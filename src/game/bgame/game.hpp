@@ -389,6 +389,7 @@ enum pmflags_t : uint16_t {
 	PMF_IGNORE_PLAYER_COLLISION = bit_v<9>, // don't collide with other players
 	PMF_TIME_TRICK = bit_v<10>, // pmTime is trick jump time
 	PMF_HASTE = bit_v<11>, // haste powerup active
+	PMF_TIME_SPAWN_LOCK = bit_v<12>, // pmTime is spawn-angle lock (preserve mapper angles, freeze movement)
 };
 
 MAKE_ENUM_BITFLAGS(pmflags_t);
