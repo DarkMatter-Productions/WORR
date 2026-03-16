@@ -21,6 +21,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Validate staged release contents for a release target.")
     parser.add_argument("--install-dir", required=True, help="Staged install directory (.install)")
     parser.add_argument("--base-game", default="baseq2", help="Base game directory name")
+    parser.add_argument("--archive-name", default="worr-assets.pkz", help="Expected base game asset archive")
+    parser.add_argument("--mod-game", default="worr", help="Release mod game directory name")
+    parser.add_argument("--mod-archive-name", default="pak0.pkz", help="Expected WORR asset archive name")
     parser.add_argument("--platform-id", required=True, help="Release platform id")
     args = parser.parse_args()
 
@@ -36,11 +39,17 @@ def main() -> int:
     base_game_dir = install_dir / args.base_game
     if not base_game_dir.is_dir():
         raise SystemExit(f"Missing base game directory: {base_game_dir}")
+    require_file(base_game_dir / args.archive_name)
 
     base_files = list(base_game_dir.rglob("*"))
     base_files = [path for path in base_files if path.is_file()]
     if not base_files:
         raise SystemExit(f"Base game directory is empty: {base_game_dir}")
+
+    mod_game_dir = install_dir / args.mod_game
+    if not mod_game_dir.is_dir():
+        raise SystemExit(f"Missing mod game directory: {mod_game_dir}")
+    require_file(mod_game_dir / args.mod_archive_name)
 
     updater = target.get("autoupdater", {})
     updater_asset = updater.get("updater_asset")

@@ -5,7 +5,13 @@ Date: 2026-02-27
 ## Purpose
 Create a repository-grounded SWOT and convert it into actionable, task-based project roadmaps that can guide coordinated team execution.
 
-## Status Updates (2026-02-27)
+## Status Updates
+- `DV-08-T05` Done:
+  - Nightly/stable packaging now stages a dedicated WORR asset pack at `.install/worr/pak0.pkz` while preserving `.install/baseq2/worr-assets.pkz` for local runtime compatibility.
+  - Client/server release archives now use explicit payload filters instead of packaging identical full `.install/` trees.
+  - Artifact verification now validates manifest contents so role-specific payload regressions are caught before publish.
+  - Stable release packaging now reuses the same platform-packaging path as nightlies.
+  - Implementation log: `docs-dev/release-archive-layout-worr-pak0-2026-03-16.md`.
 - `FR-01-T04` In Progress:
   - Completed Vulkan MD5 parity follow-up for frame resolve semantics and MD2/MD5 opaque-vs-alpha routing in `src/rend_vk/vk_entity.c`.
   - Implementation log: `docs-dev/vulkan-md5-mesh-frame-alpha-parity-fix-2026-02-27.md`.
@@ -505,6 +511,8 @@ Tasks:
   Dependency: none. Priority: P1.
 - [ ] `DV-08-T04` Add release readiness checklist tied to roadmap milestone gates.  
   Dependency: `DV-01-T01`. Priority: P1.
+- [x] `DV-08-T05` Split client/server archive payloads and ship a dedicated `worr/pak0.pkz` asset pack in release bundles.  
+  Dependency: none. Priority: P1.
 
 ## Immediate 90-Day Priority Queue (2026-03-01 to 2026-05-31)
 - [ ] `P0` `FR-01-T01` Vulkan particle style parity

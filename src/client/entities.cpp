@@ -612,6 +612,31 @@ static bool CL_IsPlayerEntity(const entity_state_t *state)
     return state->modelindex == MODELINDEX_PLAYER && state->number <= cl.maxclients;
 }
 
+static bool CL_UsesClientAutoAnimation(effects_t effects)
+{
+    return (effects & (EF_ANIM01 | EF_ANIM23 | EF_ANIM_ALL | EF_ANIM_ALLFAST)) != 0;
+}
+
+static bool CL_UsesExtendedModelFrameLerp(const entity_state_t *state)
+{
+    if (!state || !state->modelindex || (state->renderfx & RF_BEAM) ||
+        CL_UsesClientAutoAnimation(state->effects))
+        return false;
+
+    if (state->modelindex == MODELINDEX_PLAYER)
+        return true;
+
+    const char *model_name = cl.configstrings[cl.csr.models + state->modelindex];
+    if (!model_name || !*model_name || model_name[0] == '*')
+        return false;
+
+    const char *ext = COM_FileExtension(model_name);
+    return !Q_stricmp(ext, ".md2") ||
+           !Q_stricmp(ext, ".md3") ||
+           !Q_stricmp(ext, ".iqm") ||
+           !Q_stricmp(ext, ".md5mesh");
+}
+
 static bool CL_GetPlayerTeamInfo(const entity_state_t *state, uint8_t *team_index, bool *is_dead)
 {
     if (team_index)
@@ -873,8 +898,7 @@ CL_AddPacketEntities
         ent.backlerp = 1.0f - cl.lerpfrac;
 
 // KEX
-        if (cl.csr.extended) {
-            // TODO: must only do this on alias models
+        if (cl.csr.extended && CL_UsesExtendedModelFrameLerp(s1)) {
             if (cent->last_frame != cent->current_frame) {
                 ent.backlerp = Q_clipf(1.0f - ((cl.time - ((float) cent->frame_servertime - cl.frametime.time)) / 100.f), 0.0f, 1.0f);
                 ent.frame = cent->current_frame;

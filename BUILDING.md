@@ -85,8 +85,8 @@ On Windows:
 
 The refresh command performs post-build staging and install packaging in one
 pass: it recreates `.install/`, copies runtime binaries, syncs base game
-payload, writes `worr-assets.pkz`, and can validate staged files for a specific
-release target.
+payload, writes `.install/baseq2/worr-assets.pkz` plus `.install/worr/pak0.pkz`,
+and can validate staged files for a specific release target.
 
 
 Installation

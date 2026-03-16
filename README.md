@@ -83,7 +83,7 @@ WORR treats `.install/` as the local distributable staging root.
 
 - Every `tools/refresh_install.py` run deletes and rebuilds `.install/` from the current build output.
 - Runtime binaries are copied to `.install/` root and gameplay/runtime payload goes under `.install/baseq2/`.
-- `tools/package_assets.py` is run as part of refresh to emit `.install/baseq2/worr-assets.pkz`.
+- `tools/package_assets.py` is run as part of refresh to emit both `.install/baseq2/worr-assets.pkz` and `.install/worr/pak0.pkz`.
 - CI release/nightly workflows use the same refresh flow before packaging artifacts.
 
 ---
@@ -94,7 +94,7 @@ Nightly automation is defined in [`.github/workflows/nightly.yml`](.github/workf
 
 - Scheduled daily at `23:50 UTC`, with manual `workflow_dispatch` support.
 - Builds Windows, Linux, and macOS targets, then refreshes and validates `.install/` per platform.
-- Packages client/server artifacts plus metadata, verifies expected release payloads, and publishes/updates the nightly prerelease tag.
+- Packages role-specific client/server artifacts plus metadata, verifies expected release payloads and manifest contents, and publishes/updates the nightly prerelease tag.
 - Generates release notes with compare links and workflow traceability metadata.
 
 ---

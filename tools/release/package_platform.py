@@ -108,9 +108,13 @@ def main() -> int:
             "--platform-arch",
             target["arch"],
         ]
+        for pattern in config.get("include", []):
+            command.extend(["--include", pattern])
+        for pattern in config.get("exclude", []):
+            command.extend(["--exclude", pattern])
         if args.allow_prerelease:
             command.append("--allow-prerelease")
-        if args.write_config:
+        if args.write_config and role == "client":
             command.append("--write-config")
         run_command(command)
 

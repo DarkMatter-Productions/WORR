@@ -12,10 +12,10 @@ def collect_files(root: pathlib.Path) -> list[pathlib.Path]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description='Package WORR runtime assets into a baseq2 archive.')
+    parser = argparse.ArgumentParser(description='Package WORR runtime assets into a staged game archive.')
     parser.add_argument('--assets-dir', default='assets', help='Source assets directory')
     parser.add_argument('--install-dir', default='.install', help='Install staging directory')
-    parser.add_argument('--base-game', default='baseq2', help='Base game directory name')
+    parser.add_argument('--base-game', default='baseq2', help='Output game directory name inside the install root')
     parser.add_argument('--archive-name', default='worr-assets.pkz', help='Output archive filename')
     args = parser.parse_args()
 

@@ -27,6 +27,16 @@ def main() -> int:
         help="Generated asset archive name inside <install>/<base-game>",
     )
     parser.add_argument(
+        "--mod-game",
+        default="worr",
+        help="Additional WORR release game directory for the standalone asset pack",
+    )
+    parser.add_argument(
+        "--mod-archive-name",
+        default="pak0.pkz",
+        help="Generated asset archive name inside <install>/<mod-game>",
+    )
+    parser.add_argument(
         "--platform-id",
         default="",
         help="Optional release platform id for post-stage validation (for example windows-x86_64)",
@@ -58,7 +68,7 @@ def main() -> int:
     )
 
     run_step(
-        "Package staged runtime assets",
+        f"Package staged runtime assets ({args.base_game}/{args.archive_name})",
         [
             str(python_exe),
             str(assets_script),
@@ -73,6 +83,22 @@ def main() -> int:
         ],
     )
 
+    run_step(
+        f"Package release asset pack ({args.mod_game}/{args.mod_archive_name})",
+        [
+            str(python_exe),
+            str(assets_script),
+            "--assets-dir",
+            args.assets_dir,
+            "--install-dir",
+            args.install_dir,
+            "--base-game",
+            args.mod_game,
+            "--archive-name",
+            args.mod_archive_name,
+        ],
+    )
+
     if args.platform_id:
         run_step(
             f"Validate staged payload ({args.platform_id})",
@@ -83,6 +109,12 @@ def main() -> int:
                 args.install_dir,
                 "--base-game",
                 args.base_game,
+                "--archive-name",
+                args.archive_name,
+                "--mod-game",
+                args.mod_game,
+                "--mod-archive-name",
+                args.mod_archive_name,
                 "--platform-id",
                 args.platform_id,
             ],

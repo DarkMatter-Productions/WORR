@@ -7,8 +7,77 @@ import json
 from typing import Any
 
 
+CLIENT_INCLUDE = [
+    "worr*",
+    "baseq2/*",
+    "worr/pak0.pkz",
+]
+
+CLIENT_EXCLUDE = [
+    "worr.ded*",
+    "baseq2/.conhistory",
+    "baseq2/logs/*",
+]
+
+SERVER_INCLUDE = [
+    "worr.ded*",
+    "baseq2/*",
+    "worr/pak0.pkz",
+]
+
+SERVER_EXCLUDE = [
+    "baseq2/cgame*",
+    "baseq2/.conhistory",
+    "baseq2/logs/*",
+    "baseq2/shader_vkpt/*",
+]
+
+
+def with_payload_rules(target: dict[str, Any]) -> dict[str, Any]:
+    client = dict(target["client"])
+    server = dict(target["server"])
+
+    client["include"] = list(CLIENT_INCLUDE)
+    client["exclude"] = list(CLIENT_EXCLUDE)
+    client["required_paths"] = [
+        client["launch_exe"],
+        "baseq2/cgame*",
+        "baseq2/sgame*",
+        "baseq2/worr-assets.pkz",
+        "worr/pak0.pkz",
+        "worr_update.json",
+    ]
+    client["forbidden_paths"] = [
+        server["launch_exe"],
+    ]
+
+    server["include"] = list(SERVER_INCLUDE)
+    server["exclude"] = list(SERVER_EXCLUDE)
+    server["required_paths"] = [
+        server["launch_exe"],
+        "baseq2/sgame*",
+        "baseq2/worr-assets.pkz",
+        "worr/pak0.pkz",
+    ]
+    server["forbidden_paths"] = [
+        client["launch_exe"],
+        "worr_update.json",
+        "worr_opengl*",
+        "worr_rtx*",
+        "worr_updater*",
+        "worr_vulkan*",
+        "baseq2/cgame*",
+        "baseq2/shader_vkpt/*",
+    ]
+
+    hydrated = dict(target)
+    hydrated["client"] = client
+    hydrated["server"] = server
+    return hydrated
+
+
 TARGETS: list[dict[str, Any]] = [
-    {
+    with_payload_rules({
         "platform_id": "windows-x86_64",
         "runner": "windows-latest",
         "os": "windows",
@@ -33,8 +102,8 @@ TARGETS: list[dict[str, Any]] = [
             "updater_asset": "worr_updater.exe",
             "config_asset": "worr_update.json",
         },
-    },
-    {
+    }),
+    with_payload_rules({
         "platform_id": "linux-x86_64",
         "runner": "ubuntu-latest",
         "os": "linux",
@@ -56,8 +125,8 @@ TARGETS: list[dict[str, Any]] = [
             "updater_asset": None,
             "config_asset": "worr_update.json",
         },
-    },
-    {
+    }),
+    with_payload_rules({
         "platform_id": "macos-x86_64",
         "runner": "macos-13",
         "os": "macos",
@@ -79,7 +148,7 @@ TARGETS: list[dict[str, Any]] = [
             "updater_asset": None,
             "config_asset": "worr_update.json",
         },
-    },
+    }),
 ]
 
 
@@ -147,4 +216,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

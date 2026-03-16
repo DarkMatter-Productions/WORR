@@ -36,6 +36,7 @@ This guide is the quick path to running WORR with your own Quake II data.
 
 - Put your Quake II data in `.install/baseq2/` (or point `basedir` at a valid data tree).
 - Keep `.install/baseq2/worr-assets.pkz` in place.
+- Release-aligned staging also writes `.install/worr/pak0.pkz`.
 - If the game boots to console only, check renderer selection and your GPU driver.
 
 ## Useful Start Arguments
