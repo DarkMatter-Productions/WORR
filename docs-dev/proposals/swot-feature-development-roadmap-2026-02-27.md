@@ -6,6 +6,16 @@ Date: 2026-02-27
 Create a repository-grounded SWOT and convert it into actionable, task-based project roadmaps that can guide coordinated team execution.
 
 ## Status Updates
+- `DV-02-T02` In Progress:
+  - Nightly Linux/macOS jobs now install explicit Vulkan toolchain dependencies so renderer artifacts do not depend on hosted-image luck.
+  - Windows MSYS2 nightlies/releases now install Vulkan headers/loader plus `glslangValidator` so Vulkan/RTX renderer artifacts build in CI.
+  - The macOS Intel target now uses the supported `macos-15-intel` runner label instead of the retired `macos-13` label.
+  - Linux nightly dependency names were updated for current Ubuntu runner images (`libdecoration0-dev`, no `libsdl3-dev` requirement under Meson fallback).
+  - Implementation log: `docs-dev/macos-nightly-vulkan-support-2026-03-16.md`.
+- `FR-02-T07` Done:
+  - SDL video backend now creates Vulkan-capable windows for `r_renderer vulkan`/`rtx` instead of always forcing an OpenGL context.
+  - Native Vulkan renderer now uses SDL Vulkan instance/surface helpers and enables portability enumeration/subset support required by MoltenVK-backed macOS devices.
+  - Implementation log: `docs-dev/macos-nightly-vulkan-support-2026-03-16.md`.
 - `DV-08-T05` Done:
   - Nightly/stable packaging now stages a dedicated WORR asset pack at `.install/worr/pak0.pkz` while preserving `.install/baseq2/worr-assets.pkz` for local runtime compatibility.
   - Client/server release archives now use explicit payload filters instead of packaging identical full `.install/` trees.
@@ -212,6 +222,8 @@ Tasks:
   Dependency: `DV-02-T03`. Priority: P1.
 - [ ] `FR-02-T06` Publish renderer support policy page under `docs-user/` for end users.  
   Dependency: `FR-02-T01`. Priority: P2.
+- [x] `FR-02-T07` Add SDL/MoltenVK Vulkan window/surface support for macOS and other SDL-backed platforms.  
+  Dependency: none. Priority: P0.
 
 ## Epic FR-03: JSON UI Rework Completion
 Objective: complete modern menu coverage and remove remaining UX gaps for core settings and flows.

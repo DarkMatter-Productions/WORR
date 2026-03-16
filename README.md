@@ -124,6 +124,7 @@ For build instructions, see **[`BUILDING`](BUILDING.md)**.
 This covers:
 
 - Required toolchain and dependencies,
+- macOS SDL3/MoltenVK Vulkan setup notes,
 - Configuration options,
 - Build targets for the engine and game module.
 

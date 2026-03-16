@@ -26,12 +26,25 @@ strongly recommended).
 To install the *full* set of dependencies for building WORR on Debian or
 Ubuntu use the following command:
 
-    apt-get install meson gcc libc6-dev libsdl3-dev libopenal-dev \
+    apt-get install meson gcc libc6-dev libopenal-dev \
                     libpng-dev libjpeg-dev zlib1g-dev mesa-common-dev \
                     libcurl4-gnutls-dev libx11-dev libxi-dev \
-                    libwayland-dev wayland-protocols libdecor-0-dev \
+                    libwayland-dev wayland-protocols libdecoration0-dev \
+                    libvulkan-dev glslang-tools \
                     libavcodec-dev libavformat-dev libavutil-dev \
                     libswresample-dev libswscale-dev
+
+`libsdl3-dev` is not required for WORR's Meson fallback build. On Ubuntu 24.04
+and newer, the Wayland decoration package is `libdecoration0-dev`; older
+releases may still provide `libdecor-0-dev`.
+
+On macOS, install build dependencies with Homebrew:
+
+    brew install meson ninja pkg-config cmake sdl3 openal-soft libpng \
+                 jpeg-turbo vulkan-loader molten-vk glslang
+
+On macOS, the `vulkan` renderer runs through SDL3 + MoltenVK. `rtx` is not
+expected to work on current macOS Vulkan stacks.
 
 If you intend to build just dedicated server, smaller set of dependencies can
 be installed:
@@ -133,6 +146,9 @@ distributions.
 Library dependencies that WORR uses have been prepared as Meson subprojects
 and will be automatically downloaded and built by Meson.
 
+For Vulkan/RTX renderer builds you also need Vulkan headers/loader plus
+`glslangValidator` available in your toolchain environment.
+
 To install MinGW-w64 on Debian or Ubuntu, use the following command:
 
     apt-get install mingw-w64
@@ -141,6 +157,13 @@ It is recommended to also install nasm, which is needed to build libjpeg-turbo
 with SIMD support:
 
     apt-get install nasm
+
+For Windows CI/MSYS2 builds, install the MinGW Vulkan toolchain packages as
+well:
+
+    pacman -S mingw-w64-x86_64-vulkan-headers \
+              mingw-w64-x86_64-vulkan-loader \
+              mingw-w64-x86_64-glslang
 
 Meson needs a correct cross build definition file for compilation. Provide your
 own project-local cross file tuned to your compiler/toolchain and package
@@ -165,6 +188,10 @@ Install Visual Studio and Meson using official installers.
 
 Optionally, download and install nasm executable. The easiest way to add it
 into PATH is to put it into `Program Files/Meson`.
+
+For Vulkan/RTX renderer builds with Visual Studio, install a Vulkan SDK (or an
+equivalent toolchain that provides Vulkan headers, loader libraries, and
+`glslangValidator`).
 
 The build needs to be launched from the appropriate Visual Studio command
 prompt, e.g. `x64 Native Tools Command Prompt`.

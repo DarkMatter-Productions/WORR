@@ -114,6 +114,15 @@ OPENGL STUFF
 ===============================================================================
 */
 
+static bool sdl_renderer_uses_vulkan(void)
+{
+    const char *renderer = Cvar_VariableString("vid_ref");
+    if (!renderer[0])
+        renderer = Cvar_VariableString("r_ref");
+
+    return !Q_strcasecmp(renderer, "vulkan") || !Q_strcasecmp(renderer, "rtx");
+}
+
 static void set_gl_attributes(void)
 {
     r_opengl_config_t cfg = R_GetGLConfig();
@@ -147,17 +156,26 @@ static void set_gl_attributes(void)
 
 static void *get_proc_addr(const char *sym)
 {
+    if (!sdl.context)
+        return NULL;
+
     return SDL_GL_GetProcAddress(sym);
 }
 
 static void swap_buffers(void)
 {
+    if (!sdl.context)
+        return;
+
     if (!SDL_GL_SwapWindow(sdl.window))
         Com_EPrintf("Couldn't swap buffers: %s\n", SDL_GetError());
 }
 
 static void swap_interval(int val)
 {
+    if (!sdl.context)
+        return;
+
     if (!SDL_GL_SetSwapInterval(val))
         Com_EPrintf("Couldn't set swap interval %d: %s\n", val, SDL_GetError());
 }
@@ -420,8 +438,15 @@ static void shutdown(void)
 
 static bool create_window_and_context(const vrect_t *rc)
 {
-    sdl.window = SDL_CreateWindow(PRODUCT, rc->width, rc->height,
-                                  SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+    SDL_WindowFlags window_flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+    bool use_vulkan = sdl_renderer_uses_vulkan();
+
+    if (use_vulkan)
+        window_flags |= SDL_WINDOW_VULKAN;
+    else
+        window_flags |= SDL_WINDOW_OPENGL;
+
+    sdl.window = SDL_CreateWindow(PRODUCT, rc->width, rc->height, window_flags);
     if (!sdl.window) {
         Com_EPrintf("Couldn't create SDL window: %s\n", SDL_GetError());
         return false;
@@ -429,6 +454,9 @@ static bool create_window_and_context(const vrect_t *rc)
 
     if (!SDL_WINDOWPOS_ISUNDEFINED(rc->x) && !SDL_WINDOWPOS_ISUNDEFINED(rc->y))
         SDL_SetWindowPosition(sdl.window, rc->x, rc->y);
+
+    if (use_vulkan)
+        return true;
 
     sdl.context = SDL_GL_CreateContext(sdl.window);
     if (!sdl.context) {
@@ -444,6 +472,7 @@ static bool create_window_and_context(const vrect_t *rc)
 static bool init(void)
 {
     vrect_t rc;
+    bool use_vulkan = sdl_renderer_uses_vulkan();
 
     if (!SDL_InitSubSystem(SDL_INIT_VIDEO)) {
         Com_EPrintf("Couldn't initialize SDL video: %s\n", SDL_GetError());
@@ -457,7 +486,8 @@ static bool init(void)
         sdl_gamepad_open_first();
     }
 
-    set_gl_attributes();
+    if (!use_vulkan)
+        set_gl_attributes();
 
     SDL_SetEventFilter(my_event_filter, NULL);
 
@@ -467,6 +497,11 @@ static bool init(void)
     }
 
     if (!create_window_and_context(&rc)) {
+        if (use_vulkan) {
+            shutdown();
+            return false;
+        }
+
         Com_Printf("Falling back to failsafe config\n");
         SDL_GL_ResetAttributes();
         if (!create_window_and_context(&rc)) {

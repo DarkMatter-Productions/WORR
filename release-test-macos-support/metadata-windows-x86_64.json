@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "generated_at_utc": "2026-03-16T13:21:47Z",
+  "platform_id": "windows-x86_64",
+  "os": "windows",
+  "arch": "x86_64",
+  "channel": "nightly",
+  "version": "0.0.0",
+  "commit_sha": "local",
+  "build_id": "local",
+  "archive_format": "zip",
+  "autoupdater": {
+    "mode": "native",
+    "updater_asset": "worr_updater.exe",
+    "config_asset": "worr_update.json"
+  },
+  "artifacts": [
+    {
+      "name": "worr-client-win64.zip",
+      "kind": "archive",
+      "role": "client"
+    },
+    {
+      "name": "worr-client-win64.json",
+      "kind": "manifest",
+      "role": "client"
+    },
+    {
+      "name": "worr-server-win64.zip",
+      "kind": "archive",
+      "role": "server"
+    },
+    {
+      "name": "worr-server-win64.json",
+      "kind": "manifest",
+      "role": "server"
+    }
+  ]
+}

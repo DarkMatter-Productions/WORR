@@ -1247,6 +1247,11 @@ if get_option('external-renderers')
   )
 
   if vulkan.found()
+    renderer_vk_deps = renderer_deps + [vulkan]
+    if sdl3.found()
+      renderer_vk_deps += sdl3
+    endif
+
     renderer_vk_rtx_lib_src = renderer_vk_rtx_src + ['src/renderer/renderer_api.c']
     renderer_vk_rtx_lib_name = meson.project_name() + '_rtx_' + cpu
     renderer_vk_rtx_lib = shared_library(renderer_vk_rtx_lib_name, renderer_vk_rtx_lib_src,
@@ -1263,7 +1268,7 @@ if get_option('external-renderers')
     renderer_vk_lib_src = renderer_vk_src + ['src/renderer/renderer_api.c']
     renderer_vk_lib_name = meson.project_name() + '_vulkan_' + cpu
     renderer_vk_lib = shared_library(renderer_vk_lib_name, renderer_vk_lib_src,
-      dependencies:          renderer_deps + [vulkan],
+      dependencies:          renderer_vk_deps,
       include_directories:   ['inc', 'q2proto/inc'],
       gnu_symbol_visibility: 'hidden',
       link_args:             dll_link_args,

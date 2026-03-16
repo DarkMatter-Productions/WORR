@@ -1,0 +1,359 @@
+{
+  "version": "0.0.0",
+  "repo": "DarkMatter-Productions/WORR",
+  "channel": "nightly",
+  "generated_at_utc": "2026-03-16T13:21:47Z",
+  "package": {
+    "name": "worr-server-win64.zip",
+    "format": "zip",
+    "sha256": "8b61197f61589aea50a0b0c6d71781ab860c794d45a58fd392c776e3ed431d38",
+    "size": 25033640
+  },
+  "files": [
+    {
+      "path": "baseq2/art/logo.png",
+      "sha256": "d2b1088c33fd5ce2f477ec14825c80e971e84fd479d0cec8926c6ccba637be53",
+      "size": 1185223
+    },
+    {
+      "path": "baseq2/eax/abandoned.json",
+      "sha256": "b0ef7dfe2cd5009d6de006d6d22817d69232f8bfb71eec57ba7d6b8e0d2d7513",
+      "size": 764
+    },
+    {
+      "path": "baseq2/eax/alley.json",
+      "sha256": "43472b69d62aebd0bb712626a7ea9c4b558ed5714c14623737d83fb4397dd82d",
+      "size": 764
+    },
+    {
+      "path": "baseq2/eax/arena.json",
+      "sha256": "97394b31d6f89dbac06142cb418fb25e4a286c419403b443063ac105b0956c98",
+      "size": 764
+    },
+    {
+      "path": "baseq2/eax/auditorium.json",
+      "sha256": "2209405f852dd1daadd0991f68607b776f2e46c842d5f1ed21a13644f22c38af",
+      "size": 764
+    },
+    {
+      "path": "baseq2/eax/bathroom.json",
+      "sha256": "345243788dc9913f310a071b0892ad59ff80a910eb4a926187199cc5c48bedff",
+      "size": 764
+    },
+    {
+      "path": "baseq2/eax/carpetedhallway.json",
+      "sha256": "423d463ec7ee507fdce6528be5370d1ae2e2d1a399227a35699fc4e2ee0b4329",
+      "size": 766
+    },
+    {
+      "path": "baseq2/eax/cave.json",
+      "sha256": "5d40c2ab3b9584ce1e25414f6315a85d0c098eba19ff6992c51ebcd5545d7019",
+      "size": 764
+    },
+    {
+      "path": "baseq2/eax/chapel.json",
+      "sha256": "2be66018c59f06bc1e821ed2586e246b5b30c30ea6d53a3bb45078a60c347707",
+      "size": 764
+    },
+    {
+      "path": "baseq2/eax/city.json",
+      "sha256": "4eb4a5dffe2edfcda90cdcdcab2f18f95fb4a3afb11672a21a3e7adc5b7fcd9e",
+      "size": 764
+    },
+    {
+      "path": "baseq2/eax/citystreets.json",
+      "sha256": "d33d02d6d9cf056df753e577ce94ab886575ca9c76bad4c4067dad093f37ee25",
+      "size": 764
+    },
+    {
+      "path": "baseq2/eax/concerthall.json",
+      "sha256": "8b94f241dbde34c3f8c7b8ea1d9227e37edcc31c01ad98b6c236874bf04a89ed",
+      "size": 764
+    },
+    {
+      "path": "baseq2/eax/dizzy.json",
+      "sha256": "3eaa2ec19a5c4a01c05513df75f72ff10bd1717f62f787f34d48469cfcccd055",
+      "size": 765
+    },
+    {
+      "path": "baseq2/eax/drugged.json",
+      "sha256": "b3ce10465e1b2300e076134e321e6e28ec895ab8f14412ce4f8cb9a195eb585e",
+      "size": 766
+    },
+    {
+      "path": "baseq2/eax/dustyroom.json",
+      "sha256": "88429ba979c2b639b7356be59c8a4825725820d1c796f180246bd9a344c4607d",
+      "size": 765
+    },
+    {
+      "path": "baseq2/eax/forest.json",
+      "sha256": "514aad53984f81e34a884f79540d3495874288342887a4f4ff3b341e1859cb84",
+      "size": 764
+    },
+    {
+      "path": "baseq2/eax/hallway.json",
+      "sha256": "57374944fc6c3f78ad7cc01f8ca2a9c244088eea440c7cb1040be1041d7ac7d7",
+      "size": 764
+    },
+    {
+      "path": "baseq2/eax/hangar.json",
+      "sha256": "5728d2870edd464d8d97156a39d502fd66b3443bae13293a327673daf83b01d0",
+      "size": 765
+    },
+    {
+      "path": "baseq2/eax/library.json",
+      "sha256": "40b558383c93b3380f15b7b00ee38f14f62ba3d9ba56c5f7f4ad25839bcec1b8",
+      "size": 764
+    },
+    {
+      "path": "baseq2/eax/livingroom.json",
+      "sha256": "ab7f00945ad81f97a895de91e7981310d38ce00257c121613dc92f091fc259d5",
+      "size": 764
+    },
+    {
+      "path": "baseq2/eax/mountains.json",
+      "sha256": "5aee9368d6ef132bcf5147ae08ab7e4b57c8784933b5af36184c6260b6f402e3",
+      "size": 764
+    },
+    {
+      "path": "baseq2/eax/museum.json",
+      "sha256": "3a223107538da2cc9da6db498a544bdc393a8695c0d9aa10d04494e9e581e264",
+      "size": 764
+    },
+    {
+      "path": "baseq2/eax/paddedcell.json",
+      "sha256": "ab696dac0cc343319646ae75a1ba0f21656ad78b3a07e4dfda8b0ab091a90fb8",
+      "size": 764
+    },
+    {
+      "path": "baseq2/eax/parkinglot.json",
+      "sha256": "6d5003370a34f8206da02f00867e2e15d6c5f5a24e95df68c5ff062981bf4eac",
+      "size": 743
+    },
+    {
+      "path": "baseq2/eax/plain.json",
+      "sha256": "49eebd57095fabb56e3aa576d2413673836d3949da3f73b2e886caef70cb32a3",
+      "size": 743
+    },
+    {
+      "path": "baseq2/eax/psychotic.json",
+      "sha256": "218d3b2af586b570ae7c0504bd1360d6b45c915c088c30e34df404df1bfe657e",
+      "size": 743
+    },
+    {
+      "path": "baseq2/eax/quarry.json",
+      "sha256": "b2f80ef8fe9547ab60395dedbeca3a02bffdf7459878bc9b83aec5ea561d1e97",
+      "size": 737
+    },
+    {
+      "path": "baseq2/eax/room.json",
+      "sha256": "a3a1fc8618d5e8cc7ea273cf63f1e22beec0e8ebdf7626da39dcfc42c5ef51f1",
+      "size": 616
+    },
+    {
+      "path": "baseq2/eax/sewerpipe.json",
+      "sha256": "487c7545d817cd32fe3f04bfcb58089b723dcee028c4673b90cc0f6dd2be55a7",
+      "size": 603
+    },
+    {
+      "path": "baseq2/eax/smallwaterroom.json",
+      "sha256": "38aa5f4a33f4c193ffd42ecda833e3dcc194828af23dcbf36e54fe4c13ee3ad4",
+      "size": 737
+    },
+    {
+      "path": "baseq2/eax/stonecorridor.json",
+      "sha256": "ba8d2403e2e2373aae9904f8c09e730c364864e9196a3039fc0d244e780cff52",
+      "size": 737
+    },
+    {
+      "path": "baseq2/eax/stoneroom.json",
+      "sha256": "0fef84ac47ad96dcc2f5a004b55c2e027e0c10347d366bc813706d727aa00fa0",
+      "size": 691
+    },
+    {
+      "path": "baseq2/eax/subway.json",
+      "sha256": "20a25e2ae259bc706df9fc39c9f1b76f54c95a8b1d057705457f715521025b01",
+      "size": 677
+    },
+    {
+      "path": "baseq2/eax/underpass.json",
+      "sha256": "aee25f2c840ced8c7a228ee46b052281326ae2f3137523e3d26a3eff485d1887",
+      "size": 691
+    },
+    {
+      "path": "baseq2/localization/loc_arabic.txt",
+      "sha256": "653d6887c565e1dff01ab11b558244ad78938e1acc186ef54fc4a9b1b21b8780",
+      "size": 268325
+    },
+    {
+      "path": "baseq2/localization/loc_bulgarian.txt",
+      "sha256": "44df8e1b93c83de23b175de474cda04e93c5769833e89e8fb000ef113547f7f5",
+      "size": 291566
+    },
+    {
+      "path": "baseq2/localization/loc_chinese_simplified.txt",
+      "sha256": "893a084bd867311d8bf5c39c65afa14f00fa86bdf1d4ae3ecf6cbf46a0c29586",
+      "size": 190403
+    },
+    {
+      "path": "baseq2/localization/loc_chinese_traditional.txt",
+      "sha256": "b275bd72fc7c7c867def9546698aa8abfeb0377c619c85fce94300deff676c47",
+      "size": 181465
+    },
+    {
+      "path": "baseq2/localization/loc_czech.txt",
+      "sha256": "6b9390c3b9e60014d7cd82468bad0e439438e864a7f9125e7fe8ab88b56dd133",
+      "size": 209200
+    },
+    {
+      "path": "baseq2/localization/loc_danish.txt",
+      "sha256": "df22b113a9c7a79fbac6075d114edbddf065867ce5b19576091f11eb2d84d99c",
+      "size": 205646
+    },
+    {
+      "path": "baseq2/localization/loc_dutch.txt",
+      "sha256": "e4fb7922de14889ac62bb215cdf68ff53c9a3bf4efcd95ea0c32e9eb717c3b12",
+      "size": 207991
+    },
+    {
+      "path": "baseq2/localization/loc_english.txt",
+      "sha256": "cfcecc3704ec444b15a91224dfc659cdccc8d5a6186e92f9065f232c1dbfae7e",
+      "size": 199785
+    },
+    {
+      "path": "baseq2/localization/loc_finnish.txt",
+      "sha256": "d6a3ba213f6124d75df7e11fca2564fff48c344e412178558951f7dd0e5fef28",
+      "size": 203128
+    },
+    {
+      "path": "baseq2/localization/loc_french.txt",
+      "sha256": "9141c330348029cc22d39c1575b62755c0bac6577f2b3f54ec7c18da3a8e6970",
+      "size": 226846
+    },
+    {
+      "path": "baseq2/localization/loc_german.txt",
+      "sha256": "cd0c9f3d41073122bc64d248542c0ca9d61d0759bbb9949ed85782a6832e95dc",
+      "size": 217467
+    },
+    {
+      "path": "baseq2/localization/loc_italian.txt",
+      "sha256": "19c390788f4b0ff7fbfbe2b323d76d5930ed32d7270553f0ad80f2a1fe970373",
+      "size": 213475
+    },
+    {
+      "path": "baseq2/localization/loc_japanese.txt",
+      "sha256": "bff006220681ee4e02b2910108106199f813a6808a0d270580a29ced4c83def3",
+      "size": 245366
+    },
+    {
+      "path": "baseq2/localization/loc_korean.txt",
+      "sha256": "fe7cb97fe5f76ba685372a76cfb443b239e9fcc24e4119f39920541ce9be53bd",
+      "size": 215569
+    },
+    {
+      "path": "baseq2/localization/loc_norwegian.txt",
+      "sha256": "968356e583d4e8e8ee86d60dd75ed59f447bd9e9a3419ccdb47e76dc101da6f2",
+      "size": 201912
+    },
+    {
+      "path": "baseq2/localization/loc_polish.txt",
+      "sha256": "2adfc9fd087a516da4efc9f4cfc775107ec42aec71740d880d5d88baba1fd2e3",
+      "size": 211443
+    },
+    {
+      "path": "baseq2/localization/loc_portuguese_br.txt",
+      "sha256": "6dd7f4a8c9a68756f20ece60abe669235bcce80b55a21afbeb4a27d975e7f388",
+      "size": 203481
+    },
+    {
+      "path": "baseq2/localization/loc_portuguese_pt.txt",
+      "sha256": "7d1a2645d0ccfd3dd221600c1de456b4b2a77cb8c6d98a380dcbf876a61d38ba",
+      "size": 213279
+    },
+    {
+      "path": "baseq2/localization/loc_russian.txt",
+      "sha256": "2ff595604d907a14c4109cdebbb59a5caf282d07b6e72f1c57c27dcd98b25397",
+      "size": 294370
+    },
+    {
+      "path": "baseq2/localization/loc_spanish.txt",
+      "sha256": "1f71515a21670bcf80d52be1ffe943a59af070aa9d04c41465b099f51c7382c9",
+      "size": 221885
+    },
+    {
+      "path": "baseq2/localization/loc_swedish.txt",
+      "sha256": "7352b061fafca6a55b4a94f69efaa89613e9b7d45a101fcd45561b89c5d67ac8",
+      "size": 205670
+    },
+    {
+      "path": "baseq2/localization/loc_turkish.txt",
+      "sha256": "68ac7332a0faf7930754726f2c9d8124e6510c635a19ab61f470bfcaf9103b35",
+      "size": 215836
+    },
+    {
+      "path": "baseq2/sgamex86_64.dll",
+      "sha256": "9de821c734ba51d5e604bd95683a4904cf056905bb308353a087361381862c51",
+      "size": 7366144
+    },
+    {
+      "path": "baseq2/sgamex86_64.pdb",
+      "sha256": "48cbc23cf3560237961cdc1da4382680f36083ff002f0a81e2987c7768c5e008",
+      "size": 53755904
+    },
+    {
+      "path": "baseq2/sound/feedback/hit.wav",
+      "sha256": "c47773f8f9d9b7468b31a59c2bfacd7d3c3631aadaf9349863215cabfcf64914",
+      "size": 10474
+    },
+    {
+      "path": "baseq2/sound/feedback/hit0.ogg",
+      "sha256": "7dfc4a532d57fba4a6023603a850b9115aa0b59f5df6f4e7996fc402c753711b",
+      "size": 7331
+    },
+    {
+      "path": "baseq2/sound/feedback/hit1.ogg",
+      "sha256": "50194aa3d3ef15912df8d170a68ecf72642863a325bbcb3fae3abd8d9bcbf69f",
+      "size": 7581
+    },
+    {
+      "path": "baseq2/sound/feedback/hit2.ogg",
+      "sha256": "97f8d2d8e185fdce600a1dafe5d700cc40d6f6356ea7daecac18de23653fa15d",
+      "size": 8071
+    },
+    {
+      "path": "baseq2/sound/feedback/hit3.ogg",
+      "sha256": "34d66c2345740449f6371d685310c6e30b8e5fa0ce6d6aa638f9f5cbebfbc2e9",
+      "size": 8336
+    },
+    {
+      "path": "baseq2/sound/feedback/hit_teammate.ogg",
+      "sha256": "1ae79c9b429e7c048bae3bdfcdb91c275a5be3120406a7891df01f874e498a96",
+      "size": 5058
+    },
+    {
+      "path": "baseq2/worr-assets.pkz",
+      "sha256": "97bbf439fec8cb71fb302c57d82d0ac8523f0a1fdf98fb99b915b6dbbe0be577",
+      "size": 2674336
+    },
+    {
+      "path": "worr.ded.exe",
+      "sha256": "3c898e7d9a8b79b16c4069223bac1280d6356707e0f7deb85ca1faae26e1bf54",
+      "size": 1490432
+    },
+    {
+      "path": "worr.ded.pdb",
+      "sha256": "72da78c686899342d1f19b8a252cab91a4b05a9f96e3cae8bdd1558ed100b389",
+      "size": 11051008
+    },
+    {
+      "path": "worr/pak0.pkz",
+      "sha256": "97bbf439fec8cb71fb302c57d82d0ac8523f0a1fdf98fb99b915b6dbbe0be577",
+      "size": 2674336
+    }
+  ],
+  "platform": {
+    "id": "windows-x86_64",
+    "os": "windows",
+    "arch": "x86_64"
+  }
+}

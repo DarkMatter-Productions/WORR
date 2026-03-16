@@ -128,7 +128,7 @@ TARGETS: list[dict[str, Any]] = [
     }),
     with_payload_rules({
         "platform_id": "macos-x86_64",
-        "runner": "macos-13",
+        "runner": "macos-15-intel",
         "os": "macos",
         "arch": "x86_64",
         "archive_format": "tar.gz",

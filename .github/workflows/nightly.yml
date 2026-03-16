@@ -95,15 +95,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             meson ninja-build pkg-config gcc g++ python3 cmake nasm \
-            libsdl3-dev libopenal-dev libpng-dev libjpeg-dev zlib1g-dev \
-            libx11-dev libxi-dev libwayland-dev wayland-protocols libdecor-0-dev
+            libopenal-dev libpng-dev libjpeg-dev zlib1g-dev libvulkan-dev glslang-tools \
+            libx11-dev libxi-dev libwayland-dev wayland-protocols libdecoration0-dev
 
       - name: Install macOS dependencies
         if: matrix.os == 'macos'
         shell: bash
         run: |
           brew update
-          brew install meson ninja pkg-config cmake sdl3 openal-soft libpng jpeg-turbo
+          brew install meson ninja pkg-config cmake sdl3 openal-soft libpng jpeg-turbo \
+            vulkan-loader molten-vk glslang
 
       - name: Setup MSYS2 (Windows)
         if: matrix.os == 'windows'
@@ -118,6 +119,9 @@ jobs:
             mingw-w64-x86_64-ninja
             mingw-w64-x86_64-pkgconf
             mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-vulkan-headers
+            mingw-w64-x86_64-vulkan-loader
+            mingw-w64-x86_64-glslang
 
       - name: Configure (Linux/macOS)
         if: matrix.os != 'windows'

@@ -25,6 +25,22 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include <string.h>
 
+#if USE_SDL
+#include <SDL3/SDL_vulkan.h>
+#endif
+
+#ifndef VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME
+#define VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME "VK_KHR_portability_enumeration"
+#endif
+
+#ifndef VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME
+#define VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME "VK_KHR_portability_subset"
+#endif
+
+#ifndef VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR
+#define VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR ((VkInstanceCreateFlags)0x00000001)
+#endif
+
 vk_state_t vk_state;
 refcfg_t r_config;
 uint32_t d_8to24table[256];
@@ -212,6 +228,114 @@ static const char *VK_SurfaceExtensionForPlatform(vid_native_platform_t platform
     }
 }
 
+static bool VK_InstanceHasExtension(const VkExtensionProperties *exts, uint32_t ext_count,
+                                    const char *name)
+{
+    for (uint32_t i = 0; i < ext_count; ++i) {
+        if (!strcmp(exts[i].extensionName, name))
+            return true;
+    }
+
+    return false;
+}
+
+static bool VK_AddInstanceExtension(const char **extensions, uint32_t capacity, uint32_t *count,
+                                    const char *name)
+{
+    for (uint32_t i = 0; i < *count; ++i) {
+        if (!strcmp(extensions[i], name))
+            return true;
+    }
+
+    if (*count >= capacity) {
+        Com_SetLastError("Vulkan: instance extension list overflow");
+        return false;
+    }
+
+    extensions[*count] = name;
+    (*count)++;
+    return true;
+}
+
+static bool VK_CollectInstanceExtensions(const VkExtensionProperties *exts, uint32_t ext_count,
+                                         const char **extensions, uint32_t capacity,
+                                         uint32_t *out_count,
+                                         VkInstanceCreateFlags *out_flags)
+{
+    uint32_t enabled_count = 0;
+    VkInstanceCreateFlags create_flags = 0;
+
+#if USE_SDL
+    if (vk_state.native_window.platform == VID_NATIVE_SDL) {
+        Uint32 sdl_ext_count = 0;
+        const char *const *sdl_exts = SDL_Vulkan_GetInstanceExtensions(&sdl_ext_count);
+        if (!sdl_exts || !sdl_ext_count) {
+            const char *error = SDL_GetError();
+            Com_SetLastError(error && *error
+                                 ? va("Vulkan: SDL failed to report instance extensions: %s", error)
+                                 : "Vulkan: SDL failed to report instance extensions");
+            return false;
+        }
+
+        for (Uint32 i = 0; i < sdl_ext_count; ++i) {
+            const char *ext = sdl_exts[i];
+            if (!VK_InstanceHasExtension(exts, ext_count, ext)) {
+                Com_SetLastError(va("Vulkan: required SDL instance extension missing: %s", ext));
+                return false;
+            }
+            if (!VK_AddInstanceExtension(extensions, capacity, &enabled_count, ext))
+                return false;
+        }
+    } else
+#endif
+    {
+        const char *surface_ext = VK_SurfaceExtensionForPlatform(vk_state.native_window.platform);
+        if (!surface_ext) {
+            Com_SetLastError("Vulkan: unsupported video driver for surface creation");
+            return false;
+        }
+
+        if (!VK_InstanceHasExtension(exts, ext_count, VK_KHR_SURFACE_EXTENSION_NAME) ||
+            !VK_InstanceHasExtension(exts, ext_count, surface_ext)) {
+            Com_SetLastError("Vulkan: required instance extensions missing");
+            return false;
+        }
+
+        if (!VK_AddInstanceExtension(extensions, capacity, &enabled_count,
+                                     VK_KHR_SURFACE_EXTENSION_NAME) ||
+            !VK_AddInstanceExtension(extensions, capacity, &enabled_count, surface_ext)) {
+            return false;
+        }
+    }
+
+    if (VK_InstanceHasExtension(exts, ext_count, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME)) {
+        if (!VK_AddInstanceExtension(extensions, capacity, &enabled_count,
+                                     VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME)) {
+            return false;
+        }
+        create_flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+    }
+
+    *out_count = enabled_count;
+    *out_flags = create_flags;
+    return true;
+}
+
+static void VK_DestroySurfaceHandle(vk_context_t *ctx)
+{
+    if (!ctx->instance || !ctx->surface)
+        return;
+
+#if USE_SDL
+    if (vk_state.native_window.platform == VID_NATIVE_SDL)
+        SDL_Vulkan_DestroySurface(ctx->instance, ctx->surface, NULL);
+    else
+#endif
+        vkDestroySurfaceKHR(ctx->instance, ctx->surface, NULL);
+
+    ctx->surface = VK_NULL_HANDLE;
+}
+
 static bool VK_QueryNativeWindow(vid_native_window_t *out)
 {
     if (!out) {
@@ -235,16 +359,14 @@ static bool VK_QueryNativeWindow(vid_native_window_t *out)
 
 static bool VK_CreateInstance(void)
 {
-    const char *surface_ext = VK_SurfaceExtensionForPlatform(vk_state.native_window.platform);
-    if (!surface_ext) {
-        Com_SetLastError("Vulkan: unsupported video driver for surface creation");
-        return false;
-    }
-
     uint32_t ext_count = 0;
     VkResult result = vkEnumerateInstanceExtensionProperties(NULL, &ext_count, NULL);
-    if (result != VK_SUCCESS || ext_count == 0) {
+    if (result != VK_SUCCESS) {
         return VK_Check(result, "vkEnumerateInstanceExtensionProperties");
+    }
+    if (ext_count == 0) {
+        Com_SetLastError("Vulkan: no instance extensions reported");
+        return false;
     }
 
     VkExtensionProperties *exts = Z_TagMallocz(sizeof(*exts) * ext_count, TAG_RENDERER);
@@ -254,25 +376,15 @@ static bool VK_CreateInstance(void)
         return VK_Check(result, "vkEnumerateInstanceExtensionProperties");
     }
 
-    bool has_surface = false;
-    bool has_platform = false;
-    for (uint32_t i = 0; i < ext_count; ++i) {
-        if (!strcmp(exts[i].extensionName, VK_KHR_SURFACE_EXTENSION_NAME))
-            has_surface = true;
-        if (!strcmp(exts[i].extensionName, surface_ext))
-            has_platform = true;
-    }
+    const char *extensions[8];
+    uint32_t enabled_ext_count = 0;
+    VkInstanceCreateFlags create_flags = 0;
+    bool have_extensions = VK_CollectInstanceExtensions(exts, ext_count, extensions,
+                                                        q_countof(extensions), &enabled_ext_count,
+                                                        &create_flags);
     Z_Free(exts);
-
-    if (!has_surface || !has_platform) {
-        Com_SetLastError("Vulkan: required instance extensions missing");
+    if (!have_extensions)
         return false;
-    }
-
-    const char *extensions[] = {
-        VK_KHR_SURFACE_EXTENSION_NAME,
-        surface_ext
-    };
 
     VkApplicationInfo app_info = {
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
@@ -285,8 +397,9 @@ static bool VK_CreateInstance(void)
 
     VkInstanceCreateInfo create_info = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+        .flags = create_flags,
         .pApplicationInfo = &app_info,
-        .enabledExtensionCount = (uint32_t)(sizeof(extensions) / sizeof(extensions[0])),
+        .enabledExtensionCount = enabled_ext_count,
         .ppEnabledExtensionNames = extensions,
     };
 
@@ -336,8 +449,22 @@ static bool VK_CreateSurface(void)
     }
 #endif
     case VID_NATIVE_SDL:
+#if USE_SDL
+        if (!SDL_Vulkan_CreateSurface((SDL_Window *)native->handle.sdl.window,
+                                      vk_state.ctx.instance, NULL, &vk_state.ctx.surface)) {
+            const char *error = SDL_GetError();
+            Com_SetLastError(error && *error
+                                 ? va("Vulkan: SDL surface creation failed: %s", error)
+                                 : "Vulkan: SDL surface creation failed");
+            return false;
+        }
+        return true;
+#else
+        Com_SetLastError("Vulkan: SDL native window handles are not supported in this build");
+        return false;
+#endif
     default:
-        Com_SetLastError("Vulkan: SDL native window handles are not supported yet");
+        Com_SetLastError("Vulkan: unsupported video driver for surface creation");
         return false;
     }
 }
@@ -402,8 +529,12 @@ static bool VK_SelectPhysicalDevice(void)
 {
     uint32_t count = 0;
     VkResult result = vkEnumeratePhysicalDevices(vk_state.ctx.instance, &count, NULL);
-    if (result != VK_SUCCESS || count == 0) {
+    if (result != VK_SUCCESS) {
         return VK_Check(result, "vkEnumeratePhysicalDevices");
+    }
+    if (count == 0) {
+        Com_SetLastError("Vulkan: no physical devices reported");
+        return false;
     }
 
     VkPhysicalDevice *devices = Z_TagMallocz(sizeof(*devices) * count, TAG_RENDERER);
@@ -457,15 +588,21 @@ static bool VK_CreateDevice(void)
         .pQueuePriorities = &queue_priority,
     };
 
-    const char *extensions[] = {
+    const char *extensions[2] = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
     };
+    uint32_t enabled_ext_count = 1;
+
+    if (VK_DeviceHasExtension(vk_state.ctx.physical_device,
+                              VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME)) {
+        extensions[enabled_ext_count++] = VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME;
+    }
 
     VkDeviceCreateInfo create_info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
-        .enabledExtensionCount = (uint32_t)(sizeof(extensions) / sizeof(extensions[0])),
+        .enabledExtensionCount = enabled_ext_count,
         .ppEnabledExtensionNames = extensions,
     };
 
@@ -1197,10 +1334,7 @@ static void VK_DestroyContext(void)
         ctx->device = VK_NULL_HANDLE;
     }
 
-    if (ctx->surface) {
-        vkDestroySurfaceKHR(ctx->instance, ctx->surface, NULL);
-        ctx->surface = VK_NULL_HANDLE;
-    }
+    VK_DestroySurfaceHandle(ctx);
 
     if (ctx->instance) {
         vkDestroyInstance(ctx->instance, NULL);
@@ -1731,10 +1865,7 @@ void R_ModeChanged(int width, int height, int flags)
 
     VK_DestroySwapchain(&vk_state.ctx);
 
-    if (vk_state.ctx.surface) {
-        vkDestroySurfaceKHR(vk_state.ctx.instance, vk_state.ctx.surface, NULL);
-        vk_state.ctx.surface = VK_NULL_HANDLE;
-    }
+    VK_DestroySurfaceHandle(&vk_state.ctx);
 
     vid_native_window_t native;
     if (!VK_QueryNativeWindow(&native)) {

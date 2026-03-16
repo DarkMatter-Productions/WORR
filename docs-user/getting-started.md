@@ -48,6 +48,9 @@ This guide is the quick path to running WORR with your own Quake II data.
 +set r_renderer rtx
 ```
 
+On macOS, `r_renderer vulkan` uses SDL3 + MoltenVK. `r_renderer rtx` is not
+expected to work on current macOS Vulkan stacks.
+
 ## If Something Feels Off
 
 - No sound: verify OpenAL device output and in-game volume cvars.
