@@ -1033,7 +1033,7 @@ static void PM_CatagorizePosition() {
 
 		// Touching solid ground ends waterjump
 		if (pm->s.pmFlags & PMF_TIME_WATERJUMP) {
-			pm->s.pmFlags &= ~(PMF_TIME_WATERJUMP | PMF_TIME_LAND | PMF_TIME_KNOCKBACK | PMF_TIME_TRICK);
+			pm->s.pmFlags &= ~(PMF_TIME_WATERJUMP | PMF_TIME_LAND | PMF_TIME_KNOCKBACK | PMF_TIME_SPAWN_LOCK | PMF_TIME_TRICK);
 			pm->s.pmTime = 0;
 		}
 
@@ -1518,6 +1518,17 @@ static void PM_ClampAngles() {
 		pm->viewAngles[PITCH] = 0.0f;
 		pm->viewAngles[ROLL] = 0.0f;
 	}
+	else if (pm->s.pmFlags & PMF_TIME_SPAWN_LOCK) {
+		// Spawn lock: preserve full mapper-set angles (pitch, yaw, roll)
+		pm->viewAngles = pm->cmd.angles + pm->s.deltaAngles;
+		// Clamp pitch: [-89, +89] degrees
+		if (pm->viewAngles[PITCH] > 89.0f && pm->viewAngles[PITCH] < 180.0f) {
+			pm->viewAngles[PITCH] = 89.0f;
+		}
+		else if (pm->viewAngles[PITCH] >= 180.0f && pm->viewAngles[PITCH] < 271.0f) {
+			pm->viewAngles[PITCH] = 271.0f;
+		}
+	}
 	else {
 		// Add command + delta
 		pm->viewAngles = pm->cmd.angles + pm->s.deltaAngles;
@@ -1650,7 +1661,7 @@ void Pmove(PMove* pmove) {
 	// --- Drop timers ---
 	if (pm->s.pmTime) {
 		if (pm->cmd.msec >= pm->s.pmTime) {
-			pm->s.pmFlags &= ~(PMF_TIME_WATERJUMP | PMF_TIME_LAND | PMF_TIME_KNOCKBACK | PMF_TIME_TRICK);
+			pm->s.pmFlags &= ~(PMF_TIME_WATERJUMP | PMF_TIME_LAND | PMF_TIME_KNOCKBACK | PMF_TIME_SPAWN_LOCK | PMF_TIME_TRICK);
 			pm->s.pmTime = 0;
 		}
 		else {
@@ -1658,9 +1669,12 @@ void Pmove(PMove* pmove) {
 		}
 	}
 
-	// --- Knockback / waterjump / normal movement ---
+	// --- Knockback / spawn lock / waterjump / normal movement ---
 	if (pm->s.pmFlags & PMF_TIME_KNOCKBACK) {
 		// Knockback freeze: stay in place
+	}
+	else if (pm->s.pmFlags & PMF_TIME_SPAWN_LOCK) {
+		// Spawn-angle lock: stay in place, view already set in PM_ClampAngles
 	}
 	else if (pm->s.pmFlags & PMF_TIME_WATERJUMP) {
 		// Waterjump: ballistic arc, no control
@@ -1668,7 +1682,7 @@ void Pmove(PMove* pmove) {
 
 		// Cancel when falling again
 		if (pml.velocity[_Z] < 0.0f) {
-			pm->s.pmFlags &= ~(PMF_TIME_WATERJUMP | PMF_TIME_LAND | PMF_TIME_KNOCKBACK | PMF_TIME_TRICK);
+			pm->s.pmFlags &= ~(PMF_TIME_WATERJUMP | PMF_TIME_LAND | PMF_TIME_KNOCKBACK | PMF_TIME_SPAWN_LOCK | PMF_TIME_TRICK);
 			pm->s.pmTime = 0;
 		}
 

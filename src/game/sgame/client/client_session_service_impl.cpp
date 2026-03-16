@@ -1408,7 +1408,7 @@ gentity_t* ent, usercmd_t* ucmd) {
 			const int64_t remainingMs =
 				std::max<int64_t>(1, (cl->spawnAngleLockUntil - level.time).milliseconds());
 			const uint16_t lockTime = static_cast<uint16_t>(std::min<int64_t>(remainingMs, 65535));
-			pmState.pmFlags |= PMF_TIME_KNOCKBACK;
+			pmState.pmFlags |= PMF_TIME_SPAWN_LOCK;
 			pmState.pmTime = std::max(pmState.pmTime, lockTime);
 		}
 

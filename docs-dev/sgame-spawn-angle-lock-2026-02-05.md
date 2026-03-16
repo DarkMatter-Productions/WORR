@@ -5,7 +5,7 @@
 
 ## Details
 - `ClientSpawn` now tags spawn-point spawns (non-landmark, non-squad, non-ghost) with a brief lock timer and the spawn-point angles.
-- `ClientThink` honors the lock by forcing a short `PMF_TIME_KNOCKBACK` window and overriding the incoming command angles to the stored spawn angles for the lock duration.
+- `ClientThink` honors the lock by forcing a short `PMF_TIME_SPAWN_LOCK` window (see issue #747 fix) and overriding the incoming command angles to the stored spawn angles for the lock duration. Spawn lock preserves full mapper angles (pitch, yaw, roll); knockback is not used so pitch/roll are not zeroed.
 - The lock is only applied for active players and does not affect landmark or ghost spawns.
 
 ## Files
