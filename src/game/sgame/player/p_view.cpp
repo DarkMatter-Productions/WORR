@@ -27,7 +27,7 @@ float		  xySpeed = 0.0f;
 
 float bobMove = 0.0f;
 int	  bobCycle = 0, bobCycleRun = 0;	  // odd cycles are right foot going forward
-float bobFracSin = 0.0f; // std::sinf(bobfrac*M_PI)
+float bobFracSin = 0.0f; // std::sin(bobfrac*M_PI)
 
 namespace {
 
@@ -325,7 +325,7 @@ static void OffsetThirdPersonDeathView(gentity_t* ent) {
 	constexpr float camAngleDeg = 0.0f;
 
 	const float forwardScale = cosf(camAngleDeg * PIf / 180.0f);
-	const float sideScale = std::sinf(camAngleDeg * PIf / 180.0f);
+	const float sideScale = std::sin(camAngleDeg * PIf / 180.0f);
 
 	// Eye origin at the player's view height.
 	Vector3 viewOrigin = ent->s.origin;
@@ -1708,7 +1708,7 @@ void ClientEndServerFrame(gentity_t* ent) {
 
 	bobCycle = (int)bobTime;
 	bobCycleRun = (int)bobTimeRun;
-	bobFracSin = std::fabs(std::sinf(bobTime * PIf));
+	bobFracSin = std::fabs(std::sin(bobTime * PIf));
 
 	// apply all the damage taken this frame
 	P_DamageFeedback(e);

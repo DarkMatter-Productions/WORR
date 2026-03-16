@@ -214,7 +214,7 @@ static THINK(turret_breach_think) (gentity_t* self) -> void {
 		angle = self->s.angles[YAW] + self->owner->moveOrigin[_Y];
 		angle *= (float)(PI * 2 / 360);
 		target[0] = self->s.origin[_X] + cosf(angle) * self->owner->moveOrigin[_X];
-		target[1] = self->s.origin[_Y] + std::sinf(angle) * self->owner->moveOrigin[_X];
+		target[1] = self->s.origin[_Y] + std::sin(angle) * self->owner->moveOrigin[_X];
 		target[2] = self->owner->s.origin[_Z];
 
 		dir = target - self->owner->s.origin;

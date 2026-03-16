@@ -17,8 +17,8 @@ def read_version_file():
         return env_version.strip()
 
     candidates = [
-        Path.cwd() / "VERSION",
-        Path(__file__).resolve().parent / "VERSION",
+        Path.cwd() / "WORR_VERSION",
+        Path(__file__).resolve().parent / "WORR_VERSION",
     ]
     for candidate in candidates:
         if candidate.exists():

@@ -2516,8 +2516,8 @@ static void BobThink(gentity_t* self) {
 	const int frame = self->bobFrame % cycleTime;
 	const int nextFrame = (self->bobFrame + 1) % cycleTime;
 
-	const float phase0 = std::sinf(2.0f * M_PI * (frame / static_cast<float>(cycleTime)));
-	const float phase1 = std::sinf(2.0f * M_PI * (nextFrame / static_cast<float>(cycleTime)));
+	const float phase0 = std::sin(2.0f * M_PI * (frame / static_cast<float>(cycleTime)));
+	const float phase1 = std::sin(2.0f * M_PI * (nextFrame / static_cast<float>(cycleTime)));
 
 	const float delta = (self->bob / 2.0f) * (phase1 - phase0);
 	self->velocity[_Z] = delta / FRAME_TIME_MS.milliseconds();
@@ -4201,7 +4201,7 @@ static THINK(func_bobbing_think) (gentity_t* ent) -> void {
 	const float phase_offset = ent->phase * cycle;
 	const float frac = fmodf((level.time.milliseconds() * 0.001f + phase_offset), cycle) / cycle;
 	const float angle = frac * M_TWOPI;
-	const float bob = std::sinf(angle) * ent->height;
+	const float bob = std::sin(angle) * ent->height;
 
 	Vector3 delta = { 0, 0, 0 };
 
@@ -4288,7 +4288,7 @@ static THINK(func_pendulum_think) (gentity_t* ent) -> void {
 	const float cycle = ent->speed > 0.0f ? ent->speed : 30.0f; // temporary use for swing angle
 	const float duration = ent->wait; // seconds
 	const float frac = fmodf(level.time.milliseconds() + ent->phase * duration, duration) / duration;
-	const float angle = std::sinf(frac * M_TWOPI) * cycle;
+	const float angle = std::sin(frac * M_TWOPI) * cycle;
 
 	ent->s.angles = ent->pos1; // reset to base position
 	ent->s.angles[ROLL] += angle;

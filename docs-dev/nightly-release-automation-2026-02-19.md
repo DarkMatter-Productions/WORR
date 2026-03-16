@@ -30,7 +30,7 @@ This keeps versions monotonic for update comparison and reproducible per commit/
 ### MSI versioning output
 `version.py --msi-version` now emits a strict `Major.Minor.Patch` value for MSI packaging.
 
-- Stable channel: uses `VERSION` file patch.
+- Stable channel: uses `WORR_VERSION` file patch.
 - Nightly channel: patch derives from git revision count (clamped to MSI constraints).
 
 This avoids prerelease string failures in MSI tooling while preserving upgrade ordering for nightly installers.
@@ -140,4 +140,3 @@ This index is the future-proof contract for platform-aware autoupdaters to resol
 - `tools/stage_install.py`
 - `src/updater/worr_updater.c`
 - `.github/workflows/release.yml`
-

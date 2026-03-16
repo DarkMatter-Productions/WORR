@@ -778,7 +778,7 @@ PRETHINK(fixbot_laser_update) (gentity_t *laser) -> void {
 		Vector3 point;
 		point = (self->enemy->absMin + self->enemy->absMax) * 0.5f;
 		if (self->monsterInfo.aiFlags & AI_MEDIC)
-			point[0] += std::sinf(level.time.seconds()) * 8;
+			point[0] += std::sin(level.time.seconds()) * 8;
 		dir = point - self->s.origin;
 		dir.normalize();
 	}

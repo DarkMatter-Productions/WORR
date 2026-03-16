@@ -70,7 +70,7 @@ Example:
 ```
 
 ## Versioning System
-- `VERSION` holds the base semver (e.g., `1.2.3`).
+- `WORR_VERSION` holds the base semver (e.g., `1.2.3`).
 - `version.py` outputs:
   - `--version`: display string used by the build (adds dev/build metadata when not a release build).
   - `--semver`: stable semver string for release artifacts.
@@ -101,7 +101,7 @@ python tools/package_release.py \
 - Triggers:
   - Push to `main` with `[release]` in the commit message.
   - Manual `workflow_dispatch`.
-- Release commits should bump `VERSION` to the intended semver.
+- Release commits should bump `WORR_VERSION` to the intended semver.
 - Steps:
   - Build via Meson (MSYS2 + MinGW).
   - Install into a staging directory.

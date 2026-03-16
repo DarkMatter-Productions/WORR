@@ -1,12 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-  <?define ProductName="WORR" ?>
-  <?define Manufacturer="DarkMatter Productions" ?>
-  <?define ProductVersion="$(var.ProductVersion)" ?>
-  <?define UpgradeCode="$(var.UpgradeCode)" ?>
-
   <Product Id="*" Name="$(var.ProductName)" Manufacturer="$(var.Manufacturer)"
-           Version="$(var.ProductVersion)" UpgradeCode="$(var.UpgradeCode)">
+           Version="$(var.ProductVersion)" UpgradeCode="$(var.UpgradeCode)" Language="1033">
     <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" Platform="x64" />
     <MajorUpgrade DowngradeErrorMessage="A newer version of $(var.ProductName) is already installed." />
     <MediaTemplate EmbedCab="yes" />

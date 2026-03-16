@@ -236,9 +236,9 @@ void TurretAim(gentity_t *self) {
 	if (visible(self, self->enemy))
 		scan_range = 12.f;
 
-	tr.endPos[0] += std::sinf(level.time.seconds() + self->s.number) * scan_range;
+	tr.endPos[0] += std::sin(level.time.seconds() + self->s.number) * scan_range;
 	tr.endPos[1] += cosf((level.time.seconds() - self->s.number) * 3.f) * scan_range;
-	tr.endPos[2] += std::sinf((level.time.seconds() - self->s.number) * 2.5f) * scan_range;
+	tr.endPos[2] += std::sin((level.time.seconds() - self->s.number) * 2.5f) * scan_range;
 
 	forward = tr.endPos - self->s.origin;
 	forward.normalize();

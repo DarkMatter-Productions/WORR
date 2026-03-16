@@ -782,7 +782,7 @@ bool ai_check_move(gentity_t *self, float dist) {
 	float yaw = self->s.angles[YAW] * PIf * 2 / 360;
 	Vector3 move = {
 		cosf(yaw) * dist,
-		std::sinf(yaw) * dist,
+		std::sin(yaw) * dist,
 		0
 	};
 
@@ -861,7 +861,7 @@ static bool G_StepDirection(gentity_t *ent, float yaw, float dist, bool allow_no
 
 	yaw = yaw * PIf * 2 / 360;
 	move[0] = cosf(yaw) * dist;
-	move[1] = std::sinf(yaw) * dist;
+	move[1] = std::sin(yaw) * dist;
 	move[2] = 0;
 
 	oldorigin = ent->s.origin;
@@ -1323,7 +1323,7 @@ bool M_walkmove(gentity_t *ent, float yaw, float dist) {
 	yaw = yaw * PIf * 2 / 360;
 
 	move[0] = cosf(yaw) * dist;
-	move[1] = std::sinf(yaw) * dist;
+	move[1] = std::sin(yaw) * dist;
 	move[2] = 0;
 
 	// PMM
