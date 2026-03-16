@@ -6,6 +6,10 @@ Date: 2026-02-27
 Create a repository-grounded SWOT and convert it into actionable, task-based project roadmaps that can guide coordinated team execution.
 
 ## Status Updates
+- `FR-09-T01` Done:
+  - Added a repository-grounded networking migration proposal for porting Quake 3 snapshot and event ideas into WORR without ignoring the current q2proto/q2repro-derived networking path.
+  - The proposal explicitly covers current WORR code paths, upstream Quake 2 versus Quake 3 architecture, monster/co-op impact, Quake 3 weaknesses, and a phased rollout plan.
+  - Proposal doc: `docs-dev/proposals/q3-snapshot-event-network-migration-2026-03-16.md`.
 - `DV-02-T02` In Progress:
   - Nightly Linux/macOS jobs now install explicit Vulkan toolchain dependencies so renderer artifacts do not depend on hosted-image luck.
   - Windows MSYS2 nightlies/releases now install Vulkan headers/loader plus `glslangValidator` so Vulkan/RTX renderer artifacts build in CI.
@@ -408,6 +412,33 @@ Tasks:
 - [ ] `FR-08-T05` Stage a minimal public server deployment runbook and monitoring checklist.  
   Dependency: `FR-08-T01`. Priority: P2.
 
+## Epic FR-09: Snapshot and Event Networking Modernization
+Objective: replace the remaining idTech2-era event semantics and packet-layout constraints with a WORR-specific snapshot/event model inspired by Quake 3 and adapted for monsters and cooperative play.
+
+Primary Areas: `src/server/*`, `src/client/*`, `src/common/net/*`, `src/game/sgame/*`, `src/game/cgame/*`, networking proposal docs
+
+Exit Criteria:
+- WORR has a versioned snapshot/event protocol path with sequenced player events, a transient effect stream, and monster/co-op-aware prioritization.
+- Legacy Q2-compatible paths remain available until the WORR path is validated for demos, MVD, and gameplay flows.
+
+Tasks:
+- [x] `FR-09-T01` Produce a repository-grounded architecture proposal and task breakdown for the Quake 3-style snapshot/event migration.  
+  Dependency: none. Priority: P0.
+- [ ] `FR-09-T02` Add engine-owned WORR snapshot abstractions, protocol negotiation, and dual send/parse paths alongside legacy networking.  
+  Dependency: none. Priority: P0.
+- [ ] `FR-09-T03` Implement Quake 3-style predictable player event queues plus shared client/game event APIs.  
+  Dependency: `FR-09-T02`. Priority: P0.
+- [ ] `FR-09-T04` Add a transient effect stream to retire temp-entity and monster-muzzleflash dependence in the WORR protocol path.  
+  Dependency: `FR-09-T02`. Priority: P0.
+- [ ] `FR-09-T05` Implement schema-driven snapshot delta encoding for the WORR protocol path.  
+  Dependency: `FR-09-T02`. Priority: P0.
+- [ ] `FR-09-T06` Add monster/co-op-aware snapshot budgeting, overflow diagnostics, and event priority classes.  
+  Dependency: `FR-09-T03..T05`. Priority: P1.
+- [ ] `FR-09-T07` Add selective motion descriptors for players, projectiles, and movers where they materially improve quality or bandwidth.  
+  Dependency: `FR-09-T05`. Priority: P1.
+- [ ] `FR-09-T08` Finalize demo/MVD compatibility strategy, rollout toggles, and promotion criteria for the WORR protocol path.  
+  Dependency: `FR-09-T03..T07` and `DV-03-T07`. Priority: P1.
+
 ## Development Roadmap (Task-Based Project)
 
 ## Timeline
@@ -476,6 +507,8 @@ Tasks:
   Dependency: `FR-04-T02`. Priority: P2.
 - [ ] `DV-03-T06` Add updater/release index parser tests for stable and nightly channels.  
   Dependency: none. Priority: P1.
+- [ ] `DV-03-T07` Add deterministic networking regression coverage for WORR snapshot/event migration, including packet-loss, monster, coop, and demo scenarios.  
+  Dependency: `FR-09-T02`. Priority: P0.
 
 ## Epic DV-04: Architecture and Code Quality
 Objective: reduce maintenance overhead and complete key modernization tracks.
