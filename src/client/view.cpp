@@ -240,7 +240,7 @@ void V_AddEntity(const entity_t *ent)
         if (ent->flags & RF_LOW_PRIORITY)
             return;
 
-        for (size_t i = 0; i < r_numentities; i++) {
+        for (int i = 0; i < r_numentities; i++) {
             if (r_entities[i].flags & RF_LOW_PRIORITY) {
                 r_entities[i] = *ent;
                 return;
@@ -304,6 +304,12 @@ static inline float fade_distance_to_light(const vec2_t fade, const vec3_t light
     return 1.0f - smoothstep(min_frag_dist, 1.0f, frac_to_end);
 }
 
+static inline float fade_distance_to_light(float fade_start, float fade_end, const vec3_t light_origin, const vec3_t org)
+{
+    const vec2_t fade = { fade_start, fade_end };
+    return fade_distance_to_light(fade, light_origin, org);
+}
+
 /*
 =====================
 V_AddLightEx
@@ -314,7 +320,7 @@ void V_AddLightExVis(cl_shadow_light_t *light, bool strict_pvs)
 {
     dlight_t    *dl;
 
-    float fade = fade_distance_to_light(VEC2(light->fade_start, light->fade_end), light->origin, cl.refdef.vieworg);
+    float fade = fade_distance_to_light(light->fade_start, light->fade_end, light->origin, cl.refdef.vieworg);
 
     if (fade <= 0.0f)
         return;

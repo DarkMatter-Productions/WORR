@@ -235,7 +235,8 @@ void Z_Stats_f(void)
         if (!s->count) {
             continue;
         }
-        Com_Printf("%9zu %6zu %s\n", s->bytes, s->count, z_tagnames[i]);
+        const char *tag_name = z_tagnames[i] ? z_tagnames[i] : "<unnamed>";
+        Com_Printf("%9zu %6zu %s\n", s->bytes, s->count, tag_name);
         bytes += s->bytes;
         count += s->count;
     }

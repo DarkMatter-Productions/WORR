@@ -549,6 +549,7 @@ else
 endif
 
 engine_args = []
+engine_c_warn_args = []
 if win32
   engine_args += '-D_WIN32_WINNT=0x0601'
 endif
@@ -578,7 +579,7 @@ if cc.get_argument_syntax() == 'gcc'
   ]
 
   common_args += cc.get_supported_arguments(test_args)
-  engine_args += cc.get_supported_arguments(['-Wmissing-prototypes'])
+  engine_c_warn_args += cc.get_supported_arguments(['-Wmissing-prototypes'])
 
   if win32
     common_args += '-D__USE_MINGW_ANSI_STDIO=1'
@@ -640,6 +641,7 @@ else
   client_cpp_args += '-D_GNU_SOURCE'
 endif
 client_cpp_args += engine_args
+engine_c_args = engine_args + engine_c_warn_args
 
 if cpp.get_argument_syntax() == 'gcc'
   if x86
@@ -1230,7 +1232,7 @@ if get_option('external-renderers')
   endif
   renderer_deps += khr_headers_dep
 
-  renderer_c_args = ['-DUSE_CLIENT=1', '-DRENDERER_DLL'] + engine_args
+  renderer_c_args = ['-DUSE_CLIENT=1', '-DRENDERER_DLL'] + engine_c_args
   renderer_gl_c_args = renderer_c_args + ['-DUSE_REF=REF_GL']
   renderer_vk_rtx_c_args = renderer_c_args + ['-DUSE_REF=REF_VKPT', '-DRENDERER_VULKAN', '-DRENDERER_VULKAN_RTX=1']
   renderer_vk_c_args = renderer_c_args + ['-DUSE_REF=REF_VKPT', '-DRENDERER_VULKAN', '-DRENDERER_VULKAN_LEGACY=1']
@@ -1285,9 +1287,10 @@ endif
 if get_option('game-abi-hack').require(x86 and cc.get_id() == 'gcc' and cc.has_argument('-mstackrealign')).allowed()
   config.set10('USE_GAME_ABI_HACK', true)
   engine_args += '-mstackrealign'
+  engine_c_args += '-mstackrealign'
 endif
 
-q2proto_c_args = engine_args + []
+q2proto_c_args = engine_c_args + []
 if cc.get_argument_syntax() == 'gcc'
   q2proto_c_args += cc.get_supported_arguments(['-Wno-unused-function'])
 endif
@@ -1304,7 +1307,7 @@ executable('worr', common_src, client_src, renderer_engine_src,
   win_subsystem:         win_subsystem_client,
   link_args:             client_link_args,
   link_with:             q2proto_lib,
-  c_args:                ['-DUSE_CLIENT=1', '-DUSE_REF=REF_GL', engine_args],
+  c_args:                ['-DUSE_CLIENT=1', '-DUSE_REF=REF_GL', engine_c_args],
   cpp_args:              client_cpp_args,
   override_options:      ['cpp_std=c++20'],
   install:               true,
@@ -1318,7 +1321,7 @@ executable('worr.ded', common_src, server_src,
   win_subsystem:         win_subsystem_server,
   link_args:             exe_link_args,
   link_with:             q2proto_lib,
-  c_args:                ['-DUSE_SERVER=1', engine_args],
+  c_args:                ['-DUSE_SERVER=1', engine_c_args],
   install:               true,
   install_dir:           bindir,
 )

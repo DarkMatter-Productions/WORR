@@ -127,10 +127,10 @@ static void MVD_ParseMulticast(mvd_t *mvd, multicast_t to, bool reliable, int ex
     mvd_client_t    *client;
     client_t        *cl;
     visrow_t        mask;
-    const mleaf_t   *leaf1, *leaf2;
+    const mleaf_t   *leaf2;
     vec3_t          org;
     byte            *data;
-    int             length, leafnum;
+    int             length, leafnum = 0, leaf1_area = 0;
 
     length = MSG_ReadByte();
     length |= extrabits << 8;
@@ -148,7 +148,8 @@ static void MVD_ParseMulticast(mvd_t *mvd, multicast_t to, bool reliable, int ex
         return;
 
     if (to) {
-        leaf1 = CM_LeafNum(&mvd->cm, leafnum);
+        const mleaf_t *leaf1 = CM_LeafNum(&mvd->cm, leafnum);
+        leaf1_area = leaf1->area;
         BSP_ClusterVis(mvd->cm.cache, &mask, leaf1->cluster, MULTICAST_PVS - to);
     }
 
@@ -167,7 +168,7 @@ static void MVD_ParseMulticast(mvd_t *mvd, multicast_t to, bool reliable, int ex
         if (to) {
             VectorCopy(client->ps.pmove.origin, org);
             leaf2 = CM_PointLeaf(&mvd->cm, org);
-            if (!CM_AreasConnected(&mvd->cm, leaf1->area, leaf2->area))
+            if (!CM_AreasConnected(&mvd->cm, leaf1_area, leaf2->area))
                 continue;
             if (leaf2->cluster == -1)
                 continue;

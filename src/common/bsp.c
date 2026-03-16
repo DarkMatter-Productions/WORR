@@ -385,21 +385,26 @@ byte *BSP_GetPvs2(bsp_t *bsp, int cluster)
 
 static bool BSP_GetPatchedPVSFileName(const char *map_path, char pvs_path[MAX_QPATH])
 {
-    int path_len = (int)strlen(map_path);
+    const size_t path_len = strlen(map_path);
     if (path_len < 5 || strcmp(map_path + path_len - 4, ".bsp") != 0)
         return false;
 
     const char *map_file = strrchr(map_path, '/');
-    if (map_file)
-        map_file += 1;
-    else
-        map_file = map_path;
+    const size_t prefix_len = map_file ? (size_t)(map_file + 1 - map_path) : 0;
+    const size_t map_file_len = strlen(map_file ? map_file + 1 : map_path);
+    const size_t pvs_name_len = prefix_len + 4 + (map_file_len - 4) + 4;
+    if (pvs_name_len >= MAX_QPATH)
+        return false;
 
-    memset(pvs_path, 0, MAX_QPATH);
-    strncpy(pvs_path, map_path, map_file - map_path);
-    strcat(pvs_path, "pvs/");
-    strncat(pvs_path, map_file, strlen(map_file) - 4);
-    strcat(pvs_path, ".bin");
+    map_file = map_file ? map_file + 1 : map_path;
+
+    if (prefix_len)
+        memcpy(pvs_path, map_path, prefix_len);
+    pvs_path[prefix_len] = '\0';
+    Q_strlcat(pvs_path, "pvs/", MAX_QPATH);
+    Q_strlcat(pvs_path, map_file, MAX_QPATH);
+    pvs_path[prefix_len + 4 + (map_file_len - 4)] = '\0';
+    Q_strlcat(pvs_path, ".bin", MAX_QPATH);
 
     return true;
 }

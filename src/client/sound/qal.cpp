@@ -148,7 +148,7 @@ void QAL_Shutdown(void)
         device = NULL;
     }
 
-    for (int i = 0; i < q_countof(sections); i++) {
+    for (size_t i = 0; i < q_countof(sections); i++) {
         const alsection_t *sec = &sections[i];
         const alfunction_t *func;
 
@@ -205,7 +205,7 @@ int QAL_Init(void)
     const alsection_t *sec;
     const alfunction_t *func;
     ALCint major, minor;
-    int i;
+    size_t i;
 
     al_device = Cvar_Get("al_device", "", 0);
     al_hrtf = Cvar_Get("al_hrtf", "0", 0);
