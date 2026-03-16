@@ -17,14 +17,32 @@ Scripting Utilities: Provides helper entities like `target_relay` (to chain trig
 #include "../../bgame/char_array_utils.hpp"
 #include "../../../../inc/shared/files.h"
 #include <algorithm>
+#include <cerrno>
+#include <cstdlib>
 #include <cstring>
 #include <format>
 #include <limits>
+#include <optional>
 #include <string>
 #include <vector>
 
 namespace {
 	using filesystem_handle_t = int;
+
+	std::optional<float> ParseFloatStrict(std::string_view text) {
+		if (text.empty()) {
+			return std::nullopt;
+		}
+
+		std::string buffer(text);
+		char* end = nullptr;
+		errno = 0;
+		const float value = std::strtof(buffer.c_str(), &end);
+		if (errno == 0 && end == buffer.c_str() + buffer.size()) {
+			return value;
+		}
+		return std::nullopt;
+	}
 
 	struct filesystem_api_v1_t {
 		int64_t		(*OpenFile)(const char *path, filesystem_handle_t *f, unsigned mode);
@@ -2352,7 +2370,9 @@ static USE(use_target_sky)(gentity_t* self, gentity_t* other, gentity_t* activat
 
 		// Safely parse the existing "rotate autorotate" string.
 		if (auto separator = current_sky_rotate.find(' '); separator != std::string_view::npos) {
-			std::from_chars(current_sky_rotate.data(), current_sky_rotate.data() + separator, rotate);
+			if (const auto parsed_rotate = ParseFloatStrict(current_sky_rotate.substr(0, separator))) {
+				rotate = *parsed_rotate;
+			}
 			std::from_chars(current_sky_rotate.data() + separator + 1, current_sky_rotate.data() + current_sky_rotate.size(), autorotate);
 		}
 

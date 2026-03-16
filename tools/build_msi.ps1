@@ -18,7 +18,7 @@ function Invoke-NativeCommand {
   param(
     [Parameter(Mandatory = $true)]
     [string]$FilePath,
-    [Parameter(ValueFromRemainingArguments = $true)]
+    [Parameter(Mandatory = $true)]
     [string[]]$Arguments
   )
 
@@ -53,32 +53,47 @@ $harvestWxs = Join-Path $tempRoot "Harvest.wxs"
 try {
   Copy-Item $wxsTemplate $productWxs
 
-  Invoke-NativeCommand $heat.Source `
-    dir $source `
-    -cg AppComponents `
-    -dr INSTALLDIR `
-    -gg -g1 `
-    -scom -sreg -srd `
-    -var var.SourceDir `
-    -out $harvestWxs
+  Invoke-NativeCommand -FilePath $heat.Source -Arguments @(
+    "dir"
+    $source
+    "-cg"
+    "AppComponents"
+    "-dr"
+    "INSTALLDIR"
+    "-gg"
+    "-g1"
+    "-scom"
+    "-sreg"
+    "-srd"
+    "-var"
+    "var.SourceDir"
+    "-out"
+    $harvestWxs
+  )
 
-  Invoke-NativeCommand $candle.Source `
-    -nologo `
-    "-dProductVersion=$ProductVersion" `
-    "-dProductName=$ProductName" `
-    "-dManufacturer=$Manufacturer" `
-    "-dUpgradeCode=$UpgradeCode" `
-    "-dSourceDir=$source" `
-    "-out" "$tempRoot\" `
-    $productWxs $harvestWxs
+  Invoke-NativeCommand -FilePath $candle.Source -Arguments @(
+    "-nologo"
+    "-dProductVersion=$ProductVersion"
+    "-dProductName=$ProductName"
+    "-dManufacturer=$Manufacturer"
+    "-dUpgradeCode=$UpgradeCode"
+    "-dSourceDir=$source"
+    "-out"
+    "$tempRoot\"
+    $productWxs
+    $harvestWxs
+  )
 
   $msiPath = Join-Path $output $MsiName
-  Invoke-NativeCommand $light.Source `
-    -nologo `
-    -ext WixUIExtension `
-    -out $msiPath `
-    (Join-Path $tempRoot "Product.wixobj") `
+  Invoke-NativeCommand -FilePath $light.Source -Arguments @(
+    "-nologo"
+    "-ext"
+    "WixUIExtension"
+    "-out"
+    $msiPath
+    (Join-Path $tempRoot "Product.wixobj")
     (Join-Path $tempRoot "Harvest.wixobj")
+  )
 
   Write-Host "Wrote $msiPath"
 }

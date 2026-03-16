@@ -19,6 +19,11 @@ Create a repository-grounded SWOT and convert it into actionable, task-based pro
     - replaced non-portable `std::sinf` usage in `sgame` with standard `std::sin` overloads so GCC/Linux builds complete
     - fixed WiX MSI generation by removing self-referential preprocessor defines, adding the required Product language, and hard-failing on `heat`/`candle`/`light` native command errors
   - Implementation log: `docs-dev/nightly-ci-cross-platform-recovery-2026-03-16.md`.
+  - Recovered run `23152001787` by fixing three follow-up CI regressions:
+    - changed the WiX PowerShell wrapper to pass explicit native argument arrays so switches like `-out` are not consumed as PowerShell parameters
+    - restored the Linux nightly OpenGL header dependency with `libgl1-mesa-dev`
+    - replaced `std::from_chars(float)` with portable strict `std::strtof` parsing in `sgame` command and sky-rotation paths for macOS libc++
+  - Implementation log: `docs-dev/nightly-run-23152001787-recovery-2026-03-16.md`.
 - `FR-02-T07` Done:
   - SDL video backend now creates Vulkan-capable windows for `r_renderer vulkan`/`rtx` instead of always forcing an OpenGL context.
   - Native Vulkan renderer now uses SDL Vulkan instance/surface helpers and enables portability enumeration/subset support required by MoltenVK-backed macOS devices.

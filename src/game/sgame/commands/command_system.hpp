@@ -6,10 +6,12 @@
 #pragma once
 
 #include "../g_local.hpp"
+#include <cerrno>
 #include <string_view>
 #include <optional>
 #include <functional>
 #include <charconv>
+#include <cstdlib>
 #include <string>
 #include <vector>
 #include <initializer_list>
@@ -236,9 +238,15 @@ public:
 	=============
 	*/
 	static std::optional<float> ParseFloat(std::string_view str) {
-		float value;
-		auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), value);
-		if (ec == std::errc() && ptr == str.data() + str.size()) {
+		if (str.empty()) {
+			return std::nullopt;
+		}
+
+		std::string buffer(str);
+		char* end = nullptr;
+		errno = 0;
+		const float value = std::strtof(buffer.c_str(), &end);
+		if (errno == 0 && end == buffer.c_str() + buffer.size()) {
 			return value;
 		}
 		return std::nullopt;
