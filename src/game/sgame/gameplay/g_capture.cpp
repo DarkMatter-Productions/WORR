@@ -53,8 +53,6 @@ namespace {
 		void SetTakenTime(Team team, GameTime time);
 		[[nodiscard]] GameTime GetTakenTime(Team team) const;
 		void RecordCapture(GameTime time, Team team);
-		[[nodiscard]] GameTime LastCaptureTime() const;
-		[[nodiscard]] Team LastCaptureTeam() const;
 		void UpdateConfigString() const;
 
 	private:
@@ -128,7 +126,7 @@ namespace {
 			return false;
 		}
 
-		FlagData& data = data_.at(*index);
+		FlagData& data = DataFor(team);
 		if (data.status == status) {
 			return false;
 		}
@@ -162,12 +160,8 @@ namespace {
 	=============
 	*/
 	void FlagStateManager::SetTakenTime(Team team, GameTime time) {
-		const auto index = IndexForTeam(team);
-		if (!index) {
-			return;
-		}
-
-		data_.at(*index).lastTaken = time;
+		if (IndexForTeam(team))
+			DataFor(team).lastTaken = time;
 	}
 
 	/*
@@ -196,28 +190,6 @@ namespace {
 	void FlagStateManager::RecordCapture(GameTime time, Team team) {
 		lastCaptureTime_ = time;
 		lastCaptureTeam_ = team;
-	}
-
-	/*
-	=============
-	FlagStateManager::LastCaptureTime
-
-	Returns the time at which the last capture occurred.
-	=============
-	*/
-	GameTime FlagStateManager::LastCaptureTime() const {
-		return lastCaptureTime_;
-	}
-
-	/*
-	=============
-	FlagStateManager::LastCaptureTeam
-
-	Returns the team that last captured a flag.
-	=============
-	*/
-	Team FlagStateManager::LastCaptureTeam() const {
-		return lastCaptureTeam_;
 	}
 
 	/*

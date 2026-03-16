@@ -6,7 +6,7 @@
 #include "json/json.h"
 #include "../../bgame/version.hpp"
 
-inline constexpr size_t SAVE_FORMAT_VERSION = 1;
+inline constexpr Json::UInt SAVE_FORMAT_VERSION = 1;
 
 /*
 =============

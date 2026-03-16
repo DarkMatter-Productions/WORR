@@ -620,8 +620,7 @@ void PCfg_WriteConfig(gentity_t *ent) {
     return;
   }
 
-  std::unique_ptr<FILE, decltype(&std::fclose)> file(
-      std::fopen(path.c_str(), "wb"), &std::fclose);
+  ScopedStdioFile file(std::fopen(path.c_str(), "wb"));
   if (!file) {
     if (gi.Com_Print) {
       gi.Com_PrintFmt("{}: Cannot save player config: {}\n", __FUNCTION__,
@@ -888,8 +887,7 @@ void PCfg_ClientInitPConfig(gentity_t *ent) {
     }
   }
 
-  std::unique_ptr<FILE, decltype(&std::fclose)> file(fopen(path.c_str(), "rb"),
-                                                     &std::fclose);
+  ScopedStdioFile file(std::fopen(path.c_str(), "rb"));
   char *buffer = nullptr;
   if (file != nullptr) {
     size_t length;

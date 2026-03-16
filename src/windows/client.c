@@ -1040,10 +1040,12 @@ static void legacy_key_event(WPARAM wParam, LPARAM lParam, bool down)
     int result = win_translate_vk(wParam, lParam);
 
     if (!result) {
+#if USE_DEBUG
         int scancode = (lParam >> 16) & 255;
         int extended = (lParam >> 24) & 1;
         Com_DPrintf("%s: unknown %sscancode %d (vk %#lx)\n",
                     __func__, extended ? "extended " : "", scancode, (unsigned long)wParam);
+#endif
         return;
     }
 

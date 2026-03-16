@@ -1828,7 +1828,10 @@ void CL_LoadFilterList(string_entry_t **list, const char *name, const char *comm
 {
     string_entry_t *entry, *next;
     char *raw, *data, *p;
-    int len, count q_unused, line;
+    int len, line;
+#if USE_DEBUG
+    int count = 0;
+#endif
 
     // free previous entries
     for (entry = *list; entry; entry = next) {
@@ -1846,7 +1849,9 @@ void CL_LoadFilterList(string_entry_t **list, const char *name, const char *comm
         return;
     }
 
+#if USE_DEBUG
     count = 0;
+#endif
     line = 1;
     data = raw;
 
@@ -1866,7 +1871,9 @@ void CL_LoadFilterList(string_entry_t **list, const char *name, const char *comm
                 memcpy(entry->string, data, len + 1);
                 entry->next = *list;
                 *list = entry;
+#if USE_DEBUG
                 count++;
+#endif
             } else {
                 Com_WPrintf("$cl_filter_oversize_line", line, name);
             }
@@ -1879,7 +1886,9 @@ void CL_LoadFilterList(string_entry_t **list, const char *name, const char *comm
         line++;
     }
 
+#if USE_DEBUG
     Com_DPrintf("Loaded %d filters from %s\n", count, name);
+#endif
 
     FS_FreeFile(raw);
 }

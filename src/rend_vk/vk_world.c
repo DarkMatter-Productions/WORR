@@ -170,7 +170,9 @@ static bool VK_World_BuildWorldFaceMask(const bsp_t *bsp)
         memset(mask, 1, (size_t)bsp->numfaces);
     }
 
+#if USE_DEBUG
     int inline_faces_cleared = 0;
+#endif
     for (int i = 1; i < bsp->nummodels; i++) {
         const mmodel_t *inline_model = &bsp->models[i];
         if (!inline_model->firstface || inline_model->numfaces <= 0) {
@@ -186,14 +188,17 @@ static bool VK_World_BuildWorldFaceMask(const bsp_t *bsp)
         if (count <= 0) {
             continue;
         }
+#if USE_DEBUG
         for (int j = 0; j < count; j++) {
             if (mask[first + j]) {
                 inline_faces_cleared++;
             }
         }
+#endif
         memset(mask + first, 0, (size_t)count);
     }
 
+#if USE_DEBUG
     int world_faces = 0;
     for (int i = 0; i < bsp->numfaces; i++) {
         if (mask[i]) {
@@ -203,6 +208,7 @@ static bool VK_World_BuildWorldFaceMask(const bsp_t *bsp)
 
     Com_DPrintf("VK_World_BuildWorldFaceMask: total=%d world=%d inline_cleared=%d world_range_valid=%d\n",
                 bsp->numfaces, world_faces, inline_faces_cleared, world_range_valid ? 1 : 0);
+#endif
 
     vk_world.world_face_mask = mask;
     return true;
@@ -1284,7 +1290,9 @@ static bool VK_World_BuildMesh(vk_world_vertex_t **out_vertices,
 
     uint32_t out = 0;
     uint32_t batch_out = 0;
+#if USE_DEBUG
     uint32_t lightmapped_vertices = 0;
+#endif
 
     for (int i = 0; i < bsp->numfaces; ++i) {
         if (!VK_World_IsWorldFaceIndex(bsp, i)) {
@@ -1437,7 +1445,9 @@ static bool VK_World_BuildMesh(vk_world_vertex_t **out_vertices,
             };
 
             if (!(batch_flags & VK_WORLD_BATCH_SKY) && face_lm->has_lightmap) {
+#if USE_DEBUG
                 lightmapped_vertices += 3;
+#endif
             }
 
             batches[batch_out - 1].vertex_count += 3;
@@ -1473,8 +1483,10 @@ static bool VK_World_BuildMesh(vk_world_vertex_t **out_vertices,
     *out_vertex_count = out;
     *out_batches = batches;
     *out_batch_count = batch_out;
+#if USE_DEBUG
     Com_DPrintf("VK_World_BuildMesh: vertices=%u batches=%u lightmapped=%u\n",
                 out, batch_out, lightmapped_vertices);
+#endif
     return true;
 }
 

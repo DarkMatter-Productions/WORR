@@ -164,7 +164,7 @@ static void UI_Command_NoOp()
 static void UI_Command_PushMenu()
 {
     if (Cmd_Argc() < 2) {
-        Com_Printf("$ui_cmd_menu_usage", Cmd_Argv(0));
+        PrintLocalized("$ui_cmd_menu_usage", Cmd_Argv(0));
         return;
     }
 
@@ -176,7 +176,7 @@ static void UI_Command_PushMenu()
             menu->SetArgs(args);
         GetMenuSystem().Push(menu);
     } else {
-        Com_Printf("$ui_menu_not_found", menu_name);
+        PrintLocalized("$ui_menu_not_found", menu_name);
     }
 }
 

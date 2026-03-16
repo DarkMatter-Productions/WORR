@@ -652,7 +652,7 @@ void ServerBrowserPage::ParseMasterArgs(netadr_t *broadcast)
                 ParseBinary(data, len, chunk);
             HTTP_FreeFile(data);
 #else
-            Com_Printf("$ui_http_fetch_not_supported", s);
+            PrintLocalized("$ui_http_fetch_not_supported", s);
 #endif
             continue;
         }
@@ -676,7 +676,7 @@ void ServerBrowserPage::ParseMasterArgs(netadr_t *broadcast)
         }
 
 ignore:
-        Com_Printf("$ui_invalid_master_url_ignored", s);
+        PrintLocalized("$ui_invalid_master_url_ignored", s);
     }
 }
 
@@ -690,7 +690,7 @@ void ServerBrowserPage::AddServer(const netadr_t *address, const char *hostname)
         if (!hostname)
             return;
         if (!NET_StringToAdr(hostname, &tmp, PORT_SERVER)) {
-            Com_Printf("$ui_bad_server_address", hostname);
+            PrintLocalized("$ui_bad_server_address", hostname);
             return;
         }
         address = &tmp;
@@ -703,7 +703,7 @@ void ServerBrowserPage::AddServer(const netadr_t *address, const char *hostname)
         hostname = NET_AdrToString(address);
 
     if (BigShort(address->port) < 1024) {
-        Com_Printf("$ui_bad_server_port", hostname);
+        PrintLocalized("$ui_bad_server_port", hostname);
         return;
     }
 

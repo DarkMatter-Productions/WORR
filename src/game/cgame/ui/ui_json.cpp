@@ -109,7 +109,7 @@ static void AddExpandedItems(const char *token, std::vector<std::string> &out)
             data = temp;
             macro->function(temp, len + 1);
         } else {
-            Com_Printf("$ui_cmd_expanded_line_too_long", INT_MAX);
+            PrintLocalized("$ui_cmd_expanded_line_too_long", INT_MAX);
             return;
         }
     } else {
@@ -1049,7 +1049,7 @@ static void ParseMenu(json_parse_t *parser)
     if (!feeder.empty()) {
         auto feeder_menu = CreateFeederMenu(feeder);
         if (!feeder_menu) {
-            Com_WPrintf("$ui_unknown_menu_feeder", feeder.c_str());
+            WPrintLocalized("$ui_unknown_menu_feeder", feeder.c_str());
             return;
         }
         GetMenuSystem().RegisterMenu(std::move(feeder_menu));
@@ -1205,7 +1205,7 @@ bool UI_LoadJsonMenus(const char *path)
 {
     json_parse_t parser{};
     if (Json_ErrorHandler(parser)) {
-        Com_WPrintf("$ui_json_load_failed", path, parser.error, parser.error_loc);
+        WPrintLocalized("$ui_json_load_failed", path, parser.error, parser.error_loc);
         Json_Free(&parser);
         return false;
     }

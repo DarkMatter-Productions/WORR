@@ -73,6 +73,26 @@ namespace ui {
 using std::min;
 using std::max;
 
+template<typename... Args>
+inline void PrintLocalizedWith(print_type_t type, const char *key,
+                               Args&&... args)
+{
+    const char *format = key;
+    Com_LPrintf(type, format, std::forward<Args>(args)...);
+}
+
+template<typename... Args>
+inline void PrintLocalized(const char *key, Args&&... args)
+{
+    PrintLocalizedWith(PRINT_ALL, key, std::forward<Args>(args)...);
+}
+
+template<typename... Args>
+inline void WPrintLocalized(const char *key, Args&&... args)
+{
+    PrintLocalizedWith(PRINT_WARNING, key, std::forward<Args>(args)...);
+}
+
 enum class Sound {
     NotHandled,
     Silent,

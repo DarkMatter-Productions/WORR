@@ -69,7 +69,9 @@ static const vid_driver_t ui_vid = []() {
     return driver;
 }();
 
-extern "C" const vid_driver_t *vid = &ui_vid;
+extern "C" {
+const vid_driver_t *vid = &ui_vid;
+}
 
 extern "C" void CG_UI_SetImport(const cgame_ui_import_t *import)
 {

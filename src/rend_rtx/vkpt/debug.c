@@ -336,9 +336,9 @@ void vkpt_debugdraw_prepare(void)
 		.depthBiasClamp          = 0.0f,
 		.depthBiasSlopeFactor    = 0.0f,
 	};
-	VkPipelineRasterizationLineStateCreateInfoKHR line_state = {
-		.sType                 = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_LINE_STATE_CREATE_INFO_KHR,
-		.lineRasterizationMode = VK_LINE_RASTERIZATION_MODE_RECTANGULAR_SMOOTH_KHR,
+	VkPipelineRasterizationLineStateCreateInfoEXT line_state = {
+		.sType                 = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_LINE_STATE_CREATE_INFO_EXT,
+		.lineRasterizationMode = VK_LINE_RASTERIZATION_MODE_RECTANGULAR_SMOOTH_EXT,
 	};
 	if (qvk.supports_smooth_lines)
 		rasterizer_state.pNext = &line_state;

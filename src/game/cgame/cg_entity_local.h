@@ -165,6 +165,9 @@ static inline cvar_t *CG_SvPausedVar(void)
 
 #define R_RegisterModel cgei->R_RegisterModel
 #define R_RegisterImage cgei->R_RegisterImage
+#ifdef R_RegisterSkin
+#undef R_RegisterSkin
+#endif
 #define R_RegisterSkin cgei->R_RegisterSkin
 #define R_SupportsPerPixelLighting cgei->R_SupportsPerPixelLighting
 #define V_CalcFov cgei->V_CalcFov

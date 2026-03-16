@@ -1224,7 +1224,6 @@ CL_SendDefaultCmd
 */
 static void CL_SendDefaultCmd(void)
 {
-    int cursize q_unused;
     usercmd_t *cmd, *oldcmd;
     client_history_t *history;
 
@@ -1278,11 +1277,13 @@ static void CL_SendDefaultCmd(void)
     //
     // deliver the message
     //
-    cursize = Netchan_Transmit(&cls.netchan, msg_write.cursize, msg_write.data, 1);
 #if USE_DEBUG
+    int cursize = Netchan_Transmit(&cls.netchan, msg_write.cursize, msg_write.data, 1);
     if (cl_showpackets->integer) {
         Com_Printf("%i ", cursize);
     }
+#else
+    Netchan_Transmit(&cls.netchan, msg_write.cursize, msg_write.data, 1);
 #endif
 
     SZ_Clear(&msg_write);
@@ -1296,9 +1297,12 @@ CL_SendBatchedCmd
 static void CL_SendBatchedCmd(void)
 {
     int i, j, seq, numCmds, numDups;
-    q_unused int totalCmds, totalMsec, cursize;
     usercmd_t *cmd, *oldcmd;
     client_history_t *history, *oldest;
+#if USE_DEBUG
+    int totalCmds = 0;
+    int totalMsec = 0;
+#endif
 
     // see if we are ready to send this packet
     if (!ready_to_send()) {
@@ -1331,8 +1335,6 @@ static void CL_SendBatchedCmd(void)
     // send this and the previous cmds in the message, so
     // if the last packet was dropped, it can be recovered
     oldcmd = NULL;
-    totalCmds = 0;
-    totalMsec = 0;
     q2proto_clc_batch_move_frame_t *frame = move_message.batch_move.batch_frames;
     for (i = seq - numDups; i <= seq; i++) {
         oldest = &cl.history[(i - 1) & CMD_MASK];
@@ -1344,13 +1346,17 @@ static void CL_SendBatchedCmd(void)
             MSG_BeginWriting();
             break;
         }
+#if USE_DEBUG
         totalCmds += numCmds;
+#endif
         frame->num_cmds = numCmds;
         // MSG_WriteBits(numCmds, 5);
         q2proto_clc_move_delta_t *move = frame->moves;
         for (j = oldest->cmdNumber + 1; j <= history->cmdNumber; j++) {
             cmd = &cl.cmds[j & CMD_MASK];
+#if USE_DEBUG
             totalMsec += cmd->msec;
+#endif
             build_delta_move(move, oldcmd, cmd, cl.lightlevel);
             oldcmd = cmd;
             ++move;
@@ -1365,8 +1371,8 @@ static void CL_SendBatchedCmd(void)
     //
     // deliver the message
     //
-    cursize = Netchan_Transmit(&cls.netchan, msg_write.cursize, msg_write.data, 1);
 #if USE_DEBUG
+    int cursize = Netchan_Transmit(&cls.netchan, msg_write.cursize, msg_write.data, 1);
     if (cl_showpackets->integer == 1) {
         Com_Printf("%i(%i) ", cursize, totalCmds);
     } else if (cl_showpackets->integer == 2) {
@@ -1374,6 +1380,8 @@ static void CL_SendBatchedCmd(void)
     } else if (cl_showpackets->integer == 3) {
         Com_Printf(" | ");
     }
+#else
+    Netchan_Transmit(&cls.netchan, msg_write.cursize, msg_write.data, 1);
 #endif
 
     SZ_Clear(&msg_write);
@@ -1382,7 +1390,6 @@ static void CL_SendBatchedCmd(void)
 static void CL_SendKeepAlive(void)
 {
     client_history_t *history;
-    int cursize q_unused;
 
     // archive this packet
     history = &cl.history[cls.netchan.outgoing_sequence & CMD_MASK];
@@ -1394,11 +1401,13 @@ static void CL_SendKeepAlive(void)
     cl.lastTransmitCmdNumber = cl.cmdNumber;
     cl.lastTransmitCmdNumberReal = cl.cmdNumber;
 
-    cursize = Netchan_Transmit(&cls.netchan, 0, NULL, 1);
 #if USE_DEBUG
+    int cursize = Netchan_Transmit(&cls.netchan, 0, NULL, 1);
     if (cl_showpackets->integer) {
         Com_Printf("%i ", cursize);
     }
+#else
+    Netchan_Transmit(&cls.netchan, 0, NULL, 1);
 #endif
 }
 

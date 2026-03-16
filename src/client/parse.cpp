@@ -556,7 +556,7 @@ static void set_server_fps(int value)
 static void CL_ParseServerData(const q2proto_svc_serverdata_t *serverdata)
 {
     char    levelname[MAX_QPATH];
-    int     i, protocol, attractloop q_unused;
+    int     i, protocol;
     bool    cinematic;
 
     Cbuf_Execute(&cl_cmdbuf);          // make sure any stuffed commands are done
@@ -567,11 +567,12 @@ static void CL_ParseServerData(const q2proto_svc_serverdata_t *serverdata)
     // parse protocol version number
     protocol = serverdata->protocol;
     cl.servercount = serverdata->servercount;
-    attractloop = serverdata->attractloop;
 
+#if USE_DEBUG
     Com_DPrintf("Serverdata packet received "
                 "(protocol=%d, servercount=%d, attractloop=%d)\n",
-                protocol, cl.servercount, attractloop);
+                protocol, cl.servercount, serverdata->attractloop);
+#endif
 
     cl.csr = cs_remap_old;
 

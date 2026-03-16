@@ -424,8 +424,7 @@ void LoadMotd() {
 
   auto loadMotdFile = [&](const std::filesystem::path &resolvedPath) -> bool {
     const std::string resolvedPathString = resolvedPath.string();
-    std::unique_ptr<FILE, decltype(&std::fclose)> file(
-        fopen(resolvedPathString.c_str(), "rb"), &std::fclose);
+    ScopedStdioFile file(std::fopen(resolvedPathString.c_str(), "rb"));
 
     if (!file) {
       if (g_verbose && g_verbose->integer) {

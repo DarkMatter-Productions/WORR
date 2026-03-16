@@ -360,7 +360,7 @@ namespace
 			}
 		}
 
-		std::unique_ptr<std::FILE, decltype(&std::fclose)> file(std::fopen(pathStr.c_str(), "wb"), &std::fclose);
+		ScopedStdioFile file(std::fopen(pathStr.c_str(), "wb"));
 		if (!file) {
 			gi.LocClient_Print(nullptr, PRINT_HIGH, "$g_sgame_auto_7aa2109d84ab", pathStr.c_str());
 			return;

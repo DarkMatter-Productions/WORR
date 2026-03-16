@@ -2909,7 +2909,7 @@ static USE(target_remove_powerups_use) (gentity_t* ent, gentity_t* other, gentit
 		if (!activator->client->pers.inventory[i])
 			continue;
 
-		if (itemList[i].flags & IF_KEY | IF_POWERUP | IF_TIMED | IF_SPHERE | IF_TECH) {
+		if (itemList[i].flags & (IF_KEY | IF_POWERUP | IF_TIMED | IF_SPHERE | IF_TECH)) {
 			if (itemList[i].id == IT_POWERUP_QUAD && g_quadhog->integer) {
 				// spawn quad
 
@@ -2953,7 +2953,7 @@ static USE(target_remove_weapons_use) (gentity_t* ent, gentity_t* other, gentity
 		if (!activator->client->pers.inventory[i])
 			continue;
 
-		if (itemList[i].flags & IF_WEAPON | IF_AMMO && itemList[i].id != IT_WEAPON_BLASTER)
+		if ((itemList[i].flags & (IF_WEAPON | IF_AMMO)) && itemList[i].id != IT_WEAPON_BLASTER)
 			activator->client->pers.inventory[i] = 0;
 	}
 

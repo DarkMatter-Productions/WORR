@@ -58,17 +58,26 @@ static void AddCoopStatus(statusbar_t& sb) {
 
 	int y = 2;
 	const int step = 26;
-	if (G_LimitedLivesActive())
-		sb.ifstat(STAT_LIVES).xr(-16).yt(y).lives_num(STAT_LIVES).xr(0).yt(y += step).loc_rstring("$g_lives").endifstat();
+	if (G_LimitedLivesActive()) {
+		const int livesValueY = y;
+		y += step;
+		sb.ifstat(STAT_LIVES).xr(-16).yt(livesValueY).lives_num(STAT_LIVES).xr(0).yt(y).loc_rstring("$g_lives").endifstat();
+	}
 
 	if (Game::Is(GameType::Horde)) {
 		int n = level.roundNumber;
 		int chars = n > 99 ? 3 : n > 9 ? 2 : 1;
-		sb.ifstat(STAT_ROUND_NUMBER).xr(-32 - (16 * chars)).yt(y += 10).num(3, STAT_ROUND_NUMBER).xr(0).yt(y += step).loc_rstring("Wave").endifstat();
+		const int roundValueY = y + 10;
+		const int roundLabelY = roundValueY + step;
+		sb.ifstat(STAT_ROUND_NUMBER).xr(-32 - (16 * chars)).yt(roundValueY).num(3, STAT_ROUND_NUMBER).xr(0).yt(roundLabelY).loc_rstring("Wave").endifstat();
+		y = roundLabelY;
 
 		n = level.campaign.totalMonsters - level.campaign.killedMonsters;
 		chars = n > 99 ? 3 : n > 9 ? 2 : 1;
-		sb.ifstat(STAT_MONSTER_COUNT).xr(-32 - (16 * chars)).yt(y += 10).num(3, STAT_MONSTER_COUNT).xr(0).yt(y += step).loc_rstring("Monsters").endifstat();
+		const int monsterValueY = y + 10;
+		const int monsterLabelY = monsterValueY + step;
+		sb.ifstat(STAT_MONSTER_COUNT).xr(-32 - (16 * chars)).yt(monsterValueY).num(3, STAT_MONSTER_COUNT).xr(0).yt(monsterLabelY).loc_rstring("Monsters").endifstat();
+		y = monsterLabelY;
 	}
 }
 

@@ -58,6 +58,8 @@ try {
     $source
     "-cg"
     "AppComponents"
+    "-platform"
+    "x64"
     "-dr"
     "INSTALLDIR"
     "-gg"
@@ -73,6 +75,8 @@ try {
 
   Invoke-NativeCommand -FilePath $candle.Source -Arguments @(
     "-nologo"
+    "-arch"
+    "x64"
     "-dProductVersion=$ProductVersion"
     "-dProductName=$ProductName"
     "-dManufacturer=$Manufacturer"

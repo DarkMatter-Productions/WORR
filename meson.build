@@ -727,12 +727,14 @@ endif
 
 add_project_arguments(common_args, language: 'c')
 add_project_link_arguments(common_link_args, language: 'c')
+add_project_link_arguments(common_link_args, language: 'cpp')
 
 config = configuration_data()
 
 texture_formats = []
 
 fallback_opt = ['default_library=static']
+quiet_fallback_opt = fallback_opt + ['warning_level=0']
 
 game_fallback_opt = fallback_opt + [
   'b_vscrt=from_buildtype',
@@ -786,14 +788,14 @@ sdl3 = dependency('sdl3',
   version:         '>= 3.4.0',
   required:        get_option('sdl3'),
   fallback:        ['sdl3', 'sdl3_dep'],
-  default_options: fallback_opt,
+  default_options: quiet_fallback_opt,
 )
 if sdl3.found()
   client_src += 'src/unix/video/sdl.c'
   config.set('USE_SDL', 'USE_CLIENT')
 endif
 
-freetype_fallback_opt = fallback_opt + [
+freetype_fallback_opt = quiet_fallback_opt + [
   'harfbuzz=disabled',
   'brotli=disabled',
   'bzip2=disabled',
@@ -806,7 +808,7 @@ freetype2 = dependency('freetype2',
   default_options: freetype_fallback_opt,
 )
 
-harfbuzz_fallback_opt = fallback_opt + [
+harfbuzz_fallback_opt = quiet_fallback_opt + [
   'cpp_std=c++14',
   'cpp_args=-D_CRT_SECURE_NO_WARNINGS',
   'glib=disabled',
@@ -838,7 +840,7 @@ harfbuzz = dependency('harfbuzz',
 sdl3_ttf = dependency('sdl3_ttf',
   required:        get_option('sdl3-ttf'),
   fallback:        ['sdl3_ttf', 'sdl3_ttf_dep'],
-  default_options: fallback_opt,
+  default_options: quiet_fallback_opt,
 )
 config.set10('USE_SDL3_TTF', sdl3_ttf.found())
 config.set10('USE_HARFBUZZ', harfbuzz.found() and sdl3_ttf.found())
@@ -995,7 +997,7 @@ openal = dependency('openal',
   version:         '>= 1.23.1',
   required:        get_option('openal'),
   fallback:        ['openal-soft', 'openal_dep'],
-  default_options: fallback_opt,
+  default_options: quiet_fallback_opt,
 )
 if openal.found()
   client_src += [ 'src/client/sound/al.cpp', 'src/client/sound/qal.cpp', 'inc/common/jsmn.h' ]

@@ -13,6 +13,7 @@ class Menu;
 #include <array>
 #include <bitset> // for bitset
 #include <cctype>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -29,6 +30,15 @@ struct local_game_import_t;
 extern local_game_import_t gi;
 
 struct gclient_t;
+
+struct StdioFileCloser {
+  void operator()(std::FILE *file) const noexcept {
+    if (file)
+      std::fclose(file);
+  }
+};
+
+using ScopedStdioFile = std::unique_ptr<std::FILE, StdioFileCloser>;
 
 // the "gameversion" client command will print this plus compile date
 const std::string GAMEVERSION = "baseq2";

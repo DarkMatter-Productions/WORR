@@ -128,14 +128,16 @@ jobs:
         shell: bash
         run: |
           meson setup builddir --wrap-mode=forcefallback --buildtype=release \
-            -Dbootstrapper=false -Dtests=false -Davcodec=disabled -Dlibcurl=disabled
+            -Dbootstrapper=false -Dtests=false -Davcodec=disabled -Dlibcurl=disabled \
+            -Dharfbuzz:tests=disabled
 
       - name: Configure (Windows)
         if: matrix.os == 'windows'
         shell: msys2 {0}
         run: |
           meson setup builddir --wrap-mode=forcefallback --buildtype=release \
-            -Dbootstrapper=true -Dtests=false -Davcodec=disabled -Dlibcurl=disabled
+            -Dbootstrapper=true -Dtests=false -Davcodec=disabled -Dlibcurl=disabled \
+            -Dharfbuzz:tests=disabled
 
       - name: Build (Linux/macOS)
         if: matrix.os != 'windows'

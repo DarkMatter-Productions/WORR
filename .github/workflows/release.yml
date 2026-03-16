@@ -37,7 +37,7 @@ jobs:
       - name: Configure
         shell: msys2 {0}
         run: |
-          meson setup build --wrap-mode=forcefallback --buildtype=release -Dbootstrapper=true -Dtests=false
+          meson setup build --wrap-mode=forcefallback --buildtype=release -Dbootstrapper=true -Dtests=false -Dharfbuzz:tests=disabled
 
       - name: Build
         shell: msys2 {0}

@@ -24,6 +24,19 @@ Create a repository-grounded SWOT and convert it into actionable, task-based pro
     - restored the Linux nightly OpenGL header dependency with `libgl1-mesa-dev`
     - replaced `std::from_chars(float)` with portable strict `std::strtof` parsing in `sgame` command and sky-rotation paths for macOS libc++
   - Implementation log: `docs-dev/nightly-run-23152001787-recovery-2026-03-16.md`.
+  - Recovered run `23153597827` by fixing another three-platform nightly regression set:
+    - emitted explicit x64 WiX harvest/compile metadata so Windows MSI validation no longer trips `ICE80`
+    - updated RTX debug line-rasterization setup to the current Vulkan `EXT` symbols used by hosted Linux headers
+    - made `sgame` save metadata/serialization handle `size_t` cleanly with JsonCpp-facing explicit widths for macOS builds
+  - Implementation log: `docs-dev/nightly-run-23153597827-error-warning-recovery-2026-03-16.md`.
+- `DV-04-T03` In Progress:
+  - Recovered run `23153597827` by fixing three additional cross-platform failures:
+    - emitted explicit x64 WiX harvest/compile metadata so Windows MSI validation no longer trips `ICE80`
+    - updated RTX debug line-rasterization setup to the current Vulkan `EXT` symbols used by hosted Linux headers
+    - made `sgame` save metadata/serialization handle `size_t` cleanly with JsonCpp-facing explicit widths for macOS builds
+  - Removed first-party warning categories surfaced by the same run across `client`, `cgame`, `sgame`, `rend_gl`, and `rend_vk`, and reduced fallback dependency warning noise by quieting forced-fallback third-party builds and disabling HarfBuzz subproject tests in CI configure steps.
+  - Aligned project-wide linker arguments for both C and C++ Meson targets so local Windows validation of `worr.exe` uses the same linker configuration as the other binaries.
+  - Implementation log: `docs-dev/nightly-run-23153597827-error-warning-recovery-2026-03-16.md`.
 - `FR-02-T07` Done:
   - SDL video backend now creates Vulkan-capable windows for `r_renderer vulkan`/`rtx` instead of always forcing an OpenGL context.
   - Native Vulkan renderer now uses SDL Vulkan instance/surface helpers and enables portability enumeration/subset support required by MoltenVK-backed macOS devices.

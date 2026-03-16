@@ -346,6 +346,21 @@ struct save_type_deducer<uint64_t> {
 	}
 };
 
+template<typename T>
+struct save_type_deducer<T, typename std::enable_if_t<std::is_same_v<T, size_t> &&
+	!std::is_same_v<T, uint32_t> &&
+	!std::is_same_v<T, uint64_t>>> {
+	static constexpr save_field_t get_save_type(const char* name, size_t offset) {
+		if constexpr (sizeof(T) == sizeof(uint64_t))
+			return save_field_t{ name, offset, { SaveTypeID::UInt64 } };
+		else if constexpr (sizeof(T) == sizeof(uint32_t))
+			return save_field_t{ name, offset, { SaveTypeID::UInt32 } };
+		else
+			static_assert(sizeof(T) == sizeof(uint32_t) || sizeof(T) == sizeof(uint64_t),
+				"Unsupported size_t width for save serialization.");
+	}
+};
+
 // floating point
 template<>
 struct save_type_deducer<float> {
