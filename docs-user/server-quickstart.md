@@ -18,6 +18,9 @@ From `.install/`:
   ./worr.ded +set basedir . +set deathmatch 1 +map q2dm1
   ```
 
+Published release server packages keep their runtime data and configs under `worr/`.
+Local `.install/` builds still stage that data under `baseq2/`.
+
 ## Recommended Baseline Cvars
 
 ```text
@@ -30,7 +33,7 @@ set allow_download 1
 
 ## Common Admin Flow
 
-1. Keep a server config in `baseq2/server.cfg`.
+1. Keep a server config in `worr/server.cfg` for published releases, or `.install/baseq2/server.cfg` for a local staged build.
 2. Launch with `+exec server.cfg`.
 3. Test locally, then open your firewall/router port for WAN play.
 4. Watch console logs for bad configs, missing maps, or denied file loads.

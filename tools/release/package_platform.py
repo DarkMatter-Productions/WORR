@@ -8,11 +8,13 @@ import json
 import pathlib
 import subprocess
 import sys
+import tempfile
 from typing import Any
 
 if __package__ is None or __package__ == "":
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
+from tools.release.stage_release_layout import stage_release_layout
 from tools.release.targets import get_target
 
 
@@ -78,47 +80,55 @@ def main() -> int:
     if not package_script.is_file():
         raise SystemExit(f"Packaging script not found: {package_script}")
 
-    for role in ("client", "server"):
-        config = target[role]
-        command = [
-            sys.executable,
-            str(package_script),
-            "--input-dir",
-            str(input_dir),
-            "--output-dir",
-            str(output_dir),
-            "--package-name",
-            config["package_name"],
-            "--manifest-name",
-            config["manifest_name"],
-            "--version",
-            args.version,
-            "--repo",
-            args.repo,
-            "--channel",
-            args.channel,
-            "--launch-exe",
-            config["launch_exe"],
-            "--archive-format",
-            target["archive_format"],
-            "--platform-id",
-            target["platform_id"],
-            "--platform-os",
-            target["os"],
-            "--platform-arch",
-            target["arch"],
-        ]
-        for pattern in config.get("include", []):
-            command.extend(["--include", pattern])
-        for pattern in config.get("exclude", []):
-            command.extend(["--exclude", pattern])
-        for mapping in config.get("mapped_files", []):
-            command.extend(["--mapped-file", f"{mapping['source']}={mapping['dest']}"])
-        if args.allow_prerelease:
-            command.append("--allow-prerelease")
-        if args.write_config and role == "client":
-            command.append("--write-config")
-        run_command(command)
+    with tempfile.TemporaryDirectory(prefix=f"worr-release-{target['platform_id']}-") as temp_dir:
+        release_input = pathlib.Path(temp_dir) / "release-input"
+        release_layout = target.get("release_layout", {})
+        stage_release_layout(
+            input_dir,
+            release_input,
+            relocate_root_files=release_layout.get("relocate_root_files", []),
+            relocate_root_dir=release_layout.get("relocate_root_dir", "bin"),
+        )
+
+        for role in ("client", "server"):
+            config = target[role]
+            command = [
+                sys.executable,
+                str(package_script),
+                "--input-dir",
+                str(release_input),
+                "--output-dir",
+                str(output_dir),
+                "--package-name",
+                config["package_name"],
+                "--manifest-name",
+                config["manifest_name"],
+                "--version",
+                args.version,
+                "--repo",
+                args.repo,
+                "--channel",
+                args.channel,
+                "--launch-exe",
+                config["launch_exe"],
+                "--archive-format",
+                target["archive_format"],
+                "--platform-id",
+                target["platform_id"],
+                "--platform-os",
+                target["os"],
+                "--platform-arch",
+                target["arch"],
+            ]
+            for pattern in config.get("include", []):
+                command.extend(["--include", pattern])
+            for pattern in config.get("exclude", []):
+                command.extend(["--exclude", pattern])
+            if args.allow_prerelease:
+                command.append("--allow-prerelease")
+            if args.write_config and role == "client":
+                command.append("--write-config")
+            run_command(command)
 
     metadata_path = pathlib.Path(args.metadata_path).resolve() if args.metadata_path else (
         output_dir / f"metadata-{target['platform_id']}.json"

@@ -118,7 +118,22 @@ void *CGameDll_Load(void)
     if (sys_forcegamelib->string[0])
         gamelib = LoadGameLibraryFrom(sys_forcegamelib->string);
 
-    // cgame is always loaded from basedir (prefer current exe dir on Windows)
+    // Prefer the active game directory first so packaged releases can keep
+    // cgame alongside the rest of the selected gamedir payload.
+    if (!gamelib) {
+#ifdef _WIN32
+        if (fs_game->string[0])
+            gamelib = LoadCGameLibrary(".", fs_game->string);
+#endif
+        if (!gamelib && fs_game->string[0] && sys_basedir->string[0] && strcmp(sys_basedir->string, "."))
+            gamelib = LoadCGameLibrary(sys_basedir->string, fs_game->string);
+        if (!gamelib && fs_game->string[0])
+            gamelib = LoadCGameLibrary(sys_libdir->string, fs_game->string);
+        if (!gamelib && fs_game->string[0] && sys_homedir->string[0])
+            gamelib = LoadCGameLibrary(sys_homedir->string, fs_game->string);
+    }
+
+    // Fall back to the base game for local/dev layouts that still stage there.
     if (!gamelib) {
 #ifdef _WIN32
         gamelib = LoadCGameLibrary(".", BASEGAME);

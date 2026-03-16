@@ -83,7 +83,8 @@ WORR treats `.install/` as the local distributable staging root.
 
 - Every `tools/refresh_install.py` run deletes and rebuilds `.install/` from the current build output.
 - Runtime binaries are copied to `.install/` root and gameplay/runtime payload goes under `.install/baseq2/`.
-- `tools/package_assets.py` is run as part of refresh to emit `.install/baseq2/worr-assets.pkz` plus the release-pack source `.install/.release/worr/pak0.pkz` (published as `worr/pak0.pkz` in release archives).
+- `tools/package_assets.py` is run as part of refresh to emit `.install/baseq2/worr-assets.pkz` plus the release-pack source `.install/.release/worr/pak0.pkz`.
+- Published release archives and the Windows MSI merge that staged `baseq2/` payload into a single `worr/` gamedir. On Linux/macOS client archives the launcher is published as `bin/worr` so it can coexist with the `worr/` directory.
 - CI release/nightly workflows use the same refresh flow before packaging artifacts.
 
 ---
@@ -96,6 +97,9 @@ Nightly automation is defined in [`.github/workflows/nightly.yml`](.github/workf
 - Builds Windows, Linux, and macOS targets, then refreshes and validates `.install/` per platform.
 - Packages role-specific client/server artifacts plus metadata, verifies expected release payloads and manifest contents, and publishes/updates the nightly prerelease tag.
 - Generates release notes with compare links and workflow traceability metadata.
+
+Stable releases are published by [`.github/workflows/release.yml`](.github/workflows/release.yml).
+That workflow now uses the same cross-platform packaging path and publishes versioned GitHub releases from `WORR_VERSION` (currently `0.1.0`).
 
 ---
 

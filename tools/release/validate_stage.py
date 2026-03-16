@@ -17,6 +17,10 @@ def require_file(path: pathlib.Path) -> None:
         raise SystemExit(f"Missing required file: {path}")
 
 
+def staged_launch_exe(config: dict[str, str]) -> str:
+    return config.get("staged_launch_exe", config["launch_exe"])
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate staged release contents for a release target.")
     parser.add_argument("--install-dir", required=True, help="Staged install directory (.install)")
@@ -38,8 +42,8 @@ def main() -> int:
 
     target = get_target(args.platform_id)
 
-    require_file(install_dir / target["client"]["launch_exe"])
-    require_file(install_dir / target["server"]["launch_exe"])
+    require_file(install_dir / staged_launch_exe(target["client"]))
+    require_file(install_dir / staged_launch_exe(target["server"]))
 
     base_game_dir = install_dir / args.base_game
     if not base_game_dir.is_dir():

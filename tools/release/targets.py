@@ -9,34 +9,25 @@ from typing import Any
 
 CLIENT_INCLUDE = [
     "worr*",
-    "baseq2/*",
-    "worr/pak0.pkz",
+    "worr/*",
 ]
 
 CLIENT_EXCLUDE = [
     "worr.ded*",
-    "baseq2/.conhistory",
-    "baseq2/logs/*",
+    "worr/.conhistory",
+    "worr/logs/*",
 ]
 
 SERVER_INCLUDE = [
     "worr.ded*",
-    "baseq2/*",
-    "worr/pak0.pkz",
+    "worr/*",
 ]
 
 SERVER_EXCLUDE = [
-    "baseq2/cgame*",
-    "baseq2/.conhistory",
-    "baseq2/logs/*",
-    "baseq2/shader_vkpt/*",
-]
-
-RELEASE_MAPPED_FILES = [
-    {
-        "source": ".release/worr/pak0.pkz",
-        "dest": "worr/pak0.pkz",
-    },
+    "worr/cgame*",
+    "worr/.conhistory",
+    "worr/logs/*",
+    "worr/shader_vkpt/*",
 ]
 
 
@@ -44,40 +35,44 @@ def with_payload_rules(target: dict[str, Any]) -> dict[str, Any]:
     client = dict(target["client"])
     server = dict(target["server"])
 
-    client["include"] = list(CLIENT_INCLUDE)
-    client["exclude"] = list(CLIENT_EXCLUDE)
-    client["mapped_files"] = [dict(entry) for entry in RELEASE_MAPPED_FILES]
-    client["required_paths"] = [
+    client["include"] = list(client.get("include", CLIENT_INCLUDE))
+    client["exclude"] = list(client.get("exclude", CLIENT_EXCLUDE))
+    client["required_paths"] = list(client.get("required_paths", [
         client["launch_exe"],
-        "baseq2/cgame*",
-        "baseq2/sgame*",
-        "baseq2/worr-assets.pkz",
+        "worr/cgame*",
+        "worr/sgame*",
+        "worr/worr-assets.pkz",
         "worr/pak0.pkz",
         "worr_update.json",
-    ]
-    client["forbidden_paths"] = [
+    ]))
+    client["forbidden_paths"] = list(client.get("forbidden_paths", [
         server["launch_exe"],
-    ]
+        "baseq2/*",
+        ".release/*",
+        ".release/**/*",
+    ]))
 
-    server["include"] = list(SERVER_INCLUDE)
-    server["exclude"] = list(SERVER_EXCLUDE)
-    server["mapped_files"] = [dict(entry) for entry in RELEASE_MAPPED_FILES]
-    server["required_paths"] = [
+    server["include"] = list(server.get("include", SERVER_INCLUDE))
+    server["exclude"] = list(server.get("exclude", SERVER_EXCLUDE))
+    server["required_paths"] = list(server.get("required_paths", [
         server["launch_exe"],
-        "baseq2/sgame*",
-        "baseq2/worr-assets.pkz",
+        "worr/sgame*",
+        "worr/worr-assets.pkz",
         "worr/pak0.pkz",
-    ]
-    server["forbidden_paths"] = [
+    ]))
+    server["forbidden_paths"] = list(server.get("forbidden_paths", [
         client["launch_exe"],
         "worr_update.json",
         "worr_opengl*",
         "worr_rtx*",
         "worr_updater*",
         "worr_vulkan*",
-        "baseq2/cgame*",
-        "baseq2/shader_vkpt/*",
-    ]
+        "worr/cgame*",
+        "worr/shader_vkpt/*",
+        "baseq2/*",
+        ".release/*",
+        ".release/**/*",
+    ]))
 
     hydrated = dict(target)
     hydrated["client"] = client
@@ -121,7 +116,13 @@ TARGETS: list[dict[str, Any]] = [
         "client": {
             "package_name": "worr-client-linux-x86_64.tar.gz",
             "manifest_name": "worr-client-linux-x86_64.json",
-            "launch_exe": "worr",
+            "launch_exe": "bin/worr",
+            "staged_launch_exe": "worr",
+            "include": [
+                "worr*",
+                "worr/*",
+                "bin/worr",
+            ],
         },
         "server": {
             "package_name": "worr-server-linux-x86_64.tar.gz",
@@ -134,6 +135,10 @@ TARGETS: list[dict[str, Any]] = [
             "updater_asset": None,
             "config_asset": "worr_update.json",
         },
+        "release_layout": {
+            "relocate_root_files": ["worr"],
+            "relocate_root_dir": "bin",
+        },
     }),
     with_payload_rules({
         "platform_id": "macos-x86_64",
@@ -144,7 +149,13 @@ TARGETS: list[dict[str, Any]] = [
         "client": {
             "package_name": "worr-client-macos-x86_64.tar.gz",
             "manifest_name": "worr-client-macos-x86_64.json",
-            "launch_exe": "worr",
+            "launch_exe": "bin/worr",
+            "staged_launch_exe": "worr",
+            "include": [
+                "worr*",
+                "worr/*",
+                "bin/worr",
+            ],
         },
         "server": {
             "package_name": "worr-server-macos-x86_64.tar.gz",
@@ -156,6 +167,10 @@ TARGETS: list[dict[str, Any]] = [
             "mode": "archive_sync",
             "updater_asset": None,
             "config_asset": "worr_update.json",
+        },
+        "release_layout": {
+            "relocate_root_files": ["worr"],
+            "relocate_root_dir": "bin",
         },
     }),
 ]

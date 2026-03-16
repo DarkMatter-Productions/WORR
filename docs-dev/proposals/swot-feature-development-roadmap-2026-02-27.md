@@ -55,6 +55,12 @@ Create a repository-grounded SWOT and convert it into actionable, task-based pro
   - Artifact verification now validates manifest contents so role-specific payload regressions are caught before publish.
   - Stable release packaging now reuses the same platform-packaging path as nightlies.
   - Implementation log: `docs-dev/release-archive-layout-worr-pak0-2026-03-16.md`.
+- `DV-08-T06` Done:
+  - Published nightly/stable archives and the Windows MSI now merge the staged `baseq2/` payload into a single `worr/` gamedir, alongside the dedicated WORR `pak0.pkz` release pack.
+  - Unix client releases now stage the launcher as `bin/worr` so a `worr/` gamedir can coexist with the executable in the same archive.
+  - Release CI now builds with `-Ddefault-game=worr`, and `CGameDll_Load()` now prefers the active gamedir before falling back to the base game so merged release layouts boot correctly.
+  - `WORR_VERSION` is now `0.1.0`, and the stable release workflow publishes cross-platform GitHub releases from that semver source of truth.
+  - Implementation log: `docs-dev/release-worr-gamedir-merge-0.1.0-2026-03-16.md`.
 - `FR-01-T04` In Progress:
   - Completed Vulkan MD5 parity follow-up for frame resolve semantics and MD2/MD5 opaque-vs-alpha routing in `src/rend_vk/vk_entity.c`.
   - Implementation log: `docs-dev/vulkan-md5-mesh-frame-alpha-parity-fix-2026-02-27.md`.
@@ -558,6 +564,8 @@ Tasks:
   Dependency: `DV-01-T01`. Priority: P1.
 - [x] `DV-08-T05` Split client/server archive payloads and ship a dedicated `worr/pak0.pkz` asset pack in release bundles.  
   Dependency: none. Priority: P1.
+- [x] `DV-08-T06` Merge published release archives into a single `worr/` gamedir and make release binaries boot that layout by default.  
+  Dependency: `DV-08-T05`. Priority: P1.
 
 ## Immediate 90-Day Priority Queue (2026-03-01 to 2026-05-31)
 - [ ] `P0` `FR-01-T01` Vulkan particle style parity

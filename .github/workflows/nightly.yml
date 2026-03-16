@@ -128,6 +128,7 @@ jobs:
         shell: bash
         run: |
           meson setup builddir --wrap-mode=forcefallback --buildtype=release \
+            -Ddefault-game=worr \
             -Dbootstrapper=false -Dtests=false -Davcodec=disabled -Dlibcurl=disabled \
             -Dharfbuzz:tests=disabled
 
@@ -136,6 +137,7 @@ jobs:
         shell: msys2 {0}
         run: |
           meson setup builddir --wrap-mode=forcefallback --buildtype=release \
+            -Ddefault-game=worr \
             -Dbootstrapper=true -Dtests=false -Davcodec=disabled -Dlibcurl=disabled \
             -Dharfbuzz:tests=disabled
 
@@ -182,12 +184,20 @@ jobs:
           if (-not $wixRoot) { throw "WiX Toolset install not found." }
           "$($wixRoot.FullName)\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
+      - name: Stage Windows release layout
+        if: matrix.has_installer
+        shell: msys2 {0}
+        run: |
+          python3 tools/release/stage_release_layout.py \
+            --input-dir .install \
+            --output-dir .release-layout
+
       - name: Build MSI installer
         if: matrix.has_installer
         shell: powershell
         run: |
           New-Item -ItemType Directory -Path release -Force | Out-Null
-          .\tools\build_msi.ps1 -SourceDir .install -OutputDir release -Version "${{ needs.prepare.outputs.msi_version }}" -MsiName worr-win64.msi
+          .\tools\build_msi.ps1 -SourceDir .release-layout -OutputDir release -Version "${{ needs.prepare.outputs.msi_version }}" -MsiName worr-win64.msi
 
       - name: Package release assets (Linux/macOS)
         if: matrix.os != 'windows'

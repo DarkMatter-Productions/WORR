@@ -100,8 +100,13 @@ The refresh command performs post-build staging and install packaging in one
 pass: it recreates `.install/`, copies runtime binaries, syncs base game
 payload, writes `.install/baseq2/worr-assets.pkz` plus the release-pack source
 `.install/.release/worr/pak0.pkz`, and can validate staged files for a specific
-release target. Published release archives still expose that second pack as
-`worr/pak0.pkz`.
+release target.
+
+Published releases do not keep a separate `baseq2/` directory. Packaging merges
+the staged runtime payload into a single `worr/` gamedir, including both
+`worr-assets.pkz` and `pak0.pkz`. Windows releases keep `worr.exe` at archive
+root; Linux/macOS client releases place the launcher at `bin/worr` so the
+merged `worr/` gamedir can exist alongside it.
 
 
 Installation

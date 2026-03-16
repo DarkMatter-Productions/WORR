@@ -5,7 +5,7 @@ This guide is the quick path to running WORR with your own Quake II data.
 ## What You Need
 
 - A built WORR workspace (or a release package).
-- Quake II data files (`baseq2/pak*.pak`).
+- Quake II data files (`baseq2/pak*.pak` from your source install).
 - A fresh staged runtime in `.install/` if you are building locally.
 
 ## Local Build Flow (Fast Path)
@@ -32,11 +32,17 @@ This guide is the quick path to running WORR with your own Quake II data.
    - Windows: `.install/worr.exe`
    - Linux/macOS: `.install/worr`
 
+## Published Release Layout
+
+- Windows client releases launch from `worr.exe` and keep their merged game payload in `worr/`.
+- Linux/macOS client releases launch from `bin/worr` and keep their merged game payload in `worr/`.
+- Dedicated server releases keep configs, maps, and WORR assets in `worr/`.
+
 ## First Run Checklist
 
-- Put your Quake II data in `.install/baseq2/` (or point `basedir` at a valid data tree).
-- Keep `.install/baseq2/worr-assets.pkz` in place.
-- Release-aligned staging also writes `.install/.release/worr/pak0.pkz`, which is remapped to `worr/pak0.pkz` in published archives.
+- Local build: put your Quake II data in `.install/baseq2/` (or point `basedir` at a valid data tree).
+- Local build: keep `.install/baseq2/worr-assets.pkz` in place.
+- Published release: put the merged runtime data under `worr/` and keep both `worr/worr-assets.pkz` and `worr/pak0.pkz` in place.
 - If the game boots to console only, check renderer selection and your GPU driver.
 
 ## Useful Start Arguments
@@ -54,5 +60,5 @@ expected to work on current macOS Vulkan stacks.
 ## If Something Feels Off
 
 - No sound: verify OpenAL device output and in-game volume cvars.
-- Missing UI/textures: confirm `worr-assets.pkz` exists under `baseq2/`.
+- Missing UI/textures: confirm `worr-assets.pkz` exists under `.install/baseq2/` for local builds or under `worr/` in a published release.
 - Startup crash after pull: rebuild, then rerun `tools/refresh_install.py`.
