@@ -21,6 +21,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #pragma once
 
 #ifdef __cplusplus
+#include <algorithm>
 extern "C" {
 #endif
 
@@ -825,4 +826,7 @@ void CG_Unload(void);
 
 #ifdef __cplusplus
 }
+
+using std::max;
+using std::min;
 #endif

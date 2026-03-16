@@ -2210,7 +2210,7 @@ static void AL_StreamUpdate(void)
 
     while (num_buffers > 0) {
         ALuint buffers[MAX_STREAM_BUFFERS];
-        ALsizei n = min(num_buffers, q_countof(buffers));
+        ALsizei n = min(num_buffers, static_cast<ALint>(q_countof(buffers)));
         Q_assert(s_stream_buffers >= n);
 
         qalSourceUnqueueBuffers(s_stream, n, buffers);

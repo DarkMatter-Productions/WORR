@@ -1334,15 +1334,20 @@ if win32 and get_option('bootstrapper')
     '-DMINIZ_NO_ARCHIVE_WRITING_APIS',
     '-DMINIZ_NO_ZLIB_COMPATIBLE_NAMES',
   ]
+  updater_link_args = exe_link_args
   if cc.get_argument_syntax() == 'gcc'
-    updater_c_args += cc.get_supported_arguments(['-Wno-unused-function'])
+    updater_c_args += cc.get_supported_arguments([
+      '-Wno-unused-function',
+      '-municode',
+    ])
+    updater_link_args += ['-municode']
   endif
 
   executable('worr_updater', updater_src,
     dependencies:        updater_deps,
     include_directories: ['inc', 'src/updater/third_party'],
     win_subsystem:       win_subsystem_client,
-    link_args:           exe_link_args,
+    link_args:           updater_link_args,
     c_args:              updater_c_args,
     install:             true,
     install_dir:         bindir,

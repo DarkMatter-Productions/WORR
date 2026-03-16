@@ -341,7 +341,7 @@ void SCR_DrawStringMultiStretch(int x, int y, int scale, int flags, size_t maxle
             break;
         }
 
-        len = min(p - s, maxlen);
+        len = min(static_cast<size_t>(p - s), maxlen);
         last_x = SCR_DrawStringStretch(x, y, scale, flags, len, s, color, font);
         last_y = y;
         maxlen -= len;
@@ -375,7 +375,7 @@ void SCR_DrawKStringMultiStretch(int x, int y, int scale, int flags, size_t maxl
             break;
         }
 
-        int len = min(p - s, maxlen);
+        size_t len = min(static_cast<size_t>(p - s), maxlen);
         last_x = SCR_DrawKStringStretch(x, y, scale, flags, len, s, color, kfont);
         last_y = y;
         maxlen -= len;
@@ -869,7 +869,7 @@ void SCR_AddNetgraph(void)
         color = 0xd0;
     }
 
-    SCR_DebugGraph(min(ping, 30), color);
+    SCR_DebugGraph(min(ping, 30u), color);
 }
 
 #define GRAPH_SAMPLES   4096

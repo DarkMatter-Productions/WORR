@@ -132,6 +132,9 @@ static void CG_UI_Com_Printf(const char *fmt, ...)
 static void CG_UI_Com_DPrintf(const char *fmt, ...) q_printf(1, 2);
 static void CG_UI_Com_DPrintf(const char *fmt, ...)
 {
+#if !USE_DEBUG
+    (void)fmt;
+#else
     va_list args;
 
     if (!developer || developer->integer < 1)
@@ -140,6 +143,7 @@ static void CG_UI_Com_DPrintf(const char *fmt, ...)
     va_start(args, fmt);
     CG_UI_Com_Print(PRINT_DEVELOPER, fmt, args);
     va_end(args);
+#endif
 }
 
 static void CG_UI_Com_WPrintf(const char *fmt, ...) q_printf(1, 2);
@@ -808,7 +812,7 @@ static cg_vec2_t CG_SCR_MeasureFontString(const char *str, int scale)
             break;
         }
 
-        size_t len = min(p - str, maxlen);
+        size_t len = min(static_cast<size_t>(p - str), maxlen);
         int line_width = scr.ui_font
             ? Font_MeasureString(scr.ui_font, draw_scale, 0, len, str, nullptr)
             : (int)Com_StrlenNoColor(str, len) * CONCHAR_WIDTH * draw_scale;
@@ -846,7 +850,7 @@ static cg_vec2_t CG_SCR_MeasureCenterFontString(const char *str, int scale)
             break;
         }
 
-        size_t len = min(p - str, maxlen);
+        size_t len = min(static_cast<size_t>(p - str), maxlen);
         int line_width = font
             ? Font_MeasureString(font, draw_scale, 0, len, str, nullptr)
             : (int)Com_StrlenNoColor(str, len) * CONCHAR_WIDTH * draw_scale;

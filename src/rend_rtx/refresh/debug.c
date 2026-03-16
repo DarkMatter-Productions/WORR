@@ -266,8 +266,8 @@ void R_AddDebugCylinder(const vec3_t origin, float half_height, float radius, co
     }
 }
 
-static void R_DrawArrowCap(const vec3_t apex, const vec3_t dir, float size,
-                           color_t color, uint32_t time, qboolean depth_test)
+void R_DrawArrowCap(const vec3_t apex, const vec3_t dir, float size,
+                    color_t color, uint32_t time, qboolean depth_test)
 {
     vec3_t cap_end;
     VectorMA(apex, size, dir, cap_end);

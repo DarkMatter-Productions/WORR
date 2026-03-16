@@ -12,6 +12,8 @@ Create a repository-grounded SWOT and convert it into actionable, task-based pro
   - The macOS Intel target now uses the supported `macos-15-intel` runner label instead of the retired `macos-13` label.
   - Linux nightly dependency names were updated for current Ubuntu runner images (`libdecoration0-dev`, no `libsdl3-dev` requirement under Meson fallback).
   - Implementation log: `docs-dev/macos-nightly-vulkan-support-2026-03-16.md`.
+  - Recovered run `23146195642` by fixing MSYS2/C++20 client compatibility issues (`min`/`max` typing, non-debug `developer` usage), the RTX debug symbol linkage mismatch, and the MinGW Unicode updater entry-point path.
+  - Implementation log: `docs-dev/msys2-nightly-build-recovery-2026-03-16.md`.
 - `FR-02-T07` Done:
   - SDL video backend now creates Vulkan-capable windows for `r_renderer vulkan`/`rtx` instead of always forcing an OpenGL context.
   - Native Vulkan renderer now uses SDL Vulkan instance/surface helpers and enables portability enumeration/subset support required by MoltenVK-backed macOS devices.
