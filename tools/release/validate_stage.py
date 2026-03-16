@@ -24,6 +24,11 @@ def main() -> int:
     parser.add_argument("--archive-name", default="worr-assets.pkz", help="Expected base game asset archive")
     parser.add_argument("--mod-game", default="worr", help="Release mod game directory name")
     parser.add_argument("--mod-archive-name", default="pak0.pkz", help="Expected WORR asset archive name")
+    parser.add_argument(
+        "--mod-source-relpath",
+        default=".release/worr/pak0.pkz",
+        help="Release-pack source path inside <install-dir> that is published as <mod-game>/<mod-archive-name>",
+    )
     parser.add_argument("--platform-id", required=True, help="Release platform id")
     args = parser.parse_args()
 
@@ -46,10 +51,12 @@ def main() -> int:
     if not base_files:
         raise SystemExit(f"Base game directory is empty: {base_game_dir}")
 
-    mod_game_dir = install_dir / args.mod_game
-    if not mod_game_dir.is_dir():
-        raise SystemExit(f"Missing mod game directory: {mod_game_dir}")
-    require_file(mod_game_dir / args.mod_archive_name)
+    mod_archive_source = install_dir / args.mod_source_relpath
+    legacy_mod_archive = install_dir / args.mod_game / args.mod_archive_name
+    if mod_archive_source.is_file():
+        require_file(mod_archive_source)
+    else:
+        require_file(legacy_mod_archive)
 
     updater = target.get("autoupdater", {})
     updater_asset = updater.get("updater_asset")

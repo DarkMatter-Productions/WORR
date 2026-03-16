@@ -17,12 +17,20 @@ def main() -> int:
     parser.add_argument('--install-dir', default='.install', help='Install staging directory')
     parser.add_argument('--base-game', default='baseq2', help='Output game directory name inside the install root')
     parser.add_argument('--archive-name', default='worr-assets.pkz', help='Output archive filename')
+    parser.add_argument(
+        '--output-path',
+        help='Optional output archive path relative to <install-dir>; overrides --base-game/--archive-name',
+    )
     args = parser.parse_args()
 
     assets_dir = pathlib.Path(args.assets_dir).resolve()
     install_dir = pathlib.Path(args.install_dir).resolve()
-    output_dir = install_dir / args.base_game
-    archive_path = output_dir / args.archive_name
+    if args.output_path:
+        archive_path = install_dir / pathlib.Path(args.output_path)
+        output_dir = archive_path.parent
+    else:
+        output_dir = install_dir / args.base_game
+        archive_path = output_dir / args.archive_name
 
     if not assets_dir.is_dir():
         raise SystemExit(f'Assets directory not found: {assets_dir}')

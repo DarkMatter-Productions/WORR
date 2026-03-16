@@ -397,7 +397,7 @@ void GL_UpdateViewPVS(void)
     GL_MarkLeaves();
 }
 
-static bool GL_BoxIntersectsSphere(const vec3_t mins, const vec3_t maxs, const vec3_t center, float radius) q_unused
+static q_unused bool GL_BoxIntersectsSphere(const vec3_t mins, const vec3_t maxs, const vec3_t center, float radius)
 {
     float dist2 = 0.0f;
 
@@ -414,7 +414,7 @@ static bool GL_BoxIntersectsSphere(const vec3_t mins, const vec3_t maxs, const v
     return dist2 <= radius * radius;
 }
 
-static bool GL_BoxIntersectsBox(const vec3_t mins, const vec3_t maxs, const vec3_t test_mins, const vec3_t test_maxs) q_unused
+static q_unused bool GL_BoxIntersectsBox(const vec3_t mins, const vec3_t maxs, const vec3_t test_mins, const vec3_t test_maxs)
 {
     return !(maxs[0] < test_mins[0] || mins[0] > test_maxs[0] ||
              maxs[1] < test_mins[1] || mins[1] > test_maxs[1] ||

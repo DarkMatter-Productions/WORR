@@ -72,9 +72,9 @@ static void GL_BoxLeafs_r(const mnode_t *node) {
     gl_leaf_list[gl_leaf_count++] = (const mleaf_t *)node;
 }
 
-static int GL_BoxLeafs_headnode(const vec3_t mins, const vec3_t maxs,
-                                const mleaf_t **list, int listsize,
-                                const mnode_t *headnode) q_unused {
+static q_unused int GL_BoxLeafs_headnode(const vec3_t mins, const vec3_t maxs,
+                                         const mleaf_t **list, int listsize,
+                                         const mnode_t *headnode) {
   gl_leaf_list = list;
   gl_leaf_count = 0;
   gl_leaf_maxcount = listsize;

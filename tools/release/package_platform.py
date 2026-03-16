@@ -112,6 +112,8 @@ def main() -> int:
             command.extend(["--include", pattern])
         for pattern in config.get("exclude", []):
             command.extend(["--exclude", pattern])
+        for mapping in config.get("mapped_files", []):
+            command.extend(["--mapped-file", f"{mapping['source']}={mapping['dest']}"])
         if args.allow_prerelease:
             command.append("--allow-prerelease")
         if args.write_config and role == "client":

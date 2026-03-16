@@ -8,7 +8,8 @@ Nightly and stable release packaging now produces role-specific archives instead
 The staging pipeline also now emits a second asset archive:
 
 - local/runtime pack: `.install/baseq2/worr-assets.pkz`
-- release-aligned mod pack: `.install/worr/pak0.pkz`
+- release-pack source: `.install/.release/worr/pak0.pkz`
+- published archive path: `worr/pak0.pkz`
 
 This keeps the existing local runtime layout intact while ensuring published release archives always carry a standalone WORR gamedir payload.
 
@@ -25,9 +26,14 @@ Before this change:
 `tools/refresh_install.py` now runs `tools/package_assets.py` twice:
 
 - `baseq2/worr-assets.pkz`
-- `worr/pak0.pkz`
+- `.release/worr/pak0.pkz`
 
 `tools/release/validate_stage.py` was expanded to require both archives for release-target validation.
+
+`tools/package_release.py` also gained mapped-file support so the staged
+release-pack source is published into client/server archives at the expected
+runtime path `worr/pak0.pkz` without requiring `.install/` itself to contain a
+root-level `worr/` directory.
 
 ### 2. Role-specific package rules
 `tools/release/targets.py` now defines payload rules per role:
@@ -68,13 +74,14 @@ python tools/release/verify_artifacts.py --artifacts-root release-test --platfor
 
 Expected outcomes:
 
-- `.install/worr/pak0.pkz` exists
+- `.install/.release/worr/pak0.pkz` exists
 - client manifest includes `worr.exe`, `baseq2/cgame*`, `baseq2/sgame*`, `baseq2/worr-assets.pkz`, `worr/pak0.pkz`
 - server manifest includes `worr.ded.exe`, `baseq2/sgame*`, `baseq2/worr-assets.pkz`, `worr/pak0.pkz`
 - server manifest excludes `worr.exe`, renderer DLLs, `worr_update.json`, `baseq2/cgame*`, and `baseq2/shader_vkpt/*`
 
 ## Files Changed
 - `tools/package_assets.py`
+- `tools/package_release.py`
 - `tools/refresh_install.py`
 - `tools/release/package_platform.py`
 - `tools/release/targets.py`

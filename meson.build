@@ -734,7 +734,7 @@ config = configuration_data()
 texture_formats = []
 
 fallback_opt = ['default_library=static']
-quiet_fallback_opt = fallback_opt + ['warning_level=0']
+quiet_fallback_opt = fallback_opt + ['warning_level=0', 'c_args=-w', 'cpp_args=-w']
 
 game_fallback_opt = fallback_opt + [
   'b_vscrt=from_buildtype',
@@ -810,7 +810,7 @@ freetype2 = dependency('freetype2',
 
 harfbuzz_fallback_opt = quiet_fallback_opt + [
   'cpp_std=c++14',
-  'cpp_args=-D_CRT_SECURE_NO_WARNINGS',
+  'cpp_args=-w -D_CRT_SECURE_NO_WARNINGS',
   'glib=disabled',
   'gobject=disabled',
   'cairo=disabled',

@@ -61,6 +61,18 @@ def write_update_config(args: argparse.Namespace, root: pathlib.Path) -> None:
     config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
 
 
+def parse_mapped_files(entries: list[str]) -> list[tuple[str, str]]:
+    mapped_files: list[tuple[str, str]] = []
+    for entry in entries:
+        source, separator, dest = entry.partition("=")
+        source = source.strip().replace("\\", "/")
+        dest = dest.strip().replace("\\", "/")
+        if separator != "=" or not source or not dest:
+            raise SystemExit(f"Invalid --mapped-file entry: {entry!r} (expected source=dest)")
+        mapped_files.append((source, dest))
+    return mapped_files
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Package WORR release assets with manifest.")
     parser.add_argument("--input-dir", required=True, help="Staging install directory root")
@@ -87,47 +99,71 @@ def main() -> int:
     parser.add_argument("--exclude", action="append", default=[], help="Glob pattern to exclude")
     parser.add_argument("--preserve", action="append", default=[], help="Preserve patterns for updater config")
     parser.add_argument("--write-config", action="store_true", help="Write worr_update.json into input dir")
+    parser.add_argument(
+        "--mapped-file",
+        action="append",
+        default=[],
+        help="Map a staged file into a different archive path (format: source=dest, both relative to input dir)",
+    )
 
     args = parser.parse_args()
 
     input_dir = pathlib.Path(args.input_dir).resolve()
     output_dir = pathlib.Path(args.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+    mapped_files = parse_mapped_files(args.mapped_file)
+    mapped_sources = {source for source, _ in mapped_files}
 
     if args.write_config:
         write_update_config(args, input_dir)
 
-    files: list[dict[str, object]] = []
-    paths: list[pathlib.Path] = []
+    archive_entries: list[tuple[pathlib.Path, str]] = []
 
     for root, _, filenames in os.walk(input_dir):
         root_path = pathlib.Path(root)
         for filename in filenames:
             full_path = root_path / filename
             rel_path = full_path.relative_to(input_dir).as_posix()
+            if rel_path in mapped_sources:
+                continue
             if rel_path in (args.package_name, args.manifest_name):
                 continue
             if not should_include(rel_path, args.include, args.exclude):
                 continue
-            paths.append(full_path)
-            files.append({
-                "path": rel_path,
-                "sha256": hash_file(full_path),
-                "size": full_path.stat().st_size,
-            })
+            archive_entries.append((full_path, rel_path))
 
-    files.sort(key=lambda entry: entry["path"])
+    seen_destinations = {rel_path for _, rel_path in archive_entries}
+    for source_rel, dest_rel in mapped_files:
+        full_path = input_dir / source_rel
+        if not full_path.is_file():
+            raise SystemExit(f"Mapped source file not found: {full_path}")
+        if dest_rel in (args.package_name, args.manifest_name):
+            raise SystemExit(f"Mapped destination collides with generated artifact name: {dest_rel}")
+        if dest_rel in seen_destinations:
+            raise SystemExit(f"Duplicate archive path requested: {dest_rel}")
+        if not should_include(dest_rel, args.include, args.exclude):
+            continue
+        archive_entries.append((full_path, dest_rel))
+        seen_destinations.add(dest_rel)
+
+    archive_entries.sort(key=lambda entry: entry[1])
+    files = [
+        {
+            "path": rel_path,
+            "sha256": hash_file(full_path),
+            "size": full_path.stat().st_size,
+        }
+        for full_path, rel_path in archive_entries
+    ]
 
     package_path = output_dir / args.package_name
     if args.archive_format == "zip":
         with zipfile.ZipFile(package_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-            for full_path in paths:
-                rel_path = full_path.relative_to(input_dir).as_posix()
+            for full_path, rel_path in archive_entries:
                 archive.write(full_path, rel_path)
     elif args.archive_format == "tar.gz":
         with tarfile.open(package_path, "w:gz") as archive:
-            for full_path in paths:
-                rel_path = full_path.relative_to(input_dir).as_posix()
+            for full_path, rel_path in archive_entries:
                 archive.add(full_path, arcname=rel_path, recursive=False)
     else:
         raise SystemExit(f"Unsupported archive format: {args.archive_format}")

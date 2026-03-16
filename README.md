@@ -83,7 +83,7 @@ WORR treats `.install/` as the local distributable staging root.
 
 - Every `tools/refresh_install.py` run deletes and rebuilds `.install/` from the current build output.
 - Runtime binaries are copied to `.install/` root and gameplay/runtime payload goes under `.install/baseq2/`.
-- `tools/package_assets.py` is run as part of refresh to emit both `.install/baseq2/worr-assets.pkz` and `.install/worr/pak0.pkz`.
+- `tools/package_assets.py` is run as part of refresh to emit `.install/baseq2/worr-assets.pkz` plus the release-pack source `.install/.release/worr/pak0.pkz` (published as `worr/pak0.pkz` in release archives).
 - CI release/nightly workflows use the same refresh flow before packaging artifacts.
 
 ---

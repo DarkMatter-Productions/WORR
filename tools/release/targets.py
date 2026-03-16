@@ -32,6 +32,13 @@ SERVER_EXCLUDE = [
     "baseq2/shader_vkpt/*",
 ]
 
+RELEASE_MAPPED_FILES = [
+    {
+        "source": ".release/worr/pak0.pkz",
+        "dest": "worr/pak0.pkz",
+    },
+]
+
 
 def with_payload_rules(target: dict[str, Any]) -> dict[str, Any]:
     client = dict(target["client"])
@@ -39,6 +46,7 @@ def with_payload_rules(target: dict[str, Any]) -> dict[str, Any]:
 
     client["include"] = list(CLIENT_INCLUDE)
     client["exclude"] = list(CLIENT_EXCLUDE)
+    client["mapped_files"] = [dict(entry) for entry in RELEASE_MAPPED_FILES]
     client["required_paths"] = [
         client["launch_exe"],
         "baseq2/cgame*",
@@ -53,6 +61,7 @@ def with_payload_rules(target: dict[str, Any]) -> dict[str, Any]:
 
     server["include"] = list(SERVER_INCLUDE)
     server["exclude"] = list(SERVER_EXCLUDE)
+    server["mapped_files"] = [dict(entry) for entry in RELEASE_MAPPED_FILES]
     server["required_paths"] = [
         server["launch_exe"],
         "baseq2/sgame*",

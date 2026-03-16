@@ -34,7 +34,12 @@ def main() -> int:
     parser.add_argument(
         "--mod-archive-name",
         default="pak0.pkz",
-        help="Generated asset archive name inside <install>/<mod-game>",
+        help="Archive name published inside the WORR release gamedir",
+    )
+    parser.add_argument(
+        "--mod-source-relpath",
+        default=".release/worr/pak0.pkz",
+        help="Release-pack source path inside <install-dir> used to publish <mod-game>/<mod-archive-name>",
     )
     parser.add_argument(
         "--platform-id",
@@ -92,10 +97,8 @@ def main() -> int:
             args.assets_dir,
             "--install-dir",
             args.install_dir,
-            "--base-game",
-            args.mod_game,
-            "--archive-name",
-            args.mod_archive_name,
+            "--output-path",
+            args.mod_source_relpath,
         ],
     )
 
@@ -115,6 +118,8 @@ def main() -> int:
                 args.mod_game,
                 "--mod-archive-name",
                 args.mod_archive_name,
+                "--mod-source-relpath",
+                args.mod_source_relpath,
                 "--platform-id",
                 args.platform_id,
             ],
