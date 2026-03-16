@@ -595,7 +595,7 @@ static const char *optional_instance_extension_name[NUM_OPTIONAL_INSTANCE_EXTENS
 };
 
 #define OPTIONAL_DEVICE_EXTENSIONS					\
-	VK_OPT_EXT_DO(VK_KHR_LINE_RASTERIZATION)		\
+	VK_OPT_EXT_DO(VK_EXT_LINE_RASTERIZATION)		\
 	VK_OPT_EXT_DO(VK_KHR_SHADER_NON_SEMANTIC_INFO)	\
 	VK_OPT_EXT_DO(VK_EXT_DEBUG_MARKER)
 
@@ -1457,10 +1457,10 @@ init_vulkan(void)
 			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2_KHR,
 			.pNext = &device_features_1_2
 		};
-		VkPhysicalDeviceLineRasterizationFeaturesKHR device_features_lines = {
-			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LINE_RASTERIZATION_FEATURES_KHR,
+		VkPhysicalDeviceLineRasterizationFeaturesEXT device_features_lines = {
+			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LINE_RASTERIZATION_FEATURES_EXT,
 		};
-		if (available_optional_device_extensions[OPT_EXT_VK_KHR_LINE_RASTERIZATION]) {
+		if (available_optional_device_extensions[OPT_EXT_VK_EXT_LINE_RASTERIZATION]) {
 			device_features_lines.pNext = device_features.pNext;
 			device_features.pNext = &device_features_lines;
 		}
@@ -1672,8 +1672,8 @@ init_vulkan(void)
 	dev_create_info.enabledExtensionCount = device_extension_count;
 	dev_create_info.ppEnabledExtensionNames = device_extensions;
 
-	VkPhysicalDeviceLineRasterizationFeaturesKHR line_rast_feat = {
-		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LINE_RASTERIZATION_FEATURES_KHR,
+	VkPhysicalDeviceLineRasterizationFeaturesEXT line_rast_feat = {
+		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LINE_RASTERIZATION_FEATURES_EXT,
 		.smoothLines = VK_TRUE,
 	};
 	if (qvk.supports_smooth_lines) {

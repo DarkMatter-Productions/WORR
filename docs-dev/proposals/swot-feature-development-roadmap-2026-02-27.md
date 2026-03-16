@@ -31,6 +31,8 @@ Create a repository-grounded SWOT and convert it into actionable, task-based pro
   - Implementation log: `docs-dev/nightly-run-23153597827-error-warning-recovery-2026-03-16.md`.
   - Recovered run `23156641291` by fixing the Unix release-pack staging collision with the root `worr` executable and restoring GCC-compatible `q_unused` placement in `rend_gl`.
   - Implementation log: `docs-dev/nightly-run-23156641291-recovery-2026-03-16.md`.
+  - Recovered run `23159773990` / job `67284227517` by converting the remaining RTX line-rasterization negotiation path in `src/rend_rtx/vkpt/main.c` from `KHR` to `EXT`, matching the Vulkan headers used on current Linux CI runners.
+  - Implementation log: `docs-dev/nightly-run-23159773990-recovery-2026-03-16.md`.
 - `DV-04-T03` In Progress:
   - Recovered run `23153597827` by fixing three additional cross-platform failures:
     - emitted explicit x64 WiX harvest/compile metadata so Windows MSI validation no longer trips `ICE80`
