@@ -214,8 +214,7 @@ jobs:
             --channel nightly \
             --version "${{ needs.prepare.outputs.version }}" \
             --commit-sha "${{ needs.prepare.outputs.head_sha }}" \
-            --build-id "${WORR_BUILD_ID}" \
-            --allow-prerelease
+            --build-id "${WORR_BUILD_ID}"
 
       - name: Package release assets (Windows)
         if: matrix.os == 'windows'
@@ -235,7 +234,6 @@ jobs:
             --version "${{ needs.prepare.outputs.version }}" \
             --commit-sha "${{ needs.prepare.outputs.head_sha }}" \
             --build-id "${WORR_BUILD_ID}" \
-            --allow-prerelease \
             ${INSTALLER_ARG}
 
       - name: Upload platform release bundle
@@ -311,7 +309,7 @@ jobs:
         with:
           tag_name: ${{ needs.prepare.outputs.nightly_tag }}
           name: ${{ needs.prepare.outputs.nightly_name }} (${{ needs.prepare.outputs.version }})
-          prerelease: true
+          prerelease: false
           draft: false
           target_commitish: ${{ needs.prepare.outputs.head_sha }}
           body_path: release-assets/release-notes.md

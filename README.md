@@ -95,7 +95,7 @@ Nightly automation is defined in [`.github/workflows/nightly.yml`](.github/workf
 
 - Scheduled daily at `23:50 UTC`, with manual `workflow_dispatch` support.
 - Builds Windows, Linux, and macOS targets, then refreshes and validates `.install/` per platform.
-- Packages role-specific client/server artifacts plus metadata, verifies expected release payloads and manifest contents, and publishes/updates the nightly prerelease tag.
+- Packages role-specific client/server artifacts plus metadata, verifies expected release payloads and manifest contents, and publishes/updates the nightly release tag without marking it as a GitHub prerelease.
 - Generates release notes with compare links and workflow traceability metadata.
 
 Stable releases are published by [`.github/workflows/release.yml`](.github/workflows/release.yml).

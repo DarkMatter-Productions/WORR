@@ -48,7 +48,7 @@ Example:
 Notes:
 - `manifest_asset` and `package_asset` must match the release asset names.
 - `preserve` is used to avoid deleting or overwriting user data when syncing.
-- `allow_prerelease` toggles whether the updater should use the full release list (array) vs `releases/latest`.
+- `allow_prerelease` controls whether prerelease-tagged GitHub releases are eligible during channel-based release selection.
 
 ## Release Manifest Format
 The updater downloads a JSON manifest asset and uses it to validate and sync files.

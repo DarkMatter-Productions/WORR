@@ -66,6 +66,11 @@ Create a repository-grounded SWOT and convert it into actionable, task-based pro
   - Game DLLs now follow the same naming rule (`cgame_x86_64`, `sgame_x86_64`), and loader/resource/update metadata paths were updated to match.
   - VS Code launch configs, updater defaults, and release manifests now target the new binary names consistently.
   - Implementation log: `docs-dev/basew-gamedir-and-arch-runtime-layout-2026-03-16.md`.
+- `DV-08-T08` Done:
+  - Nightly GitHub releases now publish as standard releases instead of GitHub prereleases.
+  - Updater release discovery now filters the full GitHub release list by channel/tag and `allow_prerelease` policy, so stable installs do not drift onto nightly releases after that publishing change.
+  - Nightly packaging no longer emits updater configs with `allow_prerelease=true`.
+  - Implementation log: `docs-dev/nightly-release-non-prerelease-channel-selection-2026-03-16.md`.
 - `FR-01-T04` In Progress:
   - Completed Vulkan MD5 parity follow-up for frame resolve semantics and MD2/MD5 opaque-vs-alpha routing in `src/rend_vk/vk_entity.c`.
   - Implementation log: `docs-dev/vulkan-md5-mesh-frame-alpha-parity-fix-2026-02-27.md`.

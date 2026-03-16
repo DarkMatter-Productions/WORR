@@ -83,6 +83,7 @@ typedef struct {
     char tag[MAX_STR];
     char manifest_url[MAX_URL];
     char package_url[MAX_URL];
+    int is_prerelease;
 } release_info_t;
 
 typedef enum {
@@ -901,6 +902,11 @@ static int parse_release_object(const char *json, const jsmntok_t *tokens, int t
         json_copy_string(json, &tokens[idx], out->tag, sizeof(out->tag));
     }
 
+    idx = json_object_find(json, tokens, token_count, root, "prerelease");
+    if (idx > 0) {
+        json_read_bool(json, &tokens[idx], &out->is_prerelease);
+    }
+
     idx = json_object_find(json, tokens, token_count, root, "assets");
     if (idx > 0 && tokens[idx].type == JSMN_ARRAY) {
         int i = idx + 1;
@@ -935,17 +941,13 @@ static int parse_release_object(const char *json, const jsmntok_t *tokens, int t
 
 static int release_matches_channel(const char *channel, const char *tag)
 {
-    if (!channel || !channel[0] || _stricmp(channel, "stable") == 0) {
-        return 1;
-    }
-
     if (!tag || !tag[0]) {
         return 0;
     }
 
     char channel_lc[MAX_STR] = {0};
     char tag_lc[MAX_STR] = {0};
-    size_t channel_len = strlen(channel);
+    size_t channel_len = channel ? strlen(channel) : 0;
     size_t tag_len = strlen(tag);
     if (channel_len >= sizeof(channel_lc)) {
         channel_len = sizeof(channel_lc) - 1;
@@ -961,7 +963,20 @@ static int release_matches_channel(const char *channel, const char *tag)
         tag_lc[i] = (char)tolower((unsigned char)tag[i]);
     }
 
+    if (!channel || !channel[0] || _stricmp(channel, "stable") == 0) {
+        return strstr(tag_lc, "nightly") == NULL;
+    }
+
     return strstr(tag_lc, channel_lc) != NULL;
+}
+
+static int release_allowed_by_policy(const config_t *config, const release_info_t *release)
+{
+    if (!config->allow_prerelease && release->is_prerelease) {
+        return 0;
+    }
+
+    return release_matches_channel(config->channel, release->tag);
 }
 
 static int parse_release_json(const char *json, size_t json_size, const config_t *config, release_info_t *out)
@@ -991,7 +1006,7 @@ static int parse_release_json(const char *json, size_t json_size, const config_t
             if (tokens[i].type == JSMN_OBJECT) {
                 release_info_t candidate = {0};
                 if (parse_release_object(json, tokens, token_count, i, config, &candidate)
-                    && release_matches_channel(config->channel, candidate.tag)) {
+                    && release_allowed_by_policy(config, &candidate)) {
                     *out = candidate;
                     ok = 1;
                     break;
@@ -1002,7 +1017,7 @@ static int parse_release_json(const char *json, size_t json_size, const config_t
     } else if (tokens[0].type == JSMN_OBJECT) {
         release_info_t candidate = {0};
         if (parse_release_object(json, tokens, token_count, 0, config, &candidate)
-            && release_matches_channel(config->channel, candidate.tag)) {
+            && release_allowed_by_policy(config, &candidate)) {
             *out = candidate;
             ok = 1;
         }
@@ -1538,9 +1553,8 @@ static DWORD WINAPI update_thread(LPVOID param)
 
     wchar_t release_url[MAX_URL];
     swprintf_s(release_url, ARRAY_COUNT(release_url),
-        L"https://api.github.com/repos/%S/%S",
-        config.repo,
-        config.allow_prerelease ? "releases" : "releases/latest");
+        L"https://api.github.com/repos/%S/releases",
+        config.repo);
 
     char *release_json = NULL;
     size_t release_size = 0;
