@@ -41,7 +41,7 @@ struct StdioFileCloser {
 using ScopedStdioFile = std::unique_ptr<std::FILE, StdioFileCloser>;
 
 // the "gameversion" client command will print this plus compile date
-const std::string GAMEVERSION = "baseq2";
+const std::string GAMEVERSION = "basew";
 
 //==================================================================
 

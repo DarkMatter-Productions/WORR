@@ -1018,7 +1018,7 @@ it used to be you know where to look. The following list may be incomplete.
   filesystem root using ‘../’ components.  This means commands like these are
   equivalent and all reference the same file: ‘exec ../global.cfg’, ‘exec
   /global.cfg’, ‘exec global.cfg’.  If you have any config files in your Quake 2
-  directory root, you should consider moving them into ‘baseq2/’ to make them
+  directory root, you should consider moving them into ‘basew/’ to make them
   accessible.
 
 - Likewise, ‘link’ command syntax has been changed to work with virtual paths

@@ -2077,7 +2077,7 @@ static const char *TryLoadEntityOverride(const char *mapName,
   }
 
   std::string overridePath = std::string(
-      G_Fmt("baseq2/{}/{}.ent", overrideDir.c_str(), mapName).data());
+      G_Fmt("{}/{}/{}.ent", GAMEVERSION, overrideDir.c_str(), mapName).data());
 
   // Try to load override
   if (g_entityOverrideLoad->integer && !strstr(mapName, ".dm2")) {

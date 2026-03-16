@@ -1,3 +1,7 @@
+#if HAVE_CONFIG_H
+#include "config.h"
+#endif
+
 #ifndef UNICODE
 #define UNICODE
 #endif
@@ -125,24 +129,27 @@ typedef struct {
 static const wchar_t *kWindowClass = L"WORR_UpdateBootstrapper";
 static const wchar_t *kConfigName = L"worr_update.json";
 
+#define DEFAULT_CLIENT_LAUNCH_EXE  "worr_" CPUSTRING ".exe"
+#define DEFAULT_UPDATER_EXE        "worr_updater_" CPUSTRING ".exe"
+
 static const config_t kDefaultConfig = {
     "themuffinator/WORR",
     "stable",
     "worr-client-win64.json",
     "worr-client-win64.zip",
-    "worr.exe",
+    DEFAULT_CLIENT_LAUNCH_EXE,
     1,
     0,
     {
         "worr_update.json",
-        "worr_updater.exe",
-        "baseq2/*.cfg",
-        "baseq2/autoexec.cfg",
-        "baseq2/config.cfg",
-        "baseq2/saves/*",
-        "baseq2/screenshots/*",
-        "baseq2/demos/*",
-        "baseq2/logs/*"
+        DEFAULT_UPDATER_EXE,
+        "basew/*.cfg",
+        "basew/autoexec.cfg",
+        "basew/config.cfg",
+        "basew/saves/*",
+        "basew/screenshots/*",
+        "basew/demos/*",
+        "basew/logs/*"
     },
     9
 };

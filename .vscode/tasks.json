@@ -7,7 +7,7 @@
             "command": "cmd",
             "args": [
                 "/c",
-                "if exist builddir-win\\meson-private\\coredata.dat (meson setup --reconfigure builddir-win) else (meson setup builddir-win)"
+                "if exist builddir-win\\meson-private\\coredata.dat (meson setup --reconfigure builddir-win -Dbase-game=basew -Ddefault-game=basew) else (meson setup builddir-win -Dbase-game=basew -Ddefault-game=basew)"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"
@@ -42,7 +42,7 @@
                 "--install-dir",
                 ".install",
                 "--base-game",
-                "baseq2"
+                "basew"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"

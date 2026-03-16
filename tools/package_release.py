@@ -16,21 +16,14 @@ import zipfile
 
 DEFAULT_PRESERVE = [
     "worr_update.json",
-    "worr_updater.exe",
-    "worr/*.cfg",
-    "worr/autoexec.cfg",
-    "worr/config.cfg",
-    "worr/saves/*",
-    "worr/screenshots/*",
-    "worr/demos/*",
-    "worr/logs/*",
-    "baseq2/*.cfg",
-    "baseq2/autoexec.cfg",
-    "baseq2/config.cfg",
-    "baseq2/saves/*",
-    "baseq2/screenshots/*",
-    "baseq2/demos/*",
-    "baseq2/logs/*",
+    "worr_updater_*",
+    "basew/*.cfg",
+    "basew/autoexec.cfg",
+    "basew/config.cfg",
+    "basew/saves/*",
+    "basew/screenshots/*",
+    "basew/demos/*",
+    "basew/logs/*",
 ]
 
 

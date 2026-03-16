@@ -15,8 +15,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description='Package WORR runtime assets into a staged game archive.')
     parser.add_argument('--assets-dir', default='assets', help='Source assets directory')
     parser.add_argument('--install-dir', default='.install', help='Install staging directory')
-    parser.add_argument('--base-game', default='baseq2', help='Output game directory name inside the install root')
-    parser.add_argument('--archive-name', default='worr-assets.pkz', help='Output archive filename')
+    parser.add_argument('--base-game', default='basew', help='Output game directory name inside the install root')
+    parser.add_argument('--archive-name', default='pak0.pkz', help='Output archive filename')
     parser.add_argument(
         '--output-path',
         help='Optional output archive path relative to <install-dir>; overrides --base-game/--archive-name',

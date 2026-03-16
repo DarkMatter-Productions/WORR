@@ -3,7 +3,7 @@
 This change set adds a standalone updater binary, a release manifest format, and a GitHub Actions workflow to package and publish releases with consistent version metadata.
 
 ## Bootstrapper Overview
-- Binary: `worr_updater.exe` (Windows GUI, separate from the engine; Windows-only for now).
+- Binary: `worr_updater_x86_64.exe` (Windows GUI, separate from the engine; Windows-only for now).
 - Behavior:
   - Reads `worr_update.json` from the install root.
   - Fetches the latest release from GitHub and downloads the manifest asset.
@@ -28,19 +28,19 @@ Example:
   "channel": "stable",
   "manifest_asset": "worr-client-win64.json",
   "package_asset": "worr-client-win64.zip",
-  "launch_exe": "worr.exe",
+  "launch_exe": "worr_x86_64.exe",
   "autolaunch": true,
   "allow_prerelease": false,
   "preserve": [
     "worr_update.json",
-    "worr_updater.exe",
-    "baseq2/*.cfg",
-    "baseq2/autoexec.cfg",
-    "baseq2/config.cfg",
-    "baseq2/saves/*",
-    "baseq2/screenshots/*",
-    "baseq2/demos/*",
-    "baseq2/logs/*"
+    "worr_updater_x86_64.exe",
+    "basew/*.cfg",
+    "basew/autoexec.cfg",
+    "basew/config.cfg",
+    "basew/saves/*",
+    "basew/screenshots/*",
+    "basew/demos/*",
+    "basew/logs/*"
   ]
 }
 ```
@@ -63,8 +63,8 @@ Example:
     "size": 12345678
   },
   "files": [
-    { "path": "worr.exe", "sha256": "deadbeef...", "size": 123456 },
-    { "path": "baseq2/gamex86_64.dll", "sha256": "feedface...", "size": 456789 }
+    { "path": "worr_x86_64.exe", "sha256": "deadbeef...", "size": 123456 },
+    { "path": "basew/cgame_x86_64.dll", "sha256": "feedface...", "size": 456789 }
   ]
 }
 ```
@@ -92,7 +92,7 @@ python tools/package_release.py \
   --version 1.2.3 \
   --repo themuffinator/WORR \
   --channel stable \
-  --launch-exe worr.exe \
+  --launch-exe worr_x86_64.exe \
   --write-config
 ```
 
@@ -110,7 +110,7 @@ python tools/package_release.py \
   - Create a GitHub release and upload assets.
 
 Build option:
-- `-Dbootstrapper=true` toggles building `worr_updater.exe` (Windows only).
+- `-Dbootstrapper=true` toggles building `worr_updater_x86_64.exe` (Windows only).
 
 ## MSI Installer
 - WiX template: `tools/installer/worr.wxs`

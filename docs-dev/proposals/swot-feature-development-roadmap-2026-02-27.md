@@ -41,7 +41,7 @@ Create a repository-grounded SWOT and convert it into actionable, task-based pro
     - updated RTX debug line-rasterization setup to the current Vulkan `EXT` symbols used by hosted Linux headers
     - made `sgame` save metadata/serialization handle `size_t` cleanly with JsonCpp-facing explicit widths for macOS builds
   - Removed first-party warning categories surfaced by the same run across `client`, `cgame`, `sgame`, `rend_gl`, and `rend_vk`, and reduced fallback dependency warning noise by quieting forced-fallback third-party builds and disabling HarfBuzz subproject tests in CI configure steps.
-  - Aligned project-wide linker arguments for both C and C++ Meson targets so local Windows validation of `worr.exe` uses the same linker configuration as the other binaries.
+  - Aligned project-wide linker arguments for both C and C++ Meson targets so local Windows validation of the client executable uses the same linker configuration as the other binaries.
   - Implementation log: `docs-dev/nightly-run-23153597827-error-warning-recovery-2026-03-16.md`.
   - Recovered additional warning noise from run `23156641291` by removing `entity_iterable_t` constructor template-id syntax in `sgame` and extending quiet fallback warning suppression for third-party fallback builds.
   - Implementation log: `docs-dev/nightly-run-23156641291-recovery-2026-03-16.md`.
@@ -50,17 +50,22 @@ Create a repository-grounded SWOT and convert it into actionable, task-based pro
   - Native Vulkan renderer now uses SDL Vulkan instance/surface helpers and enables portability enumeration/subset support required by MoltenVK-backed macOS devices.
   - Implementation log: `docs-dev/macos-nightly-vulkan-support-2026-03-16.md`.
 - `DV-08-T05` Done:
-  - Nightly/stable packaging now stages a dedicated WORR asset pack source at `.install/.release/worr/pak0.pkz`, publishes it as `worr/pak0.pkz` inside release archives, and preserves `.install/baseq2/worr-assets.pkz` for local runtime compatibility.
+  - Nightly/stable staging now packages the canonical repo `assets/` tree directly into `.install/basew/pak0.pkz`.
+  - Loose staged asset duplication between `assets/` and `.install/` was removed so runtime assets now have a single authored source and a single packaged staging form.
   - Client/server release archives now use explicit payload filters instead of packaging identical full `.install/` trees.
   - Artifact verification now validates manifest contents so role-specific payload regressions are caught before publish.
   - Stable release packaging now reuses the same platform-packaging path as nightlies.
-  - Implementation log: `docs-dev/release-archive-layout-worr-pak0-2026-03-16.md`.
+  - Implementation log: `docs-dev/basew-gamedir-and-arch-runtime-layout-2026-03-16.md`.
 - `DV-08-T06` Done:
-  - Published nightly/stable archives and the Windows MSI now merge the staged `baseq2/` payload into a single `worr/` gamedir, alongside the dedicated WORR `pak0.pkz` release pack.
-  - Unix client releases now stage the launcher as `bin/worr` so a `worr/` gamedir can coexist with the executable in the same archive.
-  - Release CI now builds with `-Ddefault-game=worr`, and `CGameDll_Load()` now prefers the active gamedir before falling back to the base game so merged release layouts boot correctly.
-  - `WORR_VERSION` is now `0.1.0`, and the stable release workflow publishes cross-platform GitHub releases from that semver source of truth.
-  - Implementation log: `docs-dev/release-worr-gamedir-merge-0.1.0-2026-03-16.md`.
+  - Local staging, release archives, and the Windows MSI now use a single `basew/` gamedir instead of the earlier `baseq2/` + `worr/` split.
+  - Release CI now builds with `-Dbase-game=basew -Ddefault-game=basew`, and gameplay/runtime defaults now resolve the WORR payload through `basew`.
+  - `WORR_VERSION` remains `0.1.0`, and the stable release workflow still publishes cross-platform GitHub releases from that semver source of truth.
+  - Implementation log: `docs-dev/basew-gamedir-and-arch-runtime-layout-2026-03-16.md`.
+- `DV-08-T07` Done:
+  - Runtime executables now ship with explicit arch suffixes such as `worr_x86_64(.exe)`, `worr_ded_x86_64(.exe)`, and `worr_updater_x86_64.exe`.
+  - Game DLLs now follow the same naming rule (`cgame_x86_64`, `sgame_x86_64`), and loader/resource/update metadata paths were updated to match.
+  - VS Code launch configs, updater defaults, and release manifests now target the new binary names consistently.
+  - Implementation log: `docs-dev/basew-gamedir-and-arch-runtime-layout-2026-03-16.md`.
 - `FR-01-T04` In Progress:
   - Completed Vulkan MD5 parity follow-up for frame resolve semantics and MD2/MD5 opaque-vs-alpha routing in `src/rend_vk/vk_entity.c`.
   - Implementation log: `docs-dev/vulkan-md5-mesh-frame-alpha-parity-fix-2026-02-27.md`.
@@ -562,10 +567,12 @@ Tasks:
   Dependency: none. Priority: P1.
 - [ ] `DV-08-T04` Add release readiness checklist tied to roadmap milestone gates.  
   Dependency: `DV-01-T01`. Priority: P1.
-- [x] `DV-08-T05` Split client/server archive payloads and ship a dedicated `worr/pak0.pkz` asset pack in release bundles.  
+- [x] `DV-08-T05` Split client/server archive payloads and stage the canonical repo assets as `basew/pak0.pkz`.  
   Dependency: none. Priority: P1.
-- [x] `DV-08-T06` Merge published release archives into a single `worr/` gamedir and make release binaries boot that layout by default.  
+- [x] `DV-08-T06` Unify local and published runtime layouts under a single `basew/` gamedir and make release binaries boot that layout by default.  
   Dependency: `DV-08-T05`. Priority: P1.
+- [x] `DV-08-T07` Standardize arch-suffixed runtime binary names and updater metadata across supported platforms.  
+  Dependency: `DV-08-T06`. Priority: P1.
 
 ## Immediate 90-Day Priority Queue (2026-03-01 to 2026-05-31)
 - [ ] `P0` `FR-01-T01` Vulkan particle style parity

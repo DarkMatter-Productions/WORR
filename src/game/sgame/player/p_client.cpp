@@ -549,7 +549,7 @@ void P_RestoreFromGhostSlot(gentity_t *ent) {
 // PLAYER CONFIGS
 //=======================================================================
 namespace {
-constexpr const char *PLAYER_CONFIG_DIRECTORY = "baseq2/pcfg";
+constexpr const char *PLAYER_CONFIG_DIRECTORY = "basew/pcfg";
 }
 
 /*

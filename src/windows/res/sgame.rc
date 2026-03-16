@@ -18,7 +18,7 @@
 #define VER_FILEDESCRIPTION_STR     "WORR server game module"
 #endif
 
-#define VER_ORIGINALFILENAME_STR    "sgame" CPUSTRING ".dll"
+#define VER_ORIGINALFILENAME_STR    "sgame_" CPUSTRING ".dll"
 
 LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
 
@@ -40,7 +40,7 @@ BEGIN
             VALUE "FileDescription", VER_FILEDESCRIPTION_STR
             VALUE "OriginalFilename", VER_ORIGINALFILENAME_STR
             VALUE "FileVersion", VERSION
-            VALUE "InternalName", "sgame"
+            VALUE "InternalName", "sgame_" CPUSTRING
             VALUE "LegalCopyright", "Copyright (C) 2023 skuller.net"
             VALUE "ProductName", "WORR"
             VALUE "ProductVersion", VERSION

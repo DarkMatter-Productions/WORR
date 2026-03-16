@@ -20,26 +20,11 @@ def main() -> int:
     parser.add_argument("--build-dir", default="builddir", help="Meson build directory")
     parser.add_argument("--assets-dir", default="assets", help="Repository assets directory")
     parser.add_argument("--install-dir", default=".install", help="Install staging directory")
-    parser.add_argument("--base-game", default="baseq2", help="Base game directory name")
+    parser.add_argument("--base-game", default="basew", help="Base game directory name")
     parser.add_argument(
         "--archive-name",
-        default="worr-assets.pkz",
-        help="Generated asset archive name inside <install>/<base-game>",
-    )
-    parser.add_argument(
-        "--mod-game",
-        default="worr",
-        help="Additional WORR release game directory for the standalone asset pack",
-    )
-    parser.add_argument(
-        "--mod-archive-name",
         default="pak0.pkz",
-        help="Archive name published inside the WORR release gamedir",
-    )
-    parser.add_argument(
-        "--mod-source-relpath",
-        default=".release/worr/pak0.pkz",
-        help="Release-pack source path inside <install-dir> used to publish <mod-game>/<mod-archive-name>",
+        help="Generated asset archive name inside <install>/<base-game>",
     )
     parser.add_argument(
         "--platform-id",
@@ -88,20 +73,6 @@ def main() -> int:
         ],
     )
 
-    run_step(
-        f"Package release asset pack ({args.mod_game}/{args.mod_archive_name})",
-        [
-            str(python_exe),
-            str(assets_script),
-            "--assets-dir",
-            args.assets_dir,
-            "--install-dir",
-            args.install_dir,
-            "--output-path",
-            args.mod_source_relpath,
-        ],
-    )
-
     if args.platform_id:
         run_step(
             f"Validate staged payload ({args.platform_id})",
@@ -114,12 +85,6 @@ def main() -> int:
                 args.base_game,
                 "--archive-name",
                 args.archive_name,
-                "--mod-game",
-                args.mod_game,
-                "--mod-archive-name",
-                args.mod_archive_name,
-                "--mod-source-relpath",
-                args.mod_source_relpath,
                 "--platform-id",
                 args.platform_id,
             ],

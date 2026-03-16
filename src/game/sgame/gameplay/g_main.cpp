@@ -378,8 +378,8 @@ void LoadMotd() {
     motdRoots.emplace_back(activeGameDir);
   }
 
-  if (motdRoots.empty() || activeGameDir != "baseq2") {
-    motdRoots.emplace_back("baseq2");
+  if (motdRoots.empty() || activeGameDir != GAMEVERSION) {
+    motdRoots.emplace_back(GAMEVERSION);
   }
 
   std::string effectiveName = configuredName;

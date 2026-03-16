@@ -9,17 +9,17 @@ From `.install/`:
 - Windows:
 
   ```powershell
-  .\worr.ded.exe +set basedir . +set deathmatch 1 +map q2dm1
+  .\worr_ded_x86_64.exe +set basedir . +set deathmatch 1 +map q2dm1
   ```
 
 - Linux/macOS:
 
   ```bash
-  ./worr.ded +set basedir . +set deathmatch 1 +map q2dm1
+  ./worr_ded_x86_64 +set basedir . +set deathmatch 1 +map q2dm1
   ```
 
-Published release server packages keep their runtime data and configs under `worr/`.
-Local `.install/` builds still stage that data under `baseq2/`.
+Published release server packages keep their runtime data and configs under `basew/`.
+Local `.install/` builds stage that data under `basew/`.
 
 ## Recommended Baseline Cvars
 
@@ -33,7 +33,7 @@ set allow_download 1
 
 ## Common Admin Flow
 
-1. Keep a server config in `worr/server.cfg` for published releases, or `.install/baseq2/server.cfg` for a local staged build.
+1. Keep a server config in `basew/server.cfg` for published releases, or `.install/basew/server.cfg` for a local staged build.
 2. Launch with `+exec server.cfg`.
 3. Test locally, then open your firewall/router port for WAN play.
 4. Watch console logs for bad configs, missing maps, or denied file loads.

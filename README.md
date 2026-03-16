@@ -52,7 +52,7 @@ The goals of WORR are:
 1. Configure a build directory.
 
    ```bash
-   meson setup builddir --wrap-mode=forcefallback --buildtype=release -Dtests=false
+   meson setup builddir --wrap-mode=forcefallback --buildtype=release -Dbase-game=basew -Ddefault-game=basew -Dtests=false
    ```
 
 2. Compile.
@@ -64,13 +64,13 @@ The goals of WORR are:
 3. Refresh `.install/` with current binaries and packaged assets.
 
    ```bash
-   python3 tools/refresh_install.py --build-dir builddir --install-dir .install --base-game baseq2
+   python3 tools/refresh_install.py --build-dir builddir --install-dir .install --base-game basew
    ```
 
    On Windows, use `python` and optionally validate the staged payload:
 
    ```powershell
-   python tools/refresh_install.py --build-dir builddir --install-dir .install --base-game baseq2 --platform-id windows-x86_64
+   python tools/refresh_install.py --build-dir builddir --install-dir .install --base-game basew --platform-id windows-x86_64
    ```
 
 4. Launch from `.install/` for local runtime testing.
@@ -82,9 +82,9 @@ The goals of WORR are:
 WORR treats `.install/` as the local distributable staging root.
 
 - Every `tools/refresh_install.py` run deletes and rebuilds `.install/` from the current build output.
-- Runtime binaries are copied to `.install/` root and gameplay/runtime payload goes under `.install/baseq2/`.
-- `tools/package_assets.py` is run as part of refresh to emit `.install/baseq2/worr-assets.pkz` plus the release-pack source `.install/.release/worr/pak0.pkz`.
-- Published release archives and the Windows MSI merge that staged `baseq2/` payload into a single `worr/` gamedir. On Linux/macOS client archives the launcher is published as `bin/worr` so it can coexist with the `worr/` directory.
+- Runtime binaries are copied to `.install/` root and gameplay/runtime payload goes under `.install/basew/`.
+- `tools/package_assets.py` is run as part of refresh to emit `.install/basew/pak0.pkz` from the canonical repo `assets/` tree; loose staged asset duplication is no longer kept under `.install/`.
+- Published release archives and the Windows MSI keep the same single `basew/` gamedir layout used by local staging.
 - CI release/nightly workflows use the same refresh flow before packaging artifacts.
 
 ---

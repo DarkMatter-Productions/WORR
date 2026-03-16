@@ -26,6 +26,18 @@ def merge_tree(source_root: pathlib.Path, dest_root: pathlib.Path) -> int:
     return copied
 
 
+def unique_merge_sources(paths: list[pathlib.Path]) -> list[pathlib.Path]:
+    unique_paths: list[pathlib.Path] = []
+    seen: set[pathlib.Path] = set()
+    for path in paths:
+        resolved = path.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        unique_paths.append(path)
+    return unique_paths
+
+
 def copy_root_entries(
     input_dir: pathlib.Path,
     output_dir: pathlib.Path,
@@ -59,8 +71,8 @@ def stage_release_layout(
     input_dir: pathlib.Path,
     output_dir: pathlib.Path,
     *,
-    base_game: str = "baseq2",
-    release_game: str = "worr",
+    base_game: str = "basew",
+    release_game: str = "basew",
     relocate_root_files: list[str] | tuple[str, ...] | None = None,
     relocate_root_dir: str = "bin",
 ) -> None:
@@ -89,9 +101,12 @@ def stage_release_layout(
         )
 
     copied = 0
-    copied += merge_tree(input_dir / base_game, release_game_dir)
-    copied += merge_tree(input_dir / release_game, release_game_dir)
-    copied += merge_tree(input_dir / ".release" / release_game, release_game_dir)
+    for source_root in unique_merge_sources([
+        input_dir / base_game,
+        input_dir / release_game,
+        input_dir / ".release" / release_game,
+    ]):
+        copied += merge_tree(source_root, release_game_dir)
 
     if copied == 0:
         raise SystemExit(
@@ -103,8 +118,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Stage the published release layout from a .install tree.")
     parser.add_argument("--input-dir", required=True, help="Input staging directory (usually .install)")
     parser.add_argument("--output-dir", required=True, help="Output directory for the release-shaped tree")
-    parser.add_argument("--base-game", default="baseq2", help="Local runtime game directory name")
-    parser.add_argument("--release-game", default="worr", help="Published release game directory name")
+    parser.add_argument("--base-game", default="basew", help="Local runtime game directory name")
+    parser.add_argument("--release-game", default="basew", help="Published release game directory name")
     parser.add_argument(
         "--relocate-root-file",
         action="append",

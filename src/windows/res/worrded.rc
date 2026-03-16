@@ -14,10 +14,10 @@
 
 #ifdef _WIN64
 #define VER_FILEDESCRIPTION_STR     "WORR dedicated server (64-bit)"
-#define VER_ORIGINALFILENAME_STR    "worr.ded.exe"
+#define VER_ORIGINALFILENAME_STR    "worr_ded_" CPUSTRING ".exe"
 #else
 #define VER_FILEDESCRIPTION_STR     "WORR dedicated server"
-#define VER_ORIGINALFILENAME_STR    "worr.ded.exe"
+#define VER_ORIGINALFILENAME_STR    "worr_ded_" CPUSTRING ".exe"
 #endif
 
 LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
@@ -40,7 +40,7 @@ BEGIN
             VALUE "FileDescription", VER_FILEDESCRIPTION_STR
             VALUE "OriginalFilename", VER_ORIGINALFILENAME_STR
             VALUE "FileVersion", VERSION
-            VALUE "InternalName", "worr.ded"
+            VALUE "InternalName", "worr_ded_" CPUSTRING
             VALUE "LegalCopyright", "Copyright (C) 2026 DarkMatter Productions"
             VALUE "ProductName", "WORR"
             VALUE "ProductVersion", VERSION

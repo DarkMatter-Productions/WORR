@@ -14,7 +14,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/builddir-linux"
 INSTALL_DIR="${SCRIPT_DIR}/.install"
-BASE_GAME="baseq2"
+BASE_GAME="basew"
 
 install_deps_apt() {
     sudo apt-get install -y meson gcc libc6-dev libsdl3-dev libopenal-dev \
@@ -52,7 +52,7 @@ setup_build() {
         echo "Cleaning build directory..."
         rm -rf "$BUILD_DIR"
     fi
-    meson setup "$BUILD_DIR"
+    meson setup "$BUILD_DIR" -Dbase-game="$BASE_GAME" -Ddefault-game="$BASE_GAME"
 }
 
 compile() {

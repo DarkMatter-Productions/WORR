@@ -445,7 +445,7 @@ void ServerBrowserPage::StatusEvent(const serverStatus_t *status)
         host = hostname;
     const char *mod = Info_ValueForKey(info, "game");
     if (COM_IsWhite(mod))
-        mod = "baseq2";
+        mod = BASEGAME;
     const char *map = Info_ValueForKey(info, "mapname");
     if (COM_IsWhite(map))
         map = "???";

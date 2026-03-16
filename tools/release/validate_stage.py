@@ -24,15 +24,8 @@ def staged_launch_exe(config: dict[str, str]) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate staged release contents for a release target.")
     parser.add_argument("--install-dir", required=True, help="Staged install directory (.install)")
-    parser.add_argument("--base-game", default="baseq2", help="Base game directory name")
-    parser.add_argument("--archive-name", default="worr-assets.pkz", help="Expected base game asset archive")
-    parser.add_argument("--mod-game", default="worr", help="Release mod game directory name")
-    parser.add_argument("--mod-archive-name", default="pak0.pkz", help="Expected WORR asset archive name")
-    parser.add_argument(
-        "--mod-source-relpath",
-        default=".release/worr/pak0.pkz",
-        help="Release-pack source path inside <install-dir> that is published as <mod-game>/<mod-archive-name>",
-    )
+    parser.add_argument("--base-game", default="basew", help="Base game directory name")
+    parser.add_argument("--archive-name", default="pak0.pkz", help="Expected base game asset archive")
     parser.add_argument("--platform-id", required=True, help="Release platform id")
     args = parser.parse_args()
 
@@ -54,13 +47,6 @@ def main() -> int:
     base_files = [path for path in base_files if path.is_file()]
     if not base_files:
         raise SystemExit(f"Base game directory is empty: {base_game_dir}")
-
-    mod_archive_source = install_dir / args.mod_source_relpath
-    legacy_mod_archive = install_dir / args.mod_game / args.mod_archive_name
-    if mod_archive_source.is_file():
-        require_file(mod_archive_source)
-    else:
-        require_file(legacy_mod_archive)
 
     updater = target.get("autoupdater", {})
     updater_asset = updater.get("updater_asset")

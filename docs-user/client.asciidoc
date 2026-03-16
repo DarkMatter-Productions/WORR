@@ -1766,7 +1766,7 @@ it used to be you know where to look. The following list may be incomplete.
   filesystem root using ‘../’ components.  This means commands like these are
   equivalent and all reference the same file: ‘exec ../global.cfg’, ‘exec
   /global.cfg’, ‘exec global.cfg’.  If you have any config files in your Quake 2
-  directory root, you should consider moving them into ‘baseq2/’ to make them
+  directory root, you should consider moving them into ‘basew/’ to make them
   accessible.
 
 - Likewise, ‘link’ command syntax has been changed to work with virtual paths
@@ -1777,7 +1777,7 @@ it used to be you know where to look. The following list may be incomplete.
 - Joysticks are not supported.
 
 - Single player savegame format has been rewritten from scratch for better
-  robustness and portability. Only the ‘baseq2’ game library included in WORR
+  robustness and portability. Only the ‘basew’ game library included in WORR
   distribution has been converted to use the new improved savegame format. WORR
   will refuse to load and save games in old format for security reasons, unless
   ‘sys_allow_unsafe_savegames’ is set to 1 from the command line (not recommended).

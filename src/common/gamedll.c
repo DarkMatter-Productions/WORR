@@ -45,7 +45,7 @@ static void *TryLoadGameLibrary(const char *libdir, const char *gamedir,
 
     if (Q_concat(path, sizeof(path), libdir,
                  PATH_SEP_STRING, gamedir, PATH_SEP_STRING,
-                 module, cpustring, LIBSUFFIX) >= sizeof(path)) {
+                 module, "_", cpustring, LIBSUFFIX) >= sizeof(path)) {
         Com_EPrintf("Game library path length exceeded\n");
         return NULL;
     }
@@ -94,7 +94,7 @@ void *SGameDll_Load(void)
             gamelib = LoadSGameLibrary(sys_homedir->string, fs_game->string);
     }
 
-    // then try baseq2
+    // then try the base game
     if (!gamelib) {
 #ifdef _WIN32
         gamelib = LoadSGameLibrary(".", BASEGAME);

@@ -7,172 +7,201 @@ import json
 from typing import Any
 
 
-CLIENT_INCLUDE = [
-    "worr*",
-    "worr/*",
-]
-
-CLIENT_EXCLUDE = [
-    "worr.ded*",
-    "worr/.conhistory",
-    "worr/logs/*",
-]
-
-SERVER_INCLUDE = [
-    "worr.ded*",
-    "worr/*",
-]
-
-SERVER_EXCLUDE = [
-    "worr/cgame*",
-    "worr/.conhistory",
-    "worr/logs/*",
-    "worr/shader_vkpt/*",
-]
+BASE_GAME = "basew"
 
 
-def with_payload_rules(target: dict[str, Any]) -> dict[str, Any]:
-    client = dict(target["client"])
-    server = dict(target["server"])
+def runtime_binary_name(stem: str, arch: str, os_name: str) -> str:
+    suffix = ".exe" if os_name == "windows" else ""
+    return f"{stem}_{arch}{suffix}"
 
-    client["include"] = list(client.get("include", CLIENT_INCLUDE))
-    client["exclude"] = list(client.get("exclude", CLIENT_EXCLUDE))
-    client["required_paths"] = list(client.get("required_paths", [
-        client["launch_exe"],
-        "worr/cgame*",
-        "worr/sgame*",
-        "worr/worr-assets.pkz",
-        "worr/pak0.pkz",
+
+def runtime_binary_glob(stem: str, arch: str) -> str:
+    return f"{stem}_{arch}*"
+
+
+def client_required_paths(target: dict[str, Any]) -> list[str]:
+    required = [
+        target["client"]["launch_exe"],
+        f"{BASE_GAME}/cgame*",
+        f"{BASE_GAME}/sgame*",
+        f"{BASE_GAME}/pak0.pkz",
         "worr_update.json",
-    ]))
-    client["forbidden_paths"] = list(client.get("forbidden_paths", [
-        server["launch_exe"],
+    ]
+    updater_asset = target.get("autoupdater", {}).get("updater_asset")
+    if updater_asset:
+        required.append(updater_asset)
+    return required
+
+
+def server_required_paths(target: dict[str, Any]) -> list[str]:
+    return [
+        target["server"]["launch_exe"],
+        f"{BASE_GAME}/sgame*",
+        f"{BASE_GAME}/pak0.pkz",
+    ]
+
+
+def client_forbidden_paths(target: dict[str, Any]) -> list[str]:
+    return [
+        target["server"]["launch_exe"],
         "baseq2/*",
+        "worr/*",
+        "bin/*",
         ".release/*",
         ".release/**/*",
-    ]))
+    ]
 
-    server["include"] = list(server.get("include", SERVER_INCLUDE))
-    server["exclude"] = list(server.get("exclude", SERVER_EXCLUDE))
-    server["required_paths"] = list(server.get("required_paths", [
-        server["launch_exe"],
-        "worr/sgame*",
-        "worr/worr-assets.pkz",
-        "worr/pak0.pkz",
-    ]))
-    server["forbidden_paths"] = list(server.get("forbidden_paths", [
-        client["launch_exe"],
+
+def server_forbidden_paths(target: dict[str, Any]) -> list[str]:
+    return [
+        target["client"]["launch_exe"],
         "worr_update.json",
         "worr_opengl*",
         "worr_rtx*",
         "worr_updater*",
         "worr_vulkan*",
-        "worr/cgame*",
-        "worr/shader_vkpt/*",
+        f"{BASE_GAME}/cgame*",
+        f"{BASE_GAME}/shader_vkpt/*",
         "baseq2/*",
+        "worr/*",
+        "bin/*",
         ".release/*",
         ".release/**/*",
-    ]))
+    ]
 
-    hydrated = dict(target)
-    hydrated["client"] = client
-    hydrated["server"] = server
-    return hydrated
+
+def build_target(
+    *,
+    platform_id: str,
+    runner: str,
+    os_name: str,
+    arch: str,
+    archive_format: str,
+    client_package_name: str,
+    client_manifest_name: str,
+    server_package_name: str,
+    server_manifest_name: str,
+    installer: dict[str, Any] | None,
+    autoupdater: dict[str, Any],
+) -> dict[str, Any]:
+    client_launch = runtime_binary_name("worr", arch, os_name)
+    server_launch = runtime_binary_name("worr_ded", arch, os_name)
+
+    target: dict[str, Any] = {
+        "platform_id": platform_id,
+        "runner": runner,
+        "os": os_name,
+        "arch": arch,
+        "archive_format": archive_format,
+        "client": {
+            "package_name": client_package_name,
+            "manifest_name": client_manifest_name,
+            "launch_exe": client_launch,
+            "include": [
+                runtime_binary_glob("worr", arch),
+                "worr_opengl_*",
+                "worr_vulkan_*",
+                "worr_rtx_*",
+                "worr_update.json",
+                f"{BASE_GAME}/*",
+            ],
+            "exclude": [
+                runtime_binary_glob("worr_ded", arch),
+                f"{BASE_GAME}/.conhistory",
+                f"{BASE_GAME}/logs/*",
+            ],
+        },
+        "server": {
+            "package_name": server_package_name,
+            "manifest_name": server_manifest_name,
+            "launch_exe": server_launch,
+            "include": [
+                runtime_binary_glob("worr_ded", arch),
+                f"{BASE_GAME}/*",
+            ],
+            "exclude": [
+                runtime_binary_glob("worr", arch),
+                "worr_opengl_*",
+                "worr_vulkan_*",
+                "worr_rtx_*",
+                "worr_updater_*",
+                "worr_update.json",
+                f"{BASE_GAME}/cgame*",
+                f"{BASE_GAME}/.conhistory",
+                f"{BASE_GAME}/logs/*",
+                f"{BASE_GAME}/shader_vkpt/*",
+            ],
+        },
+        "installer": installer,
+        "autoupdater": autoupdater,
+    }
+
+    updater_asset = autoupdater.get("updater_asset")
+    if updater_asset:
+        target["client"]["include"].append(updater_asset)
+
+    target["client"]["required_paths"] = client_required_paths(target)
+    target["client"]["forbidden_paths"] = client_forbidden_paths(target)
+    target["server"]["required_paths"] = server_required_paths(target)
+    target["server"]["forbidden_paths"] = server_forbidden_paths(target)
+    return target
 
 
 TARGETS: list[dict[str, Any]] = [
-    with_payload_rules({
-        "platform_id": "windows-x86_64",
-        "runner": "windows-latest",
-        "os": "windows",
-        "arch": "x86_64",
-        "archive_format": "zip",
-        "client": {
-            "package_name": "worr-client-win64.zip",
-            "manifest_name": "worr-client-win64.json",
-            "launch_exe": "worr.exe",
-        },
-        "server": {
-            "package_name": "worr-server-win64.zip",
-            "manifest_name": "worr-server-win64.json",
-            "launch_exe": "worr.ded.exe",
-        },
-        "installer": {
+    build_target(
+        platform_id="windows-x86_64",
+        runner="windows-latest",
+        os_name="windows",
+        arch="x86_64",
+        archive_format="zip",
+        client_package_name="worr-client-win64.zip",
+        client_manifest_name="worr-client-win64.json",
+        server_package_name="worr-server-win64.zip",
+        server_manifest_name="worr-server-win64.json",
+        installer={
             "type": "msi",
             "name": "worr-win64.msi",
         },
-        "autoupdater": {
+        autoupdater={
             "mode": "native",
-            "updater_asset": "worr_updater.exe",
+            "updater_asset": runtime_binary_name("worr_updater", "x86_64", "windows"),
             "config_asset": "worr_update.json",
         },
-    }),
-    with_payload_rules({
-        "platform_id": "linux-x86_64",
-        "runner": "ubuntu-latest",
-        "os": "linux",
-        "arch": "x86_64",
-        "archive_format": "tar.gz",
-        "client": {
-            "package_name": "worr-client-linux-x86_64.tar.gz",
-            "manifest_name": "worr-client-linux-x86_64.json",
-            "launch_exe": "bin/worr",
-            "staged_launch_exe": "worr",
-            "include": [
-                "worr*",
-                "worr/*",
-                "bin/worr",
-            ],
-        },
-        "server": {
-            "package_name": "worr-server-linux-x86_64.tar.gz",
-            "manifest_name": "worr-server-linux-x86_64.json",
-            "launch_exe": "worr.ded",
-        },
-        "installer": None,
-        "autoupdater": {
+    ),
+    build_target(
+        platform_id="linux-x86_64",
+        runner="ubuntu-latest",
+        os_name="linux",
+        arch="x86_64",
+        archive_format="tar.gz",
+        client_package_name="worr-client-linux-x86_64.tar.gz",
+        client_manifest_name="worr-client-linux-x86_64.json",
+        server_package_name="worr-server-linux-x86_64.tar.gz",
+        server_manifest_name="worr-server-linux-x86_64.json",
+        installer=None,
+        autoupdater={
             "mode": "archive_sync",
             "updater_asset": None,
             "config_asset": "worr_update.json",
         },
-        "release_layout": {
-            "relocate_root_files": ["worr"],
-            "relocate_root_dir": "bin",
-        },
-    }),
-    with_payload_rules({
-        "platform_id": "macos-x86_64",
-        "runner": "macos-15-intel",
-        "os": "macos",
-        "arch": "x86_64",
-        "archive_format": "tar.gz",
-        "client": {
-            "package_name": "worr-client-macos-x86_64.tar.gz",
-            "manifest_name": "worr-client-macos-x86_64.json",
-            "launch_exe": "bin/worr",
-            "staged_launch_exe": "worr",
-            "include": [
-                "worr*",
-                "worr/*",
-                "bin/worr",
-            ],
-        },
-        "server": {
-            "package_name": "worr-server-macos-x86_64.tar.gz",
-            "manifest_name": "worr-server-macos-x86_64.json",
-            "launch_exe": "worr.ded",
-        },
-        "installer": None,
-        "autoupdater": {
+    ),
+    build_target(
+        platform_id="macos-x86_64",
+        runner="macos-15-intel",
+        os_name="macos",
+        arch="x86_64",
+        archive_format="tar.gz",
+        client_package_name="worr-client-macos-x86_64.tar.gz",
+        client_manifest_name="worr-client-macos-x86_64.json",
+        server_package_name="worr-server-macos-x86_64.tar.gz",
+        server_manifest_name="worr-server-macos-x86_64.json",
+        installer=None,
+        autoupdater={
             "mode": "archive_sync",
             "updater_asset": None,
             "config_asset": "worr_update.json",
         },
-        "release_layout": {
-            "relocate_root_files": ["worr"],
-            "relocate_root_dir": "bin",
-        },
-    }),
+    ),
 ]
 
 

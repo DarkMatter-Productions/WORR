@@ -107,7 +107,8 @@ jobs:
         shell: bash
         run: |
           meson setup builddir --wrap-mode=forcefallback --buildtype=release \
-            -Ddefault-game=worr \
+            -Dbase-game=basew \
+            -Ddefault-game=basew \
             -Dbootstrapper=false -Dtests=false -Davcodec=disabled -Dlibcurl=disabled \
             -Dharfbuzz:tests=disabled
 
@@ -116,7 +117,8 @@ jobs:
         shell: msys2 {0}
         run: |
           meson setup builddir --wrap-mode=forcefallback --buildtype=release \
-            -Ddefault-game=worr \
+            -Dbase-game=basew \
+            -Ddefault-game=basew \
             -Dbootstrapper=true -Dtests=false -Davcodec=disabled -Dlibcurl=disabled \
             -Dharfbuzz:tests=disabled
 
@@ -137,7 +139,7 @@ jobs:
           python3 tools/refresh_install.py \
             --build-dir builddir \
             --install-dir .install \
-            --base-game baseq2 \
+            --base-game basew \
             --platform-id "${{ matrix.platform_id }}"
 
       - name: Refresh .install (Windows)
@@ -147,7 +149,7 @@ jobs:
           python3 tools/refresh_install.py \
             --build-dir builddir \
             --install-dir .install \
-            --base-game baseq2 \
+            --base-game basew \
             --platform-id "${{ matrix.platform_id }}"
 
       - name: Install WiX Toolset

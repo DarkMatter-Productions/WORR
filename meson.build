@@ -1300,7 +1300,13 @@ q2proto_lib = static_library('q2proto', q2proto_src,
   c_args:              q2proto_c_args,
 )
 
-executable('worr', common_src, client_src, renderer_engine_src,
+client_binary_name = 'worr_' + cpu
+server_binary_name = 'worr_ded_' + cpu
+updater_binary_name = 'worr_updater_' + cpu
+sgame_binary_name = 'sgame_' + cpu
+cgame_binary_name = 'cgame_' + cpu
+
+executable(client_binary_name, common_src, client_src, renderer_engine_src,
   dependencies:          common_deps + client_deps,
   include_directories:   ['inc', 'q2proto/inc'],
   gnu_symbol_visibility: 'hidden',
@@ -1314,7 +1320,7 @@ executable('worr', common_src, client_src, renderer_engine_src,
   install_dir:           bindir,
 )
 
-executable('worr.ded', common_src, server_src,
+executable(server_binary_name, common_src, server_src,
   dependencies:          common_deps + server_deps,
   include_directories:   ['inc', 'q2proto/inc'],
   gnu_symbol_visibility: 'hidden',
@@ -1348,7 +1354,7 @@ if win32 and get_option('bootstrapper')
     updater_link_args += ['-municode']
   endif
 
-  executable('worr_updater', updater_src,
+  executable(updater_binary_name, updater_src,
     dependencies:        updater_deps,
     include_directories: ['inc', 'src/updater/third_party'],
     win_subsystem:       win_subsystem_client,
@@ -1371,7 +1377,7 @@ cgame_defines = [
 
 # MSVC: use c++latest (c++23 not in Meson's MSVC list). GCC/Clang: use c++23 (c++latest unsupported).
 sgame_cpp_std = cpp.get_id() == 'msvc' ? 'c++latest' : 'c++23'
-sgame_dll = shared_library('sgame' + cpu, sgame_src,
+sgame_dll = shared_library(sgame_binary_name, sgame_src,
   name_prefix:           '',
   gnu_symbol_visibility: 'hidden',
   dependencies:          game_deps,
@@ -1407,7 +1413,7 @@ cgame_inc = [
   cgame_inc,
 ]
 
-cgame_dll = shared_library('cgame' + cpu, cgame_all_src,
+cgame_dll = shared_library(cgame_binary_name, cgame_all_src,
   name_prefix:           '',
   gnu_symbol_visibility: 'hidden',
   dependencies:          cgame_deps,

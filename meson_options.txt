@@ -15,7 +15,7 @@ option('avcodec',
 
 option('base-game',
   type: 'string',
-  value: 'baseq2',
+  value: 'basew',
   description: 'Name of the base game directory')
 
 option('client-gtv',

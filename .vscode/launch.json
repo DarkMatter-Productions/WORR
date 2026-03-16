@@ -5,7 +5,7 @@
             "name": "WORR (Vulkan)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}\\.install\\worr.exe",
+            "program": "${workspaceFolder}\\.install\\worr_x86_64.exe",
             "args": [
                 "+set",
                 "basedir",
@@ -39,7 +39,7 @@
             "name": "WORR (RTX)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}\\.install\\worr.exe",
+            "program": "${workspaceFolder}\\.install\\worr_x86_64.exe",
             "args": [
                 "+set",
                 "basedir",
@@ -73,7 +73,7 @@
             "name": "WORR (OpenGL)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}\\.install\\worr.exe",
+            "program": "${workspaceFolder}\\.install\\worr_x86_64.exe",
             "args": [
                 "+set",
                 "basedir",
@@ -95,7 +95,7 @@
             "name": "WORR (dedicated)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}\\.install\\worr.ded.exe",
+            "program": "${workspaceFolder}\\.install\\worr_ded_x86_64.exe",
             "args": [
                 "+set",
                 "basedir",

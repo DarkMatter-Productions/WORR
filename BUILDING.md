@@ -62,7 +62,7 @@ WORR uses Meson build system for its build process.
 
 Setup build directory (arbitrary name can be used instead of `builddir`):
 
-    meson setup builddir
+    meson setup builddir -Dbase-game=basew -Ddefault-game=basew
 
 Review and configure options:
 
@@ -90,23 +90,20 @@ assets.
 
 On Linux/macOS:
 
-    python3 tools/refresh_install.py --build-dir builddir --install-dir .install --base-game baseq2
+    python3 tools/refresh_install.py --build-dir builddir --install-dir .install --base-game basew
 
 On Windows:
 
-    python tools\refresh_install.py --build-dir builddir --install-dir .install --base-game baseq2 --platform-id windows-x86_64
+    python tools\refresh_install.py --build-dir builddir --install-dir .install --base-game basew --platform-id windows-x86_64
 
 The refresh command performs post-build staging and install packaging in one
 pass: it recreates `.install/`, copies runtime binaries, syncs base game
-payload, writes `.install/baseq2/worr-assets.pkz` plus the release-pack source
-`.install/.release/worr/pak0.pkz`, and can validate staged files for a specific
-release target.
+payload, writes `.install/basew/pak0.pkz` from the canonical repo `assets/`
+tree, and can validate staged files for a specific release target.
 
-Published releases do not keep a separate `baseq2/` directory. Packaging merges
-the staged runtime payload into a single `worr/` gamedir, including both
-`worr-assets.pkz` and `pak0.pkz`. Windows releases keep `worr.exe` at archive
-root; Linux/macOS client releases place the launcher at `bin/worr` so the
-merged `worr/` gamedir can exist alongside it.
+Published releases keep the same `basew/` gamedir used by local staging.
+Client launchers now ship with explicit arch suffixes such as
+`worr_x86_64.exe`, and dedicated servers ship as `worr_ded_x86_64(.exe)`.
 
 
 Installation
@@ -119,7 +116,7 @@ Run `sudo ninja -C builddir install` to install WORR system-wide into
 configured prefix (`/usr/local` by default).
 
 Copy `baseq2/pak*.pak` files and `baseq2/players` directory from unpacked
-Quake 2 data into `/usr/local/share/worr/baseq2` to complete the
+Quake 2 data into `/usr/local/share/worr/basew` to complete the
 installation.
 
 Alternatively, configure with `-Dsystem-wide=false` to build a ‘portable’
