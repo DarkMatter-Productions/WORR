@@ -1395,6 +1395,7 @@ constexpr int32_t CHAT_NOTIFY_VISIBLE_LINES_ACTIVE = 8;
 constexpr float CHAT_NOTIFY_SCROLL_SPEED = 12.0f;
 constexpr int32_t CHAT_NOTIFY_STATUSBAR_ICON_HEIGHT = (CONCHAR_HEIGHT * 3);
 constexpr int32_t CHAT_NOTIFY_STATUSBAR_OFFSET = (CHAT_NOTIFY_STATUSBAR_ICON_HEIGHT * 2);
+constexpr int32_t CHAT_LINE_HEIGHT = CONCHAR_HEIGHT + 2;
 
 constexpr int32_t CHAT_KEYDEST_CONSOLE = 1 << 0;
 constexpr int32_t CHAT_KEYDEST_MESSAGE = 1 << 1;
@@ -1546,8 +1547,8 @@ static void CG_ChatHud_BuildLayout(cg_chat_layout_t *layout, const vrect_t &hud_
     int bottom = safe_y + safe_h - CONCHAR_HEIGHT - CHAT_NOTIFY_STATUSBAR_OFFSET;
     if (bottom < safe_y)
         bottom = safe_y;
-    int viewport_bottom = message_active ? (bottom - CONCHAR_HEIGHT) : bottom;
-    int viewport_top = viewport_bottom - (max_visible - 1) * CONCHAR_HEIGHT;
+    int viewport_bottom = message_active ? (bottom - CHAT_LINE_HEIGHT) : bottom;
+    int viewport_top = viewport_bottom - (max_visible - 1) * CHAT_LINE_HEIGHT;
 
     layout->valid = true;
     layout->x = safe_x;
@@ -1564,7 +1565,7 @@ static void CG_ChatHud_BuildLayout(cg_chat_layout_t *layout, const vrect_t &hud_
     layout->scrollbar_x = safe_x + width + gap;
     layout->scrollbar_w = scrollbar_w;
     layout->scroll_track_top = viewport_top;
-    layout->scroll_track_height = max_visible * CONCHAR_HEIGHT;
+    layout->scroll_track_height = max_visible * CHAT_LINE_HEIGHT;
     layout->thumb_top = viewport_top;
     layout->thumb_height = layout->scroll_track_height;
     layout->prompt_skip = 0;
@@ -1667,7 +1668,7 @@ static void CG_ChatHud_DrawInputField(const cg_chat_input_t &input, int x, int y
 {
     if (!input.text || !input.max_chars || !input.visible_chars)
         return;
-    if (!cgi.SCR_DrawString || !cgi.SCR_MeasureString || !cgi.SCR_DrawCharStretch)
+    if (!cgi.SCR_DrawString || !cgi.SCR_MeasureString || !cgi.SCR_DrawColorPic || !cgi.SCR_FontLineHeight)
         return;
 
     size_t cursor_chars = UTF8_CountChars(input.text, input.cursor_pos);
@@ -1693,8 +1694,19 @@ static void CG_ChatHud_DrawInputField(const cg_chat_input_t &input, int x, int y
 
     if ((flags & UI_DRAWCURSOR) && (cgi.CL_ClientRealTime() & (1U << 8))) {
         int cursor_x = x + cgi.SCR_MeasureString(text, cursor_bytes);
-        int cursor_ch = input.overstrike ? 11 : '_';
-        cgi.SCR_DrawCharStretch(cursor_x, y, CONCHAR_WIDTH, CONCHAR_HEIGHT, flags, cursor_ch, color);
+        int text_h = max(1, static_cast<int>(std::lround(cgi.SCR_FontLineHeight(1))));
+        rgba_t fill = color;
+        fill.a = input.overstrike ? 160 : 220;
+
+        if (input.overstrike) {
+            size_t next_chars = min(draw_chars, cursor_chars_visible + 1);
+            size_t next_bytes = UTF8_OffsetForChars(text, next_chars);
+            int next_x = x + cgi.SCR_MeasureString(text, next_bytes);
+            int cursor_w = max(2, next_x - cursor_x);
+            cgi.SCR_DrawColorPic(cursor_x, y, cursor_w, text_h, "_white", fill);
+        } else {
+            cgi.SCR_DrawColorPic(cursor_x, y, 1, text_h, "_white", fill);
+        }
     }
 }
 
@@ -1875,14 +1887,14 @@ void CG_DrawChatHUD(int32_t isplit, vrect_t hud_vrect, vrect_t hud_safe, int32_t
         base_color.a = (uint8_t)Q_clip(Q_rint(255.0f * Cvar_ClampValue(cl_alpha, 0, 1)), 0, 255);
 
     if (total > 0) {
-        float scroll_pixels = hud.scroll * CONCHAR_HEIGHT;
+        float scroll_pixels = hud.scroll * CHAT_LINE_HEIGHT;
         float y_base = (float)hud.layout.viewport_bottom + scroll_pixels;
 
         for (int i = 0; i < total; i++) {
             cg_chat_line_t *line = draw_lines[i].line;
-            float y = y_base - (float)(total - 1 - i) * CONCHAR_HEIGHT;
+            float y = y_base - (float)(total - 1 - i) * CHAT_LINE_HEIGHT;
 
-            if (y < hud.layout.viewport_top - CONCHAR_HEIGHT ||
+            if (y < hud.layout.viewport_top - CHAT_LINE_HEIGHT ||
                 y > hud.layout.viewport_bottom) {
                 continue;
             }
