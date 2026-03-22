@@ -1805,6 +1805,11 @@ static void AL_StopChannel(channel_t *ch)
     memset(ch, 0, sizeof(*ch));
 }
 
+/*
+=============
+AL_PlayChannel
+=============
+*/
 static void AL_PlayChannel(channel_t *ch)
 {
     sfxcache_t *sc = ch->sfx->cache;
@@ -1837,7 +1842,10 @@ static void AL_PlayChannel(channel_t *ch)
         AL_StopChannel(ch);
     } else {
         if (ch->autosound) {
-            qalSourcef(ch->srcnum, AL_SEC_OFFSET, fmodf(cls.realtime / 1000.f, ch->sfx->cache->length / 1000.f));
+            float offset = fmodf(cls.realtime / 1000.0f, ch->sfx->cache->length / 1000.0f);
+            if (ch->no_merge)
+                offset = AL_GetLoopSoundPhaseOffsetSeconds(ch, sc);
+            qalSourcef(ch->srcnum, AL_SEC_OFFSET, offset);
         }
     }
 }
@@ -1892,14 +1900,55 @@ static channel_t *AL_FindLoopingSound(int entnum, const sfx_t *sfx)
     return NULL;
 }
 
-static void AL_AddLoopSoundEntity(const entity_state_t *ent, sfx_t *sfx, const sfxcache_t *sc, bool no_merge)
+/*
+=============
+AL_GetLoopGroupGainScale
+
+Keeps dense loop groups from overdriving the OpenAL mixer while preserving
+some loudness growth as more emitters join the group.
+=============
+*/
+static float AL_GetLoopGroupGainScale(int count)
+{
+	if (count <= 1)
+		return 1.0f;
+
+	return 1.0f / sqrtf((float)count);
+}
+
+/*
+=============
+AL_GetLoopSoundPhaseOffsetSeconds
+
+Returns a stable per-entity phase offset for unmerged autosounds so identical
+projectile loops do not all start in lockstep.
+=============
+*/
+static float AL_GetLoopSoundPhaseOffsetSeconds(const channel_t *ch, const sfxcache_t *sc)
+{
+	if (!ch || !sc || sc->length <= 0)
+		return 0.0f;
+
+	uint32_t hash = 2166136261u;
+	hash = (hash ^ (uint32_t)ch->entnum) * 16777619u;
+	hash = (hash ^ (uint32_t)sc->bufnum) * 16777619u;
+
+	return (float)(hash % (uint32_t)sc->length) / 1000.0f;
+}
+
+/*
+=============
+AL_AddLoopSoundEntity
+=============
+*/
+static void AL_AddLoopSoundEntity(const entity_state_t *ent, sfx_t *sfx, const sfxcache_t *sc, bool no_merge, float gain_scale)
 {
     channel_t *ch = AL_FindLoopingSound(ent->number, sfx);
     if (ch) {
         ch->autoframe = s_framecount;
         ch->end = s_paintedtime + sc->length;
         ch->no_merge = no_merge;
-        ch->master_vol = S_GetEntityLoopVolume(ent);
+        ch->master_vol = S_GetEntityLoopVolume(ent) * gain_scale;
         ch->dist_mult = S_GetEntityLoopDistMult(ent);
         return;
     }
@@ -1913,13 +1962,18 @@ static void AL_AddLoopSoundEntity(const entity_state_t *ent, sfx_t *sfx, const s
     ch->no_merge = no_merge;
     ch->sfx = sfx;
     ch->entnum = ent->number;
-    ch->master_vol = S_GetEntityLoopVolume(ent);
+    ch->master_vol = S_GetEntityLoopVolume(ent) * gain_scale;
     ch->dist_mult = S_GetEntityLoopDistMult(ent);
     ch->end = s_paintedtime + sc->length;
 
     AL_PlayChannel(ch);
 }
 
+/*
+=============
+AL_MergeLoopSounds
+=============
+*/
 static void AL_MergeLoopSounds(void)
 {
     int         i, j;
@@ -1976,6 +2030,16 @@ static void AL_MergeLoopSounds(void)
         }
 
         if (has_doppler) {
+            int doppler_count = 0;
+            for (j = i; j < cl.frame.numEntities; j++) {
+                if (sounds[j] != sound_handle)
+                    continue;
+                num = (cl.frame.firstEntity + j) & PARSE_ENTITIES_MASK;
+                if (AL_EntityHasDoppler(&cl.entityStates[num]))
+                    doppler_count++;
+            }
+
+            float doppler_gain_scale = AL_GetLoopGroupGainScale(doppler_count);
             for (j = i; j < cl.frame.numEntities; j++) {
                 if (sounds[j] != sound_handle)
                     continue;
@@ -1983,7 +2047,7 @@ static void AL_MergeLoopSounds(void)
                 const entity_state_t *ent_j = &cl.entityStates[num];
                 if (!AL_EntityHasDoppler(ent_j))
                     continue;
-                AL_AddLoopSoundEntity(ent_j, sfx, sc, true);
+                AL_AddLoopSoundEntity(ent_j, sfx, sc, true, doppler_gain_scale);
                 sounds[j] = 0;
             }
             if (!sounds[i])
