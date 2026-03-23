@@ -1155,6 +1155,15 @@ if get_option('client-ui')
   )
   client_src += worr_json_c
 
+  # embed worr-multiplayer.json
+  worr_multiplayer_json_c = custom_target(
+      'worr-multiplayer.json.c',
+      output : 'worr-multiplayer.json.c',
+      input : 'src/game/cgame/ui/worr-multiplayer.json',
+      command : [prog_embed, '@INPUT@', '@OUTPUT@', 'res_worr_multiplayer_json'],
+  )
+  client_src += worr_multiplayer_json_c
+
   config.set10('USE_UI', true)
 endif
 

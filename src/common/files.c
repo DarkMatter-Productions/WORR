@@ -66,6 +66,7 @@ typedef struct {
     extern const size_t res_##n##_size;
 
 FORWARD_EMBEDDED_FILE(worr_json);
+FORWARD_EMBEDDED_FILE(worr_multiplayer_json);
 FORWARD_EMBEDDED_FILE(loc_english);
 FORWARD_EMBEDDED_FILE(loc_french);
 FORWARD_EMBEDDED_FILE(loc_german);
@@ -92,6 +93,7 @@ FORWARD_EMBEDDED_FILE(loc_korean);
 static const builtin_file_t builtin_files[] = {
 #if USE_CLIENT
     { "worr.json", res_worr_json, &res_worr_json_size },
+    { "worr-multiplayer.json", res_worr_multiplayer_json, &res_worr_multiplayer_json_size },
     { "localization/loc_english.txt", res_loc_english, &res_loc_english_size },
     { "localization/loc_french.txt", res_loc_french, &res_loc_french_size },
     { "localization/loc_german.txt", res_loc_german, &res_loc_german_size },

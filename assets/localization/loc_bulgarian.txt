@@ -2990,3 +2990,7 @@ e_auto_713f13864237 = "UI PushMenu: MAX MENU DEPTH надхвърли\\n"
 e_auto_e13d46568ae9 = "Употреба: %s <menu >\\n"
 e_auto_ad494789521e = "Няма такова меню: %s\\n"
 
+m_settings = "Настройки"
+m_leave_match = "Напусни мача"
+m_confirm_leave_match = "Потвърждаване на напускането на мача"
+m_confirm_leave_match_prompt = "Сигурни ли сте, че искате да напуснете мача?"

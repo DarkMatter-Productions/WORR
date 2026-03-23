@@ -568,6 +568,10 @@ static std::unique_ptr<Widget> BuildWidget(const MenuItemData &item)
     } else if (item.type == "heading") {
         auto heading = std::make_unique<HeadingWidget>();
         heading->SetLabel(item.label);
+        if (item.textSizeSet)
+            heading->SetTextSize(item.textSize);
+        if (item.textColorSet)
+            heading->SetTextColor(item.textColor);
         widget = std::move(heading);
     } else if (item.type == "imagevalues") {
         cvar_t *cvar = Cvar_WeakGet(item.cvar.c_str());

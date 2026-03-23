@@ -29,6 +29,7 @@
 #define UI_CopyString(s)    Z_TagCopyString((s), TAG_UI)
 
 #define UI_DEFAULT_FILE     APPLICATION ".json"
+#define UI_MULTIPLAYER_FILE APPLICATION "-multiplayer.json"
 
 extern "C" void UI_Sys_UpdateRefConfig(void);
 extern "C" void UI_Sys_UpdateGameDir(void);
@@ -117,6 +118,8 @@ enum class ConditionOp {
     Less,
     LessEqual
 };
+
+const char *UI_Localize(const char *key);
 
 struct MenuCondition {
     ConditionKind kind = ConditionKind::InGame;
@@ -378,6 +381,7 @@ private:
     int scrollY_ = 0;
     int contentHeight_ = 0;
     int bitmapBaseX_ = 0;
+    int fixedLayoutOffsetX_ = 0;
     bool hasBitmaps_ = false;
     std::string closeCommand_{};
     std::vector<UiHint> hintsLeft_;
@@ -433,6 +437,7 @@ public:
     int ImageHeight() const { return imageHeight_; }
     void SetDrawSize(int width, int height);
     void SetPosition(int x, int y);
+    void SetPositionOffset(int x, int y) { positionOffsetX_ = x; positionOffsetY_ = y; }
     bool HasFixedPosition() const { return fixedPosition_; }
     int FixedX() const { return fixedX_; }
     int FixedY() const { return fixedY_; }
@@ -453,6 +458,8 @@ private:
     bool fixedPosition_ = false;
     int fixedX_ = 0;
     int fixedY_ = 0;
+    int positionOffsetX_ = 0;
+    int positionOffsetY_ = 0;
     enum class FixedAnchor {
         Center,
         Left,
@@ -758,6 +765,14 @@ public:
     HeadingWidget();
     int Height(int lineHeight) const override;
     void Draw(bool focused) const override;
+    void SetTextSize(int size) { textSize_ = size; textSizeSet_ = true; }
+    void SetTextColor(color_t color) { textColor_ = color; textColorSet_ = true; }
+
+private:
+    int textSize_ = 0;
+    bool textSizeSet_ = false;
+    color_t textColor_{};
+    bool textColorSet_ = false;
 };
 
 class WrappedTextWidget : public Widget {

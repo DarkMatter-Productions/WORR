@@ -76,6 +76,7 @@ namespace Commands {
 	void WorrCallvoteBalance(gentity_t* ent, const CommandArgs& args);
 	void WorrCallvoteCointoss(gentity_t* ent, const CommandArgs& args);
 	void WorrMyMapMenu(gentity_t* ent, const CommandArgs& args);
+	void WorrMyMapSelect(gentity_t* ent, const CommandArgs& args);
 	void WorrMyMapFlags(gentity_t* ent, const CommandArgs& args);
 	void WorrMyMapFlag(gentity_t* ent, const CommandArgs& args);
 	void WorrMyMapClear(gentity_t* ent, const CommandArgs& args);
@@ -1733,6 +1734,11 @@ Toggles the eyecam view when following other players.
 		OpenMyMapMenu(ent);
 	}
 
+	void WorrMyMapSelect(gentity_t* ent, const CommandArgs& args) {
+		(void)args;
+		OpenMyMapSelectMenu(ent);
+	}
+
 	void WorrMyMapFlags(gentity_t* ent, const CommandArgs& args) {
 		(void)args;
 		OpenMyMapFlagsMenu(ent);
@@ -1748,6 +1754,7 @@ Toggles the eyecam view when following other players.
 			return;
 		}
 		RefreshMyMapFlagsMenu(ent);
+		RefreshMyMapMenu(ent);
 		UiList_Refresh(ent, false);
 	}
 
@@ -1758,18 +1765,28 @@ Toggles the eyecam view when following other players.
 		ent->client->ui.mymap.enableFlags = 0;
 		ent->client->ui.mymap.disableFlags = 0;
 		RefreshMyMapFlagsMenu(ent);
+		RefreshMyMapMenu(ent);
 		UiList_Refresh(ent, false);
 	}
 
 	void WorrMyMapQueue(gentity_t* ent, const CommandArgs& args) {
 		if (!ent || !ent->client)
 			return;
-		if (args.count() < 2)
+		if (args.count() < 2) {
+			OpenMyMapSelectMenu(ent);
 			return;
+		}
 		if (!CheckMyMapAllowed(ent))
 			return;
 		std::vector<std::string> flagArgs = BuildMapFlagArgs(ent->client->ui.mymap);
-		QueueMyMapRequest(ent, args.getString(1), flagArgs);
+		if (!QueueMyMapRequest(ent, args.getString(1), flagArgs))
+			return;
+
+		ent->client->ui.mymap.enableFlags = 0;
+		ent->client->ui.mymap.disableFlags = 0;
+		RefreshMyMapFlagsMenu(ent);
+		RefreshMyMapMenu(ent);
+		CloseActiveMenu(ent);
 	}
 
 	void WorrTourneyInfo(gentity_t* ent, const CommandArgs& args) {
@@ -2406,6 +2423,7 @@ Toggles the eyecam view when following other players.
 		RegisterCommand("worr_callvote_balance", &WorrCallvoteBalance, AllowDead | AllowSpectator);
 		RegisterCommand("worr_callvote_cointoss", &WorrCallvoteCointoss, AllowDead | AllowSpectator);
 		RegisterCommand("worr_mymap_menu", &WorrMyMapMenu, AllowDead | AllowSpectator);
+		RegisterCommand("worr_mymap_select", &WorrMyMapSelect, AllowDead | AllowSpectator);
 		RegisterCommand("worr_mymap_flags", &WorrMyMapFlags, AllowDead | AllowSpectator);
 		RegisterCommand("worr_mymap_flag", &WorrMyMapFlag, AllowDead | AllowSpectator);
 		RegisterCommand("worr_mymap_clear", &WorrMyMapClear, AllowDead | AllowSpectator);

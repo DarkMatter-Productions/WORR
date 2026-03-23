@@ -1,5 +1,6 @@
 #include "ui/ui_internal.h"
 #include "client/client.h"
+#include "ui_cgame_access.h"
 
 #include <cstdarg>
 
@@ -43,6 +44,11 @@ MenuSystem &GetMenuSystem()
 {
     static MenuSystem system;
     return system;
+}
+
+static bool IsActiveMultiplayerMenu()
+{
+    return CgameIsActiveMultiplayerSession();
 }
 
 void UI_DrawString(int x, int y, int flags, color_t color, const char *string)
@@ -265,6 +271,7 @@ void MenuSystem::Init()
     PlayerModel_Load();
 
     UI_LoadJsonMenus(UI_DEFAULT_FILE);
+    UI_LoadJsonMenus(UI_MULTIPLAYER_FILE);
     if (!FindMenu("players"))
         RegisterMenu(CreatePlayerConfigPage());
     if (!FindMenu("dm_welcome"))
@@ -386,7 +393,7 @@ void MenuSystem::OpenMenu(uiMenu_t menu)
     if (!uis.initialized)
         return;
 
-    const bool is_multiplayer_main = (cls.state >= ca_active && cl.maxclients > 1);
+    const bool is_multiplayer_main = IsActiveMultiplayerMenu();
 
     ForceOff();
 

@@ -2990,3 +2990,7 @@ e_auto_713f13864237 = "UI_PushMenu: تم تجاوز MAX_MENU_DEPTH\\n"
 e_auto_e13d46568ae9 = "الاستخدام: %s <menu>\\n"
 e_auto_ad494789521e = "لا توجد مثل هذه القائمة: %s\\n"
 
+m_settings = "الإعدادات"
+m_leave_match = "مغادرة المباراة"
+m_confirm_leave_match = "تأكيد مغادرة المباراة"
+m_confirm_leave_match_prompt = "هل أنت متأكد أنك تريد مغادرة المباراة؟"

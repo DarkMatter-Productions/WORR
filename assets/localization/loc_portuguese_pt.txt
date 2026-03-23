@@ -2990,3 +2990,7 @@ e_auto_713f13864237 = "UI PushMenu: MAX MENU DEPTH excedida\\n"
 e_auto_e13d46568ae9 = "Uso: %s <menu>\\n"
 e_auto_ad494789521e = "Não existe tal menu: %s\\n"
 
+m_settings = "Definições"
+m_leave_match = "Sair da partida"
+m_confirm_leave_match = "Confirmar saída da partida"
+m_confirm_leave_match_prompt = "Tem a certeza de que pretende sair da partida?"

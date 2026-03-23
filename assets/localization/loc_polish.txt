@@ -2990,3 +2990,7 @@ e_auto_713f13864237 = "Interfejs _ PushMenu: MAX _ MENU _ DEPTH przekroczył\\ n
 e_auto_e13d46568ae9 = "Sposób użycia: %s < menu >\\ n"
 e_auto_ad494789521e = "Brak takiego menu: %s\\ n"
 
+m_settings = "Ustawienia"
+m_leave_match = "Opuść mecz"
+m_confirm_leave_match = "Potwierdź opuszczenie meczu"
+m_confirm_leave_match_prompt = "Czy na pewno chcesz opuścić mecz?"

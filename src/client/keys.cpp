@@ -731,12 +731,17 @@ void Key_Event(unsigned key, bool down, unsigned time)
             return;
         }
 
+        const bool is_multiplayer_game_menu =
+            (cls.state == ca_active && cl.serverstate == ss_game &&
+             cls.netchan.protocol > 0 &&
+             !cls.demo.playback && cl.servercount > 0 && cl.maxclients > 1);
+
         if (cls.key_dest == KEY_GAME &&
             cl.frame.ps.stats[STAT_LAYOUTS] & (LAYOUTS_LAYOUT | LAYOUTS_INVENTORY | LAYOUTS_HELP) &&
             !cls.demo.playback) {
             if (keydown[key] == 2) {
-                // force main menu if escape is held
-                UI_OpenMenu(UIMENU_GAME);
+                // force match lobby in multiplayer when escape is held
+                UI_OpenMenu(is_multiplayer_game_menu ? UIMENU_MAIN : UIMENU_GAME);
             } else if (keydown[key] == 1) {
                 // put away help computer / inventory
                 CL_ClientCommand("putaway");
@@ -760,7 +765,7 @@ void Key_Event(unsigned key, bool down, unsigned time)
         } else if (cls.key_dest & KEY_MESSAGE) {
             Key_Message(key);
         } else if (cls.state >= ca_active) {
-            UI_OpenMenu(UIMENU_GAME);
+            UI_OpenMenu(is_multiplayer_game_menu ? UIMENU_MAIN : UIMENU_GAME);
         } else {
             UI_OpenMenu(UIMENU_MAIN);
         }

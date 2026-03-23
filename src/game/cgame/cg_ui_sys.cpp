@@ -57,6 +57,19 @@ extern "C" {
 
 static char cmd_null_string[] = "";
 
+namespace ui {
+
+const char *UI_Localize(const char *key)
+{
+    if (!key || key[0] != '$' || !uii || !uii->Localize) {
+        return key;
+    }
+
+    return uii->Localize(key, NULL, 0);
+}
+
+} // namespace ui
+
 void UI_SetClipboardData(const char *text)
 {
     if (uii && uii->SetClipboardData)

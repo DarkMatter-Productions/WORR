@@ -723,8 +723,8 @@
       "plaque": {
         "image": "m_main_plaque",
         "logo": "m_main_logo",
-        "plaqueRect": { "x": 6, "y": 66, "w": 64, "h": 282 },
-        "logoRect": { "x": 6, "y": 350, "w": 64, "h": 64 }
+        "plaqueRect": { "x": 6, "y": 66, "w": 32, "h": 141 },
+        "logoRect": { "x": 6, "y": 350, "w": 32, "h": 32 }
       },
       "playerName": true,
       "alignToBitmaps": true,
@@ -737,7 +737,7 @@
         "align": "center"
       },
       "items": [
-        { "type": "heading", "label": "Game" },
+        { "type": "heading", "label": "Game", "textSize": 22, "textColor": "#c8cc62" },
         {
           "type": "button",
           "label": "Single Player",
@@ -821,372 +821,6 @@
         { "type": "action", "label": "load game...", "command": "pushmenu loadgame", "showIf": ["deathmatch=0"] },
         { "type": "action", "label": "disconnect", "command": "disconnect", "ingameOnly": true },
         { "type": "action", "label": "quit", "command": "quit" }
-      ]
-    },
-    {
-      "name": "dm_welcome",
-      "background": "#000000c8",
-      "style": { "compact": true, "transparent": true },
-      "closeCommand": "forcemenuoff; worr_welcome_continue",
-      "items": [
-        { "type": "action", "label": "Welcome to", "align": "center", "selectable": false },
-        { "type": "action", "labelCvar": "ui_welcome_title", "align": "center", "selectable": false },
-        { "type": "blank" },
-        {
-          "type": "action",
-          "labelCvar": "ui_welcome_hostname",
-          "align": "center",
-          "selectable": false,
-          "showIf": ["ui_welcome_hostname"]
-        },
-        { "type": "blank", "showIf": ["ui_welcome_hostname"] },
-        {
-          "type": "wrappedtext",
-          "labelCvar": "ui_welcome_motd",
-          "align": "left",
-          "maxLines": 5,
-          "showIf": ["ui_welcome_motd"]
-        },
-        { "type": "blank", "showIf": ["ui_welcome_motd"] },
-        {
-          "type": "action",
-          "label": "Continue",
-          "align": "left",
-          "command": "forcemenuoff; worr_welcome_continue"
-        }
-      ]
-    },
-    {
-      "name": "dm_join",
-      "background": "#000000c8",
-      "style": { "compact": true, "transparent": true },
-      "closeCommand": "forcemenuoff; worr_dm_join_close",
-      "items": [
-        { "type": "action", "labelCvar": "ui_dm_title", "align": "center", "selectable": false },
-        {
-          "type": "action",
-          "labelCvar": "ui_dm_subtitle",
-          "align": "center",
-          "selectable": false,
-          "showIf": ["ui_dm_subtitle"]
-        },
-        { "type": "blank" },
-        {
-          "type": "action",
-          "labelCvar": "ui_dm_join_red",
-          "align": "left",
-          "command": "forcemenuoff; team red",
-          "showIf": ["ui_dm_show_join=1", "ui_dm_teamplay=1"]
-        },
-        {
-          "type": "action",
-          "labelCvar": "ui_dm_join_blue",
-          "align": "left",
-          "command": "forcemenuoff; team blue",
-          "showIf": ["ui_dm_show_join=1", "ui_dm_teamplay=1"]
-        },
-        {
-          "type": "action",
-          "labelCvar": "ui_dm_join_free",
-          "align": "left",
-          "command": "forcemenuoff; team free",
-          "showIf": ["ui_dm_show_join=1", "ui_dm_teamplay=0"]
-        },
-        {
-          "type": "action",
-          "label": "Spectate",
-          "align": "left",
-          "command": "forcemenuoff; team spectator",
-          "showIf": ["ui_dm_show_spectate=1"]
-        },
-        { "type": "blank" },
-        {
-          "type": "action",
-          "label": "Information",
-          "align": "left",
-          "command": "worr_tourney_info",
-          "showIf": ["ui_dm_show_tourney_info=1"]
-        },
-        {
-          "type": "action",
-          "label": "Map Choices",
-          "align": "left",
-          "command": "worr_tourney_maps",
-          "showIf": ["ui_dm_show_tourney_maps=1"]
-        },
-        {
-          "type": "action",
-          "label": "Call a Vote",
-          "align": "left",
-          "command": "worr_callvote_menu",
-          "showIf": ["ui_dm_show_callvote=1"]
-        },
-        {
-          "type": "action",
-          "label": "MyMap",
-          "align": "left",
-          "command": "worr_mymap_menu",
-          "showIf": ["ui_dm_show_mymap=1"]
-        },
-        {
-          "type": "action",
-          "label": "Host Info",
-          "align": "left",
-          "command": "worr_dm_hostinfo"
-        },
-        {
-          "type": "action",
-          "label": "Forfeit",
-          "align": "left",
-          "command": "worr_forfeit_menu",
-          "showIf": ["ui_dm_show_forfeit=1"]
-        },
-        {
-          "type": "action",
-          "label": "Match Info",
-          "align": "left",
-          "command": "worr_dm_matchinfo"
-        },
-        {
-          "type": "action",
-          "label": "Player Stats",
-          "align": "left",
-          "command": "worr_matchstats_menu",
-          "showIf": ["ui_dm_show_matchstats=1"]
-        },
-        {
-          "type": "action",
-          "label": "Admin",
-          "align": "left",
-          "command": "worr_admin_menu",
-          "showIf": ["ui_dm_show_admin=1"]
-        },
-        {
-          "type": "action",
-          "label": "settings",
-          "align": "left",
-          "command": "pushmenu options"
-        },
-        { "type": "blank" },
-        { "type": "action", "label": "visit darkmatter-quake.com", "align": "center", "selectable": false },
-        { "type": "action", "label": ":: community :: matches ::", "align": "center", "selectable": false },
-        { "type": "action", "label": ":: content :: news ::", "align": "center", "selectable": false }
-      ]
-    },
-    {
-      "name": "join",
-      "background": "#000000c8",
-      "style": { "compact": true, "transparent": true },
-      "closeCommand": "forcemenuoff; worr_dm_join_close",
-      "items": [
-        { "type": "action", "labelCvar": "ui_dm_title", "align": "center", "selectable": false },
-        { "type": "blank" },
-        { "type": "action", "label": "---", "align": "center", "selectable": false },
-        { "type": "blank" },
-        { "type": "blank" },
-        {
-          "type": "action",
-          "labelCvar": "ui_dm_join_red",
-          "align": "left",
-          "command": "forcemenuoff; team red",
-          "showIf": ["ui_dm_show_join=1", "ui_dm_teamplay=1"]
-        },
-        {
-          "type": "action",
-          "labelCvar": "ui_dm_join_blue",
-          "align": "left",
-          "command": "forcemenuoff; team blue",
-          "showIf": ["ui_dm_show_join=1", "ui_dm_teamplay=1"]
-        },
-        {
-          "type": "action",
-          "labelCvar": "ui_dm_join_free",
-          "align": "left",
-          "command": "forcemenuoff; team free",
-          "showIf": ["ui_dm_show_join=1", "ui_dm_teamplay=0"]
-        },
-        {
-          "type": "action",
-          "label": "Spectate",
-          "align": "left",
-          "command": "forcemenuoff; team spectator",
-          "showIf": ["ui_dm_show_spectate=1"]
-        },
-        { "type": "blank" },
-        {
-          "type": "action",
-          "label": "Information",
-          "align": "left",
-          "command": "worr_tourney_info",
-          "showIf": ["ui_dm_show_tourney_info=1"]
-        },
-        {
-          "type": "action",
-          "label": "Map Choices",
-          "align": "left",
-          "command": "worr_tourney_maps",
-          "showIf": ["ui_dm_show_tourney_maps=1"]
-        },
-        {
-          "type": "action",
-          "label": "Call a Vote",
-          "align": "left",
-          "command": "worr_callvote_menu",
-          "showIf": ["ui_dm_show_callvote=1"]
-        },
-        {
-          "type": "action",
-          "label": "MyMap",
-          "align": "left",
-          "command": "worr_mymap_menu",
-          "showIf": ["ui_dm_show_mymap=1"]
-        },
-        {
-          "type": "action",
-          "label": "Host Info",
-          "align": "left",
-          "command": "worr_dm_hostinfo"
-        },
-        {
-          "type": "action",
-          "label": "Forfeit",
-          "align": "left",
-          "command": "worr_forfeit_menu",
-          "showIf": ["ui_dm_show_forfeit=1"]
-        },
-        {
-          "type": "action",
-          "label": "Match Info",
-          "align": "left",
-          "command": "worr_dm_matchinfo"
-        },
-        {
-          "type": "action",
-          "label": "Player Stats",
-          "align": "left",
-          "command": "worr_matchstats_menu",
-          "showIf": ["ui_dm_show_matchstats=1"]
-        },
-        {
-          "type": "action",
-          "label": "Admin",
-          "align": "left",
-          "command": "worr_admin_menu",
-          "showIf": ["ui_dm_show_admin=1"]
-        },
-        { "type": "blank" },
-        { "type": "blank" },
-        { "type": "blank" },
-        { "type": "blank" },
-        { "type": "action", "label": "visit darkmatter-quake.com", "align": "center", "selectable": false },
-        { "type": "action", "label": ":: community :: matches ::", "align": "center", "selectable": false },
-        { "type": "action", "label": ":: content :: news ::", "align": "center", "selectable": false }
-      ]
-    },
-    {
-      "name": "dm_hostinfo",
-      "title": "Host Info",
-      "style": { "compact": true, "transparent": true },
-      "items": [
-        { "type": "action", "label": "Server Name:", "align": "left", "selectable": false },
-        {
-          "type": "wrappedtext",
-          "labelCvar": "ui_hostinfo_server",
-          "align": "left",
-          "maxLines": 3,
-          "showIf": ["ui_hostinfo_server"]
-        },
-        { "type": "blank" },
-        { "type": "action", "label": "Host:", "align": "left", "selectable": false, "showIf": ["ui_hostinfo_host"] },
-        {
-          "type": "action",
-          "labelCvar": "ui_hostinfo_host",
-          "align": "left",
-          "selectable": false,
-          "showIf": ["ui_hostinfo_host"]
-        },
-        { "type": "blank", "showIf": ["ui_hostinfo_host"] },
-        {
-          "type": "action",
-          "label": "Message of the Day:",
-          "align": "left",
-          "selectable": false,
-          "showIf": ["ui_hostinfo_motd"]
-        },
-        {
-          "type": "wrappedtext",
-          "labelCvar": "ui_hostinfo_motd",
-          "align": "left",
-          "maxLines": 6,
-          "showIf": ["ui_hostinfo_motd"]
-        },
-        { "type": "blank" },
-        { "type": "action", "label": "Return", "align": "left", "command": "popmenu" }
-      ]
-    },
-    {
-      "name": "dm_matchinfo",
-      "title": "Match Info",
-      "style": { "compact": true, "transparent": true },
-      "items": [
-        {
-          "type": "action",
-          "labelCvar": "ui_matchinfo_gametype",
-          "align": "left",
-          "selectable": false,
-          "showIf": ["ui_matchinfo_gametype"]
-        },
-        {
-          "type": "action",
-          "labelCvar": "ui_matchinfo_map",
-          "align": "left",
-          "selectable": false,
-          "showIf": ["ui_matchinfo_map"]
-        },
-        {
-          "type": "action",
-          "labelCvar": "ui_matchinfo_mapname",
-          "align": "left",
-          "selectable": false,
-          "showIf": ["ui_matchinfo_mapname"]
-        },
-        {
-          "type": "action",
-          "labelCvar": "ui_matchinfo_author1",
-          "align": "left",
-          "selectable": false,
-          "showIf": ["ui_matchinfo_author1"]
-        },
-        {
-          "type": "action",
-          "labelCvar": "ui_matchinfo_author2",
-          "align": "left",
-          "selectable": false,
-          "showIf": ["ui_matchinfo_author2"]
-        },
-        {
-          "type": "action",
-          "labelCvar": "ui_matchinfo_ruleset",
-          "align": "left",
-          "selectable": false,
-          "showIf": ["ui_matchinfo_ruleset"]
-        },
-        {
-          "type": "action",
-          "labelCvar": "ui_matchinfo_scorelimit",
-          "align": "left",
-          "selectable": false,
-          "showIf": ["ui_matchinfo_scorelimit"]
-        },
-        {
-          "type": "action",
-          "labelCvar": "ui_matchinfo_timelimit",
-          "align": "left",
-          "selectable": false,
-          "showIf": ["ui_matchinfo_timelimit"]
-        },
-        { "type": "blank" },
-        { "type": "action", "label": "Return", "align": "left", "command": "popmenu" }
       ]
     },
     {
@@ -1559,6 +1193,53 @@
       ]
     },
     {
+      "name": "mymap_main",
+      "style": { "compact": true, "transparent": true },
+      "items": [
+        { "type": "action", "label": "MyMap", "align": "center", "selectable": false },
+        { "type": "blank" },
+        {
+          "type": "wrappedtext",
+          "labelCvar": "ui_mymap_status",
+          "align": "left",
+          "maxLines": 4,
+          "showIf": ["ui_mymap_status"]
+        },
+        { "type": "blank", "showIf": ["ui_mymap_status"] },
+        {
+          "type": "action",
+          "labelCvar": "ui_mymap_flags_summary",
+          "align": "left",
+          "selectable": false,
+          "showIf": ["ui_mymap_flags_summary"]
+        },
+        { "type": "blank" },
+        {
+          "type": "action",
+          "label": "Select Map",
+          "align": "left",
+          "command": "worr_mymap_select",
+          "enableIf": ["ui_mymap_can_select=1"]
+        },
+        {
+          "type": "action",
+          "label": "Flags...",
+          "align": "left",
+          "command": "worr_mymap_flags",
+          "enableIf": ["ui_mymap_can_flags=1"]
+        },
+        {
+          "type": "action",
+          "label": "Clear Flags",
+          "align": "left",
+          "command": "worr_mymap_clear",
+          "enableIf": ["ui_mymap_has_flags=1"]
+        },
+        { "type": "blank" },
+        { "type": "action", "label": "Back", "align": "left", "command": "popmenu" }
+      ]
+    },
+    {
       "name": "mymap_flags",
       "style": { "compact": true, "transparent": true },
       "items": [
@@ -1588,6 +1269,18 @@
         { "type": "blank" },
         { "type": "action", "label": "YES", "align": "center", "command": "worr_forfeit_yes" },
         { "type": "action", "label": "NO", "align": "center", "command": "popmenu" }
+      ]
+    },
+    {
+      "name": "leave_match_confirm",
+      "style": { "compact": true, "transparent": true },
+      "items": [
+        { "type": "action", "label": "$m_confirm_leave_match", "align": "center", "selectable": false },
+        { "type": "blank" },
+        { "type": "action", "label": "$m_confirm_leave_match_prompt", "align": "center", "selectable": false },
+        { "type": "blank" },
+        { "type": "action", "label": "$m_yes", "align": "center", "command": "forcemenuoff; disconnect" },
+        { "type": "action", "label": "$m_no", "align": "center", "command": "popmenu" }
       ]
     },
     {

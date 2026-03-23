@@ -2990,3 +2990,7 @@ e_auto_713f13864237 = "UI PushMenu: MAX MENU DEPTH overschreden\\n"
 e_auto_e13d46568ae9 = "Gebruik: %s <menu>\\n"
 e_auto_ad494789521e = "Menu bestaat niet: %s\\n"
 
+m_settings = "Instellingen"
+m_leave_match = "Wedstrijd verlaten"
+m_confirm_leave_match = "Wedstrijd verlaten bevestigen"
+m_confirm_leave_match_prompt = "Weet je zeker dat je de wedstrijd wilt verlaten?"

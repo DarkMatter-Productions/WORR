@@ -45,6 +45,13 @@ Create a repository-grounded SWOT and convert it into actionable, task-based pro
   - Implementation log: `docs-dev/nightly-run-23153597827-error-warning-recovery-2026-03-16.md`.
   - Recovered additional warning noise from run `23156641291` by removing `entity_iterable_t` constructor template-id syntax in `sgame` and extending quiet fallback warning suppression for third-party fallback builds.
   - Implementation log: `docs-dev/nightly-run-23156641291-recovery-2026-03-16.md`.
+- `FR-03-T08` In Progress:
+  - Tightened multiplayer menu routing so the match menu is only selected during an active multiplayer game session, instead of any `cl.maxclients > 1` state.
+  - Split the session-only menu definitions (`dm_welcome`, `dm_join`, `join`, `dm_hostinfo`, `dm_matchinfo`) out of `src/game/cgame/ui/worr.json` into a dedicated embedded `src/game/cgame/ui/worr-multiplayer.json` asset loaded by cgame UI init.
+  - Added a cgame-side session helper exposed through the UI access boundary so the menu module no longer depends on broad engine-state assumptions for multiplayer routing.
+  - Implementation log: `docs-dev/match-menu-session-split-2026-03-23.md`.
+  - Converted the multiplayer `MyMap` entry into a dedicated submenu flow with explicit availability/status messaging, preserved flag state across navigation, and successful queue cleanup/close behavior.
+  - Implementation log: `docs-dev/match-menu-mymap-submenu-2026-03-23.md`.
 - `FR-02-T07` Done:
   - SDL video backend now creates Vulkan-capable windows for `r_renderer vulkan`/`rtx` instead of always forcing an OpenGL context.
   - Native Vulkan renderer now uses SDL Vulkan instance/surface helpers and enables portability enumeration/subset support required by MoltenVK-backed macOS devices.
@@ -307,6 +314,8 @@ Tasks:
   Dependency: `FR-03-T06`. Priority: P1.
 - [x] `FR-03-T09` Complete multi-monitor settings hierarchy and monitor targeting behavior for fullscreen modes.
   Dependency: `FR-03-T06`. Priority: P1.
+- [x] `FR-03-T10` Align the fixed-layout main menu framing with Quake II rerelease reference captures.
+  Dependency: none. Priority: P1.
 
 ## Epic FR-04: Bots and Match Experience
 Objective: evolve bot and match systems from structural presence to reliable gameplay experience.

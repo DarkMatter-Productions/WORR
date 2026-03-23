@@ -2990,3 +2990,7 @@ e_auto_713f13864237 = "UI_PushMenu : MAX_MENU_DEPTH dépassé\\n"
 e_auto_e13d46568ae9 = "Utilisation : %s <menu>\\n"
 e_auto_ad494789521e = "Aucun menu de ce type : %s\\n"
 
+m_settings = "Paramètres"
+m_leave_match = "Quitter le match"
+m_confirm_leave_match = "Confirmer quitter le match"
+m_confirm_leave_match_prompt = "Êtes-vous sûr de vouloir quitter le match ?"

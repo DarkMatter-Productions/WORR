@@ -2990,3 +2990,7 @@ e_auto_713f13864237 = "UI_PushMenu: MAX_MENU_DEPTH superado\\n"
 e_auto_e13d46568ae9 = "Uso: %s <menú>\\n"
 e_auto_ad494789521e = "No existe tal menú: %s\\n"
 
+m_settings = "Ajustes"
+m_leave_match = "Abandonar partida"
+m_confirm_leave_match = "Confirmar abandonar la partida"
+m_confirm_leave_match_prompt = "¿Está seguro de que desea abandonar la partida?"

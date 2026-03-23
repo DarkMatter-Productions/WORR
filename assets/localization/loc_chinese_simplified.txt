@@ -2990,3 +2990,7 @@ e_auto_713f13864237 = "UI PushMenu: MAX MENU DEPTH 超过\\n"
 e_auto_e13d46568ae9 = "用法:%s<菜单>"
 e_auto_ad494789521e = "无此菜单 : %s\\n"
 
+m_settings = "设置"
+m_leave_match = "离开比赛"
+m_confirm_leave_match = "确认离开比赛"
+m_confirm_leave_match_prompt = "您确定要离开比赛吗？"

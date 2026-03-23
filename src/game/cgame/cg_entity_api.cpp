@@ -107,6 +107,18 @@ void CG_Entity_SetImport(const cgame_entity_import_t *import)
     CG_Entity_InitCvars();
 }
 
+bool CG_IsActiveMultiplayerSession(void)
+{
+    if (!cgei)
+        return false;
+
+    return cl.frame.valid &&
+           cls.netchan.protocol > 0 &&
+           !cls.demo.playback &&
+           cl.servercount > 0 &&
+           cl.maxclients > 1;
+}
+
 void CL_InitEffects(void);
 void CL_ClearEffects(void);
 void CL_InitTEnts(void);

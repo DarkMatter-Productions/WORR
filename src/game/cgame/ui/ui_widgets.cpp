@@ -458,7 +458,14 @@ void Widget::Layout(int x, int y, int width, int lineHeight)
 const char *Widget::LabelText() const
 {
     if (!labelCvar_) {
-        return label_.c_str();
+        if (label_.empty())
+            return "";
+
+        labelCache_ = DecodeEscapes(label_.c_str());
+        const char *localized = UI_Localize(labelCache_.c_str());
+        if (localized)
+            labelCache_ = localized;
+        return labelCache_.c_str();
     }
 
     const char *raw = labelCvar_->string ? labelCvar_->string : "";
@@ -556,7 +563,8 @@ void BitmapWidget::Layout(int x, int y, int width, int lineHeight)
         } else {
             rect_.x = fixedX_;
         }
-        rect_.y = fixedY_;
+        rect_.x += positionOffsetX_;
+        rect_.y = fixedY_ + positionOffsetY_;
     } else {
         rect_.x = x - imageWidth_ / 2;
         rect_.y = y;
@@ -3432,10 +3440,13 @@ HeadingWidget::HeadingWidget()
 
 int HeadingWidget::Height(int lineHeight) const
 {
-    int font_size = CONCHAR_HEIGHT + 2;
+    int font_size = textSizeSet_ ? textSize_ : (CONCHAR_HEIGHT + 2);
     int text_h = max(1, UI_FontLineHeightSized(font_size));
-    int padding = max(2, CONCHAR_HEIGHT / 2);
-    int height = text_h + padding;
+    int top_pad = max(1, CONCHAR_HEIGHT / 4);
+    int line_gap = max(2, font_size / 6);
+    int line_thickness = max(1, font_size / 8);
+    int bottom_pad = max(1, CONCHAR_HEIGHT / 4);
+    int height = top_pad + text_h + line_gap + line_thickness + bottom_pad;
     return max(lineHeight, height);
 }
 
@@ -3446,23 +3457,26 @@ void HeadingWidget::Draw(bool focused) const
     if (!label || !*label)
         return;
 
-    int font_size = CONCHAR_HEIGHT + 2;
-    int text_h = max(1, UI_FontLineHeightSized(font_size));
-    int text_y = rect_.y + (rect_.height - text_h) / 2;
-    color_t color = uis.color.active;
+    int font_size = textSizeSet_ ? textSize_ : (CONCHAR_HEIGHT + 2);
+    int top_pad = max(1, CONCHAR_HEIGHT / 4);
+    int line_thickness = max(1, font_size / 8);
+    int bottom_pad = max(1, CONCHAR_HEIGHT / 4);
+    int text_y = rect_.y + top_pad;
+    color_t color = textColorSet_ ? textColor_ : uis.color.active;
+    color_t shadow = COLOR_RGBA(0, 0, 0, 160);
 
-    UI_FontDrawStringSized(rect_.x + 1, text_y, UI_LEFT, strlen(label), label,
-                           COLOR_SETA_U8(color, 220), font_size);
+    UI_FontDrawStringSized(rect_.x + 1, text_y + 1, UI_LEFT, strlen(label), label,
+                           shadow, font_size);
     UI_FontDrawStringSized(rect_.x, text_y, UI_LEFT, strlen(label), label,
                            COLOR_SETA_U8(color, 255), font_size);
 
-    int text_w = UI_FontMeasureStringSized(0, strlen(label), label, nullptr, font_size);
-    int line_x = rect_.x + text_w + CONCHAR_WIDTH;
-    int line_y = text_y + text_h / 2;
-    int line_w = rect_.width - (line_x - rect_.x);
+    int line_x = rect_.x;
+    int line_y = rect_.y + rect_.height - bottom_pad - line_thickness;
+    int line_w = rect_.width;
     if (line_w > 0) {
-        color_t line = COLOR_SETA_U8(uis.color.selection, 180);
-        R_DrawFill32(line_x, line_y, line_w, 2, line);
+        color_t line = textColorSet_ ? COLOR_SETA_U8(color, 180)
+                                     : COLOR_SETA_U8(uis.color.selection, 180);
+        R_DrawFill32(line_x, line_y, line_w, line_thickness, line);
     }
 }
 

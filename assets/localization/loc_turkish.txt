@@ -2990,3 +2990,7 @@ e_auto_713f13864237 = "UI PushMenu: MAX MENU DEPTH aştı"
 e_auto_e13d46568ae9 = "Kullanım: %s <menu>\\n"
 e_auto_ad494789521e = "Böyle bir menü yok: %s\\nn"
 
+m_settings = "Ayarlar"
+m_leave_match = "Maçı terk et"
+m_confirm_leave_match = "Maçı terk etmeyi onayla"
+m_confirm_leave_match_prompt = "Bu maçı terk etmek istediğinizden emin misiniz?"

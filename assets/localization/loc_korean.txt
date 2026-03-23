@@ -2990,3 +2990,7 @@ e_auto_713f13864237 = "UI PushMenu: MAX MENU DEPTH는 \\n을 초과했습니다"
 e_auto_e13d46568ae9 = "용법: %s <menu>\\n"
 e_auto_ad494789521e = "그런 메뉴 없음: %s\\n"
 
+m_settings = "설정"
+m_leave_match = "경기 나가기"
+m_confirm_leave_match = "매치 나가기 확인"
+m_confirm_leave_match_prompt = "정말로 경기를 나가시겠습니까?"

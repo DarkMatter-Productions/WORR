@@ -2990,3 +2990,7 @@ e_auto_713f13864237 = "UI_PushMenu: превышено значение MAX_MENU
 e_auto_e13d46568ae9 = "Использование: %s <меню>\\n"
 e_auto_ad494789521e = "Нет такого меню: %s\\n"
 
+m_settings = "Настройки"
+m_leave_match = "Покинуть матч"
+m_confirm_leave_match = "Подтвердить выход из матча"
+m_confirm_leave_match_prompt = "Вы действительно хотите покинуть матч?"

@@ -2990,3 +2990,7 @@ e_auto_713f13864237 = "UI _ PushMenu: MAX _ MENU _ DEPTH překročen\\ n"
 e_auto_e13d46568ae9 = "Použití: %s < menu >\\ n"
 e_auto_ad494789521e = "Žádné takové menu: %s\\ n"
 
+m_settings = "Nastavení"
+m_leave_match = "Opustit zápas"
+m_confirm_leave_match = "Potvrdit opuštění zápasu"
+m_confirm_leave_match_prompt = "Opravdu chcete opustit zápas?"

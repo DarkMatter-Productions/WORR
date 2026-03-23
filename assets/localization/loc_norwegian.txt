@@ -2990,3 +2990,7 @@ e_auto_713f13864237 = "UI PushMenu: MAX MENU DEPTH overskredet\\n"
 e_auto_e13d46568ae9 = "Bruk: %s <menu>\\n"
 e_auto_ad494789521e = "Ingen slik meny: %s\\n"
 
+m_settings = "Innstillinger"
+m_leave_match = "Forlat kamp"
+m_confirm_leave_match = "Bekreft forlatelse av kamp"
+m_confirm_leave_match_prompt = "Er du sikker på at du vil forlate kampen?"

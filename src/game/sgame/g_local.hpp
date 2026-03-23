@@ -6723,6 +6723,8 @@ void OpenJoinMenu(gentity_t *ent);
 void OpenAdminSettingsMenu(gentity_t *ent);
 void OpenAdminCommandsMenu(gentity_t *ent);
 void OpenMyMapMenu(gentity_t *ent);
+void OpenMyMapSelectMenu(gentity_t *ent);
+void RefreshMyMapMenu(gentity_t *ent);
 void OpenMyMapFlagsMenu(gentity_t *ent);
 void RefreshMyMapFlagsMenu(gentity_t *ent);
 void OpenVoteMenu(gentity_t *ent);
