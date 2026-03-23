@@ -87,6 +87,7 @@ typedef struct {
 extern cvar_t       *r_display;
 extern cvar_t       *r_geometry;
 extern cvar_t       *r_modelist;
+extern cvar_t       *r_monitor_mode;
 extern cvar_t       *r_fullscreen;
 extern cvar_t       *_r_fullscreen;
 extern cvar_t       *r_fullscreen_exclusive;

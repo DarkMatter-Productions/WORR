@@ -33,6 +33,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 cvar_t      *r_display;
 cvar_t      *r_geometry;
 cvar_t      *r_modelist;
+cvar_t      *r_monitor_mode;
 cvar_t      *r_fullscreen;
 cvar_t      *_r_fullscreen;
 cvar_t      *r_fullscreen_exclusive;
@@ -40,6 +41,7 @@ static cvar_t *r_driver;
 static cvar_t *vid_display_legacy;
 static cvar_t *vid_geometry_legacy;
 static cvar_t *vid_modelist_legacy;
+static cvar_t *vid_monitor_mode_legacy;
 static cvar_t *vid_fullscreen_legacy;
 static cvar_t *_vid_fullscreen_legacy;
 static cvar_t *vid_fullscreen_exclusive_legacy;
@@ -87,6 +89,7 @@ static void r_geometry_changed(cvar_t *self);
 static void r_fullscreen_changed(cvar_t *self);
 static void r_fullscreen_exclusive_changed(cvar_t *self);
 static void r_modelist_changed(cvar_t *self);
+static void r_monitor_mode_changed(cvar_t *self);
 static void r_display_changed(cvar_t *self);
 
 typedef struct {
@@ -101,6 +104,7 @@ static vid_cvar_alias_t vid_cvar_aliases[] = {
     { &r_fullscreen, &vid_fullscreen_legacy, r_fullscreen_changed },
     { &_r_fullscreen, &_vid_fullscreen_legacy, NULL },
     { &r_fullscreen_exclusive, &vid_fullscreen_exclusive_legacy, r_fullscreen_exclusive_changed },
+    { &r_monitor_mode, &vid_monitor_mode_legacy, r_monitor_mode_changed },
     { &r_display, &vid_display_legacy, r_display_changed },
     { &r_geometry, &vid_geometry_legacy, r_geometry_changed },
     { &r_modelist, &vid_modelist_legacy, r_modelist_changed },
@@ -913,36 +917,80 @@ void CL_RunRenderer(void)
     }
 }
 
+/*
+=============
+r_geometry_changed
+=============
+*/
 static void r_geometry_changed(cvar_t *self)
 {
-    mode_changed |= MODE_GEOMETRY;
+	(void)self;
+	mode_changed |= MODE_GEOMETRY;
 }
 
+/*
+=============
+r_fullscreen_changed
+=============
+*/
 static void r_fullscreen_changed(cvar_t *self)
 {
-    mode_changed |= MODE_FULLSCREEN;
+	(void)self;
+	mode_changed |= MODE_FULLSCREEN;
 }
 
+/*
+=============
+r_fullscreen_exclusive_changed
+=============
+*/
 static void r_fullscreen_exclusive_changed(cvar_t *self)
 {
-    mode_changed |= MODE_FULLSCREEN;
+	(void)self;
+	mode_changed |= MODE_FULLSCREEN;
 }
 
+/*
+=============
+r_modelist_changed
+=============
+*/
 static void r_modelist_changed(cvar_t *self)
 {
-    mode_changed |= MODE_MODELIST;
+	(void)self;
+	mode_changed |= MODE_MODELIST;
 }
 
+/*
+=============
+r_monitor_mode_changed
+
+Refreshes the display-dependent modelist and reapplies fullscreen placement.
+=============
+*/
+static void r_monitor_mode_changed(cvar_t *self)
+{
+	(void)self;
+	if (!vid || !vid->get_mode_list)
+		return;
+
+	char *modelist = vid->get_mode_list();
+	VID_SetModeList(modelist);
+	Z_Free(modelist);
+
+	mode_changed |= MODE_FULLSCREEN;
+}
+
+/*
+=============
+r_display_changed
+
+Refreshes the display-dependent modelist and reapplies fullscreen placement.
+=============
+*/
 static void r_display_changed(cvar_t *self)
 {
-    if (!vid || !vid->get_mode_list)
-        return;
-
-    char *modelist = vid->get_mode_list();
-    VID_SetModeList(modelist);
-    Z_Free(modelist);
-
-    mode_changed |= MODE_FULLSCREEN;
+    r_monitor_mode_changed(self);
 }
 
 static void vid_driver_g(genctx_t *ctx)
@@ -995,6 +1043,9 @@ void CL_InitRenderer(void)
     r_fullscreen_exclusive = Cvar_Get("r_fullscreen_exclusive", "1", CVAR_ARCHIVE);
     vid_fullscreen_exclusive_legacy = Cvar_Get("vid_fullscreen_exclusive", r_fullscreen_exclusive->string,
                                                CVAR_ARCHIVE | CVAR_NOARCHIVE);
+    r_monitor_mode = Cvar_Get("r_monitor_mode", "0", CVAR_ARCHIVE);
+    vid_monitor_mode_legacy = Cvar_Get("vid_monitor_mode", r_monitor_mode->string,
+                                       CVAR_ARCHIVE | CVAR_NOARCHIVE);
     r_display = Cvar_Get("r_display", "0", CVAR_ARCHIVE);
     vid_display_legacy = Cvar_Get("vid_display", r_display->string, CVAR_ARCHIVE | CVAR_NOARCHIVE);
     r_geometry = Cvar_Get("r_geometry", VID_GEOMETRY, CVAR_ARCHIVE);
@@ -1003,6 +1054,7 @@ void CL_InitRenderer(void)
     r_geometry->changed = r_geometry_changed;
     r_fullscreen->changed = r_fullscreen_changed;
     r_fullscreen_exclusive->changed = r_fullscreen_exclusive_changed;
+    r_monitor_mode->changed = r_monitor_mode_changed;
     r_display->changed = r_display_changed;
 
     vid_cvar_alias_register();
@@ -1102,6 +1154,7 @@ void CL_ShutdownRenderer(void)
     r_fullscreen->changed = NULL;
     r_fullscreen_exclusive->changed = NULL;
     r_modelist->changed = NULL;
+    r_monitor_mode->changed = NULL;
     r_display->changed = NULL;
 
     R_Shutdown(true);

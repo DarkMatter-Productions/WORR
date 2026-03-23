@@ -70,8 +70,7 @@ begin video
     //title "Video Setup"
     banner m_banner_video
     values "video mode" r_fullscreen windowed $$r_modelist
-    pairs "fullscreen type" r_fullscreen_exclusive exclusive 1 borderless 0
-    field --width 18 --status "0 = auto, or enter display name" "display" r_display
+    action --align "multi-monitor settings..." pushmenu multimonitor
     toggle "vertical sync" gl_swapinterval
     pairs "anti-aliasing" gl_multisamples no 0 "2x MSAA" 2 "4x MSAA" 4 "8x MSAA" 8
     range "texture gamma" r_gamma 0.3 1.3
@@ -90,6 +89,13 @@ begin video
     values "rendering backend" gl_shaders legacy shaders
 end
 
+begin multimonitor
+    title "Multi-Monitor Settings"
+    pairs "monitor mode" r_monitor_mode primary 0 selected 1 "span all" 2
+    pairs "fullscreen type" r_fullscreen_exclusive exclusive 1 borderless 0
+    field --width 18 --status "Used when monitor mode = selected" "display" r_display
+end
+
 begin options
     //title "Options"
     banner m_banner_options
@@ -98,6 +104,7 @@ begin options
     action "key bindings" pushmenu keys
     action "weapon bindings" pushmenu weapons
     action "video setup" pushmenu video
+    action "multi-monitor" pushmenu multimonitor
     action "sound setup" pushmenu sound
     action "effects setup" pushmenu effects
     action "screen setup" pushmenu screen
