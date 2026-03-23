@@ -41,7 +41,7 @@ extern "C" {
 #define COM_POSTEXEC_CFG    "postexec.cfg"
 #define COM_POSTINIT_CFG    "postinit.cfg"
 
-#define COM_CONFIG_CFG      "worrconfig.cfg"
+#define COM_CONFIG_CFG      "config.cfg"
 
 // FIXME: rename these
 #define COM_HISTORYFILE_NAME    ".conhistory"

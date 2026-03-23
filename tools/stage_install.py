@@ -8,19 +8,35 @@ import shutil
 
 
 RUNTIME_EXTENSIONS = {"", ".exe", ".dll", ".pdb", ".so", ".dylib"}
+RUNTIME_PATTERNS = ('worr_*', 'worr*.exe', 'worr*.dll', 'worr*.pdb', 'worr*.so', 'worr*.dylib')
+GENERATED_BASE_GAME_PATTERNS = ('cgame_*', 'sgame_*', 'shader_vkpt', 'pak0.pkz')
 
 
 def is_runtime_file(path: pathlib.Path) -> bool:
     return path.is_file() and path.suffix.lower() in RUNTIME_EXTENSIONS
 
 
+def remove_path(path: pathlib.Path) -> None:
+    if not path.exists() and not path.is_symlink():
+        return
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    else:
+        path.unlink()
+
+
+def clear_globbed_paths(root: pathlib.Path, patterns: tuple[str, ...]) -> None:
+    for pattern in patterns:
+        for path in sorted(root.glob(pattern)):
+            remove_path(path)
+
+
 def copy_runtime_files(build_dir: pathlib.Path, install_dir: pathlib.Path) -> int:
     copied = 0
     copied_paths: set[pathlib.Path] = set()
 
-    runtime_patterns = ('worr_*', 'worr*.exe', 'worr*.dll', 'worr*.pdb', 'worr*.so', 'worr*.dylib')
-
-    for pattern in runtime_patterns:
+    clear_globbed_paths(install_dir, RUNTIME_PATTERNS)
+    for pattern in RUNTIME_PATTERNS:
         for path in sorted(build_dir.glob(pattern)):
             if not is_runtime_file(path) or path in copied_paths:
                 continue
@@ -35,7 +51,9 @@ def copy_base_game_tree(build_dir: pathlib.Path, install_dir: pathlib.Path, base
     target = install_dir / base_game
     if not source.is_dir():
         raise SystemExit(f'Expected staged game directory not found: {source}')
-    shutil.copytree(source, target)
+    target.mkdir(parents=True, exist_ok=True)
+    clear_globbed_paths(target, GENERATED_BASE_GAME_PATTERNS)
+    shutil.copytree(source, target, dirs_exist_ok=True)
 
 
 def main() -> int:
@@ -52,8 +70,6 @@ def main() -> int:
     if not build_dir.is_dir():
         raise SystemExit(f'Build directory not found: {build_dir}')
 
-    if install_dir.exists():
-        shutil.rmtree(install_dir)
     install_dir.mkdir(parents=True, exist_ok=True)
 
     copied_runtime = copy_runtime_files(build_dir, install_dir)

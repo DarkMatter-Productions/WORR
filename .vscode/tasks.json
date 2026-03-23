@@ -7,7 +7,7 @@
             "command": "cmd",
             "args": [
                 "/c",
-                "if exist builddir-win\\meson-private\\coredata.dat (meson setup --reconfigure builddir-win -Dbase-game=basew -Ddefault-game=basew) else (meson setup builddir-win -Dbase-game=basew -Ddefault-game=basew)"
+                "if exist builddir-win\\meson-private\\coredata.dat (tools\\meson_setup.cmd setup --native-file meson.native.ini --reconfigure builddir-win -Dbase-game=basew -Ddefault-game=basew) else (tools\\meson_setup.cmd setup --native-file meson.native.ini builddir-win -Dbase-game=basew -Ddefault-game=basew)"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"

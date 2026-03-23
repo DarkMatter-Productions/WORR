@@ -28,6 +28,9 @@ This guide is the quick path to running WORR with your own Quake II data.
    python3 tools/refresh_install.py --build-dir builddir --install-dir .install --base-game basew
    ```
 
+   Existing local Quake II data already placed in `.install/basew/` is
+   preserved by refresh; you do not need to recopy `pak*.pak` after each build.
+
 4. Launch from `.install/`:
    - Windows: `.install/worr_x86_64.exe`
    - Linux/macOS: `.install/worr_x86_64`

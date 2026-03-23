@@ -238,6 +238,7 @@ typedef struct {
 // these point to user home directory
 char                fs_gamedir[MAX_OSPATH];
 //static char       fs_basedir[MAX_OSPATH];
+static const char   rerelease_default_gamedir[] = "baseq2";
 
 static searchpath_t *fs_searchpaths;
 static searchpath_t *fs_base_searchpaths;
@@ -2858,6 +2859,22 @@ static void add_game_dir(unsigned mode, const char *base, const char *game, bool
     Z_Free(list.files);
 }
 
+// For rerelease, add the canonical Quake II directory name as an additional
+// fallback for base game assets without de-prioritizing the configured BASEGAME.
+static void add_game_dir_with_rerelease_base(unsigned mode, const char *base, const char *game, bool skip_if_not_exist)
+{
+    if (!com_rerelease || com_rerelease->integer != RERELEASE_MODE_YES ||
+        !Q_stricmp(game, rerelease_default_gamedir)) {
+        add_game_dir(mode, base, game, skip_if_not_exist);
+        return;
+    }
+
+    // add rerelease canonical fallback first so the configured game remains
+    // higher priority when both directories are present.
+    add_game_dir(mode, base, rerelease_default_gamedir, skip_if_not_exist);
+    add_game_dir(mode, base, game, skip_if_not_exist);
+}
+
 /*
 =================
 FS_NextPath
@@ -3797,16 +3814,16 @@ static void setup_base_paths(void)
     // Search paths are prepended, so add in reverse priority order.
     if (*home) {
         add_game_kpf(FS_PATH_BASE | FS_DIR_HOME, home);
-        add_game_dir(FS_PATH_BASE | FS_DIR_HOME, home, BASEGAME, false);
+        add_game_dir_with_rerelease_base(FS_PATH_BASE | FS_DIR_HOME, home, BASEGAME, false);
     }
 
     if (*detected) {
         add_game_kpf(FS_PATH_BASE | FS_DIR_BASE, detected);
-        add_game_dir(FS_PATH_BASE | FS_DIR_BASE, detected, BASEGAME, true);
+        add_game_dir_with_rerelease_base(FS_PATH_BASE | FS_DIR_BASE, detected, BASEGAME, true);
     }
 
     add_game_kpf(FS_PATH_BASE | FS_DIR_BASE, base);
-    add_game_dir(FS_PATH_BASE | FS_DIR_BASE, base, BASEGAME, *home);
+    add_game_dir_with_rerelease_base(FS_PATH_BASE | FS_DIR_BASE, base, BASEGAME, *home);
 
     fs_base_searchpaths = fs_searchpaths;
 }

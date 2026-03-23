@@ -80,6 +80,8 @@ typedef struct {
 static doppler_state_t   s_doppler_state[MAX_EDICTS];
 static vec3_t            s_doppler_listener_velocity;
 
+static float AL_GetLoopSoundPhaseOffsetSeconds(const channel_t *ch, const sfxcache_t *sc);
+
 // reverb stuff
 typedef struct {
     char    material[16];
