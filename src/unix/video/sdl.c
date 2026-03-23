@@ -45,6 +45,7 @@ static struct {
     int             win_width;
     int             win_height;
 
+    bool            borderless_fullscreen;
     bool            wayland;
     SDL_WindowFlags focus_hack;
 } sdl;
@@ -188,6 +189,11 @@ VIDEO
 ===============================================================================
 */
 
+/*
+=============
+mode_changed
+=============
+*/
 static void mode_changed(void)
 {
     if (!SDL_GetWindowSize(sdl.window, &sdl.win_width, &sdl.win_height)) {
@@ -201,7 +207,7 @@ static void mode_changed(void)
     }
 
     SDL_WindowFlags flags = SDL_GetWindowFlags(sdl.window);
-    if (flags & SDL_WINDOW_FULLSCREEN)
+    if ((flags & SDL_WINDOW_FULLSCREEN) || sdl.borderless_fullscreen)
         sdl.flags |= QVF_FULLSCREEN;
     else
         sdl.flags &= ~QVF_FULLSCREEN;
@@ -210,6 +216,26 @@ static void mode_changed(void)
     SCR_ModeChanged();
 }
 
+/*
+=============
+sdl_get_monitor_mode
+=============
+*/
+static int sdl_get_monitor_mode(void)
+{
+	if (!r_monitor_mode)
+		return 0;
+
+	return Q_clip(r_monitor_mode->integer, 0, 2);
+}
+
+/*
+=============
+sdl_display_from_cvar
+
+Resolves the selected display from r_display when monitor mode uses manual selection.
+=============
+*/
 static SDL_DisplayID sdl_display_from_cvar(bool *invalid)
 {
     SDL_DisplayID display_id = 0;
@@ -260,67 +286,176 @@ static SDL_DisplayID sdl_display_from_cvar(bool *invalid)
     return display_id;
 }
 
-static SDL_DisplayID sdl_select_display_id(void)
+/*
+=============
+sdl_monitor_display_id
+
+Chooses the primary or user-selected display for fullscreen placement.
+=============
+*/
+static SDL_DisplayID sdl_monitor_display_id(void)
 {
-    bool invalid = false;
-    SDL_DisplayID display_id = sdl_display_from_cvar(&invalid);
+	bool invalid = false;
+	SDL_DisplayID display_id;
 
-    if (display_id)
-        return display_id;
+	if (sdl_get_monitor_mode() != 1)
+		return SDL_GetPrimaryDisplay();
 
-    if (invalid) {
-        Com_WPrintf("Invalid r_display '%s', using primary display.\n",
-                    r_display ? r_display->string : "");
-        display_id = SDL_GetPrimaryDisplay();
-        if (!display_id && sdl.window)
-            display_id = SDL_GetDisplayForWindow(sdl.window);
-        return display_id;
-    }
+	display_id = sdl_display_from_cvar(&invalid);
 
-    display_id = SDL_GetDisplayForWindow(sdl.window);
-    if (!display_id)
-        display_id = SDL_GetPrimaryDisplay();
-    return display_id;
+	if (display_id)
+		return display_id;
+
+	if (invalid) {
+		Com_WPrintf("Invalid r_display '%s', using primary display.\n",
+					r_display ? r_display->string : "");
+		return SDL_GetPrimaryDisplay();
+	}
+
+	return SDL_GetPrimaryDisplay();
 }
 
+/*
+=============
+sdl_get_display_bounds
+=============
+*/
+static bool sdl_get_display_bounds(SDL_DisplayID display_id, SDL_Rect *bounds)
+{
+	if (!display_id || !bounds)
+		return false;
+
+	return SDL_GetDisplayBounds(display_id, bounds);
+}
+
+/*
+=============
+sdl_get_span_bounds
+
+Builds the virtual desktop bounds across every connected display.
+=============
+*/
+static bool sdl_get_span_bounds(SDL_Rect *bounds)
+{
+	SDL_DisplayID *displays;
+	SDL_Rect rect;
+	int num_displays;
+	bool have_bounds = false;
+
+	if (!bounds)
+		return false;
+
+	displays = SDL_GetDisplays(&num_displays);
+	if (!displays || num_displays < 1) {
+		SDL_free(displays);
+		return false;
+	}
+
+	for (int i = 0; i < num_displays; i++) {
+		if (!sdl_get_display_bounds(displays[i], &rect))
+			continue;
+
+		if (!have_bounds) {
+			*bounds = rect;
+			have_bounds = true;
+			continue;
+		}
+
+		int right = max(bounds->x + bounds->w, rect.x + rect.w);
+		int bottom = max(bounds->y + bounds->h, rect.y + rect.h);
+		bounds->x = min(bounds->x, rect.x);
+		bounds->y = min(bounds->y, rect.y);
+		bounds->w = right - bounds->x;
+		bounds->h = bottom - bounds->y;
+	}
+
+	SDL_free(displays);
+	return have_bounds;
+}
+
+/*
+=============
+sdl_apply_borderless_fullscreen
+
+Applies monitor-sized borderless fullscreen for selected/primary/span layouts.
+=============
+*/
+static void sdl_apply_borderless_fullscreen(void)
+{
+	SDL_Rect bounds = { 0 };
+
+	if (sdl_get_monitor_mode() == 2) {
+		if (!sdl_get_span_bounds(&bounds) &&
+			!sdl_get_display_bounds(SDL_GetPrimaryDisplay(), &bounds)) {
+			bounds.w = VIRTUAL_SCREEN_WIDTH;
+			bounds.h = VIRTUAL_SCREEN_HEIGHT;
+		}
+	} else if (!sdl_get_display_bounds(sdl_monitor_display_id(), &bounds) &&
+			   !sdl_get_display_bounds(SDL_GetPrimaryDisplay(), &bounds)) {
+		bounds.w = VIRTUAL_SCREEN_WIDTH;
+		bounds.h = VIRTUAL_SCREEN_HEIGHT;
+	}
+
+	SDL_SetWindowFullscreen(sdl.window, false);
+	SDL_SetWindowFullscreenMode(sdl.window, NULL);
+	SDL_SetWindowBordered(sdl.window, false);
+	SDL_SetWindowPosition(sdl.window, bounds.x, bounds.y);
+	SDL_SetWindowSize(sdl.window, bounds.w, bounds.h);
+	sdl.borderless_fullscreen = true;
+}
+
+/*
+=============
+set_mode
+=============
+*/
 static void set_mode(void)
 {
-    vrect_t rc;
-    int freq;
+	vrect_t rc;
+	int freq;
+	SDL_DisplayID display_id = sdl_monitor_display_id();
 
-    SDL_DisplayID display_id = sdl_select_display_id();
+	if (r_fullscreen->integer) {
+		if (sdl_get_monitor_mode() == 2 || !r_fullscreen_exclusive || !r_fullscreen_exclusive->integer) {
+			sdl_apply_borderless_fullscreen();
+			mode_changed();
+			return;
+		}
 
-    if (r_fullscreen->integer) {
-        if (VID_GetFullscreen(&rc, &freq, NULL)) {
-            SDL_DisplayMode mode = {0};
+		sdl.borderless_fullscreen = false;
+		SDL_SetWindowBordered(sdl.window, true);
+		if (VID_GetFullscreen(&rc, &freq, NULL)) {
+			SDL_DisplayMode mode = {0};
 
-            mode.displayID = display_id;
-            mode.format = SDL_PIXELFORMAT_UNKNOWN;
-            mode.w = rc.width;
-            mode.h = rc.height;
-            mode.refresh_rate = (float)freq;
+			mode.displayID = display_id;
+			mode.format = SDL_PIXELFORMAT_UNKNOWN;
+			mode.w = rc.width;
+			mode.h = rc.height;
+			mode.refresh_rate = (float)freq;
 
-            if (!SDL_SetWindowFullscreenMode(sdl.window, &mode)) {
-                Com_EPrintf("Couldn't set fullscreen mode: %s\n", SDL_GetError());
-                SDL_SetWindowFullscreenMode(sdl.window, NULL);
-            }
-        } else {
-            SDL_SetWindowFullscreenMode(sdl.window, NULL);
-        }
+			if (!SDL_SetWindowFullscreenMode(sdl.window, &mode)) {
+				Com_EPrintf("Couldn't set fullscreen mode: %s\n", SDL_GetError());
+				SDL_SetWindowFullscreenMode(sdl.window, NULL);
+			}
+		} else {
+			SDL_SetWindowFullscreenMode(sdl.window, NULL);
+		}
 
-        if (!SDL_SetWindowFullscreen(sdl.window, true))
-            Com_EPrintf("Couldn't enter fullscreen: %s\n", SDL_GetError());
-    } else {
-        if (VID_GetGeometry(&rc)) {
-            SDL_SetWindowSize(sdl.window, rc.width, rc.height);
-            SDL_SetWindowPosition(sdl.window, rc.x, rc.y);
-        }
-        if (!SDL_SetWindowFullscreen(sdl.window, false))
-            Com_EPrintf("Couldn't leave fullscreen: %s\n", SDL_GetError());
-        SDL_SetWindowFullscreenMode(sdl.window, NULL);
-    }
+		if (!SDL_SetWindowFullscreen(sdl.window, true))
+			Com_EPrintf("Couldn't enter fullscreen: %s\n", SDL_GetError());
+	} else {
+		sdl.borderless_fullscreen = false;
+		SDL_SetWindowBordered(sdl.window, true);
+		if (VID_GetGeometry(&rc)) {
+			SDL_SetWindowSize(sdl.window, rc.width, rc.height);
+			SDL_SetWindowPosition(sdl.window, rc.x, rc.y);
+		}
+		if (!SDL_SetWindowFullscreen(sdl.window, false))
+			Com_EPrintf("Couldn't leave fullscreen: %s\n", SDL_GetError());
+		SDL_SetWindowFullscreenMode(sdl.window, NULL);
+	}
 
-    mode_changed();
+	mode_changed();
 }
 
 static void fatal_shutdown(void)
@@ -366,6 +501,13 @@ static int get_refresh_rate(const SDL_DisplayMode *mode)
     return 0;
 }
 
+/*
+=============
+get_mode_list
+
+Builds the fullscreen modelist for the active monitor policy.
+=============
+*/
 static char *get_mode_list(void)
 {
     SDL_DisplayMode **modes;
@@ -373,7 +515,10 @@ static char *get_mode_list(void)
     char *buf;
     int i, num_modes;
 
-    SDL_DisplayID display_id = sdl_select_display_id();
+    if (sdl_get_monitor_mode() == 2)
+        return Z_CopyString("desktop");
+
+    SDL_DisplayID display_id = sdl_monitor_display_id();
     modes = SDL_GetFullscreenDisplayModes(display_id, &num_modes);
     if (!modes || num_modes < 1)
         return Z_CopyString(VID_MODELIST);
@@ -402,6 +547,11 @@ static char *get_mode_list(void)
     return buf;
 }
 
+/*
+=============
+sdl_refresh_modelist
+=============
+*/
 static void sdl_refresh_modelist(void)
 {
     char *modelist = get_mode_list();
@@ -551,6 +701,11 @@ EVENTS
 ==========================================================================
 */
 
+/*
+=============
+window_event
+=============
+*/
 static void window_event(SDL_WindowEvent *event)
 {
     SDL_WindowFlags flags = SDL_GetWindowFlags(sdl.window);
@@ -593,7 +748,7 @@ static void window_event(SDL_WindowEvent *event)
         break;
 
     case SDL_EVENT_WINDOW_MOVED:
-        if (!(flags & SDL_WINDOW_FULLSCREEN)) {
+        if (!(flags & SDL_WINDOW_FULLSCREEN) && !sdl.borderless_fullscreen) {
             SDL_GetWindowSize(sdl.window, &rc.width, &rc.height);
             rc.x = event->data1;
             rc.y = event->data2;
@@ -601,7 +756,7 @@ static void window_event(SDL_WindowEvent *event)
         }
         break;
     case SDL_EVENT_WINDOW_DISPLAY_CHANGED:
-        if (!(flags & SDL_WINDOW_FULLSCREEN)) {
+        if (!(flags & SDL_WINDOW_FULLSCREEN) && !sdl.borderless_fullscreen) {
             SDL_GetWindowPosition(sdl.window, &rc.x, &rc.y);
             SDL_GetWindowSize(sdl.window, &rc.width, &rc.height);
             VID_SetGeometry(&rc);
@@ -611,7 +766,7 @@ static void window_event(SDL_WindowEvent *event)
         break;
 
     case SDL_EVENT_WINDOW_RESIZED:
-        if (!(flags & SDL_WINDOW_FULLSCREEN)) {
+        if (!(flags & SDL_WINDOW_FULLSCREEN) && !sdl.borderless_fullscreen) {
             SDL_GetWindowPosition(sdl.window, &rc.x, &rc.y);
             rc.width = event->data1;
             rc.height = event->data2;

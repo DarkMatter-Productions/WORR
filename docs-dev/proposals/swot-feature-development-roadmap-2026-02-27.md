@@ -305,6 +305,8 @@ Tasks:
   Dependency: `FR-03-T06`. Priority: P1.
 - [ ] `FR-03-T08` Complete split between engine-side and cgame-side UI ownership where still mixed.  
   Dependency: `FR-03-T06`. Priority: P1.
+- [x] `FR-03-T09` Complete multi-monitor settings hierarchy and monitor targeting behavior for fullscreen modes.
+  Dependency: `FR-03-T06`. Priority: P1.
 
 ## Epic FR-04: Bots and Match Experience
 Objective: evolve bot and match systems from structural presence to reliable gameplay experience.

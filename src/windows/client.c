@@ -229,6 +229,169 @@ static bool win_fullscreen_exclusive(void)
     return !r_fullscreen_exclusive || r_fullscreen_exclusive->integer;
 }
 
+typedef struct {
+	HMONITOR		monitor;
+	MONITORINFOEXA	info;
+	RECT			bounds;
+} win_monitor_target_t;
+
+typedef struct {
+	bool				want_primary;
+	int					desired_index;
+	const char			*desired_name;
+	int					current_index;
+	bool				found;
+	win_monitor_target_t	target;
+} win_monitor_query_t;
+
+/*
+=============
+win_get_monitor_mode
+=============
+*/
+static int win_get_monitor_mode(void)
+{
+	if (!r_monitor_mode)
+		return 0;
+
+	return Q_clip(r_monitor_mode->integer, 0, 2);
+}
+
+/*
+=============
+win_span_all_monitors
+=============
+*/
+static bool win_span_all_monitors(void)
+{
+	return win_get_monitor_mode() == 2;
+}
+
+/*
+=============
+win_monitor_enum_proc
+
+Locates the primary or selected monitor while caching its bounds and device name.
+=============
+*/
+static BOOL CALLBACK win_monitor_enum_proc(HMONITOR monitor, HDC dc, LPRECT rect, LPARAM param)
+{
+	win_monitor_query_t *query = (win_monitor_query_t *)param;
+	MONITORINFOEXA info = { .cbSize = sizeof(info) };
+	(void)dc;
+	(void)rect;
+
+	if (!GetMonitorInfoA(monitor, (MONITORINFO *)&info))
+		return TRUE;
+
+	query->current_index++;
+
+	if (query->want_primary) {
+		if (!(info.dwFlags & MONITORINFOF_PRIMARY))
+			return TRUE;
+	} else if (query->desired_index > 0) {
+		if (query->current_index != query->desired_index)
+			return TRUE;
+	} else if (query->desired_name) {
+		if (Q_strcasecmp(info.szDevice, query->desired_name))
+			return TRUE;
+	}
+
+	query->target.monitor = monitor;
+	query->target.info = info;
+	query->target.bounds = info.rcMonitor;
+	query->found = true;
+	return FALSE;
+}
+
+/*
+=============
+win_get_primary_monitor
+=============
+*/
+static bool win_get_primary_monitor(win_monitor_target_t *target)
+{
+	win_monitor_query_t query = { .want_primary = true };
+
+	if (!target)
+		return false;
+
+	EnumDisplayMonitors(NULL, NULL, win_monitor_enum_proc, (LPARAM)&query);
+	if (!query.found)
+		return false;
+
+	*target = query.target;
+	return true;
+}
+
+/*
+=============
+win_get_selected_monitor
+
+Resolves the target monitor from r_display using a 1-based index or Win32 device name.
+=============
+*/
+static bool win_get_selected_monitor(win_monitor_target_t *target, bool *invalid)
+{
+	win_monitor_query_t query = { 0 };
+	char *end = NULL;
+	long index;
+
+	if (invalid)
+		*invalid = false;
+	if (!target)
+		return false;
+
+	if (!r_display || !r_display->string[0] || !strcmp(r_display->string, "0"))
+		return false;
+
+	index = strtol(r_display->string, &end, 10);
+	if (end && *end == '\0') {
+		if (index < 1) {
+			if (invalid)
+				*invalid = true;
+			return false;
+		}
+		query.desired_index = (int)index;
+	} else {
+		query.desired_name = r_display->string;
+	}
+
+	EnumDisplayMonitors(NULL, NULL, win_monitor_enum_proc, (LPARAM)&query);
+	if (!query.found) {
+		if (invalid)
+			*invalid = true;
+		return false;
+	}
+
+	*target = query.target;
+	return true;
+}
+
+/*
+=============
+win_get_target_monitor
+
+Chooses the primary or selected monitor and falls back to the primary monitor on invalid input.
+=============
+*/
+static bool win_get_target_monitor(win_monitor_target_t *target)
+{
+	bool invalid = false;
+
+	if (!target)
+		return false;
+
+	if (win_get_monitor_mode() == 1 && win_get_selected_monitor(target, &invalid))
+		return true;
+
+	if (invalid)
+		Com_WPrintf("Invalid r_display '%s', using primary display.\n",
+					r_display ? r_display->string : "");
+
+	return win_get_primary_monitor(target);
+}
+
 static int modecmp(const void *p1, const void *p2)
 {
     const DEVMODE *dm1 = (const DEVMODE *)p1;
@@ -289,21 +452,31 @@ static bool modes_are_equal(const DEVMODE *base, const DEVMODE *compare)
 }
 
 /*
-============
+=============
 Win_GetModeList
-============
+
+Builds a fullscreen modelist for the active monitor policy.
+=============
 */
 char *Win_GetModeList(void)
 {
     DEVMODE desktop, dm, *modes;
+    win_monitor_target_t target;
+    const char *device_name = NULL;
     int i, j, num_modes, max_modes;
     size_t size, len;
     char *buf;
 
+    if (win_span_all_monitors())
+        return Z_CopyString("desktop");
+
+    if (win_get_target_monitor(&target))
+        device_name = target.info.szDevice;
+
     memset(&desktop, 0, sizeof(desktop));
     desktop.dmSize = sizeof(desktop);
 
-    if (!EnumDisplaySettings(NULL, ENUM_REGISTRY_SETTINGS, &desktop))
+    if (!EnumDisplaySettingsA(device_name, ENUM_REGISTRY_SETTINGS, &desktop))
         return Z_CopyString(VID_MODELIST);
 
     modes = NULL;
@@ -312,7 +485,7 @@ char *Win_GetModeList(void)
     for (i = 0; i < 4096; i++) {
         memset(&dm, 0, sizeof(dm));
         dm.dmSize = sizeof(dm);
-        if (!EnumDisplaySettings(NULL, i, &dm))
+        if (!EnumDisplaySettingsA(device_name, i, &dm))
             break;
 
         // sanity check
@@ -366,11 +539,16 @@ char *Win_GetModeList(void)
 static bool mode_is_current(const DEVMODE *dm)
 {
     DEVMODE current;
+    win_monitor_target_t target;
+    const char *device_name = NULL;
 
     memset(&current, 0, sizeof(current));
     current.dmSize = sizeof(current);
 
-    if (!EnumDisplaySettings(NULL, ENUM_CURRENT_SETTINGS, &current))
+    if (win_get_target_monitor(&target))
+        device_name = target.info.szDevice;
+
+    if (!EnumDisplaySettingsA(device_name, ENUM_CURRENT_SETTINGS, &current))
         return false;
 
     return modes_are_equal(&current, dm);
@@ -379,13 +557,21 @@ static bool mode_is_current(const DEVMODE *dm)
 static LONG set_fullscreen_mode(void)
 {
     DEVMODE desktop, dm;
+    win_monitor_target_t target;
+    const char *device_name = NULL;
     LONG ret;
     int freq, depth;
+
+    if (win_get_target_monitor(&target)) {
+        device_name = target.info.szDevice;
+        win.rc.x = target.bounds.left;
+        win.rc.y = target.bounds.top;
+    }
 
     memset(&desktop, 0, sizeof(desktop));
     desktop.dmSize = sizeof(desktop);
 
-    EnumDisplaySettings(NULL, ENUM_REGISTRY_SETTINGS, &desktop);
+    EnumDisplaySettingsA(device_name, ENUM_REGISTRY_SETTINGS, &desktop);
 
     // parse r_modelist specification
     if (VID_GetFullscreen(&win.rc, &freq, &depth)) {
@@ -432,7 +618,7 @@ static LONG set_fullscreen_mode(void)
         ret = DISP_CHANGE_SUCCESSFUL;
     } else {
         Com_DPrintf("...calling CDS: ");
-        ret = ChangeDisplaySettings(&dm, CDS_FULLSCREEN);
+        ret = ChangeDisplaySettingsExA(device_name, &dm, NULL, CDS_FULLSCREEN, NULL);
         if (ret != DISP_CHANGE_SUCCESSFUL) {
             Com_DPrintf("failed with error %ld\n", ret);
             return ret;
@@ -451,14 +637,18 @@ static LONG set_fullscreen_mode(void)
 
 static void set_borderless_mode(void)
 {
-    MONITORINFO mi = { .cbSize = sizeof(mi) };
-    HMONITOR monitor = MonitorFromWindow(win.wnd, MONITOR_DEFAULTTONEAREST);
+    win_monitor_target_t target;
 
-    if (GetMonitorInfoA(monitor, &mi)) {
-        win.rc.x = mi.rcMonitor.left;
-        win.rc.y = mi.rcMonitor.top;
-        win.rc.width = mi.rcMonitor.right - mi.rcMonitor.left;
-        win.rc.height = mi.rcMonitor.bottom - mi.rcMonitor.top;
+    if (win_span_all_monitors()) {
+        win.rc.x = GetSystemMetrics(SM_XVIRTUALSCREEN);
+        win.rc.y = GetSystemMetrics(SM_YVIRTUALSCREEN);
+        win.rc.width = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+        win.rc.height = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+    } else if (win_get_target_monitor(&target)) {
+        win.rc.x = target.bounds.left;
+        win.rc.y = target.bounds.top;
+        win.rc.width = target.bounds.right - target.bounds.left;
+        win.rc.height = target.bounds.bottom - target.bounds.top;
     } else {
         win.rc.x = 0;
         win.rc.y = 0;
@@ -497,7 +687,7 @@ void Win_SetMode(void)
 {
     // set full screen mode if requested
     if (r_fullscreen->integer > 0) {
-        if (!win_fullscreen_exclusive()) {
+        if (win_span_all_monitors() || !win_fullscreen_exclusive()) {
             ChangeDisplaySettings(NULL, 0);
             set_borderless_mode();
             return;
