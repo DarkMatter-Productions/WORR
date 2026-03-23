@@ -23,20 +23,9 @@
           "items": ["windowed", "$$r_modelist"]
         },
         {
-          "type": "dropdown",
-          "label": "fullscreen type",
-          "cvar": "r_fullscreen_exclusive",
-          "pairs": [
-            { "label": "exclusive", "value": "1" },
-            { "label": "borderless", "value": "0" }
-          ]
-        },
-        {
-          "type": "field",
-          "label": "display",
-          "cvar": "r_display",
-          "width": 18,
-          "status": "0 = auto, or enter display name"
+          "type": "action",
+          "label": "multi-monitor settings",
+          "command": "pushmenu multimonitor"
         },
         { "type": "checkbox", "label": "vertical sync", "cvar": "gl_swapinterval" },
         {
@@ -98,6 +87,38 @@
       ]
     },
     {
+      "name": "multimonitor",
+      "title": "Multi-Monitor Settings",
+      "items": [
+        {
+          "type": "dropdown",
+          "label": "monitor mode",
+          "cvar": "r_monitor_mode",
+          "pairs": [
+            { "label": "primary", "value": "0" },
+            { "label": "selected", "value": "1" },
+            { "label": "span all", "value": "2" }
+          ]
+        },
+        {
+          "type": "dropdown",
+          "label": "fullscreen type",
+          "cvar": "r_fullscreen_exclusive",
+          "pairs": [
+            { "label": "exclusive", "value": "1" },
+            { "label": "borderless", "value": "0" }
+          ]
+        },
+        {
+          "type": "field",
+          "label": "display",
+          "cvar": "r_display",
+          "width": 18,
+          "status": "Used when monitor mode = selected"
+        }
+      ]
+    },
+    {
       "name": "performance",
       "title": "Performance",
       "items": [
@@ -136,6 +157,7 @@
         { "type": "action", "label": "key bindings", "command": "pushmenu keys" },
         { "type": "action", "label": "weapon bindings", "command": "pushmenu weapons" },
         { "type": "action", "label": "video setup", "command": "pushmenu video" },
+        { "type": "action", "label": "multi-monitor", "command": "pushmenu multimonitor" },
         { "type": "action", "label": "performance", "command": "pushmenu performance" },
         { "type": "action", "label": "sound setup", "command": "pushmenu sound" },
         { "type": "action", "label": "effects setup", "command": "pushmenu effects" },
