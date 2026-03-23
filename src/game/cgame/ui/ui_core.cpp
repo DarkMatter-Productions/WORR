@@ -1,4 +1,5 @@
 #include "ui/ui_internal.h"
+#include "client/client.h"
 
 #include <cstdarg>
 
@@ -385,17 +386,19 @@ void MenuSystem::OpenMenu(uiMenu_t menu)
     if (!uis.initialized)
         return;
 
+    const bool is_multiplayer_main = (cls.state >= ca_active && cl.maxclients > 1);
+
     ForceOff();
 
     MenuPage *target = nullptr;
     switch (menu) {
     case UIMENU_DEFAULT:
         if (ui_open->integer) {
-            target = FindMenu("main");
+            target = FindMenu(is_multiplayer_main ? "dm_join" : "main");
         }
         break;
     case UIMENU_MAIN:
-        target = FindMenu("main");
+        target = FindMenu(is_multiplayer_main ? "dm_join" : "main");
         break;
     case UIMENU_GAME:
         target = FindMenu("game");

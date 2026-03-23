@@ -939,6 +939,12 @@
           "command": "worr_admin_menu",
           "showIf": ["ui_dm_show_admin=1"]
         },
+        {
+          "type": "action",
+          "label": "settings",
+          "align": "left",
+          "command": "pushmenu options"
+        },
         { "type": "blank" },
         { "type": "action", "label": "visit darkmatter-quake.com", "align": "center", "selectable": false },
         { "type": "action", "label": ":: community :: matches ::", "align": "center", "selectable": false },
