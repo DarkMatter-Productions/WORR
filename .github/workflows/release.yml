@@ -74,7 +74,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             meson ninja-build pkg-config gcc g++ python3 cmake nasm \
-            libcurl4-openssl-dev libopenal-dev libpng-dev libjpeg-dev zlib1g-dev libvulkan-dev glslang-tools \
+            libcurl4-openssl-dev libopenal-dev libpng-dev libjpeg-dev zlib1g-dev libvulkan-dev glslang-tools libsdl3-dev \
             libgl1-mesa-dev libx11-dev libxi-dev libwayland-dev wayland-protocols libdecoration0-dev
 
       - name: Install macOS dependencies
@@ -107,10 +107,10 @@ jobs:
         if: matrix.os != 'windows'
         shell: bash
         run: |
-          meson setup builddir --wrap-mode=forcefallback --buildtype=release \
+          meson setup builddir --wrap-mode=default --buildtype=release \
             -Dbase-game=basew \
             -Ddefault-game=basew \
-            -Dbootstrapper=true -Dtests=false -Davcodec=disabled -Dlibcurl=enabled \
+            -Dbootstrapper=true -Dsdl3=enabled -Dtests=false -Davcodec=disabled -Dlibcurl=enabled \
             -Dharfbuzz:tests=disabled
 
       - name: Configure (Windows)
@@ -120,7 +120,7 @@ jobs:
           meson setup builddir --wrap-mode=forcefallback --buildtype=release \
             -Dbase-game=basew \
             -Ddefault-game=basew \
-            -Dbootstrapper=true -Dtests=false -Davcodec=disabled -Dlibcurl=enabled \
+            -Dbootstrapper=true -Dsdl3=enabled -Dtests=false -Davcodec=disabled -Dlibcurl=enabled \
             -Dharfbuzz:tests=disabled
 
       - name: Build (Linux/macOS)

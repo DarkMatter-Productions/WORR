@@ -780,12 +780,20 @@ if use_stb_png
   renderer_src += 'src/rend_vk/refresh/stb/stb.c'
 endif
 
-curl = dependency('libcurl',
-  version:         '>= 7.68.0',
-  required:        get_option('libcurl'),
-  default_options: fallback_opt,
-  fallback:        ['libcurl', 'libcurl_dep'],
-)
+if win32
+  curl = dependency('libcurl',
+    version:         '>= 7.68.0',
+    required:        get_option('libcurl'),
+    default_options: fallback_opt,
+    fallback:        ['libcurl', 'libcurl_dep'],
+  )
+else
+  curl = dependency('libcurl',
+    version:         '>= 7.68.0',
+    required:        get_option('libcurl'),
+    default_options: fallback_opt,
+  )
+endif
 
 if curl.found()
   client_src += 'src/client/http.cpp'
