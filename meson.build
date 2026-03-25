@@ -780,21 +780,39 @@ if use_stb_png
   renderer_src += 'src/rend_vk/refresh/stb/stb.c'
 endif
 
-curl = dependency('libcurl',
-  version:         '>= 7.68.0',
-  required:        get_option('libcurl'),
-  default_options: fallback_opt,
-  fallback:        ['libcurl', 'libcurl_dep'],
-)
+curl_required = get_option('libcurl')
+if get_option('bootstrapper')
+  curl_required = true
+endif
+
+if win32
+  curl = dependency('libcurl',
+    version:         '>= 7.68.0',
+    required:        curl_required,
+    default_options: fallback_opt,
+    fallback:        ['libcurl', 'libcurl_dep'],
+  )
+else
+  curl = dependency('libcurl',
+    version:         '>= 7.68.0',
+    required:        curl_required,
+    default_options: fallback_opt,
+  )
+endif
 
 if curl.found()
   client_src += 'src/client/http.cpp'
   config.set10('USE_CURL', true)
 endif
 
+sdl3_required = get_option('sdl3')
+if get_option('bootstrapper')
+  sdl3_required = true
+endif
+
 sdl3 = dependency('sdl3',
   version:         '>= 3.4.0',
-  required:        get_option('sdl3'),
+  required:        sdl3_required,
   fallback:        ['sdl3', 'sdl3_dep'],
   default_options: quiet_fallback_opt,
 )
@@ -1623,4 +1641,3 @@ summary({
   'x11'                : config.get('USE_X11', 0) != 0,
   'zlib'               : config.get('USE_ZLIB', 0) != 0,
   }, section: 'Features', bool_yn: true)
-
