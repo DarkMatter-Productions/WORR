@@ -56,6 +56,10 @@ Create a repository-grounded SWOT and convert it into actionable, task-based pro
   - SDL video backend now creates Vulkan-capable windows for `r_renderer vulkan`/`rtx` instead of always forcing an OpenGL context.
   - Native Vulkan renderer now uses SDL Vulkan instance/surface helpers and enables portability enumeration/subset support required by MoltenVK-backed macOS devices.
   - Implementation log: `docs-dev/macos-nightly-vulkan-support-2026-03-16.md`.
+- `FR-02-T03` Done:
+  - User-facing launch/debug presets stay on `worr_x86_64(.exe)` and `worr_ded_x86_64(.exe)`, which are now bootstrap hosts that load `worr_engine_*` and `worr_ded_engine_*` in-process.
+  - The short-lived explicit `worr_launcher_*` split was removed so the published binary names match the actual user launch path again.
+  - Implementation logs: `docs-dev/bootstrap-hosted-engine-libraries-2026-03-24.md`, `docs-dev/vscode-bootstrap-debug-presets-2026-03-24.md`.
 - `DV-08-T05` Done:
   - Nightly/stable staging now packages the canonical repo `assets/` tree directly into `.install/basew/pak0.pkz`.
   - Loose staged asset duplication between `assets/` and `.install/` was removed so runtime assets now have a single authored source and a single packaged staging form.
@@ -69,15 +73,44 @@ Create a repository-grounded SWOT and convert it into actionable, task-based pro
   - `WORR_VERSION` remains `0.1.0`, and the stable release workflow still publishes cross-platform GitHub releases from that semver source of truth.
   - Implementation log: `docs-dev/basew-gamedir-and-arch-runtime-layout-2026-03-16.md`.
 - `DV-08-T07` Done:
-  - Runtime executables now ship with explicit arch suffixes such as `worr_x86_64(.exe)`, `worr_ded_x86_64(.exe)`, and `worr_updater_x86_64.exe`.
-  - Game DLLs now follow the same naming rule (`cgame_x86_64`, `sgame_x86_64`), and loader/resource/update metadata paths were updated to match.
-  - VS Code launch configs, updater defaults, and release manifests now target the new binary names consistently.
-  - Implementation log: `docs-dev/basew-gamedir-and-arch-runtime-layout-2026-03-16.md`.
+  - User-facing bootstrap executables now ship with explicit arch suffixes such as `worr_x86_64(.exe)`, `worr_ded_x86_64(.exe)`, and `worr_updater_x86_64.exe`.
+  - Hosted engine libraries now follow the same arch-suffixed rule (`worr_engine_x86_64`, `worr_ded_engine_x86_64`), while game DLLs continue using `cgame_x86_64` and `sgame_x86_64`.
+  - Release manifests and updater metadata now publish the launcher/engine pairing through `launch_exe` and `engine_library`.
+  - Implementation logs: `docs-dev/basew-gamedir-and-arch-runtime-layout-2026-03-16.md`, `docs-dev/bootstrap-hosted-engine-libraries-2026-03-24.md`.
 - `DV-08-T08` Done:
   - Nightly GitHub releases now publish as standard releases instead of GitHub prereleases.
   - Updater release discovery now filters the full GitHub release list by channel/tag and `allow_prerelease` policy, so stable installs do not drift onto nightly releases after that publishing change.
   - Nightly packaging no longer emits updater configs with `allow_prerelease=true`.
   - Implementation log: `docs-dev/nightly-release-non-prerelease-channel-selection-2026-03-16.md`.
+- `FR-08-T04` Done:
+  - Release metadata now publishes an explicit role-level updater contract through the release index instead of inferring package names inside the updater.
+  - `worr_update.json` now points at a channel-specific release index asset, and updater discovery resolves role payloads from that index before fetching the remote manifest.
+  - Implementation log: `docs-dev/desktop-bootstrap-updater-2026-03-23.md`.
+- `DV-03-T06` Done:
+  - Added release-tool SemVer ordering tests covering stable, prerelease, and nightly version strings.
+  - Added release-index parser tests for missing role metadata and malformed payload fields.
+  - Implementation log: `docs-dev/desktop-bootstrap-updater-2026-03-23.md`.
+- `DV-08-T01` Done:
+  - Added release-index parser fixtures for missing role payloads and missing required updater metadata.
+  - Added target-contract tests that keep full-install updater payload coverage separate from split manual archive coverage.
+  - Implementation log: `docs-dev/desktop-bootstrap-updater-2026-03-23.md`.
+- `DV-08-T03` In Progress:
+  - The new bootstrap apply worker now verifies staged file hashes, writes the local install manifest last, and restores backed-up files on failure.
+  - Local build/package validation passed, but explicit live fault-injection coverage for failed extraction/apply paths is still pending.
+  - Implementation log: `docs-dev/desktop-bootstrap-updater-2026-03-23.md`.
+- `DV-08-T09` Done:
+  - Desktop updater startup remains bootstrap-based on Windows, Linux, and macOS, with the client using a branded splash and the dedicated server using a console-first updater flow.
+  - Normal startup now stays inside the user-facing bootstrap executables, which host the engine shared libraries in-process; the temp updater worker is reserved for approved file-replacement/update paths and relaunches the public bootstrap after a successful update.
+  - Update prompts can now be deferred without forcing an exit, and `autolaunch` is respected after worker-applied installs.
+  - Implementation logs: `docs-dev/desktop-bootstrap-updater-2026-03-23.md`, `docs-dev/bootstrap-hosted-engine-libraries-2026-03-24.md`.
+- `DV-08-T11` Done:
+  - Re-audited the updater pipeline against packaged artifacts, role-scoped staged installs, and local pending-update payloads.
+  - Kept install-root normalization and real apply-time permission handling hardening in the bootstrap worker, added trace instrumentation plus a native Windows dedicated-server temp-worker/relaunch handoff path, closed the local Windows public-bootstrap approved-update gap, and added `tools/release/server_bootstrap_update_smoke.py` for deterministic local validation.
+  - Implementation log: `docs-dev/updater-pipeline-audit-2026-03-25.md`.
+- `DV-08-T10` Done:
+  - Repaired the tracked vendored libcurl wrap patch so bootstrap-enabled local Windows builds now succeed against the `curl-8.18.0` fallback instead of failing on stale 8.15-era source paths.
+  - Fixed the bootstrap updater's Windows `min`/`max` macro collision so the launcher/worker binaries compile cleanly with the vendored fallback enabled.
+  - Implementation log: `docs-dev/libcurl-wrap-bootstrap-build-fix-2026-03-23.md`.
 - `FR-01-T04` In Progress:
   - Completed Vulkan MD5 parity follow-up for frame resolve semantics and MD2/MD5 opaque-vs-alpha routing in `src/rend_vk/vk_entity.c`.
   - Implementation log: `docs-dev/vulkan-md5-mesh-frame-alpha-parity-fix-2026-02-27.md`.
@@ -275,7 +308,7 @@ Tasks:
   Dependency: none. Priority: P0.
 - [ ] `FR-02-T02` Add runtime command to dump active renderer capabilities to log/console.  
   Dependency: `FR-02-T01`. Priority: P1.
-- [ ] `FR-02-T03` Align launch/debug presets with current renderer names and expected modes.  
+- [x] `FR-02-T03` Align launch/debug presets with current renderer names and expected modes.  
   Dependency: none. Priority: P1.
 - [ ] `FR-02-T04` Validate and document fallback/error behavior for missing renderer DLLs.  
   Dependency: none. Priority: P1.
@@ -419,7 +452,7 @@ Tasks:
   Dependency: `FR-08-T01`. Priority: P2.
 - [ ] `FR-08-T03` Define server browser data contract between in-game UI and backend service.  
   Dependency: `FR-08-T01`. Priority: P2.
-- [ ] `FR-08-T04` Define CDN/update channel strategy aligned with existing release index format.  
+- [x] `FR-08-T04` Define CDN/update channel strategy aligned with existing release index format.  
   Dependency: none. Priority: P2.
 - [ ] `FR-08-T05` Stage a minimal public server deployment runbook and monitoring checklist.  
   Dependency: `FR-08-T01`. Priority: P2.
@@ -490,7 +523,7 @@ Tasks:
   Dependency: `DV-02-T03`. Priority: P1.
 - [ ] `DV-03-T05` Add bot scenario tests for spawn, navigation, and objective behavior.  
   Dependency: `FR-04-T02`. Priority: P2.
-- [ ] `DV-03-T06` Add updater/release index parser tests for stable and nightly channels.  
+- [x] `DV-03-T06` Add updater/release index parser tests for stable and nightly channels.  
   Dependency: none. Priority: P1.
 
 ## Epic DV-04: Architecture and Code Quality
@@ -580,7 +613,7 @@ Exit Criteria:
 - Release artifacts are consistently valid and updater behavior is deterministic across channels.
 
 Tasks:
-- [ ] `DV-08-T01` Add test fixtures for release index parsing edge cases (missing assets, mixed channels, malformed metadata).  
+- [x] `DV-08-T01` Add test fixtures for release index parsing edge cases (missing assets, mixed channels, malformed metadata).  
   Dependency: `DV-03-T06`. Priority: P1.
 - [ ] `DV-08-T02` Add checksum/signature policy review for package trust model.  
   Dependency: none. Priority: P2.
@@ -592,8 +625,16 @@ Tasks:
   Dependency: none. Priority: P1.
 - [x] `DV-08-T06` Unify local and published runtime layouts under a single `basew/` gamedir and make release binaries boot that layout by default.  
   Dependency: `DV-08-T05`. Priority: P1.
-- [x] `DV-08-T07` Standardize arch-suffixed runtime binary names and updater metadata across supported platforms.  
+- [x] `DV-08-T07` Standardize arch-suffixed bootstrap/engine binary names and updater metadata across supported platforms.  
   Dependency: `DV-08-T06`. Priority: P1.
+- [x] `DV-08-T08` Align nightly release publishing and updater channel selection after dropping GitHub prerelease publishing.  
+  Dependency: `DV-08-T07`. Priority: P1.
+- [x] `DV-08-T09` Implement the cross-platform desktop bootstrap updater flow with bootstrap/engine-library split, splash-first startup, and role-scoped installer staging.  
+  Dependency: `DV-08-T07`. Priority: P0.
+- [x] `DV-08-T10` Repair the vendored libcurl wrap and bootstrap launcher Windows build path so local fallback builds can compile and stage the desktop updater layout.  
+  Dependency: `DV-08-T09`. Priority: P1.
+- [x] `DV-08-T11` Stabilize the Windows public-bootstrap-to-temp-worker approved-update handoff and add deterministic local automation for that path.  
+  Dependency: `DV-08-T09`. Priority: P0.
 
 ## Immediate 90-Day Priority Queue (2026-03-01 to 2026-05-31)
 - [ ] `P0` `FR-01-T01` Vulkan particle style parity

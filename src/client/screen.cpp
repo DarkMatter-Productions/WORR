@@ -18,6 +18,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 // cl_scrn.c -- master for renderer, status bar, console, chat, notify, etc
 
 #include "client.h"
+#include "common/bootstrap.h"
 #include "client/font.h"
 #include "client/ui_font.h"
 
@@ -3765,6 +3766,7 @@ void SCR_UpdateScreen(void)
     SCR_DrawLoading();
 
     R_EndFrame();
+    Com_BootstrapSignalReady();
 
     recursive--;
 }

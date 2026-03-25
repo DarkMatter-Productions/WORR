@@ -53,17 +53,40 @@ def validate_manifest(
     target: dict[str, Any],
     role: str,
     manifest: dict[str, Any],
+    *,
+    manifest_name: str,
+    package_name: str,
+    required_paths: list[str],
+    forbidden_paths: list[str],
 ) -> None:
     config = target[role]
     platform_id = target["platform_id"]
-    manifest_name = config["manifest_name"]
-    package_name = config["package_name"]
 
     package = manifest.get("package", {})
     if package.get("name") != package_name:
         failures.append(
             f"{platform_id} {role}: {manifest_name} package name mismatch "
             f"({package.get('name')} != {package_name})"
+        )
+
+    if manifest.get("role") != role:
+        failures.append(f"{platform_id} {role}: {manifest_name} role mismatch ({manifest.get('role')})")
+    launch_exe = manifest.get("launch_exe", manifest.get("launcher_exe"))
+    if launch_exe != config["launch_exe"]:
+        failures.append(
+            f"{platform_id} {role}: {manifest_name} launch executable mismatch "
+            f"({launch_exe} != {config['launch_exe']})"
+        )
+    engine_library = manifest.get("engine_library", manifest.get("runtime_exe"))
+    if engine_library != config["engine_library"]:
+        failures.append(
+            f"{platform_id} {role}: {manifest_name} engine library mismatch "
+            f"({engine_library} != {config['engine_library']})"
+        )
+    if manifest.get("local_manifest_name") != config["local_manifest_name"]:
+        failures.append(
+            f"{platform_id} {role}: {manifest_name} local manifest mismatch "
+            f"({manifest.get('local_manifest_name')} != {config['local_manifest_name']})"
         )
 
     files = manifest.get("files", [])
@@ -77,11 +100,11 @@ def validate_manifest(
         if isinstance(entry, dict) and isinstance(entry.get("path"), str)
     )
 
-    for pattern in config.get("required_paths", []):
+    for pattern in required_paths:
         if not matching_paths(rel_paths, pattern):
             failures.append(f"{platform_id} {role}: manifest missing required path {pattern}")
 
-    for pattern in config.get("forbidden_paths", []):
+    for pattern in forbidden_paths:
         hits = matching_paths(rel_paths, pattern)
         if hits:
             failures.append(
@@ -124,12 +147,25 @@ def main() -> int:
                 failures.append(f"{platform_id}: missing {name}")
 
         for role in ("client", "server"):
-            manifest_name = target[role]["manifest_name"]
-            try:
-                manifest = load_manifest(artifacts_root, manifest_name)
-            except FileNotFoundError:
-                continue
-            validate_manifest(failures, target, role, manifest)
+            for manifest_key, package_key, required_key, forbidden_key in (
+                ("manifest_name", "package_name", "required_paths", "forbidden_paths"),
+                ("update_manifest_name", "update_package_name", "update_required_paths", "update_forbidden_paths"),
+            ):
+                manifest_name = target[role][manifest_key]
+                try:
+                    manifest = load_manifest(artifacts_root, manifest_name)
+                except FileNotFoundError:
+                    continue
+                validate_manifest(
+                    failures,
+                    target,
+                    role,
+                    manifest,
+                    manifest_name=manifest_name,
+                    package_name=target[role][package_key],
+                    required_paths=target[role].get(required_key, target[role].get("required_paths", [])),
+                    forbidden_paths=target[role].get(forbidden_key, target[role].get("forbidden_paths", [])),
+                )
 
     if failures:
         print("Artifact verification failed:")

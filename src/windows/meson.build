@@ -32,13 +32,13 @@ if not use_windows_rc and not llvm_rc_prog.found()
 endif
 
 if use_windows_rc
-  client_src += windows.compile_resources('res/worr.rc',
+  client_launcher_src += windows.compile_resources('res/worr.rc',
     args:                rc_args,
     depend_files:        ['res/worr.ico', 'res/worr.exe.manifest'],
     include_directories: rc_inc,
   )
 
-  server_src += windows.compile_resources('res/worrded.rc',
+  server_launcher_src += windows.compile_resources('res/worrded.rc',
     args:                rc_args,
     depend_files:        ['res/worrded.ico', 'res/worrded.exe.manifest'],
     include_directories: rc_inc,
@@ -54,14 +54,14 @@ if use_windows_rc
     include_directories: rc_inc,
   )
 elif llvm_rc_prog.found()
-  client_src += custom_target('rc_worr',
+  client_launcher_src += custom_target('rc_worr',
     input:        'res/worr.rc',
     output:       'worr.res',
     depend_files: ['res/worr.ico', 'res/worr.exe.manifest'],
     command:      [llvm_rc_prog, '/FO@OUTPUT@'] + llvm_rc_args + ['@INPUT@'],
   )
 
-  server_src += custom_target('rc_worrded',
+  server_launcher_src += custom_target('rc_worrded',
     input:        'res/worrded.rc',
     output:       'worrded.res',
     depend_files: ['res/worrded.ico', 'res/worrded.exe.manifest'],
@@ -85,13 +85,13 @@ client_deps += khr_headers_dep
 
 if get_option('bootstrapper')
   if use_windows_rc
-    updater_src += windows.compile_resources('res/worrupdater.rc',
+    updater_worker_src += windows.compile_resources('res/worrupdater.rc',
       args:                rc_args,
       depend_files:        ['res/worr.ico', 'res/worrupdater.exe.manifest'],
       include_directories: rc_inc,
     )
   elif llvm_rc_prog.found()
-    updater_src += custom_target('rc_worrupdater',
+    updater_worker_src += custom_target('rc_worrupdater',
       input:        'res/worrupdater.rc',
       output:       'worrupdater.res',
       depend_files: ['res/worr.ico', 'res/worrupdater.exe.manifest'],
@@ -99,11 +99,8 @@ if get_option('bootstrapper')
     )
   endif
   updater_deps += [
-    cc.find_library('winhttp'),
-    cc.find_library('comctl32'),
-    cc.find_library('shlwapi'),
-    cc.find_library('bcrypt'),
-    cc.find_library('version'),
+    cc.find_library('advapi32'),
+    cc.find_library('shell32'),
   ]
 endif
 

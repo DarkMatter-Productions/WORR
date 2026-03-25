@@ -31,6 +31,7 @@ def metadata_artifacts(target: dict[str, Any]) -> list[dict[str, str]]:
                 "name": config["package_name"],
                 "kind": "archive",
                 "role": role,
+                "variant": "manual",
             }
         )
         artifacts.append(
@@ -38,6 +39,23 @@ def metadata_artifacts(target: dict[str, Any]) -> list[dict[str, str]]:
                 "name": config["manifest_name"],
                 "kind": "manifest",
                 "role": role,
+                "variant": "manual",
+            }
+        )
+        artifacts.append(
+            {
+                "name": config["update_package_name"],
+                "kind": "archive",
+                "role": role,
+                "variant": "update",
+            }
+        )
+        artifacts.append(
+            {
+                "name": config["update_manifest_name"],
+                "kind": "manifest",
+                "role": role,
+                "variant": "update",
             }
         )
     installer = target.get("installer")
@@ -47,9 +65,27 @@ def metadata_artifacts(target: dict[str, Any]) -> list[dict[str, str]]:
                 "name": installer["name"],
                 "kind": installer["type"],
                 "role": "installer",
+                "variant": "manual",
             }
         )
     return artifacts
+
+
+def metadata_roles(target: dict[str, Any]) -> dict[str, dict[str, str]]:
+    roles: dict[str, dict[str, str]] = {}
+    for role in ("client", "server"):
+        config = target[role]
+        roles[role] = {
+            "role": config["role"],
+            "launch_exe": config["launch_exe"],
+            "engine_library": config["engine_library"],
+            "package_name": config["package_name"],
+            "manifest_name": config["manifest_name"],
+            "update_package_name": config["update_package_name"],
+            "update_manifest_name": config["update_manifest_name"],
+            "local_manifest_name": config["local_manifest_name"],
+        }
+    return roles
 
 
 def main() -> int:
@@ -80,6 +116,8 @@ def main() -> int:
     if not package_script.is_file():
         raise SystemExit(f"Packaging script not found: {package_script}")
 
+    release_index_asset = f"worr-release-index-{args.channel}.json"
+
     with tempfile.TemporaryDirectory(prefix=f"worr-release-{target['platform_id']}-") as temp_dir:
         release_input = pathlib.Path(temp_dir) / "release-input"
         release_layout = target.get("release_layout", {})
@@ -92,43 +130,72 @@ def main() -> int:
 
         for role in ("client", "server"):
             config = target[role]
-            command = [
+            base_command = [
                 sys.executable,
                 str(package_script),
                 "--input-dir",
                 str(release_input),
                 "--output-dir",
                 str(output_dir),
-                "--package-name",
-                config["package_name"],
-                "--manifest-name",
-                config["manifest_name"],
                 "--version",
                 args.version,
                 "--repo",
                 args.repo,
+                "--role",
+                role,
                 "--channel",
                 args.channel,
                 "--launch-exe",
                 config["launch_exe"],
-                "--archive-format",
-                target["archive_format"],
+                "--engine-library",
+                config["engine_library"],
+                "--release-index-asset",
+                release_index_asset,
+                "--local-manifest-name",
+                config["local_manifest_name"],
                 "--platform-id",
                 target["platform_id"],
                 "--platform-os",
                 target["os"],
                 "--platform-arch",
                 target["arch"],
+                "--build-id",
+                args.build_id,
+                "--commit-sha",
+                args.commit_sha,
+            ]
+            if args.allow_prerelease:
+                base_command.append("--allow-prerelease")
+            if args.write_config:
+                base_command.append("--write-config")
+
+            manual_command = base_command + [
+                "--package-name",
+                config["package_name"],
+                "--manifest-name",
+                config["manifest_name"],
+                "--archive-format",
+                target["archive_format"],
             ]
             for pattern in config.get("include", []):
-                command.extend(["--include", pattern])
+                manual_command.extend(["--include", pattern])
             for pattern in config.get("exclude", []):
-                command.extend(["--exclude", pattern])
-            if args.allow_prerelease:
-                command.append("--allow-prerelease")
-            if args.write_config and role == "client":
-                command.append("--write-config")
-            run_command(command)
+                manual_command.extend(["--exclude", pattern])
+            run_command(manual_command)
+
+            update_command = base_command + [
+                "--package-name",
+                config["update_package_name"],
+                "--manifest-name",
+                config["update_manifest_name"],
+                "--archive-format",
+                "zip",
+            ]
+            for pattern in config.get("update_include", config.get("include", [])):
+                update_command.extend(["--include", pattern])
+            for pattern in config.get("update_exclude", config.get("exclude", [])):
+                update_command.extend(["--exclude", pattern])
+            run_command(update_command)
 
     metadata_path = pathlib.Path(args.metadata_path).resolve() if args.metadata_path else (
         output_dir / f"metadata-{target['platform_id']}.json"
@@ -150,9 +217,10 @@ def main() -> int:
                 entry["name"] = installer_name
 
     metadata = {
-        "schema_version": 1,
+        "schema_version": 3,
         "generated_at_utc": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "platform_id": target["platform_id"],
+        "platform_stub": target["platform_stub"],
         "os": target["os"],
         "arch": target["arch"],
         "channel": args.channel,
@@ -161,6 +229,7 @@ def main() -> int:
         "build_id": args.build_id,
         "archive_format": target["archive_format"],
         "autoupdater": target["autoupdater"],
+        "roles": metadata_roles(target),
         "artifacts": artifacts,
     }
     metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")

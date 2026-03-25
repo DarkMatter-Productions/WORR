@@ -35,8 +35,15 @@ def main() -> int:
 
     target = get_target(args.platform_id)
 
-    require_file(install_dir / staged_launch_exe(target["client"]))
-    require_file(install_dir / staged_launch_exe(target["server"]))
+    client_launcher = install_dir / staged_launch_exe(target["client"])
+    client_engine = install_dir / target["client"]["engine_library"]
+    server_launcher = install_dir / staged_launch_exe(target["server"])
+    server_engine = install_dir / target["server"]["engine_library"]
+
+    require_file(client_launcher)
+    require_file(client_engine)
+    require_file(server_launcher)
+    require_file(server_engine)
 
     base_game_dir = install_dir / args.base_game
     if not base_game_dir.is_dir():

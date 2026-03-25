@@ -17,6 +17,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 */
 
 #include "client.h"
+#include "common/bootstrap.h"
 #include "common/cvar.h"
 #include "common/field.h"
 #include "common/prompt.h"
@@ -1462,7 +1463,15 @@ MAIN
 static void fix_current_directory(void)
 {
     WCHAR buffer[MAX_PATH];
-    DWORD ret = GetModuleFileNameW(NULL, buffer, MAX_PATH);
+    DWORD ret = GetEnvironmentVariableW(L"WORR_BOOTSTRAP_BASEDIR", buffer, MAX_PATH);
+
+    if (ret > 0 && ret < MAX_PATH) {
+        if (!SetCurrentDirectoryW(buffer))
+            Sys_Error("SetCurrentDirectoryW failed");
+        return;
+    }
+
+    ret = GetModuleFileNameW(NULL, buffer, MAX_PATH);
 
     if (ret < MAX_PATH)
         while (ret)
@@ -1510,6 +1519,9 @@ static int Sys_Main(int argc, char **argv)
     main_thread_id = GetCurrentThreadId();
 
     Qcommon_Init(argc, argv);
+#if !USE_CLIENT
+    Com_BootstrapSignalReady();
+#endif
 
     // main program loop
     while (!atomic_load(&shouldExit))
@@ -1518,28 +1530,6 @@ static int Sys_Main(int argc, char **argv)
     Com_Quit(NULL, ERR_DISCONNECT);
     return 0;   // never gets here
 }
-
-#if USE_CLIENT
-
-/*
-==================
-WinMain
-
-==================
-*/
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
-{
-    // previous instances do not exist in Win32
-    if (hPrevInstance) {
-        return 1;
-    }
-
-    hGlobalInstance = hInstance;
-
-    return Sys_Main(__argc, __argv);
-}
-
-#else // USE_CLIENT
 
 #if USE_WINSVC
 
@@ -1582,17 +1572,11 @@ static const SERVICE_TABLE_ENTRYA serviceTable[] = {
 
 #endif // USE_WINSVC
 
-/*
-==================
-main
-
-==================
-*/
-int main(int argc, char **argv)
+q_exported int WORR_EngineMain(int argc, char **argv)
 {
     hGlobalInstance = GetModuleHandle(NULL);
 
-#if USE_WINSVC
+#if !USE_CLIENT && USE_WINSVC
     if (argc > 1 && !strcmp(argv[1], "-service")) {
         sys_argc = argc - 1;
         sys_argv = argv + 1;
@@ -1606,5 +1590,3 @@ int main(int argc, char **argv)
 
     return Sys_Main(argc, argv);
 }
-
-#endif // !USE_CLIENT

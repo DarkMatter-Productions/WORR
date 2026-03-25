@@ -1,5 +1,9 @@
 # Auto-Updater Bootstrapper + Release Pipeline
 
+Superseded by `docs-dev/desktop-bootstrap-updater-2026-03-23.md`. This document
+describes the earlier Windows-only updater path and is kept for historical
+reference.
+
 This change set adds a standalone updater binary, a release manifest format, and a GitHub Actions workflow to package and publish releases with consistent version metadata.
 
 ## Bootstrapper Overview

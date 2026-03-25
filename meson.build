@@ -18,6 +18,7 @@ common_src = [
   'src/common/crc.c',
   'src/common/cvar.c',
   'src/common/error.c',
+  'src/common/bootstrap.c',
   'src/common/field.c',
   'src/common/fifo.c',
   'src/common/files.c',
@@ -59,6 +60,7 @@ common_src = [
   'inc/common/natsort.h',
   'inc/common/async.h',
   'inc/common/bsp.h',
+  'inc/common/bootstrap.h',
   'inc/common/cmd.h',
   'inc/common/cmodel.h',
   'inc/common/common.h',
@@ -497,6 +499,9 @@ cgame_src = bgame_src + [
 ]
 
 updater_src = []
+updater_worker_src = []
+client_launcher_src = []
+server_launcher_src = []
 updater_deps = []
 
 cc = meson.get_compiler('c')
@@ -779,6 +784,7 @@ curl = dependency('libcurl',
   version:         '>= 7.68.0',
   required:        get_option('libcurl'),
   default_options: fallback_opt,
+  fallback:        ['libcurl', 'libcurl_dep'],
 )
 
 if curl.found()
@@ -846,6 +852,8 @@ sdl3_ttf = dependency('sdl3_ttf',
 )
 config.set10('USE_SDL3_TTF', sdl3_ttf.found())
 config.set10('USE_HARFBUZZ', harfbuzz.found() and sdl3_ttf.found())
+
+openal_fallback_opt = quiet_fallback_opt + ['utils=false']
 
 khr_headers_dep = []
 if win32
@@ -999,7 +1007,7 @@ openal = dependency('openal',
   version:         '>= 1.23.1',
   required:        get_option('openal'),
   fallback:        ['openal-soft', 'openal_dep'],
-  default_options: quiet_fallback_opt,
+  default_options: openal_fallback_opt,
 )
 if openal.found()
   client_src += [ 'src/client/sound/al.cpp', 'src/client/sound/qal.cpp', 'inc/common/jsmn.h' ]
@@ -1309,41 +1317,64 @@ q2proto_lib = static_library('q2proto', q2proto_src,
   c_args:              q2proto_c_args,
 )
 
-client_binary_name = 'worr_' + cpu
-server_binary_name = 'worr_ded_' + cpu
+bootstrapper_requested = get_option('bootstrapper')
+bootstrapper_enabled = bootstrapper_requested
+if bootstrapper_enabled and not curl.found()
+  warning('bootstrapper disabled: libcurl is unavailable in this build environment')
+  bootstrapper_enabled = false
+endif
+if bootstrapper_enabled and not sdl3.found()
+  warning('bootstrapper disabled: SDL3 is unavailable in this build environment')
+  bootstrapper_enabled = false
+endif
+if not bootstrapper_enabled
+  error('bootstrapper is required because WORR client and dedicated engines now run as shared libraries behind the launcher executables')
+endif
+
+client_launcher_binary_name = 'worr_' + cpu
+server_launcher_binary_name = 'worr_ded_' + cpu
+client_engine_binary_name = 'worr_engine_' + cpu
+server_engine_binary_name = 'worr_ded_engine_' + cpu
 updater_binary_name = 'worr_updater_' + cpu
 sgame_binary_name = 'sgame_' + cpu
 cgame_binary_name = 'cgame_' + cpu
 
-executable(client_binary_name, common_src, client_src, renderer_engine_src,
+shared_library(client_engine_binary_name, common_src, client_src, renderer_engine_src,
   dependencies:          common_deps + client_deps,
   include_directories:   ['inc', 'q2proto/inc'],
   gnu_symbol_visibility: 'hidden',
-  win_subsystem:         win_subsystem_client,
-  link_args:             client_link_args,
+  link_args:             dll_link_args,
   link_with:             q2proto_lib,
   c_args:                ['-DUSE_CLIENT=1', '-DUSE_REF=REF_GL', engine_c_args],
   cpp_args:              client_cpp_args,
+  name_prefix:           '',
   override_options:      ['cpp_std=c++20'],
   install:               true,
   install_dir:           bindir,
 )
 
-executable(server_binary_name, common_src, server_src,
+shared_library(server_engine_binary_name, common_src, server_src,
   dependencies:          common_deps + server_deps,
   include_directories:   ['inc', 'q2proto/inc'],
   gnu_symbol_visibility: 'hidden',
-  win_subsystem:         win_subsystem_server,
-  link_args:             exe_link_args,
+  link_args:             dll_link_args,
   link_with:             q2proto_lib,
   c_args:                ['-DUSE_SERVER=1', engine_c_args],
+  name_prefix:           '',
   install:               true,
   install_dir:           bindir,
 )
 
-if win32 and get_option('bootstrapper')
+if bootstrapper_enabled
+  bootstrap_logo_h = custom_target('bootstrap_logo_rgba',
+    input:  'assets/art/logo.png',
+    output: 'bootstrap_logo_rgba.h',
+    command: [find_program('python3'), files('tools/generate_png_rgba_header.py'), '@INPUT@', '@OUTPUT@'],
+  )
+
   updater_src += [
-    'src/updater/worr_updater.c',
+    bootstrap_logo_h,
+    'src/updater/bootstrap.cpp',
     'src/updater/third_party/miniz.c',
     'src/updater/third_party/miniz_tdef.c',
     'src/updater/third_party/miniz_tinfl.c',
@@ -1351,24 +1382,57 @@ if win32 and get_option('bootstrapper')
   ]
 
   updater_c_args = [
+    '-DHAVE_CONFIG_H',
     '-DMINIZ_NO_ARCHIVE_WRITING_APIS',
     '-DMINIZ_NO_ZLIB_COMPATIBLE_NAMES',
   ]
+  updater_cpp_args = updater_c_args + []
   updater_link_args = exe_link_args
   if cc.get_argument_syntax() == 'gcc'
     updater_c_args += cc.get_supported_arguments([
       '-Wno-unused-function',
-      '-municode',
     ])
-    updater_link_args += ['-municode']
+    updater_cpp_args += cpp.get_supported_arguments([
+      '-Wno-unused-function',
+    ])
+    if win32
+      updater_c_args += cc.get_supported_arguments(['-municode'])
+      updater_link_args += ['-municode']
+    endif
   endif
 
-  executable(updater_binary_name, updater_src,
-    dependencies:        updater_deps,
-    include_directories: ['inc', 'src/updater/third_party'],
+  updater_common_deps = updater_deps + [curl, jsoncpp_dep, sdl3]
+  updater_include_dirs = ['.', 'inc', 'src/updater/third_party']
+
+  executable(client_launcher_binary_name, client_launcher_src + updater_src + ['src/updater/client_launcher_main.cpp'],
+    dependencies:        updater_common_deps,
+    include_directories: updater_include_dirs,
     win_subsystem:       win_subsystem_client,
     link_args:           updater_link_args,
     c_args:              updater_c_args,
+    cpp_args:            updater_cpp_args,
+    install:             true,
+    install_dir:         bindir,
+  )
+
+  executable(server_launcher_binary_name, server_launcher_src + updater_src + ['src/updater/server_launcher_main.cpp'],
+    dependencies:        updater_common_deps,
+    include_directories: updater_include_dirs,
+    win_subsystem:       win_subsystem_server,
+    link_args:           updater_link_args,
+    c_args:              updater_c_args,
+    cpp_args:            updater_cpp_args,
+    install:             true,
+    install_dir:         bindir,
+  )
+
+  executable(updater_binary_name, updater_worker_src + updater_src + ['src/updater/worker_main.cpp'],
+    dependencies:        updater_common_deps,
+    include_directories: updater_include_dirs,
+    win_subsystem:       win_subsystem_client,
+    link_args:           updater_link_args,
+    c_args:              updater_c_args,
+    cpp_args:            updater_cpp_args,
     install:             true,
     install_dir:         bindir,
   )

@@ -9,11 +9,21 @@ import shutil
 
 RUNTIME_EXTENSIONS = {"", ".exe", ".dll", ".pdb", ".so", ".dylib"}
 RUNTIME_PATTERNS = ('worr_*', 'worr*.exe', 'worr*.dll', 'worr*.pdb', 'worr*.so', 'worr*.dylib')
-GENERATED_BASE_GAME_PATTERNS = ('cgame_*', 'sgame_*', 'shader_vkpt', 'pak0.pkz')
+LEGACY_RUNTIME_PATTERNS = ('worr_runtime_*', 'worr_ded_runtime_*')
+GENERATED_BASE_GAME_PATTERNS = ('cgame*', 'sgame*', 'shader_vkpt', 'pak0.pkz')
 
 
 def is_runtime_file(path: pathlib.Path) -> bool:
     return path.is_file() and path.suffix.lower() in RUNTIME_EXTENSIONS
+
+
+def should_stage_runtime_file(path: pathlib.Path) -> bool:
+    return (
+        is_runtime_file(path)
+        and path.name.startswith("worr")
+        and "_runtime_" not in path.name
+        and "_launcher_" not in path.name
+    )
 
 
 def remove_path(path: pathlib.Path) -> None:
@@ -35,12 +45,14 @@ def copy_runtime_files(build_dir: pathlib.Path, install_dir: pathlib.Path) -> in
     copied = 0
     copied_paths: set[pathlib.Path] = set()
 
-    clear_globbed_paths(install_dir, RUNTIME_PATTERNS)
+    clear_globbed_paths(install_dir, RUNTIME_PATTERNS + LEGACY_RUNTIME_PATTERNS)
+    remove_path(install_dir / "bin")
     for pattern in RUNTIME_PATTERNS:
         for path in sorted(build_dir.glob(pattern)):
-            if not is_runtime_file(path) or path in copied_paths:
+            if not should_stage_runtime_file(path) or path in copied_paths:
                 continue
-            shutil.copy2(path, install_dir / path.name)
+            dest = install_dir / path.name
+            shutil.copy2(path, dest)
             copied_paths.add(path)
             copied += 1
     return copied

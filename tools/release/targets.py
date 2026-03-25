@@ -8,20 +8,39 @@ from typing import Any
 
 
 BASE_GAME = "basew"
+LOCAL_INSTALL_MANIFEST = "worr_install_manifest.json"
 
 
-def runtime_binary_name(stem: str, arch: str, os_name: str) -> str:
+def binary_name(stem: str, arch: str, os_name: str) -> str:
     suffix = ".exe" if os_name == "windows" else ""
     return f"{stem}_{arch}{suffix}"
 
 
-def runtime_binary_glob(stem: str, arch: str) -> str:
+def binary_glob(stem: str, arch: str) -> str:
     return f"{stem}_{arch}*"
+
+
+def engine_library_name(stem: str, arch: str, os_name: str) -> str:
+    suffix = {
+        "windows": ".dll",
+        "linux": ".so",
+        "macos": ".dylib",
+    }[os_name]
+    return f"{stem}_engine_{arch}{suffix}"
+
+
+def engine_library_glob(stem: str, arch: str) -> str:
+    return f"{stem}_engine_{arch}*"
+
+
+def update_asset_name(prefix: str, platform_stub: str, ext: str) -> str:
+    return f"{prefix}-{platform_stub}-update.{ext}"
 
 
 def client_required_paths(target: dict[str, Any]) -> list[str]:
     required = [
         target["client"]["launch_exe"],
+        target["client"]["engine_library"],
         f"{BASE_GAME}/cgame*",
         f"{BASE_GAME}/sgame*",
         f"{BASE_GAME}/pak0.pkz",
@@ -34,19 +53,25 @@ def client_required_paths(target: dict[str, Any]) -> list[str]:
 
 
 def server_required_paths(target: dict[str, Any]) -> list[str]:
-    return [
+    required = [
         target["server"]["launch_exe"],
+        target["server"]["engine_library"],
+        "worr_update.json",
         f"{BASE_GAME}/sgame*",
         f"{BASE_GAME}/pak0.pkz",
     ]
+    updater_asset = target.get("autoupdater", {}).get("updater_asset")
+    if updater_asset:
+        required.append(updater_asset)
+    return required
 
 
 def client_forbidden_paths(target: dict[str, Any]) -> list[str]:
     return [
         target["server"]["launch_exe"],
+        target["server"]["engine_library"],
         "baseq2/*",
         "worr/*",
-        "bin/*",
         ".release/*",
         ".release/**/*",
     ]
@@ -55,16 +80,37 @@ def client_forbidden_paths(target: dict[str, Any]) -> list[str]:
 def server_forbidden_paths(target: dict[str, Any]) -> list[str]:
     return [
         target["client"]["launch_exe"],
-        "worr_update.json",
-        "worr_opengl*",
-        "worr_rtx*",
-        "worr_updater*",
-        "worr_vulkan*",
+        target["client"]["engine_library"],
         f"{BASE_GAME}/cgame*",
         f"{BASE_GAME}/shader_vkpt/*",
         "baseq2/*",
         "worr/*",
-        "bin/*",
+        ".release/*",
+        ".release/**/*",
+    ]
+
+
+def full_install_required_paths(target: dict[str, Any]) -> list[str]:
+    required = [
+        target["client"]["launch_exe"],
+        target["client"]["engine_library"],
+        target["server"]["launch_exe"],
+        target["server"]["engine_library"],
+        f"{BASE_GAME}/cgame*",
+        f"{BASE_GAME}/sgame*",
+        f"{BASE_GAME}/pak0.pkz",
+        "worr_update.json",
+    ]
+    updater_asset = target.get("autoupdater", {}).get("updater_asset")
+    if updater_asset:
+        required.append(updater_asset)
+    return required
+
+
+def full_install_forbidden_paths() -> list[str]:
+    return [
+        "baseq2/*",
+        "worr/*",
         ".release/*",
         ".release/**/*",
     ]
@@ -73,6 +119,7 @@ def server_forbidden_paths(target: dict[str, Any]) -> list[str]:
 def build_target(
     *,
     platform_id: str,
+    platform_stub: str,
     runner: str,
     os_name: str,
     arch: str,
@@ -84,21 +131,32 @@ def build_target(
     installer: dict[str, Any] | None,
     autoupdater: dict[str, Any],
 ) -> dict[str, Any]:
-    client_launch = runtime_binary_name("worr", arch, os_name)
-    server_launch = runtime_binary_name("worr_ded", arch, os_name)
+    client_launch = binary_name("worr", arch, os_name)
+    server_launch = binary_name("worr_ded", arch, os_name)
+    client_engine = engine_library_name("worr", arch, os_name)
+    server_engine = engine_library_name("worr_ded", arch, os_name)
 
+    updater_asset = binary_name("worr_updater", arch, os_name)
     target: dict[str, Any] = {
         "platform_id": platform_id,
+        "platform_stub": platform_stub,
         "runner": runner,
         "os": os_name,
         "arch": arch,
         "archive_format": archive_format,
         "client": {
+            "role": "client",
             "package_name": client_package_name,
             "manifest_name": client_manifest_name,
+            "update_package_name": update_asset_name("worr-client", platform_stub, "zip"),
+            "update_manifest_name": update_asset_name("worr-client", platform_stub, "json"),
             "launch_exe": client_launch,
+            "engine_library": client_engine,
+            "local_manifest_name": LOCAL_INSTALL_MANIFEST,
             "include": [
-                runtime_binary_glob("worr", arch),
+                binary_glob("worr", arch),
+                engine_library_glob("worr", arch),
+                binary_glob("worr_updater", arch),
                 "worr_opengl_*",
                 "worr_vulkan_*",
                 "worr_rtx_*",
@@ -106,26 +164,34 @@ def build_target(
                 f"{BASE_GAME}/*",
             ],
             "exclude": [
-                runtime_binary_glob("worr_ded", arch),
+                binary_glob("worr_ded", arch),
+                engine_library_glob("worr_ded", arch),
                 f"{BASE_GAME}/.conhistory",
                 f"{BASE_GAME}/logs/*",
             ],
         },
         "server": {
+            "role": "server",
             "package_name": server_package_name,
             "manifest_name": server_manifest_name,
+            "update_package_name": update_asset_name("worr-server", platform_stub, "zip"),
+            "update_manifest_name": update_asset_name("worr-server", platform_stub, "json"),
             "launch_exe": server_launch,
+            "engine_library": server_engine,
+            "local_manifest_name": LOCAL_INSTALL_MANIFEST,
             "include": [
-                runtime_binary_glob("worr_ded", arch),
+                binary_glob("worr_ded", arch),
+                engine_library_glob("worr_ded", arch),
+                binary_glob("worr_updater", arch),
+                "worr_update.json",
                 f"{BASE_GAME}/*",
             ],
             "exclude": [
-                runtime_binary_glob("worr", arch),
+                binary_glob("worr", arch),
+                engine_library_glob("worr", arch),
                 "worr_opengl_*",
                 "worr_vulkan_*",
                 "worr_rtx_*",
-                "worr_updater_*",
-                "worr_update.json",
                 f"{BASE_GAME}/cgame*",
                 f"{BASE_GAME}/.conhistory",
                 f"{BASE_GAME}/logs/*",
@@ -133,23 +199,50 @@ def build_target(
             ],
         },
         "installer": installer,
-        "autoupdater": autoupdater,
+        "autoupdater": {
+            **autoupdater,
+            "mode": "bootstrap_v1",
+            "updater_asset": updater_asset,
+        },
     }
-
-    updater_asset = autoupdater.get("updater_asset")
-    if updater_asset:
-        target["client"]["include"].append(updater_asset)
 
     target["client"]["required_paths"] = client_required_paths(target)
     target["client"]["forbidden_paths"] = client_forbidden_paths(target)
     target["server"]["required_paths"] = server_required_paths(target)
     target["server"]["forbidden_paths"] = server_forbidden_paths(target)
+
+    full_required = full_install_required_paths(target)
+    full_forbidden = full_install_forbidden_paths()
+    full_include = [
+        binary_glob("worr", arch),
+        binary_glob("worr_ded", arch),
+        engine_library_glob("worr", arch),
+        engine_library_glob("worr_ded", arch),
+        binary_glob("worr_updater", arch),
+        "worr_opengl_*",
+        "worr_vulkan_*",
+        "worr_rtx_*",
+        "worr_update.json",
+        f"{BASE_GAME}/*",
+    ]
+    full_exclude = [
+        f"{BASE_GAME}/.conhistory",
+        f"{BASE_GAME}/logs/*",
+    ]
+
+    for role in ("client", "server"):
+        target[role]["update_include"] = list(full_include)
+        target[role]["update_exclude"] = list(full_exclude)
+        target[role]["update_required_paths"] = list(full_required)
+        target[role]["update_forbidden_paths"] = list(full_forbidden)
+
     return target
 
 
 TARGETS: list[dict[str, Any]] = [
     build_target(
         platform_id="windows-x86_64",
+        platform_stub="win64",
         runner="windows-latest",
         os_name="windows",
         arch="x86_64",
@@ -163,13 +256,12 @@ TARGETS: list[dict[str, Any]] = [
             "name": "worr-win64.msi",
         },
         autoupdater={
-            "mode": "native",
-            "updater_asset": runtime_binary_name("worr_updater", "x86_64", "windows"),
             "config_asset": "worr_update.json",
         },
     ),
     build_target(
         platform_id="linux-x86_64",
+        platform_stub="linux-x86_64",
         runner="ubuntu-latest",
         os_name="linux",
         arch="x86_64",
@@ -180,13 +272,12 @@ TARGETS: list[dict[str, Any]] = [
         server_manifest_name="worr-server-linux-x86_64.json",
         installer=None,
         autoupdater={
-            "mode": "archive_sync",
-            "updater_asset": None,
             "config_asset": "worr_update.json",
         },
     ),
     build_target(
         platform_id="macos-x86_64",
+        platform_stub="macos-x86_64",
         runner="macos-15-intel",
         os_name="macos",
         arch="x86_64",
@@ -197,8 +288,6 @@ TARGETS: list[dict[str, Any]] = [
         server_manifest_name="worr-server-macos-x86_64.json",
         installer=None,
         autoupdater={
-            "mode": "archive_sync",
-            "updater_asset": None,
             "config_asset": "worr_update.json",
         },
     ),
@@ -231,8 +320,12 @@ def expected_asset_names(target: dict[str, Any]) -> list[str]:
     assets = [
         target["client"]["package_name"],
         target["client"]["manifest_name"],
+        target["client"]["update_package_name"],
+        target["client"]["update_manifest_name"],
         target["server"]["package_name"],
         target["server"]["manifest_name"],
+        target["server"]["update_package_name"],
+        target["server"]["update_manifest_name"],
     ]
     installer = target.get("installer")
     if installer:

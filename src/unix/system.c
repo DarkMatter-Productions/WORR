@@ -18,6 +18,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "shared/shared.h"
 #include "common/cmd.h"
+#include "common/bootstrap.h"
 #include "common/common.h"
 #include "common/cvar.h"
 #include "common/files.h"
@@ -187,6 +188,7 @@ Sys_Init
 void Sys_Init(void)
 {
     const char *homedir;
+    const char *bootstrap_basedir;
 
     signal(SIGTERM, term_handler);
     signal(SIGINT, term_handler);
@@ -198,7 +200,10 @@ void Sys_Init(void)
 
     // basedir <path>
     // allows the game to run from outside the data tree
-    sys_basedir = Cvar_Get("basedir", DATADIR, CVAR_NOSET);
+    bootstrap_basedir = getenv("WORR_BOOTSTRAP_BASEDIR");
+    sys_basedir = Cvar_Get("basedir",
+                           bootstrap_basedir && *bootstrap_basedir ? bootstrap_basedir : DATADIR,
+                           CVAR_NOSET);
 
     // homedir <path>
     // specifies per-user writable directory for demos, screenshots, etc
@@ -560,12 +565,7 @@ const sys_getinstalledgamepath_func_t gamepath_funcs[] = {
 };
 
 
-/*
-=================
-main
-=================
-*/
-int main(int argc, char **argv)
+q_exported int WORR_EngineMain(int argc, char **argv)
 {
     if (argc > 1) {
         if (!strcmp(argv[1], "-v") || !strcmp(argv[1], "--version")) {
@@ -589,6 +589,9 @@ int main(int argc, char **argv)
 #endif
 
     Qcommon_Init(argc, argv);
+#if !USE_CLIENT
+    Com_BootstrapSignalReady();
+#endif
 
     while (!terminate) {
         if (flush_logs) {

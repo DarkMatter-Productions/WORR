@@ -77,10 +77,12 @@ def main() -> int:
         targets.append(
             {
                 "platform_id": metadata["platform_id"],
+                "platform_stub": metadata.get("platform_stub", ""),
                 "os": metadata["os"],
                 "arch": metadata["arch"],
                 "archive_format": metadata["archive_format"],
                 "autoupdater": metadata.get("autoupdater", {}),
+                "roles": metadata.get("roles", {}),
                 "files": target_files,
             }
         )
@@ -89,7 +91,7 @@ def main() -> int:
     asset_paths = sorted(set(asset_paths))
 
     index = {
-        "schema_version": 1,
+        "schema_version": 3,
         "generated_at_utc": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "repo": args.repo,
         "channel": args.channel,

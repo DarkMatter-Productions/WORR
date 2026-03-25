@@ -74,7 +74,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             meson ninja-build pkg-config gcc g++ python3 cmake nasm \
-            libopenal-dev libpng-dev libjpeg-dev zlib1g-dev libvulkan-dev glslang-tools \
+            libcurl4-openssl-dev libopenal-dev libpng-dev libjpeg-dev zlib1g-dev libvulkan-dev glslang-tools \
             libgl1-mesa-dev libx11-dev libxi-dev libwayland-dev wayland-protocols libdecoration0-dev
 
       - name: Install macOS dependencies
@@ -82,7 +82,7 @@ jobs:
         shell: bash
         run: |
           brew update
-          brew install meson ninja pkg-config cmake sdl3 openal-soft libpng jpeg-turbo \
+          brew install meson ninja pkg-config cmake curl sdl3 openal-soft libpng jpeg-turbo \
             vulkan-loader molten-vk glslang
 
       - name: Setup MSYS2 (Windows)
@@ -98,6 +98,7 @@ jobs:
             mingw-w64-x86_64-ninja
             mingw-w64-x86_64-pkgconf
             mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-curl
             mingw-w64-x86_64-vulkan-headers
             mingw-w64-x86_64-vulkan-loader
             mingw-w64-x86_64-glslang
@@ -109,7 +110,7 @@ jobs:
           meson setup builddir --wrap-mode=forcefallback --buildtype=release \
             -Dbase-game=basew \
             -Ddefault-game=basew \
-            -Dbootstrapper=false -Dtests=false -Davcodec=disabled -Dlibcurl=disabled \
+            -Dbootstrapper=true -Dtests=false -Davcodec=disabled -Dlibcurl=enabled \
             -Dharfbuzz:tests=disabled
 
       - name: Configure (Windows)
@@ -119,7 +120,7 @@ jobs:
           meson setup builddir --wrap-mode=forcefallback --buildtype=release \
             -Dbase-game=basew \
             -Ddefault-game=basew \
-            -Dbootstrapper=true -Dtests=false -Davcodec=disabled -Dlibcurl=disabled \
+            -Dbootstrapper=true -Dtests=false -Davcodec=disabled -Dlibcurl=enabled \
             -Dharfbuzz:tests=disabled
 
       - name: Build (Linux/macOS)
@@ -165,13 +166,20 @@ jobs:
           if (-not $wixRoot) { throw "WiX Toolset install not found." }
           "$($wixRoot.FullName)\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
-      - name: Stage Windows release layout
+      - name: Prepare Windows installer layout
         if: matrix.has_installer
         shell: msys2 {0}
         run: |
-          python3 tools/release/stage_release_layout.py \
+          python3 tools/release/prepare_role_install.py \
             --input-dir .install \
-            --output-dir .release-layout
+            --output-dir .release-layout \
+            --platform-id "${{ matrix.platform_id }}" \
+            --role client \
+            --repo "${{ github.repository }}" \
+            --channel stable \
+            --version "${{ needs.prepare.outputs.version }}" \
+            --commit-sha "${{ needs.prepare.outputs.head_sha }}" \
+            --build-id "${WORR_BUILD_ID}"
 
       - name: Build MSI installer
         if: matrix.has_installer

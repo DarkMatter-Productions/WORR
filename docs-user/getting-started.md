@@ -32,19 +32,29 @@ This guide is the quick path to running WORR with your own Quake II data.
    preserved by refresh; you do not need to recopy `pak*.pak` after each build.
 
 4. Launch from `.install/`:
-   - Windows: `.install/worr_x86_64.exe`
-   - Linux/macOS: `.install/worr_x86_64`
+   - Client bootstrap executable:
+     - Windows: `.install/worr_x86_64.exe`
+     - Linux/macOS: `.install/worr_x86_64`
+   - Dedicated bootstrap executable:
+     - Windows: `.install/worr_ded_x86_64.exe`
+     - Linux/macOS: `.install/worr_ded_x86_64`
 
 ## Published Release Layout
 
-- Client releases launch from `worr_x86_64(.exe)` and keep runtime data in `basew/`.
-- Dedicated server releases launch from `worr_ded_x86_64(.exe)` and keep configs, maps, and WORR assets in `basew/`.
+- `worr_x86_64(.exe)` is the user-facing client bootstrap executable.
+- `worr_ded_x86_64(.exe)` is the user-facing dedicated bootstrap executable.
+- `worr_engine_x86_64(.dll/.so/.dylib)` is the hosted client engine library.
+- `worr_ded_engine_x86_64(.dll/.so/.dylib)` is the hosted dedicated engine library.
+- `worr_updater_x86_64(.exe)` is the updater/apply worker used for safe file replacement during updates.
+- Runtime data stays in `basew/`.
 
 ## First Run Checklist
 
 - Local build: put your Quake II data in `.install/basew/` (or point `basedir` at a valid data tree).
 - Local build: keep `.install/basew/pak0.pkz` in place.
+- Local build: `worr_update.json` and `worr_install_manifest.json` are optional. If they are absent, the bootstrap executable detects a developer install and loads the engine library directly.
 - Published release: keep runtime data under `basew/`, including `basew/pak0.pkz`.
+- Published release: keep `worr_update.json` and `worr_install_manifest.json` next to the bootstrap/updater executables so auto-update can run.
 - If the game boots to console only, check renderer selection and your GPU driver.
 
 ## Useful Start Arguments
@@ -63,4 +73,4 @@ expected to work on current macOS Vulkan stacks.
 
 - No sound: verify OpenAL device output and in-game volume cvars.
 - Missing UI/textures: confirm `pak0.pkz` exists under `.install/basew/` for local builds or under `basew/` in a published release.
-- Startup crash after pull: rebuild, then rerun `tools/refresh_install.py`.
+- Startup crash after pull: rebuild, then rerun `tools/refresh_install.py` so the bootstrap executables and engine libraries are refreshed together.
