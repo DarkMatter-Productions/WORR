@@ -95,7 +95,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             meson ninja-build pkg-config gcc g++ python3 cmake nasm \
-            libcurl4-openssl-dev libopenal-dev libpng-dev libjpeg-dev zlib1g-dev libvulkan-dev glslang-tools \
+            libcurl4-openssl-dev libopenal-dev libpng-dev libjpeg-dev zlib1g-dev libvulkan-dev glslang-tools libsdl3-dev \
             libgl1-mesa-dev libx11-dev libxi-dev libwayland-dev wayland-protocols libdecoration0-dev
 
       - name: Install macOS dependencies

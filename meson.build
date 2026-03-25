@@ -1631,4 +1631,3 @@ summary({
   'x11'                : config.get('USE_X11', 0) != 0,
   'zlib'               : config.get('USE_ZLIB', 0) != 0,
   }, section: 'Features', bool_yn: true)
-
