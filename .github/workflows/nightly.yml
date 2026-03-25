@@ -128,7 +128,7 @@ jobs:
         if: matrix.os != 'windows'
         shell: bash
         run: |
-          meson setup builddir --wrap-mode=default --buildtype=release \
+          meson setup builddir --wrap-mode=default --force-fallback-for=sdl3,sdl3_ttf --buildtype=release \
             -Dbase-game=basew \
             -Ddefault-game=basew \
             -Dbootstrapper=true -Dsdl3=enabled -Dtests=false -Davcodec=disabled -Dlibcurl=enabled \
