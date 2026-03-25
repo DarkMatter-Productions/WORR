@@ -107,10 +107,10 @@ jobs:
         if: matrix.os != 'windows'
         shell: bash
         run: |
-          meson setup builddir --wrap-mode=forcefallback --buildtype=release \
+          meson setup builddir --wrap-mode=default --force-fallback-for=sdl3,sdl3_ttf --buildtype=release \
             -Dbase-game=basew \
             -Ddefault-game=basew \
-            -Dbootstrapper=true -Dtests=false -Davcodec=disabled -Dlibcurl=enabled \
+            -Dbootstrapper=true -Dsdl3=enabled -Dtests=false -Davcodec=disabled -Dlibcurl=enabled \
             -Dharfbuzz:tests=disabled
 
       - name: Configure (Windows)
@@ -120,7 +120,7 @@ jobs:
           meson setup builddir --wrap-mode=forcefallback --buildtype=release \
             -Dbase-game=basew \
             -Ddefault-game=basew \
-            -Dbootstrapper=true -Dtests=false -Davcodec=disabled -Dlibcurl=enabled \
+            -Dbootstrapper=true -Dsdl3=enabled -Dtests=false -Davcodec=disabled -Dlibcurl=enabled \
             -Dharfbuzz:tests=disabled
 
       - name: Build (Linux/macOS)
