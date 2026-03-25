@@ -74,8 +74,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             meson ninja-build pkg-config gcc g++ python3 cmake nasm \
-            libcurl4-openssl-dev libopenal-dev libpng-dev libjpeg-dev zlib1g-dev libvulkan-dev glslang-tools libsdl3-dev \
+            libcurl4-openssl-dev libopenal-dev libpng-dev libjpeg-dev zlib1g-dev libvulkan-dev glslang-tools \
             libgl1-mesa-dev libx11-dev libxi-dev libwayland-dev wayland-protocols libdecoration0-dev
+          # ubuntu-latest currently maps to Ubuntu 24.04, where libsdl3-dev is unavailable.
+          # Meson is already configured to use the bundled SDL3/SDL3_ttf wraps on Linux.
 
       - name: Install macOS dependencies
         if: matrix.os == 'macos'
