@@ -780,12 +780,20 @@ if use_stb_png
   renderer_src += 'src/rend_vk/refresh/stb/stb.c'
 endif
 
-curl = dependency('libcurl',
-  version:         '>= 7.68.0',
-  required:        get_option('libcurl'),
-  default_options: fallback_opt,
-  fallback:        ['libcurl', 'libcurl_dep'],
-)
+if host_machine.system() == 'windows'
+  curl = dependency('libcurl',
+    version:         '>= 7.68.0',
+    required:        get_option('libcurl'),
+    default_options: fallback_opt,
+    fallback:        ['libcurl', 'libcurl_dep'],
+  )
+else
+  curl = dependency('libcurl',
+    version:         '>= 7.68.0',
+    required:        get_option('libcurl'),
+    default_options: fallback_opt,
+  )
+endif
 
 if curl.found()
   client_src += 'src/client/http.cpp'
@@ -1623,4 +1631,3 @@ summary({
   'x11'                : config.get('USE_X11', 0) != 0,
   'zlib'               : config.get('USE_ZLIB', 0) != 0,
   }, section: 'Features', bool_yn: true)
-
