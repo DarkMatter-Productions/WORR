@@ -780,7 +780,7 @@ if use_stb_png
   renderer_src += 'src/rend_vk/refresh/stb/stb.c'
 endif
 
-if host_machine.system() == 'windows'
+if win32
   curl = dependency('libcurl',
     version:         '>= 7.68.0',
     required:        get_option('libcurl'),
