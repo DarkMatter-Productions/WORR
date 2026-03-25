@@ -94,11 +94,23 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            meson ninja-build pkg-config gcc g++ python3 cmake nasm \
+            meson ninja-build pkg-config gcc g++ python3 python3-venv cmake nasm \
             libcurl4-openssl-dev libopenal-dev libpng-dev libjpeg-dev zlib1g-dev libvulkan-dev glslang-tools \
-            libgl1-mesa-dev libx11-dev libxi-dev libwayland-dev wayland-protocols libdecoration0-dev
+            libdbus-1-dev libpipewire-0.3-dev libudev-dev libxkbcommon-dev \
+            libgl1-mesa-dev libx11-dev libxext-dev libxi-dev libxcursor-dev libxfixes-dev libxrandr-dev libxss-dev libxtst-dev \
+            libwayland-dev wayland-protocols x11proto-dev libdecor-0-dev
           # ubuntu-latest currently maps to Ubuntu 24.04, where libsdl3-dev is unavailable.
-          # Meson is already configured to use the bundled SDL3/SDL3_ttf wraps on Linux.
+          # Meson is already configured to use the bundled SDL3/SDL3_ttf wraps on Linux, but
+          # the SDL3 subproject still needs its native Linux development dependencies.
+
+      - name: Install Linux Meson toolchain
+        if: matrix.os == 'linux'
+        shell: bash
+        run: |
+          python3 -m venv "${RUNNER_TEMP}/meson-venv"
+          "${RUNNER_TEMP}/meson-venv/bin/pip" install --upgrade pip meson
+          echo "${RUNNER_TEMP}/meson-venv/bin" >> "$GITHUB_PATH"
+          "${RUNNER_TEMP}/meson-venv/bin/meson" --version
 
       - name: Install macOS dependencies
         if: matrix.os == 'macos'
