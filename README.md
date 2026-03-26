@@ -1,6 +1,13 @@
 <div align="center">
   <img src="assets/art/logo.png" alt="WORR Logo" width="300">
   <h2>WORR – The new way to experience <b>QUAKE II Rerelease</b></h2>
+
+  [![Latest Release](https://img.shields.io/github/v/release/DarkMatter-Productions/WORR?label=release&color=blue)](https://github.com/DarkMatter-Productions/WORR/releases/latest)
+  [![License](https://img.shields.io/github/license/DarkMatter-Productions/WORR?color=blue)](LICENSE)
+  [![Nightly Build](https://img.shields.io/github/actions/workflow/status/DarkMatter-Productions/WORR/nightly.yml?label=nightly)](https://github.com/DarkMatter-Productions/WORR/actions/workflows/nightly.yml)
+  [![Release Build](https://img.shields.io/github/actions/workflow/status/DarkMatter-Productions/WORR/release.yml?label=release%20build)](https://github.com/DarkMatter-Productions/WORR/actions/workflows/release.yml)
+  [![Open Issues](https://img.shields.io/github/issues/DarkMatter-Productions/WORR)](https://github.com/DarkMatter-Productions/WORR/issues)
+  [![Stars](https://img.shields.io/github/stars/DarkMatter-Productions/WORR?style=flat)](https://github.com/DarkMatter-Productions/WORR/stargazers)
 </div>
 
 <p align="center">
