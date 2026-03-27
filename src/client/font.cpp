@@ -452,11 +452,11 @@ static bool font_ttf_render_bitmap(font_t *font, uint32_t glyph_index,
   if (!font || !out_glyph || !out_bitmap || !out_pitch || !font->ttf.sdl_font)
     return false;
 
-  int minx, maxx, miny, maxy, advance;
-  if (!TTF_GetGlyphMetrics(font->ttf.sdl_font, glyph_index, &minx, &maxx, &miny, &maxy, &advance))
-    return false;
+  int minx = 0, maxx = 0, miny = 0, maxy = 0, advance = 0;
+  bool have_metrics = TTF_GetGlyphMetrics(font->ttf.sdl_font, glyph_index, &minx,
+	&maxx, &miny, &maxy, &advance);
 
-  out_glyph->valid = true;
+  out_glyph->valid = have_metrics;
   out_glyph->left = minx;
   out_glyph->top = maxy;
   out_glyph->bottom = miny;
@@ -465,7 +465,7 @@ static bool font_ttf_render_bitmap(font_t *font, uint32_t glyph_index,
   out_glyph->w = std::max(0, maxx - minx);
   out_glyph->h = std::max(0, maxy - miny);
 
-  if (out_glyph->w <= 0 || out_glyph->h <= 0) {
+  if (have_metrics && out_glyph->w <= 0 && out_glyph->h <= 0) {
     *out_pitch = 0;
     out_bitmap->clear();
     return true;
@@ -478,8 +478,13 @@ static bool font_ttf_render_bitmap(font_t *font, uint32_t glyph_index,
     return true;
   }
 
+  out_glyph->valid = true;
   out_glyph->w = surface->w;
   out_glyph->h = surface->h;
+  if (!have_metrics && out_glyph->x_skip <= 0) {
+	out_glyph->x_skip = surface->w;
+	out_glyph->advance_26_6 = surface->w << 6;
+  }
   *out_pitch = surface->w;
   out_bitmap->assign((size_t)surface->w * (size_t)surface->h, 0);
 
@@ -1089,8 +1094,13 @@ void Font_Init(void) {
       g_ttf_ready = false;
     } else {
       g_ttf_engine = TTF_CreateSurfaceTextEngine();
-      g_ttf_ready = true;
-      font_debug_printf("Font: SDL3_ttf initialized\n");
+      if (!g_ttf_engine) {
+        Com_WPrintf("SDL3_ttf text engine creation failed, TTF fonts disabled\n");
+        g_ttf_ready = false;
+      } else {
+        g_ttf_ready = true;
+        font_debug_printf("Font: SDL3_ttf initialized\n");
+      }
     }
   }
 #else
@@ -1267,6 +1277,7 @@ int Font_DrawString(font_t *font, int x, int y, int scale, int flags,
 
 #if USE_SDL3_TTF
     if (font->kind == FONT_TTF && g_ttf_engine) {
+      bool drew_ttf_segment = false;
       TTF_Text *text_obj = TTF_CreateText(g_ttf_engine, font->ttf.sdl_font, seg_start, seg_len);
       if (text_obj && text_obj->internal && text_obj->internal->ops) {
         float glyph_scale = font_draw_scale(font, draw_scale);
@@ -1292,11 +1303,13 @@ int Font_DrawString(font_t *font, int x, int y, int scale, int flags,
         }
         x_f += (float)text_obj->internal->w * glyph_scale;
         x_i = Q_rint(x_f);
+        drew_ttf_segment = true;
         TTF_DestroyText(text_obj);
       } else {
         if (text_obj) TTF_DestroyText(text_obj);
       }
-      continue;
+      if (drew_ttf_segment)
+        continue;
     }
 #endif
 
@@ -1379,10 +1392,11 @@ int Font_MeasureString(const font_t *font, int scale, int flags,
 #if USE_SDL3_TTF
     if (font->kind == FONT_TTF && g_ttf_engine) {
       int w = 0, h = 0;
-      TTF_GetStringSize(font->ttf.sdl_font, seg_start, seg_len, &w, &h);
-      pen_x += (float)w * font_draw_scale(font, draw_scale);
-      max_width = std::max(max_width, pen_x);
-      continue;
+      if (TTF_GetStringSize(font->ttf.sdl_font, seg_start, seg_len, &w, &h)) {
+        pen_x += (float)w * font_draw_scale(font, draw_scale);
+        max_width = std::max(max_width, pen_x);
+        continue;
+      }
     }
 #endif
 
