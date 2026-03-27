@@ -130,6 +130,8 @@ static int g_font_seq = 0;
 static cvar_t *cl_debug_fonts = nullptr;
 static cvar_t *cl_font_scale_boost = nullptr;
 static cvar_t *cl_font_draw_black_background = nullptr;
+static cvar_t *cl_font_fallback_kfont = nullptr;
+static cvar_t *cl_font_fallback_legacy = nullptr;
 
 #if USE_SDL3_TTF
 static cvar_t *cl_font_ttf_hinting = nullptr;
@@ -172,12 +174,12 @@ static float font_scale_boost(void) {
 }
 
 static bool font_draw_black_background_enabled(void) {
-  if (!cl_font_draw_black_background) {
-    cl_font_draw_black_background =
-        Cvar_Get("cl_font_draw_black_background", "0", CVAR_ARCHIVE);
-  }
-  return cl_font_draw_black_background &&
-         Cvar_ClampInteger(cl_font_draw_black_background, 0, 1) != 0;
+	if (!cl_font_draw_black_background) {
+		cl_font_draw_black_background =
+			Cvar_Get("cl_font_draw_black_background", "1", CVAR_ARCHIVE);
+	}
+	return cl_font_draw_black_background &&
+		   Cvar_ClampInteger(cl_font_draw_black_background, 0, 1) != 0;
 }
 
 static float font_draw_scale(const font_t *font, int scale) {
@@ -876,6 +878,25 @@ static font_t *font_load_internal(const char *path, int virtual_line_height,
                                   const char *fallback_kfont,
                                   const char *fallback_legacy,
                                   bool register_font) {
+	if (!cl_font_fallback_kfont)
+		cl_font_fallback_kfont =
+			Cvar_Get("cl_font_fallback_kfont", "fonts/qfont.kfont", CVAR_ARCHIVE);
+	if (!cl_font_fallback_legacy)
+		cl_font_fallback_legacy =
+			Cvar_Get("cl_font_fallback_legacy", "conchars.png", CVAR_ARCHIVE);
+
+	if ((!fallback_kfont || !*fallback_kfont) &&
+		cl_font_fallback_kfont && cl_font_fallback_kfont->string &&
+		*cl_font_fallback_kfont->string) {
+		fallback_kfont = cl_font_fallback_kfont->string;
+	}
+
+	if ((!fallback_legacy || !*fallback_legacy) &&
+		cl_font_fallback_legacy && cl_font_fallback_legacy->string &&
+		*cl_font_fallback_legacy->string) {
+		fallback_legacy = cl_font_fallback_legacy->string;
+	}
+
   if (virtual_line_height <= 0)
     virtual_line_height = CONCHAR_HEIGHT;
 
@@ -1081,6 +1102,12 @@ void Font_Init(void) {
   (void)font_debug_enabled();
   (void)font_scale_boost();
   (void)font_draw_black_background_enabled();
+	if (!cl_font_fallback_kfont)
+		cl_font_fallback_kfont =
+			Cvar_Get("cl_font_fallback_kfont", "fonts/qfont.kfont", CVAR_ARCHIVE);
+	if (!cl_font_fallback_legacy)
+		cl_font_fallback_legacy =
+			Cvar_Get("cl_font_fallback_legacy", "conchars.png", CVAR_ARCHIVE);
 #if USE_CLIENT
   Cmd_AddCommand("font_dump_glyphs", Font_DumpGlyphs_f);
 #endif

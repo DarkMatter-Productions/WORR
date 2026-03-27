@@ -5277,7 +5277,7 @@ void CG_InitScreen()
     cg_obituary_time_legacy = cgi.cvar("cl_obituary_time", cg_obituary_time->string, CVAR_NOFLAGS);
     cg_obituary_fade = cgi.cvar("cg_obituary_fade", "200", CVAR_ARCHIVE);
     cg_obituary_fade_legacy = cgi.cvar("cl_obituary_fade", cg_obituary_fade->string, CVAR_NOFLAGS);
-    ui_acc_contrast = cgi.cvar ("ui_acc_contrast", "0",   CVAR_NOFLAGS);
+	ui_acc_contrast = cgi.cvar ("ui_acc_contrast", "1",   CVAR_NOFLAGS);
     ui_acc_alttypeface = cgi.cvar("ui_acc_alttypeface", "0", CVAR_NOFLAGS);
     scr_crosshair = cgi.cvar("crosshair", "3", CVAR_ARCHIVE);
     cl_crosshair_brightness = cgi.cvar("cl_crosshair_brightness", "1.0", CVAR_ARCHIVE);
@@ -5308,7 +5308,6 @@ void CG_InitScreen()
     poi_state = {};
     cg_fps_state = {};
 }
-
 
 
 
