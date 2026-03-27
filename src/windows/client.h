@@ -79,6 +79,8 @@ typedef const GUID *LPCGUID;
 typedef struct {
     HWND    wnd;
     HDC     dc;
+    WNDPROC bootstrap_wndproc;
+    bool    adopted_bootstrap_window;
 
     DEVMODE  dm;
 

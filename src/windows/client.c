@@ -131,6 +131,8 @@ static bool win_altgr_active;
 static int win_suppress_char_scancode;
 static bool win_ime_ignore_char;
 
+static const char *win_bootstrap_hwnd_env = "WORR_BOOTSTRAP_WIN32_HWND";
+
 /*
 ===============================================================================
 
@@ -1677,6 +1679,8 @@ static LRESULT WINAPI Win_MainWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARA
     }
 
     // pass all unhandled messages to DefWindowProc
+    if (win.adopted_bootstrap_window && win.bootstrap_wndproc)
+        return CallWindowProcA(win.bootstrap_wndproc, hWnd, uMsg, wParam, lParam);
     return DefWindowProc(hWnd, uMsg, wParam, lParam);
 }
 
@@ -1723,6 +1727,51 @@ static void win_style_changed(cvar_t *self)
     }
 }
 
+static bool win_parse_bootstrap_hwnd(HWND *out)
+{
+    char buffer[64];
+    DWORD len = GetEnvironmentVariableA(win_bootstrap_hwnd_env, buffer, sizeof(buffer));
+    if (!len || len >= sizeof(buffer))
+        return false;
+
+    char *end = NULL;
+    uintptr_t value = (uintptr_t)_strtoui64(buffer, &end, 16);
+    if (!value || !end || *end)
+        return false;
+
+    *out = (HWND)value;
+    return IsWindow(*out);
+}
+
+static bool win_try_adopt_bootstrap_window(void)
+{
+    HWND adopted_wnd;
+    HDC adopted_dc;
+    WNDPROC previous_wndproc;
+
+    if (!win_parse_bootstrap_hwnd(&adopted_wnd))
+        return false;
+
+    SetLastError(0);
+    previous_wndproc = (WNDPROC)SetWindowLongPtrA(adopted_wnd, GWLP_WNDPROC, (LONG_PTR)Win_MainWndProc);
+    if (!previous_wndproc && GetLastError() != 0)
+        return false;
+
+    adopted_dc = GetDC(adopted_wnd);
+    if (!adopted_dc) {
+        SetWindowLongPtrA(adopted_wnd, GWLP_WNDPROC, (LONG_PTR)previous_wndproc);
+        return false;
+    }
+
+    win.wnd = adopted_wnd;
+    win.dc = adopted_dc;
+    win.bootstrap_wndproc = previous_wndproc;
+    win.adopted_bootstrap_window = true;
+    SetWindowTextA(win.wnd, PRODUCT);
+    Com_Printf("Adopted bootstrap-owned Win32 window.\n");
+    return true;
+}
+
 /*
 ============
 Win_Init
@@ -1758,33 +1807,35 @@ void Win_Init(void)
 
     win.GetDpiForWindow = (PVOID)GetProcAddress(GetModuleHandle("user32"), "GetDpiForWindow");
 
-    // register the frame class
-    memset(&wc, 0, sizeof(wc));
-    wc.cbSize = sizeof(wc);
-    wc.lpfnWndProc = Win_MainWndProc;
-    wc.hInstance = hGlobalInstance;
-    wc.hIcon = LoadImage(hGlobalInstance, MAKEINTRESOURCE(IDI_APP),
-                         IMAGE_ICON, 32, 32, LR_CREATEDIBSECTION);
-    wc.hIconSm = LoadImage(hGlobalInstance, MAKEINTRESOURCE(IDI_APP),
-                           IMAGE_ICON, 16, 16, LR_CREATEDIBSECTION);
-    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-    wc.hbrBackground = GetStockObject(BLACK_BRUSH);
-    wc.lpszClassName = WINDOW_CLASS_NAME;
+    if (!win_try_adopt_bootstrap_window()) {
+        // register the frame class
+        memset(&wc, 0, sizeof(wc));
+        wc.cbSize = sizeof(wc);
+        wc.lpfnWndProc = Win_MainWndProc;
+        wc.hInstance = hGlobalInstance;
+        wc.hIcon = LoadImage(hGlobalInstance, MAKEINTRESOURCE(IDI_APP),
+                             IMAGE_ICON, 32, 32, LR_CREATEDIBSECTION);
+        wc.hIconSm = LoadImage(hGlobalInstance, MAKEINTRESOURCE(IDI_APP),
+                               IMAGE_ICON, 16, 16, LR_CREATEDIBSECTION);
+        wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+        wc.hbrBackground = GetStockObject(BLACK_BRUSH);
+        wc.lpszClassName = WINDOW_CLASS_NAME;
 
-    if (!RegisterClassExA(&wc)) {
-        Com_Error(ERR_FATAL, "Couldn't register main window class");
-    }
+        if (!RegisterClassExA(&wc)) {
+            Com_Error(ERR_FATAL, "Couldn't register main window class");
+        }
 
-    // create the window
-    win.wnd = CreateWindowA(WINDOW_CLASS_NAME, PRODUCT, 0, 0, 0, 0, 0, NULL,
-                            NULL, hGlobalInstance, NULL);
-    if (!win.wnd) {
-        Com_Error(ERR_FATAL, "Couldn't create main window");
-    }
+        // create the window
+        win.wnd = CreateWindowA(WINDOW_CLASS_NAME, PRODUCT, 0, 0, 0, 0, 0, NULL,
+                                NULL, hGlobalInstance, NULL);
+        if (!win.wnd) {
+            Com_Error(ERR_FATAL, "Couldn't create main window");
+        }
 
-    win.dc = GetDC(win.wnd);
-    if (!win.dc) {
-        Com_Error(ERR_FATAL, "Couldn't get DC of the main window");
+        win.dc = GetDC(win.wnd);
+        if (!win.dc) {
+            Com_Error(ERR_FATAL, "Couldn't get DC of the main window");
+        }
     }
 
     // init gamma ramp
@@ -1816,10 +1867,16 @@ void Win_Shutdown(void)
     }
 
     if (win.wnd) {
-        DestroyWindow(win.wnd);
+        if (win.adopted_bootstrap_window) {
+            if (win.bootstrap_wndproc)
+                SetWindowLongPtrA(win.wnd, GWLP_WNDPROC, (LONG_PTR)win.bootstrap_wndproc);
+        } else {
+            DestroyWindow(win.wnd);
+        }
     }
 
-    UnregisterClassA(WINDOW_CLASS_NAME, hGlobalInstance);
+    if (!win.adopted_bootstrap_window)
+        UnregisterClassA(WINDOW_CLASS_NAME, hGlobalInstance);
 
     if (win.kbdHook) {
         UnhookWindowsHookEx(win.kbdHook);

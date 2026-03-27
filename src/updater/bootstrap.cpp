@@ -22,10 +22,11 @@
 #include <functional>
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <memory>
+#include <limits>
 #include <optional>
 #include <random>
-#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -97,6 +98,7 @@ constexpr const char *kServerEngineLibraryStem =
     "worr_ded_engine_" CPUSTRING ".so";
 #endif
 constexpr const char *kBaseDirEnv = "WORR_BOOTSTRAP_BASEDIR";
+constexpr const char *kBootstrapWin32HwndEnv = "WORR_BOOTSTRAP_WIN32_HWND";
 constexpr const char *kEngineEntryPoint = "WORR_EngineMain";
 constexpr const char *kReadyCallbackEntryPoint = "Com_SetBootstrapReadyCallback";
 constexpr const char *kSkipUpdateCheckArg = "--bootstrap-skip-update-check";
@@ -177,6 +179,75 @@ struct RemotePayload {
   Json::Value manifest_json;
 };
 
+enum class InstallActionKind {
+  Add,
+  Refresh,
+};
+
+struct InstallAction {
+  InstallActionKind kind = InstallActionKind::Add;
+  FileEntry file;
+};
+
+struct InstallSyncPlan {
+  std::vector<InstallAction> install_actions;
+  std::vector<std::string> remove_paths;
+  uint64_t unchanged_count = 0;
+  bool metadata_change = false;
+  bool version_change = false;
+
+  bool RequiresSync() const { return metadata_change || !install_actions.empty() || !remove_paths.empty(); }
+  bool RequiresPackagePayload() const { return !install_actions.empty(); }
+  uint64_t TotalApplySteps() const {
+    return static_cast<uint64_t>(install_actions.size()) + static_cast<uint64_t>(remove_paths.size());
+  }
+
+  uint64_t AddCount() const {
+    return static_cast<uint64_t>(std::count_if(install_actions.begin(), install_actions.end(), [](const InstallAction &a) {
+      return a.kind == InstallActionKind::Add;
+    }));
+  }
+
+  uint64_t RefreshCount() const {
+    return static_cast<uint64_t>(std::count_if(install_actions.begin(), install_actions.end(),
+                                               [](const InstallAction &a) {
+                                                 return a.kind == InstallActionKind::Refresh;
+                                               }));
+  }
+};
+
+enum class SessionShellWindowMode {
+  Windowed,
+  BorderlessFullscreen,
+  ExclusiveFullscreen,
+  SpanBorderless,
+};
+
+struct SessionShellWindowConfig {
+  fs::path runtime_root;
+  SessionShellWindowMode mode = SessionShellWindowMode::Windowed;
+  int width = 640;
+  int height = 480;
+  int x = SDL_WINDOWPOS_CENTERED;
+  int y = SDL_WINDOWPOS_CENTERED;
+  bool geometry_specified = false;
+  int monitor_mode = 0;
+  int fullscreen_index = 0;
+  bool fullscreen_exclusive = true;
+  std::string display_request = "0";
+};
+
+struct SessionShellWindowPlacement {
+  SDL_DisplayID display_id = 0;
+  SDL_Rect bounds{0, 0, 0, 0};
+  bool has_bounds = false;
+  bool invalid_display = false;
+  int width = 640;
+  int height = 480;
+  int x = SDL_WINDOWPOS_CENTERED;
+  int y = SDL_WINDOWPOS_CENTERED;
+};
+
 struct BootstrapOptions {
   Role role = Role::Client;
   fs::path install_root;
@@ -253,6 +324,12 @@ std::string RandomToken() {
   return ss.str();
 }
 
+std::string PointerString(const void *pointer) {
+  std::ostringstream ss;
+  ss << std::hex << reinterpret_cast<uintptr_t>(pointer);
+  return ss.str();
+}
+
 fs::path Utf8Path(const std::string &path) { return fs::u8path(path); }
 
 std::string GenericPath(const fs::path &path) { return path.generic_u8string(); }
@@ -281,6 +358,390 @@ fs::path NormalizeInstallRoot(fs::path path) {
     text.pop_back();
   }
   return Utf8Path(text);
+}
+
+bool EqualsIgnoreCase(std::string_view a, std::string_view b) {
+  if (a.size() != b.size())
+    return false;
+  for (size_t i = 0; i < a.size(); ++i) {
+    if (std::tolower(static_cast<unsigned char>(a[i])) != std::tolower(static_cast<unsigned char>(b[i])))
+      return false;
+  }
+  return true;
+}
+
+bool ParseIntStrict(const std::string &text, int *out) {
+  if (!out || text.empty())
+    return false;
+
+  char *end = nullptr;
+  const long value = std::strtol(text.c_str(), &end, 10);
+  if (!end || *end != '\0')
+    return false;
+  if (value < std::numeric_limits<int>::min() || value > std::numeric_limits<int>::max())
+    return false;
+
+  *out = static_cast<int>(value);
+  return true;
+}
+
+std::string StripMatchingQuotes(std::string text) {
+  text = Trim(std::move(text));
+  if (text.size() >= 2 &&
+      ((text.front() == '"' && text.back() == '"') || (text.front() == '\'' && text.back() == '\''))) {
+    text = text.substr(1, text.size() - 2);
+  }
+  return text;
+}
+
+bool ParseGeometryString(const std::string &text, int *x, int *y, int *width, int *height) {
+  if (!x || !y || !width || !height)
+    return false;
+
+  const char *cursor = text.c_str();
+  if (!*cursor)
+    return false;
+
+  char *end = nullptr;
+  const unsigned long parsed_width = std::strtoul(cursor, &end, 10);
+  if (!end || (*end != 'x' && *end != 'X'))
+    return false;
+
+  cursor = end + 1;
+  const unsigned long parsed_height = std::strtoul(cursor, &end, 10);
+  if (!end)
+    return false;
+
+  long parsed_x = 0;
+  long parsed_y = 0;
+  if (*end == '+' || *end == '-') {
+    parsed_x = std::strtol(end, &end, 10);
+    if (*end == '+' || *end == '-') {
+      parsed_y = std::strtol(end, &end, 10);
+    }
+  }
+
+  if (*end != '\0')
+    return false;
+  if (parsed_width < 1 || parsed_width > 8192 || parsed_height < 1 || parsed_height > 8192)
+    return false;
+  if (parsed_x < std::numeric_limits<int>::min() || parsed_x > std::numeric_limits<int>::max() ||
+      parsed_y < std::numeric_limits<int>::min() || parsed_y > std::numeric_limits<int>::max())
+    return false;
+
+  *x = static_cast<int>(parsed_x);
+  *y = static_cast<int>(parsed_y);
+  *width = static_cast<int>(parsed_width);
+  *height = static_cast<int>(parsed_height);
+  return true;
+}
+
+bool IsSetCommand(std::string_view token) {
+  return EqualsIgnoreCase(token, "+set") || EqualsIgnoreCase(token, "+seta") || EqualsIgnoreCase(token, "+sets") ||
+         EqualsIgnoreCase(token, "+setu") || EqualsIgnoreCase(token, "+setr");
+}
+
+void OverlayCvarsFromCommandLine(const std::vector<std::string> &args, std::map<std::string, std::string> *cvars) {
+  if (!cvars)
+    return;
+
+  for (size_t i = 0; i < args.size(); ++i) {
+    if (!IsSetCommand(args[i]) || i + 2 >= args.size())
+      continue;
+    (*cvars)[ToLower(args[i + 1])] = args[i + 2];
+    i += 2;
+  }
+}
+
+void OverlayCvarsFromFile(const fs::path &path, std::map<std::string, std::string> *cvars) {
+  if (!cvars || !fs::is_regular_file(path))
+    return;
+
+  std::ifstream stream(path);
+  if (!stream)
+    return;
+
+  std::string line;
+  while (std::getline(stream, line)) {
+    const std::string trimmed = Trim(line);
+    if (trimmed.empty() || trimmed.rfind("//", 0) == 0 || trimmed[0] == '#')
+      continue;
+
+    size_t cursor = 0;
+    auto next_token = [&](std::string *token) -> bool {
+      while (cursor < trimmed.size() && std::isspace(static_cast<unsigned char>(trimmed[cursor])))
+        ++cursor;
+      if (cursor >= trimmed.size())
+        return false;
+      const size_t start = cursor;
+      while (cursor < trimmed.size() && !std::isspace(static_cast<unsigned char>(trimmed[cursor])))
+        ++cursor;
+      *token = trimmed.substr(start, cursor - start);
+      return true;
+    };
+
+    std::string command;
+    std::string name;
+    if (!next_token(&command) || !next_token(&name))
+      continue;
+
+    const std::string lowered = ToLower(command);
+    if (lowered != "set" && lowered != "seta" && lowered != "sets" && lowered != "setu" && lowered != "setr")
+      continue;
+
+    while (cursor < trimmed.size() && std::isspace(static_cast<unsigned char>(trimmed[cursor])))
+      ++cursor;
+
+    (*cvars)[ToLower(name)] = StripMatchingQuotes(trimmed.substr(cursor));
+  }
+}
+
+std::optional<int> ParseDisplayOrdinalHint(const std::string &text) {
+  if (text.empty())
+    return std::nullopt;
+
+  int value = 0;
+  if (ParseIntStrict(text, &value))
+    return value;
+
+  const std::string lowered = ToLower(text);
+  const size_t pos = lowered.rfind("display");
+  if (pos == std::string::npos)
+    return std::nullopt;
+
+  const std::string suffix = lowered.substr(pos + 7);
+  if (suffix.empty())
+    return std::nullopt;
+  if (!std::all_of(suffix.begin(), suffix.end(), [](unsigned char c) { return std::isdigit(c); }))
+    return std::nullopt;
+
+  if (!ParseIntStrict(suffix, &value))
+    return std::nullopt;
+  return value;
+}
+
+const char *SessionShellWindowModeToCString(SessionShellWindowMode mode) {
+  switch (mode) {
+  case SessionShellWindowMode::Windowed:
+    return "windowed";
+  case SessionShellWindowMode::BorderlessFullscreen:
+    return "borderless_fullscreen";
+  case SessionShellWindowMode::ExclusiveFullscreen:
+    return "exclusive_fullscreen";
+  case SessionShellWindowMode::SpanBorderless:
+    return "span_borderless";
+  }
+  return "windowed";
+}
+
+fs::path ResolveClientRuntimeRoot(const fs::path &install_root, const std::map<std::string, std::string> &cli_cvars) {
+  const auto it = cli_cvars.find("basedir");
+  if (it == cli_cvars.end() || it->second.empty())
+    return install_root;
+
+  fs::path runtime_root = Utf8Path(it->second);
+  if (!runtime_root.is_absolute())
+    runtime_root = install_root / runtime_root;
+  return NormalizeInstallRoot(runtime_root);
+}
+
+SessionShellWindowConfig LoadClientSessionShellWindowConfig(const fs::path &install_root,
+                                                           const std::vector<std::string> &forwarded_args) {
+  SessionShellWindowConfig config;
+  std::map<std::string, std::string> cvars;
+  OverlayCvarsFromCommandLine(forwarded_args, &cvars);
+
+  config.runtime_root = ResolveClientRuntimeRoot(install_root, cvars);
+  OverlayCvarsFromFile(config.runtime_root / "basew" / "config.cfg", &cvars);
+  OverlayCvarsFromFile(config.runtime_root / "basew" / "autoexec.cfg", &cvars);
+  OverlayCvarsFromCommandLine(forwarded_args, &cvars);
+
+  const auto geometry_it = cvars.find("r_geometry");
+  if (geometry_it != cvars.end()) {
+    int parsed_x = 0;
+    int parsed_y = 0;
+    int parsed_width = 0;
+    int parsed_height = 0;
+    if (ParseGeometryString(geometry_it->second, &parsed_x, &parsed_y, &parsed_width, &parsed_height)) {
+      config.x = parsed_x;
+      config.y = parsed_y;
+      config.width = parsed_width;
+      config.height = parsed_height;
+      config.geometry_specified = true;
+    }
+  }
+
+  if (const auto it = cvars.find("r_monitor_mode"); it != cvars.end()) {
+    int value = 0;
+    if (ParseIntStrict(it->second, &value))
+      config.monitor_mode = std::clamp(value, 0, 2);
+  }
+  if (const auto it = cvars.find("r_fullscreen"); it != cvars.end()) {
+    int value = 0;
+    if (ParseIntStrict(it->second, &value))
+      config.fullscreen_index = std::max(0, value);
+  }
+  if (const auto it = cvars.find("r_fullscreen_exclusive"); it != cvars.end()) {
+    int value = 1;
+    if (ParseIntStrict(it->second, &value))
+      config.fullscreen_exclusive = value != 0;
+  }
+  if (const auto it = cvars.find("r_display"); it != cvars.end() && !it->second.empty())
+    config.display_request = it->second;
+
+  if (config.fullscreen_index > 0) {
+    if (config.monitor_mode == 2) {
+      config.mode = SessionShellWindowMode::SpanBorderless;
+    } else if (!config.fullscreen_exclusive) {
+      config.mode = SessionShellWindowMode::BorderlessFullscreen;
+    } else {
+      config.mode = SessionShellWindowMode::ExclusiveFullscreen;
+    }
+  }
+
+  std::ostringstream geometry_detail;
+  geometry_detail << config.width << 'x' << config.height;
+  if (config.geometry_specified)
+    geometry_detail << std::showpos << config.x << config.y << std::noshowpos;
+
+  BootstrapTrace("LoadClientSessionShellWindowConfig root=" + GenericPath(config.runtime_root) +
+                 " mode=" + SessionShellWindowModeToCString(config.mode) +
+                 " fullscreen_index=" + std::to_string(config.fullscreen_index) +
+                 " exclusive=" + std::to_string(config.fullscreen_exclusive ? 1 : 0) +
+                 " monitor_mode=" + std::to_string(config.monitor_mode) + " display=\"" + config.display_request +
+                 "\" geometry=" + geometry_detail.str());
+  return config;
+}
+
+SDL_DisplayID ResolveSessionShellDisplayId(const SessionShellWindowConfig &config, bool *invalid) {
+  if (invalid)
+    *invalid = false;
+
+  if (config.monitor_mode != 1 || config.display_request.empty() || config.display_request == "0")
+    return SDL_GetPrimaryDisplay();
+
+  int num_displays = 0;
+  SDL_DisplayID *displays = SDL_GetDisplays(&num_displays);
+  if (!displays || num_displays < 1) {
+    if (invalid)
+      *invalid = true;
+    SDL_free(displays);
+    return SDL_GetPrimaryDisplay();
+  }
+
+  SDL_DisplayID resolved = 0;
+  if (const std::optional<int> ordinal = ParseDisplayOrdinalHint(config.display_request); ordinal.has_value()) {
+    if (*ordinal == 0) {
+      resolved = SDL_GetPrimaryDisplay();
+    } else if (*ordinal > 0 && *ordinal <= num_displays) {
+      resolved = displays[*ordinal - 1];
+    } else if (invalid) {
+      *invalid = true;
+    }
+  } else {
+    for (int i = 0; i < num_displays; ++i) {
+      const char *name = SDL_GetDisplayName(displays[i]);
+      if (name && EqualsIgnoreCase(name, config.display_request)) {
+        resolved = displays[i];
+        break;
+      }
+    }
+    if (!resolved && invalid)
+      *invalid = true;
+  }
+
+  SDL_free(displays);
+  return resolved ? resolved : SDL_GetPrimaryDisplay();
+}
+
+bool ResolveSessionShellSpanBounds(SDL_Rect *bounds) {
+  if (!bounds)
+    return false;
+
+  int num_displays = 0;
+  SDL_DisplayID *displays = SDL_GetDisplays(&num_displays);
+  if (!displays || num_displays < 1) {
+    SDL_free(displays);
+    return false;
+  }
+
+  SDL_Rect rect{};
+  bool have_bounds = false;
+  for (int i = 0; i < num_displays; ++i) {
+    if (!SDL_GetDisplayBounds(displays[i], &rect))
+      continue;
+
+    if (!have_bounds) {
+      *bounds = rect;
+      have_bounds = true;
+      continue;
+    }
+
+    const int right = std::max(bounds->x + bounds->w, rect.x + rect.w);
+    const int bottom = std::max(bounds->y + bounds->h, rect.y + rect.h);
+    bounds->x = std::min(bounds->x, rect.x);
+    bounds->y = std::min(bounds->y, rect.y);
+    bounds->w = right - bounds->x;
+    bounds->h = bottom - bounds->y;
+  }
+
+  SDL_free(displays);
+  return have_bounds;
+}
+
+SessionShellWindowPlacement ResolveSessionShellPlacement(const SessionShellWindowConfig &config) {
+  SessionShellWindowPlacement placement;
+  placement.width = config.width;
+  placement.height = config.height;
+  placement.x = config.x;
+  placement.y = config.y;
+  placement.display_id = ResolveSessionShellDisplayId(config, &placement.invalid_display);
+
+  if (config.mode == SessionShellWindowMode::SpanBorderless) {
+    placement.has_bounds = ResolveSessionShellSpanBounds(&placement.bounds);
+  } else if (placement.display_id) {
+    placement.has_bounds = SDL_GetDisplayBounds(placement.display_id, &placement.bounds);
+  }
+
+  if (config.mode != SessionShellWindowMode::Windowed && placement.has_bounds) {
+    placement.width = placement.bounds.w;
+    placement.height = placement.bounds.h;
+    placement.x = placement.bounds.x;
+    placement.y = placement.bounds.y;
+  } else if (!config.geometry_specified) {
+    placement.x = SDL_WINDOWPOS_CENTERED;
+    placement.y = SDL_WINDOWPOS_CENTERED;
+  }
+
+  return placement;
+}
+
+std::optional<SDL_DisplayMode> ResolveExclusiveDisplayMode(SDL_DisplayID display_id, int fullscreen_index) {
+  if (!display_id)
+    return std::nullopt;
+
+  if (fullscreen_index <= 1) {
+    const SDL_DisplayMode *desktop_mode = SDL_GetDesktopDisplayMode(display_id);
+    if (!desktop_mode)
+      return std::nullopt;
+    return *desktop_mode;
+  }
+
+  int num_modes = 0;
+  SDL_DisplayMode **modes = SDL_GetFullscreenDisplayModes(display_id, &num_modes);
+  if (!modes || num_modes < 1) {
+    SDL_free(modes);
+    return std::nullopt;
+  }
+
+  const int mode_index = fullscreen_index - 2;
+  std::optional<SDL_DisplayMode> resolved;
+  if (mode_index >= 0 && mode_index < num_modes && modes[mode_index]) {
+    resolved = *modes[mode_index];
+  }
+
+  SDL_free(modes);
+  return resolved;
 }
 
 std::string DefaultLaunchRelpath(Role role) {
@@ -616,6 +1077,9 @@ public:
   virtual bool Pump() = 0;
   virtual bool PromptInstall(const std::string &headline, const std::string &detail) = 0;
   virtual void DismissForEngineHandoff() = 0;
+  virtual bool SupportsSharedWindowHandoff() const { return false; }
+  virtual bool PrepareSharedWindowHandoff() { return false; }
+  virtual void *GetSharedWindowNativeHandle() { return nullptr; }
 };
 
 class ConsoleUi final : public BootstrapUi {
@@ -705,16 +1169,15 @@ std::vector<std::string> WrapText(const std::string &text, size_t width) {
 
 class SplashUi final : public BootstrapUi {
 public:
-  SplashUi() {
+  explicit SplashUi(SessionShellWindowConfig config) : config_(std::move(config)) {
     if (SDL_WasInit(SDL_INIT_VIDEO) == 0) {
       if (!SDL_Init(SDL_INIT_VIDEO))
         throw std::runtime_error(SDL_GetError());
       owns_sdl_video_ = true;
     }
 
-    window_ = SDL_CreateWindow("WORR", 960, 540, SDL_WINDOW_RESIZABLE);
-    if (!window_)
-      throw std::runtime_error(SDL_GetError());
+    placement_ = ResolveSessionShellPlacement(config_);
+    CreateShellWindow();
     renderer_ = SDL_CreateRenderer(window_, nullptr);
     if (!renderer_)
       throw std::runtime_error(SDL_GetError());
@@ -731,6 +1194,10 @@ public:
     logo_ = SDL_CreateTextureFromSurface(renderer_, surface);
     SDL_DestroySurface(surface);
     if (!logo_)
+      throw std::runtime_error(SDL_GetError());
+
+    ApplySessionShellWindowMode();
+    if (!SDL_ShowWindow(window_))
       throw std::runtime_error(SDL_GetError());
   }
 
@@ -799,6 +1266,39 @@ public:
     ReleaseUiResources(true);
   }
 
+  bool SupportsSharedWindowHandoff() const override {
+#if defined(_WIN32)
+    return window_ != nullptr;
+#else
+    return false;
+#endif
+  }
+
+  bool PrepareSharedWindowHandoff() override {
+#if defined(_WIN32)
+    if (!window_)
+      return false;
+    closed_ = true;
+    ReleaseUiResources(true, true);
+    return window_ != nullptr;
+#else
+    return false;
+#endif
+  }
+
+  void *GetSharedWindowNativeHandle() override {
+#if defined(_WIN32)
+    if (!window_)
+      return nullptr;
+    SDL_PropertiesID props = SDL_GetWindowProperties(window_);
+    if (!props)
+      return nullptr;
+    return SDL_GetPointerProperty(props, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
+#else
+    return nullptr;
+#endif
+  }
+
 private:
   static constexpr float kHeadlineTextScale = 2.0f;
   static constexpr float kDetailTextScale = 2.0f;
@@ -812,16 +1312,148 @@ private:
   static constexpr float kButtonHeight = 36.0f;
   static constexpr float kButtonGap = 16.0f;
 
-  void ReleaseUiResources(bool keep_video_subsystem) {
+  void CreateShellWindow() {
+    SDL_PropertiesID props = SDL_CreateProperties();
+    if (!props)
+      throw std::runtime_error(SDL_GetError());
+
+    SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, "WORR");
+    SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_HIDDEN_BOOLEAN, true);
+    SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_HIGH_PIXEL_DENSITY_BOOLEAN, true);
+    SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN,
+                           config_.mode == SessionShellWindowMode::Windowed);
+    SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, placement_.width);
+    SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, placement_.height);
+    SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_X_NUMBER, placement_.x);
+    SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_Y_NUMBER, placement_.y);
+
+    window_ = SDL_CreateWindowWithProperties(props);
+    SDL_DestroyProperties(props);
+    if (!window_)
+      throw std::runtime_error(SDL_GetError());
+  }
+
+  bool ApplySdlChange(bool result, const char *step) {
+    if (!result) {
+      BootstrapTrace("SplashUi step=" + std::string(step) + " error=" + SDL_GetError());
+      return false;
+    }
+    return true;
+  }
+
+  bool ApplyWindowedMode() {
+    bool ok = true;
+    ok &= ApplySdlChange(SDL_SetWindowFullscreen(window_, false), "leave_fullscreen");
+    ok &= ApplySdlChange(SDL_SetWindowFullscreenMode(window_, nullptr), "clear_fullscreen_mode");
+    ok &= ApplySdlChange(SDL_SetWindowBordered(window_, true), "set_bordered");
+    ok &= ApplySdlChange(SDL_SetWindowSize(window_, config_.width, config_.height), "set_window_size");
+    if (config_.geometry_specified) {
+      ok &= ApplySdlChange(SDL_SetWindowPosition(window_, config_.x, config_.y), "set_window_position");
+    }
+    ok &= ApplySdlChange(SDL_SyncWindow(window_), "sync_window");
+    return ok;
+  }
+
+  bool ApplySpanBorderlessMode() {
+    if (!placement_.has_bounds)
+      return false;
+
+    bool ok = true;
+    ok &= ApplySdlChange(SDL_SetWindowFullscreen(window_, false), "leave_fullscreen");
+    ok &= ApplySdlChange(SDL_SetWindowFullscreenMode(window_, nullptr), "clear_fullscreen_mode");
+    ok &= ApplySdlChange(SDL_SetWindowBordered(window_, false), "set_borderless");
+    ok &= ApplySdlChange(SDL_SetWindowPosition(window_, placement_.bounds.x, placement_.bounds.y), "set_span_position");
+    ok &= ApplySdlChange(SDL_SetWindowSize(window_, placement_.bounds.w, placement_.bounds.h), "set_span_size");
+    ok &= ApplySdlChange(SDL_SyncWindow(window_), "sync_window");
+    return ok;
+  }
+
+  bool ApplyBorderlessFullscreenMode() {
+    if (placement_.has_bounds) {
+      ApplySdlChange(SDL_SetWindowPosition(window_, placement_.bounds.x, placement_.bounds.y), "set_fullscreen_position");
+      ApplySdlChange(SDL_SetWindowSize(window_, placement_.bounds.w, placement_.bounds.h), "set_fullscreen_size");
+    }
+
+    bool ok = true;
+    ok &= ApplySdlChange(SDL_SetWindowFullscreenMode(window_, nullptr), "clear_fullscreen_mode");
+    ok &= ApplySdlChange(SDL_SetWindowFullscreen(window_, true), "enter_borderless_fullscreen");
+    ok &= ApplySdlChange(SDL_SyncWindow(window_), "sync_window");
+    return ok;
+  }
+
+  bool ApplyExclusiveFullscreenMode() {
+    bool ok = true;
+    if (placement_.has_bounds) {
+      ok &= ApplySdlChange(SDL_SetWindowPosition(window_, placement_.bounds.x, placement_.bounds.y),
+                           "set_exclusive_position");
+    }
+
+    const std::optional<SDL_DisplayMode> display_mode =
+        ResolveExclusiveDisplayMode(placement_.display_id, config_.fullscreen_index);
+    if (display_mode.has_value()) {
+      ok &= ApplySdlChange(SDL_SetWindowSize(window_, display_mode->w, display_mode->h), "set_exclusive_size");
+      ok &= ApplySdlChange(SDL_SetWindowFullscreenMode(window_, &*display_mode), "set_exclusive_mode");
+    } else {
+      if (placement_.has_bounds) {
+        ok &= ApplySdlChange(SDL_SetWindowSize(window_, placement_.bounds.w, placement_.bounds.h),
+                             "set_exclusive_size");
+      }
+      ok &= ApplySdlChange(SDL_SetWindowFullscreenMode(window_, nullptr), "clear_fullscreen_mode");
+    }
+
+    ok &= ApplySdlChange(SDL_SetWindowFullscreen(window_, true), "enter_exclusive_fullscreen");
+    ok &= ApplySdlChange(SDL_SyncWindow(window_), "sync_window");
+    return ok;
+  }
+
+  void ApplySessionShellWindowMode() {
+    bool ok = false;
+    bool fell_back = false;
+    switch (config_.mode) {
+    case SessionShellWindowMode::Windowed:
+      ok = ApplyWindowedMode();
+      break;
+    case SessionShellWindowMode::BorderlessFullscreen:
+      ok = ApplyBorderlessFullscreenMode();
+      break;
+    case SessionShellWindowMode::ExclusiveFullscreen:
+      ok = ApplyExclusiveFullscreenMode();
+      break;
+    case SessionShellWindowMode::SpanBorderless:
+      ok = ApplySpanBorderlessMode();
+      break;
+    }
+
+    if (!ok && config_.mode != SessionShellWindowMode::Windowed) {
+      BootstrapTrace("SplashUi window_mode_fallback requested=" + std::string(SessionShellWindowModeToCString(config_.mode)));
+      ApplyWindowedMode();
+      fell_back = true;
+    }
+
+    const char *display_name = placement_.display_id ? SDL_GetDisplayName(placement_.display_id) : nullptr;
+    std::ostringstream detail;
+    detail << "SplashUi window_mode=" << SessionShellWindowModeToCString(config_.mode)
+           << " display_id=" << static_cast<unsigned long long>(placement_.display_id)
+           << " invalid_display=" << (placement_.invalid_display ? 1 : 0)
+           << " fallback=" << (fell_back ? 1 : 0)
+           << " bounds=" << placement_.bounds.w << 'x' << placement_.bounds.h << std::showpos << placement_.bounds.x
+           << placement_.bounds.y << std::noshowpos << " create=" << placement_.width << 'x' << placement_.height;
+    if (display_name && *display_name)
+      detail << " name=\"" << display_name << '"';
+    BootstrapTrace(detail.str());
+  }
+
+  void ReleaseUiResources(bool keep_video_subsystem, bool keep_window = false) {
     if (logo_)
       SDL_DestroyTexture(logo_);
     if (renderer_)
       SDL_DestroyRenderer(renderer_);
-    if (window_)
+    if (window_ && !keep_window)
       SDL_DestroyWindow(window_);
     logo_ = nullptr;
     renderer_ = nullptr;
-    window_ = nullptr;
+    if (!keep_window)
+      window_ = nullptr;
     if (owns_sdl_video_ && !keep_video_subsystem)
       SDL_QuitSubSystem(SDL_INIT_VIDEO);
     owns_sdl_video_ = false;
@@ -946,6 +1578,8 @@ private:
   SDL_Window *window_ = nullptr;
   SDL_Renderer *renderer_ = nullptr;
   SDL_Texture *logo_ = nullptr;
+  SessionShellWindowConfig config_{};
+  SessionShellWindowPlacement placement_{};
   bool owns_sdl_video_ = false;
   bool closed_ = false;
   bool prompt_active_ = false;
@@ -961,14 +1595,14 @@ private:
 
 class UiHandle {
 public:
-  UiHandle(Role role, bool quiet_status) {
+  UiHandle(Role role, bool quiet_status, const SessionShellWindowConfig *session_shell_config = nullptr) {
     if (quiet_status) {
       ui_ = std::make_unique<SilentUi>();
       return;
     }
     if (role == Role::Client) {
       try {
-        ui_ = std::make_unique<SplashUi>();
+        ui_ = std::make_unique<SplashUi>(session_shell_config ? *session_shell_config : SessionShellWindowConfig{});
       } catch (...) {
         ui_ = std::make_unique<ConsoleUi>();
       }
@@ -1191,8 +1825,8 @@ std::string CurrentPlatformId() {
 #endif
 }
 
-RemotePayload DiscoverRemotePayload(const UpdaterConfig &config, Role role, const InstallManifest &local_manifest,
-                                    BootstrapUi *ui, const clock_type::time_point &deadline) {
+RemotePayload DiscoverRemotePayload(const UpdaterConfig &config, Role role, BootstrapUi *ui,
+                                    const clock_type::time_point &deadline) {
   const int releases_timeout = std::max(1000, RemainingBudgetMs(deadline));
   const std::string releases_url = "https://api.github.com/repos/" + config.repo + "/releases";
   const Json::Value releases_json =
@@ -1209,12 +1843,6 @@ RemotePayload DiscoverRemotePayload(const UpdaterConfig &config, Role role, cons
       ParseJsonString(HttpGetString(index_asset->url, index_timeout, ui, "Loading release index"), "release index");
 
   const std::string remote_version = JsonString(index_json, "version");
-  if (CompareSemver(local_manifest.version, remote_version) >= 0) {
-    RemotePayload current;
-    current.version = remote_version;
-    return current;
-  }
-
   const Json::Value targets = index_json["targets"];
   Json::Value selected_target;
   for (const Json::Value &target : targets) {
@@ -1467,6 +2095,114 @@ bool IsPreserved(const std::string &rel_path, const UpdaterConfig &config) {
   return false;
 }
 
+std::map<std::string, FileEntry> BuildManifestFileMap(const std::vector<FileEntry> &files) {
+  std::map<std::string, FileEntry> out;
+  for (const FileEntry &file : files)
+    out[NormalizeRelativePath(Utf8Path(file.path))] = file;
+  return out;
+}
+
+bool LiveFileMatchesEntry(const fs::path &install_root, const FileEntry &entry) {
+  const fs::path live_path = install_root / Utf8Path(entry.path);
+  if (!fs::is_regular_file(live_path))
+    return false;
+
+  std::error_code ec;
+  const uint64_t live_size = fs::file_size(live_path, ec);
+  if (ec)
+    return false;
+  if (entry.size != 0 && live_size != entry.size)
+    return false;
+
+  return true;
+}
+
+InstallSyncPlan BuildInstallSyncPlan(const fs::path &install_root, const InstallManifest &local_manifest,
+                                     const UpdaterConfig &config, const RemotePayload &payload) {
+  InstallSyncPlan plan;
+  plan.version_change = CompareSemver(local_manifest.version, payload.version) < 0;
+  plan.metadata_change = local_manifest.version != payload.version || local_manifest.launch_exe != payload.launch_exe ||
+                         local_manifest.engine_library != payload.engine_library ||
+                         local_manifest.local_manifest_name != payload.local_manifest_name;
+
+  const std::vector<FileEntry> remote_files = ManifestFiles(payload.manifest_json);
+  const auto remote_map = BuildManifestFileMap(remote_files);
+  const auto local_map = BuildManifestFileMap(local_manifest.files);
+
+  for (const FileEntry &remote_file : remote_files) {
+    const std::string normalized = NormalizeRelativePath(Utf8Path(remote_file.path));
+    const auto local_it = local_map.find(normalized);
+    const bool manifest_matches = local_it != local_map.end() && local_it->second.size == remote_file.size &&
+                                  ToLower(local_it->second.sha256) == ToLower(remote_file.sha256);
+    if (manifest_matches && LiveFileMatchesEntry(install_root, remote_file)) {
+      ++plan.unchanged_count;
+      continue;
+    }
+
+    InstallAction action;
+    action.kind = local_it == local_map.end() ? InstallActionKind::Add : InstallActionKind::Refresh;
+    action.file = remote_file;
+    plan.install_actions.push_back(std::move(action));
+  }
+
+  for (const auto &[normalized, local_file] : local_map) {
+    if (remote_map.count(normalized) != 0)
+      continue;
+    if (IsPreserved(local_file.path, config))
+      continue;
+    const fs::path live_path = install_root / Utf8Path(local_file.path);
+    if (fs::exists(live_path))
+      plan.remove_paths.push_back(local_file.path);
+  }
+
+  return plan;
+}
+
+std::string DescribeInstallSyncPlan(const InstallSyncPlan &plan) {
+  std::vector<std::string> parts;
+  if (plan.AddCount() != 0)
+    parts.push_back(std::to_string(plan.AddCount()) + " add");
+  if (plan.RefreshCount() != 0)
+    parts.push_back(std::to_string(plan.RefreshCount()) + " refresh");
+  if (!plan.remove_paths.empty())
+    parts.push_back(std::to_string(plan.remove_paths.size()) + " remove");
+  if (plan.metadata_change && parts.empty())
+    parts.push_back("metadata refresh");
+  if (parts.empty())
+    return "no file changes";
+
+  std::ostringstream ss;
+  for (size_t i = 0; i < parts.size(); ++i) {
+    if (i != 0)
+      ss << ", ";
+    ss << parts[i];
+  }
+  return ss.str();
+}
+
+bool PlanTouchesPath(const InstallSyncPlan &plan, const std::string &rel_path) {
+  const std::string normalized = NormalizeRelativePath(Utf8Path(rel_path));
+  for (const InstallAction &action : plan.install_actions) {
+    if (NormalizeRelativePath(Utf8Path(action.file.path)) == normalized)
+      return true;
+  }
+  for (const std::string &remove_path : plan.remove_paths) {
+    if (NormalizeRelativePath(Utf8Path(remove_path)) == normalized)
+      return true;
+  }
+  return false;
+}
+
+bool CanApplySyncInProcess(const BootstrapOptions &options, const InstallSyncPlan &plan) {
+  if (options.worker_mode)
+    return true;
+  if (options.role != Role::Client)
+    return false;
+  if (PlanTouchesPath(plan, options.launch_relpath))
+    return false;
+  return true;
+}
+
 Json::Value BuildLocalInstallManifest(const RemotePayload &payload) {
   Json::Value root = payload.manifest_json;
   root.removeMember("package");
@@ -1477,26 +2213,24 @@ Json::Value BuildLocalInstallManifest(const RemotePayload &payload) {
   return root;
 }
 
-void ApplyPayload(const fs::path &stage_dir, const fs::path &install_root, const UpdaterConfig &config,
-                  const RemotePayload &payload, BootstrapUi *ui) {
-  const std::vector<FileEntry> files = ManifestFiles(payload.manifest_json);
-  if (files.empty())
-    throw std::runtime_error("Update manifest contained no files");
-
-  for (const FileEntry &file : files) {
+void ValidateStagedPayload(const fs::path &stage_dir, const InstallSyncPlan &plan) {
+  for (const InstallAction &action : plan.install_actions) {
+    const FileEntry &file = action.file;
     const fs::path staged = stage_dir / Utf8Path(file.path);
     if (!fs::is_regular_file(staged))
       throw std::runtime_error("Missing staged file " + file.path);
     if (!file.sha256.empty() && ToLower(Sha256File(staged)) != ToLower(file.sha256))
       throw std::runtime_error("Hash mismatch for staged file " + file.path);
   }
+}
+
+void ApplyInstallSyncPlan(const fs::path &stage_dir, const fs::path &install_root, const InstallSyncPlan &plan,
+                          const RemotePayload &payload, BootstrapUi *ui) {
+  if (!plan.RequiresSync())
+    return;
 
   const fs::path rollback_root = fs::temp_directory_path() / ("worr-update-rollback-" + RandomToken());
   fs::create_directories(rollback_root);
-
-  std::set<std::string> expected_paths;
-  for (const FileEntry &file : files)
-    expected_paths.insert(FoldPathCase(file.path));
 
   std::vector<std::string> backup_paths;
   std::vector<std::string> created_paths;
@@ -1526,46 +2260,40 @@ void ApplyPayload(const fs::path &stage_dir, const fs::path &install_root, const
   };
 
   try {
-    const uint64_t total_steps = static_cast<uint64_t>(files.size());
+    const uint64_t total_steps = std::max<uint64_t>(1, plan.TotalApplySteps());
     uint64_t step = 0;
-    for (const FileEntry &file : files) {
-      const std::string rel_path = file.path;
-      const bool preserved = IsPreserved(rel_path, config);
+    for (const InstallAction &action : plan.install_actions) {
+      const std::string &rel_path = action.file.path;
       const fs::path live_path = install_root / Utf8Path(rel_path);
       const fs::path staged_path = stage_dir / Utf8Path(rel_path);
-      if (!preserved || !fs::exists(live_path)) {
-        if (fs::exists(live_path))
-          backup_file(rel_path);
-        else
-          created_paths.push_back(rel_path);
-        fs::create_directories(live_path.parent_path());
-        fs::copy_file(staged_path, live_path, fs::copy_options::overwrite_existing);
-      }
+      if (fs::exists(live_path))
+        backup_file(rel_path);
+      else
+        created_paths.push_back(rel_path);
+      fs::create_directories(live_path.parent_path());
+      fs::copy_file(staged_path, live_path, fs::copy_options::overwrite_existing);
 
       ++step;
       if (ui) {
-        ui->SetProgress("Installing update", step, total_steps);
+        ui->SetProgress("Synchronizing installation", step, total_steps);
         if (!ui->Pump())
           throw std::runtime_error("Install cancelled");
       }
     }
 
-    std::vector<fs::path> live_files;
-    for (const fs::path &path : fs::recursive_directory_iterator(install_root)) {
-      if (fs::is_regular_file(path))
-        live_files.push_back(path);
-    }
-
-    for (const fs::path &path : live_files) {
-      if (!fs::is_regular_file(path))
-        continue;
-      const std::string rel_path = NormalizeRelativePath(fs::relative(path, install_root));
-      if (expected_paths.count(rel_path) != 0)
-        continue;
-      if (IsPreserved(rel_path, config))
+    for (const std::string &rel_path : plan.remove_paths) {
+      const fs::path live_path = install_root / Utf8Path(rel_path);
+      if (!fs::exists(live_path))
         continue;
       backup_file(rel_path);
-      fs::remove(path);
+      fs::remove(live_path);
+
+      ++step;
+      if (ui) {
+        ui->SetProgress("Synchronizing installation", step, total_steps);
+        if (!ui->Pump())
+          throw std::runtime_error("Install cancelled");
+      }
     }
 
     std::string error;
@@ -1873,10 +2601,28 @@ int LaunchEngineAndWait(const fs::path &install_root, const std::string &launch_
 
   auto *set_ready_callback =
       reinterpret_cast<set_ready_callback_fn>(SDL_LoadFunction(engine_object, kReadyCallbackEntryPoint));
-  if (!set_ready_callback && ui)
-    ui->DismissForEngineHandoff();
-  else if (set_ready_callback && ui && ui->Get())
-    set_ready_callback(BootstrapReadyDismiss, ui);
+
+  bool shared_window_handoff = false;
+  if (ui && ui->Get() && ui->Get()->SupportsSharedWindowHandoff()) {
+    if (void *native_handle = ui->Get()->GetSharedWindowNativeHandle()) {
+      if (ui->Get()->PrepareSharedWindowHandoff()) {
+        SetProcessEnvVar(kBootstrapWin32HwndEnv, PointerString(native_handle));
+        shared_window_handoff = true;
+        BootstrapTrace("LaunchEngineAndWait shared_window_handoff=1 hwnd=" + PointerString(native_handle));
+      }
+    }
+  }
+  if (!shared_window_handoff)
+    BootstrapTrace("LaunchEngineAndWait shared_window_handoff=0");
+
+  if (!shared_window_handoff) {
+    if (!set_ready_callback && ui)
+      ui->DismissForEngineHandoff();
+    else if (set_ready_callback && ui && ui->Get())
+      set_ready_callback(BootstrapReadyDismiss, ui);
+  } else if (set_ready_callback) {
+    set_ready_callback(nullptr, nullptr);
+  }
 
   std::vector<std::string> args;
   args.push_back(GenericPath(install_root / Utf8Path(launch_relpath)));
@@ -1893,6 +2639,8 @@ int LaunchEngineAndWait(const fs::path &install_root, const std::string &launch_
       set_ready_callback(nullptr, nullptr);
     SDL_UnloadObject(engine_object);
     ClearProcessEnvVar(kBaseDirEnv);
+    if (shared_window_handoff)
+      ClearProcessEnvVar(kBootstrapWin32HwndEnv);
     throw;
   }
 
@@ -1900,6 +2648,8 @@ int LaunchEngineAndWait(const fs::path &install_root, const std::string &launch_
     set_ready_callback(nullptr, nullptr);
   SDL_UnloadObject(engine_object);
   ClearProcessEnvVar(kBaseDirEnv);
+  if (shared_window_handoff)
+    ClearProcessEnvVar(kBootstrapWin32HwndEnv);
   return exit_code;
 }
 
@@ -2013,6 +2763,30 @@ void SaveState(const fs::path &state_path, const std::string &result, const std:
   JsonWriteFile(state_path, root, &error);
 }
 
+std::string BuildSyncPromptDetail(const InstallSyncPlan &plan, const InstallManifest &local_manifest,
+                                  const RemotePayload &payload, const std::string &warning) {
+  std::ostringstream detail;
+  if (plan.version_change) {
+    detail << "Version " << payload.version << " is ready to synchronize";
+    if (!local_manifest.version.empty())
+      detail << " from " << local_manifest.version;
+    detail << ".";
+  } else {
+    detail << "The local install differs from the authoritative manifest and can be synchronized.";
+  }
+
+  detail << " Planned changes: " << DescribeInstallSyncPlan(plan) << ".";
+  if (!warning.empty()) {
+    detail << " ";
+    if (plan.version_change)
+      detail << "A newer build is already known locally.";
+    else
+      detail << "The current manifest is already cached locally.";
+    detail << " " << warning;
+  }
+  return detail.str();
+}
+
 int RunBootstrapFlow(const BootstrapOptions &options) {
   BootstrapTrace("RunBootstrapFlow start role=" + std::string(RoleToCString(options.role)) +
                  " worker_mode=" + std::to_string(options.worker_mode ? 1 : 0) +
@@ -2020,8 +2794,11 @@ int RunBootstrapFlow(const BootstrapOptions &options) {
                  " skip_update_check=" + std::to_string(options.skip_update_check ? 1 : 0) +
                  " quiet_status=" + std::to_string(options.quiet_status ? 1 : 0) +
                  " install_root=" + GenericPath(options.install_root));
+  SessionShellWindowConfig session_shell_config;
+  if (options.role == Role::Client)
+    session_shell_config = LoadClientSessionShellWindowConfig(options.install_root, options.forwarded_args);
   BootstrapTrace("RunBootstrapFlow create_ui");
-  UiHandle ui(options.role, options.quiet_status);
+  UiHandle ui(options.role, options.quiet_status, options.role == Role::Client ? &session_shell_config : nullptr);
   BootstrapTrace("RunBootstrapFlow ui_ready");
   ui->SetStatus("Preparing WORR", "Starting bootstrap updater.");
   BootstrapTrace("RunBootstrapFlow initial_status_set");
@@ -2056,15 +2833,24 @@ int RunBootstrapFlow(const BootstrapOptions &options) {
                  " role=" + local_manifest.role);
 
   std::optional<RemotePayload> available_update;
+  std::optional<InstallSyncPlan> available_sync_plan;
   std::string warning;
 
   try {
     const auto deadline = clock_type::now() + std::chrono::milliseconds(kDiscoveryBudgetMs);
-    RemotePayload discovered = DiscoverRemotePayload(config, options.role, local_manifest, &*ui, deadline);
-    if (!discovered.version.empty() && CompareSemver(local_manifest.version, discovered.version) < 0) {
+    RemotePayload discovered = DiscoverRemotePayload(config, options.role, &*ui, deadline);
+    const int version_compare = CompareSemver(local_manifest.version, discovered.version);
+    const InstallSyncPlan sync_plan = BuildInstallSyncPlan(options.install_root, local_manifest, config, discovered);
+    BootstrapTrace("RunBootstrapFlow discovered version=" + discovered.version +
+                   " version_compare=" + std::to_string(version_compare) +
+                   " sync=" + std::to_string(sync_plan.RequiresSync() ? 1 : 0) + " plan=\"" +
+                   DescribeInstallSyncPlan(sync_plan) + "\"");
+    if (!discovered.version.empty() && (version_compare < 0 || (version_compare == 0 && sync_plan.RequiresSync()))) {
       available_update = discovered;
-      BootstrapTrace("RunBootstrapFlow update_available version=" + discovered.version);
-      SaveState(state_path, "update_available", available_update);
+      available_sync_plan = sync_plan;
+      const std::string state_result = sync_plan.version_change ? "update_available" : "sync_required";
+      BootstrapTrace("RunBootstrapFlow update_available version=" + discovered.version + " state=" + state_result);
+      SaveState(state_path, state_result, available_update);
     } else {
       BootstrapTrace("RunBootstrapFlow current version=" + local_manifest.version);
       SaveState(state_path, "current", std::nullopt);
@@ -2082,44 +2868,61 @@ int RunBootstrapFlow(const BootstrapOptions &options) {
   }
 
   if (available_update) {
-    const std::string detail =
-        warning.empty() ? ("Version " + available_update->version + " is ready to install.")
-                        : ("A newer build is already known locally. " + warning);
-    const bool install = options.approved_install || ui->PromptInstall("Update required", detail);
+    const int version_compare = CompareSemver(local_manifest.version, available_update->version);
+    if (!available_sync_plan)
+      available_sync_plan = BuildInstallSyncPlan(options.install_root, local_manifest, config, *available_update);
+    if (version_compare > 0 || !available_sync_plan->RequiresSync()) {
+      BootstrapTrace("RunBootstrapFlow stale_pending_sync ignored");
+      available_update.reset();
+      available_sync_plan.reset();
+    }
+  }
+
+  if (available_update && available_sync_plan) {
+    const std::string prompt_headline = available_sync_plan->version_change ? "Update required" : "Repair required";
+    const std::string detail = BuildSyncPromptDetail(*available_sync_plan, local_manifest, *available_update, warning);
+    const bool install = options.approved_install || ui->PromptInstall(prompt_headline, detail);
     if (!install) {
       BootstrapTrace("RunBootstrapFlow update_deferred");
-      ui->SetStatus("Update deferred", "Launching the installed build without applying the update.");
+      ui->SetStatus("Update deferred", "Launching the installed build without synchronizing it.");
     } else {
-      if (!options.worker_mode) {
+      const bool apply_in_process = CanApplySyncInProcess(options, *available_sync_plan);
+      BootstrapTrace("RunBootstrapFlow apply_in_process=" + std::to_string(apply_in_process ? 1 : 0));
+      if (!apply_in_process) {
         BootstrapTrace("RunBootstrapFlow launch_temp_worker");
-        ui->SetStatus("Restarting updater", "Launching a temporary updater worker to apply the approved install.");
+        ui->SetStatus("Restarting updater", "Launching a temporary updater worker to synchronize the install.");
         return LaunchApprovedUpdateWorker(options);
       }
 
-      BootstrapTrace("RunBootstrapFlow worker_download_start");
-      ui->SetStatus("Downloading update", "Fetching the approved update package.");
       const fs::path temp_root = fs::temp_directory_path() / ("worr-bootstrap-" + RandomToken());
       const fs::path archive_path = temp_root / available_update->update_package_name;
       const fs::path stage_dir = temp_root / "stage";
       fs::create_directories(stage_dir);
 
-      const int package_timeout = 30 * 60 * 1000;
-      HttpDownloadFile(available_update->package_url, archive_path, package_timeout, &*ui,
-                       "Downloading update package");
+      if (available_sync_plan->RequiresPackagePayload()) {
+        BootstrapTrace("RunBootstrapFlow worker_download_start");
+        ui->SetStatus("Downloading update", "Fetching the package needed to synchronize the install.");
+        const int package_timeout = 30 * 60 * 1000;
+        HttpDownloadFile(available_update->package_url, archive_path, package_timeout, &*ui,
+                         "Downloading update package");
 
-      const Json::Value package = available_update->manifest_json["package"];
-      const std::string package_hash = JsonString(package, "sha256");
-      if (!package_hash.empty() && ToLower(Sha256File(archive_path)) != ToLower(package_hash))
-        throw std::runtime_error("Downloaded package hash mismatch");
+        const Json::Value package = available_update->manifest_json["package"];
+        const std::string package_hash = JsonString(package, "sha256");
+        if (!package_hash.empty() && ToLower(Sha256File(archive_path)) != ToLower(package_hash))
+          throw std::runtime_error("Downloaded package hash mismatch");
 
-      BootstrapTrace("RunBootstrapFlow worker_extract_start root=" + GenericPath(temp_root));
-      ExtractZip(archive_path, stage_dir, &*ui);
+        BootstrapTrace("RunBootstrapFlow worker_extract_start root=" + GenericPath(temp_root));
+        ExtractZip(archive_path, stage_dir, &*ui);
+        ValidateStagedPayload(stage_dir, *available_sync_plan);
+      } else {
+        BootstrapTrace("RunBootstrapFlow worker_metadata_only_sync");
+      }
 #if defined(_WIN32)
       bool applied = false;
       for (int attempt = 0; attempt < kApplyRetryCount; ++attempt) {
         try {
           BootstrapTrace("RunBootstrapFlow apply_attempt=" + std::to_string(attempt + 1));
-          ApplyPayload(stage_dir, options.install_root, config, *available_update, &*ui);
+          ApplyInstallSyncPlan(stage_dir, options.install_root, *available_sync_plan, *available_update, &*ui);
           applied = true;
           BootstrapTrace("RunBootstrapFlow apply_success");
           break;
@@ -2130,13 +2933,13 @@ int RunBootstrapFlow(const BootstrapOptions &options) {
             throw;
           if (attempt + 1 < kApplyRetryCount) {
             ui->SetStatus("Waiting for launcher shutdown",
-                          "Finishing the previous process handoff before applying the update.");
+                          "Finishing the previous process handoff before synchronizing the install.");
             SDL_Delay(kApplyRetryDelayMs);
             continue;
           }
           if (!IsProcessElevated()) {
             BootstrapTrace("RunBootstrapFlow elevation_requested");
-            ui->SetStatus("Waiting for administrator approval", "WORR needs elevation to update this install.");
+            ui->SetStatus("Waiting for administrator approval", "WORR needs elevation to synchronize this install.");
             std::vector<std::string> args = BuildWorkerInvocation(options, true);
             if (!RelaunchElevated(options.worker_exe_path, args, options.install_root))
               throw std::runtime_error("Failed to request elevated updater access");
@@ -2148,21 +2951,35 @@ int RunBootstrapFlow(const BootstrapOptions &options) {
       if (!applied)
         throw std::runtime_error("Failed applying update payload");
 #else
-      ApplyPayload(stage_dir, options.install_root, config, *available_update, &*ui);
+      ApplyInstallSyncPlan(stage_dir, options.install_root, *available_sync_plan, *available_update, &*ui);
 #endif
       BootstrapTrace("RunBootstrapFlow save_state_current");
       SaveState(state_path, "current", std::nullopt);
       std::error_code ignored;
       fs::remove_all(temp_root, ignored);
 
+      const bool version_change = available_sync_plan->version_change;
+      if (!options.worker_mode) {
+        BootstrapTrace("RunBootstrapFlow in_process_sync_launch_engine");
+        ui->SetStatus(version_change ? "Update installed" : "Repair complete",
+                      version_change ? "Launching the updated hosted engine in the current bootstrap shell."
+                                     : "Launching the synchronized hosted engine in the current bootstrap shell.");
+        return LaunchEngineAndWait(options.install_root, options.launch_relpath, options.engine_library_relpath,
+                                   options.forwarded_args, &ui);
+      }
+
       if (!config.autolaunch) {
         BootstrapTrace("RunBootstrapFlow update_installed_no_autolaunch");
-        ui->SetStatus("Update installed", "WORR was updated successfully. Launch it again to start the new build.");
+        ui->SetStatus(version_change ? "Update installed" : "Repair complete",
+                      version_change ? "WORR was updated successfully. Launch it again to start the new build."
+                                     : "The local install was synchronized successfully. Launch WORR again to start.");
         return 0;
       }
 
       BootstrapTrace("RunBootstrapFlow relaunch_updated_bootstrap");
-      ui->SetStatus("Update installed", "Restarting the public WORR bootstrap with the updated build.");
+      ui->SetStatus(version_change ? "Update installed" : "Repair complete",
+                    version_change ? "Restarting the public WORR bootstrap with the updated build."
+                                   : "Restarting the public WORR bootstrap with the synchronized install.");
       return RelaunchInstalledBootstrap(options);
     }
   } else if (!warning.empty()) {
@@ -2254,6 +3071,10 @@ int RunLauncher(Role role, const std::string &launch_relative_path, const std::s
       const std::string arg = argv[i];
       if (arg == kSkipUpdateCheckArg) {
         options.skip_update_check = true;
+        continue;
+      }
+      if (arg == "--approved-install") {
+        options.approved_install = true;
         continue;
       }
       if (arg == kQuietStatusArg) {
