@@ -151,11 +151,16 @@ Create a repository-grounded SWOT and convert it into actionable, task-based pro
     - Unmerged projectile/autosound loops now use a stable per-entity phase offset so identical loop samples do not all start in lockstep.
     - This reduces crackle/noise when many projectile loop emitters are active simultaneously while preserving per-entity Doppler spatialization.
   - Implementation log: `docs-dev/audio-eax-loop-doppler-mix-stability-2026-03-22.md`.
-- `FR-06-T03` In Progress:
+- `FR-06-T03` Completed:
   - Hardened the SDL3_ttf/HarfBuzz text path in `src/client/font.cpp` so failed `TTF_CreateText(...)` or `TTF_GetStringSize(...)` calls no longer silently drop render/measure segments.
   - Updated TTF glyph cache generation to keep HarfBuzz-shaped glyphs renderable when metrics lookup fails but glyph image extraction succeeds (`TTF_GetGlyphImageForIndex(...)`).
   - Added SDL3_ttf surface text-engine startup validation so TTF mode only stays active when both library init and text engine creation succeed.
+  - Finalized accessibility defaults and fallback controls:
+    - Set `cl_font_draw_black_background` default to `1` to improve text readability on bright/high-variance scenes.
+    - Added archived fallback font cvars (`cl_font_fallback_kfont`, `cl_font_fallback_legacy`) so fallback chains remain configurable without code edits.
+    - Set `ui_acc_contrast` default to `1` so notify/centerprint contrast bars are enabled by default.
   - Implementation log: `docs-dev/ttf-sdl3-harfbuzz-render-path-hardening-2026-03-27.md`.
+  - Implementation log: `docs-dev/fr-06-t03-accessibility-defaults-and-fallback-controls-2026-03-27.md`.
 
 ## Baseline Snapshot (Repository-Derived)
 - Codebase scale is substantial: approximately 733 `*.c`/`*.cpp`/`*.h`/`*.hpp` files and approximately 426k lines across `src/` and `inc/`.
@@ -415,7 +420,7 @@ Tasks:
   Dependency: none. Priority: P1.
 - [ ] `FR-06-T02` Complete graphical obituaries/chatbox enhancement track and integrate with localization.  
   Dependency: none. Priority: P1.
-- [ ] `FR-06-T03` Add accessibility pass for text backgrounds, scaling, contrast defaults, and fallback fonts.  
+- [x] `FR-06-T03` Add accessibility pass for text backgrounds, scaling, contrast defaults, and fallback fonts.
   Dependency: none. Priority: P1.
 - [ ] `FR-06-T04` Add presets for competitive readability vs immersive presentation.  
   Dependency: `FR-06-T03`. Priority: P2.
