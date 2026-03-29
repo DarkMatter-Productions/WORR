@@ -49,8 +49,15 @@ The goals of WORR are:
   - Competitive and casual multiplayer improvements,
   - Modern rendering and UI systems.
 
-> ⚠️ **Compatibility note:**
-> Future engine updates may break compatibility with non-**WORR** game modules.
+<p align="center">
+  <a href="https://store.steampowered.com/app/2210/Quake_4/" aria-label="Buy Quake 4 on Steam">
+    <img alt="Buy Quake 4 on Steam" src="https://img.shields.io/badge/Buy%20Now-Steam-1b2838?style=for-the-badge&logo=steam&logoColor=white">
+  </a>
+  &nbsp;
+  <a href="https://www.gog.com/en/game/quake_4" aria-label="Buy Quake 4 on GOG">
+    <img alt="Buy Quake 4 on GOG" src="https://img.shields.io/badge/Buy%20Now-GOG-86328A?style=for-the-badge&logo=gog.com&logoColor=white">
+  </a>
+</p>
 
 ---
 
