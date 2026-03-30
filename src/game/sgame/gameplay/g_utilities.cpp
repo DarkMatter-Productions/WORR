@@ -2193,6 +2193,11 @@ bool ReadyConditions(gentity_t *ent, bool admin_cmd) {
   if (level.matchState == MatchState::Warmup_ReadyUp)
     return true;
 
+  if (level.devWarmupReadyBypass && deathmatch->integer && ent &&
+      ent->client && ClientIsPlaying(ent->client) &&
+      level.matchState <= MatchState::Warmup_ReadyUp)
+    return true;
+
   const char *reason = admin_cmd ? "You cannot force ready status until "
                                  : "You cannot change your ready status until ";
   switch (level.warmupState) {

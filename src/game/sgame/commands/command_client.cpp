@@ -1365,6 +1365,47 @@ Toggles the eyecam view when following other players.
 			HandleReadyResult(ent, result, false, true);
 		}
 
+		/*
+		=============
+		DevReady / DevReadyOff
+
+		Solo developer testing: bypass warmup minimum-player / fill gates and mark
+		the caller ready. Requires cheats (cheats 1). Cleared on map load; use
+		dev_ready_off to disable early (also requires cheats).
+		=============
+		*/
+		void DevReady(gentity_t* ent, const CommandArgs& args) {
+			(void)args;
+			if (!CheatsOk(ent))
+				return;
+			if (!deathmatch->integer) {
+				gi.LocClient_Print(ent, PRINT_HIGH,
+					"dev_ready: only available in deathmatch.\n");
+				return;
+			}
+			if (!ent || !ent->client || !ClientIsPlaying(ent->client)) {
+				gi.LocClient_Print(ent, PRINT_HIGH,
+					"dev_ready: join the match (not spectator) first.\n");
+				return;
+			}
+			level.devWarmupReadyBypass = true;
+			ClientSetReadyStatus(ent, true, false);
+			gi.LocClient_Print(ent, PRINT_HIGH,
+				"dev_ready: warmup bypass enabled; marked ready. "
+				"Map reload clears it; use dev_ready_off to disable.\n");
+		}
+
+		void DevReadyOff(gentity_t* ent, const CommandArgs& args) {
+			(void)args;
+			if (!CheatsOk(ent))
+				return;
+			level.devWarmupReadyBypass = false;
+			if (ent && ent->client) {
+				gi.LocClient_Print(ent, PRINT_HIGH,
+					"dev_ready_off: warmup bypass disabled.\n");
+			}
+		}
+
 	} // namespace readiness
 
 	namespace inventory {
@@ -2504,6 +2545,8 @@ Toggles the eyecam view when following other players.
 		RegisterCommand("ready", &readiness::Ready, AllowDead);
 		RegisterCommand("ready_up", &readiness::ReadyUp, AllowDead);
 		RegisterCommand("readyup", &readiness::ReadyUp, AllowDead);
+		RegisterCommand("dev_ready", &readiness::DevReady, AllowDead);
+		RegisterCommand("dev_ready_off", &readiness::DevReadyOff, AllowDead);
 	}
 
 	/*
