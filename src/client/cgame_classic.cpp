@@ -331,7 +331,8 @@ static void SCR_SkipToEndif(const char **s)
             continue;
         }
 
-        if (!strcmp(token, "num") || !strcmp(token, "health_bars")) {
+        if (!strcmp(token, "num") || !strcmp(token, "num_center") ||
+            !strcmp(token, "health_bars")) {
             COM_SkipToken(s);
             COM_SkipToken(s);
             continue;
@@ -481,6 +482,33 @@ static void layout_num(vrect_t hud_vrect, const char **s, const player_state_t *
     }
     value = ps->stats[value];
     HUD_DrawNumber(x, y, 0, width, value);
+}
+
+static void layout_num_center(vrect_t hud_vrect, const char **s, const player_state_t *ps, int x, int y)
+{
+    char* token = COM_Parse(s);
+    int width = atoi(token);
+    token = COM_Parse(s);
+    int stat = atoi(token);
+    if (stat < 0 || stat >= MAX_STATS) {
+        cgi.Com_Error(va("%s: invalid stat index", __func__));
+    }
+    const int value = ps->stats[stat];
+    constexpr int band_w = 320;
+    int w = width;
+    if (w > 5)
+        w = 5;
+    char num[16];
+    const int l_full = Q_scnprintf(num, sizeof(num), "%i", value);
+    int l = l_full;
+    if (l > w)
+        l = w;
+    if (l < 1)
+        l = 1;
+    const int digit_start = 2 + DIGIT_WIDTH * (w - l);
+    const int digit_span = l * DIGIT_WIDTH;
+    const int left_x = x + band_w / 2 - digit_start - digit_span / 2;
+    HUD_DrawNumber(left_x, y, 0, width, value);
 }
 
 static void layout_hnum(vrect_t hud_vrect, const char **s, const player_state_t *ps, int x, int y)
@@ -694,6 +722,11 @@ static void SCR_ExecuteLayoutString(vrect_t hud_vrect, const char *s, int32_t pl
 
         if (!strcmp(token, "num")) {
             layout_num(hud_vrect, &s, ps, x, y);
+            continue;
+        }
+
+        if (!strcmp(token, "num_center")) {
+            layout_num_center(hud_vrect, &s, ps, x, y);
             continue;
         }
 

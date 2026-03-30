@@ -39,11 +39,17 @@ struct statusbar_t {
 	inline auto& rnum() { sb << "rnum "; return *this; }
 	inline auto& hnum() { sb << "hnum "; return *this; }
 	inline auto& num(int32_t width, player_stat_t stat) { sb << "num " << width << ' ' << stat << ' '; return *this; }
+	inline auto& num_center(int32_t width, player_stat_t stat)
+	{
+		sb << "num_center " << width << ' ' << stat << ' ';
+		return *this;
+	}
 
 	inline auto& loc_stat_string(player_stat_t stat) { sb << "loc_stat_string " << stat << ' '; return *this; }
 	inline auto& loc_stat_rstring(player_stat_t stat) { sb << "loc_stat_rstring " << stat << ' '; return *this; }
 	inline auto& stat_string(player_stat_t stat) { sb << "stat_string " << stat << ' '; return *this; }
 	inline auto& stat_string2(player_stat_t stat) { sb << "stat_string2 " << stat << ' '; return *this; }
+	inline auto& loc_stat_cstring(player_stat_t stat) { sb << "loc_stat_cstring " << stat << ' '; return *this; }
 	inline auto& loc_stat_cstring2(player_stat_t stat) { sb << "loc_stat_cstring2 " << stat << ' '; return *this; }
 	inline auto& string2(const char* str)
 	{

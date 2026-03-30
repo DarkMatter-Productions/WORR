@@ -3727,6 +3727,38 @@ static void CG_ExecuteLayoutString (const char *s, vrect_t hud_vrect, vrect_t hu
             }
             continue;
         }
+        if (!strcmp(token, "num_center"))
+        {   // x = left edge of virtual 320 strip (xv 0). Center digit *glyphs* in band;
+            // CG_DrawField right-pads in `width` cells, so centering the full field
+            // shifts one-digit values to the right.
+            token = COM_Parse (&s);
+            if (!skip_depth)
+                width = atoi(token);
+            token = COM_Parse (&s);
+            if (!skip_depth)
+            {
+                value = ps->stats[atoi(token)];
+                int wfield = width;
+                if (wfield > 5)
+                    wfield = 5;
+                char numbuf[16];
+                auto result =
+                    std::to_chars(numbuf, numbuf + sizeof(numbuf) - 1, value);
+                *result.ptr = '\0';
+                int l = static_cast<int>(result.ptr - numbuf);
+                if (l > wfield)
+                    l = wfield;
+                if (l < 1)
+                    l = 1;
+                const int band_w = hx * 2 * scale;
+                const int digit_start = (2 + CHAR_WIDTH * (wfield - l)) * scale;
+                const int digit_span = l * CHAR_WIDTH * scale;
+                const int left_x =
+                    x + band_w / 2 - digit_start - digit_span / 2;
+                CG_DrawField(left_x, y, 0, width, value, scale);
+            }
+            continue;
+        }
         // [Paril-KEX] special handling for the lives number
         else if (!strcmp(token, "lives_num"))
         {
@@ -4570,6 +4602,11 @@ struct cg_statusbar_builder_t {
         sb += G_Fmt("num {} {} ", width, static_cast<int>(stat)).data();
         return *this;
     }
+    inline cg_statusbar_builder_t &num_center(int32_t width, player_stat_t stat)
+    {
+        sb += G_Fmt("num_center {} {} ", width, static_cast<int>(stat)).data();
+        return *this;
+    }
 
     inline cg_statusbar_builder_t &loc_stat_string(player_stat_t stat)
     {
@@ -4589,6 +4626,11 @@ struct cg_statusbar_builder_t {
     inline cg_statusbar_builder_t &stat_string2(player_stat_t stat)
     {
         sb += G_Fmt("stat_string2 {} ", static_cast<int>(stat)).data();
+        return *this;
+    }
+    inline cg_statusbar_builder_t &loc_stat_cstring(player_stat_t stat)
+    {
+        sb += G_Fmt("loc_stat_cstring {} ", static_cast<int>(stat)).data();
         return *this;
     }
     inline cg_statusbar_builder_t &loc_stat_cstring2(player_stat_t stat)
@@ -4714,8 +4756,8 @@ static void CG_Statusbar_AddDeathmatchStatus(cg_statusbar_builder_t &sb, bool is
         sb.ifstat(STAT_TEAMPLAY_INFO).xl(0).yb(-88).stat_string(STAT_TEAMPLAY_INFO).endifstat();
     }
 
-    sb.ifstat(STAT_COUNTDOWN).xv(136).yb(-256).num(3, STAT_COUNTDOWN).endifstat();
-    sb.ifstat(STAT_MATCH_STATE).xv(0).yb(-78).stat_string(STAT_MATCH_STATE).endifstat();
+    sb.ifstat(STAT_MATCH_STATE).xv(0).yt(12).loc_stat_cstring(STAT_MATCH_STATE).endifstat();
+    sb.ifstat(STAT_COUNTDOWN).xv(0).yt(28).num_center(3, STAT_COUNTDOWN).endifstat();
 
     sb.ifstat(STAT_FOLLOWING).xv(0).yb(-68).string2("FOLLOWING").xv(80).stat_string(STAT_FOLLOWING).endifstat();
     sb.ifstat(STAT_SPECTATOR).xv(0).yb(-68).string2("SPECTATING").xv(0).yb(-58).string("Use TAB Menu to join the match.").xv(80).endifstat();

@@ -118,8 +118,8 @@ static void AddDeathmatchStatus(statusbar_t& sb) {
 		sb.ifstat(STAT_TEAMPLAY_INFO).xl(0).yb(-88).stat_string(STAT_TEAMPLAY_INFO).endifstat();
 	}
 
-	sb.ifstat(STAT_COUNTDOWN).xv(136).yb(-256).num(3, STAT_COUNTDOWN).endifstat();
-	sb.ifstat(STAT_MATCH_STATE).xv(0).yb(-78).stat_string(STAT_MATCH_STATE).endifstat();
+	sb.ifstat(STAT_MATCH_STATE).xv(0).yt(12).loc_stat_cstring(STAT_MATCH_STATE).endifstat();
+	sb.ifstat(STAT_COUNTDOWN).xv(0).yt(28).num_center(3, STAT_COUNTDOWN).endifstat();
 
 	sb.ifstat(STAT_FOLLOWING).xv(0).yb(-68).string2("FOLLOWING").xv(80).stat_string(STAT_FOLLOWING).endifstat();
 	sb.ifstat(STAT_SPECTATOR).xv(0).yb(-68).string2("SPECTATING").xv(0).yb(-58).string("Use TAB Menu to join the match.").xv(80).endifstat();
