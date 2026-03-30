@@ -124,13 +124,21 @@ typedef enum {
 q_printf(2, 3)
 void    Com_LPrintf(print_type_t type, const char *fmt, ...);
 
+// Same as Com_LPrintf ($-prefixed fmt resolved at runtime); no q_printf so
+// localized keys do not trip -Wformat-extra-args.
+void    Com_LPrintf_Loc(print_type_t type, const char *fmt, ...);
+
 q_cold q_noreturn q_printf(2, 3)
 void    Com_Error(error_type_t code, const char *fmt, ...);
 
 #define Com_Printf(...) Com_LPrintf(PRINT_ALL, __VA_ARGS__)
+#define Com_PrintfLoc(...) Com_LPrintf_Loc(PRINT_ALL, __VA_ARGS__)
 #define Com_WPrintf(...) Com_LPrintf(PRINT_WARNING, __VA_ARGS__)
+#define Com_WPrintfLoc(...) Com_LPrintf_Loc(PRINT_WARNING, __VA_ARGS__)
 #define Com_EPrintf(...) Com_LPrintf(PRINT_ERROR, __VA_ARGS__)
+#define Com_EPrintfLoc(...) Com_LPrintf_Loc(PRINT_ERROR, __VA_ARGS__)
 #define Com_NPrintf(...) Com_LPrintf(PRINT_NOTICE, __VA_ARGS__)
+#define Com_NPrintfLoc(...) Com_LPrintf_Loc(PRINT_NOTICE, __VA_ARGS__)
 
 // an assertion that's ALWAYS enabled. `expr' may have side effects.
 #define Q_assert(expr) \

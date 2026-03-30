@@ -185,6 +185,34 @@ void Com_LPrintf(print_type_t type, const char *fmt, ...)
     va_end(args);
 }
 
+void Com_LPrintf_Loc(print_type_t type, const char *fmt, ...)
+{
+    void (*fn)(const char *fmt, ...) = NULL;
+    va_list args;
+
+    if (!uii)
+        return;
+
+    switch (type) {
+    case PRINT_WARNING:
+        fn = uii->Com_WPrintf;
+        break;
+    case PRINT_ERROR:
+        fn = uii->Com_EPrintf;
+        break;
+    case PRINT_DEVELOPER:
+        fn = uii->Com_DPrintf;
+        break;
+    default:
+        fn = uii->Com_Printf;
+        break;
+    }
+
+    va_start(args, fmt);
+    UI_PrintFwd(fn, fmt, args);
+    va_end(args);
+}
+
 void Com_Printf(const char *fmt, ...)
 {
     va_list args;
@@ -376,7 +404,7 @@ int Cmd_ParseOptions(const cmd_option_t *opt)
 
         if (p) {
             if (o->sh[1] != ':') {
-                Com_Printf("$ui_cmd_option_no_argument", Cmd_Argv(cmd_optind));
+                Com_PrintfLoc("$ui_cmd_option_no_argument", Cmd_Argv(cmd_optind));
                 Cmd_PrintHint();
                 return '!';
             }
@@ -394,7 +422,7 @@ int Cmd_ParseOptions(const cmd_option_t *opt)
 
     if (!p && o->sh[1] == ':') {
         if (cmd_optind + 1 == argc) {
-            Com_Printf("$ui_cmd_missing_argument", Cmd_Argv(cmd_optind));
+            Com_PrintfLoc("$ui_cmd_missing_argument", Cmd_Argv(cmd_optind));
             Cmd_PrintHint();
             return ':';
         }
@@ -405,14 +433,14 @@ int Cmd_ParseOptions(const cmd_option_t *opt)
     return o->sh[0];
 
 unknown:
-    Com_Printf("$ui_cmd_unknown_option", Cmd_Argv(cmd_optind));
+    Com_PrintfLoc("$ui_cmd_unknown_option", Cmd_Argv(cmd_optind));
     Cmd_PrintHint();
     return '?';
 }
 
 void Cmd_PrintUsage(const cmd_option_t *opt, const char *suffix)
 {
-    Com_Printf("$ui_cmd_usage_prefix", Cmd_Argv(0));
+    Com_PrintfLoc("$ui_cmd_usage_prefix", Cmd_Argv(0));
     while (opt->sh) {
         Com_Printf("%c", opt->sh[0]);
         if (opt->sh[1] == ':')
@@ -420,7 +448,7 @@ void Cmd_PrintUsage(const cmd_option_t *opt, const char *suffix)
         opt++;
     }
     if (suffix)
-        Com_Printf("$ui_cmd_usage_suffix", suffix);
+        Com_PrintfLoc("$ui_cmd_usage_suffix", suffix);
     else
         Com_Printf("]\n");
 }
@@ -438,7 +466,7 @@ void Cmd_PrintHelp(const cmd_option_t *opt)
         width = max(width, min(len, 31));
     }
 
-    Com_Printf("$ui_cmd_options_header");
+    Com_PrintfLoc("$ui_cmd_options_header");
     while (opt->sh) {
         if (opt->sh[1] == ':')
             Q_concat(buffer, sizeof(buffer), opt->lo, "=<", opt->sh + 2, ">");
@@ -452,7 +480,7 @@ void Cmd_PrintHelp(const cmd_option_t *opt)
 
 void Cmd_PrintHint(void)
 {
-    Com_Printf("$ui_cmd_help_hint", Cmd_Argv(0));
+    Com_PrintfLoc("$ui_cmd_help_hint", Cmd_Argv(0));
 }
 
 void Cmd_Option_c(const cmd_option_t *opt, xgenerator_t g, genctx_t *ctx, int argnum)

@@ -81,7 +81,7 @@ void UI_PushMenu(menuFrameWork_t *menu)
 
     if (i == uis.menuDepth) {
         if (uis.menuDepth >= MAX_MENU_DEPTH) {
-            Com_EPrintf("$e_auto_713f13864237");
+            Com_EPrintfLoc("$e_auto_713f13864237");
             return;
         }
         uis.layers[uis.menuDepth++] = menu;
@@ -624,7 +624,7 @@ static void UI_PushMenu_f(void)
     char *s;
 
     if (Cmd_Argc() < 2) {
-        Com_Printf("$e_auto_e13d46568ae9", Cmd_Argv(0));
+        Com_PrintfLoc("$e_auto_e13d46568ae9", Cmd_Argv(0));
         return;
     }
     s = Cmd_Argv(1);
@@ -632,7 +632,7 @@ static void UI_PushMenu_f(void)
     if (menu) {
         UI_PushMenu(menu);
     } else {
-        Com_Printf("$e_auto_ad494789521e", s);
+        Com_PrintfLoc("$e_auto_ad494789521e", s);
     }
 }
 

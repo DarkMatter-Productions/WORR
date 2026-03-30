@@ -298,7 +298,7 @@ static void SCR_ScoreShot_f(void)
     int i, ret;
 
     if (cls.state != ca_active) {
-        Com_Printf("$locs_requires_level");
+        Com_PrintfLoc("$locs_requires_level");
         return;
     }
 
@@ -317,14 +317,14 @@ static void SCR_ScoreShot_f(void)
                 break;
             }
             if (ret != Q_ERR(EEXIST)) {
-                Com_EPrintf("$e_auto_73287ca7dcec",
+                Com_EPrintfLoc("$e_auto_73287ca7dcec",
                             path, Q_ErrorString(ret));
                 return;
             }
         }
 
         if (i == 1000) {
-            Com_EPrintf("$e_auto_ee0c7925449b");
+            Com_EPrintfLoc("$e_auto_ee0c7925449b");
             return;
         }
     }
@@ -340,9 +340,9 @@ static void SCR_ScoreShot_f(void)
     FS_Write(buffer, sizeof(buffer), f);
 
     if (FS_CloseFile(f))
-        Com_EPrintf("$cl_error_writing_file", path);
+        Com_EPrintfLoc("$cl_error_writing_file", path);
     else
-        Com_Printf("$cl_write_complete", path);
+        Com_PrintfLoc("$cl_write_complete", path);
 }
 
 static void SCR_ScoreDump_f(void)
@@ -351,7 +351,7 @@ static void SCR_ScoreDump_f(void)
     int i;
 
     if (cls.state != ca_active) {
-        Com_Printf("$locs_requires_level");
+        Com_PrintfLoc("$locs_requires_level");
         return;
     }
 

@@ -244,6 +244,22 @@ void Com_LPrintf(print_type_t type, const char *fmt, ...)
     gi.dprintf("%s", text);
 }
 
+void Com_LPrintf_Loc(print_type_t type, const char *fmt, ...)
+{
+    va_list     argptr;
+    char        text[MAX_STRING_CHARS];
+
+    if (type == PRINT_DEVELOPER) {
+        return;
+    }
+
+    va_start(argptr, fmt);
+    Q_vsnprintf(text, sizeof(text), fmt, argptr);
+    va_end(argptr);
+
+    gi.dprintf("%s", text);
+}
+
 void Com_Error(error_type_t type, const char *fmt, ...)
 {
     va_list     argptr;

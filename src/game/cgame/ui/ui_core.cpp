@@ -333,7 +333,7 @@ void MenuSystem::Push(MenuPage *menu)
     }
 
     if (stack_.size() >= MAX_MENU_DEPTH) {
-        Com_EPrintf("$ui_pushmenu_max_depth");
+        Com_EPrintfLoc("$ui_pushmenu_max_depth");
         return;
     }
 

@@ -72,7 +72,7 @@ static void add_expand(menuSpinControl_t *s, const char *tok)
             data = temp;
             macro->function(temp, len + 1);
         } else {
-            Com_Printf("$cmd_line_expanded_too_long", INT_MAX);
+            Com_PrintfLoc("$cmd_line_expanded_too_long", INT_MAX);
             return;
         }
     } else {
@@ -133,7 +133,7 @@ static void Parse_Spin(menuFrameWork_t *menu, menuType_t type)
 
     numItems = Cmd_Argc() - (cmd_optind + 2);
     if (numItems < 1) {
-        Com_Printf("$e_auto_605198020d80", Cmd_Argv(0));
+        Com_PrintfLoc("$e_auto_605198020d80", Cmd_Argv(0));
         return;
     }
 
@@ -230,7 +230,7 @@ static void Parse_ImageSpin(menuFrameWork_t *menu, menuType_t type)
 
     numItems = Cmd_Argc() - (cmd_optind + 2);
     if (numItems < 1) {
-        Com_Printf("$ui_script_cvar_filter_usage", Cmd_Argv(0));
+        Com_PrintfLoc("$ui_script_cvar_filter_usage", Cmd_Argv(0));
         return;
     }
 
@@ -265,7 +265,7 @@ static void Parse_Pairs(menuFrameWork_t *menu)
 
     numItems = Cmd_Argc() - (cmd_optind + 2);
     if (numItems < 2 || (numItems & 1)) {
-        Com_Printf("$e_auto_795090ff06e8", Cmd_Argv(0));
+        Com_PrintfLoc("$e_auto_795090ff06e8", Cmd_Argv(0));
         return;
     }
 
@@ -303,7 +303,7 @@ static void Parse_Range(menuFrameWork_t *menu)
     }
 
     if (Cmd_Argc() - cmd_optind < 4) {
-        Com_Printf("$e_auto_f7990bba4004", Cmd_Argv(0));
+        Com_PrintfLoc("$e_auto_f7990bba4004", Cmd_Argv(0));
         return;
     }
 
@@ -349,7 +349,7 @@ static void Parse_Action(menuFrameWork_t *menu)
     }
 
     if (Cmd_Argc() - cmd_optind < 2) {
-        Com_Printf("$ui_script_command_usage", Cmd_Argv(0));
+        Com_PrintfLoc("$ui_script_command_usage", Cmd_Argv(0));
         return;
     }
 
@@ -389,7 +389,7 @@ static void Parse_Bitmap(menuFrameWork_t *menu)
     }
 
     if (Cmd_Argc() - cmd_optind < 2) {
-        Com_Printf("$ui_script_command_usage", Cmd_Argv(0));
+        Com_PrintfLoc("$ui_script_command_usage", Cmd_Argv(0));
         return;
     }
 
@@ -433,7 +433,7 @@ static void Parse_Bind(menuFrameWork_t *menu)
     }
 
     if (Cmd_Argc() - cmd_optind < 2) {
-        Com_Printf("$ui_script_command_usage", Cmd_Argv(0));
+        Com_PrintfLoc("$ui_script_command_usage", Cmd_Argv(0));
         return;
     }
 
@@ -465,7 +465,7 @@ static void Parse_Savegame(menuFrameWork_t *menu, menuType_t type)
     }
 
     if (Cmd_Argc() - cmd_optind < 1) {
-        Com_Printf("$ui_script_dir_usage", Cmd_Argv(0));
+        Com_PrintfLoc("$ui_script_dir_usage", Cmd_Argv(0));
         return;
     }
 
@@ -503,7 +503,7 @@ static void Parse_Toggle(menuFrameWork_t *menu)
     }
 
     if (Cmd_Argc() - cmd_optind < 2) {
-        Com_Printf("$e_auto_851faebfa520", Cmd_Argv(0));
+        Com_PrintfLoc("$e_auto_851faebfa520", Cmd_Argv(0));
         return;
     }
 
@@ -515,7 +515,7 @@ static void Parse_Toggle(menuFrameWork_t *menu)
     if (*b) {
         bit = Q_atoi(b);
         if (bit < 0 || bit >= 32) {
-            Com_Printf("$e_auto_4cf98dc30c11", bit);
+            Com_PrintfLoc("$e_auto_4cf98dc30c11", bit);
             return;
         }
         type = MTYPE_BITFIELD;
@@ -566,7 +566,7 @@ static void Parse_Field(menuFrameWork_t *menu)
         case 'w':
             width = Q_atoi(cmd_optarg);
             if (width < 1 || width > 32) {
-                Com_Printf("$ui_script_invalid_width");
+                Com_PrintfLoc("$ui_script_invalid_width");
                 return;
             }
             break;
@@ -645,7 +645,7 @@ static void Parse_Color(void)
     char *s, *c;
 
     if (Cmd_Argc() < 3) {
-        Com_Printf("$e_auto_57db15103668", Cmd_Argv(0));
+        Com_PrintfLoc("$e_auto_57db15103668", Cmd_Argv(0));
         return;
     }
 
@@ -661,14 +661,14 @@ static void Parse_Color(void)
     } else if (!strcmp(s, "disabled")) {
         SCR_ParseColor(c, &uis.color.disabled);
     } else {
-        Com_Printf("$ui_script_unknown_state", s);
+        Com_PrintfLoc("$ui_script_unknown_state", s);
     }
 }
 
 static void Parse_Plaque(menuFrameWork_t *menu)
 {
     if (Cmd_Argc() < 2) {
-        Com_Printf("$e_auto_b369c202878f", Cmd_Argv(0));
+        Com_PrintfLoc("$e_auto_b369c202878f", Cmd_Argv(0));
         return;
     }
 
@@ -690,7 +690,7 @@ static void Parse_Plaque(menuFrameWork_t *menu)
 static void Parse_Banner(menuFrameWork_t *menu)
 {
     if (Cmd_Argc() < 2) {
-        Com_Printf("$e_auto_633cb08a236c", Cmd_Argv(0));
+        Com_PrintfLoc("$e_auto_633cb08a236c", Cmd_Argv(0));
         return;
     }
 
@@ -711,7 +711,7 @@ static bool Parse_File(const char *path, int depth)
     ret = FS_LoadFile(path, (void **)&raw);
     if (!raw) {
         if (ret != Q_ERR(ENOENT) || depth) {
-            Com_WPrintf("$e_auto_f50d69c7d411", depth ? "include" : "load",
+            Com_WPrintfLoc("$e_auto_f50d69c7d411", depth ? "include" : "load",
                         path, Q_ErrorString(ret));
         }
         return false;
@@ -736,7 +736,7 @@ static bool Parse_File(const char *path, int depth)
                     if (menu->nitems) {
                         List_Append(&ui_menus, &menu->entry);
                     } else {
-                        Com_WPrintf("$e_auto_83b12b6664ab");
+                        Com_WPrintfLoc("$e_auto_83b12b6664ab");
                         menu->free(menu);
                     }
                     menu = NULL;
@@ -782,13 +782,13 @@ static bool Parse_File(const char *path, int depth)
                 } else if (!strcmp(cmd, "unit_selector")) {
                     Parse_UnitSelector(menu);
                 } else {
-                    Com_WPrintf("$e_auto_fd362eb66462", cmd);
+                    Com_WPrintfLoc("$e_auto_fd362eb66462", cmd);
                 }
             } else {
                 if (!strcmp(cmd, "begin")) {
                     char *s = Cmd_Argv(1);
                     if (!*s) {
-                        Com_WPrintf("$e_auto_bc9b548f7336", cmd);
+                        Com_WPrintfLoc("$e_auto_bc9b548f7336", cmd);
                         break;
                     }
                     menu = UI_FindMenu(s);
@@ -809,11 +809,11 @@ static bool Parse_File(const char *path, int depth)
                 } else if (!strcmp(cmd, "include")) {
                     char *s = Cmd_Argv(1);
                     if (!*s) {
-                        Com_WPrintf("$e_auto_bbcac12c35ad", cmd);
+                        Com_WPrintfLoc("$e_auto_bbcac12c35ad", cmd);
                         break;
                     }
                     if (depth == 16) {
-                        Com_WPrintf("$e_auto_fbebe5f10eaa");
+                        Com_WPrintfLoc("$e_auto_fbebe5f10eaa");
                     } else {
                         Parse_File(s, depth + 1);
                     }
@@ -840,7 +840,7 @@ static bool Parse_File(const char *path, int depth)
                 } else if (!strcmp(cmd, "weapon")) {
                     Cmd_ArgvBuffer(1, uis.weaponModel, sizeof(uis.weaponModel));
                 } else {
-                    Com_WPrintf("$e_auto_fd362eb66462", cmd);
+                    Com_WPrintfLoc("$e_auto_fd362eb66462", cmd);
                     break;
                 }
             }
@@ -856,7 +856,7 @@ static bool Parse_File(const char *path, int depth)
     FS_FreeFile(raw);
 
     if (menu) {
-        Com_WPrintf("$ui_script_menu_missing_end");
+        Com_WPrintfLoc("$ui_script_menu_missing_end");
         menu->free(menu);
     }
 

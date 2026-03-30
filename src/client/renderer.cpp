@@ -802,7 +802,7 @@ static bool R_UseRendererAPI(const char *renderer_name)
     }
 
     re = *exports;
-    Com_Printf("$e_auto_cc6bb5df67a7", renderer_name);
+    Com_PrintfLoc("$e_auto_cc6bb5df67a7", renderer_name);
     return true;
 }
 
@@ -1078,7 +1078,7 @@ void CL_InitRenderer(void)
     }
 
     if (!vid_drivers[i] && r_driver->string[0]) {
-        Com_Printf("$e_auto_4260ac49b6ef", r_driver->string);
+        Com_PrintfLoc("$e_auto_4260ac49b6ef", r_driver->string);
         for (int j = 0; vid_drivers[j]; j++) {
             if (j)
                 Com_Printf(", ");

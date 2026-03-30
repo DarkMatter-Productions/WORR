@@ -428,7 +428,7 @@ CL_ForwardToServer_f
 static void CL_ForwardToServer_f(void)
 {
     if (cls.state < ca_connected) {
-        Com_Printf("$cmd_not_connected", Cmd_Argv(0));
+        Com_PrintfLoc("$cmd_not_connected", Cmd_Argv(0));
         return;
     }
 
@@ -516,7 +516,7 @@ void CL_CheckForResend(void)
     cls.connect_count++;
 
     if (cls.state == ca_challenging) {
-        Com_Printf("$cl_requesting_challenge", cls.connect_count);
+        Com_PrintfLoc("$cl_requesting_challenge", cls.connect_count);
         OOB_PRINT(NS_CLIENT, &cls.serverAddress, "getchallenge\n");
         return;
     }
@@ -524,7 +524,7 @@ void CL_CheckForResend(void)
     //
     // We have gotten a challenge from the server, so try and connect.
     //
-    Com_Printf("$cl_requesting_connection", cls.connect_count);
+    Com_PrintfLoc("$cl_requesting_connection", cls.connect_count);
 
     cls.userinfo_modified = 0;
 
@@ -594,12 +594,12 @@ static void CL_Connect_f(void)
     netadr_t    address;
 
     if (Cmd_Argc() < 2) {
-        Com_Printf("$cl_server_cmd_usage", Cmd_Argv(0));
+        Com_PrintfLoc("$cl_server_cmd_usage", Cmd_Argv(0));
         return;
     }
 
     if (Cmd_Argc() > 2) {
-        Com_Printf("$cl_connect_second_arg_ignored", Cmd_Argv(0));
+        Com_PrintfLoc("$cl_connect_second_arg_ignored", Cmd_Argv(0));
     }
 
     server = Cmd_Argv(1);
@@ -613,7 +613,7 @@ static void CL_Connect_f(void)
     }
 
     if (!NET_StringToAdr(server, &address, PORT_SERVER)) {
-        Com_Printf("$cl_bad_server_address");
+        Com_PrintfLoc("$cl_bad_server_address");
         return;
     }
 
@@ -654,10 +654,10 @@ static void CL_FollowIP_f(void)
     a = &cls.recent_addr[(cls.recent_head - i - 1) & RECENT_MASK];
     if (a->type) {
         const char *s = NET_AdrToString(a);
-        Com_Printf("$cl_following_server", s);
+        Com_PrintfLoc("$cl_following_server", s);
         Cbuf_InsertText(cmd_current, va("connect %s\n", s));
     } else {
-        Com_Printf("$cl_follow_no_address");
+        Com_PrintfLoc("$cl_follow_no_address");
     }
 }
 
@@ -667,7 +667,7 @@ static void CL_PassiveConnect_f(void)
 
     if (cls.passive) {
         cls.passive = false;
-        Com_Printf("$cl_passive_listen_disabled");
+        Com_PrintfLoc("$cl_passive_listen_disabled");
         return;
     }
 
@@ -683,7 +683,7 @@ static void CL_PassiveConnect_f(void)
     }
 
     cls.passive = true;
-    Com_Printf("$cl_passive_listen_started", NET_AdrToString(&address));
+    Com_PrintfLoc("$cl_passive_listen_started", NET_AdrToString(&address));
 }
 
 void CL_SendRcon(const netadr_t *adr, const char *pass, const char *cmd)
@@ -709,23 +709,23 @@ static void CL_Rcon_f(void)
     netadr_t    address;
 
     if (Cmd_Argc() < 2) {
-        Com_Printf("$cl_command_usage", Cmd_Argv(0));
+        Com_PrintfLoc("$cl_command_usage", Cmd_Argv(0));
         return;
     }
 
     if (!rcon_password->string[0]) {
-        Com_Printf("$cl_rcon_password_required");
+        Com_PrintfLoc("$cl_rcon_password_required");
         return;
     }
 
     address = cls.netchan.remote_address;
     if (!address.type) {
         if (!rcon_address->string[0]) {
-            Com_Printf("$cl_rcon_requires_address");
+            Com_PrintfLoc("$cl_rcon_requires_address");
             return;
         }
         if (!NET_StringToAdr(rcon_address->string, &address, PORT_SERVER)) {
-            Com_Printf("$cl_bad_address", rcon_address->string);
+            Com_PrintfLoc("$cl_bad_address", rcon_address->string);
             return;
         }
     }
@@ -885,13 +885,13 @@ static void CL_ServerStatus_f(void)
     if (Cmd_Argc() < 2) {
         adr = cls.netchan.remote_address;
         if (!adr.type) {
-            Com_Printf("$cl_status_usage", Cmd_Argv(0));
+            Com_PrintfLoc("$cl_status_usage", Cmd_Argv(0));
             return;
         }
     } else {
         s = Cmd_Argv(1);
         if (!NET_StringToAdr(s, &adr, PORT_SERVER)) {
-            Com_Printf("$cl_bad_address", s);
+            Com_PrintfLoc("$cl_bad_address", s);
             return;
         }
     }
@@ -969,11 +969,11 @@ static void CL_DumpStatusResponse(const serverStatus_t *status)
 {
     int i;
 
-    Com_Printf("$cl_status_response_from", NET_AdrToString(&net_from));
+    Com_PrintfLoc("$cl_status_response_from", NET_AdrToString(&net_from));
 
     Info_Print(status->infostring);
 
-    Com_Printf("$cl_status_table_header");
+    Com_PrintfLoc("$cl_status_table_header");
     for (i = 0; i < status->numPlayers; i++) {
         Com_Printf("%3i %5i %4i %s\n", i + 1,
                    status->players[i].score,
@@ -1078,7 +1078,7 @@ static void CL_Changing_f(void)
     if (cls.demo.recording)
         CL_Stop_f();
 
-    Com_Printf("$cl_changing_map");
+    Com_PrintfLoc("$cl_changing_map");
 
     if (!cls.demo.playback) {
         EXEC_TRIGGER(cl_changemapcmd);
@@ -1118,7 +1118,7 @@ The server is changing levels
 static void CL_Reconnect_f(void)
 {
     if (cls.demo.playback) {
-        Com_Printf("$cl_reconnect_no_server");
+        Com_PrintfLoc("$cl_reconnect_no_server");
         return;
     }
 
@@ -1133,7 +1133,7 @@ static void CL_Reconnect_f(void)
             return; // if we are downloading, we don't change!
         }
 
-        Com_Printf("$cl_reconnecting");
+        Com_PrintfLoc("$cl_reconnecting");
 
         CL_ClientCommand("new");
         return;
@@ -1141,15 +1141,15 @@ static void CL_Reconnect_f(void)
 
     // issued manually at console
     if (cls.serverAddress.type == NA_UNSPECIFIED) {
-        Com_Printf("$cl_reconnect_no_server");
+        Com_PrintfLoc("$cl_reconnect_no_server");
         return;
     }
     if (cls.serverAddress.type == NA_LOOPBACK && !sv_running->integer) {
-        Com_Printf("$cl_reconnect_loopback_blocked");
+        Com_PrintfLoc("$cl_reconnect_loopback_blocked");
         return;
     }
 
-    Com_Printf("$cl_reconnecting");
+    Com_PrintfLoc("$cl_reconnecting");
 
     cls.serverProtocol = cl_protocol->integer;
     cls.state = ca_challenging;
@@ -1208,7 +1208,7 @@ static void CL_PingServers_f(void)
             continue;
 
         if (!NET_StringToAdr(var->string, &address, PORT_SERVER)) {
-            Com_Printf("$cl_bad_address", var->string);
+            Com_PrintfLoc("$cl_bad_address", var->string);
             continue;
         }
 
@@ -1233,7 +1233,7 @@ static void CL_Skins_f(void)
     clientinfo_t *ci;
 
     if (cls.state < ca_precached) {
-        Com_Printf("$cl_loadskins_requires_level");
+        Com_PrintfLoc("$cl_loadskins_requires_level");
         return;
     }
 
@@ -1352,7 +1352,7 @@ static void CL_ConnectionlessPacket(void)
             // Restrict accepted protocols if one was explicitly specified
             q2proto_protocol_t user_protocol = q2proto_protocol_from_netver(cls.serverProtocol);
             if (user_protocol == Q2P_PROTOCOL_INVALID) {
-                Com_EPrintf("$cl_invalid_protocol", cls.serverProtocol);
+                Com_EPrintfLoc("$cl_invalid_protocol", cls.serverProtocol);
                 return;
             }
             accepted_protocols[0] = user_protocol;
@@ -1441,7 +1441,7 @@ static void CL_ConnectionlessPacket(void)
             HTTP_SetServer(NULL);
         }
 
-        Com_Printf("$cl_connected_to_server", NET_AdrToString(&cls.serverAddress),
+        Com_PrintfLoc("$cl_connected_to_server", NET_AdrToString(&cls.serverAddress),
                    cls.serverProtocol);
         Netchan_Close(&cls.netchan);
         Netchan_Setup(&cls.netchan, NS_CLIENT, type, &cls.serverAddress,
@@ -1458,17 +1458,17 @@ static void CL_ConnectionlessPacket(void)
             Netchan_Transmit(&cls.netchan, 0, NULL, 3);
             S_StopAllSounds();
             cls.connect_count = -1;
-            Com_Printf("$cl_anticheat_loading");
+            Com_PrintfLoc("$cl_anticheat_loading");
             SCR_UpdateScreen();
             if (!Sys_GetAntiCheatAPI()) {
-                Com_Printf("$cl_anticheat_connect_without");
+                Com_PrintfLoc("$cl_anticheat_connect_without");
             } else {
-                Com_NPrintf("$cl_anticheat_loaded");
+                Com_NPrintfLoc("$cl_anticheat_loaded");
             }
         }
 #else
         if (anticheat >= 2) {
-            Com_Printf("$cl_anticheat_required_missing");
+            Com_PrintfLoc("$cl_anticheat_required_missing");
         }
 #endif
 
@@ -1489,7 +1489,7 @@ static void CL_ConnectionlessPacket(void)
             return;
         }
         adr = NET_AdrToString(&net_from);
-        Com_Printf("$cl_passive_connect_received", adr);
+        Com_PrintfLoc("$cl_passive_connect_received", adr);
 
         cls.serverAddress = net_from;
         cls.serverProtocol = cl_protocol->integer;
@@ -1692,7 +1692,7 @@ static void CL_Userinfo_f(void)
 
     Cvar_BitInfo(userinfo, CVAR_USERINFO);
 
-    Com_Printf("$cl_userinfo_header");
+    Com_PrintfLoc("$cl_userinfo_header");
     Info_Print(userinfo);
 }
 
@@ -1729,7 +1729,7 @@ static void CL_PlaySound_f(void)
     char name[MAX_QPATH];
 
     if (Cmd_Argc() < 2) {
-        Com_Printf("$cl_sound_usage", Cmd_Argv(0));
+        Com_PrintfLoc("$cl_sound_usage", Cmd_Argv(0));
         return;
     }
 
@@ -1845,7 +1845,7 @@ void CL_LoadFilterList(string_entry_t **list, const char *name, const char *comm
     len = FS_LoadFileEx(name, (void **)&raw, FS_TYPE_REAL, TAG_FILESYSTEM);
     if (!raw) {
         if (len != Q_ERR(ENOENT))
-            Com_EPrintf("$cl_load_failed", name, Q_ErrorString(len));
+            Com_EPrintfLoc("$cl_load_failed", name, Q_ErrorString(len));
         return;
     }
 
@@ -1875,7 +1875,7 @@ void CL_LoadFilterList(string_entry_t **list, const char *name, const char *comm
                 count++;
 #endif
             } else {
-                Com_WPrintf("$cl_filter_oversize_line", line, name);
+                Com_WPrintfLoc("$cl_filter_oversize_line", line, name);
             }
         }
 
@@ -1925,13 +1925,13 @@ static void list_ignores(const list_t *list)
     ignore_t *ignore;
 
     if (LIST_EMPTY(list)) {
-        Com_Printf("$cl_ignore_filters_none");
+        Com_PrintfLoc("$cl_ignore_filters_none");
         return;
     }
 
-    Com_Printf("$cl_ignore_filters_header");
+    Com_PrintfLoc("$cl_ignore_filters_header");
     LIST_FOR_EACH(ignore_t, ignore, list, entry) {
-        Com_Printf("$cl_ignore_filter_entry", ignore->match,
+        Com_PrintfLoc("$cl_ignore_filter_entry", ignore->match,
                    ignore->hits, ignore->hits == 1 ? "" : "s");
     }
 }
@@ -1948,7 +1948,7 @@ static void add_ignore(list_t *list, const char *match, size_t minlen)
 
     matchlen = strlen(match);
     if (matchlen < minlen) {
-        Com_Printf("$cl_ignore_filter_match_too_short", match);
+        Com_PrintfLoc("$cl_ignore_filter_match_too_short", match);
         return;
     }
 
@@ -1964,7 +1964,7 @@ static void remove_ignore(list_t *list, const char *match)
 
     ignore = find_ignore(list, match);
     if (!ignore) {
-        Com_Printf("$cl_ignore_filter_not_found", match);
+        Com_PrintfLoc("$cl_ignore_filter_not_found", match);
         return;
     }
 
@@ -1982,7 +1982,7 @@ static void remove_all_ignores(list_t *list)
         count++;
     }
 
-    Com_Printf("$cl_ignore_filter_removed_count", count, count == 1 ? "" : "s");
+    Com_PrintfLoc("$cl_ignore_filter_removed_count", count, count == 1 ? "" : "s");
     List_Init(list);
 }
 
@@ -2122,7 +2122,7 @@ static void CL_DumpClients_f(void)
     int i;
 
     if (cls.state != ca_active) {
-        Com_Printf("$cl_dump_requires_level");
+        Com_PrintfLoc("$cl_dump_requires_level");
         return;
     }
 
@@ -2140,23 +2140,23 @@ static void dump_program(const char *text, const char *name)
     char buffer[MAX_OSPATH];
 
     if (cls.state != ca_active) {
-        Com_Printf("$cl_dump_requires_level");
+        Com_PrintfLoc("$cl_dump_requires_level");
         return;
     }
 
     if (Cmd_Argc() != 2) {
-        Com_Printf("$cl_filename_usage", Cmd_Argv(0));
+        Com_PrintfLoc("$cl_filename_usage", Cmd_Argv(0));
         return;
     }
 
     if (!*text) {
-        Com_Printf("$cl_dump_no_target", name);
+        Com_PrintfLoc("$cl_dump_no_target", name);
         return;
     }
 
     if (FS_EasyWriteFile(buffer, sizeof(buffer), FS_MODE_WRITE | FS_FLAG_TEXT,
                          "layouts/", Cmd_Argv(1), ".txt", text, strlen(text))) {
-        Com_Printf("$cl_dump_program_written", name, buffer);
+        Com_PrintfLoc("$cl_dump_program_written", name, buffer);
     }
 }
 
@@ -2209,7 +2209,7 @@ static void CL_WriteConfig_f(void)
             break;
         case 'h':
             Cmd_PrintUsage(o_writeconfig, "<filename>");
-            Com_Printf("$cl_writeconfig_help");
+            Com_PrintfLoc("$cl_writeconfig_help");
             Cmd_PrintHelp(o_writeconfig);
             return;
         case 'm':
@@ -2222,7 +2222,7 @@ static void CL_WriteConfig_f(void)
     }
 
     if (!cmd_optarg[0]) {
-        Com_Printf("$cl_missing_filename");
+        Com_PrintfLoc("$cl_missing_filename");
         Cmd_PrintHint();
         return;
     }
@@ -2254,9 +2254,9 @@ static void CL_WriteConfig_f(void)
     }
 
     if (FS_CloseFile(f))
-        Com_EPrintf("$cl_error_writing_file", buffer);
+        Com_EPrintfLoc("$cl_error_writing_file", buffer);
     else
-        Com_Printf("$cl_write_complete", buffer);
+        Com_PrintfLoc("$cl_write_complete", buffer);
 }
 
 static void CL_Say_c(genctx_t *ctx, int argnum)
@@ -2416,7 +2416,7 @@ static void CL_WriteConfig(void)
 
     ret = FS_OpenFile(COM_CONFIG_CFG, &f, FS_MODE_WRITE | FS_FLAG_TEXT);
     if (!f) {
-        Com_EPrintf("$cl_write_open_failed",
+        Com_EPrintfLoc("$cl_write_open_failed",
                     COM_CONFIG_CFG, Q_ErrorString(ret));
         return;
     }
@@ -2427,7 +2427,7 @@ static void CL_WriteConfig(void)
     Cvar_WriteVariables(f, CVAR_ARCHIVE, false);
 
     if (FS_CloseFile(f))
-        Com_EPrintf("$cl_error_writing_file", COM_CONFIG_CFG);
+        Com_EPrintfLoc("$cl_error_writing_file", COM_CONFIG_CFG);
 }
 
 /*
@@ -2585,11 +2585,11 @@ static void CL_RestartRenderer_f(void)
         if (Cmd_From() == FROM_STUFFTEXT)
             return;
 
-        Com_Printf("$cl_vid_restart_manual_ignored");
+        Com_PrintfLoc("$cl_vid_restart_manual_ignored");
         if (warned)
             return;
 
-        Com_Printf("$cl_vid_restart_auto_info");
+        Com_PrintfLoc("$cl_vid_restart_auto_info");
         warned = true;
         return;
     }
@@ -2608,7 +2608,7 @@ static bool allow_stufftext(const char *text)
             return true;
 
     if (cl_ignore_stufftext->integer >= 2)
-        Com_WPrintf("$cl_ignored_stufftext", text);
+        Com_WPrintfLoc("$cl_ignored_stufftext", text);
 
     return false;
 }
@@ -3346,10 +3346,10 @@ static void warn_on_fps_rounding(const cvar_t *cvar, int msec)
     if (cvar->integer == real_maxfps)
         return;
 
-    Com_WPrintf("$cl_value_inexact_warning",
+    Com_WPrintfLoc("$cl_value_inexact_warning",
                 cvar->name, cvar->integer, real_maxfps);
     if (!warned) {
-        Com_Printf("$cl_warning_disable_hint",
+        Com_PrintfLoc("$cl_warning_disable_hint",
                    cl_warn_on_fps_rounding->name);
         warned = true;
     }
@@ -3889,7 +3889,7 @@ void CL_Shutdown(void)
     static bool isdown = false;
 
     if (isdown) {
-    Com_Printf("$cl_shutdown_recursive");
+    Com_PrintfLoc("$cl_shutdown_recursive");
         return;
     }
     isdown = true;

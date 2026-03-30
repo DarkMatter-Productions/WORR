@@ -1051,7 +1051,7 @@ static void Font_DumpGlyphs_f(void) {
     if (file)
       break;
     if (ret != Q_ERR(EEXIST)) {
-      Com_EPrintf("$e_auto_73287ca7dcec", out_path, Q_ErrorString(ret));
+      Com_EPrintfLoc("$e_auto_73287ca7dcec", out_path, Q_ErrorString(ret));
       return;
     }
   }
@@ -1093,9 +1093,9 @@ static void Font_DumpGlyphs_f(void) {
 
   Font_Free(font);
   if (FS_CloseFile(file))
-    Com_EPrintf("$cl_error_writing_file", out_path);
+    Com_EPrintfLoc("$cl_error_writing_file", out_path);
   else
-    Com_Printf("$cl_write_complete", out_path);
+    Com_PrintfLoc("$cl_write_complete", out_path);
 }
 
 void Font_Init(void) {

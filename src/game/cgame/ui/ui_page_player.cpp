@@ -444,7 +444,7 @@ void PlayerConfigPage::OnOpen()
     if (!uis.numPlayerModels) {
         PlayerModel_Load();
         if (!uis.numPlayerModels) {
-            Com_Printf("$ui_player_models_not_found");
+            Com_PrintfLoc("$ui_player_models_not_found");
             return;
         }
     }
