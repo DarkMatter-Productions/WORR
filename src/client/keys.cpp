@@ -437,13 +437,13 @@ static void Key_Unbind_f(void)
     int     b;
 
     if (Cmd_Argc() != 2) {
-        Com_Printf("$key_unbind_usage");
+        Com_PrintfLoc("$key_unbind_usage");
         return;
     }
 
     b = Key_StringToKeynum(Cmd_Argv(1));
     if (b == -1) {
-        Com_Printf("$key_invalid", Cmd_Argv(1));
+        Com_PrintfLoc("$key_invalid", Cmd_Argv(1));
         return;
     }
 
@@ -477,20 +477,20 @@ static void Key_Bind_f(void)
     c = Cmd_Argc();
 
     if (c < 2) {
-        Com_Printf("$key_bind_usage");
+        Com_PrintfLoc("$key_bind_usage");
         return;
     }
     b = Key_StringToKeynum(Cmd_Argv(1));
     if (b == -1) {
-        Com_Printf("$key_invalid", Cmd_Argv(1));
+        Com_PrintfLoc("$key_invalid", Cmd_Argv(1));
         return;
     }
 
     if (c == 2) {
         if (keybindings[b])
-            Com_Printf("$cmd_kv_pair", Cmd_Argv(1), keybindings[b]);
+            Com_PrintfLoc("$cmd_kv_pair", Cmd_Argv(1), keybindings[b]);
         else
-            Com_Printf("$key_not_bound", Cmd_Argv(1));
+            Com_PrintfLoc("$key_not_bound", Cmd_Argv(1));
         return;
     }
 

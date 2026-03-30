@@ -79,7 +79,7 @@ inline void PrintLocalizedWith(print_type_t type, const char *key,
                                Args&&... args)
 {
     const char *format = key;
-    Com_LPrintf(type, format, std::forward<Args>(args)...);
+    Com_LPrintf_Loc(type, format, std::forward<Args>(args)...);
 }
 
 template<typename... Args>

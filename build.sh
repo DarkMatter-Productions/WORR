@@ -72,6 +72,21 @@ show_help() {
     sed -n '2,15p' "$0" | sed 's/^# \?//'
 }
 
+deploy_to_apps() {
+    local SRC="$BUILD_DIR"
+    local DST="/home/chris/Apps/worr"
+    mkdir -p "$DST" "$DST/basew"
+    # Root executables and renderer libs
+    for f in worr_x86_64 worr_ded_x86_64 worr_opengl_x86_64.so worr_rtx_x86_64.so worr_vulkan_x86_64.so; do
+        [[ -f "$SRC/$f" ]] && cp -f "$SRC/$f" "$DST/"
+    done
+    # Game libs in basew
+    for f in cgame_x86_64.so sgame_x86_64.so; do
+        [[ -f "$SRC/basew/$f" ]] && cp -f "$SRC/basew/$f" "$DST/basew/"
+    done
+    echo "Deployed binaries to $DST"
+}
+
 DO_DEPS=
 CLEAN=
 DO_STAGE=
@@ -100,5 +115,7 @@ if [[ -n "$DO_STAGE" ]]; then
     echo "Staged build in $INSTALL_DIR"
 fi
 
+deploy_to_apps
+
 echo ""
-echo "Build complete. Binaries are in $BUILD_DIR"
+echo "Build complete. Binaries built in $BUILD_DIR and deployed to /home/chris/Apps/worr"

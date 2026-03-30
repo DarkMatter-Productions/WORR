@@ -427,9 +427,8 @@ Both client and server can use this, and it will output
 to the appropriate place.
 =============
 */
-void Com_LPrintf(print_type_t type, const char *fmt, ...)
+static void Com_LPrintf_VA(print_type_t type, const char *fmt, va_list argptr)
 {
-    va_list     argptr;
     char        msg[MAXPRINTMSG];
     char        localized_fmt[MAX_STRING_CHARS];
     size_t      len;
@@ -447,9 +446,7 @@ void Com_LPrintf(print_type_t type, const char *fmt, ...)
         format = localized_fmt;
     }
 
-    va_start(argptr, fmt);
     len = Q_vscnprintf(msg, sizeof(msg), format, argptr);
-    va_end(argptr);
 
     if (type == PRINT_ERROR && !com_errorEntered && len) {
         size_t errlen = min(len, sizeof(com_errorMsg) - 1);
@@ -511,6 +508,24 @@ void Com_LPrintf(print_type_t type, const char *fmt, ...)
     }
 
     com_printEntered--;
+}
+
+void Com_LPrintf(print_type_t type, const char *fmt, ...)
+{
+    va_list     argptr;
+
+    va_start(argptr, fmt);
+    Com_LPrintf_VA(type, fmt, argptr);
+    va_end(argptr);
+}
+
+void Com_LPrintf_Loc(print_type_t type, const char *fmt, ...)
+{
+    va_list     argptr;
+
+    va_start(argptr, fmt);
+    Com_LPrintf_VA(type, fmt, argptr);
+    va_end(argptr);
 }
 
 

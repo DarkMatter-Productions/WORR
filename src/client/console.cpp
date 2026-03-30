@@ -271,7 +271,7 @@ static void Con_Dump_f(void) {
   char name[MAX_OSPATH];
 
   if (Cmd_Argc() != 2) {
-    Com_Printf("$cl_filename_usage", Cmd_Argv(0));
+    Com_PrintfLoc("$cl_filename_usage", Cmd_Argv(0));
     return;
   }
 
@@ -302,9 +302,9 @@ static void Con_Dump_f(void) {
   }
 
   if (FS_CloseFile(f))
-    Com_EPrintf("$cl_error_writing_file", name);
+    Com_EPrintfLoc("$cl_error_writing_file", name);
   else
-    Com_Printf("$con_dumped_to_file", name);
+    Com_PrintfLoc("$con_dumped_to_file", name);
 }
 
 /*
@@ -326,7 +326,7 @@ Con_MessageMode_f
 */
 static void start_message_mode(chatMode_t mode) {
   if (cls.state != ca_active || cls.demo.playback) {
-    Com_Printf("$cl_chat_requires_level");
+    Com_PrintfLoc("$cl_chat_requires_level");
     return;
   }
 
@@ -354,13 +354,13 @@ static void Con_RemoteMode_f(void) {
   char *s;
 
   if (Cmd_Argc() != 3) {
-    Com_Printf("$cl_rcon_usage", Cmd_Argv(0));
+    Com_PrintfLoc("$cl_rcon_usage", Cmd_Argv(0));
     return;
   }
 
   s = Cmd_Argv(1);
   if (!NET_StringToAdr(s, &adr, PORT_SERVER)) {
-    Com_Printf("$cl_bad_address", s);
+    Com_PrintfLoc("$cl_bad_address", s);
     return;
   }
 
@@ -507,7 +507,7 @@ static void con_width_changed(cvar_t *self) {
 
 static void con_timestampscolor_changed(cvar_t *self) {
   if (!SCR_ParseColor(self->string, &con.ts_color)) {
-    Com_WPrintf("$con_invalid_value", self->string, self->name);
+    Com_WPrintfLoc("$con_invalid_value", self->string, self->name);
     Cvar_Reset(self);
     con.ts_color = COLOR_RGB(170, 170, 170);
   }

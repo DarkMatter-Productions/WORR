@@ -71,7 +71,7 @@ void LOC_LoadLocations(void)
     ret = FS_LoadFile(path, (void **)&buffer);
     if (!buffer) {
         if (ret != Q_ERR(ENOENT)) {
-            Com_EPrintf("$cl_load_failed", path, Q_ErrorString(ret));
+            Com_EPrintfLoc("$cl_load_failed", path, Q_ErrorString(ret));
         }
         return;
     }
@@ -90,7 +90,7 @@ void LOC_LoadLocations(void)
         argc = Cmd_Argc();
         if (argc) {
             if (argc < 4) {
-                Com_WPrintf("$e_auto_eb3969f72a8c", line, path);
+                Com_WPrintfLoc("$e_auto_eb3969f72a8c", line, path);
             } else {
                 loc = LOC_Alloc(Cmd_RawArgsFrom(3));
                 loc->origin[0] = Q_atof(Cmd_Argv(0)) * 0.125f;
@@ -252,12 +252,12 @@ static void LOC_Add_f(void)
     location_t *loc;
 
     if (Cmd_Argc() < 3) {
-        Com_Printf("$e_auto_fb31cd542948", Cmd_ArgsRange(0, 1));
+        Com_PrintfLoc("$e_auto_fb31cd542948", Cmd_ArgsRange(0, 1));
         return;
     }
 
     if (cls.state != ca_active) {
-        Com_Printf("$locs_requires_level");
+        Com_PrintfLoc("$locs_requires_level");
         return;
     }
 
@@ -265,7 +265,7 @@ static void LOC_Add_f(void)
     VectorCopy(cl.playerEntityOrigin, loc->origin);
     List_Append(&cl_locations, &loc->entry);
 
-    Com_Printf("$cl_location_added", loc->name, vtos(loc->origin));
+    Com_PrintfLoc("$cl_location_added", loc->name, vtos(loc->origin));
 }
 
 static void LOC_Delete_f(void)
@@ -273,17 +273,17 @@ static void LOC_Delete_f(void)
     location_t *loc;
 
     if (cls.state != ca_active) {
-        Com_Printf("$locs_requires_level");
+        Com_PrintfLoc("$locs_requires_level");
         return;
     }
 
     loc = LOC_FindClosest(cl.playerEntityOrigin);
     if (!loc) {
-        Com_Printf("$e_auto_bc1de37034da");
+        Com_PrintfLoc("$e_auto_bc1de37034da");
         return;
     }
 
-    Com_Printf("$e_auto_eaa7f653a97a", loc->name, vtos(loc->origin));
+    Com_PrintfLoc("$e_auto_eaa7f653a97a", loc->name, vtos(loc->origin));
     List_Remove(&loc->entry);
     Z_Free(loc);
 }
@@ -293,18 +293,18 @@ static void LOC_Set_f(void)
     location_t *oldloc, *newloc;
 
     if (Cmd_Argc() < 3) {
-        Com_Printf("$e_auto_fb31cd542948", Cmd_ArgsRange(0, 1));
+        Com_PrintfLoc("$e_auto_fb31cd542948", Cmd_ArgsRange(0, 1));
         return;
     }
 
     if (cls.state != ca_active) {
-        Com_Printf("$locs_requires_level");
+        Com_PrintfLoc("$locs_requires_level");
         return;
     }
 
     oldloc = LOC_FindClosest(cl.playerEntityOrigin);
     if (!oldloc) {
-        Com_Printf("$e_auto_bc1de37034da");
+        Com_PrintfLoc("$e_auto_bc1de37034da");
         return;
     }
 
@@ -313,7 +313,7 @@ static void LOC_Set_f(void)
     List_Link(oldloc->entry.prev, oldloc->entry.next, &newloc->entry);
     Z_Free(oldloc);
 
-    Com_Printf("$e_auto_65920d22627c", vtos(newloc->origin), newloc->name);
+    Com_PrintfLoc("$e_auto_65920d22627c", vtos(newloc->origin), newloc->name);
 }
 
 static void LOC_List_f(void)
@@ -322,22 +322,22 @@ static void LOC_List_f(void)
     int count;
 
     if (cls.state != ca_active) {
-        Com_Printf("$locs_requires_level");
+        Com_PrintfLoc("$locs_requires_level");
         return;
     }
 
     if (LIST_EMPTY(&cl_locations)) {
-        Com_Printf("$locs_no_locations");
+        Com_PrintfLoc("$locs_no_locations");
         return;
     }
 
     count = 0;
     LIST_FOR_EACH(location_t, loc, &cl_locations, entry) {
-        Com_Printf("$cl_location_entry", loc->name, vtos(loc->origin));
+        Com_PrintfLoc("$cl_location_entry", loc->name, vtos(loc->origin));
         count++;
     }
 
-    Com_Printf("$e_auto_68f038d32388", count, count == 1 ? "" : "s");
+    Com_PrintfLoc("$e_auto_68f038d32388", count, count == 1 ? "" : "s");
 }
 
 static void LOC_Save_f(void)
@@ -349,12 +349,12 @@ static void LOC_Save_f(void)
     int count;
 
     if (cls.state != ca_active) {
-        Com_Printf("$locs_requires_level");
+        Com_PrintfLoc("$locs_requires_level");
         return;
     }
 
     if (LIST_EMPTY(&cl_locations)) {
-        Com_Printf("$e_auto_9dd09167f01d");
+        Com_PrintfLoc("$e_auto_9dd09167f01d");
         return;
     }
 
@@ -380,9 +380,9 @@ static void LOC_Save_f(void)
     }
 
     if (FS_CloseFile(f))
-        Com_EPrintf("$cl_error_writing_file", buffer);
+        Com_EPrintfLoc("$cl_error_writing_file", buffer);
     else
-        Com_Printf("$e_auto_ff47f8618ad9",
+        Com_PrintfLoc("$e_auto_ff47f8618ad9",
                    count, count == 1 ? "" : "s", buffer);
 }
 
@@ -412,7 +412,7 @@ static void LOC_Cmd_f(void)
     else if (!strcmp(cmd, "save"))
         LOC_Save_f();
     else
-        Com_Printf("$locs_usage", Cmd_Argv(0));
+        Com_PrintfLoc("$locs_usage", Cmd_Argv(0));
 }
 
 static const cmdreg_t c_loc[] = {
