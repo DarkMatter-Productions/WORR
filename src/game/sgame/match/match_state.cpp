@@ -1857,7 +1857,8 @@ static bool CheckReady() {
 
   // wait if below minimum players
   if (minplayers->integer > 0 &&
-      (count_humans + count_bots) < minplayers->integer)
+      (count_humans + count_bots) < minplayers->integer &&
+      !level.devWarmupReadyBypass)
     return false;
 
   // start if only bots
@@ -2041,11 +2042,12 @@ static void CheckDMWarmupState() {
       forceBalance &&
       std::abs(level.pop.num_playing_red - level.pop.num_playing_blue) > 1;
   const bool notEnoughPlayers =
-      (Teams() &&
-       (level.pop.num_playing_red < 1 || level.pop.num_playing_blue < 1)) ||
-      (duel && level.pop.num_playing_clients != 2) ||
-      (!Teams() && !duel && level.pop.num_playing_clients < min_players) ||
-      (!match_startNoHumans->integer && !level.pop.num_playing_human_clients);
+      !level.devWarmupReadyBypass &&
+      ((Teams() &&
+        (level.pop.num_playing_red < 1 || level.pop.num_playing_blue < 1)) ||
+       (duel && level.pop.num_playing_clients != 2) ||
+       (!Teams() && !duel && level.pop.num_playing_clients < min_players) ||
+       (!match_startNoHumans->integer && !level.pop.num_playing_human_clients));
 
   if (teamsImbalanced || notEnoughPlayers) {
     if (level.matchState <= MatchState::Countdown) {
@@ -2486,7 +2488,8 @@ void CheckDMExitRules() {
 
   // --- Not enough players for match ---
   if (minplayers->integer > 0 &&
-      level.pop.num_playing_clients < minplayers->integer) {
+      level.pop.num_playing_clients < minplayers->integer &&
+      !level.devWarmupReadyBypass) {
     graceScope.MarkConditionActive();
     if (!level.endmatch_grace) {
       level.endmatch_grace = level.time;

@@ -3234,6 +3234,10 @@ struct LevelLocals {
   GameTime matchStateTimer = 0_ms; // change match state at this time
   int32_t
       warmupModificationCount; // for detecting if g_warmup_countdown is changed
+  /// When true, skip min-player / team-fill warmup gates, relax CheckReady, and
+  /// skip the CheckDMExitRules minplayers intermission (solo dev testing). Set by
+  /// `dev_ready` with cheats enabled; cleared on map load or `dev_ready_off`.
+  bool devWarmupReadyBypass = false;
 
   GameTime countdownTimerCheck = 0_ms;
   GameTime matchEndWarnTimerCheck = 0_ms;
