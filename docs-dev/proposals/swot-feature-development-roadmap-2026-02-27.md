@@ -167,6 +167,42 @@ Create a repository-grounded SWOT and convert it into actionable, task-based pro
     - Unmerged projectile/autosound loops now use a stable per-entity phase offset so identical loop samples do not all start in lockstep.
     - This reduces crackle/noise when many projectile loop emitters are active simultaneously while preserving per-entity Doppler spatialization.
   - Implementation log: `docs-dev/audio-eax-loop-doppler-mix-stability-2026-03-22.md`.
+- `FR-06-T06` Done:
+  - Implemented the first spatial-audio roadmap wave from `docs-dev/proposals/spatial-audio.md`:
+    - Defaulted occlusion, EFX reverb, per-source reverb sends, air absorption, and HRTF default/autodetect toward the modern spatial path.
+    - Decoupled OpenAL auxiliary reverb sends from `al_eax` so `al_reverb` is the routing master and authored EAX zones are optional overrides.
+    - Reconnected automatic BSP reverb environment selection and added a compiled-in fallback table for missing `sound/default.environments`.
+  - Implementation log: `docs-dev/spatial-audio-first-wave-consolidation-2026-04-27.md`.
+- `FR-06-T07` Done:
+  - Implemented the second spatial-audio roadmap wave from `docs-dev/proposals/spatial-audio.md`:
+    - Replaced the direct substring occlusion classifier with a `.mat` ID keyed acoustic material resolver.
+    - Converted the existing material families into low/mid/high transmission, absorption, scattering, and semantic flag profiles.
+    - Routed resolved acoustic coefficients through direct gain, per-source HF filtering, and material-coloured reverb sends for OpenAL; kept DMA loop/channel state coherent with the shared resolver.
+  - Implementation log: `docs-dev/spatial-audio-acoustic-material-resolver-2026-04-27.md`.
+- `FR-06-T08` Done:
+  - Implemented the third spatial-audio roadmap wave from `docs-dev/proposals/spatial-audio.md`:
+    - Added an OpenAL BSP acoustic region cache keyed by BSP area, built from leaf bounds, leaf faces, `.mat` material groups, sky exposure, and areaportal neighbours.
+    - Replaced floor-first automatic reverb preset selection with a weighted listener-space resolver using region material composition, live dimension probes, sky ratio, vertical openness, portal openness, and floor material as a secondary signal.
+    - Added source/listener region classification to per-source and merged-loop reverb sends so interior/exterior and cross-area sources get region-aware send gain and HF colour.
+  - Implementation log: `docs-dev/spatial-audio-bsp-acoustic-regions-2026-04-27.md`.
+- `FR-06-T09` Done:
+  - Implemented the fourth spatial-audio roadmap wave from `docs-dev/proposals/spatial-audio.md`:
+    - Added a lightweight OpenAL portal propagation fallback that searches one- and two-hop BSP areaportal neighbour routes after direct multi-ray occlusion.
+    - Evaluates route distance, bend penalty, aperture/openness penalty, and acoustic material transmission to estimate indirect direct-path audibility.
+    - Applies valid portal routes to reduce over-occlusion, raise direct HF cutoff where appropriate, and colour/boost reverb sends for sources heard through neighbouring spaces.
+  - Implementation log: `docs-dev/spatial-audio-portal-propagation-2026-04-27.md`.
+- `FR-06-T10` Done:
+  - Implemented the fifth spatial-audio roadmap wave from `docs-dev/proposals/spatial-audio.md`:
+    - Reworked OpenAL source routing around an explicit two-identity source path state: listener room identity remains the global EFX slot, while each source resolves its own source room and path class.
+    - Added same-space, adjacent-space, cross-space, portal, exterior-to-interior, interior-to-exterior, and unreachable source path classes.
+    - Applied path classes consistently to direct attenuation/HF limits when occlusion is enabled and to per-source reverb send gain/HF colour for normal and merged looping sources.
+  - Implementation log: `docs-dev/spatial-audio-two-identity-source-paths-2026-04-27.md`.
+- `FR-06-T11` Done:
+  - Implemented the sixth spatial-audio roadmap wave from `docs-dev/proposals/spatial-audio.md`:
+    - Preserved authored `client_env_sound` / `env_sound` overrides and continued loading EAX JSON effect profiles, with named authored-zone profile keys added alongside numeric `reverb_effect_id`.
+    - Added optional `.aud` sidecars from `maps/<mapname>.aud` or `sound/acoustics/<mapname>.aud` for authored region, portal/opening, and EAX zone refinements.
+    - Routed valid sidecar portal hints through the existing one- and two-hop BSP source path resolver so authored data refines route aperture, transmission, and HF colour without replacing automatic spatial audio.
+  - Implementation log: `docs-dev/spatial-audio-authored-sidecar-overrides-2026-04-27.md`.
 - `FR-06-T03` Completed:
   - Hardened the SDL3_ttf/HarfBuzz text path in `src/client/font.cpp` so failed `TTF_CreateText(...)` or `TTF_GetStringSize(...)` calls no longer silently drop render/measure segments.
   - Updated TTF glyph cache generation to keep HarfBuzz-shaped glyphs renderable when metrics lookup fails but glyph image extraction succeeds (`TTF_GetGlyphImageForIndex(...)`).
@@ -452,6 +488,16 @@ Tasks:
   Dependency: `FR-06-T03`. Priority: P2.
 - [ ] `FR-06-T05` Add QA script/checklist for multi-language font rendering in main HUD/menu surfaces.  
   Dependency: `FR-06-T03`. Priority: P1.
+- [x] `FR-06-T06` Implement first-wave spatial audio consolidation defaults, reverb-send decoupling, and built-in environment fallback.
+  Dependency: `FR-06-T01`. Priority: P1.
+- [x] `FR-06-T07` Implement second-wave spatial audio acoustic material resolver with `.mat` ID keyed banded coefficients.
+  Dependency: `FR-06-T06`. Priority: P1.
+- [x] `FR-06-T08` Implement third-wave spatial audio BSP acoustic regions for region-aware reverb selection.
+  Dependency: `FR-06-T07`. Priority: P1.
+- [x] `FR-06-T09` Implement fourth-wave spatial audio portal-aware propagation through one- and two-hop areaportal routes.
+  Dependency: `FR-06-T08`. Priority: P1.
+- [x] `FR-06-T10` Implement fifth-wave spatial audio two-identity listener/source room path model.
+  Dependency: `FR-06-T09`. Priority: P1.
 
 ## Epic FR-07: Multiplayer Operations and Match Tooling
 Objective: harden map vote, match logging, tournament, and admin workflows.

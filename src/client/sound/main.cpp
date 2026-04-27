@@ -162,7 +162,7 @@ void S_Init(void)
     s_underwater = Cvar_Get("s_underwater", "1", 0);
     s_underwater_gain_hf = Cvar_Get("s_underwater_gain_hf", "0.25", 0);
     s_num_channels = Cvar_Get("s_num_channels", "64", CVAR_SOUND);
-    s_occlusion = Cvar_Get("s_occlusion", "0", CVAR_ARCHIVE);
+    s_occlusion = Cvar_Get("s_occlusion", "1", CVAR_ARCHIVE);
     s_occlusion_strength = Cvar_Get("s_occlusion_strength", "1.0", CVAR_ARCHIVE);
 
     s_maxchannels = Cvar_ClampInteger(s_num_channels, 16, 256);
@@ -944,10 +944,293 @@ void S_SpatializeOrigin(const vec3_t origin, float master_vol, float dist_mult, 
         *left_vol = 0;
 }
 
-float S_ComputeOcclusion(const vec3_t origin, float *cutoff_hz)
+typedef enum {
+    S_ACOUSTIC_BAND_LOW,
+    S_ACOUSTIC_BAND_MID,
+    S_ACOUSTIC_BAND_HIGH,
+    S_ACOUSTIC_BAND_COUNT
+} s_acoustic_band_t;
+
+enum {
+    S_ACOUSTIC_FLAG_WINDOW       = 1u << 0,
+    S_ACOUSTIC_FLAG_GRATE        = 1u << 1,
+    S_ACOUSTIC_FLAG_SOFT         = 1u << 2,
+    S_ACOUSTIC_FLAG_WOOD         = 1u << 3,
+    S_ACOUSTIC_FLAG_METAL        = 1u << 4,
+    S_ACOUSTIC_FLAG_STONE        = 1u << 5,
+    S_ACOUSTIC_FLAG_WATER        = 1u << 6,
+    S_ACOUSTIC_FLAG_FOLIAGE      = 1u << 7,
+    S_ACOUSTIC_FLAG_SKY          = 1u << 8,
+    S_ACOUSTIC_FLAG_OUTDOOR_HINT = 1u << 9
+};
+
+typedef struct {
+    const char *name;
+    float       transmission[S_ACOUSTIC_BAND_COUNT];
+    float       absorption[S_ACOUSTIC_BAND_COUNT];
+    float       scattering;
+    uint32_t    flags;
+} s_acoustic_material_t;
+
+typedef struct {
+    const char                 *id;
+    const s_acoustic_material_t *profile;
+} s_acoustic_material_id_t;
+
+typedef struct {
+    const char                 *key;
+    const s_acoustic_material_t *profile;
+} s_acoustic_material_hint_t;
+
+typedef struct {
+    float       transmission[S_ACOUSTIC_BAND_COUNT];
+    float       absorption[S_ACOUSTIC_BAND_COUNT];
+    float       scattering;
+    uint32_t    flags;
+} s_acoustic_surface_t;
+
+#define S_ACOUSTIC_MATERIAL(name, low, mid, high, scatter, flags) \
+    { name, { low, mid, high }, { 1.0f - low, 1.0f - mid, 1.0f - high }, scatter, flags }
+
+static const s_acoustic_material_t s_acoustic_default =
+    S_ACOUSTIC_MATERIAL("default", 0.0f, 0.18f, S_OCCLUSION_AL_GAINHF, 0.10f, 0);
+static const s_acoustic_material_t s_acoustic_sky =
+    S_ACOUSTIC_MATERIAL("sky", 1.0f, 1.0f, 1.0f, 1.0f,
+                        S_ACOUSTIC_FLAG_SKY | S_ACOUSTIC_FLAG_OUTDOOR_HINT);
+static const s_acoustic_material_t s_acoustic_glass =
+    S_ACOUSTIC_MATERIAL("glass", 0.75f, 0.45f, 0.20f, 0.08f, S_ACOUSTIC_FLAG_WINDOW);
+static const s_acoustic_material_t s_acoustic_grate =
+    S_ACOUSTIC_MATERIAL("grate", 0.70f, 0.88f, 1.0f, 0.65f, S_ACOUSTIC_FLAG_GRATE);
+static const s_acoustic_material_t s_acoustic_soft =
+    S_ACOUSTIC_MATERIAL("soft", 0.40f, 0.20f, 0.10f, 0.55f, S_ACOUSTIC_FLAG_SOFT);
+static const s_acoustic_material_t s_acoustic_foliage =
+    S_ACOUSTIC_MATERIAL("foliage", 0.55f, 0.30f, 0.12f, 0.80f,
+                        S_ACOUSTIC_FLAG_FOLIAGE | S_ACOUSTIC_FLAG_OUTDOOR_HINT);
+static const s_acoustic_material_t s_acoustic_wood =
+    S_ACOUSTIC_MATERIAL("wood", 0.25f, 0.12f, 0.10f, 0.32f, S_ACOUSTIC_FLAG_WOOD);
+static const s_acoustic_material_t s_acoustic_metal =
+    S_ACOUSTIC_MATERIAL("metal", 0.15f, 0.08f, 0.075f, 0.18f, S_ACOUSTIC_FLAG_METAL);
+static const s_acoustic_material_t s_acoustic_stone =
+    S_ACOUSTIC_MATERIAL("stone", 0.85f, 0.12f, 0.04f, 0.22f, S_ACOUSTIC_FLAG_STONE);
+static const s_acoustic_material_t s_acoustic_water =
+    S_ACOUSTIC_MATERIAL("water", 0.60f, 0.12f, 0.035f, 0.70f, S_ACOUSTIC_FLAG_WATER);
+
+#undef S_ACOUSTIC_MATERIAL
+
+static const s_acoustic_material_id_t s_acoustic_material_ids[] = {
+    { "default", &s_acoustic_default },
+    { "sky", &s_acoustic_sky },
+    { "glass", &s_acoustic_glass },
+    { "window", &s_acoustic_glass },
+    { "ice", &s_acoustic_glass },
+    { "forcefield", &s_acoustic_glass },
+    { "grate", &s_acoustic_grate },
+    { "grid", &s_acoustic_grate },
+    { "vent", &s_acoustic_grate },
+    { "fence", &s_acoustic_grate },
+    { "chainlink", &s_acoustic_grate },
+    { "chain", &s_acoustic_grate },
+    { "grill", &s_acoustic_grate },
+    { "mesh", &s_acoustic_grate },
+    { "screen", &s_acoustic_grate },
+    { "ladder", &s_acoustic_grate },
+    { "bars", &s_acoustic_grate },
+    { "railing", &s_acoustic_grate },
+    { "cloth", &s_acoustic_soft },
+    { "curtain", &s_acoustic_soft },
+    { "fabric", &s_acoustic_soft },
+    { "carpet", &s_acoustic_soft },
+    { "plaster", &s_acoustic_soft },
+    { "drywall", &s_acoustic_soft },
+    { "sheetrock", &s_acoustic_soft },
+    { "dirt", &s_acoustic_soft },
+    { "mud", &s_acoustic_soft },
+    { "snow", &s_acoustic_soft },
+    { "sand", &s_acoustic_soft },
+    { "gravel", &s_acoustic_soft },
+    { "flesh", &s_acoustic_soft },
+    { "grass", &s_acoustic_foliage },
+    { "foliage", &s_acoustic_foliage },
+    { "leaves", &s_acoustic_foliage },
+    { "wood", &s_acoustic_wood },
+    { "plywood", &s_acoustic_wood },
+    { "metal", &s_acoustic_metal },
+    { "steel", &s_acoustic_metal },
+    { "iron", &s_acoustic_metal },
+    { "concrete", &s_acoustic_stone },
+    { "cement", &s_acoustic_stone },
+    { "stone", &s_acoustic_stone },
+    { "rock", &s_acoustic_stone },
+    { "brick", &s_acoustic_stone },
+    { "asphalt", &s_acoustic_stone },
+    { "marble", &s_acoustic_stone },
+    { "tile", &s_acoustic_stone },
+    { "ceramic", &s_acoustic_stone },
+    { "water", &s_acoustic_water },
+    { "slime", &s_acoustic_water },
+    { "lava", &s_acoustic_water }
+};
+
+static const s_acoustic_material_hint_t s_acoustic_material_hints[] = {
+    { "sky", &s_acoustic_sky },
+    { "glass", &s_acoustic_glass },
+    { "window", &s_acoustic_glass },
+    { "ice", &s_acoustic_glass },
+    { "forcefield", &s_acoustic_glass },
+    { "grate", &s_acoustic_grate },
+    { "grid", &s_acoustic_grate },
+    { "vent", &s_acoustic_grate },
+    { "fence", &s_acoustic_grate },
+    { "chainlink", &s_acoustic_grate },
+    { "chain", &s_acoustic_grate },
+    { "grill", &s_acoustic_grate },
+    { "mesh", &s_acoustic_grate },
+    { "screen", &s_acoustic_grate },
+    { "ladder", &s_acoustic_grate },
+    { "bars", &s_acoustic_grate },
+    { "railing", &s_acoustic_grate },
+    { "cloth", &s_acoustic_soft },
+    { "curtain", &s_acoustic_soft },
+    { "fabric", &s_acoustic_soft },
+    { "carpet", &s_acoustic_soft },
+    { "plaster", &s_acoustic_soft },
+    { "drywall", &s_acoustic_soft },
+    { "sheetrock", &s_acoustic_soft },
+    { "dirt", &s_acoustic_soft },
+    { "mud", &s_acoustic_soft },
+    { "snow", &s_acoustic_soft },
+    { "sand", &s_acoustic_soft },
+    { "gravel", &s_acoustic_soft },
+    { "flesh", &s_acoustic_soft },
+    { "grass", &s_acoustic_foliage },
+    { "foliage", &s_acoustic_foliage },
+    { "leaves", &s_acoustic_foliage },
+    { "wood", &s_acoustic_wood },
+    { "plywood", &s_acoustic_wood },
+    { "metal", &s_acoustic_metal },
+    { "steel", &s_acoustic_metal },
+    { "iron", &s_acoustic_metal },
+    { "concrete", &s_acoustic_stone },
+    { "cement", &s_acoustic_stone },
+    { "stone", &s_acoustic_stone },
+    { "rock", &s_acoustic_stone },
+    { "brick", &s_acoustic_stone },
+    { "asphalt", &s_acoustic_stone },
+    { "marble", &s_acoustic_stone },
+    { "tile", &s_acoustic_stone },
+    { "ceramic", &s_acoustic_stone },
+    { "water", &s_acoustic_water },
+    { "slime", &s_acoustic_water },
+    { "lava", &s_acoustic_water }
+};
+
+static const char *S_SurfaceMaterialID(const csurface_t *surface)
+{
+    if (!surface)
+        return "";
+
+    if (surface->id && cl.bsp) {
+        uint32_t texinfo_index = surface->id - 1;
+        if (texinfo_index < static_cast<uint32_t>(cl.bsp->numtexinfo)) {
+            const mtexinfo_t *texinfo = &cl.bsp->texinfo[texinfo_index];
+            if (texinfo->c.material[0])
+                return texinfo->c.material;
+        }
+    }
+
+    return surface->material;
+}
+
+static const s_acoustic_material_t *S_ResolveAcousticMaterial(const char *material_id)
+{
+    if (!material_id || !material_id[0])
+        return &s_acoustic_default;
+
+    for (size_t i = 0; i < q_countof(s_acoustic_material_ids); i++) {
+        if (!Q_stricmp(material_id, s_acoustic_material_ids[i].id))
+            return s_acoustic_material_ids[i].profile;
+    }
+
+    for (size_t i = 0; i < q_countof(s_acoustic_material_hints); i++) {
+        if (Q_stristr(material_id, s_acoustic_material_hints[i].key))
+            return s_acoustic_material_hints[i].profile;
+    }
+
+    return &s_acoustic_default;
+}
+
+static void S_AcousticSurfaceFromMaterial(s_acoustic_surface_t *surface,
+                                          const s_acoustic_material_t *material)
+{
+    for (size_t i = 0; i < S_ACOUSTIC_BAND_COUNT; i++) {
+        surface->transmission[i] = material->transmission[i];
+        surface->absorption[i] = material->absorption[i];
+    }
+    surface->scattering = material->scattering;
+    surface->flags = material->flags;
+}
+
+static void S_AcousticSurfaceApplyWindow(s_acoustic_surface_t *surface)
+{
+    surface->transmission[S_ACOUSTIC_BAND_LOW] =
+        max(surface->transmission[S_ACOUSTIC_BAND_LOW],
+            s_acoustic_glass.transmission[S_ACOUSTIC_BAND_LOW]);
+    surface->transmission[S_ACOUSTIC_BAND_MID] =
+        min(surface->transmission[S_ACOUSTIC_BAND_MID],
+            s_acoustic_glass.transmission[S_ACOUSTIC_BAND_MID]);
+    surface->transmission[S_ACOUSTIC_BAND_HIGH] =
+        min(surface->transmission[S_ACOUSTIC_BAND_HIGH],
+            s_acoustic_glass.transmission[S_ACOUSTIC_BAND_HIGH]);
+
+    for (size_t i = 0; i < S_ACOUSTIC_BAND_COUNT; i++)
+        surface->absorption[i] = 1.0f - surface->transmission[i];
+
+    surface->scattering = max(surface->scattering, s_acoustic_glass.scattering);
+    surface->flags |= s_acoustic_glass.flags;
+}
+
+static void S_ResolveTraceAcoustics(const trace_t *tr, s_acoustic_surface_t *out_surface)
+{
+    const s_acoustic_material_t *material = &s_acoustic_default;
+    if (tr && tr->surface && (tr->surface->flags & SURF_SKY))
+        material = &s_acoustic_sky;
+    else
+        material = S_ResolveAcousticMaterial(S_SurfaceMaterialID(tr ? tr->surface : NULL));
+    S_AcousticSurfaceFromMaterial(out_surface, material);
+
+    bool translucent = tr && (tr->contents & CONTENTS_WINDOW) != 0;
+    if (tr && tr->surface)
+        translucent = translucent || (tr->surface->flags & SURF_TRANS_MASK);
+
+    if (translucent)
+        S_AcousticSurfaceApplyWindow(out_surface);
+}
+
+static float S_AcousticOcclusionWeight(const s_acoustic_surface_t *surface)
+{
+    return Q_clipf(1.0f - surface->transmission[S_ACOUSTIC_BAND_LOW], 0.0f, 1.0f);
+}
+
+static float S_AcousticCutoffHz(const s_acoustic_surface_t *surface)
+{
+    return Q_clipf(surface->transmission[S_ACOUSTIC_BAND_HIGH] *
+                       S_OCCLUSION_CUTOFF_REFERENCE_HZ,
+                   S_OCCLUSION_CUTOFF_MIN_HZ, S_OCCLUSION_CUTOFF_CLEAR_HZ);
+}
+
+static float S_AcousticReverbGainHF(const s_acoustic_surface_t *surface)
+{
+    float gainhf = surface->transmission[S_ACOUSTIC_BAND_HIGH] +
+                   surface->scattering * surface->transmission[S_ACOUSTIC_BAND_MID] * 0.15f;
+    return Q_clipf(gainhf, 0.02f, 1.0f);
+}
+
+float S_ComputeOcclusion(const vec3_t origin, float *cutoff_hz, float *reverb_gainhf)
 {
     if (cutoff_hz)
         *cutoff_hz = S_OCCLUSION_CUTOFF_CLEAR_HZ;
+    if (reverb_gainhf)
+        *reverb_gainhf = 1.0f;
 
     if (!cl.bsp)
         return 0.0f;
@@ -959,13 +1242,6 @@ float S_ComputeOcclusion(const vec3_t origin, float *cutoff_hz)
         { 0.0f, 1.0f, 0.0f },
         { 0.0f, -1.0f, 0.0f }
     };
-
-    static const char *const concrete_keys[] = { "concrete", "cement", "stone", "rock", "brick" };
-    static const char *const metal_keys[] = { "metal", "steel", "iron" };
-    static const char *const wood_keys[] = { "wood" };
-    static const char *const soft_keys[] = { "cloth", "fabric", "carpet", "dirt", "mud", "snow" };
-    static const char *const grate_keys[] = { "grate", "grid", "vent", "fence" };
-    static const char *const glass_keys[] = { "glass", "window" };
 
     vec3_t to_source;
     VectorSubtract(origin, listener_origin, to_source);
@@ -980,6 +1256,8 @@ float S_ComputeOcclusion(const vec3_t origin, float *cutoff_hz)
     float total_weight = 0.0f;
     float cutoff_weighted = 0.0f;
     float cutoff_weight_total = 0.0f;
+    float reverb_gainhf_weighted = 0.0f;
+    float reverb_gainhf_weight_total = 0.0f;
 
     for (size_t i = 0; i < q_countof(probe_offsets); i++) {
         const float ray_weight = (i == 0) ? 1.0f : S_OCCLUSION_DIFFRACTION_WEIGHT;
@@ -998,66 +1276,18 @@ float S_ComputeOcclusion(const vec3_t origin, float *cutoff_hz)
         if (tr.fraction >= 1.0f)
             continue;
 
-        float material_weight = 1.0f;
-        float material_cutoff = S_OCCLUSION_CUTOFF_DEFAULT_HZ;
-
-        bool translucent = (tr.contents & CONTENTS_WINDOW) != 0;
-        if (tr.surface) {
-            translucent = translucent || (tr.surface->flags & (SURF_TRANS33 | SURF_TRANS66));
-
-            const char *material = tr.surface->material;
-            if (material && material[0]) {
-                for (size_t k = 0; k < q_countof(glass_keys); k++) {
-                    if (Q_stristr(material, glass_keys[k])) {
-                        material_weight = min(material_weight, S_OCCLUSION_GLASS_WEIGHT);
-                        material_cutoff = min(material_cutoff, S_OCCLUSION_CUTOFF_GLASS_HZ);
-                    }
-                }
-                for (size_t k = 0; k < q_countof(grate_keys); k++) {
-                    if (Q_stristr(material, grate_keys[k])) {
-                        material_weight = min(material_weight, S_OCCLUSION_GRATE_WEIGHT);
-                        material_cutoff = min(material_cutoff, S_OCCLUSION_CUTOFF_GRATE_HZ);
-                    }
-                }
-                for (size_t k = 0; k < q_countof(soft_keys); k++) {
-                    if (Q_stristr(material, soft_keys[k])) {
-                        material_weight = min(material_weight, S_OCCLUSION_SOFT_WEIGHT);
-                        material_cutoff = min(material_cutoff, S_OCCLUSION_CUTOFF_SOFT_HZ);
-                    }
-                }
-                for (size_t k = 0; k < q_countof(wood_keys); k++) {
-                    if (Q_stristr(material, wood_keys[k])) {
-                        material_weight = min(material_weight, S_OCCLUSION_WOOD_WEIGHT);
-                        material_cutoff = min(material_cutoff, S_OCCLUSION_CUTOFF_WOOD_HZ);
-                    }
-                }
-                for (size_t k = 0; k < q_countof(metal_keys); k++) {
-                    if (Q_stristr(material, metal_keys[k])) {
-                        material_weight = min(material_weight, S_OCCLUSION_METAL_WEIGHT);
-                        material_cutoff = min(material_cutoff, S_OCCLUSION_CUTOFF_METAL_HZ);
-                    }
-                }
-                for (size_t k = 0; k < q_countof(concrete_keys); k++) {
-                    if (Q_stristr(material, concrete_keys[k])) {
-                        material_weight = min(material_weight, S_OCCLUSION_CONCRETE_WEIGHT);
-                        material_cutoff = min(material_cutoff, S_OCCLUSION_CUTOFF_CONCRETE_HZ);
-                    }
-                }
-            }
-        }
-
-        if (translucent) {
-            material_weight = min(material_weight, S_OCCLUSION_WINDOW_WEIGHT);
-            material_cutoff = min(material_cutoff, S_OCCLUSION_CUTOFF_GLASS_HZ);
-        }
-
-        material_weight = Q_clipf(material_weight, 0.0f, 1.0f);
-        material_cutoff = Q_clipf(material_cutoff, S_OCCLUSION_CUTOFF_MIN_HZ, S_OCCLUSION_CUTOFF_CLEAR_HZ);
+        s_acoustic_surface_t acoustic;
+        S_ResolveTraceAcoustics(&tr, &acoustic);
+        float material_weight = S_AcousticOcclusionWeight(&acoustic);
+        float material_cutoff = S_AcousticCutoffHz(&acoustic);
+        float material_reverb_gainhf = S_AcousticReverbGainHF(&acoustic);
 
         float weighted_hit = ray_weight * material_weight;
         blocked_weight += weighted_hit;
         cutoff_weighted += weighted_hit * material_cutoff;
         cutoff_weight_total += weighted_hit;
+        reverb_gainhf_weighted += weighted_hit * material_reverb_gainhf;
+        reverb_gainhf_weight_total += weighted_hit;
     }
 
     if (cutoff_hz) {
@@ -1066,6 +1296,14 @@ float S_ComputeOcclusion(const vec3_t origin, float *cutoff_hz)
                                  S_OCCLUSION_CUTOFF_MIN_HZ, S_OCCLUSION_CUTOFF_CLEAR_HZ);
         } else {
             *cutoff_hz = S_OCCLUSION_CUTOFF_CLEAR_HZ;
+        }
+    }
+    if (reverb_gainhf) {
+        if (reverb_gainhf_weight_total > 0.0f) {
+            *reverb_gainhf = Q_clipf(reverb_gainhf_weighted / reverb_gainhf_weight_total,
+                                     0.02f, 1.0f);
+        } else {
+            *reverb_gainhf = 1.0f;
         }
     }
 
@@ -1086,6 +1324,8 @@ void S_ResetOcclusion(channel_t *ch)
     ch->occlusion_mix = 0.0f;
     ch->occlusion_cutoff = S_OCCLUSION_CUTOFF_CLEAR_HZ;
     ch->occlusion_cutoff_target = S_OCCLUSION_CUTOFF_CLEAR_HZ;
+    ch->occlusion_reverb_gainhf = 1.0f;
+    ch->occlusion_reverb_gainhf_target = 1.0f;
 }
 
 float S_SmoothOcclusion(channel_t *ch, float target)
@@ -1106,8 +1346,16 @@ float S_SmoothOcclusion(channel_t *ch, float target)
     ch->occlusion = Q_clipf(ch->occlusion, 0.0f, 1.0f);
 
     const float cutoff_alpha = 1.0f - expf(-12.0f * dt);
+    if (ch->occlusion_reverb_gainhf <= 0.0f)
+        ch->occlusion_reverb_gainhf = 1.0f;
+    if (ch->occlusion_reverb_gainhf_target <= 0.0f)
+        ch->occlusion_reverb_gainhf_target = 1.0f;
+
     ch->occlusion_cutoff = FASTLERP(ch->occlusion_cutoff, ch->occlusion_cutoff_target, cutoff_alpha);
     ch->occlusion_cutoff = Q_clipf(ch->occlusion_cutoff, S_OCCLUSION_CUTOFF_MIN_HZ, S_OCCLUSION_CUTOFF_CLEAR_HZ);
+    ch->occlusion_reverb_gainhf =
+        FASTLERP(ch->occlusion_reverb_gainhf, ch->occlusion_reverb_gainhf_target, cutoff_alpha);
+    ch->occlusion_reverb_gainhf = Q_clipf(ch->occlusion_reverb_gainhf, 0.02f, 1.0f);
 
     return ch->occlusion;
 }
@@ -1124,8 +1372,10 @@ float S_GetOcclusion(channel_t *ch, const vec3_t origin)
 
     if (!ch->occlusion_time || (cl.time - ch->occlusion_time) >= S_OCCLUSION_UPDATE_MS) {
         float cutoff_hz = S_OCCLUSION_CUTOFF_CLEAR_HZ;
-        float target = S_ComputeOcclusion(origin, &cutoff_hz);
+        float reverb_gainhf = 1.0f;
+        float target = S_ComputeOcclusion(origin, &cutoff_hz, &reverb_gainhf);
         ch->occlusion_cutoff_target = cutoff_hz;
+        ch->occlusion_reverb_gainhf_target = reverb_gainhf;
         ch->occlusion_target = target;
         ch->occlusion_time = cl.time;
     }

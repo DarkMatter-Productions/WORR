@@ -208,7 +208,7 @@ int QAL_Init(void)
     size_t i;
 
     al_device = Cvar_Get("al_device", "", 0);
-    al_hrtf = Cvar_Get("al_hrtf", "0", 0);
+    al_hrtf = Cvar_Get("al_hrtf", "1", CVAR_ARCHIVE);
 
     if (!*al_device->string) {
         for (i = 0, sec = sections; i < q_countof(sections); i++, sec++)

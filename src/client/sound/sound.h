@@ -132,6 +132,8 @@ typedef struct {
     float       occlusion_mix;
     float       occlusion_cutoff;
     float       occlusion_cutoff_target;
+    float       occlusion_reverb_gainhf;
+    float       occlusion_reverb_gainhf_target;
 #if USE_SNDDMA
     float       occlusion_z1[2];
     float       occlusion_z2[2];
@@ -252,6 +254,6 @@ const qboolean S_SetEAXEnvironmentProperties(const sfx_eax_properties_t *propert
 float S_GetEntityLoopDistMult(const entity_state_t *ent);
 float S_GetOcclusion(channel_t *ch, const vec3_t origin);
 float S_SmoothOcclusion(channel_t *ch, float target);
-float S_ComputeOcclusion(const vec3_t origin, float *cutoff_hz);
+float S_ComputeOcclusion(const vec3_t origin, float *cutoff_hz, float *reverb_gainhf);
 float S_MapOcclusion(float occlusion);
 void S_ResetOcclusion(channel_t *ch);

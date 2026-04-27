@@ -868,6 +868,8 @@ static void AddLoopSounds(void)
     float       occlusion_weighted;
     float       occlusion_cutoff_weighted;
     float       occlusion_cutoff_weight;
+    float       occlusion_reverb_gainhf_weighted;
+    float       occlusion_reverb_gainhf_weight;
     float       gain_total;
     channel_t   *ch;
     sfx_t       *sfx;
@@ -901,6 +903,8 @@ static void AddLoopSounds(void)
         occlusion_weighted = 0.0f;
         occlusion_cutoff_weighted = 0.0f;
         occlusion_cutoff_weight = 0.0f;
+        occlusion_reverb_gainhf_weighted = 0.0f;
+        occlusion_reverb_gainhf_weight = 0.0f;
         gain_total = 0.0f;
 
         // find the total contribution of all sounds of this type
@@ -909,12 +913,15 @@ static void AddLoopSounds(void)
         float contribution = left + right;
         float occ = 0.0f;
         float cutoff = S_OCCLUSION_CUTOFF_CLEAR_HZ;
+        float reverb_gainhf = 1.0f;
         if (occlusion_enabled && att > 0.0f)
-            occ = S_ComputeOcclusion(origin, &cutoff);
+            occ = S_ComputeOcclusion(origin, &cutoff, &reverb_gainhf);
         occlusion_weighted += occ * contribution;
         if (occ > 0.0f) {
             occlusion_cutoff_weighted += cutoff * occ * contribution;
             occlusion_cutoff_weight += occ * contribution;
+            occlusion_reverb_gainhf_weighted += reverb_gainhf * occ * contribution;
+            occlusion_reverb_gainhf_weight += occ * contribution;
         }
         gain_total += contribution;
         float occ_mix = S_MapOcclusion(occ);
@@ -941,12 +948,15 @@ static void AddLoopSounds(void)
             contribution = left + right;
             occ = 0.0f;
             cutoff = S_OCCLUSION_CUTOFF_CLEAR_HZ;
+            reverb_gainhf = 1.0f;
             if (occlusion_enabled && ent_att > 0.0f)
-                occ = S_ComputeOcclusion(origin, &cutoff);
+                occ = S_ComputeOcclusion(origin, &cutoff, &reverb_gainhf);
             occlusion_weighted += occ * contribution;
             if (occ > 0.0f) {
                 occlusion_cutoff_weighted += cutoff * occ * contribution;
                 occlusion_cutoff_weight += occ * contribution;
+                occlusion_reverb_gainhf_weighted += reverb_gainhf * occ * contribution;
+                occlusion_reverb_gainhf_weight += occ * contribution;
             }
             gain_total += contribution;
             occ_mix = S_MapOcclusion(occ);
@@ -966,6 +976,10 @@ static void AddLoopSounds(void)
         float occlusion_cutoff_target = S_OCCLUSION_CUTOFF_CLEAR_HZ;
         if (occlusion_cutoff_weight > 0.0f)
             occlusion_cutoff_target = occlusion_cutoff_weighted / occlusion_cutoff_weight;
+        float occlusion_reverb_gainhf_target = 1.0f;
+        if (occlusion_reverb_gainhf_weight > 0.0f)
+            occlusion_reverb_gainhf_target =
+                Q_clipf(occlusion_reverb_gainhf_weighted / occlusion_reverb_gainhf_weight, 0.02f, 1.0f);
 
         // allocate a channel
         ch = S_PickChannel(0, 0);
@@ -983,6 +997,8 @@ static void AddLoopSounds(void)
         float occlusion_mix = S_MapOcclusion(occlusion_target);
         ch->occlusion_cutoff = occlusion_cutoff_target;
         ch->occlusion_cutoff_target = occlusion_cutoff_target;
+        ch->occlusion_reverb_gainhf = occlusion_reverb_gainhf_target;
+        ch->occlusion_reverb_gainhf_target = occlusion_reverb_gainhf_target;
         DMA_SetOcclusion(ch, occlusion_mix);
     }
 }

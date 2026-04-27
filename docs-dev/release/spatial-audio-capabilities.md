@@ -14,13 +14,15 @@ WORR features a comprehensive spatial audio system built on OpenAL with EFX (Eff
 
 | Feature | Description |
 |---------|-------------|
-| **Multi-Ray Occlusion** | 16-ray system with material-aware filtering |
+| **Multi-Ray Occlusion** | 5-ray source fan with material-aware filtering |
 | **EFX Reverb** | 26 environment presets with smooth transitions |
 | **Doppler Effect** | Per-projectile tracking with velocity smoothing |
 | **HRTF (Binaural)** | Accurate 3D positioning for headphones |
 | **Air Absorption** | Distance-based high-frequency rolloff |
 | **Per-Source Reverb Sends** | Individual reverb routing per sound |
 | **Material Transmission** | Frequency-dependent filtering through surfaces |
+| **Portal Propagation** | One- and two-hop areaportal fallback for sounds around openings |
+| **Two-Identity Source Paths** | Listener-room EFX plus per-source room/path send filtering |
 
 ---
 
@@ -30,11 +32,10 @@ The occlusion system simulates how sounds are muffled and attenuated when obstru
 
 ### Multi-Ray Sampling
 
-The system traces **16 rays** per sound source to determine occlusion:
+The system traces **5 rays** per sound source to determine occlusion:
 
 - **1 direct ray**: Listener → source center
-- **8 peripheral rays around source**: Cardinal + diagonal offsets
-- **8 peripheral rays around listener**: Catch sounds "peeking" around corners
+- **4 peripheral rays around the source path**: Cardinal offsets that catch partial obstruction and corner leakage
 
 This multi-sample approach produces smooth, realistic transitions as objects partially obstruct sounds.
 
@@ -44,16 +45,20 @@ Peripheral rays are blended with the direct trace using a configurable weight (d
 
 ### Material-Based Transmission
 
-Occlusion traces identify surface materials and apply appropriate attenuation and frequency response:
+Occlusion traces resolve the BSP surface's rerelease `.mat` ID through an acoustic material table before producing attenuation and filtering. Exact `.mat` IDs are preferred; substring hints remain only as a fallback for custom or path-like material names.
 
-| Material | Gain Weight | HF Cutoff | Effect |
-|----------|-------------|-----------|--------|
-| **Glass / Window** | 0.25 | 4000 Hz | Significant muffling, preserves upper-mids |
-| **Grate / Mesh / Vent** | 0.30 | Clear | Light attenuation, no HF loss |
-| **Soft (Cloth / Carpet)** | 0.60 | 2000 Hz | Moderate absorption |
-| **Wood / Plywood** | 0.75 | 2000 Hz | Light absorption |
-| **Metal / Steel** | 0.85 | 1500 Hz | Minimal absorption, muffled highs |
-| **Concrete / Cement** | 0.15 | 800 Hz | Heavy muffling, deep bass only |
+Each acoustic material stores low/mid/high transmission, low/mid/high absorption, scattering, and semantic flags such as water, foliage, grate, sky, and outdoor hint. The initial built-in table preserves the old family behavior while making the model extensible:
+
+| Material Family | Direct Gain Weight | Direct HF Cutoff | Reverb Send Colour |
+|-----------------|--------------------|------------------|--------------------|
+| **Sky** | Clear | Clear | Clear exterior hint |
+| **Glass / Window / Ice** | 0.25 | 4000 Hz | Brightened but still filtered |
+| **Grate / Mesh / Vent / Fence / Ladder** | 0.30 | Clear | Mostly bright/scattered |
+| **Soft (Cloth / Carpet / Dirt / Sand / Flesh)** | 0.60 | 2000 Hz | Damped |
+| **Wood / Plywood** | 0.75 | 2000 Hz | Damped with moderate scatter |
+| **Metal / Steel / Iron** | 0.85 | 1500 Hz | Darker reflections |
+| **Stone / Concrete / Brick / Tile / Marble** | 0.15 | 800 Hz | Deep, low-passed reflections |
+| **Water / Slime / Lava** | 0.40 | 700 Hz | Wet, heavily low-passed reflections |
 
 ### Temporal Smoothing
 
@@ -66,9 +71,20 @@ To prevent "flutter" from geometry edges or minimal obstructions:
 
 ### OpenAL Implementation
 
-- Per-source `AL_FILTER_LOWPASS` filters control high-frequency rolloff
-- `AL_GAIN` reduction proportional to occlusion factor
-- `AL_DIRECT_FILTER` applies both gain and HF attenuation atomically
+- Per-source `AL_FILTER_LOWPASS` filters control overall direct gain and high-frequency rolloff
+- `AL_DIRECT_FILTER` applies the acoustic direct path atomically where EFX filters are available
+- `AL_AUXILIARY_SEND_FILTER` colours the reverb send separately so occluded metal, stone, glass, foliage, and liquid surfaces do not all feed the same bright room tail
+
+### Portal-Aware Propagation
+
+When direct multi-ray occlusion reports a blocked path, the OpenAL backend can try a lightweight BSP route through one or two neighbouring areaportals. The route is estimated from acoustic region bounds and areaportal connectivity, then scored by:
+
+- **Route distance**: Longer indirect paths lose strength
+- **Aperture openness**: Regions with more portal connectivity pass more energy
+- **Bend angle**: Sharper turns lose more high-frequency energy
+- **Material transmission**: Dominant region materials colour the indirect path
+
+Valid portal routes can reduce excessive wall-style muffling and increase filtered reverb send for sounds heard through doorways or adjacent spaces. This is intentionally modest; it is not a full wave simulation or baked propagation sidecar.
 
 ### CVars
 
@@ -118,9 +134,59 @@ The reverb system uses OpenAL EFX to create convincing room acoustics with 26 en
 
 Reverb presets are selected based on:
 
-1. **Floor material detection**: The player's footstep surface identifies zone type
-2. **Room dimension probing**: Raycasts estimate space volume and shape
-3. **JSON configuration**: Maps can define custom environment zones
+1. **BSP acoustic regions**: Map-load area cache stores leaf bounds, dominant material groups, sky ratio, vertical openness, and areaportal neighbours
+2. **Room dimension probing**: Live raycasts estimate local volume, vertical openness, and sky exposure around the listener
+3. **Weighted material matching**: Region material composition and the listener floor material are scored against `sound/default.environments`
+4. **Explicit outdoor classification**: Sky exposure, portal connectivity, vertical openness, and enclosure ratio decide whether the listener is interior, semi-open, or exterior
+5. **Built-in fallback rules**: Small, medium, large, and exterior spaces remain covered when the external environment file is absent
+6. **Authored EAX zones**: `client_env_sound` / `env_sound` entities can override the automatic resolver when `al_eax` is enabled; zones support numeric `reverb_effect_id` and named `reverb_effect`, `reverb`, or `eax_profile` keys
+7. **Optional `.aud` sidecars**: Map-specific sidecars can refine existing BSP regions, portal/opening hints, and authored EAX zones without replacing the automatic resolver
+
+### Optional `.aud` Sidecars
+
+OpenAL looks for sidecars in this order:
+
+1. `maps/<mapname>.aud`
+2. `sound/acoustics/<mapname>.aud`
+
+The file is optional JSON. Missing files are silent; invalid files warn and are ignored before their hints are applied. Supported top-level arrays:
+
+- `regions`: target an existing BSP acoustic area by `area` / `area_id`, or by `origin`
+- `portals` / `openings`: add or tune route edges between existing acoustic areas
+- `eax_zones` / `env_sounds` / `environment_zones`: append authored EAX-style zone overrides
+
+Example:
+
+```json
+{
+  "regions": [
+    {
+      "area": 3,
+      "dimension": 1024,
+      "sky_ratio": 0.1,
+      "dominant_material": "stone"
+    }
+  ],
+  "portals": [
+    {
+      "from": 3,
+      "to": 4,
+      "openness": 0.85,
+      "transmission": 0.95,
+      "gain_hf": 0.9
+    }
+  ],
+  "eax_zones": [
+    {
+      "origin": [128, 256, 64],
+      "radius": 512,
+      "reverb": "cave"
+    }
+  ]
+}
+```
+
+Sidecars refine WORR's BSP-derived acoustic cache. They do not create regions for invalid areas, and the map still gets region classification, portal-aware propagation, and source-room routing without any authored sidecar.
 
 ### Smooth Transitions
 
@@ -132,11 +198,11 @@ When moving between reverb zones:
 
 ### Dimension Estimation
 
-The system probes room dimensions using a 16-direction raycast pattern:
+The system probes room dimensions using a 14-direction raycast pattern:
 
 ```cpp
-// Cardinal and diagonal probes at 45° intervals
-// + Vertical probes for ceiling/floor
+// Vertical ceiling/floor probes
+// + upper-hemisphere and horizontal radial probes
 ```
 
 Results inform the reverb's:
@@ -220,7 +286,7 @@ HRTF provides accurate 3D audio positioning for headphone users by simulating ho
 ### CVars
 
 ```
-al_hrtf              0       HRTF mode: 0=off, 1=default, >1=force enable
+al_hrtf              1       HRTF mode: 0=off, 1=default/autodetect, >1=force enable
 ```
 
 ---
@@ -261,7 +327,8 @@ Unlike global-only reverb systems, WORR routes each sound source to the reverb e
 
 - **Distance-based reverb**: Distant sounds have more reverb
 - **Occlusion-boosted reverb**: Muffled sounds route more through room tail
-- **Close sounds stay dry**: Nearby sources remain clear
+- **Same-room sounds stay dry**: Local sources remain clear
+- **Path-aware sends**: Adjacent rooms, portal routes, exterior-to-interior, and interior-to-exterior paths get distinct wetness and filtering
 
 ### Implementation
 
@@ -269,11 +336,28 @@ Unlike global-only reverb systems, WORR routes each sound source to the reverb e
 // Reverb send scales with:
 // - Distance from listener
 // - Occlusion factor (occluded = more reverb)
+// - Acoustic material HF colour for the blocked path
+// - Source/listener region and portal-route modifiers
+// - Optional .aud portal/opening hint modifiers
 // - Minimum send level (default 0.2)
 // - Occlusion boost multiplier (default 1.5)
 ```
 
 Uses `AL_AUXILIARY_SEND_FILTER` for per-source effect routing.
+`al_reverb` is the routing master switch; `al_eax` only controls authored zone overrides and is not required for per-source sends.
+
+### Two-Identity Model
+
+The global EFX slot is always the listener-room identity: it represents the acoustic space the ear is inside. Each audible OpenAL source separately resolves a source-room path state:
+
+- **Same space**: Reduced send scale, clear send colour, no added direct-path damping
+- **Adjacent or cross space**: Less direct energy when occlusion is enabled, more filtered send
+- **Portal route**: One- or two-hop indirect path can recover audibility while keeping filtered send colour
+- **Exterior → interior**: Stronger room send with darker filtering, as outside sound enters the listener room
+- **Interior → exterior**: Lighter send boost with different HF colour, as room sound exits into open space
+- **Unreachable**: Heavy direct damping when occlusion is enabled and reduced/darker send
+
+Merged looping sounds aggregate source path states across their contributing entities before updating a shared OpenAL source.
 
 ### CVars
 
@@ -373,7 +457,7 @@ struct channel_t {
 s_occlusion          1       Occlusion system
 al_reverb            1       EFX reverb
 al_doppler           1       Doppler effect
-al_hrtf              0       HRTF (headphones)
+al_hrtf              1       HRTF default/autodetect
 al_air_absorption    1       Air absorption
 al_reverb_send       1       Per-source reverb
 s_underwater         1       Underwater effects
@@ -405,9 +489,9 @@ al_air_absorption_distance  2048    Air absorption range
 | Hardware | Occlusion | Reverb | HRTF |
 |----------|-----------|--------|------|
 | Low-end | `s_occlusion 0` | `al_reverb 1` | `al_hrtf 0` |
-| Mid-range | `s_occlusion 1` | `al_reverb 1` | `al_hrtf 0` |
+| Mid-range | `s_occlusion 1` | `al_reverb 1` | `al_hrtf 1` |
 | High-end | `s_occlusion 1` | `al_reverb 1` | `al_hrtf 1` |
-| Headphones | `s_occlusion 1` | `al_reverb 1` | `al_hrtf 1` |
+| Headphones | `s_occlusion 1` | `al_reverb 1` | `al_hrtf 2` |
 
 ---
 
@@ -432,5 +516,5 @@ WORR's spatial audio system combines proven techniques with modern OpenAL extens
 
 For optimal experience:
 - **Speakers**: Use default settings with reverb enabled
-- **Headphones**: Enable HRTF (`al_hrtf 1`) for accurate 3D positioning
+- **Headphones**: Leave HRTF on default/autodetect (`al_hrtf 1`) or force it with `al_hrtf 2` for accurate 3D positioning
 - **Competitive**: Consider `s_occlusion 1` for directional awareness
