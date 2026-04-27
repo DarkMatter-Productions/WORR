@@ -828,8 +828,13 @@ freetype_fallback_opt = quiet_fallback_opt + [
   'png=disabled',
   'zlib=internal',
 ]
+sdl3_ttf_required = get_option('sdl3-ttf')
+if get_option('bootstrapper')
+  sdl3_ttf_required = true
+endif
+
 freetype2 = dependency('freetype2',
-  required:        get_option('sdl3-ttf'),
+  required:        sdl3_ttf_required,
   fallback:        ['freetype2', 'freetype_dep'],
   default_options: freetype_fallback_opt,
 )
@@ -858,13 +863,13 @@ harfbuzz_fallback_opt = quiet_fallback_opt + [
   'introspection=disabled',
 ]
 harfbuzz = dependency('harfbuzz',
-  required:        get_option('sdl3-ttf'),
+  required:        sdl3_ttf_required,
   fallback:        ['harfbuzz', 'libharfbuzz_dep'],
   default_options: harfbuzz_fallback_opt,
 )
 
 sdl3_ttf = dependency('sdl3_ttf',
-  required:        get_option('sdl3-ttf'),
+  required:        sdl3_ttf_required,
   fallback:        ['sdl3_ttf', 'sdl3_ttf_dep'],
   default_options: quiet_fallback_opt,
 )
@@ -1419,7 +1424,7 @@ if bootstrapper_enabled
     endif
   endif
 
-  updater_common_deps = updater_deps + [curl, jsoncpp_dep, sdl3]
+  updater_common_deps = updater_deps + [curl, jsoncpp_dep, sdl3, sdl3_ttf]
   updater_include_dirs = ['.', 'inc', 'src/updater/third_party']
 
   executable(client_launcher_binary_name, client_launcher_src + updater_src + ['src/updater/client_launcher_main.cpp'],

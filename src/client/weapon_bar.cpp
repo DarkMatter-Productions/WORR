@@ -17,6 +17,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 */
 
 #include "client.h"
+#include "client/font.h"
 #include "common/loc.h"
 
 #define WEAPON_BAR_DISABLED      0
@@ -44,21 +45,88 @@ static cvar_t *wb_lock_time;
 static cvar_t *wb_ammo_scale;
 static int weapon_bar_last_mode = WEAPON_BAR_TIMED_Q2R;
 
+static const char k_weapon_bar_font_path[] = "fonts/AtkinsonHyperLegible-Regular.otf";
+static const char k_weapon_bar_kfont_fallback_path[] = "fonts/qconfont.kfont";
+static const char k_weapon_bar_legacy_fallback_path[] = "conchars.png";
+static const float k_weapon_bar_ttf_letter_spacing = 0.06f;
+
+typedef struct weapon_bar_font_cache_s {
+    font_t *font;
+    int line_height;
+    float pixel_scale;
+} weapon_bar_font_cache_t;
+
+#define WEAPON_BAR_FONT_CACHE_COUNT 4
+static weapon_bar_font_cache_t weapon_bar_font_cache[WEAPON_BAR_FONT_CACHE_COUNT];
+static int weapon_bar_font_cache_next;
+
+static int WeaponBar_FormatCount(int value, char *out, size_t out_size);
+static void WeaponBar_DrawScaledString(int x, int y, float scale, int flags, color_t color, const char *text);
+
+static float WeaponBar_FontPixelScale(void)
+{
+    float hud_scale = scr.hud_scale > 0.0f ? scr.hud_scale : 1.0f;
+    float virtual_scale = scr.virtual_scale > 0.0f ? scr.virtual_scale : 1.0f;
+
+    if (Cvar_VariableInteger("cl_font_skip_virtual_scale"))
+        return 1.0f / hud_scale;
+
+    return virtual_scale / hud_scale;
+}
+
+static int WeaponBar_FontLineHeightForScale(float scale)
+{
+    if (scale <= 0.0f)
+        scale = 1.0f;
+
+    return max(1, Q_rint(CONCHAR_HEIGHT * scale));
+}
+
+static font_t *WeaponBar_GetFont(float scale)
+{
+    int line_height = WeaponBar_FontLineHeightForScale(scale);
+    float pixel_scale = WeaponBar_FontPixelScale();
+
+    for (int i = 0; i < WEAPON_BAR_FONT_CACHE_COUNT; i++) {
+        weapon_bar_font_cache_t *entry = &weapon_bar_font_cache[i];
+        if (entry->font && entry->line_height == line_height && entry->pixel_scale == pixel_scale)
+            return entry->font;
+    }
+
+    int slot = -1;
+    for (int i = 0; i < WEAPON_BAR_FONT_CACHE_COUNT; i++) {
+        if (!weapon_bar_font_cache[i].font) {
+            slot = i;
+            break;
+        }
+    }
+
+    if (slot < 0) {
+        slot = weapon_bar_font_cache_next++ % WEAPON_BAR_FONT_CACHE_COUNT;
+        if (weapon_bar_font_cache[slot].font) {
+            Font_Free(weapon_bar_font_cache[slot].font);
+            weapon_bar_font_cache[slot].font = NULL;
+        }
+    }
+
+    weapon_bar_font_cache_t *entry = &weapon_bar_font_cache[slot];
+    entry->line_height = line_height;
+    entry->pixel_scale = pixel_scale;
+    entry->font = Font_Load(k_weapon_bar_font_path, line_height, pixel_scale, 0,
+                            k_weapon_bar_kfont_fallback_path,
+                            k_weapon_bar_legacy_fallback_path);
+    if (entry->font)
+        Font_SetLetterSpacing(entry->font, k_weapon_bar_ttf_letter_spacing);
+
+    return entry->font;
+}
+
 /* Draw item/ammo count for weapon bar. */
 static void draw_count(int x, int y, float scale, int flags, color_t color, int value)
 {
-    // Compute an integer text scale factor
-    int scale_factor = ((1.f / scr.hud_scale) * scale) + 0.5f;
-    if (scale_factor < 1)
-        scale_factor = 1;
-
-    // Scale manually, as SCR_DrawStringStretch() can't scale below 100%
-    R_SetScale(1.f / scale_factor);
-
-    float coord_scale = 1.f / (scale_factor * scr.hud_scale);
-    SCR_DrawString(x * coord_scale, y * coord_scale, flags, color, va("%i", value));
-
-    R_SetScale(scr.hud_scale);
+    char count_text[16];
+    WeaponBar_FormatCount(value, count_text, sizeof(count_text));
+    WeaponBar_DrawScaledString(x, y, scale, flags, color, count_text);
 }
 
 static void WeaponBar_GetScaledSize(qhandle_t pic, float scale, int *out_w, int *out_h);
@@ -110,6 +178,15 @@ static void WeaponBar_GetScaledCharSize(float scale, int *out_w, int *out_h)
     if (scale <= 0.0f)
         scale = 1.0f;
 
+    font_t *font = WeaponBar_GetFont(scale);
+    if (font) {
+        if (out_w)
+            *out_w = max(1, Font_MeasureString(font, 1, 0, MAX_STRING_CHARS, "0", NULL));
+        if (out_h)
+            *out_h = max(1, Font_LineHeight(font, 1));
+        return;
+    }
+
     if (out_w)
         *out_w = max(1, Q_rint(CONCHAR_WIDTH * scale));
     if (out_h)
@@ -121,6 +198,10 @@ static int WeaponBar_GetScaledTextWidth(const char *text, float scale)
     if (!text || !*text)
         return 0;
 
+    font_t *font = WeaponBar_GetFont(scale);
+    if (font)
+        return Font_MeasureString(font, 1, 0, MAX_STRING_CHARS, text, NULL);
+
     int char_w = 0;
     WeaponBar_GetScaledCharSize(scale, &char_w, NULL);
     return (int)strlen(text) * char_w;
@@ -130,6 +211,12 @@ static void WeaponBar_DrawScaledString(int x, int y, float scale, int flags, col
 {
     if (!text || !*text)
         return;
+
+    font_t *font = WeaponBar_GetFont(scale);
+    if (font) {
+        Font_DrawString(font, x, y, 1, flags, MAX_STRING_CHARS, text, color);
+        return;
+    }
 
     int char_w = 0;
     int char_h = 0;

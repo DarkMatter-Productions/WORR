@@ -69,6 +69,12 @@ void UI_DrawString(int x, int y, int flags, color_t color, const char *string)
 
 void UI_DrawChar(int x, int y, int flags, color_t color, int ch)
 {
+    if (ch >= 32 && ch < 127) {
+        char text[2] = { static_cast<char>(ch), 0 };
+        UI_FontDrawString(x, y, flags, 1, text, COLOR_SETA_U8(color, 255));
+        return;
+    }
+
     R_DrawChar(x, y, flags, ch, COLOR_SETA_U8(color, 255), UI_FontLegacyHandle());
 }
 

@@ -2319,7 +2319,8 @@ static void Menu_DrawStatus(menuFrameWork_t *menu)
     for (l = 0; l < count; l++) {
         x = (uis.width - lens[l] * CONCHAR_WIDTH) / 2;
         y = menu->y2 - (count - l) * CONCHAR_HEIGHT;
-        R_DrawString(x, y, 0, lens[l], ptrs[l], COLOR_WHITE, uis.fontHandle);
+        SCR_DrawStringStretch(x, y, 1, 0, lens[l], ptrs[l], COLOR_WHITE,
+                              uis.fontHandle);
     }
 }
 

@@ -121,7 +121,8 @@ Create a repository-grounded SWOT and convert it into actionable, task-based pro
   - Replaced the old fixed-size placeholder splash with a display-profile-driven SDL3 session shell that resolves `r_geometry`, `r_fullscreen`, `r_fullscreen_exclusive`, `r_monitor_mode`, `r_display`, `autoexec.cfg`, and forwarded `+set` overrides before creating the client window.
   - The bootstrap now creates the client shell through SDL3's hidden property-based window path, applies the real fullscreen/window mode before showing it, and logs the resolved session-shell mode for validation.
   - Extended `tools/release/client_bootstrap_sync_smoke.py` so local validation can assert both the in-process repair/sync handoff and the expected bootstrap session-shell window mode.
-  - Implementation logs: `docs-dev/client-bootstrap-session-shell-architecture-2026-03-25.md`, `docs-dev/bootstrap-session-shell-sync-refactor-2026-03-25.md`, `docs-dev/bootstrap-windows-client-shared-window-adoption-2026-03-25.md`, `docs-dev/bootstrap-client-in-process-sync-handoff-2026-03-25.md`, `docs-dev/bootstrap-session-shell-display-profile-window-creation-2026-03-25.md`.
+  - The bootstrap splash now renders text through SDL3_ttf first, uses readable 12-16 px legal fine print, shortens the no-update splash dwell, disables Windows shared-HWND handoff so Win11 thumbnails/PrintScreen sample the renderer-owned engine window, keeps the transient splash out of the taskbar preview surface, routes fullscreen through capture-friendly borderless mode by default, clears the renderer-owned backbuffer under non-transparent menus, and consumes the startup transition marker as a one-shot so stale bootstrap frames cannot reappear behind the main menu.
+  - Implementation logs: `docs-dev/client-bootstrap-session-shell-architecture-2026-03-25.md`, `docs-dev/bootstrap-session-shell-sync-refactor-2026-03-25.md`, `docs-dev/bootstrap-windows-client-shared-window-adoption-2026-03-25.md`, `docs-dev/bootstrap-client-in-process-sync-handoff-2026-03-25.md`, `docs-dev/bootstrap-session-shell-display-profile-window-creation-2026-03-25.md`, `docs-dev/ui-bootstrap-font-handoff-2026-04-27.md`.
 - `DV-08-T10` Done:
   - Repaired the tracked vendored libcurl wrap patch so bootstrap-enabled local Windows builds now succeed against the `curl-8.18.0` fallback instead of failing on stale 8.15-era source paths.
   - Fixed the bootstrap updater's Windows `min`/`max` macro collision so the launcher/worker binaries compile cleanly with the vendored fallback enabled.
@@ -181,6 +182,9 @@ Create a repository-grounded SWOT and convert it into actionable, task-based pro
   - Implementation log: `docs-dev/font-ttf-kexfont-alignment-2026-04-27.md`.
   - Implementation log: `docs-dev/font-ttf-test-screen-visual-alignment-2026-04-27.md`.
   - Implementation log: `docs-dev/font-horizontal-alignment-and-menu-footer-2026-04-27.md`.
+  - Extended the TTF-first policy to the actual cgame in-game weapon bar and the bootstrapper splash/legal footer text; client font loading now falls back to platform TTFs when staged project font files are unavailable, with TTF menu measurement kept on the renderer glyph-advance path for stable center/right alignment.
+  - Expanded the high-visibility black text background behavior from centerprint-specific contrast bars to the shared HUD/menu font wrappers. `cl_font_draw_black_background` and `ui_acc_contrast` now both enable the shared black background path for TTF/kfont text and legacy fallback string wrappers.
+  - Implementation log: `docs-dev/ui-bootstrap-font-handoff-2026-04-27.md`.
 
 ## Baseline Snapshot (Repository-Derived)
 - Codebase scale is substantial: approximately 733 `*.c`/`*.cpp`/`*.h`/`*.hpp` files and approximately 426k lines across `src/` and `inc/`.
@@ -669,8 +673,8 @@ Tasks:
   Dependency: `DV-08-T09`. Priority: P0.
 - [ ] `DV-08-T12` Convert the client bootstrap into a long-lived session shell that owns the display/window lifecycle, keeps updater UX in-process, and reserves the external worker for locked-file replacement and relaunch only.  
   Dependency: `DV-08-T09`, `DV-08-T11`. Priority: P1.
-  Progress: Windows session-shell handoff now stays on one native client window in installed launches, explicitly reactivates the adopted bootstrap window to avoid black-screen/Alt+Tab startup stalls, keeps the blended splash-to-engine transition, hardens `.install` staging so launcher/runtime binaries are hash-verified against the current build outputs, gives the main menu an engine-side backdrop so installed startup no longer lands on a flat black menu frame, and now uses a native Win32 splash shell with SDL detached before handoff so the live desktop canvas advances into the engine instead of freezing on the splash.
-  Implementation log: `docs-dev/bootstrap-session-shell-handoff-2026-04-01.md`.
+  Progress: Windows session-shell work introduced native splash-shell startup, adopted-window activation, synchronized `.install` staging, and engine-side menu backdrops. This follow-up temporarily disables Windows shared-HWND handoff because Win11 capture/preview APIs were still sampling the bootstrap-owned surface; the splash is kept out of taskbar previews, fullscreen defaults to capture-friendly borderless behavior for PrintScreen/Snipping Tool, and the renderer-owned engine window becomes the app frame. Non-transparent menus now clear the engine backbuffer every frame, and the bootstrap transition marker is consumed as a one-shot so stale splash pixels cannot remain blended into the main menu.
+  Implementation logs: `docs-dev/bootstrap-session-shell-handoff-2026-04-01.md`, `docs-dev/ui-bootstrap-font-handoff-2026-04-27.md`.
 
 ## Immediate 90-Day Priority Queue (2026-03-01 to 2026-05-31)
 - [ ] `P0` `FR-01-T01` Vulkan particle style parity

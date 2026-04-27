@@ -203,13 +203,23 @@ static float CG_UI_ClampScale(cvar_t *var)
 
 static void CG_UI_DrawChar(int x, int y, int flags, int ch, color_t color, qhandle_t font)
 {
+    if (scr.ui_font && (!font || font == scr.ui_font_pic) && ch >= 32 && ch < 127) {
+        char text[2] = { static_cast<char>(ch), 0 };
+        UI_FontDrawString(x, y, flags, 1, text, color);
+        return;
+    }
+
+    if (Font_DrawBlackBackgroundEnabled()) {
+        R_DrawFill32(x - 1, y - 1, CONCHAR_WIDTH + 2, CONCHAR_HEIGHT + 2,
+                     COLOR_BLACK);
+    }
     R_DrawChar(x, y, flags, ch, color, font);
 }
 
 static int CG_UI_DrawStringStretch(int x, int y, int scale, int flags, size_t maxChars,
                                    const char *string, color_t color, qhandle_t font)
 {
-    return R_DrawStringStretch(x, y, scale, flags, maxChars, string, color, font);
+    return SCR_DrawStringStretch(x, y, scale, flags, maxChars, string, color, font);
 }
 
 static int CG_UI_FontDrawString(int x, int y, int flags, size_t maxChars,

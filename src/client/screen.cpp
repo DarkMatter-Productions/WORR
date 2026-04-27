@@ -22,6 +22,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "client/font.h"
 #include "client/ui_font.h"
 
+#include <cstdlib>
+
 static cvar_t   *scr_viewsize;
 static cvar_t   *scr_showpause;
 #if USE_DEBUG
@@ -72,13 +74,42 @@ static const float k_scr_ttf_letter_spacing = 0.06f;
 static const char k_scr_kfont_fallback_path[] = "fonts/qconfont.kfont";
 static const char k_scr_ui_font_path[] = "fonts/AtkinsonHyperLegible-Regular.otf";
 static const char k_scr_bootstrap_transition_env[] = "WORR_BOOTSTRAP_TRANSITION";
-static const unsigned k_scr_bootstrap_blend_duration = 240;
+static const unsigned k_scr_bootstrap_blend_duration = 180;
 static unsigned scr_bootstrap_blend_start;
 static bool scr_bootstrap_blend_pending;
 static bool scr_bootstrap_blend_done;
-static qhandle_t scr_bootstrap_logo_pic;
-static int scr_bootstrap_logo_width;
-static int scr_bootstrap_logo_height;
+static bool scr_bootstrap_blend_armed;
+static bool scr_bootstrap_blend_consumed;
+
+static void SCR_ClearBootstrapTransitionEnv(void)
+{
+#if defined(_WIN32)
+    _putenv_s(k_scr_bootstrap_transition_env, "");
+#else
+    unsetenv(k_scr_bootstrap_transition_env);
+#endif
+}
+
+static bool SCR_BootstrapTransitionRequested(void)
+{
+    if (scr_bootstrap_blend_consumed)
+        return false;
+    if (scr_bootstrap_blend_armed)
+        return true;
+
+    const char *transition = getenv(k_scr_bootstrap_transition_env);
+    if (!transition || !*transition)
+        return false;
+
+    scr_bootstrap_blend_armed = true;
+    SCR_ClearBootstrapTransitionEnv();
+    return true;
+}
+
+static bool SCR_BootstrapTransitionActive(void)
+{
+    return SCR_BootstrapTransitionRequested() && !scr_bootstrap_blend_done;
+}
 
 #define SCR_FONT_TEST_SIZE_COUNT 6
 static const int scr_font_test_sizes[SCR_FONT_TEST_SIZE_COUNT] = {
@@ -340,6 +371,14 @@ int SCR_DrawStringStretch(int x, int y, int scale, int flags, size_t maxlen,
         x -= (visible_len * CONCHAR_WIDTH * scale) / 2;
     } else if (flags & UI_RIGHT) {
         x -= visible_len * CONCHAR_WIDTH * scale;
+    }
+
+    if (Font_DrawBlackBackgroundEnabled() && visible_len > 0) {
+        int padding = max(1, scale);
+        R_DrawFill32(x - padding, y - padding,
+                     (int)visible_len * CONCHAR_WIDTH * scale + padding * 2,
+                     CONCHAR_HEIGHT * scale + padding * 2,
+                     COLOR_BLACK);
     }
 
     return R_DrawStringStretch(x, y, scale, flags, maxlen, s, color, font);
@@ -3279,13 +3318,8 @@ void SCR_Init(void)
     scr_bootstrap_blend_start = 0;
     scr_bootstrap_blend_pending = false;
     scr_bootstrap_blend_done = false;
-    scr_bootstrap_logo_pic = R_RegisterPic("/art/logo.png");
-    if (scr_bootstrap_logo_pic) {
-        R_GetPicSize(&scr_bootstrap_logo_width, &scr_bootstrap_logo_height, scr_bootstrap_logo_pic);
-    } else {
-        scr_bootstrap_logo_width = 0;
-        scr_bootstrap_logo_height = 0;
-    }
+    scr_bootstrap_blend_armed = false;
+    scr_bootstrap_blend_consumed = false;
 
     scr.initialized = true;
 }
@@ -3304,12 +3338,11 @@ void SCR_Shutdown(void)
     }
     scr.font_pic = 0;
     scr.ui_font_pic = 0;
-    scr_bootstrap_logo_pic = 0;
-    scr_bootstrap_logo_width = 0;
-    scr_bootstrap_logo_height = 0;
     scr_bootstrap_blend_start = 0;
     scr_bootstrap_blend_pending = false;
     scr_bootstrap_blend_done = false;
+    scr_bootstrap_blend_armed = false;
+    scr_bootstrap_blend_consumed = false;
     scr.initialized = false;
 }
 
@@ -3990,8 +4023,7 @@ static void SCR_DrawActive(void)
 
 static void SCR_DrawBootstrapBlend(void)
 {
-    const char *transition = getenv(k_scr_bootstrap_transition_env);
-    if (!transition || !*transition)
+    if (!SCR_BootstrapTransitionRequested())
         return;
 
     unsigned now = Sys_Milliseconds();
@@ -4007,31 +4039,35 @@ static void SCR_DrawBootstrapBlend(void)
     if (elapsed >= k_scr_bootstrap_blend_duration) {
         scr_bootstrap_blend_pending = false;
         scr_bootstrap_blend_done = true;
+        scr_bootstrap_blend_armed = false;
+        scr_bootstrap_blend_consumed = true;
         return;
     }
 
     float frac = 1.0f - (float)elapsed / (float)k_scr_bootstrap_blend_duration;
+    frac *= frac;
     byte alpha = (byte)Q_clip(Q_rint(frac * 255.0f), 0, 255);
     if (alpha <= 0)
         return;
 
     R_DrawFill32(0, 0, r_config.width, r_config.height, COLOR_RGBA(0, 0, 0, alpha));
+}
 
-    if (scr_bootstrap_logo_pic && scr_bootstrap_logo_width > 0 && scr_bootstrap_logo_height > 0) {
-        float banner_width = min((float)r_config.width, (float)r_config.height * (4.0f / 3.0f));
-        float banner_height = banner_width * (float)scr_bootstrap_logo_height / (float)scr_bootstrap_logo_width;
-        float max_height = (float)r_config.height * 0.6f;
-        if (banner_height > max_height) {
-            banner_height = max_height;
-            banner_width = banner_height * (float)scr_bootstrap_logo_width / (float)scr_bootstrap_logo_height;
-        }
+static void SCR_DrawBootstrapTransitionBackdrop(void)
+{
+    if (!SCR_BootstrapTransitionActive())
+        return;
 
-        int draw_w = Q_rint(banner_width);
-        int draw_h = Q_rint(banner_height);
-        int draw_x = (r_config.width - draw_w) / 2;
-        int draw_y = 28;
-        R_DrawStretchPic(draw_x, draw_y, draw_w, draw_h, COLOR_RGBA(255, 255, 255, alpha), scr_bootstrap_logo_pic);
-    }
+    R_DrawFill32(0, 0, r_config.width, r_config.height, COLOR_BLACK);
+}
+
+static void SCR_DrawOpaqueMenuBackdrop(void)
+{
+    if (UI_IsTransparent())
+        return;
+
+    R_SetScale(1.0f);
+    R_DrawFill32(0, 0, r_config.width, r_config.height, COLOR_BLACK);
 }
 
 //=======================================================
@@ -4074,6 +4110,10 @@ void SCR_UpdateScreen(void)
 
     // do 3D renderer drawing
     SCR_DrawActive();
+
+    SCR_DrawOpaqueMenuBackdrop();
+
+    SCR_DrawBootstrapTransitionBackdrop();
 
     // draw main menu
     UI_Draw(cls.realtime);

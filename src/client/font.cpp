@@ -26,6 +26,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -41,6 +44,13 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #endif
 #ifdef min
 #undef min
+#endif
+
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
 #endif
 
 #if USE_SDL3_TTF
@@ -134,6 +144,7 @@ static int g_font_seq = 0;
 static cvar_t *cl_debug_fonts = nullptr;
 static cvar_t *cl_font_scale_boost = nullptr;
 static cvar_t *cl_font_draw_black_background = nullptr;
+static cvar_t *ui_acc_contrast = nullptr;
 static cvar_t *cl_font_fallback_kfont = nullptr;
 static cvar_t *cl_font_fallback_legacy = nullptr;
 
@@ -185,8 +196,13 @@ static bool font_draw_black_background_enabled(void) {
 		cl_font_draw_black_background =
 			Cvar_Get("cl_font_draw_black_background", "1", CVAR_ARCHIVE);
 	}
-	return cl_font_draw_black_background &&
-		   Cvar_ClampInteger(cl_font_draw_black_background, 0, 1) != 0;
+	if (cl_font_draw_black_background &&
+		Cvar_ClampInteger(cl_font_draw_black_background, 0, 1) != 0)
+		return true;
+
+	if (!ui_acc_contrast)
+		ui_acc_contrast = Cvar_WeakGet("ui_acc_contrast");
+	return ui_acc_contrast && Cvar_ClampInteger(ui_acc_contrast, 0, 1) != 0;
 }
 
 static bool font_uses_ttf_layout_fast_path(const font_t *font) {
@@ -956,14 +972,98 @@ static void font_free_ttf(font_t *font) {
   font->ttf.data_size = 0;
 }
 
+static bool font_read_disk_file(const std::filesystem::path &path, void **out_data,
+                                int *out_len) {
+  if (!out_data || !out_len)
+    return false;
+
+  *out_data = nullptr;
+  *out_len = 0;
+
+  std::error_code ec;
+  if (path.empty() || !std::filesystem::is_regular_file(path, ec))
+    return false;
+
+  uintmax_t file_size = std::filesystem::file_size(path, ec);
+  if (ec || file_size == 0 || file_size > MAX_LOADFILE)
+    return false;
+
+  std::ifstream stream(path, std::ios::binary);
+  if (!stream)
+    return false;
+
+  void *data = Z_Malloc(static_cast<size_t>(file_size));
+  if (!data)
+    return false;
+
+  stream.read(static_cast<char *>(data), static_cast<std::streamsize>(file_size));
+  if (!stream) {
+    Z_Free(data);
+    return false;
+  }
+
+  *out_data = data;
+  *out_len = static_cast<int>(file_size);
+  return true;
+}
+
+static std::vector<std::filesystem::path> font_system_ttf_candidates(void) {
+  std::vector<std::filesystem::path> candidates;
+
+#if defined(_WIN32)
+  WCHAR windows_dir[MAX_PATH];
+  UINT windows_dir_len = GetWindowsDirectoryW(windows_dir, MAX_PATH);
+  if (windows_dir_len > 0 && windows_dir_len < MAX_PATH) {
+    std::filesystem::path fonts_dir = std::filesystem::path(windows_dir) / L"Fonts";
+    candidates.push_back(fonts_dir / L"segoeui.ttf");
+    candidates.push_back(fonts_dir / L"arial.ttf");
+  }
+#elif defined(__APPLE__)
+  candidates.emplace_back("/System/Library/Fonts/Supplemental/Arial.ttf");
+  candidates.emplace_back("/Library/Fonts/Arial.ttf");
+#else
+  candidates.emplace_back("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
+  candidates.emplace_back("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf");
+  candidates.emplace_back("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc");
+#endif
+
+  return candidates;
+}
+
+static bool font_load_ttf_disk_fallback(const char *requested_path, void **out_data,
+                                        int *out_len) {
+  if (!requested_path || !*requested_path)
+    return false;
+
+  std::filesystem::path requested(requested_path);
+  if (requested.is_absolute() && font_read_disk_file(requested, out_data, out_len)) {
+    font_debug_printf("Font: loaded external_ttf path=\"%s\"\n", requested_path);
+    return true;
+  }
+
+  for (const std::filesystem::path &candidate : font_system_ttf_candidates()) {
+    if (font_read_disk_file(candidate, out_data, out_len)) {
+      font_debug_printf("Font: system_ttf_fallback requested=\"%s\" path=\"%s\"\n",
+                        requested_path, candidate.u8string().c_str());
+      return true;
+    }
+  }
+
+  return false;
+}
+
 static bool font_load_ttf(font_t *font, const char *path) {
   if (!font || !path || !*path || !g_ttf_ready)
     return false;
 
   void *data = nullptr;
   int len = FS_LoadFile(path, &data);
-  if (len <= 0 || !data)
-    return false;
+  if (len <= 0 || !data) {
+    data = nullptr;
+    len = 0;
+    if (!font_load_ttf_disk_fallback(path, &data, &len))
+      return false;
+  }
 
   int pixel_height = std::max(1, Q_rint((float)font->virtual_line_height * font->pixel_scale));
 
@@ -1738,36 +1838,6 @@ int Font_MeasureString(const font_t *font, int scale, int flags,
 
     if (seg_len == 0) continue;
 
-#if USE_SDL3_TTF
-    if (font_uses_ttf_layout_fast_path(font)) {
-      TTF_Text *text_obj =
-          TTF_CreateText(g_ttf_engine, font->ttf.sdl_font, seg_start, seg_len);
-      if (text_obj && TTF_UpdateText(text_obj) && text_obj->internal) {
-        int num_ops = text_obj->internal->ops ? text_obj->internal->num_ops : 0;
-        int copy_ops = 0;
-        for (int i = 0; i < num_ops; ++i) {
-          if (text_obj->internal->ops[i].cmd == TTF_DRAW_COMMAND_COPY)
-            ++copy_ops;
-        }
-        pen_x += (float)text_obj->internal->w * font_draw_scale(font, draw_scale);
-        if (copy_ops > 1)
-          pen_x += (float)(copy_ops - 1) *
-                   font_ttf_letter_spacing_px(font, draw_scale);
-        max_width = std::max(max_width, pen_x);
-        TTF_DestroyText(text_obj);
-        continue;
-      }
-      if (text_obj)
-        TTF_DestroyText(text_obj);
-      int w = 0, h = 0;
-      if (TTF_GetStringSize(font->ttf.sdl_font, seg_start, seg_len, &w, &h)) {
-        pen_x += (float)w * font_draw_scale(font, draw_scale);
-        max_width = std::max(max_width, pen_x);
-        continue;
-      }
-    }
-#endif
-
     const char *fs = seg_start;
     size_t f_rem = seg_len;
     while (f_rem > 0) {
@@ -1804,6 +1874,10 @@ int Font_LineHeight(const font_t *font, int scale) {
   return std::max(
       1, Q_rint((float)font->virtual_line_height * (float)draw_scale *
                 font_scale_boost()));
+}
+
+bool Font_DrawBlackBackgroundEnabled(void) {
+  return font_draw_black_background_enabled();
 }
 
 bool Font_GetDebugMetrics(const font_t *font, int scale,

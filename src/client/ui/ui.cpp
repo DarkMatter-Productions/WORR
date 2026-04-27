@@ -17,7 +17,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 */
 
 #include "ui.h"
+#include "client/font.h"
 #include "client/input.h"
+#include "client/ui_font.h"
 #include "common/prompt.h"
 
 uiStatic_t    uis;
@@ -347,19 +349,26 @@ bool UI_CursorInRect(const vrect_t *rect)
 // nb: all UI strings are drawn at full alpha
 void UI_DrawString(int x, int y, int flags, color_t color, const char *string)
 {
-    size_t visible_len = Com_StrlenNoColor(string, strlen(string));
-    if ((flags & UI_CENTER) == UI_CENTER) {
-        x -= visible_len * CONCHAR_WIDTH / 2;
-    } else if (flags & UI_RIGHT) {
-        x -= visible_len * CONCHAR_WIDTH;
-    }
+    if (!string || !*string)
+        return;
 
-    R_DrawString(x, y, flags, MAX_STRING_CHARS, string, COLOR_SETA_U8(color, 255), uis.fontHandle);
+    UI_FontDrawString(x, y, flags, MAX_STRING_CHARS, string,
+                      COLOR_SETA_U8(color, 255));
 }
 
 // nb: all UI chars are drawn at full alpha
 void UI_DrawChar(int x, int y, int flags, color_t color, int ch)
 {
+    if (ch >= 32 && ch < 127) {
+        char text[2] = { static_cast<char>(ch), 0 };
+        UI_FontDrawString(x, y, flags, 1, text, COLOR_SETA_U8(color, 255));
+        return;
+    }
+
+    if (Font_DrawBlackBackgroundEnabled()) {
+        R_DrawFill32(x - 1, y - 1, CONCHAR_WIDTH + 2, CONCHAR_HEIGHT + 2,
+                     COLOR_BLACK);
+    }
     R_DrawChar(x, y, flags, ch, COLOR_SETA_U8(color, 255), uis.fontHandle);
 }
 

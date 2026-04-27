@@ -57,6 +57,7 @@ int Font_DrawString(font_t *font, int x, int y, int scale, int flags,
 int Font_MeasureString(const font_t *font, int scale, int flags, size_t max_chars,
                        const char *string, int *out_height);
 int Font_LineHeight(const font_t *font, int scale);
+bool Font_DrawBlackBackgroundEnabled(void);
 bool Font_GetDebugMetrics(const font_t *font, int scale,
                           font_debug_metrics_t *out_metrics);
 

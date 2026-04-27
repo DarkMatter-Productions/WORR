@@ -6,6 +6,9 @@
 #include "common/bootstrap.h"
 
 #include <SDL3/SDL.h>
+#if USE_SDL3_TTF
+#include <SDL3_ttf/SDL_ttf.h>
+#endif
 #include <curl/curl.h>
 #include <json/json.h>
 
@@ -110,7 +113,7 @@ constexpr int kDiscoveryBudgetMs = 5000;
 constexpr int kApplyRetryCount = 20;
 constexpr int kApplyRetryDelayMs = 100;
 constexpr uint64_t kUiTickDelayMs = 16;
-constexpr uint64_t kMinimumSplashDisplayMs = 5000;
+constexpr uint64_t kMinimumSplashDisplayMs = 750;
 constexpr const char *kUserAgent = "WORR-Bootstrap/1.0";
 
 struct SemverIdentifier {
@@ -237,6 +240,7 @@ struct SessionShellWindowConfig {
   int monitor_mode = 0;
   int fullscreen_index = 0;
   bool fullscreen_exclusive = true;
+  bool fullscreen_capture_friendly = true;
   std::string display_request = "0";
 };
 
@@ -589,13 +593,18 @@ SessionShellWindowConfig LoadClientSessionShellWindowConfig(const fs::path &inst
     if (ParseIntStrict(it->second, &value))
       config.fullscreen_exclusive = value != 0;
   }
+  if (const auto it = cvars.find("win_fullscreen_capture_friendly"); it != cvars.end()) {
+    int value = 1;
+    if (ParseIntStrict(it->second, &value))
+      config.fullscreen_capture_friendly = value != 0;
+  }
   if (const auto it = cvars.find("r_display"); it != cvars.end() && !it->second.empty())
     config.display_request = it->second;
 
   if (config.fullscreen_index > 0) {
     if (config.monitor_mode == 2) {
       config.mode = SessionShellWindowMode::SpanBorderless;
-    } else if (!config.fullscreen_exclusive) {
+    } else if (!config.fullscreen_exclusive || config.fullscreen_capture_friendly) {
       config.mode = SessionShellWindowMode::BorderlessFullscreen;
     } else {
       config.mode = SessionShellWindowMode::ExclusiveFullscreen;
@@ -611,6 +620,7 @@ SessionShellWindowConfig LoadClientSessionShellWindowConfig(const fs::path &inst
                  " mode=" + SessionShellWindowModeToCString(config.mode) +
                  " fullscreen_index=" + std::to_string(config.fullscreen_index) +
                  " exclusive=" + std::to_string(config.fullscreen_exclusive ? 1 : 0) +
+                 " capture_friendly=" + std::to_string(config.fullscreen_capture_friendly ? 1 : 0) +
                  " monitor_mode=" + std::to_string(config.monitor_mode) + " display=\"" + config.display_request +
                  "\" geometry=" + geometry_detail.str());
   return config;
@@ -1149,34 +1159,6 @@ public:
   void DismissForEngineHandoff() override {}
 };
 
-std::vector<std::string> WrapText(const std::string &text, size_t width) {
-  std::vector<std::string> lines;
-  std::istringstream paragraphs(text);
-  std::string paragraph;
-  while (std::getline(paragraphs, paragraph)) {
-    std::istringstream stream(paragraph);
-    std::string word;
-    std::string current;
-    while (stream >> word) {
-      if (current.empty()) {
-        current = word;
-      } else if (current.size() + 1 + word.size() <= width) {
-        current += " " + word;
-      } else {
-        lines.push_back(current);
-        current = word;
-      }
-    }
-    if (!current.empty())
-      lines.push_back(current);
-    else
-      lines.push_back({});
-  }
-  if (lines.empty())
-    lines.push_back({});
-  return lines;
-}
-
 class SplashUi final : public BootstrapUi {
 public:
   explicit SplashUi(SessionShellWindowConfig config) : config_(std::move(config)) {
@@ -1218,6 +1200,7 @@ public:
     if (!logo_)
       throw std::runtime_error(SDL_GetError());
 
+    InitializeTextRenderer();
   }
 
   ~SplashUi() override { ReleaseUiResources(false); }
@@ -1311,7 +1294,11 @@ public:
 
   bool SupportsSharedWindowHandoff() const override {
 #if defined(_WIN32)
-    return native_window_ != nullptr;
+    // The native splash shell is an updater/bootstrap surface, not a renderer
+    // swapchain owner. Keeping it as the final app HWND leaves Windows 11 taskbar
+    // thumbnails and OS PrintScreen sampling stale bootstrap pixels, so let the
+    // engine create and own its real window for now.
+    return false;
 #else
     return false;
 #endif
@@ -1321,6 +1308,7 @@ public:
 #if defined(_WIN32)
     if (!native_window_)
       return false;
+    PresentHandoffFrame();
     closed_ = true;
     ReleaseUiResources(true, true);
     return native_window_ != nullptr;
@@ -1344,11 +1332,16 @@ public:
   }
 
 private:
-  static constexpr float kHeadlineTextScale = 2.3f;
-  static constexpr float kDetailTextScale = 1.6f;
-  static constexpr float kProgressTextScale = 1.4f;
-  static constexpr float kButtonTextScale = 1.5f;
-  static constexpr float kLegalTextScale = 6.0f / SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE;
+  static constexpr float kHeadlineTextMinPx = 22.0f;
+  static constexpr float kHeadlineTextMaxPx = 34.0f;
+  static constexpr float kDetailTextMinPx = 15.0f;
+  static constexpr float kDetailTextMaxPx = 22.0f;
+  static constexpr float kProgressTextMinPx = 14.0f;
+  static constexpr float kProgressTextMaxPx = 20.0f;
+  static constexpr float kButtonTextMinPx = 15.0f;
+  static constexpr float kButtonTextMaxPx = 20.0f;
+  static constexpr float kLegalTextMinPx = 12.0f;
+  static constexpr float kLegalTextMaxPx = 16.0f;
   static constexpr float kButtonWidth = 132.0f;
   static constexpr float kButtonHeight = 36.0f;
   static constexpr float kButtonGap = 16.0f;
@@ -1358,6 +1351,16 @@ private:
       "WORR is an unofficial fan project and is not affiliated with or endorsed by id Software or Bethesda.";
 
 #if defined(_WIN32)
+  static void FlushDesktopComposition() {
+    GdiFlush();
+
+    using dwm_flush_fn = HRESULT(WINAPI *)(void);
+    static HMODULE dwmapi = LoadLibraryA("dwmapi.dll");
+    static auto dwm_flush = dwmapi ? reinterpret_cast<dwm_flush_fn>(GetProcAddress(dwmapi, "DwmFlush")) : nullptr;
+    if (dwm_flush)
+      dwm_flush();
+  }
+
   static LRESULT CALLBACK NativeShellWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
     case WM_CLOSE:
@@ -1420,7 +1423,7 @@ private:
     const bool fullscreen = config_.mode != SessionShellWindowMode::Windowed;
     DWORD style = fullscreen ? (WS_POPUP | WS_CLIPCHILDREN | WS_CLIPSIBLINGS)
                              : (WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_CLIPSIBLINGS);
-    DWORD exstyle = WS_EX_APPWINDOW;
+    DWORD exstyle = WS_EX_TOOLWINDOW;
 
     RECT monitor_rect = ResolveMonitorRect(fullscreen);
     int client_width = fullscreen ? (monitor_rect.right - monitor_rect.left) : placement_.width;
@@ -1450,7 +1453,7 @@ private:
   void CreateNativeShellWindow() {
     EnsureNativeShellWindowClass();
 
-    native_window_ = CreateWindowExA(WS_EX_APPWINDOW, NativeShellWindowClassName(), "WORR",
+    native_window_ = CreateWindowExA(WS_EX_TOOLWINDOW, NativeShellWindowClassName(), "WORR",
                                      WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_CLIPSIBLINGS, CW_USEDEFAULT,
                                      CW_USEDEFAULT, placement_.width, placement_.height, nullptr, nullptr,
                                      GetModuleHandleA(nullptr), nullptr);
@@ -1633,6 +1636,7 @@ private:
   }
 
   void ReleaseUiResources(bool keep_video_subsystem, bool keep_native_window = false) {
+    ReleaseTextResources();
     if (logo_)
       SDL_DestroyTexture(logo_);
     if (renderer_)
@@ -1655,20 +1659,41 @@ private:
     owns_sdl_video_ = false;
   }
 
-  static float DebugTextPixelSize(float scale) { return SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * scale; }
+  void PresentHandoffFrame() {
+    if (!renderer_)
+      return;
 
-  static float DebugTextLineAdvance(float scale) { return (SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE + 4.0f) * scale; }
-
-  static size_t DebugTextWrapWidth(float pixel_width, float scale) {
-    const float character_width = std::max(1.0f, DebugTextPixelSize(scale));
-    return std::max<size_t>(1, static_cast<size_t>(pixel_width / character_width));
+    SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
+    SDL_RenderClear(renderer_);
+    SDL_RenderPresent(renderer_);
+    SDL_SyncWindow(window_);
+#if defined(_WIN32)
+    FlushDesktopComposition();
+#endif
   }
 
-  float MeasureTextBlockHeight(const std::string &text, float scale, float max_width) const {
-    return static_cast<float>(WrapText(text, DebugTextWrapWidth(max_width, scale)).size()) * DebugTextLineAdvance(scale);
+  static SDL_Color Color(uint8_t r, uint8_t g, uint8_t b, uint8_t a = 255) {
+    return SDL_Color{r, g, b, a};
   }
 
-  void DrawScaledDebugText(float x, float y, const std::string &text, float scale) {
+  static float ResponsiveTextSize(float reference, float fraction, float min_px, float max_px) {
+    return std::clamp(reference * fraction, min_px, max_px);
+  }
+
+  static float DebugTextScaleForSize(float pixel_size) {
+    return pixel_size / static_cast<float>(SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE);
+  }
+
+  static float DebugTextPixelSize(float pixel_size) {
+    return SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * DebugTextScaleForSize(pixel_size);
+  }
+
+  static float DebugTextLineAdvance(float pixel_size) {
+    return (SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE + 4.0f) * DebugTextScaleForSize(pixel_size);
+  }
+
+  void DrawScaledDebugText(float x, float y, const std::string &text, float pixel_size) {
+    const float scale = DebugTextScaleForSize(pixel_size);
     float old_scale_x = 1.0f;
     float old_scale_y = 1.0f;
     SDL_GetRenderScale(renderer_, &old_scale_x, &old_scale_y);
@@ -1677,46 +1702,215 @@ private:
     SDL_SetRenderScale(renderer_, old_scale_x, old_scale_y);
   }
 
-  void DrawCenteredTextBlock(float center_x, float y, const std::string &text, float scale, float max_width) {
+#if USE_SDL3_TTF
+  std::vector<fs::path> TextFontCandidates() const {
+    std::vector<fs::path> candidates;
+    if (!config_.runtime_root.empty()) {
+      candidates.push_back(config_.runtime_root / "basew" / "fonts" / "AtkinsonHyperLegible-Regular.otf");
+      candidates.push_back(config_.runtime_root / "fonts" / "AtkinsonHyperLegible-Regular.otf");
+    }
+
+    if (const char *base_path = SDL_GetBasePath()) {
+      fs::path base = Utf8Path(base_path);
+      candidates.push_back(base / "basew" / "fonts" / "AtkinsonHyperLegible-Regular.otf");
+      candidates.push_back(base / "fonts" / "AtkinsonHyperLegible-Regular.otf");
+    }
+
+#if defined(_WIN32)
+    WCHAR windows_dir[MAX_PATH];
+    UINT windows_dir_len = GetWindowsDirectoryW(windows_dir, MAX_PATH);
+    if (windows_dir_len > 0 && windows_dir_len < MAX_PATH) {
+      fs::path fonts_dir = fs::path(windows_dir) / L"Fonts";
+      candidates.push_back(fonts_dir / L"segoeui.ttf");
+      candidates.push_back(fonts_dir / L"arial.ttf");
+    }
+#elif defined(__APPLE__)
+    candidates.push_back("/System/Library/Fonts/Supplemental/Arial.ttf");
+    candidates.push_back("/Library/Fonts/Arial.ttf");
+#else
+    candidates.push_back("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
+    candidates.push_back("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf");
+    candidates.push_back("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc");
+#endif
+
+    return candidates;
+  }
+
+  void InitializeTextRenderer() {
+    if (!TTF_Init()) {
+      BootstrapTrace(std::string("SplashUi ttf_init_failed error=") + SDL_GetError());
+      return;
+    }
+
+    owns_ttf_ = true;
+    for (const fs::path &candidate : TextFontCandidates()) {
+      std::error_code ec;
+      if (candidate.empty() || !fs::is_regular_file(candidate, ec))
+        continue;
+      ttf_font_path_ = candidate;
+      BootstrapTrace("SplashUi ttf_font=" + GenericPath(candidate));
+      return;
+    }
+
+    BootstrapTrace("SplashUi ttf_font_missing using_sdl_debug_text=1");
+  }
+
+  TTF_Font *GetTextFont(float pixel_size) {
+    if (!owns_ttf_ || ttf_font_path_.empty())
+      return nullptr;
+
+    int size = std::max(1, static_cast<int>(std::round(pixel_size)));
+    auto it = ttf_fonts_.find(size);
+    if (it != ttf_fonts_.end())
+      return it->second;
+
+    TTF_Font *font = TTF_OpenFont(GenericPath(ttf_font_path_).c_str(), static_cast<float>(size));
+    if (!font) {
+      BootstrapTrace("SplashUi ttf_open_failed size=" + std::to_string(size) + " error=" + SDL_GetError());
+      return nullptr;
+    }
+    ttf_fonts_[size] = font;
+    return font;
+  }
+
+  void ReleaseTextResources() {
+    for (auto &entry : ttf_fonts_) {
+      if (entry.second)
+        TTF_CloseFont(entry.second);
+    }
+    ttf_fonts_.clear();
+    ttf_font_path_.clear();
+
+    if (owns_ttf_) {
+      TTF_Quit();
+      owns_ttf_ = false;
+    }
+  }
+#else
+  void InitializeTextRenderer() {}
+  void ReleaseTextResources() {}
+#endif
+
+  float TextLineAdvance(float pixel_size) {
+#if USE_SDL3_TTF
+    if (TTF_Font *font = GetTextFont(pixel_size)) {
+      return std::max(static_cast<float>(TTF_GetFontLineSkip(font)),
+                      std::max(static_cast<float>(TTF_GetFontHeight(font)),
+                               pixel_size * 1.25f));
+    }
+#endif
+    return DebugTextLineAdvance(pixel_size);
+  }
+
+  float MeasureTextLineWidth(const std::string &text, float pixel_size) {
+    if (text.empty())
+      return 0.0f;
+
+#if USE_SDL3_TTF
+    if (TTF_Font *font = GetTextFont(pixel_size)) {
+      int w = 0;
+      int h = 0;
+      if (TTF_GetStringSize(font, text.c_str(), text.size(), &w, &h))
+        return static_cast<float>(w);
+    }
+#endif
+
+    return static_cast<float>(text.size()) * DebugTextPixelSize(pixel_size);
+  }
+
+  std::vector<std::string> WrapTextByWidth(const std::string &text, float pixel_size, float max_width) {
+    std::vector<std::string> lines;
+    std::stringstream paragraphs(text);
+    std::string paragraph;
+
+    while (std::getline(paragraphs, paragraph)) {
+      std::istringstream words(paragraph);
+      std::string word;
+      std::string current;
+
+      while (words >> word) {
+        std::string candidate = current.empty() ? word : current + " " + word;
+        if (current.empty() || MeasureTextLineWidth(candidate, pixel_size) <= max_width) {
+          current = candidate;
+          continue;
+        }
+
+        lines.push_back(current);
+        current = word;
+      }
+
+      lines.push_back(current);
+    }
+
+    if (lines.empty())
+      lines.push_back({});
+
+    return lines;
+  }
+
+  float MeasureTextBlockHeight(const std::string &text, float pixel_size, float max_width) {
+    return static_cast<float>(WrapTextByWidth(text, pixel_size, max_width).size()) *
+           TextLineAdvance(pixel_size);
+  }
+
+  void DrawTextLine(float x, float y, const std::string &line, float pixel_size, SDL_Color color) {
+    if (line.empty())
+      return;
+
+#if USE_SDL3_TTF
+    if (TTF_Font *font = GetTextFont(pixel_size)) {
+      SDL_Surface *surface = TTF_RenderText_Blended(font, line.c_str(), line.size(), color);
+      if (surface) {
+        SDL_Texture *texture = SDL_CreateTextureFromSurface(renderer_, surface);
+        if (texture) {
+          SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_LINEAR);
+          SDL_FRect dst{x, y, static_cast<float>(surface->w), static_cast<float>(surface->h)};
+          SDL_RenderTexture(renderer_, texture, nullptr, &dst);
+          SDL_DestroyTexture(texture);
+        }
+        SDL_DestroySurface(surface);
+        return;
+      }
+    }
+#endif
+
+    SDL_SetRenderDrawColor(renderer_, color.r, color.g, color.b, color.a);
+    DrawScaledDebugText(x, y, line, pixel_size);
+  }
+
+  void DrawCenteredTextBlock(float center_x, float y, const std::string &text, float pixel_size,
+                             float max_width, SDL_Color color) {
     float line_y = y;
-    const float line_advance = DebugTextLineAdvance(scale);
-    for (const std::string &line : WrapText(text, DebugTextWrapWidth(max_width, scale))) {
-      const float line_width = static_cast<float>(line.size()) * DebugTextPixelSize(scale);
-      DrawScaledDebugText(center_x - (line_width * 0.5f), line_y, line, scale);
+    const float line_advance = TextLineAdvance(pixel_size);
+    for (const std::string &line : WrapTextByWidth(text, pixel_size, max_width)) {
+      const float line_width = MeasureTextLineWidth(line, pixel_size);
+      DrawTextLine(center_x - (line_width * 0.5f), line_y, line, pixel_size, color);
       line_y += line_advance;
     }
   }
 
-  float DrawTextBlock(float x, float y, const std::string &text, float scale, float max_width) {
+  float DrawCenteredTextMeasured(float center_x, float y, const std::string &text, float pixel_size,
+                                 float max_width, SDL_Color color) {
     float line_y = y;
-    const float line_advance = DebugTextLineAdvance(scale);
-    for (const std::string &line : WrapText(text, DebugTextWrapWidth(max_width, scale))) {
-      DrawScaledDebugText(x, line_y, line, scale);
+    const float line_advance = TextLineAdvance(pixel_size);
+    for (const std::string &line : WrapTextByWidth(text, pixel_size, max_width)) {
+      const float line_width = MeasureTextLineWidth(line, pixel_size);
+      DrawTextLine(center_x - (line_width * 0.5f), line_y, line, pixel_size, color);
       line_y += line_advance;
     }
     return line_y;
   }
 
-  float DrawCenteredTextMeasured(float center_x, float y, const std::string &text, float scale, float max_width) {
-    float line_y = y;
-    const float line_advance = DebugTextLineAdvance(scale);
-    for (const std::string &line : WrapText(text, DebugTextWrapWidth(max_width, scale))) {
-      const float line_width = static_cast<float>(line.size()) * DebugTextPixelSize(scale);
-      DrawScaledDebugText(center_x - (line_width * 0.5f), line_y, line, scale);
-      line_y += line_advance;
-    }
-    return line_y;
-  }
-
-  void DrawButton(const SDL_FRect &rect, const std::string &label, bool primary) {
+  void DrawButton(const SDL_FRect &rect, const std::string &label, float text_size, bool primary) {
     SDL_SetRenderDrawColor(renderer_, primary ? 159 : 56, primary ? 202 : 64, primary ? 68 : 56, 255);
     SDL_RenderFillRect(renderer_, &rect);
     SDL_SetRenderDrawColor(renderer_, 229, 235, 219, 255);
     SDL_RenderRect(renderer_, &rect);
-    const float text_width = static_cast<float>(label.size()) * DebugTextPixelSize(kButtonTextScale);
-    const float text_height = DebugTextPixelSize(kButtonTextScale);
-    DrawScaledDebugText(rect.x + (rect.w - text_width) * 0.5f, rect.y + (rect.h - text_height) * 0.5f, label,
-                        kButtonTextScale);
+    const float text_width = MeasureTextLineWidth(label, text_size);
+    const float text_height = TextLineAdvance(text_size);
+    DrawTextLine(rect.x + (rect.w - text_width) * 0.5f,
+                 rect.y + (rect.h - text_height) * 0.5f,
+                 label, text_size, Color(229, 235, 219));
   }
 
   void AnimateProgress() {
@@ -1773,9 +1967,10 @@ private:
 
       const int percent = static_cast<int>(std::round(progress * 100.0f));
       const std::string value = std::to_string(percent) + "%";
-      const float value_width = static_cast<float>(value.size()) * DebugTextPixelSize(1.25f);
-      SDL_SetRenderDrawColor(renderer_, 229, 235, 219, 255);
-      DrawScaledDebugText(cx - value_width * 0.5f, cy - DebugTextPixelSize(1.25f) * 0.5f, value, 1.25f);
+      const float value_size = std::clamp(radius * 0.42f, 12.0f, 18.0f);
+      const float value_width = MeasureTextLineWidth(value, value_size);
+      DrawTextLine(cx - value_width * 0.5f, cy - TextLineAdvance(value_size) * 0.5f,
+                   value, value_size, Color(229, 235, 219));
     } else {
       const float tick = static_cast<float>(SDL_GetTicks() % 1200u) / 1200.0f;
       const float start = -1.57079632679f + tau * tick;
@@ -1798,10 +1993,21 @@ private:
     SDL_RenderClear(renderer_);
 
     const float center_x = static_cast<float>(width) * 0.5f;
+    const float size_reference = static_cast<float>(std::min(width, height));
+    const float headline_text_size =
+        ResponsiveTextSize(size_reference, 0.026f, kHeadlineTextMinPx, kHeadlineTextMaxPx);
+    const float detail_text_size =
+        ResponsiveTextSize(size_reference, 0.018f, kDetailTextMinPx, kDetailTextMaxPx);
+    const float progress_text_size =
+        ResponsiveTextSize(size_reference, 0.016f, kProgressTextMinPx, kProgressTextMaxPx);
+    const float button_text_size =
+        ResponsiveTextSize(size_reference, 0.017f, kButtonTextMinPx, kButtonTextMaxPx);
+    const float legal_text_size =
+        ResponsiveTextSize(size_reference, 0.0125f, kLegalTextMinPx, kLegalTextMaxPx);
     const float virtual_43_width = std::min(static_cast<float>(width), static_cast<float>(height) * (4.0f / 3.0f));
     const float legal_margin = 12.0f;
     const float legal_width = std::min<float>(virtual_43_width, static_cast<float>(width) - 96.0f);
-    const float legal_height = MeasureTextBlockHeight(kLegalText, kLegalTextScale, legal_width);
+    const float legal_height = MeasureTextBlockHeight(kLegalText, legal_text_size, legal_width);
     const float footer_top = static_cast<float>(height) - legal_height - legal_margin;
     const float content_top = 24.0f;
     const float content_bottom = footer_top - 22.0f;
@@ -1811,9 +2017,9 @@ private:
     const bool has_progress = !progress_label_.empty();
     const bool has_headline = !headline_.empty();
     const bool has_detail = !detail_.empty();
-    const float progress_height = has_progress ? MeasureTextBlockHeight(progress_label_, kProgressTextScale, status_width) : 0.0f;
-    const float headline_height = has_headline ? MeasureTextBlockHeight(headline_, kHeadlineTextScale, status_width) : 0.0f;
-    const float detail_height = has_detail ? MeasureTextBlockHeight(detail_, kDetailTextScale, status_width) : 0.0f;
+    const float progress_height = has_progress ? MeasureTextBlockHeight(progress_label_, progress_text_size, status_width) : 0.0f;
+    const float headline_height = has_headline ? MeasureTextBlockHeight(headline_, headline_text_size, status_width) : 0.0f;
+    const float detail_height = has_detail ? MeasureTextBlockHeight(detail_, detail_text_size, status_width) : 0.0f;
 
     float text_block_height = 0.0f;
     if (has_progress)
@@ -1879,19 +2085,19 @@ private:
 
     float text_y = spinner_y + spinner_radius + gap_spinner_text;
     if (has_progress) {
-      SDL_SetRenderDrawColor(renderer_, 155, 198, 66, 255);
-      text_y = DrawCenteredTextMeasured(center_x, text_y, progress_label_, kProgressTextScale, status_width);
+      text_y = DrawCenteredTextMeasured(center_x, text_y, progress_label_, progress_text_size,
+                                        status_width, Color(155, 198, 66));
       text_y += 4.0f;
     }
     if (has_headline) {
-      SDL_SetRenderDrawColor(renderer_, 229, 235, 219, 255);
-      text_y = DrawCenteredTextMeasured(center_x, text_y, headline_, kHeadlineTextScale, status_width);
+      text_y = DrawCenteredTextMeasured(center_x, text_y, headline_, headline_text_size,
+                                        status_width, Color(229, 235, 219));
     }
     if (has_detail) {
-      SDL_SetRenderDrawColor(renderer_, 170, 179, 163, 255);
       if (has_headline || has_progress)
         text_y += 4.0f;
-      text_y = DrawCenteredTextMeasured(center_x, text_y, detail_, kDetailTextScale, status_width);
+      text_y = DrawCenteredTextMeasured(center_x, text_y, detail_, detail_text_size,
+                                        status_width, Color(170, 179, 163));
     }
 
     if (prompt_active_) {
@@ -1899,12 +2105,12 @@ private:
       const float button_y = text_y + gap_text_buttons;
       install_button_ = SDL_FRect{center_x - total_button_width * 0.5f, button_y, kButtonWidth, kButtonHeight};
       exit_button_ = SDL_FRect{install_button_.x + kButtonWidth + kButtonGap, button_y, kButtonWidth, kButtonHeight};
-      DrawButton(install_button_, "Install", true);
-      DrawButton(exit_button_, "Exit", false);
+      DrawButton(install_button_, "Install", button_text_size, true);
+      DrawButton(exit_button_, "Exit", button_text_size, false);
     }
 
-    SDL_SetRenderDrawColor(renderer_, 160, 170, 150, 255);
-    DrawCenteredTextBlock(center_x, footer_top, kLegalText, kLegalTextScale, legal_width);
+    DrawCenteredTextBlock(center_x, footer_top, kLegalText, legal_text_size,
+                          legal_width, Color(160, 170, 150));
 
     SDL_RenderPresent(renderer_);
   }
@@ -1933,6 +2139,11 @@ private:
   uint64_t last_progress_tick_ = 0;
   SDL_FRect install_button_{};
   SDL_FRect exit_button_{};
+#if USE_SDL3_TTF
+  bool owns_ttf_ = false;
+  fs::path ttf_font_path_;
+  std::map<int, TTF_Font *> ttf_fonts_;
+#endif
 };
 
 class UiHandle {

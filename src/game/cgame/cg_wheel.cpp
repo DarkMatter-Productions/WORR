@@ -78,6 +78,12 @@ constexpr int32_t UI_RIGHT = 1 << 1;
 constexpr int32_t UI_CENTER = UI_LEFT | UI_RIGHT;
 constexpr int32_t UI_DROPSHADOW = 1 << 4;
 
+extern "C" int UI_FontDrawStringSized(int x, int y, int flags, size_t maxChars,
+                                      const char *string, rgba_t color, int size);
+extern "C" int UI_FontMeasureStringSized(int flags, size_t maxChars, const char *string,
+                                         int *out_height, int size);
+extern "C" int UI_FontLineHeightSized(int size);
+
 constexpr int32_t STAT_MINUS = 10; // num frame for '-' stats digit
 static constexpr const char *sb_nums[2][11] = {
     {
@@ -1677,6 +1683,17 @@ static void CG_WeaponBar_GetScaledCharSize(float scale, int *out_w, int *out_h)
     if (scale <= 0.0f)
         scale = 1.0f;
 
+    int font_size = max(1, CG_Rint(CONCHAR_HEIGHT * scale));
+    int font_h = UI_FontLineHeightSized(font_size);
+    int font_w = UI_FontMeasureStringSized(0, 1, "0", nullptr, font_size);
+    if (font_w > 0 && font_h > 0) {
+        if (out_w)
+            *out_w = font_w;
+        if (out_h)
+            *out_h = font_h;
+        return;
+    }
+
     if (out_w)
         *out_w = max(1, CG_Rint(CONCHAR_WIDTH * scale));
     if (out_h)
@@ -1688,6 +1705,14 @@ static int CG_WeaponBar_GetScaledTextWidth(const char *text, float scale)
     if (!text || !*text)
         return 0;
 
+    if (scale <= 0.0f)
+        scale = 1.0f;
+
+    int font_size = max(1, CG_Rint(CONCHAR_HEIGHT * scale));
+    int font_w = UI_FontMeasureStringSized(0, strlen(text), text, nullptr, font_size);
+    if (font_w > 0)
+        return font_w;
+
     int char_w = 0;
     CG_WeaponBar_GetScaledCharSize(scale, &char_w, nullptr);
     return (int)strlen(text) * char_w;
@@ -1695,7 +1720,26 @@ static int CG_WeaponBar_GetScaledTextWidth(const char *text, float scale)
 
 static void CG_WeaponBar_DrawScaledString(int x, int y, float scale, int flags, const rgba_t &color, const char *text)
 {
+    if (!text || !*text)
+        return;
+
+    if (scale <= 0.0f)
+        scale = 1.0f;
+
+    int font_size = max(1, CG_Rint(CONCHAR_HEIGHT * scale));
+    if (UI_FontMeasureStringSized(0, strlen(text), text, nullptr, font_size) > 0) {
+        UI_FontDrawStringSized(x, y, flags, MAX_STRING_CHARS, text, color, font_size);
+        return;
+    }
+
     CG_DrawScaledString(x, y, scale, flags, color, text);
+}
+
+static void CG_WeaponBar_DrawScaledInt(int x, int y, float scale, int flags, const rgba_t &color, int value)
+{
+    char buffer[16];
+    CG_Snprintf(buffer, sizeof(buffer), "%i", value);
+    CG_WeaponBar_DrawScaledString(x, y, scale, flags, color, buffer);
 }
 
 static int CG_WeaponBar_FormatCount(int value, char *out, size_t out_size)
@@ -1971,12 +2015,12 @@ static void CG_WeaponBar_DrawHorizontalScaled(const player_state_t *ps, int bar_
             int ammo_offset = max(max(1, CG_Rint(icon_h * WEAPON_BAR_AMMO_ABOVE_FRAC)), count_h + ammo_pad);
             int count_y = ammo_above ? (bar_y - ammo_offset) : (bar_y + icon_h + ammo_pad);
 
-            CG_DrawScaledInt(bar_x + (icon_w / 2),
-                             count_y,
-                             ammo_scale,
-                             UI_DROPSHADOW | UI_CENTER,
-                             color,
-                             count);
+            CG_WeaponBar_DrawScaledInt(bar_x + (icon_w / 2),
+                                       count_y,
+                                       ammo_scale,
+                                       UI_DROPSHADOW | UI_CENTER,
+                                       color,
+                                       count);
         }
 
         bar_x += icon_w + pad;
@@ -2183,12 +2227,12 @@ static void CG_WeaponBar_DrawQ2RTimed(const player_state_t *ps)
             int count = CG_Wheel_GetAmmoCount(ps, weap->ammo_index);
             rgba_t color = CG_WeaponBar_CountColor(weap, selected, count);
 
-            CG_DrawScaledInt(bar_x + (WEAPON_BAR_ICON_SIZE / 2),
-                             bar_y + WEAPON_BAR_ICON_SIZE + 2,
-                             ammo_scale,
-                             UI_DROPSHADOW | UI_CENTER,
-                             color,
-                             count);
+            CG_WeaponBar_DrawScaledInt(bar_x + (WEAPON_BAR_ICON_SIZE / 2),
+                                       bar_y + WEAPON_BAR_ICON_SIZE + 2,
+                                       ammo_scale,
+                                       UI_DROPSHADOW | UI_CENTER,
+                                       color,
+                                       count);
         }
     }
 }

@@ -81,6 +81,7 @@ typedef struct {
     HDC     dc;
     WNDPROC bootstrap_wndproc;
     bool    adopted_bootstrap_window;
+    bool    fullscreen_exclusive_active;
 
     DEVMODE  dm;
 

@@ -32,6 +32,7 @@ static cvar_t   *win_noresize;
 static cvar_t   *win_notitle;
 static cvar_t   *win_alwaysontop;
 static cvar_t   *win_noborder;
+static cvar_t   *win_fullscreen_capture_friendly;
 static UINT     win_char_codepage;
 
 typedef struct {
@@ -237,6 +238,11 @@ static void Win_ModeChanged(void)
 static bool win_fullscreen_exclusive(void)
 {
     return !r_fullscreen_exclusive || r_fullscreen_exclusive->integer;
+}
+
+static bool win_capture_friendly_fullscreen(void)
+{
+    return !win_fullscreen_capture_friendly || win_fullscreen_capture_friendly->integer;
 }
 
 typedef struct {
@@ -638,6 +644,7 @@ static LONG set_fullscreen_mode(void)
 
     win.dm = dm;
     win.flags |= QVF_FULLSCREEN;
+    win.fullscreen_exclusive_active = true;
     Win_SetPosition();
     Win_ModeChanged();
     win_force_activate_adopted_window();
@@ -672,6 +679,7 @@ static void set_borderless_mode(void)
 
     memset(&win.dm, 0, sizeof(win.dm));
     win.flags |= QVF_FULLSCREEN;
+    win.fullscreen_exclusive_active = false;
     Win_SetPosition();
     Win_ModeChanged();
     win_force_activate_adopted_window();
@@ -699,7 +707,7 @@ void Win_SetMode(void)
 {
     // set full screen mode if requested
     if (r_fullscreen->integer > 0) {
-        if (win_span_all_monitors() || !win_fullscreen_exclusive()) {
+        if (win_span_all_monitors() || !win_fullscreen_exclusive() || win_capture_friendly_fullscreen()) {
             ChangeDisplaySettings(NULL, 0);
             set_borderless_mode();
             return;
@@ -736,6 +744,7 @@ void Win_SetMode(void)
 
     memset(&win.dm, 0, sizeof(win.dm));
     win.flags &= ~QVF_FULLSCREEN;
+    win.fullscreen_exclusive_active = false;
     Win_SetPosition();
     Win_ModeChanged();
     win_force_activate_adopted_window();
@@ -822,14 +831,14 @@ static void Win_Activate(WPARAM wParam)
         }
     }
 
-    if (win.flags & QVF_FULLSCREEN) {
+    if ((win.flags & QVF_FULLSCREEN) && win.fullscreen_exclusive_active) {
         if (active == ACT_ACTIVATED) {
             ShowWindow(win.wnd, SW_RESTORE);
         } else {
             ShowWindow(win.wnd, SW_MINIMIZE);
         }
 
-        if (win_flip_on_switch->integer && win_fullscreen_exclusive()) {
+        if (win_flip_on_switch->integer) {
             if (active == ACT_ACTIVATED) {
                 if (!mode_is_current(&win.dm)) {
                     ChangeDisplaySettings(&win.dm, CDS_FULLSCREEN);
@@ -1818,6 +1827,8 @@ void Win_Init(void)
     win_alwaysontop->changed = win_style_changed;
     win_noborder = Cvar_Get("win_noborder", "0", 0);
     win_noborder->changed = win_style_changed;
+    win_fullscreen_capture_friendly =
+        Cvar_Get("win_fullscreen_capture_friendly", "1", CVAR_ARCHIVE);
 
     win_disablewinkey_changed(win_disablewinkey);
     Key_SetCharEvents(false);
