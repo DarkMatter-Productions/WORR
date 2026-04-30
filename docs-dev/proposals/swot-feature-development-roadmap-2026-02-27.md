@@ -6,6 +6,23 @@ Date: 2026-02-27
 Create a repository-grounded SWOT and convert it into actionable, task-based project roadmaps that can guide coordinated team execution.
 
 ## Status Updates
+- `FR-02-T09` / `DV-02-T06` In Progress:
+  - Added a renderer-neutral shadow frontend contract (`shadow_light_desc_t`, `shadow_view_desc_t`, `shadow_caster_t`, `shadow_cache_key_t`, `shadow_page_id_t`, `shadow_backend_ops_t`) shared by GL, native Vulkan, and RTX builds.
+  - Wired GL and native Vulkan frame paths into the shared frontend for deterministic candidate light selection, backend-resolved caster bounds, per-view caster index spans, light-influence cluster dirtying, page residency keys, dirty reasons, freeze modes, optional sun cascade descriptors, and main-view visibility mutation guardrails.
+  - Added `sv_shadow_strict_replication` for multiplayer servers that prefer strict normal-PVS shadow owner replication over the default PVS2 shadow relevance expansion.
+  - Added a CI/source guardrail script that blocks the removed no-slot fallback and sticky slot-churn shadow cvars/paths from returning.
+  - Implementation log: `docs-dev/renderer/shadowmapping-replacement-baseline.md`.
+- `FR-03-T09` Done:
+  - Added shared archived `r_borderless` tri-state window behavior for renderer/video backends (`0` exclusive where supported, `1` borderless fullscreen, `2` always borderless in windowed mode too).
+  - Updated the Video and Multi-Monitor menu selectors to expose `r_borderless` instead of the legacy `r_fullscreen_exclusive` toggle, while keeping the legacy cvar as a no-archive runtime mirror.
+  - Aligned the bootstrap session shell with `r_borderless` so startup window mode resolution matches the engine's renderer window policy.
+  - Implementation log: `docs-dev/shared-borderless-cvar-2026-04-29.md`.
+- `FR-04-T08` Done:
+  - Added a Quake Champions-inspired top HUD for cgame multiplayer modes, covering FFA leader/chaser rows, team score panels, duel player panels, match timer, time limit, warmup/countdown, timeout, overtime, and intermission states.
+  - Extended the sgame HUD blob with match metadata and optional scoreboard-row health/armor vitals so spectator duel panels can show player resources without changing legacy layout compatibility.
+  - Refined the warmup timer to match the QC state/clock/timelimit stack, made FFA row selection mirror the existing minihud's top-two-or-viewed-player behavior, and serialized row rank/name data so top rows do not fall back to generic labels.
+  - Fixed a screenshot-validation crash by draining renderer-owned async callbacks before external renderer shutdown/unload.
+  - Implementation logs: `docs-dev/quake-champions-top-hud-2026-04-28.md`, `docs-dev/renderer-async-shutdown-drain-2026-04-29.md`.
 - `DV-02-T02` In Progress:
   - Nightly Linux/macOS jobs now install explicit Vulkan toolchain dependencies so renderer artifacts do not depend on hosted-image luck.
   - Windows MSYS2 nightlies/releases now install Vulkan headers/loader plus `glslangValidator` so Vulkan/RTX renderer artifacts build in CI.
@@ -118,11 +135,11 @@ Create a repository-grounded SWOT and convert it into actionable, task-based pro
   - The worker/apply path can now complete metadata-only syncs without downloading a package, and local validation repaired a deliberately missing dedicated engine DLL through the public bootstrap update flow.
   - Added a Windows client shared-window handoff slice so the hosted engine can adopt the bootstrap-owned splash window instead of creating a second native client window on that path.
   - Added an in-process client sync/apply path so approved client synchronization can stay in the launcher, restore managed files, and enter the hosted engine in the same bootstrap-owned window when the running bootstrap executable itself is not being replaced.
-  - Replaced the old fixed-size placeholder splash with a display-profile-driven SDL3 session shell that resolves `r_geometry`, `r_fullscreen`, `r_fullscreen_exclusive`, `r_monitor_mode`, `r_display`, `autoexec.cfg`, and forwarded `+set` overrides before creating the client window.
+  - Replaced the old fixed-size placeholder splash with a display-profile-driven SDL3 session shell that resolves `r_geometry`, `r_fullscreen`, `r_borderless`, legacy `r_fullscreen_exclusive`, `r_monitor_mode`, `r_display`, `autoexec.cfg`, and forwarded `+set` overrides before creating the client window.
   - The bootstrap now creates the client shell through SDL3's hidden property-based window path, applies the real fullscreen/window mode before showing it, and logs the resolved session-shell mode for validation.
   - Extended `tools/release/client_bootstrap_sync_smoke.py` so local validation can assert both the in-process repair/sync handoff and the expected bootstrap session-shell window mode.
-  - The bootstrap splash now renders text through SDL3_ttf first, uses readable 12-16 px legal fine print, shortens the no-update splash dwell, disables Windows shared-HWND handoff so Win11 thumbnails/PrintScreen sample the renderer-owned engine window, keeps the transient splash out of the taskbar preview surface, routes fullscreen through capture-friendly borderless mode by default, clears the renderer-owned backbuffer under non-transparent menus, and consumes the startup transition marker as a one-shot so stale bootstrap frames cannot reappear behind the main menu.
-  - Implementation logs: `docs-dev/client-bootstrap-session-shell-architecture-2026-03-25.md`, `docs-dev/bootstrap-session-shell-sync-refactor-2026-03-25.md`, `docs-dev/bootstrap-windows-client-shared-window-adoption-2026-03-25.md`, `docs-dev/bootstrap-client-in-process-sync-handoff-2026-03-25.md`, `docs-dev/bootstrap-session-shell-display-profile-window-creation-2026-03-25.md`, `docs-dev/ui-bootstrap-font-handoff-2026-04-27.md`.
+  - The bootstrap splash now renders text through SDL3_ttf first, uses readable 12-16 px legal fine print, shortens the no-update splash dwell, disables Windows shared-HWND handoff so Win11 thumbnails/PrintScreen sample the renderer-owned engine window, keeps the transient splash out of the taskbar preview surface, routes fullscreen through `r_borderless 1` by default, clears the renderer-owned backbuffer under non-transparent menus, and consumes the startup transition marker as a one-shot so stale bootstrap frames cannot reappear behind the main menu.
+  - Implementation logs: `docs-dev/client-bootstrap-session-shell-architecture-2026-03-25.md`, `docs-dev/bootstrap-session-shell-sync-refactor-2026-03-25.md`, `docs-dev/bootstrap-windows-client-shared-window-adoption-2026-03-25.md`, `docs-dev/bootstrap-client-in-process-sync-handoff-2026-03-25.md`, `docs-dev/bootstrap-session-shell-display-profile-window-creation-2026-03-25.md`, `docs-dev/ui-bootstrap-font-handoff-2026-04-27.md`, `docs-dev/shared-borderless-cvar-2026-04-29.md`.
 - `DV-08-T10` Done:
   - Repaired the tracked vendored libcurl wrap patch so bootstrap-enabled local Windows builds now succeed against the `curl-8.18.0` fallback instead of failing on stale 8.15-era source paths.
   - Fixed the bootstrap updater's Windows `min`/`max` macro collision so the launcher/worker binaries compile cleanly with the vendored fallback enabled.
@@ -226,6 +243,8 @@ Create a repository-grounded SWOT and convert it into actionable, task-based pro
   - Expanded high-visibility black text backgrounds from centerprint-specific contrast bars to shared HUD/menu font wrappers under the single `ui_high_visibility_text` cvar. Added Options -> Accessibility controls and `ui_text_typeface` (`legacy`, `KEX`, `TrueType`, default TrueType), with high-visibility text forcing the effective typeface to TrueType.
   - Implementation log: `docs-dev/ui-bootstrap-font-handoff-2026-04-27.md`.
   - Stabilized fullscreen/resizable TTF handling so framebuffer size changes refresh font raster pixel height without changing the assigned font kind, expanded shared font-generation invalidation to console and cached weapon-bar paths, and fixed multiline screen/cgame TTF row stepping to use real font line heights.
+  - Fixed a HUD font-role mix-up in the cgame SCR bridge so HUD helpers no longer swap between different TTF families (`scr.font` vs. the readable screen/UI font path) as layout or mode paths change.
+  - Fixed cgame menu font bootstrap so JSON-selected menu fonts bind immediately through canonical `cl_font` resolution instead of lingering on the startup default until a fullscreen/windowed renderer restart.
   - Implementation log: `docs-dev/ttf-fullscreen-font-pixel-scale-refresh-2026-04-28.md`.
 
 ## Baseline Snapshot (Repository-Derived)
@@ -396,6 +415,12 @@ Tasks:
   Dependency: none. Priority: P0.
 - [x] `FR-02-T08` Harden OpenGL startup fallback and clean local `q2dm1` launch log noise.  
   Dependency: none. Priority: P1.
+- [ ] `FR-02-T09` Implement renderer-neutral shadowmapping frontend, deterministic page residency, and no-fallback guardrails.  
+  Dependency: `FR-02-T01`. Priority: P0.
+- [ ] `FR-02-T10` Implement native OpenGL shadow page allocation/render/sample backend under the shared frontend.  
+  Dependency: `FR-02-T09`. Priority: P0.
+- [ ] `FR-02-T11` Implement native Vulkan raster shadow page allocation/render/sample backend under the shared frontend.  
+  Dependency: `FR-02-T09`, `FR-01-T07`. Priority: P0.
 
 ## Epic FR-03: JSON UI Rework Completion
 Objective: complete modern menu coverage and remove remaining UX gaps for core settings and flows.
@@ -452,6 +477,8 @@ Tasks:
   Dependency: `FR-04-T02`. Priority: P1.
 - [ ] `FR-04-T07` Provide bot tuning cvars in preferred naming convention (`sg_` for new controls).  
   Dependency: `FR-04-T01`. Priority: P2.
+- [x] `FR-04-T08` Recreate a modern competitive top HUD for FFA/team/duel, including match timer, time limit, warmup/countdown state, player/team assets, and spectator duel vitals.
+  Dependency: none. Priority: P1.
 
 ## Epic FR-05: Asset and Format Expansion
 Objective: expand supported content formats without breaking current workflows.
@@ -591,6 +618,8 @@ Tasks:
   Dependency: `DV-02-T01`. Priority: P1.
 - [ ] `DV-02-T05` Add failure triage guide and flaky test quarantine workflow.  
   Dependency: `DV-02-T01`. Priority: P2.
+- [ ] `DV-02-T06` Add renderer guardrail scans for removed shadow fallback/cache paths.  
+  Dependency: `DV-02-T01`. Priority: P1.
 
 ## Epic DV-03: Automated Test Strategy
 Objective: expand meaningful automated tests across protocol, gameplay, renderer, and tooling.
@@ -691,6 +720,8 @@ Tasks:
   Dependency: none. Priority: P2.
 - [ ] `DV-07-T04` Add user-doc parity pass whenever user-visible cvars/features are changed.  
   Dependency: none. Priority: P1.
+- [ ] `DV-07-T05` Keep the canonical shadowmapping replacement baseline synchronized with implementation status.  
+  Dependency: `FR-02-T09`. Priority: P1.
 
 ## Epic DV-08: Release and Updater Hardening
 Objective: ensure staged artifacts, update metadata, and updater behavior remain reliable under growth.

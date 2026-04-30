@@ -1207,7 +1207,7 @@ static void ParseGlobals(json_parse_t *parser)
                 font_value = (ref && ref->string) ? ref->string : "";
             }
             if (font_value && *font_value)
-                Cvar_Set("ui_font", font_value);
+                Cvar_SetEx("ui_font", font_value, FROM_CONSOLE);
             uis.fontHandle = UI_FontLegacyHandle();
         } else if (Json_Strcmp(parser, "cursor") == 0) {
             Json_Next(parser);

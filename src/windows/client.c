@@ -32,7 +32,6 @@ static cvar_t   *win_noresize;
 static cvar_t   *win_notitle;
 static cvar_t   *win_alwaysontop;
 static cvar_t   *win_noborder;
-static cvar_t   *win_fullscreen_capture_friendly;
 static UINT     win_char_codepage;
 
 typedef struct {
@@ -135,6 +134,14 @@ static bool win_ime_ignore_char;
 
 static const char *win_bootstrap_hwnd_env = "WORR_BOOTSTRAP_WIN32_HWND";
 
+static int win_borderless_mode(void)
+{
+    if (!r_borderless)
+        return 1;
+
+    return Q_clip(r_borderless->integer, 0, 2);
+}
+
 /*
 ===============================================================================
 
@@ -159,13 +166,15 @@ static void Win_SetPosition(void)
         after = HWND_TOPMOST;
         style |= WS_POPUP;
     } else {
+        bool borderless = win_borderless_mode() == 2;
+
         if (win_alwaysontop->integer) {
             after = HWND_TOPMOST;
         } else {
             after = HWND_NOTOPMOST;
         }
         style |= WS_OVERLAPPED;
-        if (win_noborder->integer) {
+        if (borderless || win_noborder->integer) {
             style |= WS_POPUP | WS_MINIMIZEBOX | WS_MAXIMIZEBOX; // allow minimize and maximize hotkeys.
         } else if (win_notitle->integer) {
             if (win_noresize->integer) {
@@ -237,12 +246,8 @@ static void Win_ModeChanged(void)
 
 static bool win_fullscreen_exclusive(void)
 {
-    return !r_fullscreen_exclusive || r_fullscreen_exclusive->integer;
-}
-
-static bool win_capture_friendly_fullscreen(void)
-{
-    return !win_fullscreen_capture_friendly || win_fullscreen_capture_friendly->integer;
+    return win_borderless_mode() == 0 &&
+           (!r_fullscreen_exclusive || r_fullscreen_exclusive->integer);
 }
 
 typedef struct {
@@ -707,7 +712,7 @@ void Win_SetMode(void)
 {
     // set full screen mode if requested
     if (r_fullscreen->integer > 0) {
-        if (win_span_all_monitors() || !win_fullscreen_exclusive() || win_capture_friendly_fullscreen()) {
+        if (win_span_all_monitors() || !win_fullscreen_exclusive()) {
             ChangeDisplaySettings(NULL, 0);
             set_borderless_mode();
             return;
@@ -1827,8 +1832,7 @@ void Win_Init(void)
     win_alwaysontop->changed = win_style_changed;
     win_noborder = Cvar_Get("win_noborder", "0", 0);
     win_noborder->changed = win_style_changed;
-    win_fullscreen_capture_friendly =
-        Cvar_Get("win_fullscreen_capture_friendly", "1", CVAR_ARCHIVE);
+    Cvar_Get("win_fullscreen_capture_friendly", "1", CVAR_ARCHIVE | CVAR_NOARCHIVE);
 
     win_disablewinkey_changed(win_disablewinkey);
     Key_SetCharEvents(false);

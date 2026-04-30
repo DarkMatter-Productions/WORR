@@ -125,12 +125,129 @@ static uint32_t BuildScoreboardFlags() {
   return flags;
 }
 
+static hud_match_phase_t BuildHudMatchPhase() {
+  if (level.intermission.time)
+    return HUD_MATCH_PHASE_INTERMISSION;
+  if (level.timeoutActive > 0_ms)
+    return HUD_MATCH_PHASE_TIMEOUT;
+
+  switch (level.matchState) {
+  case MatchState::Warmup_Default:
+  case MatchState::Warmup_ReadyUp:
+    return HUD_MATCH_PHASE_WARMUP;
+  case MatchState::Countdown:
+    return HUD_MATCH_PHASE_COUNTDOWN;
+  case MatchState::In_Progress:
+    return HUD_MATCH_PHASE_IN_PROGRESS;
+  case MatchState::Initial_Delay:
+    return HUD_MATCH_PHASE_WARMUP;
+  case MatchState::None:
+  default:
+    return HUD_MATCH_PHASE_NONE;
+  }
+}
+
+static int QuantizeHudMilliseconds(int64_t milliseconds, bool countDown) {
+  if (milliseconds == 0)
+    return 0;
+
+  const int64_t absMs = milliseconds < 0 ? -milliseconds : milliseconds;
+  int64_t seconds = countDown ? ((absMs + 999) / 1000) : (absMs / 1000);
+  if (seconds == 0)
+    seconds = 1;
+
+  const int64_t quantized = seconds * 1000;
+  return static_cast<int>(milliseconds < 0 ? -quantized : quantized);
+}
+
+static int BuildHudMatchMilliseconds(hud_match_phase_t phase) {
+  if (phase == HUD_MATCH_PHASE_COUNTDOWN)
+    return QuantizeHudMilliseconds(
+        std::max<int64_t>(0, level.countdownTimerCheck.milliseconds()), true);
+  if (phase == HUD_MATCH_PHASE_TIMEOUT)
+    return QuantizeHudMilliseconds(
+        std::max<int64_t>(0, level.timeoutActive.milliseconds()), true);
+  if (phase != HUD_MATCH_PHASE_IN_PROGRESS &&
+      phase != HUD_MATCH_PHASE_INTERMISSION)
+    return 0;
+
+  const bool hasTimeLimit = timeLimit && timeLimit->value > 0.f;
+  const GameTime matchTime =
+      hasTimeLimit
+          ? (level.levelStartTime + GameTime::from_min(timeLimit->value) +
+             level.overtime - level.time)
+          : (level.time - level.levelStartTime);
+  return QuantizeHudMilliseconds(matchTime.milliseconds(), hasTimeLimit);
+}
+
+static int BuildHudTimeLimitMilliseconds() {
+  if (!timeLimit || timeLimit->value <= 0.f)
+    return 0;
+  return static_cast<int>(timeLimit->value * 60000.0f);
+}
+
+struct scoreboard_vitals_t {
+  int health = 0;
+  int healthMax = 0;
+  int armor = 0;
+  int armorMax = 0;
+};
+
+static scoreboard_vitals_t BuildScoreboardVitals(int clientNum) {
+  scoreboard_vitals_t vitals;
+  if (clientNum < 0 || clientNum >= static_cast<int>(game.maxClients))
+    return vitals;
+
+  gentity_t *ent = g_entities + 1 + clientNum;
+  if (!ent->inUse || !ent->client || !ClientIsPlaying(ent->client))
+    return vitals;
+
+  vitals.health = std::max(0, ent->health);
+  vitals.healthMax = std::max(1, ent->maxHealth);
+
+  const item_id_t armorIndex = ArmorIndex(ent);
+  if (armorIndex) {
+    const Item *armor = GetItemByIndex(armorIndex);
+    vitals.armor = std::max(0, ent->client->pers.inventory[armorIndex]);
+    if (armor) {
+      const int armorType = static_cast<int>(armor->quantity);
+      if (armorType >= 0 && armorType < NUM_ARMOR_TYPES) {
+        vitals.armorMax =
+            std::max(1, armor_stats[game.ruleset][armorType].max_count);
+      }
+    }
+  }
+
+  if (vitals.armor > 0 && vitals.armorMax <= 0)
+    vitals.armorMax = std::max(1, vitals.armor);
+  if (vitals.armor > vitals.armorMax)
+    vitals.armorMax = vitals.armor;
+  if (vitals.health > vitals.healthMax)
+    vitals.healthMax = vitals.health;
+
+  return vitals;
+}
+
 static void AppendScoreboardRow(std::string &section, int clientNum, int score,
                                 int ping, int team, uint32_t rowFlags,
                                 int skinIcon) {
+  const scoreboard_vitals_t vitals = BuildScoreboardVitals(clientNum);
+  int rank = 0;
+  std::string playerName;
+  if (clientNum >= 0 && clientNum < static_cast<int>(game.maxClients)) {
+    gclient_t *cl = &game.clients[clientNum];
+    if (cl->pers.currentRank >= 0)
+      rank = (cl->pers.currentRank & ~RANK_TIED_FLAG) + 1;
+    playerName = HudBlob_QuoteToken(cl->sess.netName);
+  } else {
+    playerName = HudBlob_QuoteToken("");
+  }
+
   fmt::format_to(std::back_inserter(section),
-                 FMT_STRING("sb_row {} {} {} {} {} {}\n"), clientNum, score,
-                 std::min(ping, 999), team, rowFlags, skinIcon);
+                 FMT_STRING("sb_row {} {} {} {} {} {} {} {} {} {} {} {}\n"),
+                 clientNum, score, std::min(ping, 999), team, rowFlags,
+                 skinIcon, vitals.health, vitals.healthMax, vitals.armor,
+                 vitals.armorMax, rank, playerName);
 }
 
 static std::string BuildScoreboardSection() {
@@ -145,9 +262,15 @@ static std::string BuildScoreboardSection() {
   const int blueScore = level.teamScores[static_cast<int>(Team::Blue)];
   const std::string gametype = HudBlob_QuoteToken(level.gametype_name.data());
   const bool in_progress = (level.matchState == MatchState::In_Progress);
+  const hud_match_phase_t matchPhase = BuildHudMatchPhase();
 
   std::string section;
   section.reserve(1024);
+  fmt::format_to(std::back_inserter(section),
+                 FMT_STRING("match_meta {} {} {}\n"),
+                 static_cast<int>(matchPhase),
+                 BuildHudMatchMilliseconds(matchPhase),
+                 BuildHudTimeLimitMilliseconds());
   fmt::format_to(std::back_inserter(section),
                  FMT_STRING("sb_meta {} {} {} {} {} {}\n"),
                  static_cast<int>(mode), flags, GT_ScoreLimit(), redScore,
@@ -292,6 +415,15 @@ static std::string BuildScoreboardSection() {
   }
 
   return section;
+}
+
+void UpdateMultiplayerHudBlob() {
+  if (!deathmatch->integer) {
+    G_HudBlob_ClearScoreboardSection();
+    return;
+  }
+
+  G_HudBlob_SetScoreboardSection(BuildScoreboardSection());
 }
 
 /*
@@ -1176,7 +1308,7 @@ void MultiplayerScoreboard(gentity_t *ent) {
   gentity_t *target =
       ent->client->follow.target ? ent->client->follow.target : ent;
 
-  G_HudBlob_SetScoreboardSection(BuildScoreboardSection());
+  UpdateMultiplayerHudBlob();
   DeathmatchScoreboardMessage(target, target->enemy);
 
   gi.unicast(ent, true);

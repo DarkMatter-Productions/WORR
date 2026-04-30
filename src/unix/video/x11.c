@@ -62,6 +62,7 @@ static struct {
         Atom    wm_state;
         Atom    fs;
         Atom    hidden;
+        Atom    motif_wm_hints;
     } atom;
 
     struct {
@@ -86,6 +87,16 @@ enum {
     QGLX_EXT_swap_control               = BIT(3),
     QGLX_EXT_swap_control_tear          = BIT(4),
 };
+
+typedef struct {
+    unsigned long   flags;
+    unsigned long   functions;
+    unsigned long   decorations;
+    long            input_mode;
+    unsigned long   status;
+} motif_wm_hints_t;
+
+#define MWM_HINTS_DECORATIONS   BIT(1)
 
 static unsigned glx_parse_extension_string(const char *s)
 {
@@ -368,6 +379,7 @@ static bool init(void)
     XSetWMProtocols(x11.dpy, x11.win, &x11.atom.delete, 1);
 
     x11.atom.wm_state = XA(_NET_WM_STATE);
+    x11.atom.motif_wm_hints = XA(_MOTIF_WM_HINTS);
 
     int nitems;
     Atom *list = get_prop_list(x11.root, XA(_NET_SUPPORTED), XA_ATOM, 32, &nitems);
@@ -480,17 +492,43 @@ static void set_fullscreen(bool fs)
     XSendEvent(x11.dpy, x11.root, False, SubstructureRedirectMask | SubstructureNotifyMask, &event);
 }
 
+static int x11_borderless_mode(void)
+{
+    if (!r_borderless)
+        return 1;
+
+    return Q_clip(r_borderless->integer, 0, 2);
+}
+
+static void set_decorated(bool decorated)
+{
+    motif_wm_hints_t hints = {
+        .flags = MWM_HINTS_DECORATIONS,
+        .decorations = decorated ? 1 : 0,
+    };
+
+    if (!x11.atom.motif_wm_hints)
+        return;
+
+    XChangeProperty(x11.dpy, x11.win, x11.atom.motif_wm_hints, x11.atom.motif_wm_hints,
+                    32, PropModeReplace, (unsigned char *)&hints, 5);
+}
+
 static void set_mode(void)
 {
+    bool fullscreen = r_fullscreen->integer != 0;
+
+    set_decorated(!(!fullscreen && x11_borderless_mode() == 2));
+
     x11.configured = false;
     if (!x11.mapped) {
-        if (r_fullscreen->integer && x11.atom.fs) {
+        if (fullscreen && x11.atom.fs) {
             XChangeProperty(x11.dpy, x11.win, x11.atom.wm_state, XA_ATOM, 32,
                             PropModeAppend, (unsigned char *)&x11.atom.fs, 1);
         }
         XMapWindow(x11.dpy, x11.win);
         x11.mapped = true;
-    } else if (r_fullscreen->integer) {
+    } else if (fullscreen) {
         set_fullscreen(true);
     } else if (x11.flags & QVF_FULLSCREEN) {
         set_fullscreen(false);

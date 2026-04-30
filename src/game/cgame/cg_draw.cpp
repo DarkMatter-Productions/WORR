@@ -126,6 +126,7 @@ static cvar_t *cg_obituary_fade;
 static cvar_t *cg_obituary_fade_legacy;
 static cvar_t *cg_draw_fps;
 static cvar_t *cg_draw_fps_legacy;
+static cvar_t *cg_draw_match_hud;
 static cvar_t *rtx_draw_debug;
 static cvar_t *rtx_debug_dlights_total;
 static cvar_t *rtx_debug_dlights_uploaded;
@@ -282,11 +283,17 @@ struct cg_hud_state_t {
 
 struct cg_scoreboard_row_t {
     int client = -1;
-    int score = 0;
+    int score = -999;
     int ping = 0;
     int team = -1;
     uint32_t flags = 0;
     int skin = 0;
+    int health = 0;
+    int health_max = 0;
+    int armor = 0;
+    int armor_max = 0;
+    int rank = 0;
+    std::string name;
 };
 
 struct cg_scoreboard_spec_t {
@@ -317,6 +324,13 @@ struct cg_scoreboard_data_t {
     bool layout_dirty = true;
 };
 
+struct cg_match_data_t {
+    bool valid = false;
+    hud_match_phase_t phase = HUD_MATCH_PHASE_NONE;
+    int time_ms = 0;
+    int time_limit_ms = 0;
+};
+
 struct cg_eou_row_t {
     std::string name;
     int kills = 0;
@@ -344,6 +358,7 @@ struct cg_fps_state_t {
 static cg_hud_blob_t cg_hud_blob;
 static cg_hud_state_t cg_hud_state;
 static cg_scoreboard_data_t cg_scoreboard;
+static cg_match_data_t cg_match;
 static cg_eou_data_t cg_eou;
 static cg_fps_state_t cg_fps_state;
 
@@ -380,6 +395,14 @@ static void CG_Scoreboard_Reset()
     cg_scoreboard.layout_dirty = true;
 }
 
+static void CG_Match_Reset()
+{
+    cg_match.valid = false;
+    cg_match.phase = HUD_MATCH_PHASE_NONE;
+    cg_match.time_ms = 0;
+    cg_match.time_limit_ms = 0;
+}
+
 static void CG_HudState_Reset()
 {
     cg_hud_state.game_style = game_style_t::GAME_STYLE_PVE;
@@ -402,6 +425,7 @@ static void CG_Hud_ParseBlob(cg_hud_blob_t &blob)
 {
     blob.flags = 0;
     CG_Scoreboard_Reset();
+    CG_Match_Reset();
     CG_EOU_Reset();
 
     const char *cursor = blob.blob.c_str();
@@ -417,6 +441,19 @@ static void CG_Hud_ParseBlob(cg_hud_blob_t &blob)
                 const char *value = COM_Parse(&s);
                 if (value[0])
                     blob.flags = static_cast<uint32_t>(strtoul(value, nullptr, 0));
+            } else if (!strcmp(token, "match_meta")) {
+                const char *phase_token = COM_Parse(&s);
+                const char *time_token = COM_Parse(&s);
+                const char *limit_token = COM_Parse(&s);
+
+                int phase = phase_token[0] ? atoi(phase_token) : 0;
+                if (phase < HUD_MATCH_PHASE_NONE || phase > HUD_MATCH_PHASE_INTERMISSION)
+                    phase = HUD_MATCH_PHASE_NONE;
+
+                cg_match.phase = static_cast<hud_match_phase_t>(phase);
+                cg_match.time_ms = time_token[0] ? atoi(time_token) : 0;
+                cg_match.time_limit_ms = limit_token[0] ? atoi(limit_token) : 0;
+                cg_match.valid = true;
             } else if (!strcmp(token, "sb_meta")) {
                 const char *mode_token = COM_Parse(&s);
                 const char *flags_token = COM_Parse(&s);
@@ -484,6 +521,32 @@ static void CG_Hud_ParseBlob(cg_hud_blob_t &blob)
                 row.team = team_token[0] ? atoi(team_token) : -1;
                 row.flags = row_flags_token[0] ? static_cast<uint32_t>(strtoul(row_flags_token, nullptr, 0)) : 0;
                 row.skin = skin_token[0] ? atoi(skin_token) : 0;
+                row.health = 0;
+                row.health_max = 0;
+                row.armor = 0;
+                row.armor_max = 0;
+                row.rank = 0;
+                row.name.clear();
+
+                const char *health_token = COM_Parse(&s);
+                if (health_token[0]) {
+                    const char *health_max_token = COM_Parse(&s);
+                    const char *armor_token = COM_Parse(&s);
+                    const char *armor_max_token = COM_Parse(&s);
+
+                    row.health = atoi(health_token);
+                    row.health_max = health_max_token[0] ? atoi(health_max_token) : 0;
+                    row.armor = armor_token[0] ? atoi(armor_token) : 0;
+                    row.armor_max = armor_max_token[0] ? atoi(armor_max_token) : 0;
+                }
+
+                const char *rank_token = COM_Parse(&s);
+                if (rank_token[0]) {
+                    row.rank = atoi(rank_token);
+                    const char *name_token = COM_Parse(&s);
+                    if (name_token[0])
+                        row.name = name_token;
+                }
 
                 if (cg_scoreboard.mode == SB_MODE_TEAM && row.team >= 0 && row.team < 2) {
                     cg_scoreboard.team_rows[static_cast<size_t>(row.team)].push_back(row);
@@ -590,9 +653,36 @@ static void CG_Hud_RebuildBlob(cg_hud_blob_t &blob)
     CG_Hud_ParseBlob(blob);
 }
 
+static bool CG_Hud_SyncBlobConfigStrings()
+{
+    std::string current_blob;
+    bool changed = false;
+
+    for (size_t i = 0; i < cg_hud_blob.segments.size(); ++i) {
+        const int config_index = CONFIG_HUD_BLOB + static_cast<int>(i);
+        const char *value = cgi.get_configString(config_index);
+        const char *safe_value = value ? value : "";
+        current_blob += safe_value;
+
+        if (cg_hud_blob.segments[i] != safe_value) {
+            cg_hud_blob.segments[i] = safe_value;
+            changed = true;
+        }
+    }
+
+    if (changed || cg_hud_blob.blob != current_blob) {
+        cg_hud_blob.blob = std::move(current_blob);
+        cg_hud_blob.dirty = false;
+        CG_Hud_ParseBlob(cg_hud_blob);
+        return true;
+    }
+
+    return false;
+}
+
 static void CG_Hud_EnsureBlobParsed()
 {
-    if (cg_hud_blob.dirty)
+    if (!CG_Hud_SyncBlobConfigStrings() && cg_hud_blob.dirty)
         CG_Hud_RebuildBlob(cg_hud_blob);
 }
 
@@ -605,13 +695,13 @@ static void CG_Hud_Reset()
     cg_hud_blob.dirty = false;
     CG_HudState_Reset();
     CG_Scoreboard_Reset();
+    CG_Match_Reset();
     CG_EOU_Reset();
 }
 
 static uint32_t CG_Hud_GetFlags()
 {
-    if (cg_hud_blob.dirty)
-        CG_Hud_RebuildBlob(cg_hud_blob);
+    CG_Hud_EnsureBlobParsed();
     return cg_hud_blob.flags;
 }
 
@@ -3516,6 +3606,24 @@ CG_ExecuteLayoutString
 
 ================
 */
+static bool CG_ShouldSuppressLegacyTopHudStat(int stat)
+{
+    if (!cg_draw_match_hud || !cg_draw_match_hud->integer)
+        return false;
+
+    switch (stat) {
+    case STAT_MATCH_STATE:
+    case STAT_COUNTDOWN:
+    case STAT_MINISCORE_FIRST_PIC:
+    case STAT_MINISCORE_FIRST_POS:
+    case STAT_MINISCORE_SECOND_PIC:
+    case STAT_MINISCORE_SECOND_POS:
+        return true;
+    default:
+        return false;
+    }
+}
+
 static void CG_ExecuteLayoutString (const char *s, vrect_t hud_vrect, vrect_t hud_safe, int32_t scale, int32_t playernum, const player_state_t *ps)
 {
     int     x, y;
@@ -3936,11 +4044,13 @@ static void CG_ExecuteLayoutString (const char *s, vrect_t hud_vrect, vrect_t hu
         {
             // if stmt
             token = COM_Parse (&s);
+            const int stat = atoi(token);
 
             if_depth++;
 
             // skip to endif
-            if (!skip_depth && !ps->stats[atoi(token)])
+            if (!skip_depth &&
+                (CG_ShouldSuppressLegacyTopHudStat(stat) || !ps->stats[stat]))
             {
                 skip_depth = true;
                 endif_depth = if_depth;
@@ -4763,6 +4873,687 @@ static void CG_Statusbar_AddSPExtras(cg_statusbar_builder_t &sb)
     sb.story();
 }
 
+static int CG_TopHud_VX(const vrect_t &hud_vrect, int32_t scale, float x)
+{
+    return Q_rint((hud_vrect.x + x) * scale);
+}
+
+static int CG_TopHud_VY(const vrect_t &hud_vrect, const vrect_t &hud_safe,
+                        int32_t scale, float y)
+{
+    return Q_rint((hud_vrect.y + y) * scale) + hud_safe.y;
+}
+
+static int CG_TopHud_VSize(float value, int32_t scale)
+{
+    return max(1, Q_rint(value * scale));
+}
+
+static void CG_TopHud_Fill(int x, int y, int w, int h, const rgba_t &color)
+{
+    if (w <= 0 || h <= 0)
+        return;
+    cgi.SCR_DrawColorPic(x, y, w, h, "_white", color);
+}
+
+static void CG_TopHud_FillV(const vrect_t &hud_vrect, const vrect_t &hud_safe,
+                            int32_t scale, float x, float y, float w, float h,
+                            const rgba_t &color)
+{
+    CG_TopHud_Fill(CG_TopHud_VX(hud_vrect, scale, x),
+                   CG_TopHud_VY(hud_vrect, hud_safe, scale, y),
+                   CG_TopHud_VSize(w, scale), CG_TopHud_VSize(h, scale),
+                   color);
+}
+
+static std::string CG_TopHud_FitText(const char *text, int scale, int max_width)
+{
+    if (!text || !*text)
+        return "";
+
+    if (cgi.SCR_MeasureFontString(text, scale).x <= max_width)
+        return text;
+
+    constexpr const char *ellipsis = "...";
+    const int ellipsis_width = cgi.SCR_MeasureFontString(ellipsis, scale).x;
+    const size_t chars = UTF8_CountChars(text, strlen(text));
+
+    for (size_t keep = chars; keep > 0; --keep) {
+        const size_t bytes = UTF8_OffsetForChars(text, keep);
+        std::string candidate(text, bytes);
+        candidate += ellipsis;
+        if (cgi.SCR_MeasureFontString(candidate.c_str(), scale).x <= max_width)
+            return candidate;
+        if (ellipsis_width > max_width)
+            break;
+    }
+
+    return ellipsis_width <= max_width ? ellipsis : "";
+}
+
+static std::string CG_TopHud_FormatClock(int milliseconds)
+{
+    const bool negative = milliseconds < 0;
+    int ms = negative ? -milliseconds : milliseconds;
+    int seconds = ms / 1000;
+    const int hours = seconds / 3600;
+    const int minutes = (seconds / 60) % 60;
+    seconds %= 60;
+
+    if (hours > 0) {
+        return G_Fmt("{}{}:{:02}:{:02}", negative ? "-" : "", hours, minutes,
+                     seconds).data();
+    }
+    return G_Fmt("{}{}:{:02}", negative ? "-" : "", minutes, seconds).data();
+}
+
+static std::string CG_TopHud_FormatCountdown(int seconds)
+{
+    if (seconds < 0)
+        seconds = 0;
+    return G_Fmt("{}:{:02}", seconds / 60, seconds % 60).data();
+}
+
+static const char *CG_TopHud_RowName(const cg_scoreboard_row_t &row,
+                                     const char *fallback)
+{
+    if (row.client >= 0 && row.client < MAX_CLIENTS) {
+        const char *name = cgi.CL_GetClientName(row.client);
+        if (name && *name)
+            return name;
+    }
+    if (!row.name.empty())
+        return row.name.c_str();
+    return fallback ? fallback : "";
+}
+
+static const char *CG_TopHud_RowIcon(const cg_scoreboard_row_t &row)
+{
+    const char *pic = "";
+    if (row.client >= 0 && row.client < MAX_CLIENTS)
+        pic = cgi.CL_GetClientPic(row.client);
+    if ((!pic || !*pic) && row.skin > 0 && cgi.CL_GetImageConfigString)
+        pic = cgi.CL_GetImageConfigString(row.skin);
+    return pic ? pic : "";
+}
+
+static bool CG_TopHud_IsSpectatorView(const player_state_t *ps)
+{
+    return ps && (ps->stats[STAT_SPECTATOR] || ps->stats[STAT_FOLLOWING]);
+}
+
+static void CG_TopHud_DrawPicBox(const char *pic, int x, int y, int size,
+                                 const rgba_t &border)
+{
+    if (!pic || !*pic || size <= 0)
+        return;
+
+    int w = 0;
+    int h = 0;
+    cgi.Draw_GetPicSize(&w, &h, pic);
+    if (w <= 0 || h <= 0)
+        return;
+
+    static constexpr rgba_t shade{ 0, 0, 0, 180 };
+    CG_TopHud_Fill(x - 1, y - 1, size + 2, size + 2, shade);
+    cgi.SCR_DrawPic(x, y, size, size, pic);
+    CG_TopHud_Fill(x - 1, y - 1, size + 2, 1, border);
+    CG_TopHud_Fill(x - 1, y + size, size + 2, 1, border);
+    CG_TopHud_Fill(x - 1, y, 1, size, border);
+    CG_TopHud_Fill(x + size, y, 1, size, border);
+}
+
+static void CG_TopHud_DrawAccentSlash(int x, int y, int w, int h,
+                                      const rgba_t &color, float angle)
+{
+    if (!cgi.SCR_DrawStretchRotatePic)
+        return;
+    cgi.SCR_DrawStretchRotatePic(x, y, w, h, color, angle, 0, 0, "_white");
+}
+
+static void CG_TopHud_DrawPanelFrame(int x, int y, int w, int h,
+                                     const rgba_t &accent, bool score_left)
+{
+    static constexpr rgba_t panel{ 4, 10, 14, 178 };
+    static constexpr rgba_t panel_dark{ 0, 0, 0, 145 };
+    rgba_t accent_soft = accent;
+    accent_soft.a = 105;
+
+    CG_TopHud_Fill(x, y, w, h, panel);
+    CG_TopHud_Fill(x, y, w, 1, accent);
+    CG_TopHud_Fill(x, y + h - 2, w, 2, panel_dark);
+
+    const int slash_w = max(2, w / 26);
+    if (score_left)
+        CG_TopHud_DrawAccentSlash(x + w - slash_w, y, slash_w, h, accent_soft,
+                                  -12.0f);
+    else
+        CG_TopHud_DrawAccentSlash(x, y, slash_w, h, accent_soft, 12.0f);
+}
+
+static void CG_TopHud_DrawBars(int x, int y, int w,
+                               const cg_scoreboard_row_t &row)
+{
+    if (row.health_max <= 0)
+        return;
+
+    static constexpr rgba_t bar_back{ 0, 0, 0, 150 };
+    static constexpr rgba_t health_color{ 56, 222, 232, 230 };
+    static constexpr rgba_t armor_color{ 80, 238, 72, 230 };
+    static constexpr rgba_t tick{ 210, 255, 245, 170 };
+
+    const int bar_h = 3;
+    const int gap = 2;
+    const float health_frac = Q_clipf((float)row.health / (float)row.health_max,
+                                      0.0f, 1.0f);
+    const float armor_frac = row.armor_max > 0
+        ? Q_clipf((float)row.armor / (float)row.armor_max, 0.0f, 1.0f)
+        : 0.0f;
+
+    CG_TopHud_Fill(x, y, w, bar_h, bar_back);
+    CG_TopHud_Fill(x, y, Q_rint(w * health_frac), bar_h, health_color);
+    CG_TopHud_Fill(x + Q_rint(w * health_frac), y, 1, bar_h, tick);
+
+    CG_TopHud_Fill(x, y + bar_h + gap, w, bar_h, bar_back);
+    if (row.armor_max > 0) {
+        CG_TopHud_Fill(x, y + bar_h + gap, Q_rint(w * armor_frac), bar_h,
+                       armor_color);
+        CG_TopHud_Fill(x + Q_rint(w * armor_frac), y + bar_h + gap, 1, bar_h,
+                       tick);
+    }
+}
+
+static cg_scoreboard_row_t CG_TopHud_FallbackRow(const player_state_t *ps,
+                                                 bool first)
+{
+    cg_scoreboard_row_t row;
+    if (!ps)
+        return row;
+
+    row.score = ps->stats[first ? STAT_MINISCORE_FIRST_SCORE
+                                : STAT_MINISCORE_SECOND_SCORE];
+    row.skin = ps->stats[first ? STAT_MINISCORE_FIRST_PIC
+                               : STAT_MINISCORE_SECOND_PIC];
+    row.rank = first ? 1 : 2;
+    return row;
+}
+
+static scoreboard_mode_t CG_TopHud_Mode(const player_state_t *ps)
+{
+    if (cg_scoreboard.valid)
+        return cg_scoreboard.mode;
+    if (CG_GetGameStyle() == game_style_t::GAME_STYLE_TDM)
+        return SB_MODE_TEAM;
+    if (ps && ps->stats[STAT_DUEL_HEADER])
+        return SB_MODE_DUEL;
+    return SB_MODE_FFA;
+}
+
+static bool CG_TopHud_RowHasContent(const cg_scoreboard_row_t &row)
+{
+    return row.client >= 0 || row.skin > 0 || row.score != -999;
+}
+
+static int CG_TopHud_RowRank(const cg_scoreboard_row_t &row, int fallback_index)
+{
+    return row.rank > 0 ? row.rank : fallback_index + 1;
+}
+
+static int CG_TopHud_FindFFARowByClient(int client)
+{
+    if (client < 0 || client >= MAX_CLIENTS)
+        return -1;
+
+    for (size_t i = 0; i < cg_scoreboard.rows.size(); ++i) {
+        if (cg_scoreboard.rows[i].client == client)
+            return static_cast<int>(i);
+    }
+    return -1;
+}
+
+static int CG_TopHud_ViewedClient(const player_state_t *ps, int32_t playernum)
+{
+    if (!ps)
+        return -1;
+
+    const int following = ps->stats[STAT_FOLLOWING];
+    if (following >= CONFIG_CHASE_PLAYER_NAME &&
+        following < CONFIG_CHASE_PLAYER_NAME_END) {
+        return following - CONFIG_CHASE_PLAYER_NAME;
+    }
+
+    if (ps->stats[STAT_SPECTATOR])
+        return -1;
+
+    return (playernum >= 0 && playernum < MAX_CLIENTS) ? playernum : -1;
+}
+
+static bool CG_TopHud_MiniScoreHasContent(const player_state_t *ps, bool first)
+{
+    if (!ps)
+        return false;
+
+    const int score = ps->stats[first ? STAT_MINISCORE_FIRST_SCORE
+                                     : STAT_MINISCORE_SECOND_SCORE];
+    const int pic = ps->stats[first ? STAT_MINISCORE_FIRST_PIC
+                                   : STAT_MINISCORE_SECOND_PIC];
+    return score != -999 || pic > 0;
+}
+
+static bool CG_TopHud_RowMatchesMiniScore(const cg_scoreboard_row_t &row,
+                                          const player_state_t *ps, bool first)
+{
+    if (!CG_TopHud_MiniScoreHasContent(ps, first))
+        return false;
+
+    const int score = ps->stats[first ? STAT_MINISCORE_FIRST_SCORE
+                                     : STAT_MINISCORE_SECOND_SCORE];
+    const int skin = ps->stats[first ? STAT_MINISCORE_FIRST_PIC
+                                    : STAT_MINISCORE_SECOND_PIC];
+
+    if (score != -999 && row.score != score)
+        return false;
+    if (skin > 0 && row.skin != skin)
+        return false;
+    return true;
+}
+
+static int CG_TopHud_FindFFARowByMiniScore(const player_state_t *ps, bool first,
+                                           int avoid_index)
+{
+    if (!CG_TopHud_MiniScoreHasContent(ps, first))
+        return -1;
+
+    for (size_t i = 0; i < cg_scoreboard.rows.size(); ++i) {
+        if (static_cast<int>(i) == avoid_index)
+            continue;
+        if (CG_TopHud_RowMatchesMiniScore(cg_scoreboard.rows[i], ps, first))
+            return static_cast<int>(i);
+    }
+    return -1;
+}
+
+static bool CG_TopHud_SelectFFARows(const player_state_t *ps, int32_t playernum,
+                                    cg_scoreboard_row_t &first,
+                                    cg_scoreboard_row_t &second)
+{
+    first = {};
+    second = {};
+
+    if (cg_scoreboard.valid && cg_scoreboard.in_progress &&
+        !cg_scoreboard.rows.empty()) {
+        const int viewed_client = CG_TopHud_ViewedClient(ps, playernum);
+        const int viewed_index = CG_TopHud_FindFFARowByClient(viewed_client);
+
+        int other_index = -1;
+        int other2_index = -1;
+        for (size_t i = 0; i < cg_scoreboard.rows.size(); ++i) {
+            if (static_cast<int>(i) == viewed_index)
+                continue;
+            if (other_index < 0)
+                other_index = static_cast<int>(i);
+            else {
+                other2_index = static_cast<int>(i);
+                break;
+            }
+        }
+
+        int first_index = -1;
+        int second_index = -1;
+        if (viewed_index >= 0) {
+            if (CG_TopHud_RowRank(cg_scoreboard.rows[viewed_index],
+                                  viewed_index) == 1) {
+                first_index = viewed_index;
+                second_index = other_index >= 0 ? other_index : other2_index;
+            } else {
+                first_index = other_index >= 0 ? other_index : other2_index;
+                second_index = viewed_index;
+            }
+        } else {
+            first_index = 0;
+            second_index = cg_scoreboard.rows.size() > 1 ? 1 : -1;
+        }
+
+        if (first_index >= 0)
+            first = cg_scoreboard.rows[static_cast<size_t>(first_index)];
+        if (second_index >= 0)
+            second = cg_scoreboard.rows[static_cast<size_t>(second_index)];
+
+        return CG_TopHud_RowHasContent(first) ||
+               CG_TopHud_RowHasContent(second);
+    }
+
+    int first_index = CG_TopHud_FindFFARowByMiniScore(ps, true, -1);
+    int second_index = CG_TopHud_FindFFARowByMiniScore(ps, false, first_index);
+    if (first_index >= 0)
+        first = cg_scoreboard.rows[static_cast<size_t>(first_index)];
+    else if (CG_TopHud_MiniScoreHasContent(ps, true))
+        first = CG_TopHud_FallbackRow(ps, true);
+
+    if (second_index >= 0)
+        second = cg_scoreboard.rows[static_cast<size_t>(second_index)];
+    else if (CG_TopHud_MiniScoreHasContent(ps, false))
+        second = CG_TopHud_FallbackRow(ps, false);
+
+    return CG_TopHud_RowHasContent(first) || CG_TopHud_RowHasContent(second);
+}
+
+static void CG_TopHud_DrawTimer(const vrect_t &hud_vrect,
+                                const vrect_t &hud_safe, int32_t scale,
+                                const player_state_t *ps, float center_x)
+{
+    if (!cg_match.valid && (!ps || !ps->stats[STAT_MATCH_STATE]))
+        return;
+
+    static constexpr rgba_t text_white{ 244, 248, 248, 255 };
+    static constexpr rgba_t text_muted{ 170, 185, 190, 220 };
+    static constexpr rgba_t text_warn{ 255, 54, 42, 255 };
+    static constexpr rgba_t text_gold{ 246, 176, 48, 255 };
+    static constexpr rgba_t timer_back{ 0, 0, 0, 126 };
+    static constexpr rgba_t timer_edge{ 255, 255, 255, 34 };
+
+    std::string timer;
+    std::string state;
+    rgba_t timer_color = text_white;
+
+    if (cg_match.valid) {
+        switch (cg_match.phase) {
+        case HUD_MATCH_PHASE_WARMUP:
+            state = "WARMUP";
+            timer = CG_TopHud_FormatClock(cg_match.time_ms);
+            timer_color = text_warn;
+            break;
+        case HUD_MATCH_PHASE_COUNTDOWN:
+            state = "WARMUP";
+            timer = CG_TopHud_FormatClock(cg_match.time_ms);
+            timer_color = text_warn;
+            break;
+        case HUD_MATCH_PHASE_TIMEOUT:
+            state = "TIMEOUT";
+            timer = CG_TopHud_FormatClock(cg_match.time_ms);
+            timer_color = text_gold;
+            break;
+        case HUD_MATCH_PHASE_IN_PROGRESS:
+        case HUD_MATCH_PHASE_INTERMISSION:
+            if (cg_match.time_ms < 0) {
+                state = "OVERTIME";
+                timer = CG_TopHud_FormatClock(-cg_match.time_ms);
+                timer_color = text_gold;
+            } else {
+                timer = CG_TopHud_FormatClock(cg_match.time_ms);
+            }
+            break;
+        case HUD_MATCH_PHASE_NONE:
+            if (cg_scoreboard.valid && !cg_scoreboard.in_progress) {
+                state = "WARMUP";
+                timer = "0:00";
+                timer_color = text_warn;
+            }
+            break;
+        default:
+            break;
+        }
+    }
+
+    if (timer.empty() && ps && ps->stats[STAT_COUNTDOWN] > 0) {
+        state = "WARMUP";
+        timer = CG_TopHud_FormatCountdown(ps->stats[STAT_COUNTDOWN]);
+        timer_color = text_warn;
+    }
+
+    if (timer.empty() && !cg_match.valid && ps && ps->stats[STAT_MATCH_STATE]) {
+        const char *raw = cgi.get_configString(ps->stats[STAT_MATCH_STATE]);
+        const char *localized = cgi.Localize(raw, nullptr, 0);
+        timer = localized ? localized : "";
+    }
+
+    if (timer.empty())
+        return;
+
+    std::string limit;
+    if (cg_match.valid && cg_match.time_limit_ms > 0)
+        limit = CG_TopHud_FormatClock(cg_match.time_limit_ms);
+
+    const int x = CG_TopHud_VX(hud_vrect, scale, center_x);
+    const int label_scale = state.empty() ? scale : max(1, scale - 1);
+    const int timer_scale = state.empty() ? scale : max(1, scale + 1);
+    const int limit_scale = max(1, scale - 1);
+    const int timer_width = cgi.SCR_MeasureFontString(timer.c_str(),
+                                                      timer_scale).x;
+    const int limit_width = limit.empty()
+        ? 0
+        : cgi.SCR_MeasureFontString(limit.c_str(), limit_scale).x;
+    const int panel_w = max(CG_TopHud_VSize(52.0f, scale),
+                            max(timer_width, limit_width) +
+                                CG_TopHud_VSize(12.0f, scale));
+    const int panel_x = x - panel_w / 2;
+    const int panel_y = CG_TopHud_VY(hud_vrect, hud_safe, scale,
+                                     state.empty() ? 5.0f : 8.0f);
+    const int panel_h = CG_TopHud_VSize(limit.empty() ? 21.0f : 29.0f, scale);
+    CG_TopHud_Fill(panel_x, panel_y, panel_w, panel_h, timer_back);
+    CG_TopHud_Fill(panel_x, panel_y + panel_h - max(1, scale / 2), panel_w,
+                   max(1, scale / 2), timer_edge);
+
+    if (!state.empty()) {
+        CG_DrawBoldFontString(
+            state.c_str(), x,
+            CG_TopHud_VY(hud_vrect, hud_safe, scale, 2.0f), label_scale,
+            text_gold, true, text_align_t::CENTER);
+    }
+
+    const float timer_y_v = state.empty() ? 8.0f : 10.5f;
+    CG_DrawBoldFontString(timer.c_str(), x,
+                          CG_TopHud_VY(hud_vrect, hud_safe, scale, timer_y_v),
+                          timer_scale, timer_color, true,
+                          text_align_t::CENTER);
+
+    if (!limit.empty()) {
+        cgi.SCR_DrawFontString(limit.c_str(), x,
+                               CG_TopHud_VY(hud_vrect, hud_safe, scale, 27.0f),
+                               limit_scale, text_muted, true,
+                               text_align_t::CENTER);
+    }
+}
+
+static void CG_TopHud_DrawDuelPanel(const vrect_t &hud_vrect,
+                                    const vrect_t &hud_safe, int32_t scale,
+                                    const cg_scoreboard_row_t &row, float x_v,
+                                    bool left, bool spectator_bars)
+{
+    static constexpr rgba_t blue{ 39, 143, 188, 235 };
+    static constexpr rgba_t red{ 190, 35, 34, 235 };
+    static constexpr rgba_t text_white{ 244, 248, 248, 255 };
+    static constexpr rgba_t text_muted{ 170, 185, 190, 220 };
+    static constexpr rgba_t black{ 0, 0, 0, 150 };
+
+    const rgba_t accent = left ? blue : red;
+    const int x = CG_TopHud_VX(hud_vrect, scale, x_v);
+    const int y = CG_TopHud_VY(hud_vrect, hud_safe, scale, 7.0f);
+    const int w = CG_TopHud_VSize(74.0f, scale);
+    const int h = CG_TopHud_VSize(23.0f, scale);
+    const int score_w = CG_TopHud_VSize(24.0f, scale);
+    const int icon = CG_TopHud_VSize(18.0f, scale);
+    const int score_x = left ? x : x + w - score_w;
+
+    CG_TopHud_DrawPanelFrame(x, y, w, h, accent, left);
+    CG_TopHud_Fill(score_x, y, score_w, h, accent);
+
+    CG_DrawBoldFontString(G_Fmt("{}", row.score).data(), score_x + score_w / 2,
+                          y + CG_TopHud_VSize(3.0f, scale), scale,
+                          text_white, true, text_align_t::CENTER);
+
+    const int name_x = left ? x + score_w + CG_TopHud_VSize(4.0f, scale)
+                            : x + CG_TopHud_VSize(4.0f, scale);
+    const int name_w = w - score_w - CG_TopHud_VSize(8.0f, scale);
+    std::string name = CG_TopHud_FitText(
+        CG_TopHud_RowName(row, left ? "PLAYER 1" : "PLAYER 2"), scale, name_w);
+
+    cgi.SCR_DrawFontString(name.c_str(), left ? name_x : name_x + name_w,
+                           y + CG_TopHud_VSize(15.0f, scale), scale,
+                           text_muted, true,
+                           left ? text_align_t::LEFT : text_align_t::RIGHT);
+
+    const int icon_x = left ? x - icon - CG_TopHud_VSize(5.0f, scale)
+                            : x + w + CG_TopHud_VSize(5.0f, scale);
+    CG_TopHud_DrawPicBox(CG_TopHud_RowIcon(row), icon_x,
+                         y + CG_TopHud_VSize(1.0f, scale), icon, accent);
+
+    if (spectator_bars)
+        CG_TopHud_DrawBars(x, y + h + CG_TopHud_VSize(4.0f, scale), w, row);
+
+    if (row.flags & SB_ROW_ELIMINATED) {
+        rgba_t slash = red;
+        slash.a = 220;
+        CG_TopHud_DrawAccentSlash(icon_x, y + CG_TopHud_VSize(2.0f, scale),
+                                  icon, CG_TopHud_VSize(4.0f, scale), slash,
+                                  left ? -30.0f : 30.0f);
+        CG_TopHud_Fill(icon_x, y + icon / 2, icon, max(1, scale), black);
+    }
+}
+
+static void CG_TopHud_DrawTeamPanel(const vrect_t &hud_vrect,
+                                    const vrect_t &hud_safe, int32_t scale,
+                                    int score, const char *label,
+                                    const char *icon_name, float x_v,
+                                    bool left)
+{
+    static constexpr rgba_t blue{ 39, 143, 188, 235 };
+    static constexpr rgba_t red{ 190, 35, 34, 235 };
+    static constexpr rgba_t text_white{ 244, 248, 248, 255 };
+    static constexpr rgba_t text_muted{ 170, 185, 190, 220 };
+
+    const rgba_t accent = left ? blue : red;
+    const int x = CG_TopHud_VX(hud_vrect, scale, x_v);
+    const int y = CG_TopHud_VY(hud_vrect, hud_safe, scale, 7.0f);
+    const int w = CG_TopHud_VSize(78.0f, scale);
+    const int h = CG_TopHud_VSize(23.0f, scale);
+    const int score_w = CG_TopHud_VSize(26.0f, scale);
+    const int score_x = left ? x : x + w - score_w;
+
+    CG_TopHud_DrawPanelFrame(x, y, w, h, accent, left);
+    CG_TopHud_Fill(score_x, y, score_w, h, accent);
+    CG_DrawBoldFontString(G_Fmt("{}", score).data(), score_x + score_w / 2,
+                          y + CG_TopHud_VSize(3.0f, scale), scale,
+                          text_white, true, text_align_t::CENTER);
+
+    const int label_x = left ? x + score_w + CG_TopHud_VSize(4.0f, scale)
+                             : x + w - score_w - CG_TopHud_VSize(4.0f, scale);
+    cgi.SCR_DrawFontString(label, label_x,
+                           y + CG_TopHud_VSize(15.0f, scale), scale,
+                           text_muted, true,
+                           left ? text_align_t::LEFT : text_align_t::RIGHT);
+
+    const int icon = CG_TopHud_VSize(14.0f, scale);
+    const int icon_x = left ? x - icon - CG_TopHud_VSize(4.0f, scale)
+                            : x + w + CG_TopHud_VSize(4.0f, scale);
+    CG_TopHud_DrawPicBox(icon_name, icon_x, y + CG_TopHud_VSize(4.0f, scale),
+                         icon, accent);
+}
+
+static void CG_TopHud_DrawFFARow(const vrect_t &hud_vrect,
+                                 const vrect_t &hud_safe, int32_t scale,
+                                 const cg_scoreboard_row_t &row, int rank,
+                                 float x_v, float y_v, const rgba_t &accent)
+{
+    static constexpr rgba_t panel{ 4, 10, 14, 164 };
+    static constexpr rgba_t text_white{ 244, 248, 248, 255 };
+    static constexpr rgba_t text_muted{ 170, 185, 190, 220 };
+
+    const int x = CG_TopHud_VX(hud_vrect, scale, x_v);
+    const int y = CG_TopHud_VY(hud_vrect, hud_safe, scale, y_v);
+    const int w = CG_TopHud_VSize(112.0f, scale);
+    const int h = CG_TopHud_VSize(10.0f, scale);
+    const int score_w = CG_TopHud_VSize(20.0f, scale);
+    if (rank <= 0)
+        rank = 1;
+
+    CG_TopHud_Fill(x, y, w, h, panel);
+    CG_TopHud_Fill(x, y, CG_TopHud_VSize(2.0f, scale), h, accent);
+    CG_TopHud_Fill(x + w - score_w, y, score_w, h, accent);
+
+    cgi.SCR_DrawFontString(G_Fmt("{}", rank).data(),
+                           x + CG_TopHud_VSize(7.0f, scale), y, scale,
+                           text_muted, true, text_align_t::CENTER);
+
+    const int name_x = x + CG_TopHud_VSize(15.0f, scale);
+    const int name_w = w - score_w - CG_TopHud_VSize(18.0f, scale);
+    std::string name = CG_TopHud_FitText(
+        CG_TopHud_RowName(row, "PLAYER"), scale, name_w);
+    cgi.SCR_DrawFontString(name.c_str(), name_x, y, scale, text_white, true,
+                           text_align_t::LEFT);
+
+    CG_DrawBoldFontString(G_Fmt("{}", row.score).data(),
+                          x + w - score_w / 2, y, scale, text_white, true,
+                          text_align_t::CENTER);
+}
+
+static void CG_DrawModernTopHUD(const player_state_t *ps, vrect_t hud_vrect,
+                                vrect_t hud_safe, int32_t scale,
+                                int32_t playernum)
+{
+    if (!cg_draw_match_hud || !cg_draw_match_hud->integer)
+        return;
+    if (CG_GetGameStyle() == game_style_t::GAME_STYLE_PVE)
+        return;
+
+    CG_Hud_EnsureBlobParsed();
+
+    const scoreboard_mode_t mode = CG_TopHud_Mode(ps);
+    const float center_x = hud_vrect.width * 0.5f;
+    CG_TopHud_DrawTimer(hud_vrect, hud_safe, scale, ps, center_x);
+
+    if (mode == SB_MODE_TEAM) {
+        const int red_score = cg_scoreboard.valid ? cg_scoreboard.team_scores[0]
+                                                  : ps->stats[STAT_MINISCORE_FIRST_SCORE];
+        const int blue_score = cg_scoreboard.valid ? cg_scoreboard.team_scores[1]
+                                                   : ps->stats[STAT_MINISCORE_SECOND_SCORE];
+        const char *red_icon = "i_ctf1";
+        const char *blue_icon = "i_ctf2";
+        if (ps->stats[STAT_MINISCORE_FIRST_PIC] && cgi.CL_GetImageConfigString)
+            red_icon = cgi.CL_GetImageConfigString(ps->stats[STAT_MINISCORE_FIRST_PIC]);
+        if (ps->stats[STAT_MINISCORE_SECOND_PIC] && cgi.CL_GetImageConfigString)
+            blue_icon = cgi.CL_GetImageConfigString(ps->stats[STAT_MINISCORE_SECOND_PIC]);
+
+        CG_TopHud_DrawTeamPanel(hud_vrect, hud_safe, scale, blue_score, "BLUE",
+                                blue_icon, center_x - 111.0f, true);
+        CG_TopHud_DrawTeamPanel(hud_vrect, hud_safe, scale, red_score, "RED",
+                                red_icon, center_x + 33.0f, false);
+        return;
+    }
+
+    if (mode == SB_MODE_DUEL) {
+        cg_scoreboard_row_t left = cg_scoreboard.rows.size() > 0
+            ? cg_scoreboard.rows[0]
+            : CG_TopHud_FallbackRow(ps, true);
+        cg_scoreboard_row_t right = cg_scoreboard.rows.size() > 1
+            ? cg_scoreboard.rows[1]
+            : CG_TopHud_FallbackRow(ps, false);
+        const bool spectator_bars = CG_TopHud_IsSpectatorView(ps);
+
+        CG_TopHud_DrawDuelPanel(hud_vrect, hud_safe, scale, left,
+                                center_x - 106.0f, true, spectator_bars);
+        CG_TopHud_DrawDuelPanel(hud_vrect, hud_safe, scale, right,
+                                center_x + 32.0f, false, spectator_bars);
+        return;
+    }
+
+    static constexpr rgba_t orange{ 245, 126, 35, 235 };
+    static constexpr rgba_t cyan{ 54, 178, 225, 235 };
+
+    cg_scoreboard_row_t first;
+    cg_scoreboard_row_t second;
+    if (!CG_TopHud_SelectFFARows(ps, playernum, first, second))
+        return;
+
+    const float x_v = center_x + 42.0f;
+    if (first.score != -999 || first.client >= 0 || first.skin > 0)
+        CG_TopHud_DrawFFARow(hud_vrect, hud_safe, scale, first,
+                             CG_TopHud_RowRank(first, 0), x_v, 7.0f, orange);
+    if (second.score != -999 || second.client >= 0 || second.skin > 0)
+        CG_TopHud_DrawFFARow(hud_vrect, hud_safe, scale, second,
+                             CG_TopHud_RowRank(second, 1), x_v, 18.0f, cyan);
+}
+
 static void CG_Statusbar_AddDeathmatchStatus(cg_statusbar_builder_t &sb, bool is_team_mode)
 {
     if (is_team_mode) {
@@ -4770,17 +5561,21 @@ static void CG_Statusbar_AddDeathmatchStatus(cg_statusbar_builder_t &sb, bool is
         sb.ifstat(STAT_TEAMPLAY_INFO).xl(0).yb(-88).stat_string(STAT_TEAMPLAY_INFO).endifstat();
     }
 
-    sb.ifstat(STAT_MATCH_STATE).xv(0).yt(12).loc_stat_cstring(STAT_MATCH_STATE).endifstat();
-    sb.ifstat(STAT_COUNTDOWN).xv(0).yt(28).num_center(3, STAT_COUNTDOWN).endifstat();
+    if (!cg_draw_match_hud || !cg_draw_match_hud->integer) {
+        sb.ifstat(STAT_MATCH_STATE).xv(0).yt(12).loc_stat_cstring(STAT_MATCH_STATE).endifstat();
+        sb.ifstat(STAT_COUNTDOWN).xv(0).yt(28).num_center(3, STAT_COUNTDOWN).endifstat();
+    }
 
     sb.ifstat(STAT_FOLLOWING).xv(0).yb(-68).string2("FOLLOWING").xv(80).stat_string(STAT_FOLLOWING).endifstat();
     sb.ifstat(STAT_SPECTATOR).xv(0).yb(-68).string2("SPECTATING").xv(0).yb(-58).string("Use TAB Menu to join the match.").xv(80).endifstat();
 
-    sb.ifstat(STAT_MINISCORE_FIRST_PIC).xr(-26).yb(-110).pic(STAT_MINISCORE_FIRST_PIC).xr(-78).num(3, STAT_MINISCORE_FIRST_SCORE).ifstat(STAT_MINISCORE_FIRST_VAL).xr(-24).yb(-94).stat_string(STAT_MINISCORE_FIRST_VAL).endifstat().endifstat();
-    sb.ifstat(STAT_MINISCORE_FIRST_POS).xr(-28).yb(-112).pic(STAT_MINISCORE_FIRST_POS).endifstat();
-    sb.ifstat(STAT_MINISCORE_SECOND_PIC).xr(-26).yb(-83).pic(STAT_MINISCORE_SECOND_PIC).xr(-78).num(3, STAT_MINISCORE_SECOND_SCORE).ifstat(STAT_MINISCORE_SECOND_VAL).xr(-24).yb(-68).stat_string(STAT_MINISCORE_SECOND_VAL).endifstat().endifstat();
-    sb.ifstat(STAT_MINISCORE_SECOND_POS).xr(-28).yb(-85).pic(STAT_MINISCORE_SECOND_POS).endifstat();
-    sb.ifstat(STAT_MINISCORE_FIRST_PIC).xr(-28).yb(-57).stat_string(STAT_SCORELIMIT).endifstat();
+    if (!cg_draw_match_hud || !cg_draw_match_hud->integer) {
+        sb.ifstat(STAT_MINISCORE_FIRST_PIC).xr(-26).yb(-110).pic(STAT_MINISCORE_FIRST_PIC).xr(-78).num(3, STAT_MINISCORE_FIRST_SCORE).ifstat(STAT_MINISCORE_FIRST_VAL).xr(-24).yb(-94).stat_string(STAT_MINISCORE_FIRST_VAL).endifstat().endifstat();
+        sb.ifstat(STAT_MINISCORE_FIRST_POS).xr(-28).yb(-112).pic(STAT_MINISCORE_FIRST_POS).endifstat();
+        sb.ifstat(STAT_MINISCORE_SECOND_PIC).xr(-26).yb(-83).pic(STAT_MINISCORE_SECOND_PIC).xr(-78).num(3, STAT_MINISCORE_SECOND_SCORE).ifstat(STAT_MINISCORE_SECOND_VAL).xr(-24).yb(-68).stat_string(STAT_MINISCORE_SECOND_VAL).endifstat().endifstat();
+        sb.ifstat(STAT_MINISCORE_SECOND_POS).xr(-28).yb(-85).pic(STAT_MINISCORE_SECOND_POS).endifstat();
+        sb.ifstat(STAT_MINISCORE_FIRST_PIC).xr(-28).yb(-57).stat_string(STAT_SCORELIMIT).endifstat();
+    }
 
     sb.ifstat(STAT_CROSSHAIR_ID_VIEW).xv(122).yb(-128).stat_pname(STAT_CROSSHAIR_ID_VIEW).endifstat();
     sb.ifstat(STAT_CROSSHAIR_ID_VIEW_COLOR).xv(156).yb(-118).pic(STAT_CROSSHAIR_ID_VIEW_COLOR).endifstat();
@@ -5224,6 +6019,7 @@ void CG_DrawHUD (int32_t isplit, const cg_server_data_t *data, vrect_t hud_vrect
         } else {
             CG_ExecuteLayoutString(cgi.get_configString(CS_STATUSBAR), hud_vrect, hud_safe, scale, playernum, ps);
         }
+        CG_DrawModernTopHUD(ps, hud_vrect, hud_safe, scale, playernum);
     }
 
     // draw centerprint string
@@ -5270,6 +6066,9 @@ void CG_TouchPics()
             cgi.Draw_RegisterPic(str);
 
     cgi.Draw_RegisterPic("inventory");
+    cgi.Draw_RegisterPic("_white");
+    cgi.Draw_RegisterPic("i_ctf1");
+    cgi.Draw_RegisterPic("i_ctf2");
     for (const auto &templ : obituary_templates) {
         if (templ.icon)
             cgi.Draw_RegisterPic(templ.icon);
@@ -5289,6 +6088,7 @@ void CG_InitScreen()
     cg_hud_cgame_legacy = cgi.cvar("cl_hud_cgame", cg_hud_cgame->string, CVAR_NOFLAGS);
     cg_draw_fps = cgi.cvar("cg_draw_fps", "0", CVAR_ARCHIVE);
     cg_draw_fps_legacy = cgi.cvar("cg_drawFPS", cg_draw_fps->string, CVAR_NOFLAGS);
+    cg_draw_match_hud = cgi.cvar("cg_draw_match_hud", "1", CVAR_ARCHIVE);
     rtx_draw_debug = cgi.cvar("rtx_draw_debug", "0", CVAR_NOFLAGS);
     rtx_debug_dlights_total =
         cgi.cvar("rtx_debug_dlights_total", "0", CVAR_NOFLAGS);

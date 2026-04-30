@@ -802,12 +802,18 @@ static void CG_SCR_SetAltTypeface(bool enabled)
     // We don't support alternate type faces.
 }
 
+static font_t *CG_SCR_GetHudFont(void)
+{
+    return scr.font ? scr.font : scr.ui_font;
+}
+
 static float CG_SCR_FontLineHeight(int scale)
 {
     int draw_scale = scale > 0 ? scale : 1;
+    font_t *font = CG_SCR_GetHudFont();
 
-    if (scr.ui_font)
-        return (float)Font_LineHeight(scr.ui_font, draw_scale);
+    if (font)
+        return (float)Font_LineHeight(font, draw_scale);
 
     return (float)(CONCHAR_HEIGHT * draw_scale);
 }
@@ -821,12 +827,13 @@ static cg_vec2_t CG_SCR_MeasureFontString(const char *str, int scale)
     int num_lines = 1;
     int max_width = 0;
     int draw_scale = scale > 0 ? scale : 1;
+    const font_t *font = CG_SCR_GetHudFont();
 
     while (*str) {
         const char *p = strchr(str, '\n');
         if (!p) {
-            int line_width = scr.ui_font
-                ? Font_MeasureString(scr.ui_font, draw_scale, 0, maxlen, str, nullptr)
+            int line_width = font
+                ? Font_MeasureString(font, draw_scale, 0, maxlen, str, nullptr)
                 : (int)Com_StrlenNoColor(str, maxlen) * CONCHAR_WIDTH * draw_scale;
             if (line_width > max_width)
                 max_width = line_width;
@@ -834,8 +841,8 @@ static cg_vec2_t CG_SCR_MeasureFontString(const char *str, int scale)
         }
 
         size_t len = min(static_cast<size_t>(p - str), maxlen);
-        int line_width = scr.ui_font
-            ? Font_MeasureString(scr.ui_font, draw_scale, 0, len, str, nullptr)
+        int line_width = font
+            ? Font_MeasureString(font, draw_scale, 0, len, str, nullptr)
             : (int)Com_StrlenNoColor(str, len) * CONCHAR_WIDTH * draw_scale;
         if (line_width > max_width)
             max_width = line_width;
@@ -854,7 +861,7 @@ static cg_vec2_t CG_SCR_MeasureCenterFontString(const char *str, int scale)
     if (!str || !*str)
         return cg_vec2_t{ 0.0f, 0.0f };
 
-    const font_t *font = scr.font ? scr.font : scr.ui_font;
+    const font_t *font = CG_SCR_GetHudFont();
     size_t maxlen = strlen(str);
     int num_lines = 1;
     int max_width = 0;
@@ -892,41 +899,9 @@ static cg_vec2_t CG_SCR_MeasureCenterFontString(const char *str, int scale)
 
 static void CG_SCR_DrawFontString(const char *str, int x, int y, int scale, const rgba_t *color, bool shadow, text_align_t align)
 {
-    int draw_x = x;
-    if (align != LEFT) {
-        int text_width = CG_SCR_MeasureFontString(str, scale).x;
-        if (align == CENTER)
-            draw_x -= text_width / 2;
-        else if (align == RIGHT)
-            draw_x -= text_width;
-    }
-
-    int draw_flags = shadow ? UI_DROPSHADOW : 0;
-    color_t draw_color = apply_scr_alpha(*color);
-    int draw_scale = scale > 0 ? scale : 1;
-
-    SCR_DrawStringMultiStretch(draw_x, y, draw_scale,
-                               draw_flags, strlen(str), str, draw_color, scr.ui_font_pic);
-}
-
-static void CG_SCR_DrawCenterFontString(const char *str, int x, int y, int scale,
-                                        const rgba_t *color, bool shadow, text_align_t align)
-{
-    if (!str || !*str)
+    font_t *font = CG_SCR_GetHudFont();
+    if (!font || !str || !*str)
         return;
-
-    font_t *font = scr.font ? scr.font : scr.ui_font;
-    if (!font)
-        return;
-
-    int draw_x = x;
-    if (align != LEFT) {
-        int text_width = CG_SCR_MeasureCenterFontString(str, scale).x;
-        if (align == CENTER)
-            draw_x -= text_width / 2;
-        else if (align == RIGHT)
-            draw_x -= text_width;
-    }
 
     int draw_flags = shadow ? UI_DROPSHADOW : 0;
     color_t draw_color = apply_scr_alpha(*color);
@@ -936,6 +911,50 @@ static void CG_SCR_DrawCenterFontString(const char *str, int x, int y, int scale
     while (*line) {
         const char *p = strchr(line, '\n');
         size_t len = p ? (size_t)(p - line) : strlen(line);
+        int draw_x = x;
+        if (align != LEFT) {
+            int line_width = Font_MeasureString(font, draw_scale, 0, len, line, nullptr);
+            if (align == CENTER)
+                draw_x -= line_width / 2;
+            else if (align == RIGHT)
+                draw_x -= line_width;
+        }
+
+        Font_DrawString(font, draw_x, y, draw_scale, draw_flags, len, line, draw_color);
+        if (!p)
+            break;
+        y += Font_LineHeight(font, draw_scale);
+        line = p + 1;
+    }
+}
+
+static void CG_SCR_DrawCenterFontString(const char *str, int x, int y, int scale,
+                                        const rgba_t *color, bool shadow, text_align_t align)
+{
+    if (!str || !*str)
+        return;
+
+    font_t *font = CG_SCR_GetHudFont();
+    if (!font)
+        return;
+
+    int draw_flags = shadow ? UI_DROPSHADOW : 0;
+    color_t draw_color = apply_scr_alpha(*color);
+    int draw_scale = scale > 0 ? scale : 1;
+    const char *line = str;
+
+    while (*line) {
+        const char *p = strchr(line, '\n');
+        size_t len = p ? (size_t)(p - line) : strlen(line);
+        int draw_x = x;
+        if (align != LEFT) {
+            int line_width = Font_MeasureString(font, draw_scale, 0, len, line, nullptr);
+            if (align == CENTER)
+                draw_x -= line_width / 2;
+            else if (align == RIGHT)
+                draw_x -= line_width;
+        }
+
         Font_DrawString(font, draw_x, y, draw_scale, draw_flags, len, line, draw_color);
         if (!p)
             break;

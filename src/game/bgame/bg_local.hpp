@@ -71,6 +71,15 @@ enum hud_blob_flag_t : uint32_t {
 	HUD_FLAG_MINHUD = 1u << 0
 };
 
+enum hud_match_phase_t : int32_t {
+	HUD_MATCH_PHASE_NONE = 0,
+	HUD_MATCH_PHASE_WARMUP = 1,
+	HUD_MATCH_PHASE_COUNTDOWN = 2,
+	HUD_MATCH_PHASE_IN_PROGRESS = 3,
+	HUD_MATCH_PHASE_TIMEOUT = 4,
+	HUD_MATCH_PHASE_INTERMISSION = 5
+};
+
 enum scoreboard_mode_t : int32_t {
 	SB_MODE_FFA = 0,
 	SB_MODE_TEAM = 1,

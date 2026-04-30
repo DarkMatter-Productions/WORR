@@ -224,6 +224,7 @@ struct InstallSyncPlan {
 
 enum class SessionShellWindowMode {
   Windowed,
+  BorderlessWindow,
   BorderlessFullscreen,
   ExclusiveFullscreen,
   SpanBorderless,
@@ -239,6 +240,7 @@ struct SessionShellWindowConfig {
   bool geometry_specified = false;
   int monitor_mode = 0;
   int fullscreen_index = 0;
+  int borderless = 1;
   bool fullscreen_exclusive = true;
   bool fullscreen_capture_friendly = true;
   std::string display_request = "0";
@@ -531,6 +533,8 @@ const char *SessionShellWindowModeToCString(SessionShellWindowMode mode) {
   switch (mode) {
   case SessionShellWindowMode::Windowed:
     return "windowed";
+  case SessionShellWindowMode::BorderlessWindow:
+    return "borderless_window";
   case SessionShellWindowMode::BorderlessFullscreen:
     return "borderless_fullscreen";
   case SessionShellWindowMode::ExclusiveFullscreen:
@@ -588,6 +592,11 @@ SessionShellWindowConfig LoadClientSessionShellWindowConfig(const fs::path &inst
     if (ParseIntStrict(it->second, &value))
       config.fullscreen_index = std::max(0, value);
   }
+  if (const auto it = cvars.find("r_borderless"); it != cvars.end()) {
+    int value = 1;
+    if (ParseIntStrict(it->second, &value))
+      config.borderless = std::clamp(value, 0, 2);
+  }
   if (const auto it = cvars.find("r_fullscreen_exclusive"); it != cvars.end()) {
     int value = 1;
     if (ParseIntStrict(it->second, &value))
@@ -604,11 +613,13 @@ SessionShellWindowConfig LoadClientSessionShellWindowConfig(const fs::path &inst
   if (config.fullscreen_index > 0) {
     if (config.monitor_mode == 2) {
       config.mode = SessionShellWindowMode::SpanBorderless;
-    } else if (!config.fullscreen_exclusive || config.fullscreen_capture_friendly) {
+    } else if (config.borderless >= 1) {
       config.mode = SessionShellWindowMode::BorderlessFullscreen;
     } else {
       config.mode = SessionShellWindowMode::ExclusiveFullscreen;
     }
+  } else if (config.borderless == 2) {
+    config.mode = SessionShellWindowMode::BorderlessWindow;
   }
 
   std::ostringstream geometry_detail;
@@ -619,6 +630,7 @@ SessionShellWindowConfig LoadClientSessionShellWindowConfig(const fs::path &inst
   BootstrapTrace("LoadClientSessionShellWindowConfig root=" + GenericPath(config.runtime_root) +
                  " mode=" + SessionShellWindowModeToCString(config.mode) +
                  " fullscreen_index=" + std::to_string(config.fullscreen_index) +
+                 " borderless=" + std::to_string(config.borderless) +
                  " exclusive=" + std::to_string(config.fullscreen_exclusive ? 1 : 0) +
                  " capture_friendly=" + std::to_string(config.fullscreen_capture_friendly ? 1 : 0) +
                  " monitor_mode=" + std::to_string(config.monitor_mode) + " display=\"" + config.display_request +
@@ -716,7 +728,10 @@ SessionShellWindowPlacement ResolveSessionShellPlacement(const SessionShellWindo
     placement.has_bounds = SDL_GetDisplayBounds(placement.display_id, &placement.bounds);
   }
 
-  if (config.mode != SessionShellWindowMode::Windowed && placement.has_bounds) {
+  const bool fullscreen = config.mode == SessionShellWindowMode::BorderlessFullscreen ||
+                          config.mode == SessionShellWindowMode::ExclusiveFullscreen ||
+                          config.mode == SessionShellWindowMode::SpanBorderless;
+  if (fullscreen && placement.has_bounds) {
     placement.width = placement.bounds.w;
     placement.height = placement.bounds.h;
     placement.x = placement.bounds.x;
@@ -1420,8 +1435,11 @@ private:
     if (!native_window_)
       return;
 
-    const bool fullscreen = config_.mode != SessionShellWindowMode::Windowed;
-    DWORD style = fullscreen ? (WS_POPUP | WS_CLIPCHILDREN | WS_CLIPSIBLINGS)
+    const bool fullscreen = config_.mode == SessionShellWindowMode::BorderlessFullscreen ||
+                            config_.mode == SessionShellWindowMode::ExclusiveFullscreen ||
+                            config_.mode == SessionShellWindowMode::SpanBorderless;
+    const bool borderless = fullscreen || config_.mode == SessionShellWindowMode::BorderlessWindow;
+    DWORD style = borderless ? (WS_POPUP | WS_CLIPCHILDREN | WS_CLIPSIBLINGS)
                              : (WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_CLIPSIBLINGS);
     DWORD exstyle = WS_EX_TOOLWINDOW;
 
@@ -1515,11 +1533,11 @@ private:
     return true;
   }
 
-  bool ApplyWindowedMode() {
+  bool ApplyWindowedMode(bool bordered = true) {
     bool ok = true;
     ok &= ApplySdlChange(SDL_SetWindowFullscreen(window_, false), "leave_fullscreen");
     ok &= ApplySdlChange(SDL_SetWindowFullscreenMode(window_, nullptr), "clear_fullscreen_mode");
-    ok &= ApplySdlChange(SDL_SetWindowBordered(window_, true), "set_bordered");
+    ok &= ApplySdlChange(SDL_SetWindowBordered(window_, bordered), bordered ? "set_bordered" : "set_borderless");
     ok &= ApplySdlChange(SDL_SetWindowSize(window_, config_.width, config_.height), "set_window_size");
     if (config_.geometry_specified) {
       ok &= ApplySdlChange(SDL_SetWindowPosition(window_, config_.x, config_.y), "set_window_position");
@@ -1604,6 +1622,9 @@ private:
     switch (config_.mode) {
     case SessionShellWindowMode::Windowed:
       ok = ApplyWindowedMode();
+      break;
+    case SessionShellWindowMode::BorderlessWindow:
+      ok = ApplyWindowedMode(false);
       break;
     case SessionShellWindowMode::BorderlessFullscreen:
       ok = ApplyBorderlessFullscreenMode();

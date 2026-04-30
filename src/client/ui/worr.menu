@@ -70,6 +70,7 @@ begin video
     //title "Video Setup"
     banner m_banner_video
     values "video mode" r_fullscreen windowed $$r_modelist
+    pairs "borderless" r_borderless off 0 fullscreen 1 always 2
     action --align "multi-monitor settings..." pushmenu multimonitor
     toggle "vertical sync" gl_swapinterval
     pairs "anti-aliasing" gl_multisamples no 0 "2x MSAA" 2 "4x MSAA" 4 "8x MSAA" 8
@@ -92,7 +93,7 @@ end
 begin multimonitor
     title "Multi-Monitor Settings"
     pairs "monitor mode" r_monitor_mode primary 0 selected 1 "span all" 2
-    pairs "fullscreen type" r_fullscreen_exclusive exclusive 1 borderless 0
+    pairs "borderless" r_borderless off 0 fullscreen 1 always 2
     field --width 18 --status "Used when monitor mode = selected" "display" r_display
 end
 

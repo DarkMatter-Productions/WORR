@@ -90,6 +90,7 @@ extern cvar_t       *r_modelist;
 extern cvar_t       *r_monitor_mode;
 extern cvar_t       *r_fullscreen;
 extern cvar_t       *_r_fullscreen;
+extern cvar_t       *r_borderless;
 extern cvar_t       *r_fullscreen_exclusive;
 
 extern const vid_driver_t   *vid;

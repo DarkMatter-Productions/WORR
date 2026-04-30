@@ -5065,6 +5065,7 @@ void ValidateSelectedItem(gentity_t *ent);
 void DeathmatchScoreboardMessage(gentity_t *ent, gentity_t *killer);
 void TeamsScoreboardMessage(gentity_t *ent, gentity_t *killer);
 void ReportMatchDetails(bool is_end);
+void UpdateMultiplayerHudBlob();
 void UpdateLevelEntry();
 void DrawHelpComputer(gentity_t *ent);
 

@@ -2234,6 +2234,7 @@ static inline void G_RunFrame_(bool main_loop) {
     }
     G_HudBlob_SetFlags(hud_flags);
   }
+  UpdateMultiplayerHudBlob();
   if (!level.intermission.endOfUnit)
     G_HudBlob_ClearEOUSection();
 

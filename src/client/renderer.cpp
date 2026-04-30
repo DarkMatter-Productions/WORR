@@ -24,6 +24,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "client.h"
 #include "client/font.h"
 #include "client/ui_font.h"
+#include "common/async.h"
 #include "system/system.h"
 #if USE_EXTERNAL_RENDERERS
 #include "renderer/renderer_api.h"
@@ -36,6 +37,7 @@ cvar_t      *r_modelist;
 cvar_t      *r_monitor_mode;
 cvar_t      *r_fullscreen;
 cvar_t      *_r_fullscreen;
+cvar_t      *r_borderless;
 cvar_t      *r_fullscreen_exclusive;
 static cvar_t *r_driver;
 static cvar_t *vid_display_legacy;
@@ -87,6 +89,7 @@ static int  mode_changed;
 
 static void r_geometry_changed(cvar_t *self);
 static void r_fullscreen_changed(cvar_t *self);
+static void r_borderless_changed(cvar_t *self);
 static void r_fullscreen_exclusive_changed(cvar_t *self);
 static void r_modelist_changed(cvar_t *self);
 static void r_monitor_mode_changed(cvar_t *self);
@@ -939,6 +942,38 @@ static void r_fullscreen_changed(cvar_t *self)
 	mode_changed |= MODE_FULLSCREEN;
 }
 
+static int r_normalize_int_cvar(cvar_t *self, int min, int max)
+{
+	int value = Cvar_ClampInteger(self, min, max);
+	char canonical[16];
+
+	Q_snprintf(canonical, sizeof(canonical), "%d", value);
+	if (strcmp(self->string, canonical)) {
+		Cvar_SetByVar(self, canonical, FROM_CODE);
+	}
+
+	return value;
+}
+
+/*
+=============
+r_borderless_changed
+=============
+*/
+static void r_borderless_changed(cvar_t *self)
+{
+	int value = r_normalize_int_cvar(self, 0, 2);
+
+	if (r_fullscreen_exclusive) {
+		Cvar_SetInteger(r_fullscreen_exclusive, value ? 0 : 1, FROM_CODE);
+	}
+	if (vid_fullscreen_exclusive_legacy) {
+		Cvar_SetInteger(vid_fullscreen_exclusive_legacy, value ? 0 : 1, FROM_CODE);
+	}
+
+	mode_changed |= MODE_FULLSCREEN;
+}
+
 /*
 =============
 r_fullscreen_exclusive_changed
@@ -946,7 +981,12 @@ r_fullscreen_exclusive_changed
 */
 static void r_fullscreen_exclusive_changed(cvar_t *self)
 {
-	(void)self;
+	int exclusive = r_normalize_int_cvar(self, 0, 1);
+
+	if (r_borderless) {
+		Cvar_SetInteger(r_borderless, exclusive ? 0 : 1, FROM_CODE);
+	}
+
 	mode_changed |= MODE_FULLSCREEN;
 }
 
@@ -1040,7 +1080,9 @@ void CL_InitRenderer(void)
     _r_fullscreen = Cvar_Get("_r_fullscreen", "1", CVAR_ARCHIVE);
     _vid_fullscreen_legacy = Cvar_Get("_vid_fullscreen", _r_fullscreen->string,
                                       CVAR_ARCHIVE | CVAR_NOARCHIVE);
-    r_fullscreen_exclusive = Cvar_Get("r_fullscreen_exclusive", "1", CVAR_ARCHIVE);
+    r_borderless = Cvar_Get("r_borderless", "1", CVAR_ARCHIVE);
+    r_fullscreen_exclusive = Cvar_Get("r_fullscreen_exclusive", r_borderless->integer ? "0" : "1",
+                                      CVAR_ARCHIVE | CVAR_NOARCHIVE);
     vid_fullscreen_exclusive_legacy = Cvar_Get("vid_fullscreen_exclusive", r_fullscreen_exclusive->string,
                                                CVAR_ARCHIVE | CVAR_NOARCHIVE);
     r_monitor_mode = Cvar_Get("r_monitor_mode", "0", CVAR_ARCHIVE);
@@ -1053,11 +1095,13 @@ void CL_InitRenderer(void)
 
     r_geometry->changed = r_geometry_changed;
     r_fullscreen->changed = r_fullscreen_changed;
+    r_borderless->changed = r_borderless_changed;
     r_fullscreen_exclusive->changed = r_fullscreen_exclusive_changed;
     r_monitor_mode->changed = r_monitor_mode_changed;
     r_display->changed = r_display_changed;
 
     vid_cvar_alias_register();
+    r_borderless_changed(r_borderless);
 
     if (r_fullscreen->integer) {
         Cvar_Set("_r_fullscreen", r_fullscreen->string);
@@ -1142,6 +1186,10 @@ void CL_ShutdownRenderer(void)
         return;
     }
 
+    // Renderer modules can own async callbacks, such as screenshot completion.
+    // Drain them before shutdown can unload external renderer code.
+    Com_ShutdownAsyncWork();
+
     // Shutdown the rest of graphics subsystems
     V_Shutdown();
     SCR_Shutdown();
@@ -1152,6 +1200,7 @@ void CL_ShutdownRenderer(void)
 
     r_geometry->changed = NULL;
     r_fullscreen->changed = NULL;
+    r_borderless->changed = NULL;
     r_fullscreen_exclusive->changed = NULL;
     r_modelist->changed = NULL;
     r_monitor_mode->changed = NULL;

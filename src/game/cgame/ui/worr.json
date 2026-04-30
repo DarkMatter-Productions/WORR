@@ -1,7 +1,7 @@
 {
   "globals": {
     "background": "black",
-    "font": "$scr_font",
+    "font": "$cl_font",
     "cursor": "/gfx/cursor.png",
     "weapon": "w_railgun.md2",
     "colors": {
@@ -21,6 +21,16 @@
           "label": "video mode",
           "cvar": "r_fullscreen",
           "items": ["windowed", "$$r_modelist"]
+        },
+        {
+          "type": "dropdown",
+          "label": "borderless",
+          "cvar": "r_borderless",
+          "pairs": [
+            { "label": "off", "value": "0" },
+            { "label": "fullscreen", "value": "1" },
+            { "label": "always", "value": "2" }
+          ]
         },
         {
           "type": "action",
@@ -102,11 +112,12 @@
         },
         {
           "type": "dropdown",
-          "label": "fullscreen type",
-          "cvar": "r_fullscreen_exclusive",
+          "label": "borderless",
+          "cvar": "r_borderless",
           "pairs": [
-            { "label": "exclusive", "value": "1" },
-            { "label": "borderless", "value": "0" }
+            { "label": "off", "value": "0" },
+            { "label": "fullscreen", "value": "1" },
+            { "label": "always", "value": "2" }
           ]
         },
         {

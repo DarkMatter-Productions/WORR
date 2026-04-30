@@ -29,6 +29,7 @@ static float ui_pixel_scale;
 static int ui_last_width;
 static int ui_last_height;
 static int ui_font_settings_generation;
+static int ui_font_modified_count;
 static const int k_ui_list_font_size = 6;
 static const float k_ui_ttf_letter_spacing = 0.06f;
 static const char k_ui_kfont_fallback_path[] = "fonts/qconfont.kfont";
@@ -88,6 +89,7 @@ static void UI_FontReload(void)
     ui_last_width = r_config.width;
     ui_last_height = r_config.height;
     ui_font_settings_generation = Font_SettingsGeneration();
+    ui_font_modified_count = ui_font ? ui_font->modified_count : 0;
 
     const char *font_path = ui_font ? ui_font->string : nullptr;
     ui_font_handle = UI_FontLoadHandle(font_path, CONCHAR_HEIGHT);
@@ -125,6 +127,7 @@ static void UI_FontEnsure(void)
         ui_pixel_scale != pixel_scale ||
         ui_last_width != r_config.width ||
         ui_last_height != r_config.height ||
+        ui_font_modified_count != (ui_font ? ui_font->modified_count : 0) ||
         ui_font_settings_generation != Font_SettingsGeneration()) {
         UI_FontReload();
     }
@@ -157,6 +160,7 @@ void UI_FontShutdown(void)
     ui_last_width = 0;
     ui_last_height = 0;
     ui_font_settings_generation = 0;
+    ui_font_modified_count = 0;
 }
 
 int UI_FontDrawString(int x, int y, int flags, size_t max_chars,

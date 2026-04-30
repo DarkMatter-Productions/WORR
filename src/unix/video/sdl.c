@@ -218,6 +218,19 @@ static void mode_changed(void)
 
 /*
 =============
+sdl_borderless_mode
+=============
+*/
+static int sdl_borderless_mode(void)
+{
+	if (!r_borderless)
+		return 1;
+
+	return Q_clip(r_borderless->integer, 0, 2);
+}
+
+/*
+=============
 sdl_get_monitor_mode
 =============
 */
@@ -415,8 +428,11 @@ static void set_mode(void)
 	int freq;
 	SDL_DisplayID display_id = sdl_monitor_display_id();
 
+	int borderless_mode = sdl_borderless_mode();
+
 	if (r_fullscreen->integer) {
-		if (sdl_get_monitor_mode() == 2 || !r_fullscreen_exclusive || !r_fullscreen_exclusive->integer) {
+		if (sdl_get_monitor_mode() == 2 || borderless_mode >= 1 ||
+			!r_fullscreen_exclusive || !r_fullscreen_exclusive->integer) {
 			sdl_apply_borderless_fullscreen();
 			mode_changed();
 			return;
@@ -445,7 +461,7 @@ static void set_mode(void)
 			Com_EPrintf("Couldn't enter fullscreen: %s\n", SDL_GetError());
 	} else {
 		sdl.borderless_fullscreen = false;
-		SDL_SetWindowBordered(sdl.window, true);
+		SDL_SetWindowBordered(sdl.window, borderless_mode != 2);
 		if (VID_GetGeometry(&rc)) {
 			SDL_SetWindowSize(sdl.window, rc.width, rc.height);
 			SDL_SetWindowPosition(sdl.window, rc.x, rc.y);

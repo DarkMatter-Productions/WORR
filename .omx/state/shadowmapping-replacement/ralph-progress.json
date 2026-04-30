@@ -1,0 +1,46 @@
+{
+  "mode": "ralph",
+  "active": true,
+  "iteration": 2,
+  "max_iterations": 10,
+  "current_phase": "executing-native-backends",
+  "started_at": "2026-04-30T15:39:15Z",
+  "state": {
+    "context_snapshot_path": ".omx/context/shadowmapping-native-backends-20260430T163108Z.md",
+    "previous_context_snapshot_path": ".omx/context/shadowmapping-replacement-20260430T153915Z.md",
+    "mcp_state_tools": "unavailable",
+    "agent_tiers_doc": "missing"
+  },
+  "todos": [
+    {
+      "id": "SHADOW-BASELINE-001",
+      "status": "completed",
+      "description": "Implement backend-neutral shadow replacement baseline and guardrails."
+    },
+    {
+      "id": "SHADOW-DOCS-001",
+      "status": "completed",
+      "description": "Document the canonical replacement contract and keep the roadmap current."
+    },
+    {
+      "id": "SHADOW-VERIFY-001",
+      "status": "completed",
+      "description": "Run fresh build/regression checks and obtain architect verification."
+    },
+    {
+      "id": "SHADOW-GL-BACKEND-001",
+      "status": "in_progress",
+      "description": "Implement visible native OpenGL shadow page allocation, rendering, and sampling."
+    },
+    {
+      "id": "SHADOW-VK-BACKEND-001",
+      "status": "pending",
+      "description": "Implement native Vulkan shadow page allocation/render integration without redirecting to OpenGL."
+    },
+    {
+      "id": "SHADOW-FINAL-VERIFY-001",
+      "status": "pending",
+      "description": "Run final builds/regression checks, architect verification, and cleanup pass."
+    }
+  ]
+}
