@@ -2964,10 +2964,11 @@ constexpr size_t SPAWN_SPOT_INTERMISSION = NUM_SPAWN_SPOTS - 1;
 // New spawn containers
 // ----------------------------------------------------------------------------
 struct SpawnLists {
-  std::vector<gentity_t *> ffa;      // info_player_deathmatch
-  std::vector<gentity_t *> red;      // info_player_team_red
-  std::vector<gentity_t *> blue;     // info_player_team_blue
-  gentity_t *intermission = nullptr; // info_player_intermission
+  std::vector<gentity_t *> ffa;       // info_player_deathmatch
+  std::vector<gentity_t *> red;       // info_player_team_red
+  std::vector<gentity_t *> blue;      // info_player_team_blue
+  std::vector<gentity_t *> fallback;  // info_player_start/coop fallback spots
+  gentity_t *intermission = nullptr;  // info_player_intermission
 
   /*
   ===============
@@ -2978,6 +2979,7 @@ struct SpawnLists {
     ffa.clear();
     red.clear();
     blue.clear();
+    fallback.clear();
     intermission = nullptr;
   }
 
@@ -2986,7 +2988,9 @@ struct SpawnLists {
   Total
   ===============
   */
-  size_t Total() const { return ffa.size() + red.size() + blue.size(); }
+  size_t Total() const {
+    return ffa.size() + red.size() + blue.size() + fallback.size();
+  }
 };
 
 struct LevelLocals {

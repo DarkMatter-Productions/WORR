@@ -322,11 +322,21 @@ typedef struct {
     int         frames;
     float       light;
     vec3_t      lightcolor;
+    uint32_t    light_key;
     float       start;
     int         baseframe;
 } explosion_t;
 
 static explosion_t  cl_explosions[MAX_EXPLOSIONS];
+static uint32_t     cl_explosion_light_key = 1;
+
+static void CL_ResetExplosion(explosion_t *ex)
+{
+    memset(ex, 0, sizeof(*ex));
+    ex->light_key = cl_explosion_light_key++;
+    if (!cl_explosion_light_key)
+        cl_explosion_light_key = 1;
+}
 
 [[maybe_unused]] static void CL_ClearExplosions(void)
 {
@@ -341,7 +351,7 @@ static explosion_t *CL_AllocExplosion(void)
 
     for (i = 0, e = cl_explosions; i < MAX_EXPLOSIONS; i++, e++) {
         if (e->type == ex_free) {
-            memset(e, 0, sizeof(*e));
+            CL_ResetExplosion(e);
             return e;
         }
     }
@@ -355,7 +365,7 @@ static explosion_t *CL_AllocExplosion(void)
             oldest = e;
         }
     }
-    memset(oldest, 0, sizeof(*oldest));
+    CL_ResetExplosion(oldest);
     return oldest;
 }
 
@@ -580,8 +590,9 @@ static void CL_AddExplosions(void)
             continue;
 
         if (ex->light)
-            V_AddLight(ent->origin, ex->light * ent->alpha,
-                       ex->lightcolor[0], ex->lightcolor[1], ex->lightcolor[2]);
+            V_AddLightWithKey(ent->origin, ex->light * ent->alpha,
+                              ex->lightcolor[0], ex->lightcolor[1],
+                              ex->lightcolor[2], ex->light_key);
 
         if (ex->type != ex_light) {
             VectorCopy(ent->origin, ent->oldorigin);

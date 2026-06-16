@@ -667,6 +667,36 @@ static inline void AddInflictedClientDamage(
 
 /*
 ===============
+ShouldRecordCombatHeat
+
+Spawn heat should describe combat that matters to player respawns, not every
+piece of world, monster, or destructible damage that can occur in deathmatch.
+===============
+*/
+static bool ShouldRecordCombatHeat(const gentity_t *attacker,
+                                   const gclient_t *targCl) {
+  return targCl || (attacker && attacker->client);
+}
+
+/*
+===============
+CombatHeatOrigin
+===============
+*/
+static Vector3 CombatHeatOrigin(const gentity_t *targ,
+                                const gentity_t *inflictor,
+                                const Vector3 &point) {
+  if (point)
+    return point;
+  if (targ && targ->client)
+    return targ->s.origin;
+  if (inflictor && inflictor->inUse)
+    return inflictor->s.origin;
+  return targ ? targ->s.origin : vec3_origin;
+}
+
+/*
+===============
 ApplyDamage
 Subtract health, spawn effects, handle spheres, and kill target if needed.
 Returns true if the target died.
@@ -699,7 +729,10 @@ static bool ApplyDamage(gentity_t *targ, gentity_t *inflictor,
 
   // apply to health (unless game-wide combat disabled)
   if (!targ->client || (targ->client && !CombatIsDisabled())) {
-    HM_AddEvent(point, static_cast<float>(take));
+    if (ShouldRecordCombatHeat(attacker, targCl)) {
+      HM_AddEvent(CombatHeatOrigin(targ, inflictor, point),
+                  static_cast<float>(take));
+    }
     targ->health -= take;
 
     // consume health bonus first

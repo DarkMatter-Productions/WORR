@@ -6,10 +6,28 @@ Date: 2026-02-27
 Create a repository-grounded SWOT and convert it into actionable, task-based project roadmaps that can guide coordinated team execution.
 
 ## Status Updates
+- `FR-04-T09` Done:
+  - Corrected deathmatch `INITIAL` spawn flag handling and kept initial-spawn
+    intent aligned between the safe-spawn precheck and the actual spawn.
+  - Routed team-mode spawns through the same safety filters and composite
+    scoring used by FFA spawns, including last-death, mine/trap, nearest-player,
+    and enemy-LOS checks.
+  - Split solo/coop starts into a fallback-only spawn registry so ordinary
+    deathmatch selection does not consume them unless real multiplayer spawn
+    lists fail.
+  - Kept relaxed fallback paths scored by heat, player proximity, LOS,
+    last-death distance, and mine risk instead of reverting to random picks.
+  - Hardened combat heatmap pruning, event capping, and danger normalization so
+    spawn scoring receives a stable recent-combat signal.
+  - Filtered heat writes to player-involved damage, tightened heat event origin
+    fallback, and accelerated decay so stale combat zones stop biasing respawns.
+  - Implementation logs: `docs-dev/sgame-spawn-selection-heatmap-hardening-2026-06-16.md`, `docs-dev/sgame-spawn-selection-heatmap-second-pass-2026-06-16.md`.
 - `DV-04-T02` / `FR-03-T06` / `DV-07-T04` In Progress:
-  - Added `cg_view.cpp` as the cgame-local home for first-person viewweapon pose logic and introduced archived `cg_weaponBob` modes for disabled, Quake 3-style, and Doom 3-style weapon bobbing.
+  - Added `cg_view.cpp` as the cgame-local home for first-person viewweapon pose logic and introduced archived `cg_weapon_bob` modes for disabled, Quake 3-style, and Doom 3-style weapon bobbing.
+  - Promoted `cg_weapon_bob` as the snake_case primary cvar while keeping `cg_weaponBob` as a non-archived compatibility alias.
+  - Fixed Quake 3 mode to use the active interpolated playerstate weapon pose instead of a parallel cgame-only bob cycle.
   - Wired the cgame Effects menu and client cvar docs to expose the new setting.
-  - Implementation log: `docs-dev/cgame-viewweapon-bob-options-2026-05-06.md`.
+  - Implementation logs: `docs-dev/cgame-viewweapon-bob-options-2026-05-06.md`, `docs-dev/cgame-weapon-bob-cvar-snake-case-2026-06-12.md`, `docs-dev/cgame-weapon-bob-active-pose-fix-2026-06-12.md`.
 - `FR-02-T09` / `FR-02-T10` / `FR-02-T11` / `DV-02-T06` / `DV-07-T05` Done:
   - Added a renderer-neutral shadow frontend contract (`shadow_light_desc_t`, `shadow_view_desc_t`, `shadow_caster_t`, `shadow_cache_key_t`, `shadow_page_id_t`, `shadow_backend_ops_t`) shared by GL, native Vulkan, and RTX builds.
   - Wired GL and native Vulkan frame paths into the shared frontend for deterministic candidate light selection, backend-resolved caster bounds, per-view caster index spans, light-influence cluster dirtying, page residency keys, dirty reasons, freeze modes, optional sun cascade descriptors, and main-view visibility mutation guardrails.
@@ -23,7 +41,10 @@ Create a repository-grounded SWOT and convert it into actionable, task-based pro
   - Added focused shadow dumps, materialization reports, live debug overlays, model-path caster exclusion, tracked/configstring shadowlight metadata preservation, world-occluder view culling, and scripted repro smoke launch coverage.
   - Added `sv_shadow_strict_replication` for multiplayer servers that prefer strict normal-PVS shadow owner replication over the default PVS2 shadow relevance expansion.
   - Added a CI/source guardrail script that blocks the removed no-slot fallback and sticky slot-churn shadow cvars/paths from returning.
-  - Implementation logs: `docs-dev/renderer/shadowmapping-replacement-baseline.md`, `docs-dev/renderer/shadowmapping-native-backends-2026-04-30.md`, `docs-dev/renderer/shadowmapping-full-plan-2026-04-30.md`.
+  - Completed the native Vulkan entity receiver follow-up so inline BSP models sample authored lightmaps and MD2/MD5 entities sample dynamic shadow pages through the Vulkan shadow descriptor set.
+  - Stabilized dynamic effect dlight shadow residency for both OpenGL and Vulkan by preserving stable cdlight/entity/explosion keys through client submission and by removing moving dynamic-light projection/origin drift from shadow cache residency keys.
+  - Restored first-person viewweapon shadow receiving in both OpenGL and native Vulkan so the hidden local-player body caster can shadow the held weapon without making `RF_WEAPONMODEL` entities cast shadows.
+  - Implementation logs: `docs-dev/renderer/shadowmapping-replacement-baseline.md`, `docs-dev/renderer/shadowmapping-native-backends-2026-04-30.md`, `docs-dev/renderer/shadowmapping-full-plan-2026-04-30.md`, `docs-dev/renderer/vulkan-entity-lightmap-shadow-receiver-repair-2026-06-11.md`, `docs-dev/renderer/vulkan-viewweapon-dlight-glow-fixes-2026-06-12.md`, `docs-dev/renderer/viewweapon-shadow-receiver-2026-06-13.md`.
 - `FR-03-T09` Done:
   - Added shared archived `r_borderless` tri-state window behavior for renderer/video backends (`0` exclusive where supported, `1` borderless fullscreen, `2` always borderless in windowed mode too).
   - Updated the Video and Multi-Monitor menu selectors to expose `r_borderless` instead of the legacy `r_fullscreen_exclusive` toggle, while keeping the legacy cvar as a no-archive runtime mirror.
@@ -171,6 +192,13 @@ Create a repository-grounded SWOT and convert it into actionable, task-based pro
     - Remap/deduplicate MD2 vertices by `(index_xyz, st.s, st.t)` and emit compact index/vertex streams.
     - Added MD2 header/frame-size/skin-dimension bounds checks matching RTX-style validation.
   - Implementation log: `docs-dev/vulkan-md2-mesh-remap-parity-fix-2026-02-27.md`.
+  - Added Vulkan entity receiver lighting for MD2/MD5 and inline BSP models:
+    - MD2 now interpolates imported frame normals for dynamic-light/shadow receiver evaluation.
+    - MD5 now emits world-space per-triangle receiver normals while a smoother skinned-normal reconstruction remains a follow-up.
+    - Inline BSP models now sample authored Vulkan lightmaps while remaining excluded from the static world mesh.
+  - Implementation log: `docs-dev/renderer/vulkan-entity-lightmap-shadow-receiver-repair-2026-06-11.md`.
+  - Fixed native Vulkan view weapon rendering by splitting depthhack entity rendering into opaque and alpha pipelines with a compressed near depth range, and restored the classic `RF_GLOW` item pulse in the Vulkan entity light path.
+  - Implementation log: `docs-dev/renderer/vulkan-viewweapon-dlight-glow-fixes-2026-06-12.md`.
 - `FR-06-T01` In Progress:
   - Fixed OpenAL loop-merge channel reuse so merged loops cannot reuse `no_merge` Doppler channels in `src/client/sound/al.cpp`.
   - This preserves projectile world-origin tracking for Doppler-marked loop sounds when mixed with non-Doppler loops using the same sample.
@@ -395,6 +423,8 @@ Tasks:
   Dependency: none. Priority: P1.
 - [ ] `FR-01-T04` Complete MD2 and MD5 visual parity pass with map-driven validation scenes.  
   Dependency: none. Priority: P0.
+  Progress: Native Vulkan now renders MD2/MD5 entity receivers with dynamic shadows, keeps MD5 skin selection aligned with GL, and fixes first-person view weapon depthhack rendering with separate opaque/alpha depthhack pipelines. `RF_GLOW` item pulse parity is restored in the Vulkan entity light path.
+  Implementation logs: `docs-dev/renderer/vulkan-entity-lightmap-shadow-receiver-repair-2026-06-11.md`, `docs-dev/renderer/vulkan-viewweapon-dlight-glow-fixes-2026-06-12.md`.
 - [ ] `FR-01-T05` Resolve remaining sky seam/artifact issues for all six faces and transitions.  
   Dependency: none. Priority: P0.
 - [ ] `FR-01-T06` Finalize bmodel initial-state correctness on first render frame.  
@@ -434,8 +464,10 @@ Tasks:
   Dependency: `FR-02-T01`. Priority: P0.
 - [x] `FR-02-T10` Implement native OpenGL shadow page allocation/render/sample backend under the shared frontend.
   Dependency: `FR-02-T09`. Priority: P0.
+  Progress: Dynamic effect dlights now preserve stable cdlight/entity/explosion identities before they reach shared shadow selection, reducing page churn and flicker in the OpenGL backend.
 - [x] `FR-02-T11` Implement native Vulkan raster shadow page allocation/render/sample backend under the shared frontend.
   Dependency: `FR-02-T09`, `FR-01-T07`. Priority: P0.
+  Progress: The same dynamic effect dlight identity/cache-key stabilization applies to native Vulkan, while dynamic pages remain rerendered when light parameters move or fade.
 
 ## Epic FR-03: JSON UI Rework Completion
 Objective: complete modern menu coverage and remove remaining UX gaps for core settings and flows.
@@ -459,7 +491,7 @@ Tasks:
   Dependency: `FR-03-T01`. Priority: P1.
 - [ ] `FR-03-T06` Audit and complete settings page cvar wiring for Video/Audio/Input/HUD/Downloads.  
   Dependency: `FR-03-T02..T05`. Priority: P0.
-  Progress: The cgame Effects menu now exposes `cg_weaponBob` as a 0/1/2 selector for disabled, Quake 3, and Doom 3 viewweapon bob modes.
+  Progress: The cgame Effects menu now exposes `cg_weapon_bob` as a 0/1/2 selector for disabled, Quake 3, and Doom 3 viewweapon bob modes.
 - [ ] `FR-03-T07` Add menu regression checklist (navigation, conditionals, scaling, localization).  
   Dependency: `FR-03-T06`. Priority: P1.
 - [ ] `FR-03-T08` Complete split between engine-side and cgame-side UI ownership where still mixed.  
@@ -472,11 +504,13 @@ Tasks:
 ## Epic FR-04: Bots and Match Experience
 Objective: evolve bot and match systems from structural presence to reliable gameplay experience.
 
-Primary Areas: `src/game/sgame/bots/*`, `src/game/sgame/match/*`, `src/game/sgame/gameplay/*`
+Primary Areas: `src/game/sgame/bots/*`, `src/game/sgame/match/*`, `src/game/sgame/gameplay/*`, `tools/q2aas/*`
 
 Exit Criteria:
 - Bots can join, navigate, fight, and participate in primary supported modes without obvious dead behavior.
 - Match flow automation remains stable with bots in common scenarios.
+- Quake II / Quake II Rerelease maps have a maintained AAS generation path based on credited upstream BSPC work.
+- Imported bot/AAS code and algorithms have complete source provenance and credits.
 
 Tasks:
 - [ ] `FR-04-T01` Define bot MVP behavior set (spawn, roam, engage, objective awareness).  
@@ -495,6 +529,24 @@ Tasks:
   Dependency: `FR-04-T01`. Priority: P2.
 - [x] `FR-04-T08` Recreate a modern competitive top HUD for FFA/team/duel, including match timer, time limit, warmup/countdown state, player/team assets, and spectator duel vitals.
   Dependency: none. Priority: P1.
+- [x] `FR-04-T09` Harden player spawn selection and combat heatmap danger scoring for multiplayer respawns.
+  Dependency: none. Priority: P1.
+  Progress: Completed a second-pass audit that separates solo/coop fallback starts from normal FFA/team pools, scores relaxed fallbacks, uses point-trace enemy visibility, filters heat writes to player-involved damage, and shortens stale heat influence.
+  Implementation logs: `docs-dev/sgame-spawn-selection-heatmap-hardening-2026-06-16.md`, `docs-dev/sgame-spawn-selection-heatmap-second-pass-2026-06-16.md`.
+- [ ] `FR-04-T10` Complete the Q3A BotLib/BSPC source audit, license review, and credits ledger before importing code.
+  Dependency: none. Priority: P0.
+- [ ] `FR-04-T11` Tailor `TTimo/bspc` into a WORR Q2/Q2R AAS generator with reproducible map validation.
+  Dependency: `FR-04-T10`. Priority: P0.
+- [ ] `FR-04-T12` Rehost the Quake III Arena BotLib runtime behind a WORR sgame adapter.
+  Dependency: `FR-04-T10`. Priority: P0.
+- [ ] `FR-04-T13` Implement WORR-native bot fake-client commands, slot lifecycle, and profile loading.
+  Dependency: `FR-04-T01`. Priority: P0.
+- [ ] `FR-04-T14` Implement AAS-backed navigation, route following, stuck recovery, and debug overlays.
+  Dependency: `FR-04-T11`, `FR-04-T12`, `FR-04-T13`. Priority: P0.
+- [ ] `FR-04-T15` Translate Q3A behavior concepts into WORR/Q2 weapons, items, combat, team modes, and architecture boundaries.
+  Dependency: `FR-04-T14`. Priority: P1.
+- [ ] `FR-04-T16` Stage/package generated AAS assets or generator outputs and add bot/AAS smoke validation.
+  Dependency: `FR-04-T11`, `FR-04-T14`. Priority: P1.
 
 ## Epic FR-05: Asset and Format Expansion
 Objective: expand supported content formats without breaking current workflows.
@@ -738,9 +790,11 @@ Tasks:
   Dependency: none. Priority: P2.
 - [ ] `DV-07-T04` Add user-doc parity pass whenever user-visible cvars/features are changed.  
   Dependency: none. Priority: P1.
-  Progress: `docs-user/client.asciidoc` documents `cg_weaponBob` and its disabled/Quake 3/Doom 3 values.
+  Progress: `docs-user/client.asciidoc` documents `cg_weapon_bob`, its disabled/Quake 3/Doom 3 values, and the legacy `cg_weaponBob` alias.
 - [x] `DV-07-T05` Keep the canonical shadowmapping replacement baseline synchronized with implementation status.
   Dependency: `FR-02-T09`. Priority: P1.
+- [ ] `DV-07-T06` Maintain imported-source credits and provenance ledgers for the Q3A BotLib and `TTimo/bspc` AAS work.
+  Dependency: `FR-04-T10`. Priority: P0.
 
 ## Epic DV-08: Release and Updater Hardening
 Objective: ensure staged artifacts, update metadata, and updater behavior remain reliable under growth.

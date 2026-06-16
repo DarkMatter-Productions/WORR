@@ -3054,9 +3054,11 @@ timers, etc.) is always applied once regardless of the spawn origin.
 void worr::server::client::ClientCompleteSpawn(gentity_t *ent) {
   // [Paril-KEX] Check for safe spawn availability before spawning
   if (deathmatch->integer) {
+    const bool initialSpawn =
+        !ent->client->sess.inGame || !ent->client->pers.spawned;
     select_spawn_result_t result =
         SelectDeathmatchSpawnPoint(ent, ent->client->lastDeathLocation, false,
-                                   true, false, !ent->client->sess.inGame);
+                                   true, false, initialSpawn);
 
     if (!result.spot) {
       // No safe spawn found - delay allowed

@@ -1793,6 +1793,8 @@ void VK_Shadow_BeginFrame(void *userdata,
     memset(&vk_shadow.uniform, 0, sizeof(vk_shadow.uniform));
     vk_shadow.uniform.global[1] = VK_SHADOW_DEFAULT_STRENGTH;
     vk_shadow.uniform.sun[0] = -1.0f;
+    vk_shadow.uniform.dlight_count[1] = 1.0f;
+    vk_shadow.uniform.dlight_count[3] = 1.0f;
     vk_shadow.uniform.moment_tuning[0] = VK_SHADOW_MOMENT_MIN_VARIANCE;
     vk_shadow.uniform.moment_tuning[1] = VK_SHADOW_EVSM_EXPONENT;
     for (int i = 0; i < MAX_DLIGHTS; i++) {
@@ -1897,6 +1899,11 @@ void VK_Shadow_EndFrame(void *userdata,
         vk_shadow.uniform.global[0] > 0.0f &&
         vk_shadow.uniform.sun[0] >= 0.0f &&
         vk_shadow.uniform.sun[1] > 0.0f;
+    // y/z/w carry the lightmap modulate, brightness add, and entity modulate
+    // for the world and entity receiver shaders; x stays the dlight count.
+    vk_shadow.uniform.dlight_count[1] = VK_World_LightmapModulate();
+    vk_shadow.uniform.dlight_count[2] = VK_World_LightmapAdd();
+    vk_shadow.uniform.dlight_count[3] = VK_World_EntityModulate();
     VK_Shadow_UploadUniform();
 
     if (!vk_shadow.vertex_count) {

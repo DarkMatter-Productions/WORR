@@ -893,6 +893,11 @@ enum { SSBO_WEIGHTS, SSBO_JOINTNUMS };
 #define GL_SHADOW_MAX_PAGES 64
 #define GL_SHADOW_MAX_RESOLUTION 1024
 
+// GL receiver opacity curve for filtered visibility. Values above 1 darken
+// partial PCF/PCSS/VSM/EVSM coverage without changing fully lit or fully
+// blocked samples, bringing filtered local shadows closer to Q2 Rerelease.
+#define GL_SHADOW_VISIBILITY_EXPONENT_GLSL "2.0"
+
 // EVSM warp exponent shared by the moment writer (shadow.c) and the receiver
 // (shader.c). Moments are stored as (w, w*w) in RGBA16F, so exp(2*e) must stay
 // below the fp16 max of 65504, which caps e at ~5.54.

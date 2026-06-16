@@ -25,4 +25,11 @@ void VK_World_RenderFrame(const refdef_t *fd);
 void VK_World_Record(VkCommandBuffer cmd, const VkExtent2D *extent);
 
 void VK_World_LightPoint(const vec3_t origin, vec3_t light);
+void VK_World_LightPointEx(const vec3_t origin, vec3_t light, bool include_dynamic_lights);
+float VK_World_LightmapModulate(void);
+float VK_World_LightmapAdd(void);
+float VK_World_EntityModulate(void);
+VkDescriptorSet VK_World_GetLightmapDescriptorSet(void);
+bool VK_World_GetFaceLightmapUV(const mface_t *face, const vec3_t point,
+                                vec2_t out_uv);
 const bsp_t *VK_World_GetBsp(void);

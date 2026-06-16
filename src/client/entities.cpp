@@ -749,6 +749,40 @@ static bool CL_UsesClientAutoAnimation(effects_t effects)
     return (effects & (EF_ANIM01 | EF_ANIM23 | EF_ANIM_ALL | EF_ANIM_ALLFAST)) != 0;
 }
 
+static uint32_t CL_HashEntityLightKey(uint32_t hash, uint32_t value)
+{
+    hash ^= value;
+    return hash * 16777619u;
+}
+
+static uint32_t CL_EntityLightKey(const entity_state_t *state, effects_t effects,
+                                  uint32_t source)
+{
+    uint32_t hash = 2166136261u;
+    hash = CL_HashEntityLightKey(hash, 0x45464c54u);
+    hash = CL_HashEntityLightKey(hash, state ? (uint32_t)state->number : 0u);
+    hash = CL_HashEntityLightKey(hash, source);
+    hash = CL_HashEntityLightKey(hash, (uint32_t)effects);
+    hash = CL_HashEntityLightKey(hash, (uint32_t)(effects >> 32));
+    return hash ? hash : 1u;
+}
+
+static void CL_AddEntityLightWithSource(const entity_state_t *state,
+                                        effects_t effects,
+                                        uint32_t source,
+                                        const vec3_t org,
+                                        float intensity,
+                                        float r,
+                                        float g,
+                                        float b)
+{
+    V_AddLightWithKey(org, intensity, r, g, b,
+                      CL_EntityLightKey(state, effects, source));
+}
+
+#define CL_AddEntityLight(state, effects, org, intensity, r, g, b) \
+    CL_AddEntityLightWithSource(state, effects, __LINE__, org, intensity, r, g, b)
+
 static bool CL_UsesExtendedModelFrameLerp(const entity_state_t *state)
 {
     if (!state || !state->modelindex || (state->renderfx & RF_BEAM) ||
@@ -1141,10 +1175,10 @@ CL_AddPacketEntities
                     color = COLOR_WHITE;
                 else
                     color.u32 = BigLong(s1->skinnum);
-                V_AddLight(ent.origin, DLIGHT_CUTOFF + s1->frame,
-                           color.r / 255.0f,
-                           color.g / 255.0f,
-                           color.b / 255.0f);
+                CL_AddEntityLight(s1, effects, ent.origin, DLIGHT_CUTOFF + s1->frame,
+                                  color.r / 255.0f,
+                                  color.g / 255.0f,
+                                  color.b / 255.0f);
                 goto skip;
             }
 
@@ -1234,7 +1268,7 @@ CL_AddPacketEntities
 
             AngleVectors(ent.angles, forward, NULL, NULL);
             VectorMA(ent.origin, 64, forward, start);
-            V_AddLight(start, 100, 1, 0, 0);
+            CL_AddEntityLight(s1, effects, start, 100, 1, 0, 0);
         } else if (s1->number == cl.frame.clientNum + 1) {
             VectorCopy(cl.playerEntityAngles, ent.angles);      // use predicted angles
         } else { // interpolate angles
@@ -1294,23 +1328,23 @@ CL_AddPacketEntities
             } else {
                 // smooth out distance "jumps"
                 LerpVector(start, end, cent->flashlightfrac, end);
-                V_AddLight(end, 256, 1, 1, 1);
+                CL_AddEntityLight(s1, effects, end, 256, 1, 1, 1);
                 CL_AdvanceValue(&cent->flashlightfrac, trace.fraction, 1);
             }
         }
 
         if (effects & EF_GRENADE_LIGHT)
-            V_AddLight(ent.origin, 100, 1, 1, 0);
+            CL_AddEntityLight(s1, effects, ent.origin, 100, 1, 1, 0);
 
         if (s1->number == cl.frame.clientNum + 1 && !cl.thirdPersonView) {
             if (effects & EF_FLAG1)
-                V_AddLight(ent.origin, 225, 1.0f, 0.1f, 0.1f);
+                CL_AddEntityLight(s1, effects, ent.origin, 225, 1.0f, 0.1f, 0.1f);
             else if (effects & EF_FLAG2)
-                V_AddLight(ent.origin, 225, 0.1f, 0.1f, 1.0f);
+                CL_AddEntityLight(s1, effects, ent.origin, 225, 0.1f, 0.1f, 1.0f);
             else if (effects & EF_TAGTRAIL)
-                V_AddLight(ent.origin, 225, 1.0f, 1.0f, 0.0f);
+                CL_AddEntityLight(s1, effects, ent.origin, 225, 1.0f, 1.0f, 0.0f);
             else if (effects & EF_TRACKERTRAIL)
-                V_AddLight(ent.origin, 225, -1.0f, -1.0f, -1.0f);
+                CL_AddEntityLight(s1, effects, ent.origin, 225, -1.0f, -1.0f, -1.0f);
             // Add a shadow-only entity so first-person players still cast shadows.
             {
                 const effects_t shadow_skip_effects =
@@ -1657,26 +1691,26 @@ CL_AddPacketEntities
                 has_trail = true;
             }
             if (cl_dlight_hacks->integer & DLHACK_ROCKET_COLOR)
-                V_AddLight(ent.origin, 200, 1, 0.23f, 0);
+                CL_AddEntityLight(s1, effects, ent.origin, 200, 1, 0.23f, 0);
             else
-                V_AddLight(ent.origin, 200, 1, 1, 0);
+                CL_AddEntityLight(s1, effects, ent.origin, 200, 1, 1, 0);
         } else if (effects & EF_BLASTER) {
             if (effects & EF_TRACKER) {
                 CL_BlasterTrail2(cent, ent.origin);
-                V_AddLight(ent.origin, 200, 0, 1, 0);
+                CL_AddEntityLight(s1, effects, ent.origin, 200, 0, 1, 0);
                 has_trail = true;
             } else {
                 if (!(cl_disable_particles->integer & NOPART_BLASTER_TRAIL)) {
                     CL_BlasterTrail(cent, ent.origin);
                     has_trail = true;
                 }
-                V_AddLight(ent.origin, 200, 1, 1, 0);
+                CL_AddEntityLight(s1, effects, ent.origin, 200, 1, 1, 0);
             }
         } else if (effects & EF_HYPERBLASTER) {
             if (effects & EF_TRACKER)
-                V_AddLight(ent.origin, 200, 0, 1, 0);
+                CL_AddEntityLight(s1, effects, ent.origin, 200, 0, 1, 0);
             else
-                V_AddLight(ent.origin, 200, 1, 1, 0);
+                CL_AddEntityLight(s1, effects, ent.origin, 200, 1, 1, 0);
         } else if (effects & EF_GIB) {
             CL_DiminishingTrail(cent, ent.origin, DT_GIB);
             has_trail = true;
@@ -1698,51 +1732,51 @@ CL_AddPacketEntities
             } else {
                 i = bfg_lightramp[Q_clip(s1->frame, 0, 5)];
             }
-            V_AddLight(ent.origin, i, 0, 1, 0);
+            CL_AddEntityLight(s1, effects, ent.origin, i, 0, 1, 0);
         } else if (effects & EF_TRAP) {
             ent.origin[2] += 32;
             CL_TrapParticles(cent, ent.origin);
             i = (Com_SlowRand() % 100) + 100;
-            V_AddLight(ent.origin, i, 1, 0.8f, 0.1f);
+            CL_AddEntityLight(s1, effects, ent.origin, i, 1, 0.8f, 0.1f);
         } else if (effects & EF_FLAG1) {
             CL_FlagTrail(cent, ent.origin, 242);
-            V_AddLight(ent.origin, 225, 1, 0.1f, 0.1f);
+            CL_AddEntityLight(s1, effects, ent.origin, 225, 1, 0.1f, 0.1f);
             has_trail = true;
         } else if (effects & EF_FLAG2) {
             CL_FlagTrail(cent, ent.origin, 115);
-            V_AddLight(ent.origin, 225, 0.1f, 0.1f, 1);
+            CL_AddEntityLight(s1, effects, ent.origin, 225, 0.1f, 0.1f, 1);
             has_trail = true;
         } else if (effects & EF_TAGTRAIL) {
             CL_TagTrail(cent, ent.origin, 220);
-            V_AddLight(ent.origin, 225, 1.0f, 1.0f, 0.0f);
+            CL_AddEntityLight(s1, effects, ent.origin, 225, 1.0f, 1.0f, 0.0f);
             has_trail = true;
         } else if (effects & EF_TRACKERTRAIL) {
             if (effects & EF_TRACKER) {
                 float intensity = 50 + (500 * (sinf(cl.time / 500.0f) + 1.0f));
-                V_AddLight(ent.origin, intensity, -1.0f, -1.0f, -1.0f);
+                CL_AddEntityLight(s1, effects, ent.origin, intensity, -1.0f, -1.0f, -1.0f);
             } else {
                 CL_Tracker_Shell(cent, ent.origin);
-                V_AddLight(ent.origin, 155, -1.0f, -1.0f, -1.0f);
+                CL_AddEntityLight(s1, effects, ent.origin, 155, -1.0f, -1.0f, -1.0f);
             }
         } else if (effects & EF_TRACKER) {
             CL_TrackerTrail(cent, ent.origin);
-            V_AddLight(ent.origin, 200, -1, -1, -1);
+            CL_AddEntityLight(s1, effects, ent.origin, 200, -1, -1, -1);
             has_trail = true;
         } else if (effects & EF_GREENGIB) {
             CL_DiminishingTrail(cent, ent.origin, DT_GREENGIB);
             has_trail = true;
         } else if (effects & EF_IONRIPPER) {
             CL_IonripperTrail(cent, ent.origin);
-            V_AddLight(ent.origin, 100, 1, 0.5f, 0.5f);
+            CL_AddEntityLight(s1, effects, ent.origin, 100, 1, 0.5f, 0.5f);
             has_trail = true;
         } else if (effects & EF_BLUEHYPERBLASTER) {
-            V_AddLight(ent.origin, 200, 0, 0, 1);
+            CL_AddEntityLight(s1, effects, ent.origin, 200, 0, 0, 1);
         } else if (effects & EF_PLASMA) {
             if (effects & EF_ANIM_ALLFAST) {
                 CL_BlasterTrail(cent, ent.origin);
                 has_trail = true;
             }
-            V_AddLight(ent.origin, 130, 1, 0.5f, 0.5f);
+            CL_AddEntityLight(s1, effects, ent.origin, 130, 1, 0.5f, 0.5f);
         }
 
 skip:

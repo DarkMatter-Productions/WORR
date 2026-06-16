@@ -5,6 +5,7 @@ Copyright (C) 2026
 #include "vk_entity.h"
 
 #include "vk_entity_spv.h"
+#include "vk_shadow.h"
 #include "vk_ui.h"
 #include "vk_world.h"
 #include "renderer/view_setup.h"
@@ -38,9 +39,11 @@ typedef struct {
     uint32_t num_vertices;
     uint32_t num_indices;
     float *positions;      // [num_frames][num_vertices][3]
+    float *normals;        // [num_frames][num_vertices][3]
     float *uv;             // [num_vertices][2]
     uint16_t *indices;     // [num_indices]
     qhandle_t *skins;
+    char (*skin_names)[MAX_QPATH]; // kept for MD5 replacement skin lookup
     uint32_t num_skins;
 } vk_md2_t;
 
@@ -93,8 +96,10 @@ typedef struct {
     uint32_t num_meshes;
     uint32_t num_joints;
     uint32_t num_frames;
+    uint32_t num_skins;
     vk_md5_mesh_t *meshes;
     vk_md5_joint_t *skeleton_frames; // [num_frames][num_joints]
+    qhandle_t *skins; // derived from the MD2 skin names, "md5/" subdirectory
 } vk_md5_t;
 #endif
 
@@ -117,7 +122,10 @@ typedef struct {
 typedef struct {
     float pos[3];
     float uv[2];
+    float lm_uv[2];
     uint32_t color;
+    uint32_t flags;
+    float normal[3];
 } vk_vertex_t;
 
 typedef struct {
@@ -144,7 +152,8 @@ typedef struct {
     VkPipelineLayout pipeline_layout;
     VkPipeline pipeline_opaque;
     VkPipeline pipeline_alpha;
-    VkPipeline pipeline_depthhack;
+    VkPipeline pipeline_depthhack_opaque;
+    VkPipeline pipeline_depthhack_alpha;
 
     VkBuffer vertex_buffer;
     VkDeviceMemory vertex_memory;
@@ -199,14 +208,23 @@ static VkDescriptorSet VK_Entity_SetForImage(qhandle_t handle);
 static bool VK_Entity_EmitTri(const vk_vertex_t *a, const vk_vertex_t *b, const vk_vertex_t *c,
                               VkDescriptorSet set, bool alpha, bool depth_hack, bool weapon_model);
 static inline float VK_Entity_Alpha(const entity_t *ent);
-static color_t VK_Entity_LitColor(const entity_t *ent, bool fullbright);
+static color_t VK_Entity_LitColor(const entity_t *ent, bool fullbright,
+                                  bool include_dynamic_lights,
+                                  float frame_time);
+static uint32_t VK_Entity_LightingFlags(const entity_t *ent, bool fullbright);
+static color_t VK_Entity_ShellColor(const entity_t *ent);
+static inline float VK_Entity_ShellScale(const entity_t *ent);
 static void VK_Entity_BuildTransform(const entity_t *ent, vk_entity_transform_t *out_transform);
 static void VK_Entity_TransformPointWithTransform(const vk_entity_transform_t *transform,
                                                   const vec3_t local, vec3_t out);
 static void VK_Entity_TransformPointInverseWithTransform(const vk_entity_transform_t *transform,
                                                          const vec3_t world, vec3_t out);
+static void VK_Entity_TransformNormalWithTransform(const vk_entity_transform_t *transform,
+                                                   const vec3_t local, vec3_t out);
+static void VK_Entity_FaceNormal(const vk_vertex_t tri[3], vec3_t out);
+static void VK_Entity_SetTriNormal(vk_vertex_t tri[3], const vec3_t normal);
 static qhandle_t VK_Entity_SelectMD2Skin(const entity_t *ent, const vk_md2_t *md2);
-static qhandle_t VK_Entity_SelectMD5Skin(const entity_t *ent);
+static qhandle_t VK_Entity_SelectMD5Skin(const entity_t *ent, const vk_md5_t *md5);
 static bool VK_Entity_AddBspModel(const entity_t *ent, const refdef_t *fd, const bsp_t *bsp,
                                   bool depth_hack, bool weapon_model);
 static bool VK_Entity_AddParticles(const refdef_t *fd, const vec3_t view_axis[3]);
@@ -226,6 +244,14 @@ static bool VK_Entity_ResolveAnimationFrames(const refdef_t *fd, uint32_t num_fr
 #define VK_ENTITY_PARTICLE_SIZE 1.70710678f
 #define VK_ENTITY_PARTICLE_SCALE (1.0f / (2.0f * VK_ENTITY_PARTICLE_SIZE))
 #define VK_ENTITY_PARTICLE_TEX_SIZE 16
+
+enum {
+    VK_ENTITY_VERTEX_FULLBRIGHT = BIT(0),
+    VK_ENTITY_VERTEX_ALPHATEST = BIT(1),
+    VK_ENTITY_VERTEX_LIGHTMAP = BIT(2),
+    VK_ENTITY_VERTEX_NO_SHADOW = BIT(3),
+    VK_ENTITY_VERTEX_NO_DLIGHT = BIT(4),
+};
 
 static bool VK_Entity_Check(VkResult result, const char *what)
 {
@@ -334,6 +360,7 @@ static void VK_MD5_Free(vk_md5_t *md5)
 
     free(md5->meshes);
     free(md5->skeleton_frames);
+    free(md5->skins);
     memset(md5, 0, sizeof(*md5));
 }
 
@@ -805,6 +832,26 @@ static bool VK_Entity_LoadMD5Replacement(vk_model_t *model)
     model->md5 = parsed;
     model->md5.loaded = true;
 
+    // Mirrors the GL renderer's MD5_LoadSkins: replacement skins live in an
+    // "md5/" subdirectory next to the MD2 skin files they replace.
+    if (model->md2.num_skins && model->md2.skin_names) {
+        model->md5.skins = calloc(model->md2.num_skins, sizeof(*model->md5.skins));
+        if (model->md5.skins) {
+            model->md5.num_skins = model->md2.num_skins;
+            for (uint32_t i = 0; i < model->md2.num_skins; i++) {
+                char skin_name[MAX_QPATH];
+                char skin_path[MAX_QPATH];
+
+                COM_SplitPath(model->md2.skin_names[i], skin_name, sizeof(skin_name),
+                              skin_path, sizeof(skin_path), false);
+                if (Q_strlcat(skin_path, "md5/", sizeof(skin_path)) < sizeof(skin_path) &&
+                    Q_strlcat(skin_path, skin_name, sizeof(skin_path)) < sizeof(skin_path)) {
+                    model->md5.skins[i] = VK_UI_RegisterImage(skin_path, IT_SKIN, IF_NONE);
+                }
+            }
+        }
+    }
+
     Com_DPrintf("Vulkan MD5 replacement loaded for %s (%u meshes, %u joints, %u frames)\n",
                 model->name, model->md5.num_meshes, model->md5.num_joints, model->md5.num_frames);
     return true;
@@ -938,8 +985,16 @@ static bool VK_Entity_AddMD5(const entity_t *ent, const refdef_t *fd, const vk_m
     vk_entity_transform_t transform;
     VK_Entity_BuildTransform(ent, &transform);
 
-    color_t color = VK_Entity_LitColor(ent, false);
-    qhandle_t preferred_skin = VK_Entity_SelectMD5Skin(ent);
+    bool shell = (ent->flags & RF_SHELL_MASK) != 0;
+    float shell_scale = shell ? VK_Entity_ShellScale(ent) : 0.0f;
+    color_t color = shell ? VK_Entity_ShellColor(ent)
+                          : VK_Entity_LitColor(ent, false, false,
+                                               fd ? fd->time : 0.0f);
+    uint32_t flags = shell
+        ? (VK_ENTITY_VERTEX_FULLBRIGHT | VK_ENTITY_VERTEX_NO_SHADOW |
+           VK_ENTITY_VERTEX_NO_DLIGHT)
+        : VK_Entity_LightingFlags(ent, false);
+    qhandle_t preferred_skin = VK_Entity_SelectMD5Skin(ent, md5);
 
     for (uint32_t i = 0; i < md5->num_meshes; i++) {
         const vk_md5_mesh_t *mesh = &md5->meshes[i];
@@ -949,11 +1004,11 @@ static bool VK_Entity_AddMD5(const entity_t *ent, const refdef_t *fd, const vk_m
         }
 
         qhandle_t skin = preferred_skin ? preferred_skin : mesh->shader_image;
-        VkDescriptorSet set = VK_Entity_SetForImage(skin);
-        bool alpha = VK_Entity_Alpha(ent) < 1.0f;
+        VkDescriptorSet set = shell ? vk_entity.white_set : VK_Entity_SetForImage(skin);
+        bool alpha = shell || VK_Entity_Alpha(ent) < 1.0f;
 
-        for (uint32_t tri_idx = 0; tri_idx < mesh->num_indices; tri_idx += 3) {
-            vk_vertex_t tri[3];
+        for (uint32_t tri_idx = 0; tri_idx + 2 < mesh->num_indices; tri_idx += 3) {
+            vk_vertex_t tri[3] = { 0 };
             bool valid_tri = true;
 
             for (uint32_t j = 0; j < 3; j++) {
@@ -969,10 +1024,21 @@ static bool VK_Entity_AddMD5(const entity_t *ent, const refdef_t *fd, const vk_m
                 tri[j].uv[0] = mesh->tcoords[idx].st[0];
                 tri[j].uv[1] = mesh->tcoords[idx].st[1];
                 tri[j].color = color.u32;
+                tri[j].flags = flags;
             }
 
             if (!valid_tri) {
                 continue;
+            }
+
+            vec3_t normal;
+            VK_Entity_FaceNormal(tri, normal);
+            VK_Entity_SetTriNormal(tri, normal);
+
+            if (shell) {
+                for (uint32_t j = 0; j < 3; j++) {
+                    VectorMA(tri[j].pos, shell_scale, normal, tri[j].pos);
+                }
             }
 
             if (!VK_Entity_EmitTri(&tri[0], &tri[1], &tri[2], set, alpha, depth_hack, weapon_model)) {
@@ -994,9 +1060,11 @@ static void VK_Entity_FreeModel(vk_model_t *model)
         free(model->sprite.frames);
     } else if (model->type == VK_MODEL_MD2) {
         free(model->md2.positions);
+        free(model->md2.normals);
         free(model->md2.uv);
         free(model->md2.indices);
         free(model->md2.skins);
+        free(model->md2.skin_names);
     }
 #if USE_MD5
     VK_MD5_Free(&model->md5);
@@ -1193,25 +1261,96 @@ static inline float VK_Entity_Alpha(const entity_t *ent)
     return Q_clipf(ent->alpha, 0.0f, 1.0f);
 }
 
-static color_t VK_Entity_LitColor(const entity_t *ent, bool fullbright)
+static color_t VK_Entity_LitColor(const entity_t *ent, bool fullbright,
+                                  bool include_dynamic_lights,
+                                  float frame_time)
 {
     float alpha = VK_Entity_Alpha(ent);
+    if (ent->flags & RF_BRIGHTSKIN) {
+        // Mirrors the GL setup_color() RF_BRIGHTSKIN branch: a fullbright
+        // entity copy tinted by ent->rgba (team/enemy force colors).
+        return COLOR_RGBA(ent->rgba.r, ent->rgba.g, ent->rgba.b,
+                          (uint8_t)(alpha * 255.0f + 0.5f));
+    }
     if (fullbright || (ent->flags & RF_FULLBRIGHT)) {
         return COLOR_RGBA(255, 255, 255, (uint8_t)(alpha * 255.0f + 0.5f));
     }
 
     vec3_t light;
-    VK_World_LightPoint(ent->origin, light);
+    VK_World_LightPointEx(ent->origin, light, include_dynamic_lights);
     if (ent->flags & RF_MINLIGHT) {
         light[0] = max(light[0], 0.1f);
         light[1] = max(light[1], 0.1f);
         light[2] = max(light[2], 0.1f);
+    }
+    if (ent->flags & RF_GLOW) {
+        float pulse = 0.1f * sinf(frame_time * 7.0f);
+        for (int i = 0; i < 3; i++) {
+            float floor = light[i] * 0.8f;
+            light[i] += pulse;
+            if (light[i] < floor) {
+                light[i] = floor;
+            }
+        }
     }
 
     return COLOR_RGBA((uint8_t)min(255, (int)(light[0] * 255.0f + 0.5f)),
                       (uint8_t)min(255, (int)(light[1] * 255.0f + 0.5f)),
                       (uint8_t)min(255, (int)(light[2] * 255.0f + 0.5f)),
                       (uint8_t)(alpha * 255.0f + 0.5f));
+}
+
+static uint32_t VK_Entity_LightingFlags(const entity_t *ent, bool fullbright)
+{
+    uint32_t flags = 0;
+    if (fullbright || (ent && (ent->flags & RF_FULLBRIGHT))) {
+        flags |= VK_ENTITY_VERTEX_FULLBRIGHT |
+                 VK_ENTITY_VERTEX_NO_SHADOW |
+                 VK_ENTITY_VERTEX_NO_DLIGHT;
+    }
+    return flags;
+}
+
+// Mirrors the GL mesh setup_color() shell branch: shell entities replace the
+// skin with a solid translucent color expanded along vertex normals. The
+// client adds the base model as a separate entity, so the shell pass draws
+// instead of, not on top of, the textured mesh.
+static color_t VK_Entity_ShellColor(const entity_t *ent)
+{
+    vec3_t shell = { 0.0f, 0.0f, 0.0f };
+    uint64_t flags = ent->flags;
+
+    if (flags & RF_SHELL_LITE_GREEN) {
+        VectorSet(shell, 0.56f, 0.93f, 0.56f);
+    }
+    if (flags & RF_SHELL_HALF_DAM) {
+        VectorSet(shell, 0.56f, 0.59f, 0.45f);
+    }
+    if (flags & RF_SHELL_DOUBLE) {
+        shell[0] = 0.25f;
+        shell[1] = 0.88f;
+        shell[2] = 0.82f;
+    }
+    if (flags & RF_SHELL_RED) {
+        shell[0] = 1.0f;
+    }
+    if (flags & RF_SHELL_GREEN) {
+        shell[1] = 1.0f;
+    }
+    if (flags & RF_SHELL_BLUE) {
+        shell[2] = 1.0f;
+    }
+
+    float alpha = VK_Entity_Alpha(ent);
+    return COLOR_RGBA((uint8_t)(shell[0] * 255.0f + 0.5f),
+                      (uint8_t)(shell[1] * 255.0f + 0.5f),
+                      (uint8_t)(shell[2] * 255.0f + 0.5f),
+                      (uint8_t)(alpha * 255.0f + 0.5f));
+}
+
+static inline float VK_Entity_ShellScale(const entity_t *ent)
+{
+    return (ent->flags & RF_WEAPONMODEL) ? WEAPONSHELL_SCALE : POWERSUIT_SCALE;
 }
 
 static void VK_Entity_BuildTransform(const entity_t *ent, vk_entity_transform_t *out_transform)
@@ -1277,6 +1416,41 @@ static void VK_Entity_TransformPointInverseWithTransform(const vk_entity_transfo
     out[0] = DotProduct(rel, transform->axis[0]) * transform->inv_scale[0];
     out[1] = DotProduct(rel, transform->axis[1]) * transform->inv_scale[1];
     out[2] = DotProduct(rel, transform->axis[2]) * transform->inv_scale[2];
+}
+
+static void VK_Entity_TransformNormalWithTransform(const vk_entity_transform_t *transform,
+                                                   const vec3_t local, vec3_t out)
+{
+    if (!transform || !local || !out) {
+        return;
+    }
+
+    VectorClear(out);
+    VectorMA(out, local[0] * transform->inv_scale[0], transform->axis[0], out);
+    VectorMA(out, local[1] * transform->inv_scale[1], transform->axis[1], out);
+    VectorMA(out, local[2] * transform->inv_scale[2], transform->axis[2], out);
+    if (VectorNormalize(out) <= 0.0001f) {
+        VectorSet(out, 0.0f, 0.0f, 1.0f);
+    }
+}
+
+static void VK_Entity_FaceNormal(const vk_vertex_t tri[3], vec3_t out)
+{
+    vec3_t edge1;
+    vec3_t edge2;
+    VectorSubtract(tri[1].pos, tri[0].pos, edge1);
+    VectorSubtract(tri[2].pos, tri[0].pos, edge2);
+    CrossProduct(edge1, edge2, out);
+    if (VectorNormalize(out) <= 0.0001f) {
+        VectorSet(out, 0.0f, 0.0f, 1.0f);
+    }
+}
+
+static void VK_Entity_SetTriNormal(vk_vertex_t tri[3], const vec3_t normal)
+{
+    for (int i = 0; i < 3; i++) {
+        VectorCopy(normal, tri[i].normal);
+    }
 }
 
 static void VK_Entity_ClearBspTextureCache(void)
@@ -1515,14 +1689,15 @@ static bool VK_Entity_AddSprite(const entity_t *ent, const vec3_t view_axis[3], 
     VectorScale(view_axis[2], -sf->origin_y * scale, down);
     VectorScale(view_axis[2], (sf->height - sf->origin_y) * scale, up);
 
-    color_t color = VK_Entity_LitColor(ent, true);
+    color_t color = VK_Entity_LitColor(ent, true, false, 0.0f);
     VkDescriptorSet set = VK_Entity_SetForImage(sf->image);
     bool alpha = (color.a < 255) || VK_UI_IsImageTransparent(sf->image);
+    uint32_t flags = VK_Entity_LightingFlags(ent, true);
 
-    vk_vertex_t v0 = { .uv = { 0, 1 }, .color = color.u32 };
-    vk_vertex_t v1 = { .uv = { 0, 0 }, .color = color.u32 };
-    vk_vertex_t v2 = { .uv = { 1, 1 }, .color = color.u32 };
-    vk_vertex_t v3 = { .uv = { 1, 0 }, .color = color.u32 };
+    vk_vertex_t v0 = { .uv = { 0, 1 }, .color = color.u32, .flags = flags, .normal = { 0, 0, 1 } };
+    vk_vertex_t v1 = { .uv = { 0, 0 }, .color = color.u32, .flags = flags, .normal = { 0, 0, 1 } };
+    vk_vertex_t v2 = { .uv = { 1, 1 }, .color = color.u32, .flags = flags, .normal = { 0, 0, 1 } };
+    vk_vertex_t v3 = { .uv = { 1, 0 }, .color = color.u32, .flags = flags, .normal = { 0, 0, 1 } };
     VectorAdd3(ent->origin, down, left, v0.pos);
     VectorAdd3(ent->origin, up, left, v1.pos);
     VectorAdd3(ent->origin, down, right, v2.pos);
@@ -1575,10 +1750,13 @@ static bool VK_Entity_AddBeam(const entity_t *ent, const refdef_t *fd)
         color.a = (uint8_t)(VK_Entity_Alpha(ent) * 255.0f + 0.5f);
     }
 
-    vk_vertex_t v0 = { .uv = { 0, 0 }, .color = color.u32 };
-    vk_vertex_t v1 = { .uv = { 1, 0 }, .color = color.u32 };
-    vk_vertex_t v2 = { .uv = { 0, 1 }, .color = color.u32 };
-    vk_vertex_t v3 = { .uv = { 1, 1 }, .color = color.u32 };
+    uint32_t flags = VK_ENTITY_VERTEX_FULLBRIGHT |
+                     VK_ENTITY_VERTEX_NO_SHADOW |
+                     VK_ENTITY_VERTEX_NO_DLIGHT;
+    vk_vertex_t v0 = { .uv = { 0, 0 }, .color = color.u32, .flags = flags, .normal = { 0, 0, 1 } };
+    vk_vertex_t v1 = { .uv = { 1, 0 }, .color = color.u32, .flags = flags, .normal = { 0, 0, 1 } };
+    vk_vertex_t v2 = { .uv = { 0, 1 }, .color = color.u32, .flags = flags, .normal = { 0, 0, 1 } };
+    vk_vertex_t v3 = { .uv = { 1, 1 }, .color = color.u32, .flags = flags, .normal = { 0, 0, 1 } };
     VectorCopy(p0, v0.pos);
     VectorCopy(p1, v1.pos);
     VectorCopy(p2, v2.pos);
@@ -1720,7 +1898,8 @@ static bool VK_Entity_AddBspModel(const entity_t *ent, const refdef_t *fd, const
     if (fd) {
         VK_Entity_TransformPointInverseWithTransform(&transform, fd->vieworg, view_local);
     }
-    color_t entity_color = VK_Entity_LitColor(ent, false);
+    color_t entity_color = VK_Entity_LitColor(ent, false, false,
+                                              fd ? fd->time : 0.0f);
 
     for (int i = 0; i < model->numfaces; i++) {
         const mface_t *face = &model->firstface[i];
@@ -1762,6 +1941,14 @@ static bool VK_Entity_AddBspModel(const entity_t *ent, const refdef_t *fd, const
         bool alpha = (alpha_u8 < 255) || (surf_flags & SURF_TRANS_MASK) ||
                      ((surf_flags & SURF_ALPHATEST) == 0 && texture_transparent);
 
+        vec3_t face_normal = { 0.0f, 0.0f, 1.0f };
+        VectorCopy(face->plane->normal, face_normal);
+        if (face->drawflags & DSURF_PLANEBACK) {
+            VectorInverse(face_normal);
+        }
+        vec3_t world_normal;
+        VK_Entity_TransformNormalWithTransform(&transform, face_normal, world_normal);
+
         const msurfedge_t *surfedges = face->firstsurfedge;
         if (surfedges[0].edge >= (uint32_t)bsp->numedges) {
             continue;
@@ -1771,6 +1958,17 @@ static bool VK_Entity_AddBspModel(const entity_t *ent, const refdef_t *fd, const
             continue;
         }
         const mvertex_t *v0 = &bsp->vertices[i0];
+        vec2_t first_lm_uv = { 0.0f, 0.0f };
+        bool face_lightmapped =
+            face->lightmap != NULL &&
+            VK_World_GetFaceLightmapUV(face, v0->point, first_lm_uv);
+        uint32_t flags = VK_Entity_LightingFlags(ent, false);
+        if (face_lightmapped) {
+            flags |= VK_ENTITY_VERTEX_LIGHTMAP;
+        }
+        if (surf_flags & SURF_ALPHATEST) {
+            flags |= VK_ENTITY_VERTEX_ALPHATEST;
+        }
 
         for (int j = 1; j < face->numsurfedges - 1; j++) {
             if (surfedges[j].edge >= (uint32_t)bsp->numedges ||
@@ -1790,7 +1988,7 @@ static bool VK_Entity_AddBspModel(const entity_t *ent, const refdef_t *fd, const
                 &bsp->vertices[i2],
             };
 
-            vk_vertex_t tri[3];
+            vk_vertex_t tri[3] = { 0 };
             for (int k = 0; k < 3; k++) {
                 const vec3_t local = {
                     verts[k]->point[0],
@@ -1803,10 +2001,18 @@ static bool VK_Entity_AddBspModel(const entity_t *ent, const refdef_t *fd, const
                 float v = DotProduct(local, face->texinfo->axis[1]) + face->texinfo->offset[1];
                 tri[k].uv[0] = u * inv_tex_w;
                 tri[k].uv[1] = v * inv_tex_h;
+                if (face_lightmapped) {
+                    vec2_t lm_uv;
+                    VK_World_GetFaceLightmapUV(face, local, lm_uv);
+                    tri[k].lm_uv[0] = lm_uv[0];
+                    tri[k].lm_uv[1] = lm_uv[1];
+                }
 
-                color_t color = entity_color;
+                color_t color = face_lightmapped ? COLOR_RGBA(255, 255, 255, alpha_u8) : entity_color;
                 color.a = alpha_u8;
                 tri[k].color = color.u32;
+                tri[k].flags = flags;
+                VectorCopy(world_normal, tri[k].normal);
             }
 
             if (!VK_Entity_EmitTri(&tri[0], &tri[1], &tri[2], set, alpha, depth_hack, weapon_model)) {
@@ -1906,9 +2112,12 @@ static bool VK_Entity_AddParticles(const refdef_t *fd, const vec3_t view_axis[3]
             continue;
         }
 
-        vk_vertex_t v0 = { .uv = { 0.0f, 0.0f }, .color = color.u32 };
-        vk_vertex_t v1 = { .uv = { 0.0f, VK_ENTITY_PARTICLE_SIZE }, .color = color.u32 };
-        vk_vertex_t v2 = { .uv = { VK_ENTITY_PARTICLE_SIZE, 0.0f }, .color = color.u32 };
+        uint32_t flags = VK_ENTITY_VERTEX_FULLBRIGHT |
+                         VK_ENTITY_VERTEX_NO_SHADOW |
+                         VK_ENTITY_VERTEX_NO_DLIGHT;
+        vk_vertex_t v0 = { .uv = { 0.0f, 0.0f }, .color = color.u32, .flags = flags, .normal = { 0, 0, 1 } };
+        vk_vertex_t v1 = { .uv = { 0.0f, VK_ENTITY_PARTICLE_SIZE }, .color = color.u32, .flags = flags, .normal = { 0, 0, 1 } };
+        vk_vertex_t v2 = { .uv = { VK_ENTITY_PARTICLE_SIZE, 0.0f }, .color = color.u32, .flags = flags, .normal = { 0, 0, 1 } };
 
         VectorMA(p->origin, scale2, view_axis[1], v0.pos);
         VectorMA(v0.pos, -scale2, view_axis[2], v0.pos);
@@ -1941,13 +2150,20 @@ static qhandle_t VK_Entity_SelectMD2Skin(const entity_t *ent, const vk_md2_t *md
     return md2->skins[skinnum];
 }
 
-static qhandle_t VK_Entity_SelectMD5Skin(const entity_t *ent)
+static qhandle_t VK_Entity_SelectMD5Skin(const entity_t *ent, const vk_md5_t *md5)
 {
     if (ent->flags & RF_CUSTOMSKIN) {
         return ent->skin;
     }
     if (ent->skin) {
         return ent->skin;
+    }
+    if (md5 && md5->skins && md5->num_skins) {
+        int skinnum = ent->skinnum;
+        if (skinnum < 0 || skinnum >= (int)md5->num_skins || !md5->skins[skinnum]) {
+            skinnum = 0;
+        }
+        return md5->skins[skinnum];
     }
     return 0;
 }
@@ -1956,7 +2172,7 @@ static bool VK_Entity_AddMD2(const entity_t *ent, const refdef_t *fd, const vk_m
                              bool depth_hack, bool weapon_model)
 {
     const vk_md2_t *md2 = &model->md2;
-    if (!md2->positions || !md2->uv || !md2->indices || !md2->num_frames) {
+    if (!md2->positions || !md2->normals || !md2->uv || !md2->indices || !md2->num_frames) {
         return true;
     }
 
@@ -1970,15 +2186,23 @@ static bool VK_Entity_AddMD2(const entity_t *ent, const refdef_t *fd, const vk_m
         return true;
     }
 
+    bool shell = (ent->flags & RF_SHELL_MASK) != 0;
+    float shell_scale = shell ? VK_Entity_ShellScale(ent) : 0.0f;
     qhandle_t skin = VK_Entity_SelectMD2Skin(ent, md2);
-    VkDescriptorSet set = VK_Entity_SetForImage(skin);
-    bool alpha = VK_Entity_Alpha(ent) < 1.0f;
-    color_t color = VK_Entity_LitColor(ent, false);
+    VkDescriptorSet set = shell ? vk_entity.white_set : VK_Entity_SetForImage(skin);
+    bool alpha = shell || VK_Entity_Alpha(ent) < 1.0f;
+    color_t color = shell ? VK_Entity_ShellColor(ent)
+                          : VK_Entity_LitColor(ent, false, false,
+                                               fd ? fd->time : 0.0f);
+    uint32_t flags = shell
+        ? (VK_ENTITY_VERTEX_FULLBRIGHT | VK_ENTITY_VERTEX_NO_SHADOW |
+           VK_ENTITY_VERTEX_NO_DLIGHT)
+        : VK_Entity_LightingFlags(ent, false);
     vk_entity_transform_t transform;
     VK_Entity_BuildTransform(ent, &transform);
 
-    for (uint32_t i = 0; i < md2->num_indices; i += 3) {
-        vk_vertex_t tri[3];
+    for (uint32_t i = 0; i + 2 < md2->num_indices; i += 3) {
+        vk_vertex_t tri[3] = { 0 };
         bool valid_tri = true;
         for (uint32_t j = 0; j < 3; j++) {
             uint32_t idx = md2->indices[i + j];
@@ -1988,15 +2212,27 @@ static bool VK_Entity_AddMD2(const entity_t *ent, const refdef_t *fd, const vk_m
             }
             const float *p0 = &md2->positions[((size_t)frame * md2->num_vertices + idx) * 3];
             const float *p1 = &md2->positions[((size_t)oldframe * md2->num_vertices + idx) * 3];
+            const float *n0 = &md2->normals[((size_t)frame * md2->num_vertices + idx) * 3];
+            const float *n1 = &md2->normals[((size_t)oldframe * md2->num_vertices + idx) * 3];
             vec3_t local = {
                 p0[0] * frontlerp + p1[0] * backlerp,
                 p0[1] * frontlerp + p1[1] * backlerp,
                 p0[2] * frontlerp + p1[2] * backlerp,
             };
+            vec3_t local_normal = {
+                n0[0] * frontlerp + n1[0] * backlerp,
+                n0[1] * frontlerp + n1[1] * backlerp,
+                n0[2] * frontlerp + n1[2] * backlerp,
+            };
+            if (shell) {
+                VectorMA(local, shell_scale, local_normal, local);
+            }
             VK_Entity_TransformPointWithTransform(&transform, local, tri[j].pos);
+            VK_Entity_TransformNormalWithTransform(&transform, local_normal, tri[j].normal);
             tri[j].uv[0] = md2->uv[idx * 2 + 0];
             tri[j].uv[1] = md2->uv[idx * 2 + 1];
             tri[j].color = color.u32;
+            tri[j].flags = flags;
         }
 
         if (!valid_tri) {
@@ -2336,6 +2572,7 @@ static bool VK_Entity_LoadMD2(vk_model_t *model, const byte *raw, size_t len)
     uint32_t num_vertices = 0;
     uint32_t num_frames = (uint32_t)hdr.num_frames;
     float *positions = NULL;
+    float *normals = NULL;
     float *uv = NULL;
     uint16_t *indices = NULL;
     uint16_t *vert_indices = NULL;
@@ -2402,10 +2639,11 @@ static bool VK_Entity_LoadMD2(vk_model_t *model, const byte *raw, size_t len)
     }
 
     positions = calloc((size_t)num_frames * num_vertices * 3, sizeof(float));
+    normals = calloc((size_t)num_frames * num_vertices * 3, sizeof(float));
     uv = calloc((size_t)num_vertices * 2, sizeof(float));
     indices = calloc((size_t)num_indices, sizeof(*indices));
     skins = hdr.num_skins ? calloc((size_t)hdr.num_skins, sizeof(*skins)) : NULL;
-    if (!positions || !uv || !indices || (hdr.num_skins && !skins)) {
+    if (!positions || !normals || !uv || !indices || (hdr.num_skins && !skins)) {
         goto fail;
     }
 
@@ -2443,10 +2681,19 @@ static bool VK_Entity_LoadMD2(vk_model_t *model, const byte *raw, size_t len)
             dst[0] = src->v[0] * scale[0] + translate[0];
             dst[1] = src->v[1] * scale[1] + translate[1];
             dst[2] = src->v[2] * scale[2] + translate[2];
+
+            float *dst_normal = &normals[((size_t)f * num_vertices + out) * 3];
+            if (src->lightnormalindex < NUMVERTEXNORMALS) {
+                VectorCopy(bytedirs[src->lightnormalindex], dst_normal);
+            } else {
+                VectorSet(dst_normal, 0.0f, 0.0f, 1.0f);
+            }
         }
     }
 
+    char (*skin_names)[MAX_QPATH] = NULL;
     if (skins) {
+        skin_names = calloc((size_t)hdr.num_skins, sizeof(*skin_names));
         const char *skin_data = (const char *)(raw + hdr.ofs_skins);
         for (int i = 0; i < hdr.num_skins; i++) {
             char name[MD2_MAX_SKINNAME];
@@ -2454,6 +2701,9 @@ static bool VK_Entity_LoadMD2(vk_model_t *model, const byte *raw, size_t len)
             name[MD2_MAX_SKINNAME - 1] = '\0';
             FS_NormalizePath(name);
             skins[i] = VK_UI_RegisterImage(name, IT_SKIN, IF_NONE);
+            if (skin_names) {
+                Q_strlcpy(skin_names[i], name, sizeof(skin_names[i]));
+            }
         }
     }
 
@@ -2467,14 +2717,17 @@ static bool VK_Entity_LoadMD2(vk_model_t *model, const byte *raw, size_t len)
     model->md2.num_vertices = num_vertices;
     model->md2.num_indices = num_indices;
     model->md2.positions = positions;
+    model->md2.normals = normals;
     model->md2.uv = uv;
     model->md2.indices = indices;
     model->md2.skins = skins;
+    model->md2.skin_names = skin_names;
     model->md2.num_skins = (uint32_t)hdr.num_skins;
     return true;
 
 fail:
     free(positions);
+    free(normals);
     free(uv);
     free(indices);
     free(vert_indices);
@@ -2522,10 +2775,13 @@ static bool VK_Entity_CreatePipeline(vk_context_t *ctx, bool alpha, bool depth_h
         .stride = sizeof(vk_vertex_t),
         .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
     };
-    VkVertexInputAttributeDescription attrs[3] = {
+    VkVertexInputAttributeDescription attrs[6] = {
         { .location = 0, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = offsetof(vk_vertex_t, pos) },
         { .location = 1, .binding = 0, .format = VK_FORMAT_R32G32_SFLOAT, .offset = offsetof(vk_vertex_t, uv) },
-        { .location = 2, .binding = 0, .format = VK_FORMAT_R8G8B8A8_UNORM, .offset = offsetof(vk_vertex_t, color) },
+        { .location = 2, .binding = 0, .format = VK_FORMAT_R32G32_SFLOAT, .offset = offsetof(vk_vertex_t, lm_uv) },
+        { .location = 3, .binding = 0, .format = VK_FORMAT_R8G8B8A8_UNORM, .offset = offsetof(vk_vertex_t, color) },
+        { .location = 4, .binding = 0, .format = VK_FORMAT_R32_UINT, .offset = offsetof(vk_vertex_t, flags) },
+        { .location = 5, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = offsetof(vk_vertex_t, normal) },
     };
     VkPipelineVertexInputStateCreateInfo vertex_input = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
@@ -2558,8 +2814,8 @@ static bool VK_Entity_CreatePipeline(vk_context_t *ctx, bool alpha, bool depth_h
     VkPipelineDepthStencilStateCreateInfo depth = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
         .depthTestEnable = VK_TRUE,
-        .depthWriteEnable = (alpha || depth_hack) ? VK_FALSE : VK_TRUE,
-        .depthCompareOp = depth_hack ? VK_COMPARE_OP_ALWAYS : VK_COMPARE_OP_LESS_OR_EQUAL,
+        .depthWriteEnable = alpha ? VK_FALSE : VK_TRUE,
+        .depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL,
     };
     VkPipelineColorBlendAttachmentState blend_attachment = {
         .blendEnable = alpha ? VK_TRUE : VK_FALSE,
@@ -2631,16 +2887,23 @@ bool VK_Entity_Init(vk_context_t *ctx)
         vk_md5_load = Cvar_Get("vk_md5_load", "1", CVAR_FILES);
     }
     if (!vk_md5_use) {
-        vk_md5_use = Cvar_Get("vk_md5_use", "0", 0);
+        // Match gl_md5_use's default so both renderers prefer MD5
+        // replacement models when the assets are present.
+        vk_md5_use = Cvar_Get("vk_md5_use", "1", 0);
     }
     if (!vk_md5_distance) {
         vk_md5_distance = Cvar_Get("vk_md5_distance", "2048", 0);
     }
 #endif
 
-    VkDescriptorSetLayout set_layout = VK_UI_GetDescriptorSetLayout();
-    if (!set_layout) {
+    VkDescriptorSetLayout ui_set_layout = VK_UI_GetDescriptorSetLayout();
+    if (!ui_set_layout) {
         Com_SetLastError("Vulkan entity: descriptor set layout unavailable");
+        return false;
+    }
+    VkDescriptorSetLayout shadow_set_layout = VK_Shadow_GetDescriptorSetLayout();
+    if (!shadow_set_layout) {
+        Com_SetLastError("Vulkan entity: shadow descriptor set layout unavailable");
         return false;
     }
 
@@ -2649,10 +2912,15 @@ bool VK_Entity_Init(vk_context_t *ctx)
         .offset = 0,
         .size = sizeof(renderer_view_push_t),
     };
+    VkDescriptorSetLayout set_layouts[3] = {
+        ui_set_layout,
+        ui_set_layout,
+        shadow_set_layout,
+    };
     VkPipelineLayoutCreateInfo layout_info = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount = 1,
-        .pSetLayouts = &set_layout,
+        .setLayoutCount = q_countof(set_layouts),
+        .pSetLayouts = set_layouts,
         .pushConstantRangeCount = 1,
         .pPushConstantRanges = &push,
     };
@@ -2686,9 +2954,13 @@ void VK_Entity_DestroySwapchainResources(vk_context_t *ctx)
         vkDestroyPipeline(vk_entity.ctx->device, vk_entity.pipeline_alpha, NULL);
         vk_entity.pipeline_alpha = VK_NULL_HANDLE;
     }
-    if (vk_entity.pipeline_depthhack) {
-        vkDestroyPipeline(vk_entity.ctx->device, vk_entity.pipeline_depthhack, NULL);
-        vk_entity.pipeline_depthhack = VK_NULL_HANDLE;
+    if (vk_entity.pipeline_depthhack_alpha) {
+        vkDestroyPipeline(vk_entity.ctx->device, vk_entity.pipeline_depthhack_alpha, NULL);
+        vk_entity.pipeline_depthhack_alpha = VK_NULL_HANDLE;
+    }
+    if (vk_entity.pipeline_depthhack_opaque) {
+        vkDestroyPipeline(vk_entity.ctx->device, vk_entity.pipeline_depthhack_opaque, NULL);
+        vk_entity.pipeline_depthhack_opaque = VK_NULL_HANDLE;
     }
     if (vk_entity.pipeline_opaque) {
         vkDestroyPipeline(vk_entity.ctx->device, vk_entity.pipeline_opaque, NULL);
@@ -2710,7 +2982,11 @@ bool VK_Entity_CreateSwapchainResources(vk_context_t *ctx)
         VK_Entity_DestroySwapchainResources(ctx);
         return false;
     }
-    if (!VK_Entity_CreatePipeline(ctx, true, true, &vk_entity.pipeline_depthhack)) {
+    if (!VK_Entity_CreatePipeline(ctx, false, true, &vk_entity.pipeline_depthhack_opaque)) {
+        VK_Entity_DestroySwapchainResources(ctx);
+        return false;
+    }
+    if (!VK_Entity_CreatePipeline(ctx, true, true, &vk_entity.pipeline_depthhack_alpha)) {
         VK_Entity_DestroySwapchainResources(ctx);
         return false;
     }
@@ -2962,7 +3238,8 @@ void VK_Entity_RenderFrame(const refdef_t *fd)
 void VK_Entity_Record(VkCommandBuffer cmd, const VkExtent2D *extent)
 {
     if (!vk_entity.initialized || !vk_entity.swapchain_ready ||
-        !vk_entity.pipeline_opaque || !vk_entity.pipeline_alpha || !vk_entity.pipeline_depthhack ||
+        !vk_entity.pipeline_opaque || !vk_entity.pipeline_alpha ||
+        !vk_entity.pipeline_depthhack_opaque || !vk_entity.pipeline_depthhack_alpha ||
         !vk_entity.frame_active || !vk_entity.vertex_count || !vk_entity.batch_count ||
         !vk_entity.vertex_buffer || !extent) {
         return;
@@ -2982,9 +3259,24 @@ void VK_Entity_Record(VkCommandBuffer cmd, const VkExtent2D *extent)
     };
 
     VkDeviceSize offset = 0;
+    VkDescriptorSet lightmap_set = VK_World_GetLightmapDescriptorSet();
+    if (!lightmap_set) {
+        lightmap_set = vk_entity.white_set;
+    }
+    VkDescriptorSet shadow_set = VK_Shadow_GetDescriptorSet();
+    if (!lightmap_set || !shadow_set) {
+        return;
+    }
+
     vkCmdBindVertexBuffers(cmd, 0, 1, &vk_entity.vertex_buffer, &offset);
     vkCmdPushConstants(cmd, vk_entity.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT,
                        0, sizeof(vk_entity.frame_push), &vk_entity.frame_push);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            vk_entity.pipeline_layout,
+                            1, 1, &lightmap_set, 0, NULL);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            vk_entity.pipeline_layout,
+                            2, 1, &shadow_set, 0, NULL);
     vkCmdSetViewport(cmd, 0, 1, &viewport);
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
@@ -3021,6 +3313,10 @@ void VK_Entity_Record(VkCommandBuffer cmd, const VkExtent2D *extent)
         VkPipeline bound_pipeline = VK_NULL_HANDLE;
         VkDescriptorSet last_set = VK_NULL_HANDLE;
         bool using_weapon_push = false;
+        VkViewport depthhack_viewport = viewport;
+
+        depthhack_viewport.maxDepth = 0.25f;
+        vkCmdSetViewport(cmd, 0, 1, &depthhack_viewport);
 
         for (uint32_t i = 0; i < vk_entity.batch_count; i++) {
             const vk_batch_t *batch = &vk_entity.batches[i];
@@ -3038,9 +3334,12 @@ void VK_Entity_Record(VkCommandBuffer cmd, const VkExtent2D *extent)
                 using_weapon_push = use_weapon_push;
             }
 
-            if (bound_pipeline != vk_entity.pipeline_depthhack) {
-                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_entity.pipeline_depthhack);
-                bound_pipeline = vk_entity.pipeline_depthhack;
+            VkPipeline target_pipeline = batch->alpha
+                ? vk_entity.pipeline_depthhack_alpha
+                : vk_entity.pipeline_depthhack_opaque;
+            if (bound_pipeline != target_pipeline) {
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, target_pipeline);
+                bound_pipeline = target_pipeline;
                 last_set = VK_NULL_HANDLE;
             }
 

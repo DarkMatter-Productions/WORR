@@ -730,6 +730,22 @@ static bool ShadowFrontend_LightTouchesPVS2(shadow_frontend_state_t *state,
 
 static uint32_t ShadowFrontend_LightOwnerId(const dlight_t *dl, int index)
 {
+    if (dl->shadow == DL_SHADOW_DYNAMIC) {
+        uint32_t id = dl->shadow_stable_id;
+        if (id) {
+            id = ShadowFrontend_HashU32(2166136261u, 0x44594e4bu);
+            id = ShadowFrontend_HashU32(id, dl->shadow_stable_id);
+        } else {
+            id = 2166136261u;
+            id = ShadowFrontend_HashU32(id, 0x44594e41u);
+            id = ShadowFrontend_HashU32(id, (uint32_t)index);
+            id = ShadowFrontend_HashU32(id, (uint32_t)dl->light_type);
+            id = ShadowFrontend_HashU32(id, (uint32_t)dl->shadow_owner_entity);
+            id = ShadowFrontend_HashU32(id, (uint32_t)dl->shadow_source_index);
+        }
+        return id ? id : 1u;
+    }
+
     uint32_t hash = 2166136261u;
     hash = ShadowFrontend_HashU32(hash, (uint32_t)index);
     hash = ShadowFrontend_HashU32(hash, (uint32_t)dl->shadow_owner_entity);
@@ -1485,8 +1501,10 @@ static uint32_t ShadowFrontend_ProjectionHash(const shadow_light_desc_t *light,
                                               shadow_filter_family_t filter)
 {
     uint32_t hash = 2166136261u;
-    hash = ShadowFrontend_HashFloatQ(hash, light->radius, 8.0f);
-    hash = ShadowFrontend_HashFloatQ(hash, light->cone_angle, 4096.0f);
+    if (light->source_shadow != DL_SHADOW_DYNAMIC) {
+        hash = ShadowFrontend_HashFloatQ(hash, light->radius, 8.0f);
+        hash = ShadowFrontend_HashFloatQ(hash, light->cone_angle, 4096.0f);
+    }
     hash = ShadowFrontend_HashU32(hash, (uint32_t)resolution);
     hash = ShadowFrontend_HashU32(hash, (uint32_t)filter);
     hash = ShadowFrontend_HashU32(hash, (uint32_t)light->light_class);
@@ -1508,9 +1526,20 @@ static void ShadowFrontend_FillCacheKey(shadow_cache_key_t *key,
     key->owner_id = light->owner_id;
     key->world_revision = state->world_revision;
     key->projection_hash = ShadowFrontend_ProjectionHash(light, resolution, filter);
-    for (int i = 0; i < 3; i++) {
-        key->origin_q[i] = ShadowFrontend_Quantize(light->origin[i], 8.0f);
-        key->direction_q[i] = ShadowFrontend_Quantize(direction[i], 32767.0f);
+    if (light->source_shadow == DL_SHADOW_DYNAMIC) {
+        // Dynamic effect lights are re-rendered every frame; including their
+        // moving origin/direction in the residency key only churns pages and
+        // causes visible selection flicker as projectiles cross quantization
+        // cells.
+        for (int i = 0; i < 3; i++) {
+            key->origin_q[i] = 0;
+            key->direction_q[i] = 0;
+        }
+    } else {
+        for (int i = 0; i < 3; i++) {
+            key->origin_q[i] = ShadowFrontend_Quantize(light->origin[i], 8.0f);
+            key->direction_q[i] = ShadowFrontend_Quantize(direction[i], 32767.0f);
+        }
     }
     key->resolution = (uint16_t)resolution;
     key->view_type = (uint8_t)view_type;

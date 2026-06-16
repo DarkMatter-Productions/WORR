@@ -114,6 +114,7 @@ typedef struct {
     int     shadow_lightstyle;
     int     shadow_owner_entity;
     int     shadow_source_index;
+    uint32_t shadow_stable_id;
     bool    shadow_strict_pvs;
     bool    shadow_ignore_owner_casters;
 

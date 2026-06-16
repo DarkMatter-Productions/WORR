@@ -1324,7 +1324,7 @@ if get_option('external-renderers')
     renderer_vk_lib_name = meson.project_name() + '_vulkan_' + cpu
     renderer_vk_lib = shared_library(renderer_vk_lib_name, renderer_vk_lib_src,
       dependencies:          renderer_vk_deps,
-      include_directories:   ['inc', 'q2proto/inc'],
+      include_directories:   ['inc', 'q2proto/inc', 'src/rend_vk/refresh/stb'],
       gnu_symbol_visibility: 'hidden',
       link_args:             dll_link_args,
       c_args:                renderer_vk_c_args,

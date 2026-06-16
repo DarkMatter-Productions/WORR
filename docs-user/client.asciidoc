@@ -271,11 +271,12 @@ cl_nobob::
     Disables the bobbing effect on bonus entities like armor, weapons, etc.
     Default value is 0 (bobbing enabled).
 
-cg_weaponBob::
+cg_weapon_bob::
     Selects first-person weapon bobbing. Default value is 2.
-      - 0 — disabled
-      - 1 — Quake 3 style
-      - 2 — Doom 3 style
+      - 0 - disabled
+      - 1 - Quake 3 style
+      - 2 - Doom 3 style
+    The older `cg_weaponBob` spelling is still accepted as an alias.
 
 cl_gunalpha::
     Specifies opacity level of the player's own gun model. Default value is 1

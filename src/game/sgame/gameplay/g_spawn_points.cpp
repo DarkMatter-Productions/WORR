@@ -139,12 +139,12 @@ static bool RegisterSpawn(gentity_t *ent, std::string_view suffix) {
     return true;
   }
 
-  // Single-player / coop start points are registered for fallbacks
+  // Single-player / coop start points are fallback-only for multiplayer.
   if (IEquals(suffix, "start") || IEquals(suffix, "coop") ||
       IEquals(suffix, "coop_lava")) {
     ent->fteam = Team::Free;
-    level.spawn.ffa.push_back(ent);
-    worr::Logf(worr::LogLevel::Trace, "{}: registered coop/solo spawn {}",
+    level.spawn.fallback.push_back(ent);
+    worr::Logf(worr::LogLevel::Trace, "{}: registered fallback spawn {}",
                __FUNCTION__, LogEntityLabel(ent));
     return true;
   }
@@ -233,6 +233,7 @@ static void G_SpawnSpots_FlattenLegacy() {
   push_all(level.spawn.ffa);
   push_all(level.spawn.red);
   push_all(level.spawn.blue);
+  push_all(level.spawn.fallback);
 
   if (level.spawn.intermission) {
     level.spawnSpots[SPAWN_SPOT_INTERMISSION] = level.spawn.intermission;
@@ -270,10 +271,12 @@ void G_LocateSpawnSpots() {
   const size_t ffa_count = level.spawn.ffa.size();
   const size_t red_count = level.spawn.red.size();
   const size_t blue_count = level.spawn.blue.size();
-  const size_t total_count = ffa_count + red_count + blue_count;
+  const size_t fallback_count = level.spawn.fallback.size();
+  const size_t total_count = ffa_count + red_count + blue_count + fallback_count;
   worr::Logf(worr::LogLevel::Debug,
-             "{}: spawn spot totals -> ffa:{} red:{} blue:{} intermission:{}",
-             __FUNCTION__, ffa_count, red_count, blue_count,
+             "{}: spawn spot totals -> ffa:{} red:{} blue:{} fallback:{} "
+             "intermission:{}",
+             __FUNCTION__, ffa_count, red_count, blue_count, fallback_count,
              level.spawn.intermission ? 1 : 0);
   worr::Logf(worr::LogLevel::Trace, "{}: processed {} spawn points this map",
              __FUNCTION__, total_count);
@@ -381,7 +384,7 @@ static bool AnyDirectEnemyLoS(const gentity_t *requester, const Vector3 &spot,
     if (dist > maxDist)
       continue;
 
-    trace_t tr = gi.trace(from, PLAYER_MINS, PLAYER_MAXS, toCheck, nullptr,
+    trace_t tr = gi.trace(from, vec3_origin, vec3_origin, toCheck, ec,
                           MASK_SOLID & ~CONTENTS_PLAYER);
     if (tr.fraction == 1.0f) {
       // Direct, unobstructed line-of-sight
@@ -472,8 +475,36 @@ static bool SpotIsSafe(gentity_t *spot, bool check_players = true) {
   return SpotIsClearOfSolidsAndPlayers(p, check_players, spot);
 }
 
-constexpr SpawnFlags SPAWNFLAG_INITIAL =
-    0x10000_spawnflag; // example value, adjust as needed
+constexpr SpawnFlags SPAWNFLAG_INITIAL = 1_spawnflag;
+constexpr float SPAWN_AVOID_LAST_DEATH_DISTANCE = 192.0f;
+constexpr float SPAWN_DEFAULT_MIN_PLAYER_RADIUS = 160.0f;
+constexpr float SPAWN_MINE_RADIUS = 196.0f;
+constexpr float SPAWN_MAX_LOS_DIST = 2048.0f;
+constexpr float SPAWN_SCORE_PLAYER_RANGE = 2048.0f;
+constexpr float SPAWN_SCORE_AVOID_RANGE = 1024.0f;
+
+/*
+===============
+SpawnMinPlayerRadius
+===============
+*/
+static float SpawnMinPlayerRadius() {
+  if (!match_playerRespawnMinDistance)
+    return SPAWN_DEFAULT_MIN_PLAYER_RADIUS;
+
+  return std::clamp(match_playerRespawnMinDistance->value, 0.0f, 4096.0f);
+}
+
+/*
+===============
+NormalizeDistancePenalty
+===============
+*/
+static float NormalizeDistancePenalty(float distance, float fullPenaltyRange) {
+  if (fullPenaltyRange <= 0.0f)
+    return 0.0f;
+  return std::clamp(1.0f - (distance / fullPenaltyRange), 0.0f, 1.0f);
+}
 
 /*
 ===============
@@ -513,11 +544,8 @@ static float PlayersRangeFromSpot(gentity_t *ent, gentity_t *spot) {
   for (auto ec : active_clients()) {
     if (ec->health <= 0 || ec->client->eliminated)
       continue;
-#if 0
-		if (ent != nullptr)
-			if (ec == ent)
-				continue;
-#endif
+    if (ent && ec == ent)
+      continue;
     v = spot->s.origin - ec->s.origin;
     playerdistance = v.length();
 
@@ -542,15 +570,9 @@ FilterEligibleSpawns(const std::vector<gentity_t *> &spawns,
                      const Vector3 &avoid_point, bool force_spawn,
                      gentity_t *entForTeamLogic, // may be null
                      bool respectAvoidPoint) {
-  constexpr float MIN_AVOID_DIST =
-      192.0f; // distance from avoid_point (e.g. last death)
-  constexpr float MIN_PLAYER_RADIUS = 160.0f; // keep away from nearest player
-  constexpr float MINE_RADIUS = 196.0f;       // avoid mines/traps around spot
-  constexpr float MAX_LOS_DIST =
-      2048.0f; // consider LoS threats up to this range
-
   std::vector<gentity_t *> out;
   out.reserve(spawns.size());
+  const float minPlayerRadius = SpawnMinPlayerRadius();
 
   for (auto *s : spawns) {
     if (!s)
@@ -563,19 +585,22 @@ FilterEligibleSpawns(const std::vector<gentity_t *> &spawns,
     if (!force_spawn) {
       // Keep away from the avoid point (e.g., last death)
       if (respectAvoidPoint &&
-          (s->s.origin - avoid_point).length() < MIN_AVOID_DIST)
+          (s->s.origin - avoid_point).length() <
+              SPAWN_AVOID_LAST_DEATH_DISTANCE)
         continue;
 
       // No nearby mines/traps
-      if (SpawnPointHasNearbyMines(s->s.origin, MINE_RADIUS))
+      if (SpawnPointHasNearbyMines(s->s.origin, SPAWN_MINE_RADIUS))
         continue;
 
       // Player proximity
-      if (PlayersRangeFromSpot(entForTeamLogic, s) < MIN_PLAYER_RADIUS)
+      if (minPlayerRadius > 0.0f &&
+          PlayersRangeFromSpot(entForTeamLogic, s) < minPlayerRadius)
         continue;
 
       // Enemy line-of-sight
-      if (AnyDirectEnemyLoS(entForTeamLogic, s->s.origin, MAX_LOS_DIST))
+      if (AnyDirectEnemyLoS(entForTeamLogic, s->s.origin,
+                            SPAWN_MAX_LOS_DIST))
         continue;
     }
 
@@ -593,16 +618,18 @@ Lightweight fallback filter: occupancy and minimum distance from avoid_point.
 */
 static std::vector<gentity_t *>
 FilterFallbackSpawns(const std::vector<gentity_t *> &spawns,
-                     const Vector3 &avoid_point) {
-  constexpr float MIN_DIST = 192.0f;
+                     const Vector3 &avoid_point, bool respectAvoidPoint,
+                     bool force_spawn = false) {
   std::vector<gentity_t *> out;
   out.reserve(spawns.size());
   for (auto *s : spawns) {
     if (!s)
       continue;
-    if (!SpotIsSafe(s))
+    if (!SpotIsSafe(s, !force_spawn))
       continue;
-    if ((s->s.origin - avoid_point).length() < MIN_DIST)
+    if (respectAvoidPoint &&
+        (s->s.origin - avoid_point).length() <
+            SPAWN_AVOID_LAST_DEATH_DISTANCE)
       continue;
     out.push_back(s);
   }
@@ -621,6 +648,9 @@ template <typename T> static T *PickRandomly(const std::vector<T *> &vec) {
   return vec[dist(game.mapRNG)];
 }
 
+static float CompositeDangerScore(gentity_t *s, gentity_t *ent,
+                                  const Vector3 &avoid_point);
+
 /*
 ===============
 SelectFromSpawnList
@@ -630,30 +660,61 @@ Pick random among all spots within epsilon of the best score.
 */
 static gentity_t *
 SelectFromSpawnList(const std::vector<gentity_t *> &spawns,
-                    const std::function<float(gentity_t *)> &scoreFn) {
+                    const auto &scoreFn) {
   if (spawns.empty())
     return nullptr;
 
-  float best = scoreFn(spawns[0]);
+  struct scored_spawn_t {
+    gentity_t *spot = nullptr;
+    float score = 0.0f;
+  };
+
+  std::vector<scored_spawn_t> scored;
+  scored.reserve(spawns.size());
+
+  float best = FLT_MAX;
   for (auto *s : spawns) {
-    best = std::min(best, scoreFn(s));
+    const float score = scoreFn(s);
+    scored.push_back({s, score});
+    best = std::min(best, score);
   }
 
   constexpr float EPS =
       0.05f; // 5 percent tolerance if we use normalized scores
   std::vector<gentity_t *> finalists;
   finalists.reserve(spawns.size());
-  for (auto *s : spawns) {
-    const float sc = scoreFn(s);
+  for (const scored_spawn_t &s : scored) {
     // treat as tie if within epsilon of best
-    if (sc <= best + std::max(EPS, 0.01f * std::abs(best)))
-      finalists.push_back(s);
+    if (s.score <= best + std::max(EPS, 0.01f * std::abs(best)))
+      finalists.push_back(s.spot);
   }
 
   if (finalists.empty())
     return nullptr;
 
   return PickRandomly(finalists);
+}
+
+/*
+===============
+SelectFallbackStartPoint
+Use solo/coop starts only as a recovery path for maps without suitable
+deathmatch/team spawns.
+===============
+*/
+static gentity_t *SelectFallbackStartPoint(gentity_t *ent,
+                                           const Vector3 &avoid_point,
+                                           bool force_spawn) {
+  const bool hasAvoidPoint = static_cast<bool>(avoid_point);
+  auto eligible = FilterFallbackSpawns(level.spawn.fallback, avoid_point,
+                                       hasAvoidPoint, force_spawn);
+  if (eligible.empty())
+    return nullptr;
+
+  auto scoreFn = [ent, avoid_point](gentity_t *s) {
+    return CompositeDangerScore(s, ent, avoid_point);
+  };
+  return SelectFromSpawnList(eligible, scoreFn);
 }
 
 /*
@@ -671,23 +732,28 @@ static float CompositeDangerScore(gentity_t *s, gentity_t *ent,
   // Heat (0..1) from your combat heat map (nearby recent combat)
   const float heat =
       HM_DangerAt(s->s.origin); // 0..1 normalized by HM_DangerAt impl
-  // Distance to nearest player (larger is safer, so invert)
+  // Distance to nearest player (larger is safer, so invert over a useful band)
   const float nearest = std::max(1.0f, PlayersRangeFromSpot(ent, s));
-  const float nearPenalty = 1.0f / nearest; // 0..1-ish
+  const float nearPenalty =
+      NormalizeDistancePenalty(nearest, SPAWN_SCORE_PLAYER_RANGE);
   // Enemy LoS risk as binary bump; soft penalty to prefer out-of-sight
-  const bool los = AnyDirectEnemyLoS(ent, s->s.origin, 2048.0f);
-  const float losPenalty = los ? 0.5f : 0.0f;
+  const bool los = AnyDirectEnemyLoS(ent, s->s.origin, SPAWN_MAX_LOS_DIST);
+  const float losPenalty = los ? 1.0f : 0.0f;
   // Avoid-point proximity (e.g., last-death). Closer is worse.
   const float ad = (s->s.origin - avoid_point).length();
-  const float avoidPenalty = 1.0f / std::max(1.0f, ad);
+  const float avoidPenalty = static_cast<bool>(avoid_point)
+                                 ? NormalizeDistancePenalty(
+                                       ad, SPAWN_SCORE_AVOID_RANGE)
+                                 : 0.0f;
 
   // Mines near spot increase danger
-  const bool mines = SpawnPointHasNearbyMines(s->s.origin, 196.0f);
-  const float minePenalty = mines ? 0.5f : 0.0f;
+  const bool mines = SpawnPointHasNearbyMines(s->s.origin, SPAWN_MINE_RADIUS);
+  const float minePenalty = mines ? 1.0f : 0.0f;
 
   // Weighted sum (lower is better)
-  const float score = 0.50f * heat + 0.20f * losPenalty + 0.15f * nearPenalty +
-                      0.10f * avoidPenalty + 0.05f * minePenalty;
+  const float score = 0.35f * heat + 0.25f * nearPenalty +
+                      0.20f * losPenalty + 0.15f * avoidPenalty +
+                      0.05f * minePenalty;
 
   return score;
 }
@@ -695,11 +761,13 @@ static float CompositeDangerScore(gentity_t *s, gentity_t *ent,
 /*
 ===============
 SelectTeamSpawnPoint
-Select from team list first, fallback to FFA then classic start.
-Fixed: pass scoreFn instead of an entity to SelectFromSpawnList.
+Select from the requested team list, then FFA, then fallback-only starts.
+All paths apply the shared spawn filtering and scoring rules.
 ===============
 */
-static gentity_t *SelectTeamSpawnPoint(gentity_t *ent, Team team) {
+static gentity_t *SelectTeamSpawnPoint(gentity_t *ent, Team team,
+                                       const Vector3 &avoid_point,
+                                       bool force_spawn) {
   const std::vector<gentity_t *> *list = nullptr;
   switch (team) {
   case Team::Red:
@@ -713,36 +781,35 @@ static gentity_t *SelectTeamSpawnPoint(gentity_t *ent, Team team) {
     break;
   }
 
-  auto scoreFn = [ent](gentity_t *s) {
-    return CompositeDangerScore(
-        s, ent, ent ? ent->client->lastDeathLocation : Vector3{0, 0, 0});
+  const bool hasAvoidPoint = static_cast<bool>(avoid_point);
+  auto pickFromList = [ent, &avoid_point, force_spawn,
+                       hasAvoidPoint](const std::vector<gentity_t *> &spawns) {
+    auto eligible = FilterEligibleSpawns(spawns, avoid_point, force_spawn, ent,
+                                         hasAvoidPoint);
+    if (eligible.empty()) {
+      eligible =
+          FilterFallbackSpawns(spawns, avoid_point, hasAvoidPoint, force_spawn);
+    }
+    if (eligible.empty())
+      return static_cast<gentity_t *>(nullptr);
+
+    auto scoreFn = [ent, avoid_point](gentity_t *s) {
+      return CompositeDangerScore(s, ent, avoid_point);
+    };
+    return SelectFromSpawnList(eligible, scoreFn);
   };
 
-  // [Paril-KEX] Filter for safety first!
-  std::vector<gentity_t *> eligible;
-  eligible.reserve(list->size());
-  for (gentity_t *s : *list) {
-    if (SpotIsSafe(s))
-      eligible.push_back(s);
-  }
-
-  if (gentity_t *spot = SelectFromSpawnList(eligible, scoreFn))
+  if (gentity_t *spot = pickFromList(*list))
     return spot;
 
   // Fallback to FFA list if team list fails
   if (list != &level.spawn.ffa) {
-    eligible.clear();
-    eligible.reserve(level.spawn.ffa.size());
-    for (gentity_t *s : level.spawn.ffa) {
-      if (SpotIsSafe(s))
-        eligible.push_back(s);
-    }
-    if (gentity_t *spot = SelectFromSpawnList(eligible, scoreFn))
+    if (gentity_t *spot = pickFromList(level.spawn.ffa))
       return spot;
   }
-  if (gentity_t *only =
-          G_FindByString<&gentity_t::className>(nullptr, "info_player_start"))
-    return only;
+
+  if (gentity_t *spot = SelectFallbackStartPoint(ent, avoid_point, force_spawn))
+    return spot;
 
   return nullptr;
 }
@@ -773,9 +840,15 @@ static gentity_t *SelectAnyTeamSpawnPoint(gentity_t *ent,
                                        ent, hasAvoidPoint);
 
   if (eligible.empty()) {
-    auto fallback = FilterFallbackSpawns(team_spawns, avoid_point);
-    if (!fallback.empty())
-      return PickRandomly(fallback);
+    auto fallback =
+        FilterFallbackSpawns(team_spawns, avoid_point, hasAvoidPoint,
+                             force_spawn);
+    if (!fallback.empty()) {
+      auto scoreFn = [ent, avoid_point](gentity_t *s) {
+        return CompositeDangerScore(s, ent, avoid_point);
+      };
+      return SelectFromSpawnList(fallback, scoreFn);
+    }
     return nullptr;
   }
 
@@ -825,7 +898,8 @@ SelectDeathmatchSpawnPoint(gentity_t *ent, Vector3 avoid_point,
 
   // If none survived and fallback is allowed, try relaxed fallback set
   if (eligible.empty() && fallback_to_ctf_or_start) {
-    auto fb = FilterFallbackSpawns(baseList, avoid_point);
+    auto fb =
+        FilterFallbackSpawns(baseList, avoid_point, hasAvoidPoint, force_spawn);
     if (!fb.empty()) {
       auto scoreFn = [ent, avoid_point](gentity_t *s) {
         return CompositeDangerScore(s, ent, avoid_point);
@@ -842,18 +916,29 @@ SelectDeathmatchSpawnPoint(gentity_t *ent, Vector3 avoid_point,
     if (ent && ent->client)
       team = ent->client->sess.team;
 
-    if (gentity_t *t = SelectTeamSpawnPoint(ent, team))
+    if (gentity_t *t =
+            SelectTeamSpawnPoint(ent, team, avoid_point, force_spawn))
       return {t, SelectSpawnFlags::Fallback};
 
     if (gentity_t *t = SelectAnyTeamSpawnPoint(ent, avoid_point, force_spawn))
       return {t, SelectSpawnFlags::Fallback};
   }
 
+  if (fallback_to_ctf_or_start) {
+    if (gentity_t *t = SelectFallbackStartPoint(ent, avoid_point, force_spawn))
+      return {t, SelectSpawnFlags::Fallback};
+  }
+
   // Final fallback: any FFA spot that is at least not embedded
   if (eligible.empty()) {
-    auto loose = FilterFallbackSpawns(level.spawn.ffa, avoid_point);
+    auto loose = FilterFallbackSpawns(level.spawn.ffa, avoid_point,
+                                      hasAvoidPoint, force_spawn);
     if (!loose.empty()) {
-      return {PickRandomly(loose), SelectSpawnFlags::Fallback};
+      auto scoreFn = [ent, avoid_point](gentity_t *s) {
+        return CompositeDangerScore(s, ent, avoid_point);
+      };
+      return {SelectFromSpawnList(loose, scoreFn),
+              SelectSpawnFlags::Fallback};
     }
     return {nullptr, SelectSpawnFlags::None};
   }
@@ -1003,7 +1088,7 @@ static gentity_t *SelectCoopSpawnPoint(gentity_t *ent) {
   auto eligible = FilterEligibleSpawns(
       coopSpots, avoid_point, /*force_spawn=*/false, ent, hasAvoidPoint);
   if (eligible.empty())
-    eligible = FilterFallbackSpawns(coopSpots, avoid_point);
+    eligible = FilterFallbackSpawns(coopSpots, avoid_point, hasAvoidPoint);
 
   if (eligible.empty()) {
     // Deterministic last-ditch so we never hard-fail coop
@@ -1034,9 +1119,12 @@ static gentity_t *SelectCoopFallbackSpawnPoint(gentity_t *ent) {
   if (gentity_t *start = SelectSingleSpawnPoint(ent))
     return start;
 
-  // Final attempt: reuse any registered FFA spawn to keep players moving
+  // Final attempts: reuse FFA first, then fallback-only starts.
   if (!level.spawn.ffa.empty())
     return level.spawn.ffa.front();
+
+  if (!level.spawn.fallback.empty())
+    return level.spawn.fallback.front();
 
   return nullptr;
 }
@@ -1173,6 +1261,10 @@ bool SelectSpawnPoint(gentity_t *ent, Vector3 &origin, Vector3 &angles,
     const bool has_client = ent && ent->client;
     const bool wants_player_spawn =
         has_client && ClientIsPlaying(ent->client) && !ent->client->eliminated;
+    const Vector3 avoid_point = (has_client) ? ent->client->lastDeathLocation
+                                             : Vector3{0, 0, 0};
+    const bool initial_spawn =
+        has_client && (!ent->client->sess.inGame || !ent->client->pers.spawned);
 
     if (has_client && !ClientIsPlaying(ent->client)) {
       if (SelectSpectatorSpawnPoint(origin, angles)) {
@@ -1184,25 +1276,24 @@ bool SelectSpawnPoint(gentity_t *ent, Vector3 &origin, Vector3 &angles,
     // Team spawns first when in team modes for active players only
     if (Teams() && wants_player_spawn) {
       spot = SelectTeamSpawnPoint(ent, ent->client ? ent->client->sess.team
-                                                   : Team::Free);
+                                                   : Team::Free,
+                                  avoid_point, force_spawn);
     }
 
     // FFA spawns if no team spot was chosen
     if (!spot) {
-      const Vector3 avoid_point = (ent && ent->client)
-                                      ? ent->client->lastDeathLocation
-                                      : Vector3{0, 0, 0};
       const bool intermission = static_cast<bool>(level.intermission.time);
       const bool has_any_spawns = !level.spawn.ffa.empty() ||
                                   !level.spawn.red.empty() ||
-                                  !level.spawn.blue.empty();
+                                  !level.spawn.blue.empty() ||
+                                  !level.spawn.fallback.empty();
       select_spawn_result_t result = SelectDeathmatchSpawnPoint(
-          ent, avoid_point, force_spawn, true, intermission, false);
+          ent, avoid_point, force_spawn, true, intermission, initial_spawn);
 
       if (!result.spot && !force_spawn) {
         // Fall back to a forced spawn if all spots are temporarily blocked.
         result = SelectDeathmatchSpawnPoint(ent, avoid_point, true, true,
-                                            intermission, false);
+                                            intermission, initial_spawn);
       }
 
       if (!result.spot) {

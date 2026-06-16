@@ -287,7 +287,7 @@
         {
           "type": "dropdown",
           "label": "weapon bob",
-          "cvar": "cg_weaponBob",
+          "cvar": "cg_weapon_bob",
           "pairs": [
             { "label": "off", "value": "0" },
             { "label": "Quake 3", "value": "1" },

@@ -12,6 +12,7 @@ cvar_t *cl_gunfov = nullptr;
 cvar_t *cl_gun_x = nullptr;
 cvar_t *cl_gun_y = nullptr;
 cvar_t *cl_gun_z = nullptr;
+cvar_t *cg_weapon_bob = nullptr;
 cvar_t *cg_weaponBob = nullptr;
 cvar_t *cl_footsteps = nullptr;
 cvar_t *cl_predict = nullptr;
@@ -48,6 +49,48 @@ cvar_t *info_uf = nullptr;
 cvar_t *info_bobskip = nullptr;
 
 static bool cg_entity_cvars_initialized = false;
+static bool cg_weapon_bob_alias_syncing = false;
+
+static void CG_SyncWeaponBobAlias(cvar_t *source)
+{
+    if (cg_weapon_bob_alias_syncing || !source || !cg_weapon_bob || !cg_weaponBob)
+        return;
+
+    cvar_t *target = nullptr;
+    if (source == cg_weapon_bob)
+        target = cg_weaponBob;
+    else if (source == cg_weaponBob)
+        target = cg_weapon_bob;
+
+    if (!target || !source->string || !target->string || !strcmp(target->string, source->string))
+        return;
+
+    cg_weapon_bob_alias_syncing = true;
+    Cvar_SetByVar(target, source->string, FROM_CODE);
+    cg_weapon_bob_alias_syncing = false;
+}
+
+static void CG_WeaponBobAliasChanged(cvar_t *self)
+{
+    CG_SyncWeaponBobAlias(self);
+}
+
+static void CG_RegisterWeaponBobCvars()
+{
+    cg_weapon_bob = Cvar_Get("cg_weapon_bob", "2", CVAR_ARCHIVE);
+    cg_weaponBob = Cvar_Get("cg_weaponBob", cg_weapon_bob ? cg_weapon_bob->string : "2", CVAR_NOARCHIVE);
+
+    if (!cg_weapon_bob || !cg_weaponBob)
+        return;
+
+    if (!(cg_weapon_bob->flags & CVAR_MODIFIED) && (cg_weaponBob->flags & CVAR_MODIFIED))
+        Cvar_SetByVar(cg_weapon_bob, cg_weaponBob->string, FROM_CODE);
+    else
+        Cvar_SetByVar(cg_weaponBob, cg_weapon_bob->string, FROM_CODE);
+
+    cg_weapon_bob->changed = CG_WeaponBobAliasChanged;
+    cg_weaponBob->changed = CG_WeaponBobAliasChanged;
+}
 
 void CG_Entity_InitCvars(void)
 {
@@ -60,7 +103,7 @@ void CG_Entity_InitCvars(void)
     cl_gun_x = Cvar_Get("cl_gun_x", "0", 0);
     cl_gun_y = Cvar_Get("cl_gun_y", "0", 0);
     cl_gun_z = Cvar_Get("cl_gun_z", "0", 0);
-    cg_weaponBob = Cvar_Get("cg_weaponBob", "2", CVAR_ARCHIVE);
+    CG_RegisterWeaponBobCvars();
     cl_footsteps = Cvar_Get("cl_footsteps", "1", 0);
     cl_predict = Cvar_Get("cl_predict", "1", 0);
     cl_kickangles = Cvar_Get("cl_kickangles", "1", CVAR_CHEAT);

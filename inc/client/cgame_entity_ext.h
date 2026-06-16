@@ -22,7 +22,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 extern "C" {
 #endif
 
-#define CGAME_ENTITY_API_VERSION 2
+#define CGAME_ENTITY_API_VERSION 3
 #define CGAME_ENTITY_IMPORT_EXT "CGameEntity_Import_v2"
 #define CGAME_ENTITY_EXPORT_EXT "CGameEntity_Export_v2"
 

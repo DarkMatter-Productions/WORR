@@ -46,3 +46,4 @@ void VK_UI_DrawKeepAspectPic(int x, int y, int w, int h, color_t color, qhandle_
 void VK_UI_TileClear(int x, int y, int w, int h, qhandle_t pic);
 void VK_UI_DrawFill32(int x, int y, int w, int h, color_t color);
 void VK_UI_DrawFill8(int x, int y, int w, int h, int c);
+void VK_UI_DrawScreenBlend(const refdef_t *fd, float vignette_frac);

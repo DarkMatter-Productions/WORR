@@ -12,14 +12,17 @@ allows other systems, like player spawning logic, to query the "danger level" of
 to avoid placing players in overly active combat zones.*/
 
 #include "../g_local.hpp"
+#include <algorithm>
 #include <unordered_map>
 
 // Tunables (cvars can be promoted later)
 static constexpr float HM_CELL_SIZE = 256.0f;    // world units
 static constexpr float HM_EVENT_RADIUS = 512.0f;    // falloff radius for a single event
-static constexpr float HM_DECAY_PER_SECOND = 0.25f;     // linear decay per second
+static constexpr float HM_DECAY_PER_SECOND = 4.0f;      // linear decay per second
 static constexpr float HM_MIN_CELL_HEAT = 0.01f;     // prune threshold
 static constexpr float HM_QUERY_DEFAULT_RAD = 320.0f;    // used by spawns if not overridden
+static constexpr float HM_MAX_EVENT_HEAT = 120.0f;
+static constexpr float HM_FULL_DANGER_HEAT = 75.0f;
 
 struct HMCell {
 	float   heat = 0.0f;    // current accumulated heat
@@ -42,6 +45,7 @@ struct HMKeyHash {
 };
 
 static std::unordered_map<HMKey, HMCell, HMKeyHash> g_hm;
+static size_t g_hm_prune_cursor = 0;
 
 /*
 ===============
@@ -80,6 +84,7 @@ HM_Init
 */
 void HM_Init() {
 	g_hm.clear();
+	g_hm_prune_cursor = 0;
 }
 
 /*
@@ -89,6 +94,7 @@ HM_ResetForNewLevel
 */
 void HM_ResetForNewLevel() {
 	g_hm.clear();
+	g_hm_prune_cursor = 0;
 }
 
 /*
@@ -133,6 +139,7 @@ void HM_AddEvent(const Vector3& pos, float amount) {
 	}
 
 	if (amount <= 0.0f) return;
+	amount = std::min(amount, HM_MAX_EVENT_HEAT);
 
 	const GameTime now = level.time;
 
@@ -217,32 +224,35 @@ void HM_Think() {
 		return;
 	}
 
-	// Lightweight pruning pass: remove cells that decayed to ~zero.
-	// Keep per-frame cost low by limiting iterations.
 	const GameTime now = level.time;
 
-	static size_t cursor = 0;
-	const size_t kMaxChecksPerFrame = 64;
+	const size_t kMaxChecksPerFrame = 128;
 
 	if (g_hm.empty())
 		return;
 
+	if (g_hm_prune_cursor >= g_hm.size())
+		g_hm_prune_cursor = 0;
+
+	auto it = g_hm.begin();
+	std::advance(it, g_hm_prune_cursor);
+
 	for (size_t i = 0; i < kMaxChecksPerFrame && !g_hm.empty(); ++i) {
-		if (cursor >= g_hm.bucket_count())
-			cursor = 0;
-
-		// Walk one bucket per step
-		auto it = g_hm.begin();
-		std::advance(it, std::min(cursor, g_hm.size() - 1));
-		cursor++;
-
-		// If map size changed due to insert/erase, guard
-		if (it == g_hm.end()) break;
-
-		apply_decay(it->second, now);
-		if (it->second.heat <= HM_MIN_CELL_HEAT) {
-			g_hm.erase(it);
+		if (it == g_hm.end()) {
+			it = g_hm.begin();
+			g_hm_prune_cursor = 0;
 		}
+
+		auto current = it++;
+		apply_decay(current->second, now);
+		if (current->second.heat <= HM_MIN_CELL_HEAT) {
+			g_hm.erase(current);
+		} else {
+			++g_hm_prune_cursor;
+		}
+
+		if (!g_hm.empty() && g_hm_prune_cursor >= g_hm.size())
+			g_hm_prune_cursor = 0;
 	}
 }
 
@@ -258,10 +268,8 @@ float HM_DangerAt(const Vector3& pos) {
 		return 0.0f;
 	}
 
-	// Example normalization: anything >= 100 heat counts as max danger
-	constexpr float HM_MAX_DANGER = 100.0f;
 	float raw = HM_Query(pos, 320.0f);
-	return std::clamp(raw / HM_MAX_DANGER, 0.0f, 1.0f);
+	return std::clamp(raw / (raw + HM_FULL_DANGER_HEAT), 0.0f, 1.0f);
 }
 
 /*

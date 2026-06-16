@@ -112,6 +112,10 @@ SHADOW_LIGHT_HANDLING_SNIPPETS = (
      "GL_DLIGHT_RECEIVER_WEAPON"),
     ("src/rend_gl/shader.c",
      "owner_weapon_spot ? 0.0f : dl->conecos"),
+    ("src/rend_gl/shader.c",
+     "gls.u_dlights.pad[0] = 0;"),
+    ("src/rend_vk/vk_entity.c",
+     "static uint32_t VK_Entity_LightingFlags(const entity_t *ent, bool fullbright)"),
     ("src/rend_gl/mesh.c",
      "dl->shadow_owner_entity == glr.ent->owner_entity"),
     ("src/client/entities.cpp",
@@ -150,6 +154,13 @@ SHADOW_LIGHT_HANDLING_SNIPPETS = (
      "VectorMA(start, -FLASHLIGHT_TORSO_DOWN_OFFSET, cl.v_up, start)"),
     ("src/game/cgame/cg_entities.cpp",
      "CL_ApplyFlashlightTorsoMotion(start, forward)"),
+)
+
+VIEWWEAPON_RECEIVER_BANNED_SNIPPETS = (
+    ("src/rend_gl/shader.c",
+     "gls.u_dlights.pad[0] = weapon_receiver ? 1 : 0;"),
+    ("src/rend_vk/vk_entity.c",
+     "if (weapon_model) {\n        flags |= VK_ENTITY_VERTEX_NO_SHADOW;\n    }"),
 )
 
 
@@ -210,6 +221,13 @@ def check_shadow_light_handling(repo: Path, failures: list[str]) -> None:
             failures.append(f"{rel}: missing shadow light handling guard {snippet!r}")
 
 
+def check_viewweapon_receiver_shadows(repo: Path, failures: list[str]) -> None:
+    for rel, snippet in VIEWWEAPON_RECEIVER_BANNED_SNIPPETS:
+        text = read_text(repo, rel, failures)
+        if text and snippet in text:
+            failures.append(f"{rel}: viewweapon receivers must not opt out of shadowmaps")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo", default=".", help="Repository root.")
@@ -234,6 +252,7 @@ def main() -> int:
 
     check_transient_no_shadow(repo, failures)
     check_shadow_light_handling(repo, failures)
+    check_viewweapon_receiver_shadows(repo, failures)
 
     if failures:
         print("Shadowmapping guardrail failed:", file=sys.stderr)

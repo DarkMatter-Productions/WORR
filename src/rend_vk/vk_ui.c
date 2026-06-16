@@ -639,7 +639,12 @@ static bool VK_UI_AllocDescriptorSet(vk_ui_image_t *image)
 
 static void VK_UI_UpdateDescriptorSet(vk_ui_image_t *image)
 {
-    VkSampler sampler = (image->flags & IF_REPEAT) ? vk_ui.sampler_repeat : vk_ui.sampler_clamp;
+    // Match GL_SetFilterAndRepeat: walls and skins always wrap (rerelease MD5
+    // viewmodels rely on UVs outside 0..1), everything else clamps unless
+    // IF_REPEAT is set.
+    bool repeat = image->type == IT_WALL || image->type == IT_SKIN ||
+                  (image->flags & IF_REPEAT);
+    VkSampler sampler = repeat ? vk_ui.sampler_repeat : vk_ui.sampler_clamp;
     VkDescriptorImageInfo image_info = {
         .sampler = sampler,
         .imageView = image->view,
@@ -1260,6 +1265,28 @@ static bool VK_UI_ReplaceExtension(char *path, size_t path_size, const char *ext
 static bool VK_UI_LoadImageData(const char *normalized_name,
                                 int *out_w, int *out_h, byte **out_rgba)
 {
+    const char *ext = VK_UI_PathExtension(normalized_name);
+    bool paletted = ext && (!Q_stricmp(ext, ".pcx") || !Q_stricmp(ext, ".wal"));
+    char candidate[MAX_QPATH];
+
+    // Match the GL renderer's default r_override_textures behavior: paletted
+    // formats prefer 32-bit overrides in "png tga dds" order before the
+    // original file, so PNG player skins and texture replacements resolve
+    // identically in both renderers.
+    if (paletted) {
+        static const char *const override_exts[] = { ".png", ".tga", ".dds" };
+        for (size_t i = 0; i < q_countof(override_exts); ++i) {
+            Q_strlcpy(candidate, normalized_name, sizeof(candidate));
+            if (!VK_UI_ReplaceExtension(candidate, sizeof(candidate), override_exts[i])) {
+                continue;
+            }
+
+            if (VK_UI_LoadRgbaFromFile(candidate, out_w, out_h, out_rgba)) {
+                return true;
+            }
+        }
+    }
+
     if (VK_UI_LoadRgbaFromFile(normalized_name, out_w, out_h, out_rgba)) {
         return true;
     }
@@ -1268,7 +1295,6 @@ static bool VK_UI_LoadImageData(const char *normalized_name,
         ".wal", ".dds", ".png", ".tga", ".jpg", ".jpeg", ".pcx"
     };
 
-    char candidate[MAX_QPATH];
     for (size_t i = 0; i < q_countof(fallback_exts); ++i) {
         Q_strlcpy(candidate, normalized_name, sizeof(candidate));
         if (!VK_UI_ReplaceExtension(candidate, sizeof(candidate), fallback_exts[i])) {
@@ -1488,6 +1514,113 @@ static bool VK_UI_EnqueueQuad(float x, float y, float w, float h,
     draw->scissor = scissor;
 
     return true;
+}
+
+// Emits an 8-vertex vignette ring (solid outer edge fading to a transparent
+// inner rect), mirroring the GL renderer's GL_DrawVignette.
+static bool VK_UI_EnqueueVignette(float x, float y, float w, float h,
+                                  float frac, color_t outer)
+{
+    static const uint32_t ring_indices[24] = {
+        0, 5, 4, 0, 1, 5, 1, 6, 5, 1, 2, 6,
+        6, 2, 3, 6, 3, 7, 0, 7, 3, 0, 4, 7
+    };
+
+    VK_UI_EnsureDefaultImages();
+
+    vk_ui_image_t *image = VK_UI_ImageForHandle(vk_ui.white_image);
+    if (!image || !image->descriptor_set) {
+        return false;
+    }
+
+    if (!VK_UI_EnsureDrawCapacity(vk_ui.vertex_count + 8,
+                                  vk_ui.index_count + 24,
+                                  vk_ui.draw_count + 1)) {
+        return false;
+    }
+
+    color_t inner = outer;
+    inner.a = 0;
+
+    float distance = min(w, h) * frac;
+    float corners[8][2] = {
+        { x, y },
+        { x + w, y },
+        { x + w, y + h },
+        { x, y + h },
+        { x + distance, y + distance },
+        { x + w - distance, y + distance },
+        { x + w - distance, y + h - distance },
+        { x + distance, y + h - distance },
+    };
+
+    uint32_t base_vertex = vk_ui.vertex_count;
+    uint32_t base_index = vk_ui.index_count;
+
+    for (int i = 0; i < 8; i++) {
+        float nx, ny;
+        VK_UI_ToNdc(corners[i][0], corners[i][1], &nx, &ny);
+        vk_ui.vertices[vk_ui.vertex_count + i] = (vk_ui_vertex_t){
+            .pos = { nx, ny },
+            .uv = { 0.0f, 0.0f },
+            .color = (i < 4) ? outer.u32 : inner.u32,
+        };
+    }
+
+    for (int i = 0; i < 24; i++) {
+        vk_ui.indices[vk_ui.index_count + i] = base_vertex + ring_indices[i];
+    }
+
+    vk_ui.vertex_count += 8;
+    vk_ui.index_count += 24;
+
+    vk_ui_draw_t *draw = &vk_ui.draws[vk_ui.draw_count++];
+    draw->first_index = base_index;
+    draw->index_count = 24;
+    draw->descriptor_set = image->descriptor_set;
+    draw->scissor = VK_UI_CurrentScissor();
+
+    return true;
+}
+
+void VK_UI_DrawScreenBlend(const refdef_t *fd, float vignette_frac)
+{
+    if (!fd) {
+        return;
+    }
+
+    // The refdef rect is in real pixel coordinates; convert to the current
+    // virtual 2D coordinate space used by the UI queue.
+    float sx = VK_UI_VirtualWidthScaled() / (float)max(r_config.width, 1);
+    float sy = VK_UI_VirtualHeightScaled() / (float)max(r_config.height, 1);
+    float x = (float)fd->x * sx;
+    float y = (float)fd->y * sy;
+    float w = (float)fd->width * sx;
+    float h = (float)fd->height * sy;
+
+    if (fd->screen_blend[3] > 0.0f) {
+        color_t color = COLOR_RGBA(
+            (uint8_t)(Q_clipf(fd->screen_blend[0], 0.0f, 1.0f) * 255.0f + 0.5f),
+            (uint8_t)(Q_clipf(fd->screen_blend[1], 0.0f, 1.0f) * 255.0f + 0.5f),
+            (uint8_t)(Q_clipf(fd->screen_blend[2], 0.0f, 1.0f) * 255.0f + 0.5f),
+            (uint8_t)(Q_clipf(fd->screen_blend[3], 0.0f, 1.0f) * 255.0f + 0.5f));
+        VK_UI_EnqueueQuad(x, y, w, h, 0.0f, 0.0f, 1.0f, 1.0f,
+                          color, vk_ui.white_image);
+    }
+
+    if (fd->damage_blend[3] > 0.0f) {
+        color_t outer = COLOR_RGBA(
+            (uint8_t)(Q_clipf(fd->damage_blend[0], 0.0f, 1.0f) * 255.0f + 0.5f),
+            (uint8_t)(Q_clipf(fd->damage_blend[1], 0.0f, 1.0f) * 255.0f + 0.5f),
+            (uint8_t)(Q_clipf(fd->damage_blend[2], 0.0f, 1.0f) * 255.0f + 0.5f),
+            (uint8_t)(Q_clipf(fd->damage_blend[3], 0.0f, 1.0f) * 255.0f + 0.5f));
+        if (vignette_frac > 0.0f) {
+            VK_UI_EnqueueVignette(x, y, w, h, vignette_frac, outer);
+        } else {
+            VK_UI_EnqueueQuad(x, y, w, h, 0.0f, 0.0f, 1.0f, 1.0f,
+                              outer, vk_ui.white_image);
+        }
+    }
 }
 
 static bool VK_UI_EnqueueRotatedQuad(float x, float y, float w, float h,

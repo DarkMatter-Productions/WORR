@@ -150,6 +150,7 @@ typedef struct cgame_entity_import_s {
     void (*V_AddEntity)(const entity_t *ent);
     bool (*V_AddParticle)(const particle_t *p);
     void (*V_AddLight)(const vec3_t org, float intensity, float r, float g, float b);
+    void (*V_AddLightWithKey)(const vec3_t org, float intensity, float r, float g, float b, uint32_t stable_key);
     void (*V_AddLightEx)(cl_shadow_light_t *light);
     void (*V_AddLightExVis)(cl_shadow_light_t *light, bool strict_pvs);
     void (*V_AddLightStyle)(int style, float value);

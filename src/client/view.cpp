@@ -109,9 +109,9 @@ static float V_DlightScore(const vec3_t origin, float radius, float intensity)
     return (intensity * radius) / (dist2 + 1.0f);
 }
 
-static inline uint32_t V_DlightHashStep(uint32_t hash, int32_t value)
+static inline uint32_t V_DlightHashStep(uint32_t hash, uint32_t value)
 {
-    hash ^= (uint32_t)value;
+    hash ^= value;
     hash *= 16777619u;
     return hash;
 }
@@ -131,6 +131,17 @@ static uint32_t V_DlightBuildKey(const vec3_t origin, float radius, float intens
     hash = V_DlightHashStep(hash, color2);
     hash = V_DlightHashStep(hash, shadowlight ? 1 : 0);
     hash = V_DlightHashStep(hash, strict_pvs ? 1 : 0);
+    return hash ? hash : 1u;
+}
+
+static uint32_t V_DlightBuildStableKey(uint32_t domain, uint32_t a,
+                                       uint32_t b, uint32_t c)
+{
+    uint32_t hash = 2166136261u;
+    hash = V_DlightHashStep(hash, domain);
+    hash = V_DlightHashStep(hash, a);
+    hash = V_DlightHashStep(hash, b);
+    hash = V_DlightHashStep(hash, c);
     return hash ? hash : 1u;
 }
 
@@ -336,10 +347,15 @@ void V_AddLightExVis(cl_shadow_light_t *light, bool strict_pvs)
     const uint32_t now_ms = Sys_Milliseconds();
     float intensity = light->intensity * V_LightstyleScale(light->lightstyle) *
                       fade;
-    uint32_t key = V_DlightBuildKey(
-        light->origin, light->radius, intensity, (int32_t)light->color.r,
-        (int32_t)light->color.g, (int32_t)light->color.b, shadowlight,
-        strict_pvs);
+    uint32_t key = (shadowlight && light->dynamic_shadow &&
+                    (light->owner_entity || light->source_index >= 0))
+        ? V_DlightBuildStableKey(0x45584c54u, (uint32_t)light->owner_entity,
+                                 (uint32_t)light->source_index,
+                                 (uint32_t)light->resolution)
+        : V_DlightBuildKey(
+            light->origin, light->radius, intensity, (int32_t)light->color.r,
+            (int32_t)light->color.g, (int32_t)light->color.b, shadowlight,
+            strict_pvs);
     float score = V_WeightedDlightScore(light->origin, light->radius, intensity,
                                         shadowlight, strict_pvs, key, now_ms);
 
@@ -417,14 +433,16 @@ V_AddLight
 
 =====================
 */
-void V_AddLight(const vec3_t org, float intensity, float r, float g, float b)
+void V_AddLightWithKey(const vec3_t org, float intensity, float r, float g, float b, uint32_t stable_key)
 {
     dlight_t    *dl;
 
     const uint32_t now_ms = Sys_Milliseconds();
-    const uint32_t key = V_DlightBuildKey(
-        org, intensity, 1.0f, Q_rint(r * 255.0f), Q_rint(g * 255.0f),
-        Q_rint(b * 255.0f), false, true);
+    const uint32_t key = stable_key
+        ? V_DlightBuildStableKey(0x53494d50u, stable_key, 0u, 0u)
+        : V_DlightBuildKey(
+            org, intensity, 1.0f, Q_rint(r * 255.0f), Q_rint(g * 255.0f),
+            Q_rint(b * 255.0f), false, true);
     float score = V_WeightedDlightScore(org, intensity, 1.0f, false, true, key,
                                         now_ms);
     r_dlight_requested++;
@@ -450,6 +468,7 @@ void V_AddLight(const vec3_t org, float intensity, float r, float g, float b)
     dl->shadow_lightstyle = -1;
     dl->shadow_owner_entity = 0;
     dl->shadow_source_index = -1;
+    dl->shadow_stable_id = stable_key;
     dl->shadow_strict_pvs = true;
     dl->shadow_ignore_owner_casters = false;
     VectorCopy(dl->origin, dl->sphere);
@@ -458,6 +477,11 @@ void V_AddLight(const vec3_t org, float intensity, float r, float g, float b)
     dl->light_type = DLIGHT_SPHERE;
 
     V_DlightStickyTouch(key, now_ms);
+}
+
+void V_AddLight(const vec3_t org, float intensity, float r, float g, float b)
+{
+    V_AddLightWithKey(org, intensity, r, g, b, 0);
 }
 
 /*

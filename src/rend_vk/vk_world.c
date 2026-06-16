@@ -45,6 +45,7 @@ enum {
     VK_WORLD_VERTEX_FULLBRIGHT = BIT(1),
     VK_WORLD_VERTEX_ALPHATEST = BIT(2),
     VK_WORLD_VERTEX_FLOWING = BIT(3),
+    VK_WORLD_VERTEX_LIGHTMAPPED = BIT(4),
 };
 
 enum {
@@ -95,6 +96,8 @@ typedef struct {
     vk_world_face_lightmap_t *face_lms;
     byte *lightmap_rgba;
     int lightmap_atlas_size;
+    int lightmap_built_shift;
+    int lightmap_built_cap;
     float style_cache[MAX_LIGHTSTYLES];
     bool style_cache_valid;
 
@@ -124,6 +127,17 @@ static vk_world_state_t vk_world;
 static cvar_t *vk_lightmap_debug;
 static cvar_t *vk_drawsky;
 static cvar_t *vk_shaders;
+
+// Lighting gain cvars shared with the OpenGL renderer so both backends read
+// the same archived configuration. The native Vulkan swapchain has no
+// hardware gamma ramp, so identity_light is always 1.0 here and the full
+// modulate value applies in the shaders/CPU paths.
+static cvar_t *vk_gl_modulate;
+static cvar_t *vk_gl_modulate_world;
+static cvar_t *vk_gl_modulate_entities;
+static cvar_t *vk_gl_brightness;
+static cvar_t *vk_map_overbright_bits;
+static cvar_t *vk_map_overbright_cap;
 
 static inline bool VK_World_Check(VkResult result, const char *what)
 {
@@ -616,16 +630,101 @@ static inline float VK_World_LightStyleWhite(byte style)
     return VK_World_LightStyleWhiteForRefdef(vk_world.current_fd, style);
 }
 
+static inline int VK_World_LightmapShift(void)
+{
+    if (!vk_map_overbright_bits) {
+        return 0;
+    }
+    return Cvar_ClampInteger(vk_map_overbright_bits, 0, 4);
+}
+
+static inline int VK_World_LightmapCap(void)
+{
+    if (!vk_map_overbright_cap) {
+        return 255;
+    }
+    return Cvar_ClampInteger(vk_map_overbright_cap, 0, 255);
+}
+
+float VK_World_LightmapModulate(void)
+{
+    if (!vk_gl_modulate || !vk_gl_modulate_world) {
+        return 1.0f;
+    }
+    return Cvar_ClampValue(vk_gl_modulate, 0, 1e6f) *
+           Cvar_ClampValue(vk_gl_modulate_world, 0, 1e6f);
+}
+
+float VK_World_LightmapAdd(void)
+{
+    if (!vk_gl_brightness) {
+        return 0.0f;
+    }
+    return Cvar_ClampValue(vk_gl_brightness, -1, 1);
+}
+
+float VK_World_EntityModulate(void)
+{
+    if (!vk_gl_modulate || !vk_gl_modulate_entities) {
+        return 1.0f;
+    }
+    return Cvar_ClampValue(vk_gl_modulate, 0, 1e6f) *
+           Cvar_ClampValue(vk_gl_modulate_entities, 0, 1e6f);
+}
+
+// Mirrors GL_ShiftLightmapBytes: applies the map overbright shift with a
+// hue-preserving clamp, plus the optional hard cap.
 static inline void VK_World_ShiftLightmapBytes(const byte in[3], vec3_t out)
 {
-    out[0] = in[0];
-    out[1] = in[1];
-    out[2] = in[2];
+    int shift = VK_World_LightmapShift();
+    int cap = VK_World_LightmapCap();
+    int r, g, b;
+
+    if (shift > 0) {
+        r = in[0] << shift;
+        g = in[1] << shift;
+        b = in[2] << shift;
+
+        if ((r | g | b) > 255) {
+            int max_c = r > g ? r : g;
+            if (b > max_c)
+                max_c = b;
+            r = r * 255 / max_c;
+            g = g * 255 / max_c;
+            b = b * 255 / max_c;
+        }
+    } else {
+        r = in[0];
+        g = in[1];
+        b = in[2];
+    }
+
+    if (cap < 255) {
+        r = min(r, cap);
+        g = min(g, cap);
+        b = min(b, cap);
+    }
+
+    out[0] = r;
+    out[1] = g;
+    out[2] = b;
 }
 
 static inline void VK_World_AdjustLightColor(vec3_t color)
 {
     VectorScale(color, 1.0f / 255.0f, color);
+}
+
+// Mirrors GL_AdjustColor for CPU-sampled entity light: brightness add and
+// entity modulate on top of the 0..255 style-accumulated sample.
+static inline void VK_World_AdjustEntityLightColor(vec3_t color)
+{
+    float add = VK_World_LightmapAdd();
+    float modulate = VK_World_EntityModulate();
+
+    for (int i = 0; i < 3; i++) {
+        color[i] = max((color[i] + add) * modulate, 0.0f);
+    }
 }
 
 static bool VK_World_SampleFaceLightmap(const mface_t *face, float s, float t, vec3_t out_color)
@@ -897,9 +996,6 @@ static void VK_World_RebuildLightmapAtlasPixels(const bsp_t *bsp,
     VK_World_InitLightmapAtlasPixels(rgba, atlas_size);
 
     for (int i = 0; i < bsp->numfaces; i++) {
-        if (!VK_World_IsWorldFaceIndex(bsp, i)) {
-            continue;
-        }
         const mface_t *face = &bsp->faces[i];
 
         if (!VK_World_DrawableFace(face)) {
@@ -1008,7 +1104,9 @@ static bool VK_World_UpdateLightmapStyles(const refdef_t *fd)
 
     bool changed_styles[MAX_LIGHTSTYLES];
     int changed_style_count = VK_World_CollectChangedStyles(fd, changed_styles);
-    if (!changed_style_count) {
+    bool gains_changed = vk_world.lightmap_built_shift != VK_World_LightmapShift() ||
+                         vk_world.lightmap_built_cap != VK_World_LightmapCap();
+    if (!changed_style_count && !gains_changed) {
         return true;
     }
 
@@ -1019,9 +1117,6 @@ static bool VK_World_UpdateLightmapStyles(const refdef_t *fd)
     int updated_faces = 0;
 
     for (int i = 0; i < vk_world.bsp->numfaces; i++) {
-        if (!VK_World_IsWorldFaceIndex(vk_world.bsp, i)) {
-            continue;
-        }
         const mface_t *face = &vk_world.bsp->faces[i];
 
         if (!VK_World_DrawableFace(face)) {
@@ -1029,7 +1124,8 @@ static bool VK_World_UpdateLightmapStyles(const refdef_t *fd)
         }
 
         const vk_world_face_lightmap_t *face_lm = &vk_world.face_lms[i];
-        if (!face_lm->has_lightmap || !VK_World_FaceUsesChangedStyle(face, changed_styles)) {
+        if (!face_lm->has_lightmap ||
+            (!gains_changed && !VK_World_FaceUsesChangedStyle(face, changed_styles))) {
             continue;
         }
 
@@ -1071,11 +1167,13 @@ static bool VK_World_UpdateLightmapStyles(const refdef_t *fd)
                        dirty_min_x, dirty_min_y, coverage);
         }
     } else if (vk_lightmap_debug && vk_lightmap_debug->integer > 1) {
-        Com_Printf("vk_lightmap_debug: styles changed (%d) but no world faces referenced them\n",
+        Com_Printf("vk_lightmap_debug: styles changed (%d) but no lightmapped faces referenced them\n",
                    changed_style_count);
     }
 
     VK_World_CacheLightStyles(fd);
+    vk_world.lightmap_built_shift = VK_World_LightmapShift();
+    vk_world.lightmap_built_cap = VK_World_LightmapCap();
     return true;
 }
 
@@ -1117,9 +1215,6 @@ static bool VK_World_BuildLightmapAtlas(const bsp_t *bsp,
         bool failed = false;
 
         for (int i = 0; i < bsp->numfaces; i++) {
-            if (!VK_World_IsWorldFaceIndex(bsp, i)) {
-                continue;
-            }
             const mface_t *face = &bsp->faces[i];
 
             if (!VK_World_DrawableFace(face) || !face->lightmap || face->lm_width < 1 || face->lm_height < 1) {
@@ -1349,6 +1444,9 @@ static bool VK_World_BuildMesh(vk_world_vertex_t **out_vertices,
         }
 
         const vk_world_face_lightmap_t *face_lm = &face_lms[i];
+        if (face_lm->has_lightmap) {
+            vertex_flags |= VK_WORLD_VERTEX_LIGHTMAPPED;
+        }
         float fallback_lm_u = 0.5f / (float)atlas_size;
         float fallback_lm_v = 0.5f / (float)atlas_size;
 
@@ -1806,6 +1904,26 @@ bool VK_World_Init(vk_context_t *ctx)
     if (!vk_shaders) {
         vk_shaders = Cvar_Get("vk_shaders", "1", 0);
     }
+    if (!vk_gl_modulate) {
+        vk_gl_modulate = Cvar_Get("gl_modulate", "2", CVAR_ARCHIVE);
+    }
+    if (!vk_gl_modulate_world) {
+        vk_gl_modulate_world = Cvar_Get("gl_modulate_world", "1", 0);
+    }
+    if (!vk_gl_modulate_entities) {
+        vk_gl_modulate_entities = Cvar_Get("gl_modulate_entities", "1", 0);
+    }
+    if (!vk_gl_brightness) {
+        vk_gl_brightness = Cvar_Get("gl_brightness", "0", 0);
+    }
+    if (!vk_map_overbright_bits) {
+        vk_map_overbright_bits = Cvar_Get("r_map_overbright_bits", "0",
+                                          CVAR_ARCHIVE | CVAR_FILES);
+    }
+    if (!vk_map_overbright_cap) {
+        vk_map_overbright_cap = Cvar_Get("r_map_overbright_cap", "255",
+                                         CVAR_ARCHIVE | CVAR_FILES);
+    }
 
     if (!ctx) {
         Com_SetLastError("Vulkan world: context is missing");
@@ -2055,6 +2173,8 @@ void VK_World_BeginRegistration(const char *map)
     vk_world.face_lms = face_lms;
     vk_world.lightmap_rgba = atlas_rgba;
     vk_world.lightmap_atlas_size = atlas_size;
+    vk_world.lightmap_built_shift = VK_World_LightmapShift();
+    vk_world.lightmap_built_cap = VK_World_LightmapCap();
     vk_world.style_cache_valid = false;
     vk_world.has_warp_vertices = VK_World_HasWarpVertices(vertices, vertex_count);
     vk_world.vertex_dynamic_dirty = false;
@@ -2348,6 +2468,16 @@ void VK_World_Record(VkCommandBuffer cmd, const VkExtent2D *extent)
 
 void VK_World_LightPoint(const vec3_t origin, vec3_t light)
 {
+    VK_World_LightPointEx(origin, light, true);
+}
+
+// include_dynamic_lights=true produces a complete CPU result with dynamic
+// lights and the entity modulate applied (the R_LightPoint contract).
+// include_dynamic_lights=false produces unmodulated static light for entity
+// vertex colors; the entity shader applies dynamic lights and the entity
+// modulate so values above 1.0 survive the UNORM vertex encoding.
+void VK_World_LightPointEx(const vec3_t origin, vec3_t light, bool include_dynamic_lights)
+{
     if (!light)
         return;
 
@@ -2432,6 +2562,9 @@ void VK_World_LightPoint(const vec3_t origin, vec3_t light)
 
             LerpVector2(lerp_y[0], lerp_y[1], bz, fz, light);
             VK_World_AdjustLightColor(light);
+            if (include_dynamic_lights) {
+                VK_World_AdjustEntityLightColor(light);
+            }
         }
     }
 
@@ -2442,6 +2575,9 @@ void VK_World_LightPoint(const vec3_t origin, vec3_t light)
         lightpoint_t point;
         BSP_LightPoint(&point, origin, end, bsp->nodes, nolm_mask);
         if (point.surf && VK_World_SampleFaceLightmap(point.surf, point.s, point.t, light)) {
+            if (include_dynamic_lights) {
+                VK_World_AdjustEntityLightColor(light);
+            }
             has_light = true;
         }
     }
@@ -2450,8 +2586,58 @@ void VK_World_LightPoint(const vec3_t origin, vec3_t light)
         VectorSet(light, 0.75f, 0.75f, 0.75f);
     }
 
-    VK_World_AddDynamicLightsAtPoint(origin, light);
+    if (include_dynamic_lights) {
+        VK_World_AddDynamicLightsAtPoint(origin, light);
+    }
     VK_World_ClampLight(light);
+}
+
+VkDescriptorSet VK_World_GetLightmapDescriptorSet(void)
+{
+    return vk_world.lightmap_descriptor_set;
+}
+
+bool VK_World_GetFaceLightmapUV(const mface_t *face, const vec3_t point,
+                                vec2_t out_uv)
+{
+    if (!out_uv) {
+        return false;
+    }
+
+    if (!vk_world.bsp || !vk_world.face_lms ||
+        vk_world.lightmap_atlas_size < 1) {
+        out_uv[0] = 0.0f;
+        out_uv[1] = 0.0f;
+        return false;
+    }
+
+    out_uv[0] = 0.5f / (float)vk_world.lightmap_atlas_size;
+    out_uv[1] = 0.5f / (float)vk_world.lightmap_atlas_size;
+
+    if (!face || !point ||
+        face < vk_world.bsp->faces ||
+        face >= vk_world.bsp->faces + vk_world.bsp->numfaces) {
+        return false;
+    }
+
+    int face_index = (int)(face - vk_world.bsp->faces);
+    const vk_world_face_lightmap_t *face_lm = &vk_world.face_lms[face_index];
+    if (!face_lm->has_lightmap || face_lm->width < 1 ||
+        face_lm->height < 1) {
+        return false;
+    }
+
+    float s = DotProduct(face->lm_axis[0], point) + face->lm_offset[0];
+    float t = DotProduct(face->lm_axis[1], point) + face->lm_offset[1];
+
+    s = max(0.0f, min((float)(face_lm->width - 1), s));
+    t = max(0.0f, min((float)(face_lm->height - 1), t));
+
+    out_uv[0] = ((float)face_lm->x + s + 0.5f) /
+        (float)vk_world.lightmap_atlas_size;
+    out_uv[1] = ((float)face_lm->y + t + 0.5f) /
+        (float)vk_world.lightmap_atlas_size;
+    return true;
 }
 
 const bsp_t *VK_World_GetBsp(void)

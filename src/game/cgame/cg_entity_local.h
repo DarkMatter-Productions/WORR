@@ -24,6 +24,7 @@ extern cvar_t *cl_gunfov;
 extern cvar_t *cl_gun_x;
 extern cvar_t *cl_gun_y;
 extern cvar_t *cl_gun_z;
+extern cvar_t *cg_weapon_bob;
 extern cvar_t *cg_weaponBob;
 extern cvar_t *cl_footsteps;
 extern cvar_t *cl_predict;
@@ -186,6 +187,7 @@ static inline cvar_t *CG_SvPausedVar(void)
 #define V_AddEntity cgei->V_AddEntity
 #define V_AddParticle cgei->V_AddParticle
 #define V_AddLight cgei->V_AddLight
+#define V_AddLightWithKey cgei->V_AddLightWithKey
 #define V_AddLightEx cgei->V_AddLightEx
 #define V_AddLightExVis cgei->V_AddLightExVis
 #define V_AddLightStyle cgei->V_AddLightStyle

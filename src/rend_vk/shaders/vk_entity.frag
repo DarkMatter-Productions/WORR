@@ -1,8 +1,10 @@
 #version 450
 
-#define VK_WORLD_VERTEX_FULLBRIGHT 2u
-#define VK_WORLD_VERTEX_ALPHATEST 4u
-#define VK_WORLD_VERTEX_LIGHTMAPPED 16u
+#define VK_ENTITY_VERTEX_FULLBRIGHT 1u
+#define VK_ENTITY_VERTEX_ALPHATEST 2u
+#define VK_ENTITY_VERTEX_LIGHTMAP 4u
+#define VK_ENTITY_VERTEX_NO_SHADOW 8u
+#define VK_ENTITY_VERTEX_NO_DLIGHT 16u
 #define VK_SHADOW_MAX_PAGES 64
 #define VK_SHADOW_MAX_DLIGHTS 64
 #define DLIGHT_CUTOFF 64.0
@@ -48,8 +50,6 @@ float shadow_raw_depth(int page, vec2 uv) {
 }
 
 float shadow_compare_depth(int page, vec2 uv, float depth) {
-    // Use hardware depth compare for hard/PCF paths; keep raw depth sampling
-    // available for PCSS blocker search and moment filters.
     return texture(shadow_sampler_cmp, vec4(uv, float(page), depth));
 }
 
@@ -196,15 +196,14 @@ float shadow_point_page(shadow_dlight_t light, vec3 light_to_frag) {
 float shadow_factor_for_light(shadow_dlight_t light, vec3 world_pos,
                               vec3 normal) {
     float kind = light.shadow_pages1.z;
-    if (kind < 0.5 || shadow_global.x <= 0.0) {
+    if (kind < 0.5 || shadow_global.x <= 0.0 ||
+        (in_flags & VK_ENTITY_VERTEX_NO_SHADOW) != 0u) {
         return 1.0;
     }
 
     float page = kind < 1.5
         ? shadow_point_page(light, world_pos - light.position_radius.xyz)
         : light.shadow_pages0.x;
-    // int() truncates toward zero, so the -1 "no page" sentinel would
-    // otherwise alias to page 0.
     if (page < 0.0) {
         return 1.0;
     }
@@ -260,26 +259,62 @@ vec3 calc_dynamic_lights(vec3 world_pos, vec3 normal) {
     return shade;
 }
 
+vec3 safe_normal(vec3 normal) {
+    float len2 = dot(normal, normal);
+    if (len2 <= 0.000001) {
+        return vec3(0.0, 0.0, 1.0);
+    }
+    return normal * inversesqrt(len2);
+}
+
 void main() {
     vec4 base = texture(tex_sampler, in_uv);
-    if ((in_flags & VK_WORLD_VERTEX_ALPHATEST) != 0u && base.a < 0.01) {
+    if (base.a < 0.01 ||
+        ((in_flags & VK_ENTITY_VERTEX_ALPHATEST) != 0u && base.a < 0.666)) {
         discard;
     }
 
-    vec4 lm = texture(lm_sampler, in_lm_uv);
-    vec3 normal = normalize(in_normal);
-    vec3 lighting = lm.rgb;
-    // Match GL: shadows, dynamic lights, brightness add and modulate apply
-    // only to lightmapped surfaces; unlit faces (classic warp water) keep
-    // their raw texture brightness. shadow_dlight_count.y/z carry
-    // gl_modulate*gl_modulate_world and gl_brightness.
-    if ((in_flags & (VK_WORLD_VERTEX_FULLBRIGHT | VK_WORLD_VERTEX_LIGHTMAPPED)) ==
-        VK_WORLD_VERTEX_LIGHTMAPPED) {
-        lighting *= shadow_sun_factor(in_world_pos, normal);
-        lighting += calc_dynamic_lights(in_world_pos, normal);
-        lighting = max((lighting + vec3(shadow_dlight_count.z)) *
-                       max(shadow_dlight_count.y, 0.0), vec3(0.0));
+    vec3 normal = safe_normal(in_normal);
+    bool fullbright = (in_flags & VK_ENTITY_VERTEX_FULLBRIGHT) != 0u;
+    bool lightmapped = (in_flags & VK_ENTITY_VERTEX_LIGHTMAP) != 0u;
+    // shadow_dlight_count.y/z/w carry gl_modulate*gl_modulate_world,
+    // gl_brightness, and gl_modulate*gl_modulate_entities.
+    float lm_modulate = max(shadow_dlight_count.y, 0.0);
+    float lm_add = shadow_dlight_count.z;
+    float entity_modulate = max(shadow_dlight_count.w, 0.0);
+    vec3 lighting = in_color.rgb;
+    vec3 modulation = vec3(1.0);
+    if (!fullbright) {
+        if (lightmapped) {
+            // Inline BSP faces follow the world formula:
+            // (lm * sun + dlights + add) * modulate.
+            lighting = texture(lm_sampler, in_lm_uv).rgb;
+            modulation = in_color.rgb;
+            if ((in_flags & VK_ENTITY_VERTEX_NO_SHADOW) == 0u) {
+                lighting *= shadow_sun_factor(in_world_pos, normal);
+            }
+            if ((in_flags & VK_ENTITY_VERTEX_NO_DLIGHT) == 0u) {
+                lighting += calc_dynamic_lights(in_world_pos, normal);
+            }
+            lighting = max((lighting + vec3(lm_add)) * lm_modulate, vec3(0.0));
+        } else {
+            // CPU-lit models carry unmodulated static light in in_color; the
+            // entity modulate applies here so values above 1.0 survive the
+            // UNORM vertex encoding. Per-pixel dynamic lights gain the world
+            // modulate like the GL mesh path.
+            lighting *= entity_modulate;
+            if ((in_flags & VK_ENTITY_VERTEX_NO_SHADOW) == 0u) {
+                lighting *= shadow_sun_factor(in_world_pos, normal);
+            }
+            if ((in_flags & VK_ENTITY_VERTEX_NO_DLIGHT) == 0u) {
+                lighting += calc_dynamic_lights(in_world_pos, normal) * lm_modulate;
+            }
+        }
+    } else {
+        lighting = vec3(1.0);
+        modulation = in_color.rgb;
     }
-    vec4 color = base * vec4(lighting, lm.a) * in_color;
-    out_color = color;
+
+    out_color = vec4(base.rgb * lighting * modulation,
+                     base.a * in_color.a);
 }

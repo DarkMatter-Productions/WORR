@@ -262,8 +262,10 @@ void CL_AddDLights(void)
     for (i = 0; i < MAX_DLIGHTS; i++, dl++) {
         if (dl->die < cl.time)
             continue;
-        V_AddLight(dl->origin, dl->die ? (dl->radius * (1.0f - ((float) (cl.time - dl->start) / (dl->die - dl->start)))) : dl->radius,
-                   dl->color[0], dl->color[1], dl->color[2]);
+        V_AddLightWithKey(dl->origin,
+                          dl->die ? (dl->radius * (1.0f - ((float)(cl.time - dl->start) / (dl->die - dl->start)))) : dl->radius,
+                          dl->color[0], dl->color[1], dl->color[2],
+                          (uint32_t)dl->key);
     }
 }
 

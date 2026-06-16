@@ -25,7 +25,10 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "format/pcx.h"
 #include "renderer/shadow_frontend.h"
 
+#include "stb_image_write.h"
+
 #include <string.h>
+#include <time.h>
 
 #if USE_SDL
 #include <SDL3/SDL_vulkan.h>
@@ -49,9 +52,22 @@ uint32_t d_8to24table[256];
 static cvar_t *vk_draw_world;
 static cvar_t *vk_draw_entities;
 static cvar_t *vk_draw_ui;
+static cvar_t *vk_damageblend_frac;
 static shadow_frontend_state_t vk_shadow_frontend;
 static shadow_frontend_cvars_t vk_shadow_frontend_cvars;
 static bool vk_shadow_frontend_cvars_registered;
+
+// Swapchain readback for the screenshot commands. A request latches in
+// vk_screenshot_pending; the next presented frame records a copy of its
+// swapchain image into a host-visible buffer and writes the PNG after the
+// frame fence signals.
+static char vk_screenshot_path[MAX_OSPATH];
+static bool vk_screenshot_pending;
+static bool vk_screenshot_armed;
+static bool vk_screenshot_supported;
+static VkBuffer vk_screenshot_buffer;
+static VkDeviceMemory vk_screenshot_memory;
+static VkDeviceSize vk_screenshot_capacity;
 
 static bool VK_ShadowResolveCasterBounds(void *userdata, const entity_t *ent,
                                          const bsp_t *world_bsp,
@@ -892,6 +908,13 @@ static bool VK_CreateSwapchain(uint32_t width, uint32_t height)
         image_count = caps.maxImageCount;
     }
 
+    VkImageUsageFlags image_usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    vk_screenshot_supported =
+        (caps.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) != 0;
+    if (vk_screenshot_supported) {
+        image_usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    }
+
     VkSwapchainCreateInfoKHR create_info = {
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
         .surface = ctx->surface,
@@ -900,7 +923,7 @@ static bool VK_CreateSwapchain(uint32_t width, uint32_t height)
         .imageColorSpace = chosen_format.colorSpace,
         .imageExtent = extent,
         .imageArrayLayers = 1,
-        .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        .imageUsage = image_usage,
         .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .preTransform = caps.currentTransform,
         .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
@@ -1234,6 +1257,258 @@ static bool VK_RecreateSwapchain(uint32_t width, uint32_t height)
     return true;
 }
 
+static bool VK_WaitForSubmittedFrame(vk_context_t *ctx, const char *what);
+
+static void VK_Screenshot_DestroyBuffer(void)
+{
+    vk_context_t *ctx = &vk_state.ctx;
+
+    if (vk_screenshot_buffer) {
+        vkDestroyBuffer(ctx->device, vk_screenshot_buffer, NULL);
+        vk_screenshot_buffer = VK_NULL_HANDLE;
+    }
+    if (vk_screenshot_memory) {
+        vkFreeMemory(ctx->device, vk_screenshot_memory, NULL);
+        vk_screenshot_memory = VK_NULL_HANDLE;
+    }
+    vk_screenshot_capacity = 0;
+}
+
+static bool VK_Screenshot_EnsureBuffer(VkDeviceSize size)
+{
+    vk_context_t *ctx = &vk_state.ctx;
+
+    if (vk_screenshot_buffer && vk_screenshot_capacity >= size) {
+        return true;
+    }
+
+    VK_Screenshot_DestroyBuffer();
+
+    VkBufferCreateInfo buffer_info = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = size,
+        .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+    };
+    if (!VK_Check(vkCreateBuffer(ctx->device, &buffer_info, NULL,
+                                 &vk_screenshot_buffer),
+                  "vkCreateBuffer(screenshot)")) {
+        return false;
+    }
+
+    VkMemoryRequirements reqs;
+    vkGetBufferMemoryRequirements(ctx->device, vk_screenshot_buffer, &reqs);
+
+    uint32_t memory_type = VK_FindMemoryType(ctx->physical_device,
+                                             reqs.memoryTypeBits,
+                                             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                             VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    if (memory_type == UINT32_MAX) {
+        Com_EPrintf("Vulkan screenshot: no host-visible memory type\n");
+        VK_Screenshot_DestroyBuffer();
+        return false;
+    }
+
+    VkMemoryAllocateInfo alloc_info = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = reqs.size,
+        .memoryTypeIndex = memory_type,
+    };
+    if (!VK_Check(vkAllocateMemory(ctx->device, &alloc_info, NULL,
+                                   &vk_screenshot_memory),
+                  "vkAllocateMemory(screenshot)")) {
+        VK_Screenshot_DestroyBuffer();
+        return false;
+    }
+    if (!VK_Check(vkBindBufferMemory(ctx->device, vk_screenshot_buffer,
+                                     vk_screenshot_memory, 0),
+                  "vkBindBufferMemory(screenshot)")) {
+        VK_Screenshot_DestroyBuffer();
+        return false;
+    }
+
+    vk_screenshot_capacity = size;
+    return true;
+}
+
+static void VK_Screenshot_RecordCopy(VkCommandBuffer cmd, uint32_t image_index)
+{
+    vk_context_t *ctx = &vk_state.ctx;
+    VkImage image = ctx->swapchain.images[image_index];
+
+    VkImageMemoryBarrier to_transfer = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .levelCount = 1,
+            .layerCount = 1,
+        },
+    };
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+                         0, NULL, 0, NULL, 1, &to_transfer);
+
+    VkBufferImageCopy region = {
+        .imageSubresource = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .layerCount = 1,
+        },
+        .imageExtent = {
+            .width = ctx->swapchain.extent.width,
+            .height = ctx->swapchain.extent.height,
+            .depth = 1,
+        },
+    };
+    vkCmdCopyImageToBuffer(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                           vk_screenshot_buffer, 1, &region);
+
+    VkBufferMemoryBarrier host_read = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_HOST_READ_BIT,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .buffer = vk_screenshot_buffer,
+        .size = VK_WHOLE_SIZE,
+    };
+    VkImageMemoryBarrier to_present = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+        .dstAccessMask = 0,
+        .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .levelCount = 1,
+            .layerCount = 1,
+        },
+    };
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_HOST_BIT |
+                         VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0,
+                         0, NULL, 1, &host_read, 1, &to_present);
+}
+
+static void VK_Screenshot_Complete(void)
+{
+    vk_context_t *ctx = &vk_state.ctx;
+
+    vk_screenshot_armed = false;
+    vk_screenshot_pending = false;
+
+    if (!VK_WaitForSubmittedFrame(ctx, "vkWaitForFences(screenshot)")) {
+        return;
+    }
+
+    uint32_t width = ctx->swapchain.extent.width;
+    uint32_t height = ctx->swapchain.extent.height;
+    size_t pixel_count = (size_t)width * height;
+
+    bool swap_red_blue;
+    switch (ctx->swapchain.format) {
+    case VK_FORMAT_B8G8R8A8_UNORM:
+    case VK_FORMAT_B8G8R8A8_SRGB:
+        swap_red_blue = true;
+        break;
+    case VK_FORMAT_R8G8B8A8_UNORM:
+    case VK_FORMAT_R8G8B8A8_SRGB:
+        swap_red_blue = false;
+        break;
+    default:
+        Com_EPrintf("Vulkan screenshot: unsupported swapchain format %d\n",
+                    ctx->swapchain.format);
+        return;
+    }
+
+    void *mapped = NULL;
+    if (!VK_Check(vkMapMemory(ctx->device, vk_screenshot_memory, 0,
+                              VK_WHOLE_SIZE, 0, &mapped),
+                  "vkMapMemory(screenshot)")) {
+        return;
+    }
+
+    byte *rgb = Z_TagMalloc(pixel_count * 3, TAG_RENDERER);
+    const byte *src = mapped;
+    byte *dst = rgb;
+    for (size_t i = 0; i < pixel_count; i++, src += 4, dst += 3) {
+        if (swap_red_blue) {
+            dst[0] = src[2];
+            dst[1] = src[1];
+            dst[2] = src[0];
+        } else {
+            dst[0] = src[0];
+            dst[1] = src[1];
+            dst[2] = src[2];
+        }
+    }
+    vkUnmapMemory(ctx->device, vk_screenshot_memory);
+
+    int ok = stbi_write_png(vk_screenshot_path, (int)width, (int)height, 3,
+                            rgb, (int)width * 3);
+    Z_Free(rgb);
+
+    if (!ok) {
+        Com_EPrintf("Couldn't write %s\n", vk_screenshot_path);
+        return;
+    }
+
+    Com_Printf("Wrote %s\n", vk_screenshot_path);
+}
+
+static void VK_ScreenShotPNG_f(void)
+{
+    if (!vk_state.initialized || !vk_state.ctx.swapchain.handle) {
+        Com_EPrintf("No Vulkan swapchain available for screenshot.\n");
+        return;
+    }
+    if (!vk_screenshot_supported) {
+        Com_EPrintf("Vulkan swapchain does not support readback.\n");
+        return;
+    }
+    if (Cmd_Argc() > 2) {
+        Com_Printf("Usage: %s [name]\n", Cmd_Argv(0));
+        return;
+    }
+
+    char name[MAX_OSPATH];
+    if (Cmd_Argc() > 1) {
+        if (FS_NormalizePathBuffer(name, Cmd_Argv(1), sizeof(name)) >= sizeof(name)) {
+            Com_EPrintf("Screenshot name too long.\n");
+            return;
+        }
+        FS_CleanupPath(name);
+    } else {
+        Q_snprintf(name, sizeof(name), "worr_vk_%llu",
+                   (unsigned long long)time(NULL));
+    }
+
+    if (Q_snprintf(vk_screenshot_path, sizeof(vk_screenshot_path),
+                   "%s/screenshots/%s.png", fs_gamedir, name) >=
+        sizeof(vk_screenshot_path)) {
+        Com_EPrintf("Screenshot path too long.\n");
+        return;
+    }
+
+    int ret = FS_CreatePath(vk_screenshot_path);
+    if (ret < 0) {
+        Com_EPrintf("Couldn't create path for %s: %s\n", vk_screenshot_path,
+                    Q_ErrorString(ret));
+        return;
+    }
+
+    vk_screenshot_pending = true;
+}
+
 static bool VK_RecordCommandBuffer(VkCommandBuffer cmd, uint32_t image_index)
 {
     vk_context_t *ctx = &vk_state.ctx;
@@ -1282,6 +1557,10 @@ static bool VK_RecordCommandBuffer(VkCommandBuffer cmd, uint32_t image_index)
     }
     vkCmdEndRenderPass(cmd);
 
+    if (vk_screenshot_armed) {
+        VK_Screenshot_RecordCopy(cmd, image_index);
+    }
+
     result = vkEndCommandBuffer(cmd);
     return VK_Check(result, "vkEndCommandBuffer");
 }
@@ -1325,6 +1604,18 @@ static bool VK_DrawFrame(void)
         return VK_Check(result, "vkAcquireNextImageKHR");
     }
 
+    vk_screenshot_armed = false;
+    if (vk_screenshot_pending) {
+        VkDeviceSize needed = (VkDeviceSize)ctx->swapchain.extent.width *
+                              ctx->swapchain.extent.height * 4;
+        if (vk_screenshot_supported && VK_Screenshot_EnsureBuffer(needed)) {
+            vk_screenshot_armed = true;
+        } else {
+            Com_EPrintf("Vulkan screenshot: readback unavailable\n");
+            vk_screenshot_pending = false;
+        }
+    }
+
     VkCommandBuffer cmd = ctx->swapchain.command_buffers[image_index];
     vkResetCommandBuffer(cmd, 0);
     if (!VK_RecordCommandBuffer(cmd, image_index))
@@ -1365,6 +1656,13 @@ static bool VK_DrawFrame(void)
     };
 
     result = vkQueuePresentKHR(ctx->graphics_queue, &present_info);
+
+    if (vk_screenshot_armed) {
+        // The submitted command buffer already executed the readback copy;
+        // finish the file write even if the present was suboptimal.
+        VK_Screenshot_Complete();
+    }
+
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
         vk_state.swapchain_dirty = true;
         return false;
@@ -1384,6 +1682,9 @@ static void VK_DestroyContext(void)
     VK_Entity_Shutdown(ctx);
     VK_World_Shutdown(ctx);
     VK_UI_Shutdown(ctx);
+    VK_Screenshot_DestroyBuffer();
+    vk_screenshot_armed = false;
+    vk_screenshot_pending = false;
     VK_DestroySwapchain(ctx);
 
     if (ctx->command_pool) {
@@ -1428,10 +1729,15 @@ bool R_Init(bool total)
     if (!vk_draw_ui) {
         vk_draw_ui = Cvar_Get("vk_draw_ui", "1", 0);
     }
+    if (!vk_damageblend_frac) {
+        vk_damageblend_frac = Cvar_Get("gl_damageblend_frac", "0.2", 0);
+    }
     if (!vk_shadow_frontend_cvars_registered) {
         ShadowFrontend_RegisterCvars(&vk_shadow_frontend_cvars, "vk");
         Cmd_AddCommand("r_shadow_dump", VK_ShadowDump_f);
         Cmd_AddCommand("vk_shadow_dump", VK_ShadowDump_f);
+        Cmd_AddCommand("screenshot", VK_ScreenShotPNG_f);
+        Cmd_AddCommand("screenshotpng", VK_ScreenShotPNG_f);
         vk_shadow_frontend_cvars_registered = true;
     }
 
@@ -1544,6 +1850,8 @@ void R_Shutdown(bool total)
     ShadowFrontend_Shutdown(&vk_shadow_frontend);
     Cmd_RemoveCommand("r_shadow_dump");
     Cmd_RemoveCommand("vk_shadow_dump");
+    Cmd_RemoveCommand("screenshot");
+    Cmd_RemoveCommand("screenshotpng");
     vk_shadow_frontend_cvars_registered = false;
     vid->shutdown();
 
@@ -1617,6 +1925,12 @@ void R_RenderFrame(const refdef_t *fd)
 
     VK_World_RenderFrame(fd);
     VK_Entity_RenderFrame(fd);
+
+    // Full-screen liquid/powerup and damage blends layer between the 3D view
+    // and the HUD, mirroring the GL renderer's GL_Blend pass.
+    VK_UI_DrawScreenBlend(fd, vk_damageblend_frac
+                          ? Cvar_ClampValue(vk_damageblend_frac, 0.0f, 0.5f)
+                          : 0.2f);
 }
 
 void R_LightPoint(const vec3_t origin, vec3_t light)

@@ -620,6 +620,7 @@ static cgame_entity_import_t cg_entity_import = {
     .V_AddEntity = V_AddEntity,
     .V_AddParticle = V_AddParticle,
     .V_AddLight = V_AddLight,
+    .V_AddLightWithKey = V_AddLightWithKey,
     .V_AddLightEx = V_AddLightEx,
     .V_AddLightExVis = V_AddLightExVis,
     .V_AddLightStyle = V_AddLightStyle,

@@ -133,6 +133,9 @@ static void write_dynamic_lights(sizebuf_t *buf) {
     return texture(u_shadowmap, vec3(uv, float(page))).r;
   })
 
+  GLSF("#define SHADOW_VISIBILITY_EXPONENT "
+       GL_SHADOW_VISIBILITY_EXPONENT_GLSL "\n");
+
   GLSL(float shadow_compare_depth(int page, vec2 uv, float depth) {
     return depth <= shadow_raw_depth(page, uv) ? 1.0 : 0.0;
   })
@@ -227,6 +230,7 @@ static void write_dynamic_lights(sizebuf_t *buf) {
     } else {
       result = shadow_pcss_depth(page, tc, bias);
     }
+    result = pow(clamp(result, 0.0, 1.0), SHADOW_VISIBILITY_EXPONENT);
     return mix(1.0, result, clamp(shadow_global.y, 0.0, 1.0));
   })
 
@@ -1539,10 +1543,10 @@ static void shader_load_lights(void) {
       (glr.ppl_dlight_receiver_key & GL_DLIGHT_RECEIVER_WEAPON) != 0;
   const int receiver_owner =
       (int)(glr.ppl_dlight_receiver_key & GL_DLIGHT_RECEIVER_OWNER_MASK);
-  // View weapons do not receive shadow maps: the (invisible) first-person
-  // body occludes the gun from most light directions, so sampling the pages
-  // there only produces unstable self-shadowing.
-  gls.u_dlights.pad[0] = weapon_receiver ? 1 : 0;
+  // View weapons stay excluded from the caster list, but they are valid
+  // receivers: the hidden first-person body caster should be able to shadow
+  // the held weapon under normal shadowmapped lights.
+  gls.u_dlights.pad[0] = 0;
   GLuint shadow_tex = GL_Shadow_DepthTexture();
   if (shadow_tex)
     GL_BindTexture(TMU_SHADOW, shadow_tex);
