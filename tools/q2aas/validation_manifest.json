@@ -1,0 +1,45 @@
+{
+  "schema": "worr-q2aas-validation-manifest-v1",
+  "version": 1,
+  "task_ids": [
+    "FR-04-T11",
+    "FR-04-T16",
+    "DV-07-T06"
+  ],
+  "maps": [
+    {
+      "id": "mm-rage",
+      "path": ".install/basew/maps/mm-rage.bsp",
+      "required": true,
+      "require_reachability": true,
+      "require_clean_bsp_lumps": true,
+      "require_spawn_coverage": true,
+      "require_item_coverage": true,
+      "require_high_value_reachability": true,
+      "minimum_metrics": {
+        "numareas": 428,
+        "numareasettings": 428,
+        "reachabilitysize": 562,
+        "numclusters": 4
+      },
+      "minimum_travel_counts": {
+        "walk": 468,
+        "barrier jump": 1,
+        "jump": 7,
+        "ladder": 1,
+        "walk off ledge": 81,
+        "elevator": 1
+      },
+      "notes": "Current staged WORR smoke map. This anchors strict Q2 reachability validation until the canonical Quake II reference map set is staged."
+    }
+  ],
+  "pending_reference_maps": [
+    "q2dm1",
+    "q2dm2",
+    "q2dm8 or another open deathmatch map",
+    "capture-the-flag map",
+    "campaign or co-op map",
+    "map with water, slime, lava, or hurt volumes",
+    "map with doors, plats, elevators, or other movers"
+  ]
+}

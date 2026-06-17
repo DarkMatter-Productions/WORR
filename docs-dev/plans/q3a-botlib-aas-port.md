@@ -2,7 +2,7 @@
 
 Date: 2026-06-16
 
-Status: Planning / Backlog
+Status: Implementation In Progress
 
 Roadmap tasks: `FR-04-T01` through `FR-04-T07`, `FR-04-T10` through `FR-04-T16`, and `DV-07-T06`.
 
@@ -99,6 +99,7 @@ Target source layout, subject to adjustment during implementation:
 
 - `tools/q2aas/`: WORR-tailored BSP-to-AAS generator derived from `TTimo/bspc`.
 - `src/game/sgame/bots/q3a/`: imported or lightly wrapped Q3A BotLib runtime code, kept behind C-compatible adapter boundaries.
+- `src/game/sgame/bots/bot_runtime.*`: WORR-native BotLib/AAS runtime shell, cvar registration, active-map AAS load probe, and lifecycle/status surface.
 - `src/game/sgame/bots/botlib_adapter.*`: WORR import table, map load/unload, entity sync, trace/PVS/FS/memory/debug bridging.
 - `src/game/sgame/bots/bot_brain.*`: WORR-native bot lifecycle, per-frame scheduling, goal selection, and usercmd generation.
 - `src/game/sgame/bots/bot_nav.*`: AAS area lookup, route requests, movement steering, stuck recovery, and debug overlays.
@@ -107,6 +108,35 @@ Target source layout, subject to adjustment during implementation:
 - `src/game/sgame/bots/bot_profiles.*`: character/profile loading and skill knobs.
 - `docs-dev/plans/q3a-botlib-aas-port.md`: this project plan.
 - `docs-dev/q3a-botlib-aas-credits.md`: source ledger and credit tracker, created in Phase 0 and updated with each import/adaptation.
+- `docs-dev/q3a-botlib-aas-source-audit-2026-06-16.md`: first-round source audit, baseline pins, license review, and import gate.
+- `docs-dev/q2aas-generator-q2-preset-validation-2026-06-16.md`: Q2 movement preset, validation harness, and first staged map smoke log.
+- `docs-dev/q2aas-generator-q2-reachability-bridge-2026-06-16.md`: Q2 trace bridge, reachability, clustering, and strict staged-map validation log.
+- `docs-dev/q2aas-generator-validation-matrix-2026-06-16.md`: manifest-driven staged-map validation, JSON report, and invalid-input smoke log.
+- `docs-dev/q2aas-generator-deterministic-metadata-2026-06-16.md`: AAS sidecar metadata, hash/report schema, Q2 BSP header preflight, and BSPX marker detection log.
+- `docs-dev/q2aas-generator-entity-diagnostics-2026-06-16.md`: entity lump parsing, brush-content diagnostics, spawn/item AAS coverage, high-value pickup reachability, and mover inventory log.
+- `docs-dev/q2aas-generator-diagnostic-gates-2026-06-16.md`: staged smoke diagnostic gates for clean BSP lumps, spawn/item AAS coverage, and high-value pickup reachability.
+- `docs-dev/q2aas-generator-baseline-regression-gates-2026-06-17.md`: manifest-driven structural metric and travel-count regression gates for staged AAS output.
+- `docs-dev/q2aas-generator-manifest-schema-validation-2026-06-17.md`: manifest schema validation, task provenance, and validation-report manifest metadata.
+- `docs-dev/q2aas-generator-manifest-schema-smoke-2026-06-17.md`: automated malformed-manifest expected-failure smoke in the staged q2aas validation target.
+- `docs-dev/q2aas-generator-aas-staging-2026-06-17.md`: validated `.aas` staging into `.install/basew/maps/` and staged-output report metadata.
+- `docs-dev/q2aas-generator-stage-audit-2026-06-17.md`: staged `.aas` artifact audit against the validation stage report.
+- `docs-dev/q2aas-generator-packaged-map-smoke-2026-06-17.md`: archive-backed map extraction and scratch pkz conversion smoke.
+- `docs-dev/q2aas-generator-archive-manifest-guardrails-2026-06-17.md`: archive-backed manifest member validation and expected-failure smoke coverage.
+- `docs-dev/q2aas-generator-package-audit-2026-06-17.md`: staged AAS package-readiness audit for loose-or-archive release payload representation.
+- `docs-dev/q2aas-generator-archive-packaging-2026-06-17.md`: validated staged AAS injection into `.install/basew/pak0.pkz` and archive-required package audit.
+- `docs-dev/q2aas-generator-refresh-install-integration-2026-06-17.md`: `refresh_install.py --package-q2aas-aas` integration for preserving generated AAS through `.install` refreshes.
+- `docs-dev/q2aas-generator-stage-archive-member-validation-2026-06-17.md`: generic staged-release archive member validation and q2aas refresh wiring for required packaged AAS hashes.
+- `docs-dev/q3a-botlib-runtime-aas-shell-2026-06-17.md`: WORR-native BotLib/AAS runtime shell, `sg_bot_*` cvars, active-map AAS header probe, and server-game lifecycle hooks.
+- `docs-dev/q3a-botlib-import-boundary-2026-06-17.md`: Q3A BotLib import root, adapter shell, planned-file inventory, and build strategy decision.
+- `docs-dev/q3a-botlib-utility-import-2026-06-17.md`: first commit-pinned Q3A BotLib utility source/header import, local build wrapper, LibVar smoke bridge, and runtime validation log.
+- `docs-dev/q3a-botlib-aas-file-loader-2026-06-17.md`: imported Q3A `be_aas_file.c` AAS loader subset, in-memory WORR-to-Q3A filesystem bridge, and staged map loader smoke.
+- `docs-dev/q3a-botlib-aas-sample-query-2026-06-17.md`: imported Q3A `be_aas_sample.c`, temporary bridge shims for later runtime hooks, and first loaded-area query smoke.
+- `docs-dev/q3a-botlib-aas-reach-query-2026-06-17.md`: imported Q3A `be_aas_reach.c`, removal of the temporary `AAS_AreaReachability` shim, scoped warning policy, and imported reachability smoke.
+- `docs-dev/q3a-botlib-bridge-time-vector-2026-06-17.md`: bridge-fed Q3A runtime milliseconds, real `AngleVectors`, adapter status, and verbose debug smoke.
+- `docs-dev/q3a-botlib-bsp-entity-bridge-2026-06-17.md`: active-map Q2 BSP entity-lump bridge for Q3A `AAS_NextBSPEntity` and epair helper callbacks.
+- `docs-dev/q3a-botlib-bsp-model-bridge-2026-06-17.md`: active-map Q2 BSP model-lump bridge for Q3A inline BSP model bounds.
+- `docs-dev/q3a-botlib-bsp-collision-bridge-2026-06-17.md`: active-map Q2 BSP static-world collision bridge for Q3A `AAS_Trace` and `AAS_PointContents`.
+- `docs-dev/q3a-botlib-bsp-visibility-bridge-2026-06-17.md`: active-map Q2 BSP PVS/PHS visibility bridge for Q3A `AAS_inPVS` and `AAS_inPHS`.
 
 ## Task Board
 
@@ -121,15 +151,15 @@ Use these tasks as the maintainable checklist backbone. Status values should fol
 | `FR-04-T05` | Backlog | `tools/q2aas`, `sgame/bots` | P1 | `FR-04-T11`, `FR-04-T14` | Map-level nav diagnostics validate generated AAS, spawn routing, reachability, and common blockers. |
 | `FR-04-T06` | Backlog | `sgame/match` | P1 | `FR-04-T02` | Tournament, vote, map queue, and scoreboard flows handle bot participants intentionally. |
 | `FR-04-T07` | Backlog | `sgame/bots`, docs | P2 | `FR-04-T01` | Public bot cvars use `sg_bot_*`, have sane defaults, and are documented in dev/user docs as appropriate. |
-| `FR-04-T10` | Ready | docs, provenance | P0 | none | Source audit, license notes, and credits ledger exist before code import starts. |
-| `FR-04-T11` | Backlog | `tools/q2aas` | P0 | `FR-04-T10` | `TTimo/bspc` based Q2 AAS generator builds locally, accepts WORR/Q2R map inputs, and emits validated `.aas` files. |
-| `FR-04-T12` | Backlog | `sgame/bots/q3a` | P0 | `FR-04-T10` | Q3A BotLib runtime compiles behind a WORR adapter and can load/unload generated AAS for the active map. |
+| `FR-04-T10` | In Progress | docs, provenance | P0 | none | Source audit, license notes, and credits ledger exist before code import starts. |
+| `FR-04-T11` | In Progress | `tools/q2aas` | P0 | `FR-04-T10` | `TTimo/bspc` based Q2 AAS generator builds locally, accepts WORR/Q2R map inputs, and emits validated `.aas` files. |
+| `FR-04-T12` | In Progress | `sgame/bots/q3a` | P0 | `FR-04-T10` | Q3A BotLib runtime compiles behind a WORR adapter and can load/unload generated AAS for the active map. |
 | `FR-04-T13` | Backlog | `sgame/client`, `sgame/commands` | P0 | `FR-04-T01` | Bots can be added/removed through WORR commands without network-client hacks or stale session state. |
 | `FR-04-T14` | Backlog | `sgame/bots/bot_nav` | P0 | `FR-04-T11`, `FR-04-T12`, `FR-04-T13` | A spawned bot can route, steer, recover from simple stalls, and reach item/position goals on reference maps. |
 | `FR-04-T15` | Backlog | `sgame/bots/bot_brain` | P1 | `FR-04-T14` | Q3A behavior concepts are translated into Q2 item, weapon, combat, and mode decisions. |
-| `FR-04-T16` | Backlog | packaging, validation | P1 | `FR-04-T11`, `FR-04-T14` | AAS assets/tooling are staged under `.install/`, smoke tested, and covered by release packaging checks. |
+| `FR-04-T16` | In Progress | packaging, validation | P1 | `FR-04-T11`, `FR-04-T14` | AAS assets/tooling are staged under `.install/`, smoke tested, and covered by release packaging checks. |
 | `DV-03-T05` | Backlog | tests | P2 | `FR-04-T02` | Bot scenario tests cover spawn, navigation, combat, and objective behavior. |
-| `DV-07-T06` | Ready | docs | P0 | none | Imported-source credit and provenance requirements are documented and checked before each bot PR/merge. |
+| `DV-07-T06` | In Progress | docs | P0 | none | Imported-source credit and provenance requirements are documented and checked before each bot PR/merge. |
 
 ## Checklist System
 
@@ -157,22 +187,26 @@ Goal: define the project contract before importing code.
 Checklist:
 
 - [x] Create `docs-dev/q3a-botlib-aas-credits.md`.
-- [ ] Record source repositories and local paths:
-  - [ ] `E:\_SOURCE\_CODE\Quake-III-Arena-master`
-  - [ ] `https://github.com/TTimo/bspc`
-  - [ ] `https://github.com/bnoordhuis/bspc`
-- [ ] Capture upstream commit IDs for any imported snapshots.
+- [x] Create `docs-dev/q3a-botlib-aas-source-audit-2026-06-16.md`.
+- [x] Record source repositories and local paths:
+  - [x] `E:\_SOURCE\_CODE\Quake-III-Arena-master`
+  - [x] `https://github.com/TTimo/bspc`
+  - [x] `https://github.com/bnoordhuis/bspc`
+- [x] Capture upstream baseline commit IDs before any imported snapshots.
 - [ ] Record every imported file with:
-  - [ ] WORR destination path.
-  - [ ] Upstream path.
-  - [ ] Upstream commit hash.
-  - [ ] Original copyright header.
-  - [ ] License.
-  - [ ] Local modifications summary.
-  - [ ] Contributor/author names found through file headers and upstream git history.
-- [ ] Verify GPL-2.0/GPL-2.0-or-later compatibility against WORR's current license obligations before code import.
-- [ ] Decide whether Q3A BotLib code is copied into `src/game/sgame/bots/q3a/`, built as a static library, or built as an internal game-module object group.
-- [ ] Decide whether `tools/q2aas/` is a copied source snapshot, a git subtree, or a documented vendored import.
+  - [x] BSPC snapshot destination path recorded as `tools/q2aas/**`.
+  - [x] BSPC upstream path and commit hash recorded.
+  - [x] BSPC license/header retention recorded.
+  - [x] BSPC local modifications summary recorded.
+  - [x] BSPC contributor baseline recorded.
+  - [x] Add per-file rows when individual BSPC files are locally tailored in the Q2 reachability bridge slice.
+  - [ ] Continue adding per-file rows for future BSPC local tailoring.
+  - [x] Add per-file rows for the first imported Q3A BotLib utility subset under `src/game/sgame/bots/q3a/`.
+  - [ ] Continue adding Q3A BotLib runtime rows before future imported `src/game/sgame/bots/q3a/` source/header files land.
+- [x] Complete first-pass GPL-2.0/GPL-2.0-or-later compatibility review against WORR's current license obligations before code import.
+- [x] Decide whether Q3A BotLib code is copied into `src/game/sgame/bots/q3a/`, built as a static library, or built as an internal game-module object group.
+  - Decision: copy only commit-pinned, ledger-recorded Q3A files into `src/game/sgame/bots/q3a/` and compile them as an internal server-game object group behind `botlib_adapter.*`.
+- [x] Decide whether `tools/q2aas/` is a copied source snapshot, a git subtree, or a documented vendored import.
 - [ ] Write the MVP behavior slice for `FR-04-T01`:
   - [ ] Spawn and leave cleanly.
   - [ ] Load character/profile data.
@@ -184,12 +218,13 @@ Checklist:
 
 Credits requirements:
 
-- [ ] Retain id Software copyright notices on Q3A-derived source.
+- [x] Retain id Software copyright notices on imported BSPC/Q3A-derived source.
 - [ ] Retain ZeniMax/WORR notices on existing WORR files.
-- [ ] Credit `TTimo/bspc` as the BSP-to-AAS compiler baseline.
-- [ ] Credit `bnoordhuis/bspc` as the fork lineage shown by `TTimo/bspc`.
-- [ ] Credit individual upstream commit authors when file-level git history is imported.
-- [ ] Add a "Modified for WORR" note to imported files only where local modifications are made.
+- [x] Credit `TTimo/bspc` as the BSP-to-AAS compiler baseline.
+- [x] Credit `bnoordhuis/bspc` as the fork lineage shown by `TTimo/bspc`.
+- [x] Credit individual upstream commit authors when file-level git history is imported for the BSPC snapshot.
+- [x] Add a "Modified for WORR" note to imported files modified in the Q2 reachability bridge slice.
+- [ ] Continue adding "Modified for WORR" notes to future locally modified imported files.
 
 Exit criteria:
 
@@ -212,55 +247,124 @@ Recommended target:
 
 Implementation checklist:
 
-- [ ] Import or vendor the `TTimo/bspc` source baseline after Phase 0 credits are in place.
-- [ ] Build a standalone local executable through Meson.
-- [ ] Keep the Q2 loader path active:
-  - [ ] `l_bsp_q2.c`
-  - [ ] `l_bsp_q2.h`
-  - [ ] `map_q2.c`
-  - [ ] `q2files.h`
-  - [ ] `textures.c`
+- [x] Import or vendor the `TTimo/bspc` source baseline after Phase 0 credits are in place.
+- [x] Build a standalone local executable through Meson.
+- [x] Add a Meson cfg smoke target for the WORR preset.
+- [x] Keep the Q2 loader path active:
+  - [x] `l_bsp_q2.c`
+  - [x] `l_bsp_q2.h`
+  - [x] `map_q2.c`
+  - [x] `q2files.h`
+  - [x] `textures.c`
 - [ ] Remove or isolate unused Q1/HL/Sin/Q3 map loaders only after validating they are not needed by shared code.
-- [ ] Add a WORR config preset, for example `tools/q2aas/cfg/worr_q2.cfg`.
-- [ ] Define WORR player presence types:
-  - [ ] Standing player bounds.
-  - [ ] Crouched player bounds.
-  - [ ] Swimming movement.
+- [x] Add a WORR config preset, for example `tools/q2aas/cfg/worr_q2.cfg`.
+- [x] Add `tools/q2aas/validation_manifest.json` as the staged-map validation matrix seed.
+- [ ] Define WORR player presence types and movement constants:
+  - [x] Standing player bounds.
+  - [x] Crouched player bounds.
+  - [x] Swimming movement constants.
   - [ ] Optional large/NPC presence type if later shared with monster AI.
+- [x] Add local validation helper for cfg/map smoke checks under `.tmp/q2aas/`.
+- [x] Add manifest-driven staged-map smoke validation and JSON report output.
+- [x] Add manifest schema/version/task validation and report manifest provenance in the staged JSON output.
+- [x] Add automated malformed-manifest expected-failure smoke coverage to `q2aas-staged-smoke`.
+- [x] Add opt-in `.install/basew/maps` staging for generated AAS files after strict validation passes.
+- [x] Add staged AAS artifact audit that verifies `.install/basew/maps` files against the stage report.
+- [x] Add package-readiness audit that verifies staged AAS files are represented in the local release payload.
+- [x] Add package archive step that injects validated staged AAS files into `.install/basew/pak0.pkz`.
+- [x] Add archive-required package audit that verifies packaged AAS members match staged-output hashes.
+- [x] Add opt-in `refresh_install.py` integration that repackages q2aas AAS after `pak0.pkz` is rebuilt from `assets/`.
+- [x] Add generic staged-release validation for required package archive members and hash-matched q2aas AAS refresh checks.
 - [ ] Map Q2 contents/surface flags to AAS travel flags:
-  - [ ] Solid/world clipping.
+  - [x] Solid/world clipping for the first static-world Q2 trace bridge.
   - [ ] Water.
+    - [x] Water brush counts are recorded in validation diagnostics.
   - [ ] Slime/lava/hurt volumes.
-  - [ ] Ladders if represented by map/entity metadata.
+    - [x] Slime/lava brush counts and `trigger_hurt` entity counts are recorded in validation diagnostics.
+  - [x] Ladders if represented by map/entity metadata in the inherited BotLib pass.
+    - [x] Ladder brush counts are recorded in validation diagnostics.
   - [ ] Slick/sky/nodraw/detail/translucent surfaces where relevant.
+    - [x] Detail/translucent brush counts are recorded in validation diagnostics.
 - [ ] Teach generator about Q2/Q2R map quirks:
-  - [ ] IBSP38 header validation.
+  - [x] IBSP38 header validation in staged-map preflight.
+  - [x] Invalid or unknown BSP headers fail clearly before AAS generation continues.
   - [ ] Rerelease/BSPX lump tolerance if present.
-  - [ ] Pak/pkz map lookup from WORR's `basew` staging layout.
-  - [ ] Entity lump parsing for doors, plats, teleporters, triggers, hurt volumes, and spawn/item points.
+    - [x] BSPX marker offsets are detected and recorded in validation metadata.
+  - [x] Pak/pkz map lookup from WORR's `basew` staging layout.
+    - [x] Manifest entries can use `archive` plus `archive_member` instead of a loose `path`.
+    - [x] `q2aas-package-map-smoke` creates a scratch `.pkz`, extracts `maps/mm-rage.bsp`, and validates the extracted BSP.
+    - [x] Manifest schema smoke rejects path/archive conflicts, missing archive members, absolute archive members, and traversal archive members.
+  - [x] Entity lump parsing for doors, plats, teleporters, triggers, hurt volumes, and spawn/item points in validation diagnostics.
 - [ ] Add reachability passes for:
-  - [ ] Walk.
-  - [ ] Step up/down.
-  - [ ] Walk off ledges within controlled drop limits.
-  - [ ] Jumps and barrier jumps tuned to Q2 movement.
+  - [x] Walk.
+  - [x] Step up/down through inherited walk reachability, validated on staged smoke map.
+  - [x] Walk off ledges within controlled drop limits.
+  - [x] Jumps and barrier jumps tuned to Q2 movement preset.
   - [ ] Water entry/exit.
   - [ ] Elevators/plats/doors as conditional reachability.
+    - [x] First elevator candidate generated by the static Q2 bridge smoke.
   - [ ] Teleports.
   - [ ] Optional rocket-jump routes behind an explicit `sg_bot_allow_rocketjump` style setting.
+    - [x] Generator can emit inherited rocket-jump candidates; runtime policy gate still pending.
 - [ ] Add deterministic metadata to generated AAS:
-  - [ ] Source BSP checksum.
-  - [ ] Tool version.
-  - [ ] Config hash.
-  - [ ] Generation time or reproducible build mode decision.
+  - [x] Source BSP checksum.
+  - [x] Tool version and executable hash in validation report/sidecar.
+  - [x] Config hash in validation report/sidecar.
+  - [x] Generation time omitted by policy; reproducible identity uses tool/config/input/output hashes.
+  - [ ] Decide whether sidecar metadata is packaged, folded into package manifests, or replaced by a runtime AAS metadata extension.
 - [ ] Add diagnostics:
-  - [ ] AAS area count.
-  - [ ] Reachability count by travel type.
-  - [ ] Orphaned item/spawn count.
-  - [ ] Unreachable high-value item report.
+  - [x] AAS area count.
+  - [x] Reachability size and cluster count summary.
+  - [x] Reachability count by travel type.
+  - [x] Structured JSON validation report under `.tmp/q2aas/`.
+  - [x] Q2 BSP and AAS header/hash metadata sidecars under `.tmp/q2aas/`.
+  - [x] First-pass orphaned item/spawn count using AAS area-bounds origin coverage.
+  - [x] First-pass unreachable high-value item report using the generated AAS reachability graph.
+  - [x] Staged smoke fails on clean BSP lump, spawn coverage, item coverage, and high-value pickup reachability regressions.
+  - [x] Staged smoke fails when manifest minimum AAS metrics or travel counts regress below the `mm-rage` baseline.
+  - [x] Staged smoke rejects malformed manifest schema, unknown baseline keys, and non-integer baseline thresholds before generation.
+  - [x] Staged smoke verifies the malformed-manifest rejection path through `--manifest-schema-smoke`.
   - [ ] Door/elevator route report.
+    - [x] Door/elevator entity inventory in validation diagnostics.
+
+Initial staged map smoke:
+
+- [x] `.install/basew/maps/mm-rage.bsp`: structural AAS generation succeeds and writes `.tmp/q2aas/mm-rage.aas`.
+  - Baseline result before Q2 bridge: `numareas = 428`, `numareasettings = 428`, `reachabilitysize = 0`, `numclusters = 0`.
+- [x] `.install/basew/maps/mm-rage.bsp`: strict Q2 reachability validation succeeds after the Q2 trace bridge.
+  - Result: `numareas = 428`, `numareasettings = 428`, `reachabilitysize = 562`, `numclusters = 4`.
+  - Travel counts: `468 walk`, `1 barrier jump`, `7 jump`, `1 ladder`, `81 walk off ledge`, `1 elevator`, `2 rocket jump`.
+- [x] `q2aas-staged-smoke`: manifest-driven validation passes for `mm-rage.bsp`, writes `.tmp/q2aas/validation-report.json`, and verifies invalid BSP input fails with `unknown BSP format`.
+  - [x] Writes `.tmp/q2aas/mm-rage.aas.meta.json` with tool/config/BSP/AAS hashes, Q2 header data, AAS header data, and no generation timestamp.
+  - [x] Detects `mm-rage.bsp` as Quake II `IBSP` version `38` and records a BSPX marker at offset `766956`.
+  - [x] Reports `9` spawn points, `2` intermission cameras, `48` pickups, `2` high-value pickups, `2` movers, `1` trigger, `0` spawn/item origin orphans, `0` unreachable high-value pickups, and `16` ladder brushes.
+  - [x] Enforces diagnostic gates: clean BSP lump table, `9/9` spawn origins mapped to AAS areas, `48/48` item origins mapped to AAS areas, and `0` unreachable high-value pickups.
+  - [x] Enforces baseline minima: `428` areas, `428` area settings, `562` reachability records, `4` clusters, `468` walk, `1` barrier jump, `7` jump, `1` ladder, `81` walk off ledge, and `1` elevator.
+  - [x] Reports manifest provenance: schema `worr-q2aas-validation-manifest-v1`, version `1`, task IDs, pending reference categories, and no manifest errors.
+  - [x] Reports `manifest_schema_smoke.status = passed` for a generated malformed manifest with an unknown metric key, a string travel-count threshold, path/archive conflicts, missing archive members, absolute archive members, and traversal archive members.
+- [x] `q2aas-stage-aas`: strict manifest validation passes for `mm-rage.bsp`, stages `.install/basew/maps/mm-rage.aas`, and writes `.tmp/q2aas/stage-report.json`.
+  - [x] Staged AAS size is `277484` bytes and staged SHA-256 is `6459585e3c15eaa4170e23ca7465fc8255bd95b9b59d42e8615c39a67b707f9c`.
+- [x] `q2aas-stage-audit`: verifies `.install/basew/maps/mm-rage.aas` exists under the expected stage directory, is non-empty, and matches the staged/generated AAS hashes.
+  - [x] Writes `.tmp/q2aas/stage-audit-report.json` with schema `worr-q2aas-stage-audit-v1`, `map_count = 1`, `failed_count = 0`, and `status = passed`.
+- [x] `q2aas-package-map-smoke`: validates archive-backed map extraction by building `.tmp/q2aas/package-map-smoke.pkz`, extracting `maps/mm-rage.bsp`, and converting the extracted BSP.
+  - [x] Writes `.tmp/q2aas/package-map-smoke-report.json` with `map_source.type = archive`, archive hash/member metadata, and strict Q2 validation status `passed`.
+- [x] `q2aas-package-audit`: verifies the staged `mm-rage.aas` release payload representation after staging.
+  - [x] Writes `.tmp/q2aas/package-audit-report.json` with schema `worr-q2aas-package-audit-v1`, `map_count = 1`, `failed_count = 0`, and `status = passed`.
+  - [x] Loose-or-archive mode confirms `.install/basew/maps/mm-rage.aas` is hash-matched before archive packaging, and also passes after the archive member is present.
+- [x] `q2aas-package-aas`: injects validated staged AAS output into `.install/basew/pak0.pkz`.
+  - [x] Writes `.tmp/q2aas/package-archive-report.json` with schema `worr-q2aas-package-archive-v1`, `added_count = 1`, `replaced_count = 0`, and `status = passed` on the first package run.
+  - [x] Adds `maps/mm-rage.aas` with size `277484` bytes and SHA-256 `6459585e3c15eaa4170e23ca7465fc8255bd95b9b59d42e8615c39a67b707f9c`.
+- [x] `q2aas-package-archive-audit`: verifies the packaged `maps/mm-rage.aas` member under an archive-required policy.
+  - [x] Writes `.tmp/q2aas/package-archive-audit-report.json` with schema `worr-q2aas-package-audit-v1`, `map_count = 1`, `failed_count = 0`, `policy = archive-required`, and `status = passed`.
+- [x] `refresh_install.py --package-q2aas-aas`: refreshes `.install/`, rebuilds `pak0.pkz` from assets, injects staged q2aas AAS, audits the archive member, and validates the staged payload.
+  - [x] Writes `.tmp/q2aas/refresh-package-archive-report.json` and `.tmp/q2aas/refresh-package-archive-audit-report.json`.
+  - [x] `windows-x86_64` staged install validation passes after q2aas AAS is re-injected.
+- [x] `validate_stage.py --required-archive-member`: verifies the packaged `maps/mm-rage.aas` member exists inside `.install/basew/pak0.pkz` and matches the staged SHA-256.
+- [x] `refresh_install.py --package-q2aas-aas --platform-id windows-x86_64`: derives required archive member checks from `.tmp/q2aas/stage-report.json` before generic staged payload validation.
 
 Reference map checklist:
 
+- [x] `validation_manifest.json`: current staged smoke map and pending reference categories recorded.
 - [ ] `q2dm1`: basic DM routing, weapon pickup, elevator/vertical movement.
 - [ ] `q2dm2`: multi-level combat routing.
 - [ ] `q2dm8` or another open map: long sightline and item timing checks.
@@ -282,31 +386,78 @@ Goal: compile and initialize the Q3A BotLib/AAS runtime behind a WORR adapter.
 
 Implementation checklist:
 
-- [ ] Create an imported-code boundary for Q3A BotLib files.
+- [x] Add a WORR-native runtime shell under `src/game/sgame/bots/bot_runtime.*`.
+- [x] Register the first public `sg_bot_*` cvars for runtime gating and debug/status work.
+- [x] Probe the active map's `maps/<map>.aas` through WORR filesystem search paths, decode the Q3A/BSPC AAS v5 header transform, and validate the `EAAS` version 5 lump table.
+- [x] Add server-game lifecycle hooks for map start, entity reload, frame tick, and shutdown.
+- [x] Create an imported-code boundary for Q3A BotLib files.
+  - [x] Add `src/game/sgame/bots/q3a/` as the reserved import root with local import rules.
+  - [x] Add a compiled WORR-native Q3A BotLib boundary inventory/status layer.
+  - [x] Add a WORR-facing `botlib_adapter.*` shell for future setup/shutdown/map/frame calls.
 - [ ] Compile the BotLib C files with first-party warning policy decisions documented.
+  - [x] Compile the first commit-pinned utility subset: `l_memory.c`, `l_libvar.c`, and required Q3A headers.
+  - [x] Document the local `q3a_botlib_utility` warning/compatibility policy and runtime LibVar smoke.
+  - [x] Compile the Q3A AAS file loader subset: `be_aas_file.c`, AAS declarations, and parser utility headers.
+  - [x] Compile the Q3A AAS sampling subset: `be_aas_sample.c`.
+  - [x] Compile the Q3A AAS reachability subset: `be_aas_reach.c`.
+  - [x] Document the temporary `WIN32`, `MEMORYMANEGER`, and legacy warning policy used by the Q3A object group.
+  - [x] Document the scoped `-Wno-absolute-value` warning exception required by the legacy Q3A reachability source.
+  - [x] Document the temporary entity-collision, BSP/entity, movement, and debug stubs used before the full Q3A runtime is imported.
+  - [x] Replace the temporary `AngleVectors` and `Sys_MilliSeconds` shims with bridge-owned implementations.
+  - [x] Replace the temporary BSP/entity epair callbacks with active-map Q2 BSP entity-lump parsing.
+  - [x] Replace the temporary BSP inline model callback with active-map Q2 BSP model-lump parsing.
+  - [x] Replace the temporary static `AAS_Trace` and `AAS_PointContents` stubs with active-map Q2 BSP collision-lump parsing and static-world lookup.
+  - [x] Replace the missing `AAS_inPVS` and `AAS_inPHS` callbacks with active-map Q2 BSP visibility-lump parsing.
+  - [ ] Compile the full BotLib runtime/AAS file set.
 - [ ] Build a WORR-facing adapter for the Q3A `botlib_import_t` callbacks:
+  - [x] Add adapter shell/status layer that keeps the runtime unavailable until Q3A files are imported.
   - [ ] `Print` to WORR logging.
-  - [ ] `Trace` to `gi.trace` / WORR collision.
+  - [ ] `Trace` to final WORR collision ownership.
+    - [x] Add an interim active-map Q2 BSP static-world `AAS_Trace` bridge.
   - [ ] `EntityTrace` to WORR entity clipping where available.
-  - [ ] `PointContents` to WORR point contents.
-  - [ ] `inPVS` to WORR PVS/area visibility.
-  - [ ] `BSPEntityData` to active map entity lump access.
-  - [ ] `BSPModelMinsMaxsOrigin` to inline model bounds.
+  - [ ] `PointContents` to final WORR collision ownership.
+    - [x] Add an interim active-map Q2 BSP leaf `AAS_PointContents` bridge.
+  - [ ] `inPVS` / `inPHS` to final WORR visibility ownership.
+    - [x] Add an interim active-map Q2 BSP PVS/PHS visibility bridge.
+  - [x] `BSPEntityData` to active map entity lump access.
+  - [x] `BSPModelMinsMaxsOrigin` to inline model bounds.
   - [ ] `BotClientCommand` to a safe sgame command path.
   - [ ] Memory allocation to WORR zone/hunk or a bot-owned allocator.
+    - [x] Add temporary `malloc` / `free` callbacks for the imported utility smoke only.
+    - [x] Enable Q3A's existing memory-manager path so temporary AAS hunk allocations can unload cleanly.
   - [ ] Filesystem reads through WORR FS and `basew` search paths.
+    - [x] Add a temporary in-memory read-only FS bridge for the already-loaded active AAS buffer.
   - [ ] Debug lines/polygons to WORR debug draw imports.
+    - [x] Add temporary debug-line no-op stubs required by the imported reachability source.
 - [ ] Add map lifecycle:
   - [ ] Init BotLib once per game module load.
-  - [ ] Load active map AAS on map start.
-  - [ ] Update BotLib time each server frame.
+  - [x] Probe active map AAS on map start through the WORR filesystem extension.
+  - [x] Load active map Q2 BSP entity data before the Q3A AAS buffer handoff.
+  - [x] Load active map Q2 BSP model data before the Q3A AAS buffer handoff.
+  - [x] Load active map Q2 BSP collision data before the Q3A AAS buffer handoff.
+  - [x] Load active map Q2 BSP visibility data before the Q3A AAS buffer handoff.
+  - [x] Load active map AAS through the imported Q3A AAS file loader on map start.
+  - [x] Run a first imported Q3A area sample smoke with `AAS_AreaInfo` and `AAS_PointAreaNum` after load.
+  - [x] Run imported Q3A `AAS_AreaReachability` against the sampled loaded area after load.
+  - [x] Update bridge-owned Q3A runtime milliseconds from `level.time` each server frame.
+  - [ ] Call imported Q3A AAS start-frame code each server frame after `be_aas_main.c` lands.
   - [ ] Shutdown/unload cleanly on map restart, game unload, or dedicated server exit.
-- [ ] Add `sg_bot_enable` gate.
+- [x] Add `sg_bot_enable` gate.
 - [ ] Add developer/debug gates:
-  - [ ] `sg_bot_debug`
-  - [ ] `sg_bot_debug_aas`
-  - [ ] `sg_bot_debug_route`
-  - [ ] `sg_bot_debug_goal`
+  - [x] Register `sg_bot_debug`.
+  - [x] Register `sg_bot_debug_aas` and wire periodic AAS status output.
+  - [x] Print verbose adapter/import-smoke status through `sg_bot_debug_aas 2`.
+  - [x] Print Q3A AAS loader status and counts through `sg_bot_debug_aas 2`.
+  - [x] Print Q3A AAS area sample status through `sg_bot_debug_aas 2`.
+  - [x] Print imported Q3A reachability sample status through `sg_bot_debug_aas 2`.
+  - [x] Print bridge-owned Q3A time and `AngleVectors` smoke status through `sg_bot_debug_aas 2`.
+  - [x] Print Q3A BSP entity-lump load and epair smoke status through `sg_bot_debug_aas 2`.
+  - [x] Print Q3A BSP model-lump bounds smoke status through `sg_bot_debug_aas 2`.
+  - [x] Print Q3A BSP collision-lump point/trace smoke status through `sg_bot_debug_aas 2`.
+  - [x] Print Q3A BSP visibility-lump PVS/PHS smoke status through `sg_bot_debug_aas 2`.
+  - [x] Register `sg_bot_debug_route`.
+  - [x] Register `sg_bot_debug_goal`.
+  - [ ] Wire route/goal debug overlays after route queries exist.
 - [ ] Decide which upstream `bot_*` libvars remain internal and document their mapping.
 
 Exit criteria:
@@ -549,8 +700,34 @@ Suggested public cvars:
 Docs checklist:
 
 - [ ] `docs-dev/q3a-botlib-aas-credits.md`: source and contributor credit ledger.
-- [ ] `docs-dev/q3a-botlib-runtime-implementation-YYYY-MM-DD.md`: runtime implementation log.
-- [ ] `docs-dev/q2-aas-generator-implementation-YYYY-MM-DD.md`: generator implementation log.
+- [x] `docs-dev/q3a-botlib-runtime-aas-shell-2026-06-17.md`: runtime AAS shell implementation log.
+- [x] `docs-dev/q3a-botlib-import-boundary-2026-06-17.md`: Q3A BotLib import boundary and adapter-shell implementation log.
+- [x] `docs-dev/q3a-botlib-aas-reach-query-2026-06-17.md`: Q3A AAS reachability import and runtime smoke log.
+- [x] `docs-dev/q3a-botlib-bridge-time-vector-2026-06-17.md`: bridge time and vector helper implementation log.
+- [x] `docs-dev/q3a-botlib-bsp-entity-bridge-2026-06-17.md`: active-map Q2 BSP entity-lump bridge implementation log.
+- [x] `docs-dev/q3a-botlib-bsp-model-bridge-2026-06-17.md`: active-map Q2 BSP model-lump bridge implementation log.
+- [x] `docs-dev/q3a-botlib-bsp-collision-bridge-2026-06-17.md`: active-map Q2 BSP static collision bridge implementation log.
+- [x] `docs-dev/q3a-botlib-bsp-visibility-bridge-2026-06-17.md`: active-map Q2 BSP PVS/PHS visibility bridge implementation log.
+- [ ] `docs-dev/q3a-botlib-runtime-implementation-YYYY-MM-DD.md`: imported runtime/adapter implementation log.
+- [x] `docs-dev/q2aas-generator-vendor-bootstrap-2026-06-16.md`: generator vendor/build bootstrap log.
+- [x] `docs-dev/q2aas-generator-q2-preset-validation-2026-06-16.md`: generator Q2 preset and validation harness log.
+- [x] `docs-dev/q2aas-generator-q2-reachability-bridge-2026-06-16.md`: generator Q2 reachability bridge log.
+- [x] `docs-dev/q2aas-generator-validation-matrix-2026-06-16.md`: generator validation matrix and invalid-input smoke log.
+- [x] `docs-dev/q2aas-generator-deterministic-metadata-2026-06-16.md`: deterministic AAS sidecar metadata and Q2 header preflight log.
+- [x] `docs-dev/q2aas-generator-entity-diagnostics-2026-06-16.md`: generator entity/content diagnostics log.
+- [x] `docs-dev/q2aas-generator-diagnostic-gates-2026-06-16.md`: generator diagnostic-gate validation log.
+- [x] `docs-dev/q2aas-generator-baseline-regression-gates-2026-06-17.md`: generator baseline-regression validation log.
+- [x] `docs-dev/q2aas-generator-manifest-schema-validation-2026-06-17.md`: generator manifest-schema validation log.
+- [x] `docs-dev/q2aas-generator-manifest-schema-smoke-2026-06-17.md`: generator manifest expected-failure smoke log.
+- [x] `docs-dev/q2aas-generator-aas-staging-2026-06-17.md`: generator validated AAS staging log.
+- [x] `docs-dev/q2aas-generator-stage-audit-2026-06-17.md`: generator staged artifact audit log.
+- [x] `docs-dev/q2aas-generator-packaged-map-smoke-2026-06-17.md`: generator archive-backed map smoke log.
+- [x] `docs-dev/q2aas-generator-archive-manifest-guardrails-2026-06-17.md`: generator archive manifest guardrail log.
+- [x] `docs-dev/q2aas-generator-package-audit-2026-06-17.md`: generator package-readiness audit log.
+- [x] `docs-dev/q2aas-generator-archive-packaging-2026-06-17.md`: generator AAS archive packaging log.
+- [x] `docs-dev/q2aas-generator-refresh-install-integration-2026-06-17.md`: generator refresh-install integration log.
+- [x] `docs-dev/q2aas-generator-stage-archive-member-validation-2026-06-17.md`: generator release archive member validation log.
+- [ ] `docs-dev/q2-aas-generator-implementation-YYYY-MM-DD.md`: generator tailoring implementation log.
 - [ ] `docs-user/bots.md` or equivalent user-facing page:
   - [ ] How to add/remove bots.
   - [ ] Recommended cvars.
@@ -577,12 +754,41 @@ Validation checklist:
   - [ ] macOS CI build once CI coverage exists.
   - [ ] Dedicated server build.
 - [ ] Tool:
-  - [ ] `worr_q2aas` builds.
+  - [x] `worr_q2aas` builds.
+  - [x] WORR/Q2 generator cfg smoke target runs.
+  - [x] Staged map structural AAS smoke emits `.tmp/q2aas/mm-rage.aas`.
+  - [x] Staged map strict reachability smoke passes for `.install/basew/maps/mm-rage.bsp`.
+  - [x] Manifest-driven staged smoke target writes `.tmp/q2aas/validation-report.json`.
+  - [x] Manifest-driven staged smoke target writes `.tmp/q2aas/mm-rage.aas.meta.json`.
+  - [x] Manifest-driven staged smoke target requires Q2 `IBSP` version 38 input.
+  - [x] Manifest-driven staged smoke target reports spawn/item origin coverage, high-value pickup reachability, brush contents, and mover/trigger inventory.
+  - [x] Manifest-driven staged smoke target fails on clean BSP lump, spawn coverage, item coverage, and high-value pickup reachability regressions.
+  - [x] Manifest-driven staged smoke target fails on structural AAS metric and travel-count regressions below manifest minima.
+  - [x] Manifest-driven staged smoke target validates manifest schema, task IDs, gate types, and baseline keys before conversion.
+  - [x] Manifest-driven staged smoke target runs an expected-failure malformed-manifest schema smoke.
+  - [x] Manifest-driven staged smoke target rejects malformed archive-backed map entries before conversion.
+  - [x] Manifest-driven stage target writes validated `.install/basew/maps/mm-rage.aas` and `.tmp/q2aas/stage-report.json`.
+  - [x] Manifest-driven stage audit target validates staged `.aas` path, size, and hashes against `.tmp/q2aas/stage-report.json`.
+  - [x] Package map smoke target validates pkz archive extraction and conversion using a scratch packaged `mm-rage.bsp`.
+  - [x] Package audit target validates staged AAS release payload representation and writes `.tmp/q2aas/package-audit-report.json`.
+  - [x] Package archive target injects staged AAS output into `.install/basew/pak0.pkz` and writes `.tmp/q2aas/package-archive-report.json`.
+  - [x] Package archive audit target requires the packaged `maps/mm-rage.aas` member and writes `.tmp/q2aas/package-archive-audit-report.json`.
+  - [x] Refresh-install workflow supports `--package-q2aas-aas`, re-injects generated AAS after asset packaging, and validates the staged Windows payload.
+  - [x] Generic stage validation can require packaged archive members with SHA-256 checks, and refresh-install passes q2aas AAS requirements from the stage report.
   - [ ] Reference maps generate AAS.
-  - [ ] Invalid BSP inputs fail clearly.
-  - [ ] AAS metadata matches source BSP checksum.
+  - [x] Invalid BSP inputs fail clearly.
+  - [x] AAS metadata receives the source BSP checksum during Q2 bridge generation.
 - [ ] Runtime smoke:
-  - [ ] Start dedicated server on reference map.
+  - [x] Server-game module builds with the WORR-native AAS runtime shell.
+  - [x] Start dedicated server on reference map with `sg_bot_enable 1` and load packaged `maps/mm-rage.aas` through the runtime shell.
+  - [x] Run imported Q3A `AAS_AreaInfo` / `AAS_PointAreaNum` sample query against loaded `maps/mm-rage.aas`.
+  - [x] Run imported Q3A `AAS_AreaReachability` sample query against loaded `maps/mm-rage.aas`.
+  - [x] Verify bridge-fed Q3A runtime time and `AngleVectors` smoke status in verbose adapter output.
+  - [x] Verify active-map Q2 BSP entity-lump parsing and Q3A epair smoke status in verbose adapter output.
+  - [x] Verify active-map Q2 BSP model-lump parsing and Q3A inline model bounds smoke status in verbose adapter output.
+  - [x] Verify active-map Q2 BSP collision-lump parsing plus Q3A static point-contents and trace smoke status in verbose adapter output.
+  - [x] Verify active-map Q2 BSP visibility-lump parsing plus Q3A PVS/PHS smoke status in verbose adapter output.
+  - [ ] Start dedicated server on reference map with real BotLib initialized.
   - [ ] Add one bot.
   - [ ] Add four bots.
   - [ ] Add eight bots.

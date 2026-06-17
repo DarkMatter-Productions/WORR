@@ -345,8 +345,11 @@ bgame_src = [
 sgame_src = bgame_src + [
   'src/game/sgame/bots/bot_debug.cpp',
   'src/game/sgame/bots/bot_exports.cpp',
+  'src/game/sgame/bots/botlib_adapter.cpp',
+  'src/game/sgame/bots/bot_runtime.cpp',
   'src/game/sgame/bots/bot_think.cpp',
   'src/game/sgame/bots/bot_utils.cpp',
+  'src/game/sgame/bots/q3a/q3a_botlib_boundary.cpp',
   'src/game/sgame/client/client_session_service_impl.cpp',
   'src/game/sgame/client/client_stats_service.cpp',
   'src/game/sgame/commands/command_admin.cpp',
@@ -486,6 +489,42 @@ sgame_src = bgame_src + [
   'src/game/sgame/third_party/qu3e/math/q3Quaternion.cpp',
   'src/game/sgame/third_party/qu3e/math/q3Vec3.cpp',
   'src/game/sgame/third_party/qu3e/scene/q3Scene.cpp',
+]
+
+q3a_botlib_utility_src = [
+  'src/game/sgame/bots/q3a/q3a_botlib_import.c',
+  'src/game/sgame/bots/q3a/game/q_shared.h',
+  'src/game/sgame/bots/q3a/game/surfaceflags.h',
+  'src/game/sgame/bots/q3a/game/botlib.h',
+  'src/game/sgame/bots/q3a/game/be_aas.h',
+  'src/game/sgame/bots/q3a/botlib/aasfile.h',
+  'src/game/sgame/bots/q3a/botlib/be_aas_bsp.h',
+  'src/game/sgame/bots/q3a/botlib/be_aas_cluster.h',
+  'src/game/sgame/bots/q3a/botlib/be_aas_debug.h',
+  'src/game/sgame/bots/q3a/botlib/be_aas_def.h',
+  'src/game/sgame/bots/q3a/botlib/be_aas_entity.h',
+  'src/game/sgame/bots/q3a/botlib/be_aas_file.c',
+  'src/game/sgame/bots/q3a/botlib/be_aas_file.h',
+  'src/game/sgame/bots/q3a/botlib/be_aas_funcs.h',
+  'src/game/sgame/bots/q3a/botlib/be_aas_main.h',
+  'src/game/sgame/bots/q3a/botlib/be_aas_move.h',
+  'src/game/sgame/bots/q3a/botlib/be_aas_optimize.h',
+  'src/game/sgame/bots/q3a/botlib/be_aas_reach.c',
+  'src/game/sgame/bots/q3a/botlib/be_aas_reach.h',
+  'src/game/sgame/bots/q3a/botlib/be_aas_route.h',
+  'src/game/sgame/bots/q3a/botlib/be_aas_routealt.h',
+  'src/game/sgame/bots/q3a/botlib/be_aas_sample.c',
+  'src/game/sgame/bots/q3a/botlib/be_aas_sample.h',
+  'src/game/sgame/bots/q3a/botlib/be_interface.h',
+  'src/game/sgame/bots/q3a/botlib/l_log.h',
+  'src/game/sgame/bots/q3a/botlib/l_memory.c',
+  'src/game/sgame/bots/q3a/botlib/l_memory.h',
+  'src/game/sgame/bots/q3a/botlib/l_libvar.c',
+  'src/game/sgame/bots/q3a/botlib/l_libvar.h',
+  'src/game/sgame/bots/q3a/botlib/l_precomp.h',
+  'src/game/sgame/bots/q3a/botlib/l_script.h',
+  'src/game/sgame/bots/q3a/botlib/l_struct.h',
+  'src/game/sgame/bots/q3a/botlib/l_utils.h',
 ]
 
 cgame_src = bgame_src + [
@@ -746,6 +785,10 @@ endif
 add_project_arguments(common_args, language: 'c')
 add_project_link_arguments(common_link_args, language: 'c')
 add_project_link_arguments(common_link_args, language: 'cpp')
+
+if get_option('q2aas')
+  subdir('tools/q2aas')
+endif
 
 config = configuration_data()
 
@@ -1484,6 +1527,45 @@ cgame_defines = [
 
 # MSVC: use c++latest (c++23 not in Meson's MSVC list). GCC/Clang: use c++23 (c++latest unsupported).
 sgame_cpp_std = cpp.get_id() == 'msvc' ? 'c++latest' : 'c++23'
+
+q3a_botlib_utility_c_args = game_c_args + [
+  '-DQ3A_BOTLIB_WORR_BOUNDARY=1',
+  '-DMEMORYMANEGER=1',
+]
+if cc.get_argument_syntax() == 'gcc'
+  if host_machine.system() == 'windows'
+    q3a_botlib_utility_c_args += ['-DWIN32']
+  else
+    q3a_botlib_utility_c_args += ['-DID_INLINE=inline']
+  endif
+  q3a_botlib_utility_c_args += cc.get_supported_arguments([
+    '-Wno-absolute-value',
+    '-Wno-missing-prototypes',
+    '-Wno-return-type',
+    '-Wno-sign-compare',
+    '-Wno-strict-prototypes',
+    '-Wno-unused-but-set-variable',
+    '-Wno-unused-parameter',
+  ])
+else
+  if host_machine.system() == 'windows'
+    q3a_botlib_utility_c_args += ['/DWIN32']
+  else
+    q3a_botlib_utility_c_args += ['/DID_INLINE=inline']
+  endif
+  if cc.get_id() == 'msvc'
+    q3a_botlib_utility_c_args += ['/wd4018', '/wd4100', '/wd4244']
+  endif
+endif
+
+q3a_botlib_utility_lib = static_library('q3a_botlib_utility',
+  q3a_botlib_utility_src,
+  include_directories: include_directories('src/game/sgame/bots/q3a'),
+  c_args:              q3a_botlib_utility_c_args,
+  install:             false,
+  pic:                 true,
+)
+
 sgame_dll = shared_library(sgame_binary_name, sgame_src,
   name_prefix:           '',
   gnu_symbol_visibility: 'hidden',
@@ -1491,6 +1573,7 @@ sgame_dll = shared_library(sgame_binary_name, sgame_src,
   include_directories:   sgame_inc,
   c_args:                game_c_args,
   cpp_args:              game_cpp_args,
+  link_whole:            q3a_botlib_utility_lib,
   link_args:             dll_link_args + game_link_args,
   install:              true,
   install_dir:          libdir / get_option('base-game'),

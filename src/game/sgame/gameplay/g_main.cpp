@@ -135,6 +135,12 @@ cvar_t *bob_roll;
 cvar_t *bob_up;
 cvar_t *bot_debug_follow_actor;
 cvar_t *bot_debug_move_to_point;
+cvar_t *sg_bot_enable;
+cvar_t *sg_bot_debug;
+cvar_t *sg_bot_debug_aas;
+cvar_t *sg_bot_debug_route;
+cvar_t *sg_bot_debug_goal;
+cvar_t *sg_bot_cpu_budget_ms;
 cvar_t *flood_msgs;
 cvar_t *flood_persecond;
 cvar_t *flood_waitdelay;
@@ -1039,6 +1045,7 @@ static void InitGame() {
   bot_debug_follow_actor = gi.cvar("bot_debug_follow_actor", "0", CVAR_NOFLAGS);
   bot_debug_move_to_point =
       gi.cvar("bot_debug_move_to_point", "0", CVAR_NOFLAGS);
+  Bot_RuntimeRegisterCvars();
 
   // noset vars
   g_dedicated = gi.cvar("dedicated", "0", CVAR_NOSET);
@@ -1364,6 +1371,7 @@ void FindIntermissionPoint(void) {
 static void ShutdownGame() {
   gi.Com_Print("==== ShutdownGame ====\n");
 
+  Bot_RuntimeEndLevel();
   SG_QU3EPhysics_Shutdown();
   FreeClientArray();
 
@@ -2259,6 +2267,7 @@ static inline void G_RunFrame_(bool main_loop) {
   }
 
   level.time += FRAME_TIME_MS;
+  Bot_RuntimeRunFrame();
 
   // --- Intermission Fade ---
   if (!deathmatch->integer && level.intermission.fading) {

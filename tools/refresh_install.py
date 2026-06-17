@@ -3,14 +3,87 @@
 from __future__ import annotations
 
 import argparse
+import json
 import pathlib
 import subprocess
 import sys
+from typing import Any
 
 
 def run_step(label: str, command: list[str]) -> None:
     print(f"[refresh-install] {label}", flush=True)
     subprocess.run(command, check=True)
+
+
+def is_under(path: pathlib.Path, root: pathlib.Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
+def load_q2aas_stage_report(path: pathlib.Path) -> dict[str, Any]:
+    try:
+        report = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise SystemExit(f"Unable to read q2aas stage report {path}: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"Invalid q2aas stage report JSON {path}: {exc}") from exc
+
+    if not isinstance(report, dict):
+        raise SystemExit(f"Invalid q2aas stage report root: expected object in {path}")
+    if not isinstance(report.get("maps"), list):
+        raise SystemExit(f"Invalid q2aas stage report: expected maps array in {path}")
+    return report
+
+
+def archive_member_for(staged_aas: pathlib.Path, base_game_dir: pathlib.Path) -> str:
+    if is_under(staged_aas, base_game_dir):
+        return staged_aas.relative_to(base_game_dir).as_posix()
+    return f"maps/{staged_aas.name}"
+
+
+def q2aas_archive_member_requirements(
+    stage_report_path: pathlib.Path,
+    install_dir: pathlib.Path,
+    base_game: str,
+) -> list[str]:
+    report = load_q2aas_stage_report(stage_report_path)
+    base_game_dir = (install_dir / base_game).resolve()
+    requirements: list[str] = []
+
+    for index, map_entry in enumerate(report.get("maps", [])):
+        if not isinstance(map_entry, dict):
+            continue
+        staged_output = map_entry.get("staged_output")
+        if not isinstance(staged_output, dict) or not staged_output.get("enabled"):
+            continue
+
+        map_id = map_entry.get("id")
+        if not isinstance(map_id, str) or not map_id:
+            map_id = f"maps[{index}]"
+
+        staged_value = staged_output.get("aas")
+        if not isinstance(staged_value, str) or not staged_value:
+            raise SystemExit(f"{map_id}: staged_output.aas is missing in {stage_report_path}")
+
+        staged_aas = pathlib.Path(staged_value)
+        if not staged_aas.is_absolute():
+            staged_aas = base_game_dir / staged_aas
+        staged_aas = staged_aas.resolve()
+
+        if staged_aas.suffix.lower() != ".aas":
+            raise SystemExit(f"{map_id}: staged output is not an .aas file: {staged_aas}")
+
+        member = archive_member_for(staged_aas, base_game_dir)
+        expected_hash = staged_output.get("aas_sha256") or map_entry.get("aas_sha256")
+        if isinstance(expected_hash, str) and expected_hash:
+            requirements.append(f"{member}={expected_hash.lower()}")
+        else:
+            requirements.append(member)
+
+    return requirements
 
 
 def main() -> int:
@@ -31,6 +104,26 @@ def main() -> int:
         default="",
         help="Optional release platform id for post-stage validation (for example windows-x86_64)",
     )
+    parser.add_argument(
+        "--package-q2aas-aas",
+        action="store_true",
+        help="After packaging assets, inject validated q2aas staged AAS files into the base game archive.",
+    )
+    parser.add_argument(
+        "--q2aas-stage-report",
+        default=".tmp/q2aas/stage-report.json",
+        help="q2aas stage report consumed by --package-q2aas-aas.",
+    )
+    parser.add_argument(
+        "--q2aas-package-report",
+        default=".tmp/q2aas/package-archive-report.json",
+        help="q2aas package archive report written by --package-q2aas-aas.",
+    )
+    parser.add_argument(
+        "--q2aas-package-audit-report",
+        default=".tmp/q2aas/package-archive-audit-report.json",
+        help="q2aas archive-required package audit report written by --package-q2aas-aas.",
+    )
     args = parser.parse_args()
 
     repo_root = pathlib.Path(__file__).resolve().parent.parent
@@ -40,6 +133,8 @@ def main() -> int:
     stage_script = tools_dir / "stage_install.py"
     assets_script = tools_dir / "package_assets.py"
     validate_script = tools_dir / "release" / "validate_stage.py"
+    q2aas_package_script = tools_dir / "q2aas" / "package_worr_q2aas_archive.py"
+    q2aas_audit_script = tools_dir / "q2aas" / "audit_worr_q2aas_package.py"
 
     run_step(
         "Stage runtime and base game tree",
@@ -73,21 +168,68 @@ def main() -> int:
         ],
     )
 
-    if args.platform_id:
+    if args.package_q2aas_aas:
         run_step(
-            f"Validate staged payload ({args.platform_id})",
+            f"Package validated q2aas AAS into {args.base_game}/{args.archive_name}",
             [
                 str(python_exe),
-                str(validate_script),
+                str(q2aas_package_script),
+                "--report-json",
+                args.q2aas_stage_report,
                 "--install-dir",
                 args.install_dir,
                 "--base-game",
                 args.base_game,
                 "--archive-name",
                 args.archive_name,
-                "--platform-id",
-                args.platform_id,
+                "--package-report-json",
+                args.q2aas_package_report,
             ],
+        )
+
+        run_step(
+            "Audit q2aas packaged AAS archive members",
+            [
+                str(python_exe),
+                str(q2aas_audit_script),
+                "--report-json",
+                args.q2aas_stage_report,
+                "--install-dir",
+                args.install_dir,
+                "--base-game",
+                args.base_game,
+                "--archive-name",
+                args.archive_name,
+                "--require-archive-member",
+                "--audit-report-json",
+                args.q2aas_package_audit_report,
+            ],
+        )
+
+    if args.platform_id:
+        validation_command = [
+            str(python_exe),
+            str(validate_script),
+            "--install-dir",
+            args.install_dir,
+            "--base-game",
+            args.base_game,
+            "--archive-name",
+            args.archive_name,
+            "--platform-id",
+            args.platform_id,
+        ]
+        if args.package_q2aas_aas:
+            for requirement in q2aas_archive_member_requirements(
+                pathlib.Path(args.q2aas_stage_report).resolve(),
+                pathlib.Path(args.install_dir).resolve(),
+                args.base_game,
+            ):
+                validation_command.extend(["--required-archive-member", requirement])
+
+        run_step(
+            f"Validate staged payload ({args.platform_id})",
+            validation_command,
         )
 
     install_dir = pathlib.Path(args.install_dir).resolve()

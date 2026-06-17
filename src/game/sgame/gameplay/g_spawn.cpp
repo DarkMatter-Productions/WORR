@@ -17,6 +17,7 @@ global game rules.*/
 
 #include "../../bgame/logger.hpp"
 #include "../../bgame/map_validation.hpp"
+#include "../bots/bot_runtime.hpp"
 #include "../g_local.hpp"
 #include "../monsters/m_actor.hpp"
 #include "g_headhunters.hpp"
@@ -2177,6 +2178,7 @@ void SpawnEntities(const char *mapName, const char *entities,
 
   // Reset all persistent game state
   SaveClientData();
+  Bot_RuntimeEndLevel();
   gi.FreeTags(TAG_LEVEL);
   ResetLevelLocals();
   Locations_Reset();
@@ -2309,6 +2311,7 @@ void SpawnEntities(const char *mapName, const char *entities,
   ProBall::InitLevel();
 
   level.init = true;
+  Bot_RuntimeBeginLevel();
 
   globals.serverFlags &= ~SERVER_FLAG_LOADING;
 }
@@ -2457,6 +2460,7 @@ bool G_ResetWorldEntitiesFromSavedString() {
     FreeEntity(ent);
   }
 
+  Bot_RuntimeEndLevel();
   gi.FreeTags(TAG_LEVEL);
 
   ResetLevelLocals();
@@ -2629,6 +2633,7 @@ bool G_ResetWorldEntitiesFromSavedString() {
   ProBall::InitLevel();
 
   level.init = true;
+  Bot_RuntimeBeginLevel();
 
   globals.serverFlags &= ~SERVER_FLAG_LOADING;
 

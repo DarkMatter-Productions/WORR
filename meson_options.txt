@@ -126,6 +126,11 @@ option('packetdup-hack',
   value: false,
   description: 'Server side packet duplication hack')
 
+option('q2aas',
+  type: 'boolean',
+  value: true,
+  description: 'Build the WORR Quake II AAS generator tool')
+
 option('save-games',
   type: 'boolean',
   value: true,

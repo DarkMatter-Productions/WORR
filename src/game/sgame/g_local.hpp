@@ -4108,6 +4108,12 @@ extern cvar_t *ai_widow_roof_spawn;
 
 extern cvar_t *bot_debug_follow_actor;
 extern cvar_t *bot_debug_move_to_point;
+extern cvar_t *sg_bot_enable;
+extern cvar_t *sg_bot_debug;
+extern cvar_t *sg_bot_debug_aas;
+extern cvar_t *sg_bot_debug_route;
+extern cvar_t *sg_bot_debug_goal;
+extern cvar_t *sg_bot_cpu_budget_ms;
 
 extern cvar_t *flood_msgs;
 extern cvar_t *flood_persecond;
