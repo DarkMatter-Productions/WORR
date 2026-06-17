@@ -14,7 +14,9 @@ Create a repository-grounded SWOT and convert it into actionable, task-based pro
   - Added the Meson `q2aas-config-smoke` target for the WORR/Q2 preset.
   - Local validation built `builddir-win\tools\q2aas\worr_q2aas.exe`, smoke-ran the preset, and converted `.install\basew\maps\mm-rage.bsp` to `.tmp\q2aas\mm-rage.aas`.
   - Added a WORR-native Q2 BSP trace bridge for BotLib reachability generation and modified the imported BSPC control path with explicit `Modified for WORR` notes.
-  - Strict staged-map validation now passes for `mm-rage.bsp`: `numareas = 428`, `reachabilitysize = 562`, `numclusters = 4`, with travel counts including walk, jump, ladder, walk-off-ledge, elevator, and inherited rocket-jump candidates.
+  - Strict staged-map validation now passes for `mm-rage.bsp`:
+umareas = 428`, `reachabilitysize = 562`,
+umclusters = 4`, with travel counts including walk, jump, ladder, walk-off-ledge, elevator, and inherited rocket-jump candidates.
   - Added `tools/q2aas/validation_manifest.json`, the Meson `q2aas-staged-smoke` target, JSON report output under `.tmp/q2aas/`, and invalid-BSP expected-failure coverage.
   - Invalid BSP smoke now fails clearly with `ERROR: unknown BSP format BAD!, version 1` instead of continuing toward AAS generation with missing map data.
   - Added deterministic sidecar metadata for generated AAS validation artifacts. `q2aas-staged-smoke` now requires Quake II `IBSP` version 38 input, writes `.tmp/q2aas/mm-rage.aas.meta.json`, records tool/config/BSP/AAS hashes, decodes AAS header checksum metadata, and detects the staged map's BSPX marker at offset `766956`.
@@ -35,24 +37,54 @@ Create a repository-grounded SWOT and convert it into actionable, task-based pro
   - Implementation logs: `docs-dev/q2aas-generator-vendor-bootstrap-2026-06-16.md`, `docs-dev/q2aas-generator-q2-preset-validation-2026-06-16.md`, `docs-dev/q2aas-generator-q2-reachability-bridge-2026-06-16.md`, `docs-dev/q2aas-generator-validation-matrix-2026-06-16.md`, `docs-dev/q2aas-generator-deterministic-metadata-2026-06-16.md`, `docs-dev/q2aas-generator-entity-diagnostics-2026-06-16.md`, `docs-dev/q2aas-generator-diagnostic-gates-2026-06-16.md`, `docs-dev/q2aas-generator-baseline-regression-gates-2026-06-17.md`, `docs-dev/q2aas-generator-manifest-schema-validation-2026-06-17.md`, `docs-dev/q2aas-generator-manifest-schema-smoke-2026-06-17.md`, `docs-dev/q2aas-generator-aas-staging-2026-06-17.md`, `docs-dev/q2aas-generator-stage-audit-2026-06-17.md`, `docs-dev/q2aas-generator-packaged-map-smoke-2026-06-17.md`, `docs-dev/q2aas-generator-archive-manifest-guardrails-2026-06-17.md`, `docs-dev/q2aas-generator-package-audit-2026-06-17.md`, `docs-dev/q2aas-generator-archive-packaging-2026-06-17.md`, `docs-dev/q2aas-generator-refresh-install-integration-2026-06-17.md`, `docs-dev/q2aas-generator-stage-archive-member-validation-2026-06-17.md`.
 - `FR-04-T12` / `DV-07-T06` In Progress:
   - Added the WORR-native `src/game/sgame/bots/bot_runtime.*` AAS runtime shell as the first Phase 2 foothold.
-  - Registered disabled-by-default `sg_bot_enable`, `sg_bot_debug`, `sg_bot_debug_aas`, `sg_bot_debug_route`, `sg_bot_debug_goal`, and `sg_bot_cpu_budget_ms` cvars.
+  - Registered disabled-by-default `sg_bot_enable`, `sg_bot_debug`, `sg_bot_debug_aas`, `sg_bot_debug_route`, `sg_bot_debug_goal`, `sg_bot_debug_client`, and `sg_bot_cpu_budget_ms` cvars.
   - Map start and entity reload now probe `maps/<current-map>.aas` through WORR's filesystem extension when `sg_bot_enable` is set, decode the Q3A/BSPC AAS v5 header transform, validate the `EAAS` version 5 lump table, and record area/reachability/cluster counts for debug status.
   - Runtime smoke against the refreshed `.install` payload loads packaged `maps/mm-rage.aas` with `areas=428`, `reachability=562`, and `clusters=4`.
   - Added the compiled Q3A BotLib import boundary: `src/game/sgame/bots/q3a/` is reserved for commit-pinned imports, `q3a_botlib_boundary.*` records the planned AAS/runtime file inventory, and `botlib_adapter.*` now owns the future setup/shutdown/map/frame bridge.
   - Imported the first commit-pinned Q3A BotLib utility subset from `id-Software/Quake-III-Arena` commit `dbe4ddb10315479fc00086f08e25d968b4b43c49`: `q_shared.h`, `surfaceflags.h`, `botlib.h`, `be_interface.h`, `l_log.h`, `l_memory.*`, and `l_libvar.*`.
   - Added the `q3a_botlib_utility` build group and WORR-native `q3a_botlib_import.*` smoke bridge. The adapter now runs a Q3A LibVar smoke during initialization and `sg_bot_debug_aas 2` prints the result.
   - Imported the next commit-pinned Q3A AAS file-loader subset: `be_aas_file.c`, `aasfile.h`, `be_aas*.h`, and parser utility headers now compile in the same boundary without editing imported Q3A source.
-  - Added a temporary read-only in-memory filesystem bridge, Q3A `aasworld` ownership, `AAS_Error`/log shims, and `Q3A_BotLibImport_LoadAASBuffer`/`Q3A_BotLibImport_UnloadAAS` so WORR can pass already-loaded `maps/<map>.aas` bytes into Q3A's native loader.
+  - Added a temporary read-only in-memory filesystem bridge, logging shims, and `Q3A_BotLibImport_LoadAASBuffer`/`Q3A_BotLibImport_UnloadAAS` so WORR can pass already-loaded `maps/<map>.aas` bytes into Q3A's native loader; `be_aas_main.c` now owns Q3A `aasworld` and `AAS_Error`.
   - Imported Q3A `be_aas_sample.c` as the first read-only AAS query layer and added temporary WORR-owned shims for later reachability/entity-collision/vector runtime hooks.
-  - Imported Q3A `be_aas_reach.c`, removed the temporary WORR-owned `AAS_AreaReachability` shim, initialized conservative bridge-owned `aassettings`, and kept later entity-collision, movement, and debug-line hooks quarantined behind temporary stubs.
+  - Imported Q3A `be_aas_reach.c`, removed the temporary WORR-owned `AAS_AreaReachability` shim, initialized conservative bridge-owned `aassettings`, and initially kept then-pending entity-collision, movement, and debug-line hooks quarantined behind temporary stubs.
   - Replaced the temporary `AngleVectors` and `Sys_MilliSeconds` bridge shims with real Q3A-style angle-vector math and server-frame `level.time` milliseconds fed through `botlib_adapter.*`.
   - The runtime now validates the active `maps/<map>.bsp` as Quake II `IBSP` version 38, feeds lump 0 entity text into the Q3A bridge before AAS load, and replaces the temporary Q3A BSP entity/epair callbacks with active-map lookup data.
   - The runtime now also feeds Q2 BSP lump 13 model records into the Q3A bridge and replaces the temporary `AAS_BSPModelMinsMaxsOrigin` callback with active-map inline model bounds.
   - The runtime now feeds the active Q2 BSP collision lumps into the Q3A bridge and replaces the temporary static `AAS_PointContents`/`AAS_Trace` stubs with a Q2 BSP static-world point/box trace walker.
   - The runtime now also feeds the active Q2 BSP visibility lump into the Q3A bridge and implements `AAS_inPVS` / `AAS_inPHS` through Q2 leaf clusters and compressed PVS/PHS rows.
-  - Runtime smoke against the refreshed `.install` payload loads packaged `maps/mm-rage.aas` and reports `utility=Q3A LibVar smoke passed`, `q3a_aas=Q3A AAS file load passed`, `q3a_sample=Q3A AAS area sample passed: area=3 point_area=3 cluster=1 presence=6 reachability=1`, `q3a_sample_reachability=1`, `q3a_bsp_entity=Q3A BSP entity lump load passed: maps/mm-rage.bsp entities=394 epairs=1704 first_classname=info_player_start`, `q3a_bsp_entity_smoke=yes`, `q3a_bsp_model=Q3A BSP model lump load passed: maps/mm-rage.bsp models=18 smoke_model=1 mins=(-328.0 -584.0 24.0) maxs=(-192.0 -440.0 256.0)`, `q3a_bsp_model_smoke=yes`, `q3a_bsp_collision=Q3A BSP collision load passed: maps/mm-rage.bsp planes=1367 nodes=1863 leafs=1882 brushes=1142 point_contents=1 trace_fraction=0.347 startsolid=0 allsolid=0`, `q3a_bsp_point_contents_smoke=yes`, `q3a_bsp_trace_smoke=yes`, `q3a_bsp_visibility=Q3A BSP visibility load passed: maps/mm-rage.bsp clusters=303 smoke_cluster=0 pvs_visible=142 phs_visible=289`, `q3a_bsp_pvs_smoke=yes`, `q3a_bsp_phs_smoke=yes`, `q3a_angle_vectors=Q3A AngleVectors smoke passed`, `q3a_time_ms=<level time>`, `q3a_areas=428`, `q3a_reachability=562`, `q3a_clusters=4`, and `planned_files=48`; dynamic entity collision, movement callbacks, route queries, and bot movement remain pending.
-  - `Bot_BeginFrame` and `Bot_EndFrame` remain no-op unless the runtime is enabled and AAS is loaded; real Q3A BotLib runtime callbacks remain pending.
-  - Implementation logs: `docs-dev/q3a-botlib-runtime-aas-shell-2026-06-17.md`, `docs-dev/q3a-botlib-import-boundary-2026-06-17.md`, `docs-dev/q3a-botlib-utility-import-2026-06-17.md`, `docs-dev/q3a-botlib-aas-file-loader-2026-06-17.md`, `docs-dev/q3a-botlib-aas-sample-query-2026-06-17.md`, `docs-dev/q3a-botlib-aas-reach-query-2026-06-17.md`, `docs-dev/q3a-botlib-bridge-time-vector-2026-06-17.md`, `docs-dev/q3a-botlib-bsp-entity-bridge-2026-06-17.md`, `docs-dev/q3a-botlib-bsp-model-bridge-2026-06-17.md`, `docs-dev/q3a-botlib-bsp-collision-bridge-2026-06-17.md`, `docs-dev/q3a-botlib-bsp-visibility-bridge-2026-06-17.md`.
+  - Imported Q3A `be_aas_route.c` and `l_crc.*`, initializes/frees route caches around active-map AAS load/unload, and added a bridge smoke for `AAS_AreaTravelTimeToGoalArea`, `AAS_AreaReachabilityToGoalArea`, and `AAS_PredictRoute`.
+  - Imported Q3A `be_aas_main.c`, moved `aasworld`/`AAS_Time`/`AAS_Error` ownership to the imported runtime, runs Q3A `AAS_Setup`/`AAS_SetInitialized`/`AAS_Shutdown` around the active-map AAS handoff, and calls imported `AAS_StartFrame` each server frame.
+  - Imported Q3A `be_aas_entity.c` so the Q3A entity cache now owns `AAS_ResetEntityLinks`, `AAS_InvalidateEntities`, and `AAS_UnlinkInvalidEntities`; dynamic BSP leaf entity links now use active-map Q2 BSP node/leaf data.
+  - `Bot_RuntimeRunFrame` now runs after the server entity update pass and pushes WORR bot-facing snapshots into imported Q3A `AAS_UpdateEntity` each frame, with inactive imported cache slots explicitly unlinked.
+  - The Q3A AAS `AAS_EntityCollision` path now calls a registered WORR `gi.clip` entity trace bridge; the snapshot sync also translates WORR SOLID_BSP server model config indices to Q3A inline BSP model numbers before `AAS_UpdateEntity`.
+  - Dynamic entity BSP leaf links and Q3A `AAS_BoxEntities` now use the parsed active-map Q2 BSP tree, with unload cleanup for link lists.
+  - Imported Q3A `be_aas_move.c`, removed the temporary movement prediction/drop/jump bridge stubs, seeded WORR/Q2-oriented movement LibVars before imported AAS setup, and added verbose smoke for `AAS_DropToFloor`, `AAS_HorizontalVelocityForJump`, and `AAS_PredictClientMovement`.
+  - Added a callback-backed Q3A debug draw bridge for `AAS_DebugLine`, `AAS_PermanentLine`, `AAS_ClearShownDebugLines`, `AAS_DrawPermanentCross`, and `AAS_DrawArrow`, gated by `sg_bot_debug_aas >= 3`, `sg_bot_debug_route`, or `sg_bot_debug_goal`.
+  - Added a route/goal overlay smoke path that uses imported Q3A route prediction and the debug draw bridge under `sg_bot_debug_route` / `sg_bot_debug_goal`.
+  - Added a callback-backed Q3A debug polygon bridge for `botimport.DebugPolygonCreate` / `DebugPolygonDelete`; `sg_bot_debug_aas 3` now renders a sampled polygon outline/fan through WORR `gi.Draw_Line` and reports create/delete counters.
+  - Imported Q3A `be_aas_debug.c`, replaced the remaining WORR-owned debug-line helper definitions with Q3A `botimport.DebugLineCreate` / `DebugLineShow` / `DebugLineDelete` callbacks, and added a `sg_bot_debug_aas 3` smoke for imported `AAS_ShowArea` / `AAS_ShowAreaPolygons`.
+  - Imported Q3A `be_aas_cluster.c`, removed the temporary WORR-owned `AAS_InitClustering` no-op, and added `q3a_cluster` verbose smoke for the loaded AAS cluster table.
+  - Imported Q3A `be_aas_routealt.c`, removed the temporary WORR-owned `AAS_InitAlternativeRouting` / `AAS_ShutdownAlternativeRouting` stubs, now initializes alternative routing after route-cache setup, and added `q3a_alt_route` verbose smoke for `AAS_AlternativeRouteGoals`.
+  - Imported Q3A `be_aas_optimize.c`, removed the temporary WORR-owned `AAS_Optimize` no-op, and kept the mutating optimization path opt-in behind Q3A `aasoptimize` behavior.
+  - Replaced the quiet Q3A `botimport.Print` capture with a WORR-owned print callback bridge; warnings/errors/fatals now forward to `gi.Com_PrintFmt`, message-level chatter is gated behind `sg_bot_debug_aas >= 3`, and verbose status reports `q3a_print_*` counters.
+  - Added a Q3A `botimport.BotClientCommand` safety bridge that reaches WORR runtime validation, requires a bot client, and safely rejects command execution until a dedicated bot command dispatcher exists.
+  - Replaced raw Q3A `botimport.GetMemory`, `FreeMemory`, and `HunkAlloc` callbacks with a tracked bot-owned allocator that reports zone/hunk active and peak bytes, grouped hunk releases, and allocation failures.
+  - Replaced the singleton active-AAS memory file shim with a read-only Q3A `botimport.FS_*` bridge backed by WORR filesystem load/free callbacks, while keeping the memory buffer as a fallback path.
+  - Runtime smoke against the refreshed `.install` payload loads packaged `maps/mm-rage.aas` and reports `utility=Q3A LibVar smoke passed`, `q3a_aas=Q3A AAS file load passed`, `q3a_sample=Q3A AAS area sample passed: area=3 point_area=3 cluster=1 presence=6 reachability=1`, `q3a_sample_reachability=1`, `q3a_route=Q3A AAS route query passed: start=3 goal=6 travel_time=113 reachability=1 route_end=6 stop=0`, `q3a_alt_route=Q3A AAS alternative route query passed: start=3 goal=6 goals=2 first_area=10 start_time=72 goal_time=39 extra_time=65534 failures=0`, `q3a_route_overlay=Q3A route overlay passed: callback=yes start=3 goal=6 end=6 travel_time=113 reachability=1 lines=2 crosses=3 arrows=1 clears=1 failures=0`, `q3a_movement=Q3A AAS movement prediction passed: start=3 end=3 stop=0 frames=8 drop=yes jump=yes`, `q3a_movement_drop=yes`, `q3a_movement_jump=yes`, `q3a_debug_draw=Q3A route overlay debug draw passed: callback=yes lines=2 crosses=3 arrows=1 clears=1 failures=0`, `q3a_debug_draw_callback=yes`, `q3a_debug_area=Q3A AAS debug area helpers passed: area=3 lines=12 polygon_creates=6 polygon_deletes=6 failures=0`, `q3a_start_frame=Q3A AAS start frame passed: result=0 time_ms=25 frames=1`, `q3a_entity_sync=Q3A AAS entity sync passed: updated=18 unlinked=1006 skipped=0 failures=0 max=1024`, `q3a_entity_trace=Q3A AAS entity trace smoke passed: callback=yes attempts=1 hits=1 misses=0 failures=0`, `q3a_bsp_leaf_link=Q3A BSP leaf entity link smoke passed: active_links=96 box_entities=2 ent=18`, `q3a_bsp_leaf_link_failures=0`, `q3a_bsp_box_entities_smoke=yes`, `q3a_bsp_entity=Q3A BSP entity lump load passed: maps/mm-rage.bsp entities=394 epairs=1704 first_classname=info_player_start`, `q3a_bsp_entity_smoke=yes`, `q3a_bsp_model=Q3A BSP model lump load passed: maps/mm-rage.bsp models=18 smoke_model=1 mins=(-328.0 -584.0 24.0) maxs=(-192.0 -440.0 256.0)`, `q3a_bsp_model_smoke=yes`, `q3a_bsp_collision=Q3A BSP collision load passed: maps/mm-rage.bsp planes=1367 nodes=1863 leafs=1882 brushes=1142 point_contents=1 trace_fraction=0.347 startsolid=0 allsolid=0`, `q3a_bsp_point_contents_smoke=yes`, `q3a_bsp_trace_smoke=yes`, `q3a_bsp_visibility=Q3A BSP visibility load passed: maps/mm-rage.bsp clusters=303 smoke_cluster=0 pvs_visible=142 phs_visible=289`, `q3a_bsp_pvs_smoke=yes`, `q3a_bsp_phs_smoke=yes`, `q3a_angle_vectors=Q3A AngleVectors smoke passed`, `q3a_time_ms=25`, `q3a_areas=428`, `q3a_reachability=562`, `q3a_clusters=4`, and `planned_files=48`; item/position goal selection, higher-level command ownership, movement-state handling, and stuck recovery remain pending.
+  - The focused clustering smoke reports `q3a_cluster=Q3A AAS clustering passed: clusters=4 area=3 cluster=1 cluster_areas=157 reachability_areas=156 failures=0`.
+  - The focused alternative-route smoke reports `q3a_alt_route=Q3A AAS alternative route query passed: start=3 goal=6 goals=2 first_area=10 start_time=72 goal_time=39 extra_time=65534 failures=0`.
+  - The optimize import smoke keeps `aasoptimize=0` on the default loaded-AAS path while the linked imported `AAS_Optimize` implementation replaces the final no-op.
+  - The focused print-bridge smoke with `sg_bot_debug_aas 3` reports `Q3A BotLib message: trying to load maps/mm-rage.aas`, `q3a_print_callback=yes`, `q3a_print_messages=2`, `q3a_print_warnings=0`, and `q3a_print_errors=0`.
+  - The focused BotClientCommand smoke with `sg_bot_debug_aas 3` reports the bridge passed with `callback=yes`, `client=0`, `accepted=0`, `rejected=1`, and `failures=0`.
+  - The focused memory-allocator smoke with `sg_bot_debug_aas 3` reports `q3a_memory_zone_active=239894`, `q3a_memory_hunk_active=691078`, `q3a_memory_hunk_allocs=17`, and `q3a_memory_failures=0`.
+  - The focused filesystem-bridge smoke with `sg_bot_debug_aas 3` reports `q3a_fs_passed=yes`, `q3a_fs_files=1`, `q3a_fs_memory_files=0`, `q3a_fs_read_bytes=277484`, and `q3a_fs_writes_rejected=0`.
+  - The dedicated bot slot smoke now reports `Queued bot Charlie for the next server frame`, `Added bot B|Charlie in slot 1`, `q3a_bot_slot_smoke_after_deferred_pair count=2`, and `q3a_bot_slot_smoke_after_remove_all count=0`.
+  - The dedicated min-player autofill smoke now reports `q3a_bot_min_players_smoke=begin target=3`, `Added bot B|bot1 in slot 0`, `Added bot B|bot2 in slot 1`, `Added bot B|bot3 in slot 2`, `q3a_bot_min_players_smoke_after_fill count=3 auto=3 humans=0 target=3`, target trim to `count=1 auto=1`, and disable cleanup to `q3a_bot_min_players_smoke=end final_count=0`.
+  - The dedicated profile smoke now reloads one temporary Q3A-style profile, resolves `sg_bot_add smoke`, and reports `q3a_bot_profile_smoke_after_add count=1 name=B|Smoke profile=smoke skin=male/grunt skill=4 reaction=250 aggression=0.65 aim_error=2.5 preferred_weapon=rocketlauncher chat=quiet role=attacker movement=strafe` followed by cleanup to `q3a_bot_profile_smoke=end final_count=0`.
+  - The dedicated bot frame-command smoke now asks `sgame` for cached AAS route-steered bot `usercmd_t` data, runs it through the server fake-client movement path, and reports `q3a_bot_frame_command_status frames=8 commands=8 route_requests=8 route_queries=2 route_refreshes=2 route_reuses=6 route_commands=8 route_failures=0 route_invalid_slots=0 route_cadence_refreshes=1 route_target_refreshes=0 route_drift_refreshes=0 route_preferred_goal_refreshes=0 last_route_client=0 last_start_area=224 last_goal_area=227 last_route_end_area=217 last_travel_time=130 last_reachability=218 last_stop_event=0 skipped_invalid=0 skipped_not_bot=0 skipped_runtime=0 skipped_inactive=0 expected_min_frames=1 expected_min_commands=1 pass=1`. With `sg_bot_debug_route 1` and `sg_bot_debug_goal 1`, the same path reports native cached overlay counters, reachability fields, and bounded polyline counters `route_debug_routes=8`, `route_debug_goals=8`, `route_debug_arrows=8`, `route_debug_labels=8`, `route_debug_polyline_points=16`, `route_debug_polyline_segments=24`, `route_debug_missing_frames=2`, `last_route_debug_client=0`, `last_current_area=224`, `last_route_point_count=2`, `last_reachability_type=2`, `last_reachability_flags=2`, and `last_reachability_end_area=217`; selected-client debug smoke with `sg_bot_debug_client 1` suppresses the slot-0 overlay and reports `route_debug_routes=0`, `route_debug_filtered_slots=8`, `route_debug_filter_miss_frames=10`, `last_debug_filter_client=1`, and `pass=1`.
+  - `Bot_BeginFrame` and `Bot_EndFrame` remain lifecycle stubs unless the runtime is enabled and AAS is loaded; per-bot route cache/query cadence plus native route/goal debug markers, current-area labels, next-reachability status, bounded route polylines, and selected-client route debug filtering exist, but item/position goal selection, higher-level command ownership, movement-state handling, and stuck recovery remain pending.
+  - Implementation logs: `docs-dev/q3a-botlib-runtime-aas-shell-2026-06-17.md`, `docs-dev/q3a-botlib-import-boundary-2026-06-17.md`, `docs-dev/q3a-botlib-utility-import-2026-06-17.md`, `docs-dev/q3a-botlib-aas-file-loader-2026-06-17.md`, `docs-dev/q3a-botlib-aas-sample-query-2026-06-17.md`, `docs-dev/q3a-botlib-aas-reach-query-2026-06-17.md`, `docs-dev/q3a-botlib-aas-route-query-2026-06-17.md`, `docs-dev/q3a-botlib-aas-start-frame-2026-06-17.md`, `docs-dev/q3a-botlib-aas-entity-cache-2026-06-17.md`, `docs-dev/q3a-botlib-aas-entity-sync-2026-06-17.md`, `docs-dev/q3a-botlib-aas-entity-trace-2026-06-17.md`, `docs-dev/q3a-botlib-aas-bsp-leaf-link-2026-06-17.md`, `docs-dev/q3a-botlib-aas-movement-import-2026-06-17.md`, `docs-dev/q3a-botlib-aas-debug-draw-bridge-2026-06-17.md`, `docs-dev/q3a-botlib-aas-route-overlay-2026-06-17.md`, `docs-dev/q3a-botlib-bridge-time-vector-2026-06-17.md`, `docs-dev/q3a-botlib-bsp-entity-bridge-2026-06-17.md`, `docs-dev/q3a-botlib-bsp-model-bridge-2026-06-17.md`, `docs-dev/q3a-botlib-bsp-collision-bridge-2026-06-17.md`, `docs-dev/q3a-botlib-bsp-visibility-bridge-2026-06-17.md`.
+  - Additional implementation logs: `docs-dev/q3a-botlib-aas-debug-polygon-bridge-2026-06-17.md`, `docs-dev/q3a-botlib-aas-debug-area-helpers-2026-06-17.md`, `docs-dev/q3a-botlib-aas-cluster-import-2026-06-17.md`, `docs-dev/q3a-botlib-aas-alternative-route-import-2026-06-17.md`, `docs-dev/q3a-botlib-aas-optimize-import-2026-06-17.md`, `docs-dev/q3a-botlib-print-bridge-2026-06-17.md`, `docs-dev/q3a-botlib-bot-client-command-bridge-2026-06-17.md`, `docs-dev/q3a-botlib-memory-allocator-bridge-2026-06-17.md`, `docs-dev/q3a-botlib-filesystem-bridge-2026-06-17.md`, `docs-dev/q3a-botlib-bot-slot-lifecycle-2026-06-17.md`, `docs-dev/q3a-botlib-multibot-slot-queue-2026-06-17.md`, `docs-dev/q3a-botlib-min-players-autofill-2026-06-17.md`, `docs-dev/q3a-botlib-profile-loading-2026-06-17.md`, `docs-dev/q3a-botlib-profile-behavior-fields-2026-06-17.md`, `docs-dev/q3a-botlib-team-policy-cleanup-2026-06-17.md`, `docs-dev/q3a-botlib-team-policy-smoke-2026-06-17.md`, `docs-dev/q3a-botlib-frame-command-dispatch-2026-06-17.md`, `docs-dev/q3a-botlib-route-steered-frame-commands-2026-06-17.md`, `docs-dev/q3a-botlib-nav-route-cache-2026-06-17.md`, `docs-dev/q3a-botlib-nav-debug-overlay-2026-06-17.md`, `docs-dev/q3a-botlib-nav-reachability-debug-2026-06-17.md`, `docs-dev/q3a-botlib-nav-polyline-debug-2026-06-17.md`, `docs-dev/q3a-botlib-nav-debug-client-filter-2026-06-17.md`.
 - `FR-04-T10` / `DV-07-T06` In Progress:
   - Created the Q3A BotLib/Q2 AAS port plan, credits ledger, and first source audit.
   - Pinned the public baseline refs for `TTimo/bspc`, `bnoordhuis/bspc`, and the id Software Quake III Arena mirror.
@@ -253,7 +285,8 @@ Create a repository-grounded SWOT and convert it into actionable, task-based pro
   - Fixed native Vulkan view weapon rendering by splitting depthhack entity rendering into opaque and alpha pipelines with a compressed near depth range, and restored the classic `RF_GLOW` item pulse in the Vulkan entity light path.
   - Implementation log: `docs-dev/renderer/vulkan-viewweapon-dlight-glow-fixes-2026-06-12.md`.
 - `FR-06-T01` In Progress:
-  - Fixed OpenAL loop-merge channel reuse so merged loops cannot reuse `no_merge` Doppler channels in `src/client/sound/al.cpp`.
+  - Fixed OpenAL loop-merge channel reuse so merged loops cannot reuse
+o_merge` Doppler channels in `src/client/sound/al.cpp`.
   - This preserves projectile world-origin tracking for Doppler-marked loop sounds when mixed with non-Doppler loops using the same sample.
   - Implementation log: `docs-dev/audio-projectile-doppler-origin-merge-fix-2026-02-27.md`.
   - Fixed q2proto entity delta application so loop extension fields are applied in `src/client/parse.cpp`:
@@ -468,23 +501,23 @@ Exit Criteria:
 - Known parity blockers from Vulkan audits are closed or explicitly deferred with owner/date.
 
 Tasks:
-- [ ] `FR-01-T01` Implement Vulkan equivalents for particle style controls (`gl_partstyle` parity map to `vk_/r_` cvars).  
+- [ ] `FR-01-T01` Implement Vulkan equivalents for particle style controls (`gl_partstyle` parity map to `vk_/r_` cvars).
   Dependency: none. Priority: P0.
-- [ ] `FR-01-T02` Implement Vulkan beam style parity (`gl_beamstyle` behavior equivalents).  
+- [ ] `FR-01-T02` Implement Vulkan beam style parity (`gl_beamstyle` behavior equivalents).
   Dependency: `FR-01-T01`. Priority: P0.
-- [ ] `FR-01-T03` Add `RF_FLARE` behavior parity in Vulkan entity path.  
+- [ ] `FR-01-T03` Add `RF_FLARE` behavior parity in Vulkan entity path.
   Dependency: none. Priority: P1.
-- [ ] `FR-01-T04` Complete MD2 and MD5 visual parity pass with map-driven validation scenes.  
+- [ ] `FR-01-T04` Complete MD2 and MD5 visual parity pass with map-driven validation scenes.
   Dependency: none. Priority: P0.
   Progress: Native Vulkan now renders MD2/MD5 entity receivers with dynamic shadows, keeps MD5 skin selection aligned with GL, and fixes first-person view weapon depthhack rendering with separate opaque/alpha depthhack pipelines. `RF_GLOW` item pulse parity is restored in the Vulkan entity light path.
   Implementation logs: `docs-dev/renderer/vulkan-entity-lightmap-shadow-receiver-repair-2026-06-11.md`, `docs-dev/renderer/vulkan-viewweapon-dlight-glow-fixes-2026-06-12.md`.
-- [ ] `FR-01-T05` Resolve remaining sky seam/artifact issues for all six faces and transitions.  
+- [ ] `FR-01-T05` Resolve remaining sky seam/artifact issues for all six faces and transitions.
   Dependency: none. Priority: P0.
-- [ ] `FR-01-T06` Finalize bmodel initial-state correctness on first render frame.  
+- [ ] `FR-01-T06` Finalize bmodel initial-state correctness on first render frame.
   Dependency: `FR-01-T04`. Priority: P0.
-- [ ] `FR-01-T07` Add Vulkan parity checklist doc and per-feature status table in `docs-dev/renderer/`.  
+- [ ] `FR-01-T07` Add Vulkan parity checklist doc and per-feature status table in `docs-dev/renderer/`.
   Dependency: `FR-01-T01..T06`. Priority: P1.
-- [ ] `FR-01-T08` Add Vulkan runtime debug overlays/counters for missing-feature detection.  
+- [ ] `FR-01-T08` Add Vulkan runtime debug overlays/counters for missing-feature detection.
   Dependency: none. Priority: P1.
 
 ## Epic FR-02: Renderer Role Clarity (OpenGL vs Vulkan vs RTX)
@@ -497,21 +530,21 @@ Exit Criteria:
 - Vulkan raster and RTX path-tracing are clearly differentiated in functionality and messaging.
 
 Tasks:
-- [ ] `FR-02-T01` Produce renderer capability matrix (`opengl`, `vulkan`, `rtx`) and include cvar mapping.  
+- [ ] `FR-02-T01` Produce renderer capability matrix (`opengl`, `vulkan`, `rtx`) and include cvar mapping.
   Dependency: none. Priority: P0.
-- [ ] `FR-02-T02` Add runtime command to dump active renderer capabilities to log/console.  
+- [ ] `FR-02-T02` Add runtime command to dump active renderer capabilities to log/console.
   Dependency: `FR-02-T01`. Priority: P1.
-- [x] `FR-02-T03` Align launch/debug presets with current renderer names and expected modes.  
+- [x] `FR-02-T03` Align launch/debug presets with current renderer names and expected modes.
   Dependency: none. Priority: P1.
-- [ ] `FR-02-T04` Validate and document fallback/error behavior for missing renderer DLLs.  
+- [ ] `FR-02-T04` Validate and document fallback/error behavior for missing renderer DLLs.
   Dependency: none. Priority: P1.
-- [ ] `FR-02-T05` Add parity smoke map sequence for each renderer in nightly validation.  
+- [ ] `FR-02-T05` Add parity smoke map sequence for each renderer in nightly validation.
   Dependency: `DV-02-T03`. Priority: P1.
-- [ ] `FR-02-T06` Publish renderer support policy page under `docs-user/` for end users.  
+- [ ] `FR-02-T06` Publish renderer support policy page under `docs-user/` for end users.
   Dependency: `FR-02-T01`. Priority: P2.
-- [x] `FR-02-T07` Add SDL/MoltenVK Vulkan window/surface support for macOS and other SDL-backed platforms.  
+- [x] `FR-02-T07` Add SDL/MoltenVK Vulkan window/surface support for macOS and other SDL-backed platforms.
   Dependency: none. Priority: P0.
-- [x] `FR-02-T08` Harden OpenGL startup fallback and clean local `q2dm1` launch log noise.  
+- [x] `FR-02-T08` Harden OpenGL startup fallback and clean local `q2dm1` launch log noise.
   Dependency: none. Priority: P1.
 - [x] `FR-02-T09` Implement renderer-neutral shadowmapping frontend, deterministic page residency, and no-fallback guardrails.
   Dependency: `FR-02-T01`. Priority: P0.
@@ -532,22 +565,22 @@ Exit Criteria:
 - High-value missing widgets are implemented or replaced by approved alternatives.
 
 Tasks:
-- [ ] `FR-03-T01` Convert current menu proposal into implementation backlog with explicit widget tickets.  
+- [ ] `FR-03-T01` Convert current menu proposal into implementation backlog with explicit widget tickets.
   Dependency: none. Priority: P0.
-- [ ] `FR-03-T02` Implement dropdown overlay behavior (no legacy spin-style fallback for new pages).  
+- [ ] `FR-03-T02` Implement dropdown overlay behavior (no legacy spin-style fallback for new pages).
   Dependency: `FR-03-T01`. Priority: P0.
-- [ ] `FR-03-T03` Implement palette picker widget for color-centric settings.  
+- [ ] `FR-03-T03` Implement palette picker widget for color-centric settings.
   Dependency: `FR-03-T01`. Priority: P1.
-- [ ] `FR-03-T04` Implement crosshair tile/grid selector with live preview.  
+- [ ] `FR-03-T04` Implement crosshair tile/grid selector with live preview.
   Dependency: `FR-03-T01`. Priority: P1.
-- [ ] `FR-03-T05` Implement model preview widget for player visuals pages.  
+- [ ] `FR-03-T05` Implement model preview widget for player visuals pages.
   Dependency: `FR-03-T01`. Priority: P1.
-- [ ] `FR-03-T06` Audit and complete settings page cvar wiring for Video/Audio/Input/HUD/Downloads.  
+- [ ] `FR-03-T06` Audit and complete settings page cvar wiring for Video/Audio/Input/HUD/Downloads.
   Dependency: `FR-03-T02..T05`. Priority: P0.
   Progress: The cgame Effects menu now exposes `cg_weapon_bob` as a 0/1/2 selector for disabled, Quake 3, and Doom 3 viewweapon bob modes.
-- [ ] `FR-03-T07` Add menu regression checklist (navigation, conditionals, scaling, localization).  
+- [ ] `FR-03-T07` Add menu regression checklist (navigation, conditionals, scaling, localization).
   Dependency: `FR-03-T06`. Priority: P1.
-- [ ] `FR-03-T08` Complete split between engine-side and cgame-side UI ownership where still mixed.  
+- [ ] `FR-03-T08` Complete split between engine-side and cgame-side UI ownership where still mixed.
   Dependency: `FR-03-T06`. Priority: P1.
 - [x] `FR-03-T09` Complete multi-monitor settings hierarchy and monitor targeting behavior for fullscreen modes.
   Dependency: `FR-03-T06`. Priority: P1.
@@ -566,19 +599,20 @@ Exit Criteria:
 - Imported bot/AAS code and algorithms have complete source provenance and credits.
 
 Tasks:
-- [ ] `FR-04-T01` Define bot MVP behavior set (spawn, roam, engage, objective awareness).  
+- [ ] `FR-04-T01` Define bot MVP behavior set (spawn, roam, engage, objective awareness).
   Dependency: none. Priority: P0.
-- [ ] `FR-04-T02` Implement frame logic in `Bot_BeginFrame` and `Bot_EndFrame`.  
+- [ ] `FR-04-T02` Implement frame logic in `Bot_BeginFrame` and `Bot_EndFrame`.
   Dependency: `FR-04-T01`. Priority: P0.
-- [ ] `FR-04-T03` Add weapon selection heuristics and situational item use.  
+  Progress: The first AAS route-steered bot command dispatch path is in place. Before each server game frame, spawned local bot clients call `BOT_FRAME_COMMAND_API_V1` in `sgame`; the game asks `bot_nav` for cached route state, builds a `usercmd_t`, and the server runs accepted commands through `SV_BotClientThink()` so fake-client movement uses normal server `ClientThink` bookkeeping. Dedicated smoke on `mm-rage` reports `frames=8`, `commands=8`, `route_requests=8`, `route_queries=2`, `route_reuses=6`, `route_commands=8`, `route_failures=0`, and `pass=1`; route/goal debug smoke reports native cached overlay counters, reachability fields, route polyline counters, and selected-client filter counters including `route_debug_routes=8`, `route_debug_goals=8`, `route_debug_labels=8`, `route_debug_polyline_points=16`, `route_debug_polyline_segments=24`, `route_debug_filtered_slots=0`, `last_current_area=224`, `last_route_point_count=2`, `last_reachability_type=2`, `last_route_debug_client=0`, and `last_debug_filter_client=0`. Full `Bot_BeginFrame`/`Bot_EndFrame` scheduling, perception, higher-level command ownership, and richer debug-state ownership remain pending.
+- [ ] `FR-04-T03` Add weapon selection heuristics and situational item use.
   Dependency: `FR-04-T02`. Priority: P1.
-- [ ] `FR-04-T04` Add team mode awareness (CTF/TDM/etc.) to bot utility state updates.  
+- [ ] `FR-04-T04` Add team mode awareness (CTF/TDM/etc.) to bot utility state updates.
   Dependency: `FR-04-T02`. Priority: P1.
-- [ ] `FR-04-T05` Add map-level nav validation pass and bot spawn diagnostics.  
+- [ ] `FR-04-T05` Add map-level nav validation pass and bot spawn diagnostics.
   Dependency: `FR-04-T02`. Priority: P1.
-- [ ] `FR-04-T06` Add bot participation checks to match/tournament/map-vote flows.  
+- [ ] `FR-04-T06` Add bot participation checks to match/tournament/map-vote flows.
   Dependency: `FR-04-T02`. Priority: P1.
-- [ ] `FR-04-T07` Provide bot tuning cvars in preferred naming convention (`sg_` for new controls).  
+- [ ] `FR-04-T07` Provide bot tuning cvars in preferred naming convention (`sg_` for new controls).
   Dependency: `FR-04-T01`. Priority: P2.
 - [x] `FR-04-T08` Recreate a modern competitive top HUD for FFA/team/duel, including match timer, time limit, warmup/countdown state, player/team assets, and spectator duel vitals.
   Dependency: none. Priority: P1.
@@ -594,16 +628,28 @@ Tasks:
   Progress: Pinned `TTimo/bspc` is vendored under `tools/q2aas/`; `worr_q2aas` builds through Meson; `tools/q2aas/cfg/worr_q2.cfg` loads through `q2aas-config-smoke`; the WORR Q2 trace bridge now lets `MAPTYPE_QUAKE2` run BotLib reachability. `.install\basew\maps\mm-rage.bsp` strict validation writes `.tmp\q2aas\mm-rage.aas` with 428 AAS areas, 562 reachability records, and 4 clusters. `tools/q2aas/validation_manifest.json` and `q2aas-staged-smoke` now run the staged map matrix, require Q2 `IBSP` version 38 input, emit `.tmp\q2aas\validation-report.json`, write deterministic `.aas.meta.json` sidecars with tool/config/BSP/AAS hashes, record AAS source checksum metadata, detect BSPX marker offsets, parse entity and brush-content diagnostics, count spawn/item origin coverage, report high-value pickup reachability from spawn areas, fail on clean BSP lump/spawn/item/high-value reachability regressions, fail when AAS metrics or travel counts drop below manifest baselines, validate/report manifest schema/task provenance before conversion, and run an automated malformed-manifest expected-failure smoke including archive-backed manifest guardrails. `q2aas-stage-aas` now validates and stages `.install\basew\maps\mm-rage.aas` with a staged-output hash report, `q2aas-stage-audit` verifies the staged file path/size/hashes, `q2aas-package-map-smoke` verifies pkz archive extraction plus conversion through a scratch packaged map, `q2aas-package-audit` verifies staged AAS release-payload representation, `q2aas-package-aas` injects `maps/mm-rage.aas` into `.install\basew\pak0.pkz` with an archive-required audit, and `refresh_install.py --package-q2aas-aas` preserves the generated AAS member after rebuilding `pak0.pkz` from assets while generic staged release validation can require the packaged member and hash. Full reference-map validation, conditional mover/liquid route support, release manifest integration, and runtime BotLib loading remain pending.
 - [ ] `FR-04-T12` Rehost the Quake III Arena BotLib runtime behind a WORR sgame adapter.
   Dependency: `FR-04-T10`. Priority: P0.
-  Progress: First WORR-native runtime shell is in place at `src/game/sgame/bots/bot_runtime.*`. It registers the initial `sg_bot_*` cvars, hooks map start/entity reload/frame/shutdown lifecycle, probes `maps/<map>.aas` through the filesystem extension, decodes the Q3A/BSPC AAS v5 header transform, validates the `EAAS` version 5 lump table, and records AAS structural counts for debug status. Runtime smoke against refreshed `.install` loads packaged `maps/mm-rage.aas` with `428` areas, `562` reachability records, and `4` clusters. The Q3A import boundary is now compiled into `sgame`: `src/game/sgame/bots/q3a/` is reserved for commit-pinned imports, `q3a_botlib_boundary.*` records the planned runtime/AAS inventory, and `botlib_adapter.*` owns the future setup/shutdown/map/frame bridge. The first commit-pinned Q3A utility subset (`q_shared.h`, `surfaceflags.h`, `botlib.h`, `be_interface.h`, `l_log.h`, `l_memory.*`, and `l_libvar.*`) now compiles through `q3a_botlib_utility`; `q3a_botlib_import.*` provides temporary memory/shared-utility callbacks, and verbose runtime smoke reports `Q3A LibVar smoke passed`. The next commit-pinned AAS loader subset (`be_aas_file.c`, `aasfile.h`, `be_aas*.h`, and parser utility headers) now loads the active packaged AAS through Q3A's native `AAS_LoadAASFile` path using an in-memory filesystem bridge, records matching Q3A world counts, and unloads via `AAS_DumpAASData`; smoke reports `q3a_aas=Q3A AAS file load passed`, `q3a_areas=428`, `q3a_reachability=562`, `q3a_clusters=4`, and `planned_files=48`. Q3A `be_aas_sample.c` and `be_aas_reach.c` are now imported for read-only AAS query smoke; the previous temporary `AAS_AreaReachability` shim has been removed, bridge-owned `aassettings` are initialized, temporary entity-collision/movement/debug stubs keep later runtime hooks quarantined, and smoke reports `q3a_sample=Q3A AAS area sample passed: area=3 point_area=3 cluster=1 presence=6 reachability=1` plus `q3a_sample_reachability=1`. The bridge now feeds `level.time.milliseconds()` into Q3A `Sys_MilliSeconds` each frame and uses real Q3A-style `AngleVectors`; verbose smoke reports `q3a_angle_vectors=Q3A AngleVectors smoke passed` and `q3a_time_ms=<level time>`. Active-map Q2 BSP entity data is now validated from `maps/<map>.bsp` as `IBSP` version 38, parsed into Q3A-style epairs before AAS load, and reported as `q3a_bsp_entity=Q3A BSP entity lump load passed: maps/mm-rage.bsp entities=394 epairs=1704 first_classname=info_player_start` with `q3a_bsp_entity_smoke=yes`. Active-map Q2 BSP model data is also parsed from lump 13 and reported as `q3a_bsp_model=Q3A BSP model lump load passed: maps/mm-rage.bsp models=18 smoke_model=1 mins=(-328.0 -584.0 24.0) maxs=(-192.0 -440.0 256.0)` with `q3a_bsp_model_smoke=yes`. Active-map Q2 BSP collision data is now parsed from the static-world collision lumps and reported as `q3a_bsp_collision=Q3A BSP collision load passed: maps/mm-rage.bsp planes=1367 nodes=1863 leafs=1882 brushes=1142 point_contents=1 trace_fraction=0.347 startsolid=0 allsolid=0` with `q3a_bsp_point_contents_smoke=yes` and `q3a_bsp_trace_smoke=yes`. Active-map Q2 BSP visibility data is now parsed from leaf cluster IDs and the compressed visibility lump and reported as `q3a_bsp_visibility=Q3A BSP visibility load passed: maps/mm-rage.bsp clusters=303 smoke_cluster=0 pvs_visible=142 phs_visible=289` with `q3a_bsp_pvs_smoke=yes` and `q3a_bsp_phs_smoke=yes`. Dynamic entity collision, movement callbacks, route query APIs, imported AAS start-frame calls, and bot movement remain pending.
+  Progress: First WORR-native runtime shell is in place at `src/game/sgame/bots/bot_runtime.*`. It registers the initial `sg_bot_*` cvars, hooks map start/entity reload/frame/shutdown lifecycle, probes `maps/<map>.aas` through the filesystem extension, decodes the Q3A/BSPC AAS v5 header transform, validates the `EAAS` version 5 lump table, and records AAS structural counts for debug status. Runtime smoke against refreshed `.install` loads packaged `maps/mm-rage.aas` with `428` areas, `562` reachability records, and `4` clusters. The Q3A import boundary is now compiled into `sgame`: `src/game/sgame/bots/q3a/` is reserved for commit-pinned imports, `q3a_botlib_boundary.*` records the planned runtime/AAS inventory, and `botlib_adapter.*` owns the future setup/shutdown/map/frame bridge. The first commit-pinned Q3A utility subset (`q_shared.h`, `surfaceflags.h`, `botlib.h`, `be_interface.h`, `l_log.h`, `l_memory.*`, and `l_libvar.*`) now compiles through `q3a_botlib_utility`; `q3a_botlib_import.*` provides tracked memory/shared-utility callbacks, and verbose runtime smoke reports `Q3A LibVar smoke passed`. The next commit-pinned AAS loader subset (`be_aas_file.c`, `aasfile.h`, `be_aas*.h`, and parser utility headers) now loads the active packaged AAS through Q3A's native `AAS_LoadAASFile` path using the callback-backed WORR filesystem bridge, with the active-memory file bridge retained as a fallback. It records matching Q3A world counts and unloads through imported Q3A shutdown. Q3A `be_aas_sample.c`, `be_aas_reach.c`, `be_aas_route.c`, `be_aas_routealt.c`, `l_crc.*`, `be_aas_main.c`, `be_aas_entity.c`, `be_aas_move.c`, and `be_aas_debug.c` are now imported for read-only AAS query, frame-lifecycle, entity-cache, movement-helper, and debug-area helper smoke; the previous temporary `AAS_AreaReachability`, `aasworld`, `AAS_Time`, `AAS_ProjectPointOntoVector`, `AAS_Error`, `AAS_ResetEntityLinks`, `AAS_InvalidateEntities`, `AAS_UnlinkInvalidEntities`, `AAS_InitAlternativeRouting`, `AAS_ShutdownAlternativeRouting`, movement prediction/drop/jump shims, and debug-line helper definitions have been removed in favor of imported Q3A implementations or callback-backed bridge code. The bridge now feeds `level.time.milliseconds()` into Q3A `Sys_MilliSeconds` each frame, uses real Q3A-style `AngleVectors`, maps Q3A debug line/cross/arrow and area-helper output to WORR debug callbacks under debug cvars, and runs a route/goal overlay smoke under `sg_bot_debug_route` / `sg_bot_debug_goal`; verbose smoke reports `q3a_angle_vectors=Q3A AngleVectors smoke passed`, `q3a_time_ms=25`, `q3a_route=Q3A AAS route query passed: start=3 goal=6 travel_time=113 reachability=1 route_end=6 stop=0`, `q3a_alt_route=Q3A AAS alternative route query passed: start=3 goal=6 goals=2 first_area=10 start_time=72 goal_time=39 extra_time=65534 failures=0`, `q3a_route_overlay=Q3A route overlay passed: callback=yes start=3 goal=6 end=6 travel_time=113 reachability=1 lines=2 crosses=3 arrows=1 clears=1 failures=0`, `q3a_movement=Q3A AAS movement prediction passed: start=3 end=3 stop=0 frames=8 drop=yes jump=yes`, `q3a_debug_draw=Q3A route overlay debug draw passed: callback=yes lines=2 crosses=3 arrows=1 clears=1 failures=0`, `q3a_debug_area=Q3A AAS debug area helpers passed: area=3 lines=12 polygon_creates=6 polygon_deletes=6 failures=0`, and `q3a_start_frame=Q3A AAS start frame passed: result=0 time_ms=25 frames=1`. Active-map Q2 BSP entity data is now validated from `maps/<map>.bsp` as `IBSP` version 38, parsed into Q3A-style epairs before AAS load, and reported as `q3a_bsp_entity=Q3A BSP entity lump load passed: maps/mm-rage.bsp entities=394 epairs=1704 first_classname=info_player_start` with `q3a_bsp_entity_smoke=yes`. Active-map Q2 BSP model data is also parsed from lump 13 and reported as `q3a_bsp_model=Q3A BSP model lump load passed: maps/mm-rage.bsp models=18 smoke_model=1 mins=(-328.0 -584.0 24.0) maxs=(-192.0 -440.0 256.0)` with `q3a_bsp_model_smoke=yes`. Active-map Q2 BSP collision data is now parsed from the static-world collision lumps and reported as `q3a_bsp_collision=Q3A BSP collision load passed: maps/mm-rage.bsp planes=1367 nodes=1863 leafs=1882 brushes=1142 point_contents=1 trace_fraction=0.347 startsolid=0 allsolid=0` with `q3a_bsp_point_contents_smoke=yes` and `q3a_bsp_trace_smoke=yes`. Active-map Q2 BSP visibility data is now parsed from leaf cluster IDs and the compressed visibility lump and reported as `q3a_bsp_visibility=Q3A BSP visibility load passed: maps/mm-rage.bsp clusters=303 smoke_cluster=0 pvs_visible=142 phs_visible=289` with `q3a_bsp_pvs_smoke=yes` and `q3a_bsp_phs_smoke=yes`. The server frame now pushes WORR bot-facing entity snapshots into imported Q3A `AAS_UpdateEntity` after the entity update pass; verbose smoke reports `q3a_entity_sync=Q3A AAS entity sync passed: updated=18 unlinked=1006 skipped=0 failures=0 max=1024`. Q3A `AAS_EntityCollision` now reaches a WORR `gi.clip` entity trace callback, SOLID_BSP snapshots translate server model config indices into Q3A inline BSP model numbers, and verbose smoke reports `q3a_entity_trace=Q3A AAS entity trace smoke passed: callback=yes attempts=1 hits=1 misses=0 failures=0`. Dynamic BSP leaf entity links and Q3A `AAS_BoxEntities` now use active-map Q2 BSP node/leaf data, with verbose smoke reporting `q3a_bsp_leaf_link=Q3A BSP leaf entity link smoke passed: active_links=96 box_entities=2 ent=18`, `q3a_bsp_leaf_link_failures=0`, and `q3a_bsp_box_entities_smoke=yes`. Native cached route/goal debug markers, reachability labels, bounded polylines, and selected-client filtering now draw for live bot route state, while bot movement-state handling, persistent goals, and stuck recovery remain pending.
+  Optimize import update: Q3A `be_aas_optimize.c` now compiles beside the existing AAS runtime imports, and the previous temporary `AAS_Optimize` no-op is removed in favor of the imported implementation. WORR keeps `aasoptimize=0` for the default loaded-AAS smoke because the Q3A optimization path mutates geometry/index arrays for opt-in save/forcewrite flows.
+  Print bridge update: Q3A `botimport.Print` now crosses the adapter into WORR logging with warning/error/fatal forwarding, verbose message-level output behind `sg_bot_debug_aas >= 3`, and `q3a_print_*` counters in adapter status.
+  BotClientCommand safety update: Q3A `botimport.BotClientCommand` now crosses the adapter into a WORR runtime validation callback that requires a bot client and rejects execution until a dedicated bot command dispatcher exists.
+  Memory allocator update: Q3A `botimport.GetMemory`, `FreeMemory`, and `HunkAlloc` now use tracked bot-owned zone/hunk allocation lists, with grouped hunk release after AAS shutdown and verbose memory counters.
+  Filesystem bridge update: Q3A `botimport.FS_FOpenFile`, `FS_Read`, `FS_Seek`, and `FS_FCloseFile` now cross the adapter into WORR's filesystem load/free callbacks with tracked read-only file handles and an active-memory fallback.
+  Lifecycle telemetry update: the Q3A BotLib bridge now reports init/load/unload/shutdown counters, transient unload residue, open file handles, and persistent LibVar zone bytes through verbose adapter status.
+  Latest slice: the repeated lifecycle import harness runs three active `maps/mm-rage.aas` load/unload cycles and reports `loads=3/3`, `active_unloads=3`, `clean_unloads=3`, `unload_failures=0`, `last_unload_zone_active=0`, `last_unload_hunk_active=0`, and `last_unload_files=0`.
+  Dedicated lifecycle smoke update: `sg_bot_lifecycle_smoke` now provides an unattended dedicated-server self-smoke that initializes real BotLib on `mm-rage`, lowers itself across the dedicated `map` game-DLL reload, reloads the map once, prints shutdown-time lifecycle status before each DLL unload, and exits with both shutdown lines reporting `q3a_lifecycle_clean_unloads=1`, `q3a_lifecycle_unload_failures=0`, and zero transient zone/hunk/file residue.
+  Nav reachability/debug update: native cached route/goal debug now labels live bot route state with current AAS area and next reachability travel type, draws a bounded sampled route polyline, supports `sg_bot_debug_client` selected-client filtering, and the dedicated frame-command smoke reports `route_debug_labels=8`, `route_debug_polyline_points=16`, `route_debug_polyline_segments=24`, `route_debug_filtered_slots=0`, `last_current_area=224`, `last_route_point_count=2`, `last_reachability_type=2`, `last_reachability_flags=2`, `last_reachability_end_area=217`, and `last_debug_filter_client=0`.
 - [ ] `FR-04-T13` Implement WORR-native bot fake-client commands, slot lifecycle, and profile loading.
   Dependency: `FR-04-T01`. Priority: P0.
+  Progress: First engine-owned fake-client lifecycle slice is in place. `sg_bot_add`, `sg_bot_remove`, `sg_bot_kick_all`, and `sg_bot_list` can add/list/remove local bot slots, bot clients call the game bot connect/begin path, server send/disconnect/status/population paths skip bot-only network work, and shutdown removes bot slots. Same-frame multi-bot adds now defer through a one-bot-per-frame queue, `ClientSpawn()` preserves `SVF_BOT`, and bot team assignment runs before host/owner auto-join logic so slot 0 bots spawn as bot participants instead of host spectators. `sg_bot_min_players` now fills auto-managed bots while `sg_bot_enable` is active, treats manual bots as satisfying the target, clamps the target to public slots, and removes only auto-managed bots when the target drops or bot support is disabled. `sg_bot_reload_profiles` now scans `botfiles/bots/*.c`, `bots/profiles/*.bot`, and `bots/*.bot`; `sg_bot_add [profile] [team]` resolves loaded profiles before falling back to display-name behavior; and `sg_bot_profile` can feed profile-backed min-player autofill. Profiles now bridge reaction, aggression, aim error, preferred weapon, chat personality, team role, and movement style into `bot_*` userinfo keys for later game-side policy. Initial bot team placement now respects match lock, one-on-one two-player active caps, and positive `maxplayers`; the per-frame policy cleanup preserves active humans first and moves surplus active bots to spectators when mode or active-player limits tighten. Clean dedicated smoke on `mm-rage` validates Alpha add/remove, Bravo add, queued Charlie add into slot 1, active count `2`, cleanup back to `0`, min-player fill to `B|bot1`/`B|bot2`/`B|bot3`, target trim to one auto bot, disable cleanup back to `0`, and direct game-side team-policy status for a three-bot Duel setup with `playing=2`, `spectators=1`, `bots=3`, plus cleanup to zero bots. The fake-client frame path now asks `sgame` for cached AAS route-steered bot commands and runs accepted commands through `SV_BotClientThink()` with `lastcmd` bookkeeping. Curated profile assets, persistent item/position goals, and higher-level navigation remain pending.
+  Implementation logs: `docs-dev/q3a-botlib-bot-slot-lifecycle-2026-06-17.md`, `docs-dev/q3a-botlib-multibot-slot-queue-2026-06-17.md`, `docs-dev/q3a-botlib-min-players-autofill-2026-06-17.md`, `docs-dev/q3a-botlib-profile-loading-2026-06-17.md`, `docs-dev/q3a-botlib-profile-behavior-fields-2026-06-17.md`, `docs-dev/q3a-botlib-team-policy-cleanup-2026-06-17.md`, `docs-dev/q3a-botlib-frame-command-dispatch-2026-06-17.md`, `docs-dev/q3a-botlib-route-steered-frame-commands-2026-06-17.md`, `docs-dev/q3a-botlib-nav-route-cache-2026-06-17.md`, `docs-dev/q3a-botlib-nav-debug-overlay-2026-06-17.md`, `docs-dev/q3a-botlib-nav-reachability-debug-2026-06-17.md`, `docs-dev/q3a-botlib-nav-polyline-debug-2026-06-17.md`, `docs-dev/q3a-botlib-nav-debug-client-filter-2026-06-17.md`.
 - [ ] `FR-04-T14` Implement AAS-backed navigation, route following, stuck recovery, and debug overlays.
   Dependency: `FR-04-T11`, `FR-04-T12`, `FR-04-T13`. Priority: P0.
+  Progress: A spawned bot can now receive a cached AAS route-steered movement command through the normal server fake-client command path. `BotLibAdapter_BuildRouteSteer()` asks imported Q3A AAS for a reachable route from the bot's current area, validates the full route, returns the first route step as the steering target, and carries the selected reachability's travel type, travel flags, end area, and a bounded sampled route-point list into native `bot_nav` state. `bot_nav.*` now owns per-client route cache state, refresh cadence, reset on BotLib level lifetime, native cached route/goal debug markers, current-area/next-reachability labels, bounded route polyline drawing, and `sg_bot_debug_client` filtering. `sv_bot_frame_command_smoke` proves command frames execute against packaged `maps/mm-rage.aas` with `route_requests=8`, `route_queries=2`, `route_refreshes=2`, `route_reuses=6`, `route_commands=8`, `route_failures=0`, and `pass=1`; the route/goal debug variant reports `route_debug_routes=8`, `route_debug_goals=8`, `route_debug_arrows=8`, `route_debug_labels=8`, `route_debug_polyline_points=16`, `route_debug_polyline_segments=24`, `route_debug_missing_frames=2`, `route_debug_filtered_slots=0`, `last_current_area=224`, `last_route_point_count=2`, `last_reachability_type=2`, `last_reachability_flags=2`, `last_reachability_end_area=217`, `last_route_debug_client=0`, and `last_debug_filter_client=0`; the filtered variant with `sg_bot_debug_client 1` reports `route_debug_routes=0`, `route_debug_filtered_slots=8`, `route_debug_filter_miss_frames=10`, `last_debug_filter_client=1`, and `pass=1`. Persistent item/position goals, movement-state handling, and stuck recovery remain pending.
 - [ ] `FR-04-T15` Translate Q3A behavior concepts into WORR/Q2 weapons, items, combat, team modes, and architecture boundaries.
   Dependency: `FR-04-T14`. Priority: P1.
 - [ ] `FR-04-T16` Stage/package generated AAS assets or generator outputs and add bot/AAS smoke validation.
   Dependency: `FR-04-T11`, `FR-04-T14`. Priority: P1.
-  Progress: First staging, staged-artifact audit, packaged-map extraction, package-readiness audit, archive packaging, refresh-install integration, and generic archive-member release validation slices are implemented. `q2aas-stage-aas` runs strict manifest validation, stages `.install\basew\maps\mm-rage.aas`, and writes `.tmp\q2aas\stage-report.json` with the staged path and SHA-256. `q2aas-stage-audit` verifies staged AAS path, size, and hashes against the stage report and writes `.tmp\q2aas\stage-audit-report.json`. `q2aas-package-map-smoke` validates pkz extraction/conversion from a scratch packaged `maps/mm-rage.bsp`. `q2aas-package-audit` verifies staged AAS release payload representation and writes `.tmp\q2aas\package-audit-report.json`. `q2aas-package-aas` injects `maps/mm-rage.aas` into `.install\basew\pak0.pkz`, writes `.tmp\q2aas\package-archive-report.json`, and `q2aas-package-archive-audit` verifies the packaged member under an archive-required policy. `validate_stage.py --required-archive-member` can require `maps/mm-rage.aas` by name and SHA-256, and `refresh_install.py --package-q2aas-aas` passes those q2aas archive requirements from the stage report while validating the `windows-x86_64` staged payload. Full release manifest integration and runtime bot smoke remain pending.
+  Progress: First staging, staged-artifact audit, packaged-map extraction, package-readiness audit, archive packaging, refresh-install integration, and generic archive-member release validation slices are implemented. `q2aas-stage-aas` runs strict manifest validation, stages `.install\basew\maps\mm-rage.aas`, and writes `.tmp\q2aas\stage-report.json` with the staged path and SHA-256. `q2aas-stage-audit` verifies staged AAS path, size, and hashes against the stage report and writes `.tmp\q2aas\stage-audit-report.json`. `q2aas-package-map-smoke` validates pkz extraction/conversion from a scratch packaged `maps/mm-rage.bsp`. `q2aas-package-audit` verifies staged AAS release payload representation and writes `.tmp\q2aas\package-audit-report.json`. `q2aas-package-aas` injects `maps/mm-rage.aas` into `.install\basew\pak0.pkz`, writes `.tmp\q2aas\package-archive-report.json`, and `q2aas-package-archive-audit` verifies the packaged member under an archive-required policy. `validate_stage.py --required-archive-member` can require `maps/mm-rage.aas` by name and SHA-256, and `refresh_install.py --package-q2aas-aas` passes those q2aas archive requirements from the stage report while validating the `windows-x86_64` staged payload. The dedicated frame-command smoke proves the refreshed install can load packaged `mm-rage.aas`, execute cached route-steered bot command frames, and exercise native route/goal debug overlay counters plus current-area/next-reachability/polyline/filter status fields from that runtime state. Full release manifest integration remains pending.
 
 ## Epic FR-05: Asset and Format Expansion
 Objective: expand supported content formats without breaking current workflows.
@@ -614,17 +660,17 @@ Exit Criteria:
 - Planned format support (IQM and extended BSP variants) has either landed or has approved implementation tracks with owners.
 
 Tasks:
-- [ ] `FR-05-T01` Build full format support matrix (current vs target) for MD2/MD3/MD5/IQM/BSP variants/DDS.  
+- [ ] `FR-05-T01` Build full format support matrix (current vs target) for MD2/MD3/MD5/IQM/BSP variants/DDS.
   Dependency: none. Priority: P0.
-- [ ] `FR-05-T02` Define IQM implementation plan and shared loader boundaries.  
+- [ ] `FR-05-T02` Define IQM implementation plan and shared loader boundaries.
   Dependency: `FR-05-T01`. Priority: P1.
-- [ ] `FR-05-T03` Define extended BSP support plan (`IBSP29`, `BSP2`, `BSP2L`, `BSPX`) with compatibility rules.  
+- [ ] `FR-05-T03` Define extended BSP support plan (`IBSP29`, `BSP2`, `BSP2L`, `BSPX`) with compatibility rules.
   Dependency: `FR-05-T01`. Priority: P1.
-- [ ] `FR-05-T04` Add renderer-side format fallback diagnostics for unsupported assets.  
+- [ ] `FR-05-T04` Add renderer-side format fallback diagnostics for unsupported assets.
   Dependency: `FR-05-T01`. Priority: P2.
-- [ ] `FR-05-T05` Add staged asset validation checks to packaging pipeline for new formats.  
+- [ ] `FR-05-T05` Add staged asset validation checks to packaging pipeline for new formats.
   Dependency: `DV-02-T04`. Priority: P1.
-- [ ] `FR-05-T06` Add user-facing docs describing supported asset formats and caveats.  
+- [ ] `FR-05-T06` Add user-facing docs describing supported asset formats and caveats.
   Dependency: `FR-05-T01..T05`. Priority: P2.
 
 ## Epic FR-06: Audio, Feedback, and Accessibility
@@ -636,15 +682,15 @@ Exit Criteria:
 - Critical feedback channels (audio cues, UI text, readability) are configurable and regression-tested.
 
 Tasks:
-- [ ] `FR-06-T01` Consolidate spatial audio follow-up backlog into implementation tasks.  
+- [ ] `FR-06-T01` Consolidate spatial audio follow-up backlog into implementation tasks.
   Dependency: none. Priority: P1.
-- [ ] `FR-06-T02` Complete graphical obituaries/chatbox enhancement track and integrate with localization.  
+- [ ] `FR-06-T02` Complete graphical obituaries/chatbox enhancement track and integrate with localization.
   Dependency: none. Priority: P1.
 - [x] `FR-06-T03` Add accessibility pass for text backgrounds, scaling, contrast defaults, and fallback fonts.
   Dependency: none. Priority: P1.
-- [ ] `FR-06-T04` Add presets for competitive readability vs immersive presentation.  
+- [ ] `FR-06-T04` Add presets for competitive readability vs immersive presentation.
   Dependency: `FR-06-T03`. Priority: P2.
-- [ ] `FR-06-T05` Add QA script/checklist for multi-language font rendering in main HUD/menu surfaces.  
+- [ ] `FR-06-T05` Add QA script/checklist for multi-language font rendering in main HUD/menu surfaces.
   Dependency: `FR-06-T03`. Priority: P1.
 - [x] `FR-06-T06` Implement first-wave spatial audio consolidation defaults, reverb-send decoupling, and built-in environment fallback.
   Dependency: `FR-06-T01`. Priority: P1.
@@ -666,15 +712,15 @@ Exit Criteria:
 - Admin and competitive flows are stable across map transitions and match-state changes.
 
 Tasks:
-- [ ] `FR-07-T01` Add end-to-end validation scenarios for map vote, mymap queue, and nextmap transitions.  
+- [ ] `FR-07-T01` Add end-to-end validation scenarios for map vote, mymap queue, and nextmap transitions.
   Dependency: none. Priority: P1.
-- [ ] `FR-07-T02` Harden tournament veto/replay flows with explicit error handling and state resets.  
+- [ ] `FR-07-T02` Harden tournament veto/replay flows with explicit error handling and state resets.
   Dependency: none. Priority: P1.
-- [ ] `FR-07-T03` Improve match logging artifact schema/versioning for downstream tooling.  
+- [ ] `FR-07-T03` Improve match logging artifact schema/versioning for downstream tooling.
   Dependency: none. Priority: P2.
-- [ ] `FR-07-T04` Add command-level audit for vote/admin privileges and abuse controls.  
+- [ ] `FR-07-T04` Add command-level audit for vote/admin privileges and abuse controls.
   Dependency: none. Priority: P1.
-- [ ] `FR-07-T05` Add server-operator docs for new competitive tooling and expected cvars.  
+- [ ] `FR-07-T05` Add server-operator docs for new competitive tooling and expected cvars.
   Dependency: `FR-07-T01..T04`. Priority: P2.
 
 ## Epic FR-08: Online Ecosystem Foundations
@@ -686,15 +732,15 @@ Exit Criteria:
 - Online roadmap is decomposed into incremental, testable tasks with security and reliability guardrails.
 
 Tasks:
-- [ ] `FR-08-T01` Define service boundary document for engine, game module, updater, and external web services.  
+- [ ] `FR-08-T01` Define service boundary document for engine, game module, updater, and external web services.
   Dependency: none. Priority: P1.
-- [ ] `FR-08-T02` Define authentication and identity model (Discord OAuth or alternative) with threat model.  
+- [ ] `FR-08-T02` Define authentication and identity model (Discord OAuth or alternative) with threat model.
   Dependency: `FR-08-T01`. Priority: P2.
-- [ ] `FR-08-T03` Define server browser data contract between in-game UI and backend service.  
+- [ ] `FR-08-T03` Define server browser data contract between in-game UI and backend service.
   Dependency: `FR-08-T01`. Priority: P2.
-- [x] `FR-08-T04` Define CDN/update channel strategy aligned with existing release index format.  
+- [x] `FR-08-T04` Define CDN/update channel strategy aligned with existing release index format.
   Dependency: none. Priority: P2.
-- [ ] `FR-08-T05` Stage a minimal public server deployment runbook and monitoring checklist.  
+- [ ] `FR-08-T05` Stage a minimal public server deployment runbook and monitoring checklist.
   Dependency: `FR-08-T01`. Priority: P2.
 
 ## Development Roadmap (Task-Based Project)
@@ -713,15 +759,15 @@ Exit Criteria:
 - All significant initiatives are tracked with epic/task IDs and lifecycle states.
 
 Tasks:
-- [ ] `DV-01-T01` Establish canonical project board template and required fields.  
+- [ ] `DV-01-T01` Establish canonical project board template and required fields.
   Dependency: none. Priority: P0.
-- [ ] `DV-01-T02` Define naming conventions for epics/tasks/milestones and enforce in docs.  
+- [ ] `DV-01-T02` Define naming conventions for epics/tasks/milestones and enforce in docs.
   Dependency: `DV-01-T01`. Priority: P0.
-- [ ] `DV-01-T03` Define WIP limits and escalation rules for blocked tasks.  
+- [ ] `DV-01-T03` Define WIP limits and escalation rules for blocked tasks.
   Dependency: `DV-01-T01`. Priority: P1.
-- [ ] `DV-01-T04` Add project status review ritual (weekly) with owners and outputs.  
+- [ ] `DV-01-T04` Add project status review ritual (weekly) with owners and outputs.
   Dependency: `DV-01-T01`. Priority: P1.
-- [ ] `DV-01-T05` Require roadmap task references in major PR descriptions and dev docs.  
+- [ ] `DV-01-T05` Require roadmap task references in major PR descriptions and dev docs.
   Dependency: `DV-01-T02`. Priority: P0.
 
 ## Epic DV-02: CI and Validation Pipeline Expansion
@@ -733,15 +779,15 @@ Exit Criteria:
 - Every non-trivial change path has automated build/test/smoke coverage before merge.
 
 Tasks:
-- [ ] `DV-02-T01` Add PR CI workflow for configure + compile on Windows/Linux/macOS.  
+- [ ] `DV-02-T01` Add PR CI workflow for configure + compile on Windows/Linux/macOS.
   Dependency: none. Priority: P0.
-- [ ] `DV-02-T02` Add matrix targets for external renderer libraries (`opengl`, `vulkan`, `rtx`) in CI.  
+- [ ] `DV-02-T02` Add matrix targets for external renderer libraries (`opengl`, `vulkan`, `rtx`) in CI.
   Dependency: `DV-02-T01`. Priority: P0.
-- [ ] `DV-02-T03` Add runtime smoke launch checks against `.install/` staging for each platform.  
+- [ ] `DV-02-T03` Add runtime smoke launch checks against `.install/` staging for each platform.
   Dependency: `DV-02-T01`. Priority: P1.
-- [ ] `DV-02-T04` Add staged payload validation for format/manifest completeness in PR CI.  
+- [ ] `DV-02-T04` Add staged payload validation for format/manifest completeness in PR CI.
   Dependency: `DV-02-T01`. Priority: P1.
-- [ ] `DV-02-T05` Add failure triage guide and flaky test quarantine workflow.  
+- [ ] `DV-02-T05` Add failure triage guide and flaky test quarantine workflow.
   Dependency: `DV-02-T01`. Priority: P2.
 - [x] `DV-02-T06` Add renderer guardrail scans for removed shadow fallback/cache paths.
   Dependency: `DV-02-T01`. Priority: P1.
@@ -755,17 +801,17 @@ Exit Criteria:
 - Core regression-prone systems are covered by deterministic tests and smoke checks.
 
 Tasks:
-- [ ] `DV-03-T01` Integrate `q2proto/tests` into main CI path and publish result artifacts.  
+- [ ] `DV-03-T01` Integrate `q2proto/tests` into main CI path and publish result artifacts.
   Dependency: `DV-02-T01`. Priority: P0.
-- [ ] `DV-03-T02` Add unit-level tests for high-risk shared utilities (`files`, parsing, cvar helpers).  
+- [ ] `DV-03-T02` Add unit-level tests for high-risk shared utilities (`files`, parsing, cvar helpers).
   Dependency: none. Priority: P1.
-- [ ] `DV-03-T03` Add deterministic server game rule tests for match-state transitions.  
+- [ ] `DV-03-T03` Add deterministic server game rule tests for match-state transitions.
   Dependency: none. Priority: P1.
-- [ ] `DV-03-T04` Add renderer smoke scenes with pixel/hash tolerance checks for key features.  
+- [ ] `DV-03-T04` Add renderer smoke scenes with pixel/hash tolerance checks for key features.
   Dependency: `DV-02-T03`. Priority: P1.
-- [ ] `DV-03-T05` Add bot scenario tests for spawn, navigation, and objective behavior.  
+- [ ] `DV-03-T05` Add bot scenario tests for spawn, navigation, and objective behavior.
   Dependency: `FR-04-T02`. Priority: P2.
-- [x] `DV-03-T06` Add updater/release index parser tests for stable and nightly channels.  
+- [x] `DV-03-T06` Add updater/release index parser tests for stable and nightly channels.
   Dependency: none. Priority: P1.
 
 ## Epic DV-04: Architecture and Code Quality
@@ -777,18 +823,18 @@ Exit Criteria:
 - Module boundaries are cleaner, duplication is reduced, and coding standards are enforceable.
 
 Tasks:
-- [ ] `DV-04-T01` Define C/C++ migration target map with boundaries and no-go zones.  
+- [ ] `DV-04-T01` Define C/C++ migration target map with boundaries and no-go zones.
   Dependency: none. Priority: P1.
-- [ ] `DV-04-T02` Complete client/cgame ownership map for duplicated behavior paths.  
+- [ ] `DV-04-T02` Complete client/cgame ownership map for duplicated behavior paths.
   Dependency: none. Priority: P1.
   Progress: First-person viewweapon pose calculation now has a cgame-local `cg_view.cpp` helper used by both the weapon entity and local beam starts, reducing drift between duplicated cgame view paths.
-- [ ] `DV-04-T03` Add static analysis and warning-as-error policy for first-party code in CI.  
+- [ ] `DV-04-T03` Add static analysis and warning-as-error policy for first-party code in CI.
   Dependency: `DV-02-T01`. Priority: P1.
-- [ ] `DV-04-T04` Create cvar namespace modernization plan (`g_` to `sg_` for new server-side controls).  
+- [ ] `DV-04-T04` Create cvar namespace modernization plan (`g_` to `sg_` for new server-side controls).
   Dependency: none. Priority: P1.
-- [ ] `DV-04-T05` Track and burn down top 100 first-party TODO/FIXME markers by severity.  
+- [ ] `DV-04-T05` Track and burn down top 100 first-party TODO/FIXME markers by severity.
   Dependency: none. Priority: P1.
-- [ ] `DV-04-T06` Add subsystem ownership map (maintainers by directory) for faster review routing.  
+- [ ] `DV-04-T06` Add subsystem ownership map (maintainers by directory) for faster review routing.
   Dependency: none. Priority: P2.
 
 ## Epic DV-05: Performance and Observability
@@ -800,16 +846,16 @@ Exit Criteria:
 - Baseline metrics exist and regressions can be identified quickly in development and CI.
 
 Tasks:
-- [ ] `DV-05-T01` Define canonical benchmark scenes/maps for renderer and gameplay performance checks.  
+- [ ] `DV-05-T01` Define canonical benchmark scenes/maps for renderer and gameplay performance checks.
   Dependency: none. Priority: P1.
-- [ ] `DV-05-T02` Add standardized perf capture commands and output schema.  
+- [ ] `DV-05-T02` Add standardized perf capture commands and output schema.
   Dependency: `DV-05-T01`. Priority: P1.
-- [ ] `DV-05-T03` Add lightweight frame-time and subsystem timing instrumentation toggles.  
+- [ ] `DV-05-T03` Add lightweight frame-time and subsystem timing instrumentation toggles.
   Dependency: none. Priority: P1.
   Progress: OpenGL now exposes the first renderer baseline through `gl_cpu_timers`, `gl_gpu_timers`, `gl_profile_log`, `gl_debug_markers`, `gl_telemetry`, and renderer stats. Server-frame and CI trend integration remain future work.
-- [ ] `DV-05-T04` Add nightly trend report for key performance metrics.  
+- [ ] `DV-05-T04` Add nightly trend report for key performance metrics.
   Dependency: `DV-05-T02`. Priority: P2.
-- [ ] `DV-05-T05` Add performance budget thresholds for major renderer and server paths.  
+- [ ] `DV-05-T05` Add performance budget thresholds for major renderer and server paths.
   Dependency: `DV-05-T01`. Priority: P2.
 
 ## Epic DV-06: Dependency Lifecycle and Security Hygiene
@@ -821,13 +867,13 @@ Exit Criteria:
 - Dependency versions are intentional, documented, and reviewable with lower drift risk.
 
 Tasks:
-- [ ] `DV-06-T01` Audit duplicate vendored versions and define active baseline per dependency.  
+- [ ] `DV-06-T01` Audit duplicate vendored versions and define active baseline per dependency.
   Dependency: none. Priority: P0.
-- [ ] `DV-06-T02` Remove or archive superseded dependency trees not needed for reproducible builds.  
+- [ ] `DV-06-T02` Remove or archive superseded dependency trees not needed for reproducible builds.
   Dependency: `DV-06-T01`. Priority: P1.
-- [ ] `DV-06-T03` Add dependency update checklist including security notes and regression tests.  
+- [ ] `DV-06-T03` Add dependency update checklist including security notes and regression tests.
   Dependency: `DV-06-T01`. Priority: P1.
-- [ ] `DV-06-T04` Add monthly dependency maintenance review cadence and owner.  
+- [ ] `DV-06-T04` Add monthly dependency maintenance review cadence and owner.
   Dependency: `DV-06-T01`. Priority: P2.
 
 ## Epic DV-07: Documentation Quality and Traceability
@@ -839,20 +885,21 @@ Exit Criteria:
 - Significant implementation changes have corresponding current docs with task references.
 
 Tasks:
-- [ ] `DV-07-T01` Add docs freshness audit for architecture docs that reference moved/renamed paths.  
+- [ ] `DV-07-T01` Add docs freshness audit for architecture docs that reference moved/renamed paths.
   Dependency: none. Priority: P1.
-- [ ] `DV-07-T02` Require task ID linkage in all new significant `docs-dev` change logs.  
+- [ ] `DV-07-T02` Require task ID linkage in all new significant `docs-dev` change logs.
   Dependency: `DV-01-T02`. Priority: P1.
-- [ ] `DV-07-T03` Add concise subsystem index pages (`renderer`, `game`, `build`, `release`) for discoverability.  
+- [ ] `DV-07-T03` Add concise subsystem index pages (`renderer`, `game`, `build`, `release`) for discoverability.
   Dependency: none. Priority: P2.
-- [ ] `DV-07-T04` Add user-doc parity pass whenever user-visible cvars/features are changed.  
+- [ ] `DV-07-T04` Add user-doc parity pass whenever user-visible cvars/features are changed.
   Dependency: none. Priority: P1.
   Progress: `docs-user/client.asciidoc` documents `cg_weapon_bob`, its disabled/Quake 3/Doom 3 values, and the legacy `cg_weaponBob` alias.
 - [x] `DV-07-T05` Keep the canonical shadowmapping replacement baseline synchronized with implementation status.
   Dependency: `FR-02-T09`. Priority: P1.
 - [ ] `DV-07-T06` Maintain imported-source credits and provenance ledgers for the Q3A BotLib and `TTimo/bspc` AAS work.
   Dependency: `FR-04-T10`. Priority: P0.
-  Progress: `docs-dev/q3a-botlib-aas-credits.md` now tracks initial source baselines, contributors, candidate files, import requirements, the `tools/q2aas/` `TTimo/bspc` vendor snapshot, modified imported BSPC files, WORR-native q2aas build/config/validation/trace-bridge/manifest-schema/manifest-smoke/metadata/diagnostic-gate/baseline-gate/AAS-staging/stage-audit/packaged-map-smoke/archive-guardrail/package-audit/archive-packaging/refresh-install/stage-archive-validation files, the WORR-native BotLib/AAS runtime shell, the WORR-native Q3A BotLib import boundary, the Q3A utility imports, the Q3A AAS file-loader imports, the Q3A AAS sampling import, the Q3A AAS reachability import with per-file pinned hashes, the WORR-owned Q3A bridge time/vector helper work, the WORR-owned active-map Q2 BSP entity-lump bridge, the WORR-owned active-map Q2 BSP model-lump bridge, the WORR-owned active-map Q2 BSP static collision bridge, and the WORR-owned active-map Q2 BSP visibility bridge.
+  Progress: `docs-dev/q3a-botlib-aas-credits.md` now tracks initial source baselines, contributors, candidate files, import requirements, the `tools/q2aas/` `TTimo/bspc` vendor snapshot, modified imported BSPC files, WORR-native q2aas build/config/validation/trace-bridge/manifest-schema/manifest-smoke/metadata/diagnostic-gate/baseline-gate/AAS-staging/stage-audit/packaged-map-smoke/archive-guardrail/package-audit/archive-packaging/refresh-install/stage-archive-validation files, the WORR-native BotLib/AAS runtime shell, the WORR-native Q3A BotLib import boundary, the Q3A utility imports, the Q3A AAS file-loader imports, the Q3A AAS sampling import, the Q3A AAS reachability import, the Q3A AAS route/CRC import with per-file pinned hashes, the Q3A AAS alternative-route import, the Q3A AAS entity-cache import, the WORR-owned Q3A AAS entity sync and entity trace bridges, the WORR-owned Q3A bridge time/vector helper work, the WORR-owned active-map Q2 BSP entity-lump bridge, the WORR-owned active-map Q2 BSP model-lump bridge, the WORR-owned active-map Q2 BSP static collision bridge, the WORR-owned active-map Q2 BSP visibility bridge, the WORR-owned active-map Q2 BSP leaf entity-link bridge, the WORR-owned BotLib memory/filesystem bridges, and WORR-owned bot frame command, nav route-cache, nav debug-overlay, nav reachability-debug, nav polyline-debug, and nav debug-client-filter bridges.
+  Latest credit update: the WORR-owned nav debug-client filter is recorded with validation showing selected slot 0 overlay output and slot 1 filter suppression through the dedicated frame-command smoke.
 
 ## Epic DV-08: Release and Updater Hardening
 Objective: ensure staged artifacts, update metadata, and updater behavior remain reliable under growth.
@@ -863,29 +910,29 @@ Exit Criteria:
 - Release artifacts are consistently valid and updater behavior is deterministic across channels.
 
 Tasks:
-- [x] `DV-08-T01` Add test fixtures for release index parsing edge cases (missing assets, mixed channels, malformed metadata).  
+- [x] `DV-08-T01` Add test fixtures for release index parsing edge cases (missing assets, mixed channels, malformed metadata).
   Dependency: `DV-03-T06`. Priority: P1.
-- [ ] `DV-08-T02` Add checksum/signature policy review for package trust model.  
+- [ ] `DV-08-T02` Add checksum/signature policy review for package trust model.
   Dependency: none. Priority: P2.
-- [ ] `DV-08-T03` Add rollback and failed-update recovery validation scenarios.  
+- [ ] `DV-08-T03` Add rollback and failed-update recovery validation scenarios.
   Dependency: none. Priority: P1.
-- [ ] `DV-08-T04` Add release readiness checklist tied to roadmap milestone gates.  
+- [ ] `DV-08-T04` Add release readiness checklist tied to roadmap milestone gates.
   Dependency: `DV-01-T01`. Priority: P1.
-- [x] `DV-08-T05` Split client/server archive payloads and stage the canonical repo assets as `basew/pak0.pkz`.  
+- [x] `DV-08-T05` Split client/server archive payloads and stage the canonical repo assets as `basew/pak0.pkz`.
   Dependency: none. Priority: P1.
-- [x] `DV-08-T06` Unify local and published runtime layouts under a single `basew/` gamedir and make release binaries boot that layout by default.  
+- [x] `DV-08-T06` Unify local and published runtime layouts under a single `basew/` gamedir and make release binaries boot that layout by default.
   Dependency: `DV-08-T05`. Priority: P1.
-- [x] `DV-08-T07` Standardize arch-suffixed bootstrap/engine binary names and updater metadata across supported platforms.  
+- [x] `DV-08-T07` Standardize arch-suffixed bootstrap/engine binary names and updater metadata across supported platforms.
   Dependency: `DV-08-T06`. Priority: P1.
-- [x] `DV-08-T08` Align nightly release publishing and updater channel selection after dropping GitHub prerelease publishing.  
+- [x] `DV-08-T08` Align nightly release publishing and updater channel selection after dropping GitHub prerelease publishing.
   Dependency: `DV-08-T07`. Priority: P1.
-- [x] `DV-08-T09` Implement the cross-platform desktop bootstrap updater flow with bootstrap/engine-library split, splash-first startup, and role-scoped installer staging.  
+- [x] `DV-08-T09` Implement the cross-platform desktop bootstrap updater flow with bootstrap/engine-library split, splash-first startup, and role-scoped installer staging.
   Dependency: `DV-08-T07`. Priority: P0.
-- [x] `DV-08-T10` Repair the vendored libcurl wrap and bootstrap launcher Windows build path so local fallback builds can compile and stage the desktop updater layout.  
+- [x] `DV-08-T10` Repair the vendored libcurl wrap and bootstrap launcher Windows build path so local fallback builds can compile and stage the desktop updater layout.
   Dependency: `DV-08-T09`. Priority: P1.
-- [x] `DV-08-T11` Stabilize the Windows public-bootstrap-to-temp-worker approved-update handoff and add deterministic local automation for that path.  
+- [x] `DV-08-T11` Stabilize the Windows public-bootstrap-to-temp-worker approved-update handoff and add deterministic local automation for that path.
   Dependency: `DV-08-T09`. Priority: P0.
-- [ ] `DV-08-T12` Convert the client bootstrap into a long-lived session shell that owns the display/window lifecycle, keeps updater UX in-process, and reserves the external worker for locked-file replacement and relaunch only.  
+- [ ] `DV-08-T12` Convert the client bootstrap into a long-lived session shell that owns the display/window lifecycle, keeps updater UX in-process, and reserves the external worker for locked-file replacement and relaunch only.
   Dependency: `DV-08-T09`, `DV-08-T11`. Priority: P1.
   Progress: Windows session-shell work introduced native splash-shell startup, adopted-window activation, synchronized `.install` staging, and engine-side menu backdrops. This follow-up temporarily disables Windows shared-HWND handoff because Win11 capture/preview APIs were still sampling the bootstrap-owned surface; the splash is kept out of taskbar previews, fullscreen defaults to capture-friendly borderless behavior for PrintScreen/Snipping Tool, and the renderer-owned engine window becomes the app frame. Non-transparent menus now clear the engine backbuffer every frame, the main menu backdrop is fully opaque, and hosted launches request only a short engine-owned fade from black, so stale splash pixels cannot remain blended into the main menu.
   Implementation logs: `docs-dev/bootstrap-session-shell-handoff-2026-04-01.md`, `docs-dev/ui-bootstrap-font-handoff-2026-04-27.md`.

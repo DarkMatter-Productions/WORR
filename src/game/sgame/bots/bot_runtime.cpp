@@ -2,6 +2,8 @@
 // Licensed under the GNU General Public License 2.0.
 
 #include "../g_local.hpp"
+#include "../../bgame/logger.hpp"
+#include "bot_nav.hpp"
 #include "botlib_adapter.hpp"
 #include "bot_runtime.hpp"
 
@@ -52,6 +54,8 @@ struct BspLump {
 
 BotAasRuntimeStatus botRuntimeStatus;
 GameTime lastDebugPrintTime = 0_ms;
+GameTime lastDebugDrawSmokeTime = 0_ms;
+int lifecycleSmokePhase = 0;
 
 struct BotFilesystemApiV1 {
 	int64_t (*OpenFile)(const char *path, fs_handle_t *file, unsigned mode);
@@ -155,6 +159,426 @@ int CurrentBotRuntimeMilliseconds() {
 		level.time.milliseconds(),
 		0,
 		static_cast<int64_t>(std::numeric_limits<int>::max())));
+}
+
+constexpr int Q3A_ENTITYNUM_NONE = 1023;
+constexpr int Q3A_LINECOLOR_RED = 1;
+constexpr int Q3A_LINECOLOR_GREEN = 2;
+constexpr int Q3A_LINECOLOR_BLUE = 3;
+constexpr int Q3A_LINECOLOR_YELLOW = 4;
+constexpr int Q3A_LINECOLOR_ORANGE = 5;
+constexpr int Q3A_PRT_MESSAGE = 1;
+constexpr int Q3A_PRT_WARNING = 2;
+constexpr int Q3A_PRT_ERROR = 3;
+constexpr int Q3A_PRT_FATAL = 4;
+constexpr uint32_t Q3A_CONTENTS_SOLID = 0x00000001u;
+constexpr uint32_t Q3A_CONTENTS_PLAYERCLIP = 0x00010000u;
+constexpr uint32_t Q3A_CONTENTS_MONSTERCLIP = 0x00020000u;
+constexpr uint32_t Q3A_CONTENTS_BODY = 0x02000000u;
+constexpr uint32_t Q3A_CONTENTS_CORPSE = 0x04000000u;
+
+void CopyVectorToBotLib(float dest[3], const gvec3_t &source) {
+	dest[0] = source[0];
+	dest[1] = source[1];
+	dest[2] = source[2];
+}
+
+Vector3 CopyVectorFromBotLib(const float source[3]) {
+	if (source == nullptr) {
+		return vec3_origin;
+	}
+	return { source[0], source[1], source[2] };
+}
+
+bool BotRuntimeDebugDrawEnabled() {
+	return (sg_bot_debug_aas != nullptr && sg_bot_debug_aas->integer >= 3) ||
+		(sg_bot_debug_route != nullptr && sg_bot_debug_route->integer != 0) ||
+		(sg_bot_debug_goal != nullptr && sg_bot_debug_goal->integer != 0);
+}
+
+bool BotRuntimeQ3APrintMessageEnabled() {
+	return sg_bot_debug_aas != nullptr && sg_bot_debug_aas->integer >= 3;
+}
+
+const char *BotRuntimeQ3APrintTypeName(int type) {
+	switch (type) {
+	case Q3A_PRT_WARNING:
+		return "warning";
+	case Q3A_PRT_ERROR:
+		return "error";
+	case Q3A_PRT_FATAL:
+		return "fatal";
+	default:
+		return "message";
+	}
+}
+
+void BotRuntimeQ3APrint(int type, const char *message) {
+	if (message == nullptr || message[0] == '\0') {
+		return;
+	}
+
+	if (type == Q3A_PRT_MESSAGE && !BotRuntimeQ3APrintMessageEnabled()) {
+		return;
+	}
+
+	std::string text = message;
+	while (!text.empty() && (text.back() == '\n' || text.back() == '\r')) {
+		text.pop_back();
+	}
+
+	if (text.empty()) {
+		return;
+	}
+
+	gi.Com_PrintFmt("Q3A BotLib {}: {}\n", BotRuntimeQ3APrintTypeName(type), text.c_str());
+}
+
+bool BotRuntimeBotClientCommand(int client, const char *command) {
+	if (command == nullptr || command[0] == '\0' || g_entities == nullptr) {
+		return false;
+	}
+	if (client < 0 || client >= static_cast<int>(game.maxClients)) {
+		return false;
+	}
+
+	const int entnum = client + 1;
+	if (entnum <= 0 || entnum >= static_cast<int>(game.maxEntities)) {
+		return false;
+	}
+
+	gentity_t *ent = &g_entities[entnum];
+	if (!ent->inUse || ent->client == nullptr) {
+		return false;
+	}
+	if ((ent->svFlags & SVF_BOT) == 0 && !ent->client->sess.is_a_bot) {
+		return false;
+	}
+
+	if (sg_bot_debug_aas != nullptr && sg_bot_debug_aas->integer >= 3) {
+		gi.Com_PrintFmt(
+			"Q3A BotClientCommand rejected until bot command dispatch is implemented: client={} command=\"{}\"\n",
+			client,
+			command);
+	}
+	return false;
+}
+
+int BotRuntimeQ3AFilesystemLoad(const char *path, const unsigned char **data) {
+	if (data != nullptr) {
+		*data = nullptr;
+	}
+	if (path == nullptr || path[0] == '\0' || data == nullptr) {
+		return -1;
+	}
+
+	const BotFilesystemApiV1 *fs = Bot_GetFilesystem();
+	if (fs == nullptr || fs->LoadFile == nullptr) {
+		return -1;
+	}
+
+	void *buffer = nullptr;
+	const int length = fs->LoadFile(path, &buffer, 0, TAG_LEVEL);
+	if (length <= 0 || buffer == nullptr) {
+		if (buffer != nullptr) {
+			gi.TagFree(buffer);
+		}
+		return -1;
+	}
+
+	*data = static_cast<const unsigned char *>(buffer);
+	return length;
+}
+
+void BotRuntimeQ3AFilesystemFree(const unsigned char *data) {
+	if (data == nullptr) {
+		return;
+	}
+
+	gi.TagFree(const_cast<unsigned char *>(data));
+}
+
+rgba_t BotRuntimeQ3ADebugColor(int color) {
+	switch (color) {
+	case Q3A_LINECOLOR_RED:
+		return rgba_red;
+	case Q3A_LINECOLOR_GREEN:
+		return rgba_green;
+	case Q3A_LINECOLOR_BLUE:
+		return rgba_blue;
+	case Q3A_LINECOLOR_YELLOW:
+		return rgba_yellow;
+	case Q3A_LINECOLOR_ORANGE:
+		return rgba_orange;
+	default:
+		return rgba_white;
+	}
+}
+
+void BotRuntimeDrawCross(const Vector3 &origin, float size, const rgba_t &color, float lifeTime) {
+	const float halfSize = std::max(size, 1.0f);
+	gi.Draw_Line(origin + Vector3{ -halfSize, 0.0f, 0.0f }, origin + Vector3{ halfSize, 0.0f, 0.0f }, color, lifeTime, false);
+	gi.Draw_Line(origin + Vector3{ 0.0f, -halfSize, 0.0f }, origin + Vector3{ 0.0f, halfSize, 0.0f }, color, lifeTime, false);
+	gi.Draw_Line(origin + Vector3{ 0.0f, 0.0f, -halfSize }, origin + Vector3{ 0.0f, 0.0f, halfSize }, color, lifeTime, false);
+}
+
+bool BotRuntimeDebugDraw(
+	int primitive,
+	const float start[3],
+	const float end[3],
+	float size,
+	int color,
+	int secondaryColor) {
+	if (!BotRuntimeDebugDrawEnabled()) {
+		return false;
+	}
+
+	const Vector3 startVec = CopyVectorFromBotLib(start);
+	const Vector3 endVec = CopyVectorFromBotLib(end);
+	const rgba_t primaryColor = BotRuntimeQ3ADebugColor(color);
+	const rgba_t secondary = BotRuntimeQ3ADebugColor(secondaryColor);
+	const float frameLifeTime = std::max(gi.frameTimeSec * 2.0f, 0.10f);
+
+	switch (primitive) {
+	case BotLibAdapterDebugDrawClear:
+		return true;
+	case BotLibAdapterDebugDrawLine:
+		gi.Draw_Line(startVec, endVec, primaryColor, frameLifeTime, false);
+		return true;
+	case BotLibAdapterDebugDrawPermanentLine:
+		gi.Draw_Line(startVec, endVec, primaryColor, 5.0f, false);
+		return true;
+	case BotLibAdapterDebugDrawCross:
+		BotRuntimeDrawCross(startVec, size, primaryColor, frameLifeTime);
+		return true;
+	case BotLibAdapterDebugDrawArrow:
+		gi.Draw_Arrow(startVec, endVec, std::max(size, 8.0f), primaryColor, secondary, frameLifeTime, false);
+		return true;
+	default:
+		return false;
+	}
+}
+
+bool BotRuntimeDebugPolygon(int color, int pointCount, const float *points) {
+	if (!BotRuntimeDebugDrawEnabled() || points == nullptr || pointCount < 3) {
+		return false;
+	}
+
+	const rgba_t polygonColor = BotRuntimeQ3ADebugColor(color);
+	const float frameLifeTime = std::max(gi.frameTimeSec * 2.0f, 0.10f);
+	auto pointAt = [points](int index) {
+		const float *point = points + index * 3;
+		return Vector3{ point[0], point[1], point[2] };
+	};
+
+	for (int i = 0; i < pointCount; ++i) {
+		gi.Draw_Line(pointAt(i), pointAt((i + 1) % pointCount), polygonColor, frameLifeTime, false);
+	}
+
+	for (int i = 2; i + 1 < pointCount; ++i) {
+		gi.Draw_Line(pointAt(0), pointAt(i), polygonColor, frameLifeTime, false);
+	}
+
+	return true;
+}
+
+contents_t BotRuntimeMapQ3AEntityTraceMask(int contentmask) {
+	const uint32_t q3aMask = static_cast<uint32_t>(contentmask);
+	contents_t mask = CONTENTS_NONE;
+
+	if ((q3aMask & Q3A_CONTENTS_SOLID) != 0) {
+		mask |= CONTENTS_SOLID | CONTENTS_WINDOW;
+	}
+	if ((q3aMask & Q3A_CONTENTS_PLAYERCLIP) != 0) {
+		mask |= CONTENTS_PLAYERCLIP | CONTENTS_PLAYER | CONTENTS_MONSTER;
+	}
+	if ((q3aMask & Q3A_CONTENTS_MONSTERCLIP) != 0) {
+		mask |= CONTENTS_MONSTERCLIP | CONTENTS_MONSTER | CONTENTS_PLAYER;
+	}
+	if ((q3aMask & Q3A_CONTENTS_BODY) != 0) {
+		mask |= CONTENTS_MONSTER | CONTENTS_PLAYER;
+	}
+	if ((q3aMask & Q3A_CONTENTS_CORPSE) != 0) {
+		mask |= CONTENTS_DEADMONSTER;
+	}
+
+	return mask != CONTENTS_NONE ? mask : (MASK_NAV_SOLID | CONTENTS_PLAYER | CONTENTS_MONSTER);
+}
+
+int BotRuntimeEntityNumber(const gentity_t *ent) {
+	if (ent == nullptr || g_entities == nullptr) {
+		return Q3A_ENTITYNUM_NONE;
+	}
+
+	const ptrdiff_t index = ent - g_entities;
+	if (index < 0 || index >= static_cast<ptrdiff_t>(game.maxEntities)) {
+		return Q3A_ENTITYNUM_NONE;
+	}
+
+	return static_cast<int>(index);
+}
+
+int BotRuntimeEntityType(const gentity_t *ent) {
+	if (ent->client != nullptr) {
+		return BotLibAdapterEntityPlayer;
+	}
+	if ((ent->sv.entFlags & SVFL_IS_ITEM) != 0) {
+		return BotLibAdapterEntityItem;
+	}
+	if ((ent->sv.entFlags & SVFL_TRAP_DANGER) != 0) {
+		return BotLibAdapterEntityMissile;
+	}
+	if (ent->solid == SOLID_BSP || ent->moveType == MoveType::Push) {
+		return BotLibAdapterEntityMover;
+	}
+	return BotLibAdapterEntityGeneral;
+}
+
+int BotRuntimeQ3ABspModelIndex(const gentity_t *ent) {
+	if (ent == nullptr || ent->solid != SOLID_BSP || ent->s.modelIndex <= 0) {
+		return ent != nullptr ? ent->s.modelIndex : 0;
+	}
+
+	int modelIndex = ent->s.modelIndex - 1;
+	if (modelIndex >= MODELINDEX_PLAYER) {
+		--modelIndex;
+	}
+	return modelIndex;
+}
+
+bool BotRuntimeBuildEntitySnapshot(gentity_t *ent, BotLibAdapterEntitySnapshot &snapshot) {
+	if (ent == nullptr || !ent->inUse || !ent->linked || !ent->sv.init || (ent->svFlags & SVF_NOCLIENT) != 0) {
+		return false;
+	}
+
+	snapshot.type = BotRuntimeEntityType(ent);
+	snapshot.flags = static_cast<int>(static_cast<uint64_t>(ent->sv.entFlags) & 0x7fffffff);
+	CopyVectorToBotLib(snapshot.origin, ent->s.origin);
+	CopyVectorToBotLib(snapshot.angles, ent->client != nullptr ? ent->sv.viewAngles : ent->s.angles);
+	CopyVectorToBotLib(snapshot.oldOrigin, ent->s.oldOrigin);
+	CopyVectorToBotLib(snapshot.mins, ent->mins);
+	CopyVectorToBotLib(snapshot.maxs, ent->maxs);
+	snapshot.groundent = BotRuntimeEntityNumber(ent->sv.groundEntity);
+	snapshot.solid = static_cast<int>(ent->solid);
+	snapshot.modelindex = BotRuntimeQ3ABspModelIndex(ent);
+	snapshot.modelindex2 = ent->s.modelIndex2;
+	snapshot.frame = ent->s.frame;
+	snapshot.event = static_cast<int>(ent->s.event);
+	snapshot.eventParm = 0;
+	snapshot.powerups = 0;
+	snapshot.weapon = ent->sv.weapon;
+	snapshot.legsAnim = 0;
+	snapshot.torsoAnim = 0;
+	return true;
+}
+
+bool BotRuntimeEntityTrace(
+	int entnum,
+	const float start[3],
+	const float mins[3],
+	const float maxs[3],
+	const float end[3],
+	int contentmask,
+	BotLibAdapterTraceResult *trace) {
+	if (trace == nullptr) {
+		return false;
+	}
+
+	trace->hit = false;
+	trace->allSolid = false;
+	trace->startSolid = false;
+	trace->fraction = 1.0f;
+	CopyVectorToBotLib(trace->endPos, CopyVectorFromBotLib(end));
+	trace->planeDist = 0.0f;
+	trace->contents = 0;
+	trace->entnum = entnum;
+
+	if (g_entities == nullptr || entnum < 0 || entnum >= static_cast<int>(game.maxEntities)) {
+		return true;
+	}
+
+	gentity_t *target = &g_entities[entnum];
+	if (!target->inUse || !target->linked || (target->solid != SOLID_BBOX && target->solid != SOLID_BSP)) {
+		return true;
+	}
+
+	const Vector3 startVec = CopyVectorFromBotLib(start);
+	const Vector3 minsVec = CopyVectorFromBotLib(mins);
+	const Vector3 maxsVec = CopyVectorFromBotLib(maxs);
+	const Vector3 endVec = CopyVectorFromBotLib(end);
+	const contents_t mappedMask = BotRuntimeMapQ3AEntityTraceMask(contentmask);
+	const trace_t result = gi.clip(target, startVec, minsVec, maxsVec, endVec, mappedMask);
+
+	trace->hit = result.fraction < 1.0f || result.startSolid || result.allSolid;
+	trace->allSolid = result.allSolid;
+	trace->startSolid = result.startSolid;
+	trace->fraction = result.fraction;
+	CopyVectorToBotLib(trace->endPos, result.endPos);
+	CopyVectorToBotLib(trace->planeNormal, result.plane.normal);
+	trace->planeDist = result.plane.dist;
+	trace->contents = static_cast<int>(static_cast<uint32_t>(result.contents));
+	const int hitEntnum = BotRuntimeEntityNumber(result.ent);
+	trace->entnum = hitEntnum != Q3A_ENTITYNUM_NONE ? hitEntnum : entnum;
+	return true;
+}
+
+void SyncBotLibEntities() {
+	if (botRuntimeStatus.state != BotAasRuntimeState::Loaded || g_entities == nullptr) {
+		return;
+	}
+
+	const int gameEntityCount = static_cast<int>(std::min<uint32_t>(
+		game.maxEntities,
+		static_cast<uint32_t>(std::numeric_limits<int>::max())));
+	if (!BotLibAdapter_BeginEntitySync(gameEntityCount)) {
+		return;
+	}
+
+	const BotLibAdapterStatus &adapter = BotLibAdapter_GetStatus();
+	const int botLibEntityCount = adapter.q3aEntitySyncMaxEntities > 0
+		? std::min(gameEntityCount, adapter.q3aEntitySyncMaxEntities)
+		: gameEntityCount;
+
+	for (int entnum = 0; entnum < botLibEntityCount; ++entnum) {
+		gentity_t *ent = &g_entities[entnum];
+		BotLibAdapterEntitySnapshot snapshot{};
+		if (BotRuntimeBuildEntitySnapshot(ent, snapshot)) {
+			BotLibAdapter_UpdateEntity(entnum, &snapshot);
+		} else {
+			BotLibAdapter_UpdateEntity(entnum, nullptr);
+		}
+	}
+
+	BotLibAdapter_FinishEntitySync();
+}
+
+void RunBotLibDebugDrawIfRequested() {
+	if (botRuntimeStatus.state != BotAasRuntimeState::Loaded) {
+		return;
+	}
+
+	const bool routeDebug = sg_bot_debug_route != nullptr && sg_bot_debug_route->integer != 0;
+	const bool goalDebug = sg_bot_debug_goal != nullptr && sg_bot_debug_goal->integer != 0;
+	const int debugClient = sg_bot_debug_client != nullptr ? sg_bot_debug_client->integer : -1;
+	if (routeDebug || goalDebug) {
+		if (!BotNav_DrawDebugOverlay(routeDebug, goalDebug, debugClient)) {
+			BotLibAdapter_RunRouteOverlaySmoke();
+		}
+		return;
+	}
+
+	if (sg_bot_debug_aas == nullptr || sg_bot_debug_aas->integer < 3) {
+		return;
+	}
+	if (level.time < lastDebugDrawSmokeTime) {
+		return;
+	}
+	lastDebugDrawSmokeTime = level.time + 1_sec;
+
+	BotLibAdapter_RunBotClientCommandSmoke();
+	BotLibAdapter_RunDebugDrawSmoke();
+	BotLibAdapter_RunDebugPolygonSmoke();
+	BotLibAdapter_RunDebugAreaSmoke();
 }
 
 bool ValidateQ2BspLumps(
@@ -398,7 +822,18 @@ void LoadLevelAas() {
 		const std::string q3aFailure =
 			adapter.q3aAasSampleAttempted && !adapter.q3aAasSamplePassed && !adapter.aasSampleMessage.empty()
 				? adapter.aasSampleMessage
-				: (adapter.aasMessage.empty() ? "unknown error" : adapter.aasMessage);
+				: (adapter.q3aAasClusterAttempted && !adapter.q3aAasClusterPassed &&
+							!adapter.aasClusterMessage.empty()
+						? adapter.aasClusterMessage
+						: (adapter.q3aAasRouteAttempted && !adapter.q3aAasRoutePassed && !adapter.aasRouteMessage.empty()
+								? adapter.aasRouteMessage
+								: (adapter.q3aAasAltRouteAttempted && !adapter.q3aAasAltRoutePassed &&
+											!adapter.aasAltRouteMessage.empty()
+										? adapter.aasAltRouteMessage
+										: (adapter.q3aAasMovementAttempted && !adapter.q3aAasMovementPassed &&
+											!adapter.aasMovementMessage.empty()
+										? adapter.aasMovementMessage
+										: (adapter.aasMessage.empty() ? "unknown error" : adapter.aasMessage)))));
 		gi.TagFree(rawBuffer);
 		SetRuntimeState(
 			BotAasRuntimeState::Failed,
@@ -420,15 +855,97 @@ void PrintBotLibAdapterStatusIfRequested() {
 
 	const BotLibAdapterStatus &adapter = BotLibAdapter_GetStatus();
 	gi.Com_PrintFmt(
-		"BotLib adapter: {} (utility={}, q3a_aas={}, q3a_sample={}, q3a_sample_area={}, q3a_sample_point_area={}, q3a_sample_cluster={}, q3a_sample_reachability={}, q3a_bsp_entity={}, q3a_bsp_entities={}, q3a_bsp_epairs={}, q3a_bsp_entity_smoke={}, q3a_bsp_model={}, q3a_bsp_models={}, q3a_bsp_model_smoke={}, q3a_bsp_collision={}, q3a_bsp_planes={}, q3a_bsp_nodes={}, q3a_bsp_leafs={}, q3a_bsp_brushes={}, q3a_bsp_point_contents_smoke={}, q3a_bsp_trace_smoke={}, q3a_bsp_visibility={}, q3a_bsp_vis_clusters={}, q3a_bsp_pvs_smoke={}, q3a_bsp_phs_smoke={}, q3a_angle_vectors={}, q3a_time_ms={}, q3a_areas={}, q3a_reachability={}, q3a_clusters={}, imported={}, planned_files={}, commit={})\n",
+		"BotLib adapter: {} (utility={}, q3a_print_callback={}, q3a_print_messages={}, q3a_print_warnings={}, q3a_print_errors={}, q3a_print_fatals={}, q3a_print_last_type={}, q3a_aas={}, q3a_sample={}, q3a_sample_area={}, q3a_sample_point_area={}, q3a_sample_cluster={}, q3a_sample_reachability={}, q3a_cluster={}, q3a_cluster_area={}, q3a_cluster_cluster={}, q3a_cluster_count={}, q3a_cluster_areas={}, q3a_cluster_reachability_areas={}, q3a_cluster_failures={}, q3a_route={}, q3a_route_start={}, q3a_route_goal={}, q3a_route_time={}, q3a_route_reachability={}, q3a_route_end={}, q3a_route_stop={}, q3a_alt_route={}, q3a_alt_route_start={}, q3a_alt_route_goal={}, q3a_alt_route_goals={}, q3a_alt_route_first_area={}, q3a_alt_route_first_start_time={}, q3a_alt_route_first_goal_time={}, q3a_alt_route_first_extra_time={}, q3a_alt_route_failures={}, q3a_movement={}, q3a_movement_end={}, q3a_movement_stop={}, q3a_movement_frames={}, q3a_movement_drop={}, q3a_movement_jump={}, q3a_start_frame={}, q3a_start_result={}, q3a_start_frames={}, q3a_start_time_ms={}, q3a_entity_sync={}, q3a_entity_updated={}, q3a_entity_unlinked={}, q3a_entity_skipped={}, q3a_entity_failures={}, q3a_entity_max={}, q3a_entity_trace={}, q3a_entity_trace_attempts={}, q3a_entity_trace_hits={}, q3a_entity_trace_misses={}, q3a_entity_trace_failures={}, q3a_entity_trace_callback={}, q3a_debug_draw={}, q3a_debug_draw_callback={}, q3a_debug_draw_lines={}, q3a_debug_draw_crosses={}, q3a_debug_draw_arrows={}, q3a_debug_draw_clears={}, q3a_debug_draw_failures={}, q3a_debug_polygon={}, q3a_debug_polygon_callback={}, q3a_debug_polygon_creates={}, q3a_debug_polygon_deletes={}, q3a_debug_polygon_points={}, q3a_debug_polygon_last_id={}, q3a_debug_polygon_failures={}, q3a_debug_area={}, q3a_debug_area_area={}, q3a_debug_area_lines={}, q3a_debug_area_polygon_creates={}, q3a_debug_area_polygon_deletes={}, q3a_debug_area_failures={}, q3a_route_overlay={}, q3a_route_overlay_start={}, q3a_route_overlay_goal={}, q3a_route_overlay_end={}, q3a_route_overlay_time={}, q3a_route_overlay_reachability={}, q3a_route_overlay_lines={}, q3a_route_overlay_crosses={}, q3a_route_overlay_arrows={}, q3a_route_overlay_clears={}, q3a_route_overlay_failures={}, q3a_bsp_entity={}, q3a_bsp_entities={}, q3a_bsp_epairs={}, q3a_bsp_entity_smoke={}, q3a_bsp_model={}, q3a_bsp_models={}, q3a_bsp_model_smoke={}, q3a_bsp_collision={}, q3a_bsp_planes={}, q3a_bsp_nodes={}, q3a_bsp_leafs={}, q3a_bsp_brushes={}, q3a_bsp_point_contents_smoke={}, q3a_bsp_trace_smoke={}, q3a_bsp_leaf_link={}, q3a_bsp_leaf_links={}, q3a_bsp_leaf_link_failures={}, q3a_bsp_box_entities_smoke={}, q3a_bsp_box_entities={}, q3a_bsp_visibility={}, q3a_bsp_vis_clusters={}, q3a_bsp_pvs_smoke={}, q3a_bsp_phs_smoke={}, q3a_angle_vectors={}, q3a_time_ms={}, q3a_areas={}, q3a_reachability={}, q3a_clusters={}, imported={}, planned_files={}, commit={})\n",
 		adapter.message.empty() ? "not initialized" : adapter.message.c_str(),
 		adapter.utilityMessage.empty() ? "not run" : adapter.utilityMessage.c_str(),
+		adapter.q3aPrintCallbackSet ? "yes" : "no",
+		adapter.q3aPrintMessages,
+		adapter.q3aPrintWarnings,
+		adapter.q3aPrintErrors,
+		adapter.q3aPrintFatals,
+		adapter.q3aPrintLastType,
 		adapter.aasMessage.empty() ? "not run" : adapter.aasMessage.c_str(),
 		adapter.aasSampleMessage.empty() ? "not run" : adapter.aasSampleMessage.c_str(),
 		adapter.q3aAasSampleArea,
 		adapter.q3aAasSamplePointArea,
 		adapter.q3aAasSampleCluster,
 		adapter.q3aAasSampleReachability,
+		adapter.aasClusterMessage.empty() ? "not run" : adapter.aasClusterMessage.c_str(),
+		adapter.q3aAasClusterArea,
+		adapter.q3aAasClusterCluster,
+		adapter.q3aAasClusterNumClusters,
+		adapter.q3aAasClusterAreas,
+		adapter.q3aAasClusterReachabilityAreas,
+		adapter.q3aAasClusterFailures,
+		adapter.aasRouteMessage.empty() ? "not run" : adapter.aasRouteMessage.c_str(),
+		adapter.q3aAasRouteStartArea,
+		adapter.q3aAasRouteGoalArea,
+		adapter.q3aAasRouteTravelTime,
+		adapter.q3aAasRouteReachability,
+		adapter.q3aAasRouteEndArea,
+		adapter.q3aAasRouteStopEvent,
+		adapter.aasAltRouteMessage.empty() ? "not run" : adapter.aasAltRouteMessage.c_str(),
+		adapter.q3aAasAltRouteStartArea,
+		adapter.q3aAasAltRouteGoalArea,
+		adapter.q3aAasAltRouteGoals,
+		adapter.q3aAasAltRouteFirstArea,
+		adapter.q3aAasAltRouteFirstStartTravelTime,
+		adapter.q3aAasAltRouteFirstGoalTravelTime,
+		adapter.q3aAasAltRouteFirstExtraTravelTime,
+		adapter.q3aAasAltRouteFailures,
+		adapter.aasMovementMessage.empty() ? "not run" : adapter.aasMovementMessage.c_str(),
+		adapter.q3aAasMovementEndArea,
+		adapter.q3aAasMovementStopEvent,
+		adapter.q3aAasMovementFrames,
+		adapter.q3aAasMovementDropToFloorPassed ? "yes" : "no",
+		adapter.q3aAasMovementJumpVelocityPassed ? "yes" : "no",
+		adapter.aasStartFrameMessage.empty() ? "not run" : adapter.aasStartFrameMessage.c_str(),
+		adapter.q3aAasStartFrameResult,
+		adapter.q3aAasStartFrameCount,
+		adapter.q3aAasStartFrameTimeMilliseconds,
+		adapter.entitySyncMessage.empty() ? "not run" : adapter.entitySyncMessage.c_str(),
+		adapter.q3aEntitySyncUpdated,
+		adapter.q3aEntitySyncUnlinked,
+		adapter.q3aEntitySyncSkipped,
+		adapter.q3aEntitySyncFailures,
+		adapter.q3aEntitySyncMaxEntities,
+		adapter.entityTraceMessage.empty() ? "not run" : adapter.entityTraceMessage.c_str(),
+		adapter.q3aEntityTraceAttempted,
+		adapter.q3aEntityTraceHits,
+		adapter.q3aEntityTraceMisses,
+		adapter.q3aEntityTraceFailures,
+		adapter.q3aEntityTraceCallbackSet ? "yes" : "no",
+		adapter.debugDrawMessage.empty() ? "not run" : adapter.debugDrawMessage.c_str(),
+		adapter.q3aDebugDrawCallbackSet ? "yes" : "no",
+		adapter.q3aDebugDrawLines,
+		adapter.q3aDebugDrawCrosses,
+		adapter.q3aDebugDrawArrows,
+		adapter.q3aDebugDrawClears,
+		adapter.q3aDebugDrawFailures,
+		adapter.debugPolygonMessage.empty() ? "not run" : adapter.debugPolygonMessage.c_str(),
+		adapter.q3aDebugPolygonCallbackSet ? "yes" : "no",
+		adapter.q3aDebugPolygonCreates,
+		adapter.q3aDebugPolygonDeletes,
+		adapter.q3aDebugPolygonPoints,
+		adapter.q3aDebugPolygonLastId,
+		adapter.q3aDebugPolygonFailures,
+		adapter.debugAreaMessage.empty() ? "not run" : adapter.debugAreaMessage.c_str(),
+		adapter.q3aDebugAreaArea,
+		adapter.q3aDebugAreaLines,
+		adapter.q3aDebugAreaPolygonCreates,
+		adapter.q3aDebugAreaPolygonDeletes,
+		adapter.q3aDebugAreaFailures,
+		adapter.routeOverlayMessage.empty() ? "not run" : adapter.routeOverlayMessage.c_str(),
+		adapter.q3aRouteOverlayStartArea,
+		adapter.q3aRouteOverlayGoalArea,
+		adapter.q3aRouteOverlayEndArea,
+		adapter.q3aRouteOverlayTravelTime,
+		adapter.q3aRouteOverlayReachability,
+		adapter.q3aRouteOverlayLines,
+		adapter.q3aRouteOverlayCrosses,
+		adapter.q3aRouteOverlayArrows,
+		adapter.q3aRouteOverlayClears,
+		adapter.q3aRouteOverlayFailures,
 		adapter.bspEntityMessage.empty() ? "not run" : adapter.bspEntityMessage.c_str(),
 		adapter.q3aBspEntityCount,
 		adapter.q3aBspEntityPairs,
@@ -443,6 +960,11 @@ void PrintBotLibAdapterStatusIfRequested() {
 		adapter.q3aBspCollisionBrushes,
 		adapter.q3aBspCollisionPointContentsSmokePassed ? "yes" : "no",
 		adapter.q3aBspCollisionTraceSmokePassed ? "yes" : "no",
+		adapter.bspLeafLinkMessage.empty() ? "not run" : adapter.bspLeafLinkMessage.c_str(),
+		adapter.q3aBspLeafLinks,
+		adapter.q3aBspLeafLinkFailures,
+		adapter.q3aBspBoxEntitiesSmokePassed ? "yes" : "no",
+		adapter.q3aBspBoxEntitiesCount,
 		adapter.bspVisibilityMessage.empty() ? "not run" : adapter.bspVisibilityMessage.c_str(),
 		adapter.q3aBspVisibilityClusters,
 		adapter.q3aBspVisibilityPvsSmokePassed ? "yes" : "no",
@@ -455,6 +977,56 @@ void PrintBotLibAdapterStatusIfRequested() {
 		adapter.q3aRuntimeImported ? "yes" : "no",
 		adapter.plannedImportFileCount,
 		adapter.sourceCommit != nullptr ? adapter.sourceCommit : "<unset>");
+	gi.Com_PrintFmt(
+		"BotLib adapter lifecycle: q3a_lifecycle={}, q3a_lifecycle_inits={}, q3a_lifecycle_shutdowns={}, q3a_lifecycle_load_attempts={}, q3a_lifecycle_load_successes={}, q3a_lifecycle_active_unloads={}, q3a_lifecycle_clean_unloads={}, q3a_lifecycle_unload_failures={}, q3a_lifecycle_last_unload_zone_active={}, q3a_lifecycle_last_unload_hunk_active={}, q3a_lifecycle_last_unload_open_files={}, q3a_lifecycle_persistent_zone={}\n",
+		adapter.lifecycleMessage.empty() ? "not run" : adapter.lifecycleMessage.c_str(),
+		adapter.q3aLifecycleInitCount,
+		adapter.q3aLifecycleShutdownCount,
+		adapter.q3aLifecycleLoadAttempts,
+		adapter.q3aLifecycleLoadSuccesses,
+		adapter.q3aLifecycleActiveUnloads,
+		adapter.q3aLifecycleCleanUnloads,
+		adapter.q3aLifecycleUnloadFailures,
+		adapter.q3aLifecycleLastUnloadZoneActiveBytes,
+		adapter.q3aLifecycleLastUnloadHunkActiveBytes,
+		adapter.q3aLifecycleLastUnloadOpenFiles,
+		adapter.q3aLifecyclePersistentZoneBytes);
+	gi.Com_PrintFmt(
+		"BotLib adapter memory: q3a_memory={}, q3a_memory_zone_active={}, q3a_memory_zone_peak={}, q3a_memory_zone_allocs={}, q3a_memory_zone_frees={}, q3a_memory_hunk_active={}, q3a_memory_hunk_peak={}, q3a_memory_hunk_allocs={}, q3a_memory_hunk_groups={}, q3a_memory_failures={}, q3a_memory_available={}\n",
+		adapter.memoryMessage.empty() ? "not run" : adapter.memoryMessage.c_str(),
+		adapter.q3aMemoryZoneActiveBytes,
+		adapter.q3aMemoryZonePeakBytes,
+		adapter.q3aMemoryZoneAllocations,
+		adapter.q3aMemoryZoneFrees,
+		adapter.q3aMemoryHunkActiveBytes,
+		adapter.q3aMemoryHunkPeakBytes,
+		adapter.q3aMemoryHunkAllocations,
+		adapter.q3aMemoryHunkGroupFrees,
+		adapter.q3aMemoryFailures,
+		adapter.q3aAvailableMemory);
+	gi.Com_PrintFmt(
+		"BotLib adapter filesystem: q3a_fs={}, q3a_fs_callback={}, q3a_fs_attempted={}, q3a_fs_passed={}, q3a_fs_open_attempts={}, q3a_fs_files={}, q3a_fs_memory_files={}, q3a_fs_open_failures={}, q3a_fs_route_cache_misses={}, q3a_fs_read_bytes={}, q3a_fs_seeks={}, q3a_fs_closes={}, q3a_fs_writes_rejected={}\n",
+		adapter.filesystemMessage.empty() ? "not run" : adapter.filesystemMessage.c_str(),
+		adapter.q3aFilesystemCallbackSet ? "yes" : "no",
+		adapter.q3aFilesystemAttempted ? "yes" : "no",
+		adapter.q3aFilesystemPassed ? "yes" : "no",
+		adapter.q3aFilesystemOpenAttempts,
+		adapter.q3aFilesystemOpenFiles,
+		adapter.q3aFilesystemOpenMemoryFiles,
+		adapter.q3aFilesystemOpenFailures,
+		adapter.q3aFilesystemRouteCacheMisses,
+		adapter.q3aFilesystemReadBytes,
+		adapter.q3aFilesystemSeekCount,
+		adapter.q3aFilesystemCloseCount,
+		adapter.q3aFilesystemWriteRejected);
+	gi.Com_PrintFmt(
+		"BotLib adapter BotClientCommand: q3a_bot_client_command={}, q3a_bot_client_command_callback={}, q3a_bot_client_command_client={}, q3a_bot_client_command_accepted={}, q3a_bot_client_command_rejected={}, q3a_bot_client_command_failures={}\n",
+		adapter.botClientCommandMessage.empty() ? "not run" : adapter.botClientCommandMessage.c_str(),
+		adapter.q3aBotClientCommandCallbackSet ? "yes" : "no",
+		adapter.q3aBotClientCommandClient,
+		adapter.q3aBotClientCommandAccepted,
+		adapter.q3aBotClientCommandRejected,
+		adapter.q3aBotClientCommandFailures);
 }
 
 void PrintAasStatusIfRequested() {
@@ -489,6 +1061,48 @@ void PrintAasStatusIfRequested() {
 
 	PrintBotLibAdapterStatusIfRequested();
 }
+
+void RunLifecycleSmokeAfterBeginLevel() {
+	if (sg_bot_lifecycle_smoke == nullptr || sg_bot_lifecycle_smoke->integer <= 0) {
+		lifecycleSmokePhase = 0;
+		return;
+	}
+
+	const int mode = sg_bot_lifecycle_smoke->integer;
+	worr::SetLogLevel(worr::LogLevel::Info);
+
+	if (mode == 4) {
+		Bot_RuntimePrintLifecycleStatus();
+		gi.Com_Print("BotLib lifecycle smoke: quitting after reload\n");
+		gi.AddCommandString("quit\n");
+		lifecycleSmokePhase = 2;
+		return;
+	}
+
+	if (lifecycleSmokePhase > 1) {
+		return;
+	}
+
+	Bot_RuntimePrintLifecycleStatus();
+
+	if (mode >= 2 && lifecycleSmokePhase == 0 && botRuntimeStatus.attemptedLoad &&
+		!botRuntimeStatus.mapName.empty()) {
+		lifecycleSmokePhase = 1;
+		gi.cvarSet("sg_bot_lifecycle_smoke", mode >= 3 ? "4" : "1");
+		gi.Com_PrintFmt("BotLib lifecycle smoke: reloading {}\n", botRuntimeStatus.mapName.c_str());
+		gi.AddCommandString(G_Fmt("map {}\n", botRuntimeStatus.mapName).data());
+		return;
+	}
+
+	if (mode >= 3 && lifecycleSmokePhase == 1) {
+		lifecycleSmokePhase = 2;
+		gi.Com_Print("BotLib lifecycle smoke: quitting after reload\n");
+		gi.AddCommandString("quit\n");
+		return;
+	}
+
+	lifecycleSmokePhase = 2;
+}
 } // namespace
 
 void Bot_RuntimeRegisterCvars() {
@@ -497,18 +1111,28 @@ void Bot_RuntimeRegisterCvars() {
 	sg_bot_debug_aas = gi.cvar("sg_bot_debug_aas", "0", CVAR_NOFLAGS);
 	sg_bot_debug_route = gi.cvar("sg_bot_debug_route", "0", CVAR_NOFLAGS);
 	sg_bot_debug_goal = gi.cvar("sg_bot_debug_goal", "0", CVAR_NOFLAGS);
+	sg_bot_debug_client = gi.cvar("sg_bot_debug_client", "-1", CVAR_NOFLAGS);
 	sg_bot_cpu_budget_ms = gi.cvar("sg_bot_cpu_budget_ms", "2", CVAR_NOFLAGS);
+	sg_bot_lifecycle_smoke = gi.cvar("sg_bot_lifecycle_smoke", "0", CVAR_NOFLAGS);
 
+	BotLibAdapter_SetPrintCallback(BotRuntimeQ3APrint);
+	BotLibAdapter_SetBotClientCommandCallback(BotRuntimeBotClientCommand);
+	BotLibAdapter_SetFilesystemCallbacks(BotRuntimeQ3AFilesystemLoad, BotRuntimeQ3AFilesystemFree);
+	BotLibAdapter_SetEntityTraceCallback(BotRuntimeEntityTrace);
+	BotLibAdapter_SetDebugDrawCallback(BotRuntimeDebugDraw);
+	BotLibAdapter_SetDebugPolygonCallback(BotRuntimeDebugPolygon);
 	BotLibAdapter_Init();
 }
 
 void Bot_RuntimeBeginLevel() {
+	BotNav_ResetAll();
 	ResetRuntimeStatusForMap();
 	lastDebugPrintTime = 0_ms;
 
 	if (!botRuntimeStatus.enabled) {
 		SetRuntimeState(BotAasRuntimeState::Disabled, "sg_bot_enable is 0");
 		PrintAasStatusIfRequested();
+		RunLifecycleSmokeAfterBeginLevel();
 		return;
 	}
 
@@ -528,9 +1152,11 @@ void Bot_RuntimeBeginLevel() {
 			botRuntimeStatus.aasPath.empty() ? "<none>" : botRuntimeStatus.aasPath.c_str(),
 			botRuntimeStatus.message.c_str());
 	}
+	RunLifecycleSmokeAfterBeginLevel();
 }
 
 void Bot_RuntimeEndLevel() {
+	BotNav_ResetAll();
 	BotLibAdapter_EndLevel();
 	botRuntimeStatus = {};
 	botRuntimeStatus.state = BotAasRuntimeState::Disabled;
@@ -542,7 +1168,31 @@ void Bot_RuntimeRunFrame() {
 		Bot_RuntimeBeginLevel();
 	}
 	BotLibAdapter_RunFrame(CurrentBotRuntimeMilliseconds());
+	SyncBotLibEntities();
+	RunBotLibDebugDrawIfRequested();
 	PrintAasStatusIfRequested();
+}
+
+void Bot_RuntimePrintLifecycleStatus() {
+	const BotLibAdapterStatus &adapter = BotLibAdapter_GetStatus();
+	gi.Com_PrintFmt(
+		"BotLib lifecycle status: sg_bot_enable={}, runtime_state={}, map={}, aas={}, q3a_lifecycle={}, q3a_lifecycle_inits={}, q3a_lifecycle_shutdowns={}, q3a_lifecycle_load_attempts={}, q3a_lifecycle_load_successes={}, q3a_lifecycle_active_unloads={}, q3a_lifecycle_clean_unloads={}, q3a_lifecycle_unload_failures={}, q3a_lifecycle_last_unload_zone_active={}, q3a_lifecycle_last_unload_hunk_active={}, q3a_lifecycle_last_unload_open_files={}, q3a_lifecycle_persistent_zone={}\n",
+		Bot_RuntimeEnabled() ? "1" : "0",
+		static_cast<int>(botRuntimeStatus.state),
+		botRuntimeStatus.mapName.empty() ? "<none>" : botRuntimeStatus.mapName.c_str(),
+		botRuntimeStatus.aasPath.empty() ? "<none>" : botRuntimeStatus.aasPath.c_str(),
+		adapter.lifecycleMessage.empty() ? "not run" : adapter.lifecycleMessage.c_str(),
+		adapter.q3aLifecycleInitCount,
+		adapter.q3aLifecycleShutdownCount,
+		adapter.q3aLifecycleLoadAttempts,
+		adapter.q3aLifecycleLoadSuccesses,
+		adapter.q3aLifecycleActiveUnloads,
+		adapter.q3aLifecycleCleanUnloads,
+		adapter.q3aLifecycleUnloadFailures,
+		adapter.q3aLifecycleLastUnloadZoneActiveBytes,
+		adapter.q3aLifecycleLastUnloadHunkActiveBytes,
+		adapter.q3aLifecycleLastUnloadOpenFiles,
+		adapter.q3aLifecyclePersistentZoneBytes);
 }
 
 bool Bot_RuntimeEnabled() {

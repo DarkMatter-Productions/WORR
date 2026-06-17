@@ -103,7 +103,9 @@ Observed smoke lines:
 - Static PVS/PHS callbacks are now backed by
   `docs-dev/q3a-botlib-bsp-visibility-bridge-2026-06-17.md`; dynamic
   area-portal policy remains future work if imported runtime paths need it.
-- Replace movement prediction, jump, drop, and debug-line stubs with WORR/Q2
-  bridges.
-- Import the Q3A AAS start-frame/runtime orchestration files once their callback
-  dependencies are ready.
+- Imported movement prediction/drop/jump helpers are covered by
+  `docs-dev/q3a-botlib-aas-movement-import-2026-06-17.md`.
+- Q3A debug line/cross/arrow bridging is covered by
+  `docs-dev/q3a-botlib-aas-debug-draw-bridge-2026-06-17.md`.
+- Q3A AAS start-frame/runtime orchestration is covered by
+  `docs-dev/q3a-botlib-aas-start-frame-2026-06-17.md`.

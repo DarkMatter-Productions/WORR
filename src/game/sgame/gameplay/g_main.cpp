@@ -21,6 +21,8 @@ change game behavior on the fly.*/
 #include "../bots/bot_includes.hpp"
 #include "../commands/commands.hpp"
 #include "../g_local.hpp"
+#include "../../../../inc/shared/bot_frame_command.h"
+#include "../../../../inc/shared/bot_team_policy_status.h"
 #include "g_clients.hpp"
 #include "g_headhunters.hpp"
 #include "g_hud_blob.hpp"
@@ -140,7 +142,9 @@ cvar_t *sg_bot_debug;
 cvar_t *sg_bot_debug_aas;
 cvar_t *sg_bot_debug_route;
 cvar_t *sg_bot_debug_goal;
+cvar_t *sg_bot_debug_client;
 cvar_t *sg_bot_cpu_budget_ms;
+cvar_t *sg_bot_lifecycle_smoke;
 cvar_t *flood_msgs;
 cvar_t *flood_persecond;
 cvar_t *flood_waitdelay;
@@ -798,6 +802,7 @@ static void PreInitGame() {
                        CVAR_SERVERINFO | CVAR_LATCH);
   minplayers = gi.cvar("minplayers", "2", CVAR_NOFLAGS);
   maxplayers = gi.cvar("maxplayers", "16", CVAR_NOFLAGS);
+  Bot_RuntimeRegisterCvars();
 
   GT_Init();
 }
@@ -1045,7 +1050,6 @@ static void InitGame() {
   bot_debug_follow_actor = gi.cvar("bot_debug_follow_actor", "0", CVAR_NOFLAGS);
   bot_debug_move_to_point =
       gi.cvar("bot_debug_move_to_point", "0", CVAR_NOFLAGS);
-  Bot_RuntimeRegisterCvars();
 
   // noset vars
   g_dedicated = gi.cvar("dedicated", "0", CVAR_NOSET);
@@ -1372,6 +1376,9 @@ static void ShutdownGame() {
   gi.Com_Print("==== ShutdownGame ====\n");
 
   Bot_RuntimeEndLevel();
+  if (sg_bot_lifecycle_smoke != nullptr && sg_bot_lifecycle_smoke->integer != 0)
+    Bot_RuntimePrintLifecycleStatus();
+
   SG_QU3EPhysics_Shutdown();
   FreeClientArray();
 
@@ -1379,7 +1386,32 @@ static void ShutdownGame() {
   gi.FreeTags(TAG_GAME);
 }
 
-static void *G_GetExtension(const char *name) { return nullptr; }
+static void *G_GetExtension(const char *name) {
+  static const bot_frame_command_api_v1_t botFrameCommandApi = {
+      1,
+      [](void *bot_entity, void *usercmd) -> int {
+        return Bot_BuildFrameCommand(static_cast<gentity_t *>(bot_entity),
+                                     static_cast<usercmd_t *>(usercmd))
+                   ? 1
+                   : 0;
+      },
+      [](int expected_min_frames, int expected_min_commands) {
+        Bot_FrameCommandPrintStatus(expected_min_frames, expected_min_commands);
+      }};
+  static const bot_team_policy_status_api_v1_t botTeamPolicyStatusApi = {
+      1, BotTeamPolicy_PrintStatus};
+
+  if (!name)
+    return nullptr;
+
+  if (!std::strcmp(name, BOT_FRAME_COMMAND_API_V1))
+    return const_cast<bot_frame_command_api_v1_t *>(&botFrameCommandApi);
+
+  if (!std::strcmp(name, BOT_TEAM_POLICY_STATUS_API_V1))
+    return const_cast<bot_team_policy_status_api_v1_t *>(&botTeamPolicyStatusApi);
+
+  return nullptr;
+}
 
 const shadow_light_data_t *GetShadowLightData(int32_t entity_number);
 
@@ -2239,6 +2271,7 @@ static inline void G_RunFrame_(bool main_loop) {
   GT_Changes();            // track gametype changes
   CheckVote();             // cancel vote if expired
   CheckCvars();            // check for updated cvars
+  Bot_EnforceMatchTeamPolicy(true);
   CheckPowerupsDisabled(); // disable unwanted powerups
   CheckRuleset();          // ruleset enforcement
   Bot_UpdateDebug();       // debug AI states
@@ -2267,7 +2300,6 @@ static inline void G_RunFrame_(bool main_loop) {
   }
 
   level.time += FRAME_TIME_MS;
-  Bot_RuntimeRunFrame();
 
   // --- Intermission Fade ---
   if (!deathmatch->integer && level.intermission.fading) {
@@ -2415,6 +2447,8 @@ static inline void G_RunFrame_(bool main_loop) {
 
     G_RunEntity(ent);
   }
+
+  Bot_RuntimeRunFrame();
 
   // --- Check for Match End / DM Logic ---
   CheckDMEndFrame();

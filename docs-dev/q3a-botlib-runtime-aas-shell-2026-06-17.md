@@ -63,8 +63,8 @@ Integration points:
 - AAS data is header-validated and summarized, not converted into live BotLib
   routing queries.
 - Bots still do not generate movement or combat input from this runtime shell.
-- `sg_bot_debug_route` and `sg_bot_debug_goal` are registered for the planned
-  debug surface, but route/goal overlays remain future work.
+- `sg_bot_debug_route` and `sg_bot_debug_goal` now have imported route-query
+  overlay smoke coverage; per-bot route overlays remain future `bot_nav.*` work.
 
 ## Validation
 

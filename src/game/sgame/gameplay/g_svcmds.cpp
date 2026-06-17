@@ -6,6 +6,7 @@ dispatch "sv" console/RCON commands - IP filtering: addip/removeip/listip/writei
 G_FilterPacket(): packet gate using configured filters*/
 
 #include "../g_local.hpp"
+#include "../bots/bot_runtime.hpp"
 
 #include <array>
 #include <vector>
@@ -13,6 +14,7 @@ G_FilterPacket(): packet gate using configured filters*/
 #include <string_view>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <algorithm>
 #include <charconv>
 #include <filesystem>
@@ -395,7 +397,119 @@ namespace
 		gi.LocBroadcast_Print(PRINT_HIGH, "$g_map_ended_by_server");
 		Match_End();
 	}
+
+	struct BotTeamPolicyStatus
+	{
+		int bots = 0;
+		int playing = 0;
+		int spectators = 0;
+		int queued = 0;
+		int none = 0;
+		int free = 0;
+		int red = 0;
+		int blue = 0;
+	};
+
+	static bool IsBotClient(const gentity_t* ent)
+	{
+		return ent && ent->client && ((ent->svFlags & SVF_BOT) || ent->client->sess.is_a_bot);
+	}
+
+	static BotTeamPolicyStatus CountBotTeamPolicyStatus()
+	{
+		BotTeamPolicyStatus status{};
+
+		CalculateRanks();
+
+		for (auto ent : active_clients()) {
+			if (!IsBotClient(ent))
+				continue;
+
+			gclient_t* client = ent->client;
+			status.bots++;
+
+			if (ClientIsPlaying(client))
+				status.playing++;
+
+			if (client->sess.matchQueued)
+				status.queued++;
+
+			switch (client->sess.team) {
+			case Team::None:
+				status.none++;
+				break;
+			case Team::Spectator:
+				status.spectators++;
+				break;
+			case Team::Free:
+				status.free++;
+				break;
+			case Team::Red:
+				status.red++;
+				break;
+			case Team::Blue:
+				status.blue++;
+				break;
+			default:
+				break;
+			}
+		}
+
+		return status;
+	}
+
+	static bool ParseExpectedInt(int arg, int& value)
+	{
+		if (gi.argc() <= arg)
+			return false;
+
+		const char* text = gi.argv(arg);
+		if (!text || !*text)
+			return false;
+
+		int parsed = 0;
+		const char* end = text + std::strlen(text);
+		const auto result = std::from_chars(text, end, parsed);
+		if (result.ec != std::errc{} || result.ptr != end)
+			return false;
+
+		value = parsed;
+		return true;
+	}
+
+	static void SVCmd_BotTeamPolicyStatus_f()
+	{
+		int expectedPlaying = -1;
+		int expectedSpectators = -1;
+		int expectedBots = -1;
+
+		ParseExpectedInt(2, expectedPlaying);
+		ParseExpectedInt(3, expectedSpectators);
+		ParseExpectedInt(4, expectedBots);
+		BotTeamPolicy_PrintStatus(expectedPlaying, expectedSpectators, expectedBots);
+	}
 } // anonymous namespace
+
+void BotTeamPolicy_PrintStatus(int expectedPlaying, int expectedSpectators, int expectedBots)
+{
+	const BotTeamPolicyStatus status = CountBotTeamPolicyStatus();
+	bool pass = true;
+
+	if (expectedPlaying >= 0 && status.playing != expectedPlaying)
+		pass = false;
+	if (expectedSpectators >= 0 && status.spectators != expectedSpectators)
+		pass = false;
+	if (expectedBots >= 0 && status.bots != expectedBots)
+		pass = false;
+
+	base_import.Com_Print(G_Fmt(
+		"q3a_bot_team_policy_status bots={} playing={} spectators={} queued={} "
+		"none={} free={} red={} blue={} expected_playing={} "
+		"expected_spectators={} expected_bots={} pass={}\n",
+		status.bots, status.playing, status.spectators, status.queued,
+		status.none, status.free, status.red, status.blue, expectedPlaying,
+		expectedSpectators, expectedBots, pass ? 1 : 0).data());
+}
 
 /*
 ===============
@@ -514,6 +628,12 @@ void ServerCommand()
 	}
 	else if (Q_strcasecmp(cmd, "nextmap") == 0) {
 		SVCmd_NextMap_f();
+	}
+	else if (Q_strcasecmp(cmd, "botlib_lifecycle_status") == 0) {
+		Bot_RuntimePrintLifecycleStatus();
+	}
+	else if (Q_strcasecmp(cmd, "bot_team_policy_status") == 0) {
+		SVCmd_BotTeamPolicyStatus_f();
 	}
 	else {
 		gi.LocClient_Print(nullptr, PRINT_HIGH, "$g_sgame_auto_14d3c73afcac", cmd);

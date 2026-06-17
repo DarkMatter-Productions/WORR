@@ -120,6 +120,6 @@ Relevant log evidence from
   `docs-dev/q3a-botlib-bsp-model-bridge-2026-06-17.md`.
 - Replace temporary trace, point-contents, movement-prediction, and jump helpers
   with real WORR/Q2 collision and movement bridges.
-- Replace debug-line stubs with WORR debug draw.
+- Q3A debug line/cross/arrow bridging is covered by `docs-dev/q3a-botlib-aas-debug-draw-bridge-2026-06-17.md`.
 - Import or bridge the remaining Q3A AAS runtime files required for route
   queries, start-frame updates, and movement steering.

@@ -3314,6 +3314,9 @@ void P_ForceFogTransition(gentity_t *ent, bool instant) {
 InitPlayerTeam
 ============
 */
+static bool ClientIsBot(const gentity_t *ent);
+static bool BotAssignInitialTeam(gentity_t *ent);
+
 bool InitPlayerTeam(gentity_t *ent) {
   // Non-deathmatch (e.g. single-player or coop) - everyone plays
   if (!deathmatch->integer) {
@@ -3347,6 +3350,9 @@ bool InitPlayerTeam(gentity_t *ent) {
       ((level.matchState >= MatchState::Countdown) && match_lock->integer);
 
   if (!matchLocked) {
+    if (ClientIsBot(ent))
+      return BotAssignInitialTeam(ent);
+
     if (ent == host) {
       if (g_owner_auto_join->integer) {
         SetTeam(ent, PickTeam(-1), false, false, false);
@@ -3354,10 +3360,6 @@ bool InitPlayerTeam(gentity_t *ent) {
       }
     } else {
       if (match_forceJoin->integer || match_autoJoin->integer) {
-        SetTeam(ent, PickTeam(-1), false, false, false);
-        return true;
-      }
-      if ((ent->svFlags & SVF_BOT) || ent->client->sess.is_a_bot) {
         SetTeam(ent, PickTeam(-1), false, false, false);
         return true;
       }
@@ -3533,6 +3535,123 @@ bool ClientIsPlaying(gclient_t *cl) {
     return true;
 
   return !(cl->sess.team == Team::None || cl->sess.team == Team::Spectator);
+}
+
+static bool ClientIsBot(const gentity_t *ent) {
+  return ent && ent->client &&
+         ((ent->svFlags & SVF_BOT) || ent->client->sess.is_a_bot);
+}
+
+static int BotMatchPlayingLimit() {
+  if (!deathmatch->integer)
+    return 0;
+
+  if (Game::Has(GameFlags::OneVOne))
+    return 2;
+
+  if (maxplayers && maxplayers->integer > 0)
+    return maxplayers->integer;
+
+  return 0;
+}
+
+static bool BotMayJoinInitialMatch(gentity_t *ent) {
+  if (!ClientIsBot(ent))
+    return false;
+
+  const bool wasPlaying = ClientIsPlaying(ent->client);
+  const bool matchLocked =
+      match_lock->integer && level.matchState >= MatchState::Countdown;
+  if (matchLocked && !wasPlaying)
+    return false;
+
+  const int playingLimit = BotMatchPlayingLimit();
+  if (playingLimit > 0 && !wasPlaying &&
+      level.pop.num_playing_clients >= playingLimit)
+    return false;
+
+  return true;
+}
+
+static void BotMoveToInitialSpectator(gentity_t *ent) {
+  if (!ent || !ent->client)
+    return;
+
+  gclient_t *cl = ent->client;
+  cl->sess.team = Team::Spectator;
+  cl->ps.teamID = static_cast<int>(cl->sess.team);
+  cl->sess.initialised = true;
+  cl->sess.matchQueued = false;
+  cl->sess.duelQueueTicket = 0;
+  cl->sess.inactiveStatus = false;
+  cl->sess.inactivityWarning = false;
+  cl->sess.inactivityTime = 0_sec;
+  cl->sess.teamJoinTime = level.time;
+  cl->pers.readyStatus = false;
+
+  MoveClientToFreeCam(ent);
+}
+
+static bool BotAssignInitialTeam(gentity_t *ent) {
+  if (!BotMayJoinInitialMatch(ent)) {
+    BotMoveToInitialSpectator(ent);
+    return false;
+  }
+
+  const int clientNum = static_cast<int>(ent->client - game.clients);
+  Team target = PickTeam(clientNum);
+
+  if (!Teams()) {
+    if (target != Team::Spectator)
+      target = Team::Free;
+  } else if (target != Team::Red && target != Team::Blue) {
+    target = PickTeam(clientNum);
+  }
+
+  ent->client->sess.team = target;
+  ent->client->ps.teamID = static_cast<int>(ent->client->sess.team);
+  ent->client->sess.initialised = true;
+  ent->client->sess.matchQueued = false;
+  ent->client->sess.duelQueueTicket = 0;
+  ent->client->sess.inactiveStatus = false;
+  ent->client->sess.teamJoinTime = level.time;
+  return true;
+}
+
+void Bot_EnforceMatchTeamPolicy(bool silent) {
+  if (!deathmatch->integer)
+    return;
+
+  const int playingLimit = BotMatchPlayingLimit();
+  if (playingLimit <= 0)
+    return;
+
+  CalculateRanks();
+
+  int retainedPlaying = 0;
+  for (auto ec : active_clients()) {
+    if (!ec || !ec->client || !ClientIsPlaying(ec->client) || ClientIsBot(ec))
+      continue;
+
+    retainedPlaying++;
+  }
+
+  bool movedBot = false;
+  for (auto ec : active_clients()) {
+    if (!ClientIsBot(ec) || !ClientIsPlaying(ec->client))
+      continue;
+
+    if (retainedPlaying < playingLimit) {
+      retainedPlaying++;
+      continue;
+    }
+
+    SetTeam(ec, Team::Spectator, false, true, silent);
+    movedBot = true;
+  }
+
+  if (movedBot)
+    CalculateRanks();
 }
 
 /*

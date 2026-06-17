@@ -5,3 +5,5 @@
 
 void Bot_BeginFrame( gentity_t * bot );
 void Bot_EndFrame( gentity_t * bot );
+bool Bot_BuildFrameCommand( gentity_t * bot, usercmd_t * cmd );
+void Bot_FrameCommandPrintStatus( int expectedMinFrames, int expectedMinCommands );

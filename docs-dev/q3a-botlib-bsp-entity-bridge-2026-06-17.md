@@ -117,7 +117,9 @@ Relevant log evidence from
   `docs-dev/q3a-botlib-bsp-model-bridge-2026-06-17.md`.
 - Static `AAS_Trace` and `AAS_PointContents` are now backed by
   `docs-dev/q3a-botlib-bsp-collision-bridge-2026-06-17.md`.
-- Continue dynamic entity collision, movement-prediction, and jump/drop helpers.
-- Replace debug-line stubs with WORR debug draw.
+- Imported movement prediction/drop/jump helpers are covered by
+  `docs-dev/q3a-botlib-aas-movement-import-2026-06-17.md`; continue final
+  WORR collision ownership and bot steering integration.
+- Q3A debug line/cross/arrow bridging is covered by `docs-dev/q3a-botlib-aas-debug-draw-bridge-2026-06-17.md`.
 - Import or bridge the remaining Q3A AAS runtime files required for route
   queries, start-frame updates, and movement steering.

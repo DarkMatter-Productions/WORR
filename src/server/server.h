@@ -264,6 +264,8 @@ typedef struct client_s {
     bool            reconnected: 1;
     bool            nodata: 1;
     bool            drop_hack: 1;
+    bool            bot: 1;
+    bool            bot_autofill: 1;
 #if USE_ICMP
     bool            unreachable: 1;
 #endif
@@ -579,10 +581,17 @@ extern edict_t      *sv_player;
 void SV_DropClient(client_t *drop, const char *reason);
 void SV_RemoveClient(client_t *client);
 void SV_CleanClient(client_t *client);
+bool SV_BotAdd(const char *name, const char *team);
+bool SV_BotRemove(client_t *client);
+int SV_BotRemoveAll(void);
+int SV_BotReloadProfiles(void);
+client_t *SV_BotGetClient(const char *s, bool partial);
+void SV_BotList(void);
 
 void SV_InitOperatorCommands(void);
 
 void SV_UserinfoChanged(client_t *cl);
+void SV_BotClientThink(client_t *client, usercmd_t *cmd);
 
 bool SV_RateLimited(ratelimit_t *r);
 void SV_RateRecharge(ratelimit_t *r);

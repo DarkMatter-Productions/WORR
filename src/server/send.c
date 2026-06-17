@@ -126,6 +126,10 @@ void SV_ClientPrintf(client_t *client, int level, const char *fmt, ...)
     char        string[MAX_STRING_CHARS];
     size_t      len;
 
+    if (client->bot) {
+        return;
+    }
+
     if (level < client->messagelevel)
         return;
 
@@ -853,6 +857,10 @@ void SV_SendClientMessages(void)
 
     // send a message to each connected client
     FOR_EACH_CLIENT(client) {
+        if (client->bot) {
+            continue;
+        }
+
         if (!CLIENT_ACTIVE(client))
             goto finish;
 
@@ -958,6 +966,10 @@ void SV_SendAsyncPackets(void)
     int         cursize;
 
     FOR_EACH_CLIENT(client) {
+        if (client->bot) {
+            continue;
+        }
+
         // don't overrun bandwidth
         if (svs.realtime - client->send_time < client->send_delta) {
             continue;

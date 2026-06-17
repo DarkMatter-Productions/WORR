@@ -1537,9 +1537,10 @@ void ClientSpawn(gentity_t *ent) {
     spawnAngles = cl->coopRespawn.squadAngles;
     spawnAngles[ROLL] = 0.0f;
     valid_spawn = true;
-  } else
+  } else {
     valid_spawn = SelectSpawnPoint(ent, spawnOrigin, spawnAngles, force_spawn,
                                    is_landmark);
+  }
 
   // [Paril-KEX] if we didn't get a valid spawn, hold us in
   // limbo for a while until we do get one
@@ -1679,6 +1680,8 @@ void ClientSpawn(gentity_t *ent) {
                   FL_NO_DAMAGE_EFFECTS | FL_SAM_RAIMI);
   ent->svFlags &= ~SVF_DEADMONSTER;
   ent->svFlags |= SVF_PLAYER;
+  if (cl->sess.is_a_bot)
+    ent->svFlags |= SVF_BOT;
   ent->client->pers.last_spawn_time = level.time;
   ent->client->timeResidual = level.time + 1_sec;
 

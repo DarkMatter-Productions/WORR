@@ -35,7 +35,7 @@ Required external tool baseline:
 
 Current WORR bot surface:
 
-- `src/game/sgame/bots/bot_think.cpp` has empty `Bot_BeginFrame` and `Bot_EndFrame` stubs.
+- `src/game/sgame/bots/bot_think.cpp` keeps `Bot_BeginFrame` and `Bot_EndFrame` as AAS-gated lifecycle stubs and now exposes an AAS route-steered `Bot_BuildFrameCommand()` path for server-owned bot `usercmd_t` dispatch.
 - `src/game/sgame/bots/bot_exports.cpp` already exposes bot action helpers for weapon selection, item use, trigger use, forced look direction, and pickup checks.
 - `src/game/sgame/bots/bot_utils.cpp` already builds useful bot-facing entity state and registers players, monsters, items, traps, and movers through the game import API.
 - `src/game/sgame/bots/bot_debug.cpp` already exercises engine-side navigation/debug imports through `Bot_MoveToPoint`, `Bot_FollowActor`, `GetPathToGoal`, and debug drawing.
@@ -132,6 +132,41 @@ Target source layout, subject to adjustment during implementation:
 - `docs-dev/q3a-botlib-aas-file-loader-2026-06-17.md`: imported Q3A `be_aas_file.c` AAS loader subset, in-memory WORR-to-Q3A filesystem bridge, and staged map loader smoke.
 - `docs-dev/q3a-botlib-aas-sample-query-2026-06-17.md`: imported Q3A `be_aas_sample.c`, temporary bridge shims for later runtime hooks, and first loaded-area query smoke.
 - `docs-dev/q3a-botlib-aas-reach-query-2026-06-17.md`: imported Q3A `be_aas_reach.c`, removal of the temporary `AAS_AreaReachability` shim, scoped warning policy, and imported reachability smoke.
+- `docs-dev/q3a-botlib-aas-route-query-2026-06-17.md`: imported Q3A `be_aas_route.c`, `l_crc.*`, route-cache initialization/unload handling, and imported travel-time/predict-route smoke.
+- `docs-dev/q3a-botlib-aas-start-frame-2026-06-17.md`: imported Q3A `be_aas_main.c`, Q3A setup/shutdown ownership for loaded AAS, and per-frame `AAS_StartFrame` smoke.
+- `docs-dev/q3a-botlib-aas-entity-cache-2026-06-17.md`: imported Q3A `be_aas_entity.c`, removal of temporary entity reset/invalidation shims, and entity-cache start-frame smoke.
+- `docs-dev/q3a-botlib-aas-entity-sync-2026-06-17.md`: WORR bot-facing entity snapshot translation into imported Q3A `AAS_UpdateEntity` and verbose sync counters.
+- `docs-dev/q3a-botlib-aas-entity-trace-2026-06-17.md`: Q3A `AAS_EntityCollision` callback bridge into WORR `gi.clip` entity clipping, plus BSP model-index sync correction.
+- `docs-dev/q3a-botlib-aas-bsp-leaf-link-2026-06-17.md`: active-map Q2 BSP leaf-link bridge for imported Q3A dynamic entity links and `AAS_BoxEntities`.
+- `docs-dev/q3a-botlib-aas-movement-import-2026-06-17.md`: imported Q3A `be_aas_move.c`, WORR/Q2 movement LibVar seeding, and imported floor-drop/jump/client-movement smoke.
+- `docs-dev/q3a-botlib-aas-debug-draw-bridge-2026-06-17.md`: callback-backed Q3A debug line/cross/arrow bridge to WORR `gi.Draw_*` imports, gated by bot debug cvars.
+- `docs-dev/q3a-botlib-aas-route-overlay-2026-06-17.md`: route/goal overlay smoke using imported Q3A route prediction and the WORR debug draw bridge under `sg_bot_debug_route` / `sg_bot_debug_goal`.
+- `docs-dev/q3a-botlib-aas-debug-polygon-bridge-2026-06-17.md`: callback-backed Q3A debug polygon create/delete bridge to WORR debug-line outline rendering, gated by `sg_bot_debug_aas >= 3`.
+- `docs-dev/q3a-botlib-aas-debug-area-helpers-2026-06-17.md`: imported Q3A `be_aas_debug.c` debug-area helper smoke through WORR debug line/polygon callbacks.
+- `docs-dev/q3a-botlib-aas-cluster-import-2026-06-17.md`: imported Q3A `be_aas_cluster.c`, removed the temporary `AAS_InitClustering` shim, and added loaded-cluster smoke status.
+- `docs-dev/q3a-botlib-aas-alternative-route-import-2026-06-17.md`: imported Q3A `be_aas_routealt.c`, removed the temporary alternative-routing lifecycle shims, and added `AAS_AlternativeRouteGoals` smoke status.
+- `docs-dev/q3a-botlib-aas-optimize-import-2026-06-17.md`: imported Q3A `be_aas_optimize.c`, removed the temporary `AAS_Optimize` no-op, and kept optimization opt-in behind Q3A `aasoptimize` behavior.
+- `docs-dev/q3a-botlib-print-bridge-2026-06-17.md`: callback-backed Q3A `botimport.Print` bridge to WORR logging with verbose status counters.
+- `docs-dev/q3a-botlib-bot-client-command-bridge-2026-06-17.md`: callback-backed Q3A `botimport.BotClientCommand` bridge with safe WORR runtime rejection and smoke counters.
+- `docs-dev/q3a-botlib-memory-allocator-bridge-2026-06-17.md`: tracked bot-owned Q3A `GetMemory` / `FreeMemory` / `HunkAlloc` bridge with grouped hunk release and status counters.
+- `docs-dev/q3a-botlib-filesystem-bridge-2026-06-17.md`: read-only callback-backed Q3A filesystem bridge through WORR FS with file-handle tracking and fallback memory support.
+- `docs-dev/q3a-botlib-route-cache-miss-policy-2026-06-17.md`: explicit optional `.rcd` route-cache miss classification so expected cache probes no longer inflate filesystem failure counters.
+- `docs-dev/q3a-botlib-lifecycle-telemetry-2026-06-17.md`: explicit BotLib init/load/unload/shutdown counters and repeated import-harness proof of clean active AAS unloads.
+- `docs-dev/q3a-botlib-dedicated-lifecycle-smoke-2026-06-17.md`: dedicated server self-smoke cvar, map-reload lifecycle status command, and shutdown-time clean-unload proof.
+- `docs-dev/q3a-botlib-bot-slot-lifecycle-2026-06-17.md`: first engine-owned fake-client lifecycle, operator commands, bot-aware teardown, and one-bot slot smoke.
+- `docs-dev/q3a-botlib-multibot-slot-queue-2026-06-17.md`: deferred multi-bot add queue, bot team assignment fix, and two-active-bot dedicated smoke.
+- `docs-dev/q3a-botlib-min-players-autofill-2026-06-17.md`: `sg_bot_min_players` auto-fill policy, auto/manual bot separation, generated-name fix, and fill/trim/disable smoke.
+- `docs-dev/q3a-botlib-profile-loading-2026-06-17.md`: `sg_bot_reload_profiles`, first Q3A-style profile parser, profile-aware add/autofill, and profile smoke.
+- `docs-dev/q3a-botlib-profile-behavior-fields-2026-06-17.md`: richer profile behavior field parsing, bot userinfo mapping, and expanded profile smoke.
+- `docs-dev/q3a-botlib-team-policy-cleanup-2026-06-17.md`: bot initial placement and per-frame cleanup respect Duel/`maxplayers` active match limits.
+- `docs-dev/q3a-botlib-team-policy-smoke-2026-06-17.md`: direct game-side team-policy smoke status through a lightweight game extension.
+- `docs-dev/q3a-botlib-frame-command-dispatch-2026-06-17.md`: first AAS-gated bot `usercmd_t` generation and server fake-client movement dispatch smoke.
+- `docs-dev/q3a-botlib-route-steered-frame-commands-2026-06-17.md`: AAS-backed route-step steering for bot frame command angles and route diagnostics in the dedicated smoke.
+- `docs-dev/q3a-botlib-nav-route-cache-2026-06-17.md`: WORR-owned per-bot route cache, route-query cadence, and route reuse diagnostics.
+- `docs-dev/q3a-botlib-nav-debug-overlay-2026-06-17.md`: live cached `bot_nav` route/goal debug overlay counters and fallback to the imported sample overlay before a bot route is cached.
+- `docs-dev/q3a-botlib-nav-reachability-debug-2026-06-17.md`: live current-area and next-reachability travel metadata in cached route overlay labels and dedicated frame-command smoke status.
+- `docs-dev/q3a-botlib-nav-polyline-debug-2026-06-17.md`: bounded cached route-point polyline drawing and headless polyline counters for live bot route debug.
+- `docs-dev/q3a-botlib-nav-debug-client-filter-2026-06-17.md`: `sg_bot_debug_client` selected-client filtering for cached route/goal debug overlays and headless filter counters.
 - `docs-dev/q3a-botlib-bridge-time-vector-2026-06-17.md`: bridge-fed Q3A runtime milliseconds, real `AngleVectors`, adapter status, and verbose debug smoke.
 - `docs-dev/q3a-botlib-bsp-entity-bridge-2026-06-17.md`: active-map Q2 BSP entity-lump bridge for Q3A `AAS_NextBSPEntity` and epair helper callbacks.
 - `docs-dev/q3a-botlib-bsp-model-bridge-2026-06-17.md`: active-map Q2 BSP model-lump bridge for Q3A inline BSP model bounds.
@@ -145,7 +180,7 @@ Use these tasks as the maintainable checklist backbone. Status values should fol
 | ID | Status | Area | Priority | Depends On | Definition of Done |
 |---|---|---|---|---|---|
 | `FR-04-T01` | Ready | `sgame/bots` | P0 | none | MVP behavior scope is written, accepted, and mapped to Q3A/WORR boundaries. |
-| `FR-04-T02` | Backlog | `sgame/bots` | P0 | `FR-04-T01`, `FR-04-T12`, `FR-04-T14` | `Bot_BeginFrame` and `Bot_EndFrame` produce stable bot usercmds with scheduling, perception, and debug hooks. |
+| `FR-04-T02` | In Progress | `sgame/bots` | P0 | `FR-04-T01`, `FR-04-T12`, `FR-04-T14` | `Bot_BeginFrame` and `Bot_EndFrame` produce stable bot usercmds with scheduling, perception, and debug hooks. |
 | `FR-04-T03` | Backlog | `sgame/bots` | P1 | `FR-04-T02` | Bots select Q2/Q2R weapons, ammo, powerups, and inventory items through WORR helpers. |
 | `FR-04-T04` | Backlog | `sgame/bots`, `sgame/match` | P1 | `FR-04-T02`, `FR-04-T15` | Bots understand supported team/objective modes and avoid sabotaging match flow. |
 | `FR-04-T05` | Backlog | `tools/q2aas`, `sgame/bots` | P1 | `FR-04-T11`, `FR-04-T14` | Map-level nav diagnostics validate generated AAS, spawn routing, reachability, and common blockers. |
@@ -154,8 +189,8 @@ Use these tasks as the maintainable checklist backbone. Status values should fol
 | `FR-04-T10` | In Progress | docs, provenance | P0 | none | Source audit, license notes, and credits ledger exist before code import starts. |
 | `FR-04-T11` | In Progress | `tools/q2aas` | P0 | `FR-04-T10` | `TTimo/bspc` based Q2 AAS generator builds locally, accepts WORR/Q2R map inputs, and emits validated `.aas` files. |
 | `FR-04-T12` | In Progress | `sgame/bots/q3a` | P0 | `FR-04-T10` | Q3A BotLib runtime compiles behind a WORR adapter and can load/unload generated AAS for the active map. |
-| `FR-04-T13` | Backlog | `sgame/client`, `sgame/commands` | P0 | `FR-04-T01` | Bots can be added/removed through WORR commands without network-client hacks or stale session state. |
-| `FR-04-T14` | Backlog | `sgame/bots/bot_nav` | P0 | `FR-04-T11`, `FR-04-T12`, `FR-04-T13` | A spawned bot can route, steer, recover from simple stalls, and reach item/position goals on reference maps. |
+| `FR-04-T13` | In Progress | `sgame/client`, `sgame/commands` | P0 | `FR-04-T01` | Bots can be added/removed through WORR commands without network-client hacks or stale session state. |
+| `FR-04-T14` | In Progress | `sgame/bots/bot_nav` | P0 | `FR-04-T11`, `FR-04-T12`, `FR-04-T13` | A spawned bot can route, steer, recover from simple stalls, and reach item/position goals on reference maps. |
 | `FR-04-T15` | Backlog | `sgame/bots/bot_brain` | P1 | `FR-04-T14` | Q3A behavior concepts are translated into Q2 item, weapon, combat, and mode decisions. |
 | `FR-04-T16` | In Progress | packaging, validation | P1 | `FR-04-T11`, `FR-04-T14` | AAS assets/tooling are staged under `.install/`, smoke tested, and covered by release packaging checks. |
 | `DV-03-T05` | Backlog | tests | P2 | `FR-04-T02` | Bot scenario tests cover spawn, navigation, combat, and objective behavior. |
@@ -400,35 +435,57 @@ Implementation checklist:
   - [x] Compile the Q3A AAS file loader subset: `be_aas_file.c`, AAS declarations, and parser utility headers.
   - [x] Compile the Q3A AAS sampling subset: `be_aas_sample.c`.
   - [x] Compile the Q3A AAS reachability subset: `be_aas_reach.c`.
+  - [x] Compile the Q3A AAS route subset: `be_aas_route.c` plus `l_crc.*`.
+  - [x] Compile the Q3A AAS runtime start-frame subset: `be_aas_main.c`.
+  - [x] Compile the Q3A AAS entity-cache subset: `be_aas_entity.c`.
+  - [x] Compile the Q3A AAS movement-prediction subset: `be_aas_move.c`.
+  - [x] Compile the Q3A AAS debug helper subset: `be_aas_debug.c`.
+  - [x] Compile the Q3A AAS clustering subset: `be_aas_cluster.c`.
+  - [x] Compile the Q3A AAS alternative-route subset: `be_aas_routealt.c`.
+  - [x] Compile the Q3A AAS optimization subset: `be_aas_optimize.c`.
   - [x] Document the temporary `WIN32`, `MEMORYMANEGER`, and legacy warning policy used by the Q3A object group.
   - [x] Document the scoped `-Wno-absolute-value` warning exception required by the legacy Q3A reachability source.
-  - [x] Document the temporary entity-collision, BSP/entity, movement, and debug stubs used before the full Q3A runtime is imported.
+  - [x] Document the remaining temporary callback/import boundaries used before the full Q3A runtime is imported.
   - [x] Replace the temporary `AngleVectors` and `Sys_MilliSeconds` shims with bridge-owned implementations.
   - [x] Replace the temporary BSP/entity epair callbacks with active-map Q2 BSP entity-lump parsing.
   - [x] Replace the temporary BSP inline model callback with active-map Q2 BSP model-lump parsing.
   - [x] Replace the temporary static `AAS_Trace` and `AAS_PointContents` stubs with active-map Q2 BSP collision-lump parsing and static-world lookup.
   - [x] Replace the missing `AAS_inPVS` and `AAS_inPHS` callbacks with active-map Q2 BSP visibility-lump parsing.
+  - [x] Replace the temporary BSP-leaf entity-link and `AAS_BoxEntities` stubs with active-map Q2 BSP leaf linking.
+  - [x] Replace the temporary `AAS_InitClustering` stub with imported Q3A clustering support and loaded-cluster smoke.
+  - [x] Replace the temporary alternative-routing lifecycle stubs with imported Q3A `be_aas_routealt.c` and `q3a_alt_route` smoke.
+  - [x] Replace the temporary `AAS_Optimize` no-op with imported Q3A `be_aas_optimize.c` while leaving the default loaded-AAS path unoptimized.
   - [ ] Compile the full BotLib runtime/AAS file set.
 - [ ] Build a WORR-facing adapter for the Q3A `botlib_import_t` callbacks:
   - [x] Add adapter shell/status layer that keeps the runtime unavailable until Q3A files are imported.
-  - [ ] `Print` to WORR logging.
+  - [x] `Print` to WORR logging with warning/error/fatal forwarding and verbose message-level forwarding behind `sg_bot_debug_aas >= 3`.
   - [ ] `Trace` to final WORR collision ownership.
     - [x] Add an interim active-map Q2 BSP static-world `AAS_Trace` bridge.
-  - [ ] `EntityTrace` to WORR entity clipping where available.
+  - [ ] `EntityTrace` to final WORR collision ownership.
+    - [x] Add an interim WORR `gi.clip` entity trace bridge for Q3A `AAS_EntityCollision`.
+  - [x] `BSPLinkEntity` / `BoxEntities` to active-map Q2 BSP leaf access.
+  - [x] AAS movement prediction/drop/jump helpers through imported `be_aas_move.c` with WORR/Q2 LibVar seeding.
   - [ ] `PointContents` to final WORR collision ownership.
     - [x] Add an interim active-map Q2 BSP leaf `AAS_PointContents` bridge.
   - [ ] `inPVS` / `inPHS` to final WORR visibility ownership.
     - [x] Add an interim active-map Q2 BSP PVS/PHS visibility bridge.
   - [x] `BSPEntityData` to active map entity lump access.
   - [x] `BSPModelMinsMaxsOrigin` to inline model bounds.
-  - [ ] `BotClientCommand` to a safe sgame command path.
-  - [ ] Memory allocation to WORR zone/hunk or a bot-owned allocator.
+  - [x] `BotClientCommand` to a safe sgame command path that validates WORR bot clients and rejects execution until a dedicated bot command dispatcher exists.
+  - [x] Memory allocation to a tracked bot-owned allocator.
     - [x] Add temporary `malloc` / `free` callbacks for the imported utility smoke only.
     - [x] Enable Q3A's existing memory-manager path so temporary AAS hunk allocations can unload cleanly.
-  - [ ] Filesystem reads through WORR FS and `basew` search paths.
+    - [x] Replace raw BotLib import `malloc` / `free` callbacks with tracked zone/hunk allocation lists and grouped hunk release after AAS shutdown.
+  - [x] Filesystem reads through WORR FS and `basew` search paths.
     - [x] Add a temporary in-memory read-only FS bridge for the already-loaded active AAS buffer.
-  - [ ] Debug lines/polygons to WORR debug draw imports.
+    - [x] Replace the singleton active-AAS memory shim with a callback-backed read-only WORR FS file-handle bridge while keeping the memory buffer as a fallback.
+    - [x] Classify optional imported Q3A `.rcd` route-cache read misses separately from real filesystem open failures.
+  - [x] Debug lines/polygons to WORR debug draw imports.
     - [x] Add temporary debug-line no-op stubs required by the imported reachability source.
+    - [x] Replace Q3A debug line/cross/arrow no-ops with a WORR debug draw callback bridge gated by `sg_bot_debug_aas >= 3`, `sg_bot_debug_route`, or `sg_bot_debug_goal`.
+    - [x] Add route/goal overlay smoke that draws imported Q3A route start, goal, and predicted-end markers through the WORR debug draw bridge.
+    - [x] Add Q3A debug polygon create/delete callbacks with runtime outline/fan rendering through WORR `gi.Draw_Line`.
+    - [x] Import Q3A AAS debug helpers and smoke `AAS_ShowArea` / `AAS_ShowAreaPolygons` through WORR debug line/polygon callbacks.
 - [ ] Add map lifecycle:
   - [ ] Init BotLib once per game module load.
   - [x] Probe active map AAS on map start through the WORR filesystem extension.
@@ -439,9 +496,18 @@ Implementation checklist:
   - [x] Load active map AAS through the imported Q3A AAS file loader on map start.
   - [x] Run a first imported Q3A area sample smoke with `AAS_AreaInfo` and `AAS_PointAreaNum` after load.
   - [x] Run imported Q3A `AAS_AreaReachability` against the sampled loaded area after load.
+  - [x] Run imported Q3A AAS clustering validation against the loaded active-map AAS after load.
+  - [x] Initialize imported Q3A route caches and run `AAS_AreaTravelTimeToGoalArea` / `AAS_PredictRoute` against the loaded active-map AAS after load.
+  - [x] Initialize imported Q3A alternative routing and run `AAS_AlternativeRouteGoals` against the loaded active-map AAS after load.
+  - [x] Run imported Q3A `AAS_DropToFloor`, `AAS_HorizontalVelocityForJump`, and `AAS_PredictClientMovement` smoke against the loaded active-map AAS after load.
   - [x] Update bridge-owned Q3A runtime milliseconds from `level.time` each server frame.
-  - [ ] Call imported Q3A AAS start-frame code each server frame after `be_aas_main.c` lands.
-  - [ ] Shutdown/unload cleanly on map restart, game unload, or dedicated server exit.
+  - [x] Call imported Q3A AAS start-frame code each server frame after `be_aas_main.c` lands.
+  - [x] Let imported Q3A entity-cache code own `AAS_ResetEntityLinks`, `AAS_InvalidateEntities`, and `AAS_UnlinkInvalidEntities` during setup/start-frame.
+  - [x] Push WORR bot-facing entity snapshots into imported Q3A `AAS_UpdateEntity` after each start-frame.
+  - [x] Shutdown/unload cleanly on map restart, game unload, or dedicated server exit.
+    - [x] Add explicit BotLib lifecycle counters for init, shutdown, load attempts/successes, active unloads, clean unloads, unload failures, transient unload bytes, open file handles, and persistent LibVar zone bytes.
+    - [x] Prove three repeated active AAS load/unload cycles through the import harness with zero transient AAS memory/file residue.
+    - [x] Add a dedicated server lifecycle self-smoke that starts `mm-rage`, reloads it once, captures clean unload counters during shutdown, and exits.
 - [x] Add `sg_bot_enable` gate.
 - [ ] Add developer/debug gates:
   - [x] Register `sg_bot_debug`.
@@ -450,21 +516,38 @@ Implementation checklist:
   - [x] Print Q3A AAS loader status and counts through `sg_bot_debug_aas 2`.
   - [x] Print Q3A AAS area sample status through `sg_bot_debug_aas 2`.
   - [x] Print imported Q3A reachability sample status through `sg_bot_debug_aas 2`.
+  - [x] Print imported Q3A AAS clustering status through `sg_bot_debug_aas 2`.
+  - [x] Register `sg_bot_lifecycle_smoke` for explicit developer self-smoke of load, reload, shutdown, and clean-unload status.
   - [x] Print bridge-owned Q3A time and `AngleVectors` smoke status through `sg_bot_debug_aas 2`.
   - [x] Print Q3A BSP entity-lump load and epair smoke status through `sg_bot_debug_aas 2`.
   - [x] Print Q3A BSP model-lump bounds smoke status through `sg_bot_debug_aas 2`.
   - [x] Print Q3A BSP collision-lump point/trace smoke status through `sg_bot_debug_aas 2`.
   - [x] Print Q3A BSP visibility-lump PVS/PHS smoke status through `sg_bot_debug_aas 2`.
+  - [x] Print imported Q3A route-query status through `sg_bot_debug_aas 2`.
+  - [x] Print imported Q3A alternative-route query status through `sg_bot_debug_aas 2`.
+  - [x] Print imported Q3A movement-prediction/drop/jump status through `sg_bot_debug_aas 2`.
+  - [x] Print imported Q3A AAS start-frame status through `sg_bot_debug_aas 2`.
+  - [x] Print Q3A AAS entity-sync counters through `sg_bot_debug_aas 2`.
+  - [x] Print Q3A debug draw bridge callback/counter status through `sg_bot_debug_aas 3`.
+  - [x] Print Q3A debug polygon callback/counter status through `sg_bot_debug_aas 3`.
+  - [x] Print imported Q3A AAS debug area helper status through `sg_bot_debug_aas 3`.
+  - [x] Print Q3A route overlay callback/counter status through `sg_bot_debug_aas 2` when `sg_bot_debug_route` or `sg_bot_debug_goal` is active.
+  - [x] Print Q3A BotLib memory allocator active/peak byte and failure counters through `sg_bot_debug_aas 2`.
+  - [x] Print Q3A BotLib filesystem callback/open/read/close counters through `sg_bot_debug_aas 2`.
+  - [x] Print Q3A BotLib optional route-cache miss counters separately from filesystem open failures.
+  - [x] Print Q3A BotLib lifecycle counters and persistent LibVar zone bytes through `sg_bot_debug_aas 2`.
   - [x] Register `sg_bot_debug_route`.
   - [x] Register `sg_bot_debug_goal`.
-  - [ ] Wire route/goal debug overlays after route queries exist.
+  - [x] Register `sg_bot_debug_client`.
+  - [x] Wire route/goal debug overlay smoke after imported route queries exist.
+  - [x] Feed real per-bot route/goal state into the debug overlay once `bot_nav.*` owns route following.
 - [ ] Decide which upstream `bot_*` libvars remain internal and document their mapping.
 
 Exit criteria:
 
 - BotLib setup/shutdown can run through repeated map changes without leaks or stale pointers.
-- The runtime can load a generated `.aas` and answer simple area/reachability queries.
-- Debug polygons/lines can render through WORR debug draw.
+- The runtime can load a generated `.aas`, answer simple area/reachability/route/movement-helper queries, and advance the imported AAS start-frame path.
+- Debug polygons/lines and imported Q3A AAS area helper output can render through WORR debug draw.
 
 ## Phase 3: Fake Clients, Commands, and Profiles
 
@@ -474,24 +557,50 @@ Goal: make bots join/leave like intentional WORR participants.
 
 Implementation checklist:
 
-- [ ] Audit current bot slot creation in `client_session_service_impl.cpp`.
+- [x] Audit current bot slot creation in `client_session_service_impl.cpp`.
 - [ ] Add commands:
-  - [ ] `sg_bot_add [profile] [team]`
-  - [ ] `sg_bot_remove <name|slot|all>`
-  - [ ] `sg_bot_kick_all`
-  - [ ] `sg_bot_list`
-  - [ ] `sg_bot_min_players`
-  - [ ] `sg_bot_reload_profiles`
+  - [x] `sg_bot_add [profile] [team]`
+  - [x] `sg_bot_remove <name|slot|all>`
+  - [x] `sg_bot_kick_all`
+  - [x] `sg_bot_list`
+  - [x] `sg_bot_min_players`
+  - [x] `sg_bot_reload_profiles`
 - [ ] Add safeguards:
-  - [ ] Respect maxclients.
-  - [ ] Respect match mode team limits.
-  - [ ] Do not count bots as humans for server population policies that already distinguish them.
-  - [ ] Free bot clients cleanly on disconnect, map end, and mode changes.
+  - [x] Respect maxclients.
+  - [x] Defer same-frame multi-bot add requests so more than one local bot can spawn safely.
+  - [x] Clamp automatic min-player fill to public client slots.
+  - [x] Respect match mode team limits.
+  - [x] Do not count bots as humans for server population policies that already distinguish them.
+  - [x] Remove only auto-managed bots when lowering `sg_bot_min_players` or disabling `sg_bot_enable`.
+  - [x] Free bot clients cleanly on disconnect, map end, and mode changes.
+    - [x] Explicit remove, kick-all, and server shutdown use bot-aware teardown without q2proto or anti-cheat disconnect traffic.
+    - [x] Mode-change and team-limit cleanup moves surplus bots to spectators when active match limits tighten.
 - [ ] Add profile loading:
-  - [ ] Start with Q3A-style character files as an import format.
-  - [ ] Add WORR JSON or info-string profile format if that fits existing UI/tooling better.
-  - [ ] Map profile fields to skill, reaction, aggression, aim error, preferred weapons, chat personality, team role, and movement style.
+  - [x] Start with Q3A-style character files as an import format.
+  - [x] Add a WORR-local key/value `.bot` profile format using the same parser.
+  - [x] Map initial profile fields to display name, skin, team, and skill.
+  - [x] Map richer profile fields to reaction, aggression, aim error, preferred weapons, chat personality, team role, and movement style.
 - [ ] Add initial profile assets under `assets/` only after credit/source ownership is clear.
+
+2026-06-17 implementation slice:
+
+- Engine-owned fake bot clients now allocate real public client slots, call game `ClientConnect(..., true)` / `ClientBegin`, and mark `client_t::bot` so game session state receives the existing bot path.
+- Bot slots are removed through `SV_BotRemove()` / `SV_BotRemoveAll()` and are skipped by q2proto disconnect writes, anti-cheat disconnect handling, client print/send loops, final server messages, status responses, and human population counts.
+- `sg_bot_add`, `sg_bot_remove`, `sg_bot_kick_all`, and `sg_bot_list` provide the first operator command surface.
+- `SV_BotAdd()` now queues same-frame add requests after the first active bot and processes one queued bot per following server frame.
+- Bot entity spawn preserves `SVF_BOT`, and `InitPlayerTeam()` assigns bots before host/owner auto-join logic so slot 0 bots do not land as spectators.
+- `sv_bot_slot_smoke` provides an unattended dedicated-server add/remove lifecycle smoke; mode `2` now validates Alpha add/remove, Bravo active add, Charlie deferred add, two active bots, and full cleanup before exit.
+- `sg_bot_min_players` now maintains auto-managed fake clients while `sg_bot_enable` is active, treats manual bots as satisfying the target, clamps the target to public slots, and removes only `bot_autofill` clients when the target drops or bot support is disabled.
+- `sv_bot_min_players_smoke` provides an unattended dedicated-server fill/trim/disable smoke; mode `2` validates `B|bot1`, `B|bot2`, and `B|bot3` auto-fill to count `3`, target trim to one auto bot, disable cleanup back to `0`, and the prior multi-slot smoke remains clean afterward.
+- `sg_bot_reload_profiles` now reloads a bounded server profile table from `botfiles/bots/*.c`, `bots/profiles/*.bot`, and `bots/*.bot`; `sg_bot_add [profile] [team]` resolves profiles before falling back to display-name behavior, and `sg_bot_profile` can feed min-player autofill when it names a loaded profile.
+- `sv_bot_profile_smoke` provides an unattended dedicated-server profile smoke; mode `2` validates a temporary `smoke` profile, `B|Smoke` spawn, `bot_profile=smoke`, `skin=male/grunt`, `skill=4`, and full cleanup before exit.
+- Bot profiles now preserve reaction, aggression, aim error, preferred weapon, chat personality, team role, and movement-style fields, accepting common Q3A/WORR aliases and exposing the values as `bot_*` userinfo keys for later game-side policy.
+- `sv_bot_profile_smoke` now validates the richer profile bridge with `reaction=250`, `aggression=0.65`, `aim_error=2.5`, `preferred_weapon=rocketlauncher`, `chat=quiet`, `role=attacker`, and `movement=strafe` on the temporary `smoke` profile.
+- Bot initial team assignment now respects match lock, `GameFlags::OneVOne` two-player active caps, and positive `maxplayers` limits; surplus bots start as spectators instead of bypassing `SetTeam()` by direct session assignment.
+- `Bot_EnforceMatchTeamPolicy(true)` runs after cvar checks each game frame, preserving active humans first and moving surplus active bots to spectators when `maxplayers` or mode rules tighten.
+- `sv_bot_team_policy_smoke` now validates the policy directly from the game module: a three-bot Duel setup reports `playing=2`, `spectators=1`, `bots=3`, then cleanup reports zero bots with both status lines passing.
+- The fake-client frame-command path now requests an AAS route-steered command from `sgame`, faces the first predicted route step, and reports route counters through `sv_bot_frame_command_smoke`.
+- Remaining limitations: curated profile assets, persistent navigation goals, route reuse, and stuck recovery remain pending.
 
 Exit criteria:
 
@@ -517,7 +626,9 @@ Implementation checklist:
   - [ ] Traps/projectiles/hazards.
   - [ ] Doors/plats/movers.
   - [ ] Objectives/flags.
-- [ ] Push entity updates into BotLib each frame or on a staggered schedule.
+- [x] Push entity updates into BotLib each frame or on a staggered schedule.
+  - [x] Push a full per-frame WORR snapshot into imported `AAS_UpdateEntity` after the server entity-state update pass.
+  - [ ] Add staggered scheduling for expensive perception checks that do not need full-rate updates.
 - [ ] Add bot blackboard state:
   - [ ] Current enemy.
   - [ ] Last seen enemy.
@@ -551,8 +662,12 @@ Goal: turn AAS route information into Quake II movement commands.
 Implementation checklist:
 
 - [ ] Map Q3A `bot_input_t` style output to WORR/Q2 `usercmd_t`.
+  - [x] Add first-step AAS route steering directly into `Bot_BuildFrameCommand()`.
+  - [x] Move route cache and query cadence into `bot_nav.*`.
+  - [ ] Move high-level command/goal ownership into `bot_brain.*`.
 - [ ] Implement movement states:
   - [ ] Ground steering.
+    - [x] Initial route-target yaw plus forward movement for a spawned bot.
   - [ ] Jump.
   - [ ] Crouch.
   - [ ] Swim.
@@ -564,6 +679,7 @@ Implementation checklist:
   - [ ] Corner cutting where safe.
   - [ ] Velocity-aware aim direction.
   - [ ] Avoid jittering between adjacent areas.
+    - [x] Reuse cached route steps for short windows instead of rebuilding the route every command frame.
 - [ ] Add stuck recovery:
   - [ ] Repath.
   - [ ] Short dodge/back-off.
@@ -571,11 +687,58 @@ Implementation checklist:
   - [ ] Door/trigger retry.
   - [ ] Last-resort respawn/spectator handling only in debug or controlled modes.
 - [ ] Add movement debug:
-  - [ ] Current AAS area.
-  - [ ] Route polyline.
-  - [ ] Next reachability type.
+  - [x] Current AAS area.
+  - [x] Route polyline.
+    - [x] Draw cached bot route step and goal markers while route/goal debug is enabled.
+    - [x] Draw bounded sampled route points from the cached Q3A route-steer result.
+  - [x] Selected debug client filter for cached route/goal overlays.
+  - [x] Next reachability type.
   - [ ] Stuck reason.
   - [ ] Failed goal reason.
+  - [x] Route query/cache counters in the dedicated frame-command smoke.
+
+2026-06-17 route-steered command slice:
+
+- `Q3A_BotLibImport_BuildRouteSteer()` and `BotLibAdapter_BuildRouteSteer()` expose a deterministic, live AAS route-steering query without spreading Q3A globals into `sgame`.
+- `Bot_BuildFrameCommand()` now queries AAS route state each accepted bot frame, turns toward the first predicted route step, and emits forward movement through the normal server fake-client command path.
+- `sv_bot_frame_command_smoke 2` now reports `route_queries=8`, `route_commands=8`, `route_failures=0`, `last_start_area=224`, `last_goal_area=227`, `last_route_end_area=217`, `last_travel_time=130`, and `last_reachability=218`.
+- Implementation log: `docs-dev/q3a-botlib-route-steered-frame-commands-2026-06-17.md`.
+
+2026-06-17 route-cache slice:
+
+- `bot_nav.*` now owns per-client cached route-steer results and resets them on BotLib level begin/end.
+- `Bot_BuildFrameCommand()` now asks `BotNav_GetRouteSteer()` for route state, so accepted command frames reuse a recent route step unless cadence, target reach, origin drift, or preferred-goal changes require a refresh.
+- `sv_bot_frame_command_smoke 2` now reports `route_requests=8`, `route_queries=2`, `route_refreshes=2`, `route_reuses=6`, `route_commands=8`, `route_failures=0`, and `pass=1`.
+- Implementation log: `docs-dev/q3a-botlib-nav-route-cache-2026-06-17.md`.
+
+2026-06-17 nav debug overlay slice:
+
+- `BotNav_DrawDebugOverlay()` now draws cached bot route-step arrows and goal markers for `sg_bot_debug_route` / `sg_bot_debug_goal`.
+- `RunBotLibDebugDrawIfRequested()` uses the cached native `bot_nav` overlay once a route exists, with the imported Q3A sample route overlay retained as a fallback before any bot route is cached.
+- `sv_bot_frame_command_smoke 2` with route/goal debug enabled reports `route_debug_frames=10`, `route_debug_routes=8`, `route_debug_goals=8`, `route_debug_missing_frames=2`, `route_debug_arrows=8`, `last_route_debug_client=0`, and `pass=1`.
+- Implementation log: `docs-dev/q3a-botlib-nav-debug-overlay-2026-06-17.md`.
+
+2026-06-17 nav reachability debug slice:
+
+- `Q3A_BotLibImport_BuildRouteSteer()` now resolves the selected reachability and carries travel type, travel flags, and reachability end area through `BotLibAdapterRouteSteer`.
+- `bot_nav.*` now records current AAS area and next reachability metadata in `BotNavRouteStatus`, draws a short cached route label while route debug is enabled, and counts emitted labels.
+- `sv_bot_frame_command_smoke 2` with route/goal debug enabled reports `route_debug_labels=8`, `last_current_area=224`, `last_reachability_type=2`, `last_reachability_flags=2`, `last_reachability_end_area=217`, and `pass=1`.
+- Implementation log: `docs-dev/q3a-botlib-nav-reachability-debug-2026-06-17.md`.
+
+2026-06-17 nav polyline debug slice:
+
+- `Q3A_BotLibImport_BuildRouteSteer()` now samples up to eight predicted route endpoints after validating the full route, while preserving the existing first-step steering result.
+- `BotLibAdapterRouteSteer` and `bot_nav.*` now carry cached route points, draw the first segment as the route arrow, draw intermediate sampled segments as a bounded polyline, and keep the goal marker.
+- `sv_bot_frame_command_smoke 2` with route/goal debug enabled reports `route_debug_polyline_points=16`, `route_debug_polyline_segments=24`, `last_route_point_count=2`, `route_debug_lines=16`, `route_debug_arrows=8`, and `pass=1`.
+- Implementation log: `docs-dev/q3a-botlib-nav-polyline-debug-2026-06-17.md`.
+
+2026-06-17 nav debug client-filter slice:
+
+- `sg_bot_debug_client` now filters native cached route/goal overlays by zero-based client slot, with `-1` retaining the default all-bots overlay mode.
+- `BotNav_DrawDebugOverlay()` skips non-selected cached route slots, counts filtered slots and filter-miss frames, and keeps the selected filter value in `last_debug_filter_client`.
+- `sv_bot_frame_command_smoke 2` with `sg_bot_debug_client 0` reports the active bot route overlay with `route_debug_routes=8`, `route_debug_filtered_slots=0`, `last_debug_filter_client=0`, and `pass=1`.
+- `sv_bot_frame_command_smoke 2` with `sg_bot_debug_client 1` filters out slot 0 and reports `route_debug_routes=0`, `route_debug_filtered_slots=8`, `route_debug_filter_miss_frames=10`, `last_debug_filter_client=1`, and `pass=1`.
+- Implementation log: `docs-dev/q3a-botlib-nav-debug-client-filter-2026-06-17.md`.
 
 Exit criteria:
 
@@ -695,7 +858,9 @@ Suggested public cvars:
 - `sg_bot_debug_aas`
 - `sg_bot_debug_route`
 - `sg_bot_debug_goal`
+- `sg_bot_debug_client`
 - `sg_bot_cpu_budget_ms`
+- `sg_bot_lifecycle_smoke`
 
 Docs checklist:
 
@@ -703,6 +868,30 @@ Docs checklist:
 - [x] `docs-dev/q3a-botlib-runtime-aas-shell-2026-06-17.md`: runtime AAS shell implementation log.
 - [x] `docs-dev/q3a-botlib-import-boundary-2026-06-17.md`: Q3A BotLib import boundary and adapter-shell implementation log.
 - [x] `docs-dev/q3a-botlib-aas-reach-query-2026-06-17.md`: Q3A AAS reachability import and runtime smoke log.
+- [x] `docs-dev/q3a-botlib-aas-route-query-2026-06-17.md`: Q3A AAS route-query import and runtime smoke log.
+- [x] `docs-dev/q3a-botlib-aas-entity-cache-2026-06-17.md`: Q3A AAS entity-cache import and runtime smoke log.
+- [x] `docs-dev/q3a-botlib-aas-entity-sync-2026-06-17.md`: WORR entity snapshot to Q3A AAS entity-cache sync implementation log.
+- [x] `docs-dev/q3a-botlib-aas-entity-trace-2026-06-17.md`: Q3A AAS entity collision to WORR entity trace bridge implementation log.
+- [x] `docs-dev/q3a-botlib-aas-bsp-leaf-link-2026-06-17.md`: Q3A AAS BSP leaf entity-link and box-query implementation log.
+- [x] `docs-dev/q3a-botlib-aas-debug-draw-bridge-2026-06-17.md`: Q3A debug draw callback bridge implementation log.
+- [x] `docs-dev/q3a-botlib-aas-route-overlay-2026-06-17.md`: Q3A route/goal overlay smoke implementation log.
+- [x] `docs-dev/q3a-botlib-aas-debug-polygon-bridge-2026-06-17.md`: Q3A debug polygon callback bridge implementation log.
+- [x] `docs-dev/q3a-botlib-aas-debug-area-helpers-2026-06-17.md`: Q3A AAS debug-area helper import and runtime smoke log.
+- [x] `docs-dev/q3a-botlib-aas-cluster-import-2026-06-17.md`: Q3A AAS clustering import and runtime smoke log.
+- [x] `docs-dev/q3a-botlib-aas-alternative-route-import-2026-06-17.md`: Q3A AAS alternative-route import and runtime smoke log.
+- [x] `docs-dev/q3a-botlib-aas-optimize-import-2026-06-17.md`: Q3A AAS optimization import and no-op replacement log.
+- [x] `docs-dev/q3a-botlib-print-bridge-2026-06-17.md`: Q3A BotLib print callback bridge and runtime smoke log.
+- [x] `docs-dev/q3a-botlib-bot-client-command-bridge-2026-06-17.md`: Q3A BotLib client-command safety bridge and runtime smoke log.
+- [x] `docs-dev/q3a-botlib-memory-allocator-bridge-2026-06-17.md`: Q3A BotLib tracked memory allocator bridge and runtime smoke log.
+- [x] `docs-dev/q3a-botlib-filesystem-bridge-2026-06-17.md`: Q3A BotLib read-only filesystem callback bridge and runtime smoke log.
+- [x] `docs-dev/q3a-botlib-dedicated-lifecycle-smoke-2026-06-17.md`: dedicated server lifecycle self-smoke and map-reload clean-unload log.
+- [x] `docs-dev/q3a-botlib-bot-slot-lifecycle-2026-06-17.md`: first fake-client slot lifecycle and operator command log.
+- [x] `docs-dev/q3a-botlib-multibot-slot-queue-2026-06-17.md`: deferred multi-bot slot queue and two-active-bot smoke log.
+- [x] `docs-dev/q3a-botlib-min-players-autofill-2026-06-17.md`: min-player autofill and fill/trim/disable smoke log.
+- [x] `docs-dev/q3a-botlib-profile-loading-2026-06-17.md`: profile loader, reload command, and profile smoke log.
+- [x] `docs-dev/q3a-botlib-profile-behavior-fields-2026-06-17.md`: richer profile behavior fields and expanded profile smoke log.
+- [x] `docs-dev/q3a-botlib-team-policy-cleanup-2026-06-17.md`: bot team-limit and mode-change cleanup log.
+- [x] `docs-dev/q3a-botlib-team-policy-smoke-2026-06-17.md`: direct game-side bot team-policy smoke log.
 - [x] `docs-dev/q3a-botlib-bridge-time-vector-2026-06-17.md`: bridge time and vector helper implementation log.
 - [x] `docs-dev/q3a-botlib-bsp-entity-bridge-2026-06-17.md`: active-map Q2 BSP entity-lump bridge implementation log.
 - [x] `docs-dev/q3a-botlib-bsp-model-bridge-2026-06-17.md`: active-map Q2 BSP model-lump bridge implementation log.
@@ -783,12 +972,28 @@ Validation checklist:
   - [x] Start dedicated server on reference map with `sg_bot_enable 1` and load packaged `maps/mm-rage.aas` through the runtime shell.
   - [x] Run imported Q3A `AAS_AreaInfo` / `AAS_PointAreaNum` sample query against loaded `maps/mm-rage.aas`.
   - [x] Run imported Q3A `AAS_AreaReachability` sample query against loaded `maps/mm-rage.aas`.
+  - [x] Verify imported Q3A AAS clustering reports cluster counts and sampled cluster area/reachability counts in verbose adapter output.
+  - [x] Run imported Q3A `AAS_AreaTravelTimeToGoalArea` / `AAS_PredictRoute` route query against loaded `maps/mm-rage.aas`.
+  - [x] Run imported Q3A `AAS_AlternativeRouteGoals` query against loaded `maps/mm-rage.aas`.
+  - [x] Verify imported Q3A entity cache survives setup/start-frame invalidation in verbose adapter output.
+  - [x] Verify WORR entity snapshots update imported Q3A `AAS_UpdateEntity` with passed counters in verbose adapter output.
+  - [x] Verify Q3A `AAS_EntityCollision` reaches the WORR entity trace callback and reports a smoke hit in verbose adapter output.
   - [x] Verify bridge-fed Q3A runtime time and `AngleVectors` smoke status in verbose adapter output.
   - [x] Verify active-map Q2 BSP entity-lump parsing and Q3A epair smoke status in verbose adapter output.
   - [x] Verify active-map Q2 BSP model-lump parsing and Q3A inline model bounds smoke status in verbose adapter output.
   - [x] Verify active-map Q2 BSP collision-lump parsing plus Q3A static point-contents and trace smoke status in verbose adapter output.
+  - [x] Verify imported Q3A BSP leaf entity links and `AAS_BoxEntities` return linked entities in verbose adapter output.
   - [x] Verify active-map Q2 BSP visibility-lump parsing plus Q3A PVS/PHS smoke status in verbose adapter output.
-  - [ ] Start dedicated server on reference map with real BotLib initialized.
+  - [x] Verify Q3A debug polygon create/delete callbacks report passed counters in verbose adapter output.
+  - [x] Verify imported Q3A `AAS_ShowArea` / `AAS_ShowAreaPolygons` report passed line/polygon counters in verbose adapter output.
+  - [x] Verify Q3A `BotClientCommand` reaches the WORR adapter and is safely rejected until the bot command dispatcher exists.
+  - [x] Verify Q3A BotLib memory allocator counters report active/peak zone and hunk usage with zero failures in verbose adapter output.
+  - [x] Verify Q3A BotLib filesystem counters report packaged active-AAS reads through WORR FS with zero fallback memory opens in verbose adapter output.
+  - [x] Verify Q3A BotLib filesystem counters keep optional `.rcd` route-cache misses out of `q3a_fs_open_failures` in the import smoke harness.
+  - [x] Verify three repeated imported Q3A AAS load/unload cycles report `clean_unloads=3`, `unload_failures=0`, `last_unload_zone_active=0`, `last_unload_hunk_active=0`, and `last_unload_open_files=0` in the lifecycle import harness.
+  - [x] Start dedicated server on reference map with real BotLib initialized.
+  - [x] Run dedicated self-smoke with `sg_bot_lifecycle_smoke 3` so `mm-rage` loads, reloads once, captures `q3a_lifecycle_clean_unloads=1` during each shutdown, and exits.
+  - [x] Verify dedicated team-policy smoke counts bot `gclient_t::sess.team` state through the game module and reports `playing=2`, `spectators=1`, `bots=3` for a three-bot Duel setup.
   - [ ] Add one bot.
   - [ ] Add four bots.
   - [ ] Add eight bots.

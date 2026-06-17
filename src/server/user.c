@@ -998,6 +998,28 @@ static inline void SV_ClientThink(usercmd_t *cmd)
     ge->ClientThink(sv_player, cmd);
 }
 
+void SV_BotClientThink(client_t *client, usercmd_t *cmd)
+{
+    client_t *saved_client;
+    edict_t *saved_player;
+
+    if (!client || !cmd || !client->bot || client->state != cs_spawned ||
+        !client->edict || !ge || !ge->ClientThink) {
+        return;
+    }
+
+    saved_client = sv_client;
+    saved_player = sv_player;
+    sv_client = client;
+    sv_player = client->edict;
+
+    SV_ClientThink(cmd);
+    client->lastcmd = *cmd;
+
+    sv_client = saved_client;
+    sv_player = saved_player;
+}
+
 static void SV_SetLastFrame(int lastframe)
 {
     client_frame_t *frame;

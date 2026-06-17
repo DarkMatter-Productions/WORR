@@ -53,6 +53,7 @@ void Bot_RuntimeRegisterCvars();
 void Bot_RuntimeBeginLevel();
 void Bot_RuntimeEndLevel();
 void Bot_RuntimeRunFrame();
+void Bot_RuntimePrintLifecycleStatus();
 
 bool Bot_RuntimeEnabled();
 bool Bot_RuntimeAasLoaded();

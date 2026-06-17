@@ -65,3 +65,6 @@ typedef struct {
     void (*AddDebugText)(const vec3_t origin, const vec3_t angles, const char *text,
                          float size, color_t color, uint32_t time, qboolean depth_test);
 } debug_draw_api_v1_t;
+
+#include "bot_frame_command.h"
+#include "bot_team_policy_status.h"

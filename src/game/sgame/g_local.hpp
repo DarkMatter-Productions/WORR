@@ -29,6 +29,7 @@ class Menu;
 
 struct local_game_import_t;
 extern local_game_import_t gi;
+extern game_import_t base_import;
 
 struct gclient_t;
 
@@ -4113,7 +4114,9 @@ extern cvar_t *sg_bot_debug;
 extern cvar_t *sg_bot_debug_aas;
 extern cvar_t *sg_bot_debug_route;
 extern cvar_t *sg_bot_debug_goal;
+extern cvar_t *sg_bot_debug_client;
 extern cvar_t *sg_bot_cpu_budget_ms;
+extern cvar_t *sg_bot_lifecycle_smoke;
 
 extern cvar_t *flood_msgs;
 extern cvar_t *flood_persecond;
@@ -4437,6 +4440,7 @@ bool ItemSpawnsEnabled();
 bool LocCanSee(gentity_t *targetEnt, gentity_t *sourceEnt);
 bool SetTeam(gentity_t *ent, Team desired_team, bool inactive, bool force,
              bool silent);
+void Bot_EnforceMatchTeamPolicy(bool silent);
 const char *TimeString(const int msec, bool showMilliseconds, bool state);
 void BroadcastFriendlyMessage(Team team, const char *msg);
 void BroadcastTeamMessage(Team team, print_type_t level, const char *msg);
@@ -5064,6 +5068,8 @@ void player_die(gentity_t *self, gentity_t *inflictor, gentity_t *attacker,
 // g_svcmds.cpp
 //
 void ServerCommand();
+void BotTeamPolicy_PrintStatus(int expectedPlaying, int expectedSpectators,
+                               int expectedBots);
 bool G_FilterPacket(const char *from);
 void G_LoadIPFilters();
 void G_SaveIPFilters();

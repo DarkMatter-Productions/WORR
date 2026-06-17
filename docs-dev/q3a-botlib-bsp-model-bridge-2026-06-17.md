@@ -110,8 +110,9 @@ Relevant log evidence from
 
 ## Outstanding Work
 
-- Continue from the static collision bridge with dynamic entity collision,
-  movement-prediction, jump/drop helpers, and final WORR collision ownership.
-- Replace debug-line stubs with WORR debug draw.
+- Imported movement prediction/drop/jump helpers are covered by
+  `docs-dev/q3a-botlib-aas-movement-import-2026-06-17.md`; continue final
+  WORR collision ownership and bot steering integration.
+- Q3A debug line/cross/arrow bridging is covered by `docs-dev/q3a-botlib-aas-debug-draw-bridge-2026-06-17.md`.
 - Import or bridge the remaining Q3A AAS runtime files required for route
   queries, start-frame updates, and movement steering.

@@ -96,6 +96,14 @@ cvar_t  *sv_cinematics;
 cvar_t  *sv_recycle;
 #endif
 cvar_t  *sv_enhanced_setplayer;
+static cvar_t  *sv_bot_slot_smoke;
+static cvar_t  *sv_bot_min_players_smoke;
+static cvar_t  *sv_bot_profile_smoke;
+static cvar_t  *sv_bot_team_policy_smoke;
+static cvar_t  *sv_bot_frame_command_smoke;
+static cvar_t  *sg_bot_enable;
+static cvar_t  *sg_bot_min_players;
+static cvar_t  *sg_bot_profile;
 
 cvar_t  *sv_iplimit;
 cvar_t  *sv_status_limit;
@@ -200,7 +208,7 @@ static void print_drop_reason(client_t *client, const char *reason, clstate_t ol
                                client->name, prefix, reason);
     }
 
-    if (announce)
+    if (announce && !client->bot)
         // print this to client as they will not receive broadcast
         SV_ClientPrintf(client, PRINT_HIGH, "%s%s%s\n",
                         client->name, prefix, reason);
@@ -236,10 +244,12 @@ void SV_DropClient(client_t *client, const char *reason)
     if (reason)
         print_drop_reason(client, reason, oldstate);
 
-    // add the disconnect
-    q2proto_svc_message_t message = {.type = Q2P_SVC_DISCONNECT};
-    q2proto_server_write(&client->q2proto_ctx, (uintptr_t)&client->io_data, &message);
-    SV_ClientAddMessage(client, MSG_RELIABLE | MSG_CLEAR);
+    if (!client->bot) {
+        // add the disconnect
+        q2proto_svc_message_t message = {.type = Q2P_SVC_DISCONNECT};
+        q2proto_server_write(&client->q2proto_ctx, (uintptr_t)&client->io_data, &message);
+        SV_ClientAddMessage(client, MSG_RELIABLE | MSG_CLEAR);
+    }
 
     if (oldstate == cs_spawned || (g_features->integer & GMF_WANT_ALL_DISCONNECTS)) {
         // call the prog function for removing a client
@@ -247,7 +257,9 @@ void SV_DropClient(client_t *client, const char *reason)
         ge->ClientDisconnect(client->edict);
     }
 
-    AC_ClientDisconnect(client);
+    if (!client->bot) {
+        AC_ClientDisconnect(client);
+    }
 
     SV_CleanClient(client);
 
@@ -452,7 +464,7 @@ static size_t SV_StatusString(char *status)
     // add player list
     if (sv_status_show->integer > 1) {
         FOR_EACH_CLIENT(cl) {
-            if (cl->state == cs_zombie) {
+            if (cl->state == cs_zombie || cl->bot) {
                 continue;
             }
             len = Q_snprintf(entry, sizeof(entry),
@@ -954,6 +966,1377 @@ static void init_pmove_and_es_flags(client_t *newcl)
     newcl->pmp.waterhack = sv_waterjump_hack->integer >= 1;
 }
 
+static void bot_add_message(client_t *client, const byte *data,
+                            size_t length, bool reliable)
+{
+    (void)client;
+    (void)data;
+    (void)length;
+    (void)reliable;
+}
+
+static int bot_client_pool_limit(void)
+{
+    if (!svs.client_pool || svs.maxclients <= 0) {
+        return 0;
+    }
+
+    return min(svs.maxclients, MAX_CLIENTS);
+}
+
+static int bot_public_client_limit(void)
+{
+    if (!svs.client_pool || svs.maxclients_soft <= 0) {
+        return 0;
+    }
+
+    return min(svs.maxclients_soft, bot_client_pool_limit());
+}
+
+typedef struct {
+    char id[MAX_QPATH];
+    char source[MAX_QPATH];
+    char name[MAX_CLIENT_NAME];
+    char skin[MAX_INFO_VALUE];
+    char team[MAX_INFO_VALUE];
+    char skill[MAX_INFO_VALUE];
+    char reaction[MAX_INFO_VALUE];
+    char aggression[MAX_INFO_VALUE];
+    char aim_error[MAX_INFO_VALUE];
+    char preferred_weapon[MAX_INFO_VALUE];
+    char chat_personality[MAX_INFO_VALUE];
+    char role[MAX_INFO_VALUE];
+    char movement_style[MAX_INFO_VALUE];
+} bot_profile_t;
+
+typedef struct {
+    const char *dir;
+    const char *ext;
+} bot_profile_source_t;
+
+#define MAX_BOT_PROFILES 128
+
+static bot_profile_t bot_profiles[MAX_BOT_PROFILES];
+static int bot_profile_count;
+static bool bot_profiles_scanned;
+
+static const bot_profile_source_t bot_profile_sources[] = {
+    { "botfiles/bots", ".c" },
+    { "bots/profiles", ".bot" },
+    { "bots", ".bot" },
+};
+
+static void bot_strip_token_trailing_punctuation(char *token)
+{
+    size_t len = strlen(token);
+
+    while (len > 0 && (token[len - 1] == ';' || token[len - 1] == ',')) {
+        token[--len] = 0;
+    }
+}
+
+static bool bot_profile_set(bot_profile_t *profile, const char *key,
+                            const char *value)
+{
+    char clean_value[MAX_INFO_VALUE];
+
+    if (!key || !key[0] || !value) {
+        return false;
+    }
+
+    Q_strlcpy(clean_value, value, sizeof(clean_value));
+    bot_strip_token_trailing_punctuation(clean_value);
+
+    if (!Q_stricmp(key, "name")) {
+        Q_strlcpy(profile->name, clean_value, sizeof(profile->name));
+        return true;
+    }
+    if (!Q_stricmp(key, "skin")) {
+        Q_strlcpy(profile->skin, clean_value, sizeof(profile->skin));
+        return true;
+    }
+    if (!Q_stricmp(key, "team")) {
+        Q_strlcpy(profile->team, clean_value, sizeof(profile->team));
+        return true;
+    }
+    if (!Q_stricmp(key, "skill")) {
+        Q_strlcpy(profile->skill, clean_value, sizeof(profile->skill));
+        return true;
+    }
+    if (!Q_stricmp(key, "reaction") ||
+        !Q_stricmp(key, "reaction_time") ||
+        !Q_stricmp(key, "reaction_ms")) {
+        Q_strlcpy(profile->reaction, clean_value, sizeof(profile->reaction));
+        return true;
+    }
+    if (!Q_stricmp(key, "aggression") ||
+        !Q_stricmp(key, "aggression_bias")) {
+        Q_strlcpy(profile->aggression, clean_value, sizeof(profile->aggression));
+        return true;
+    }
+    if (!Q_stricmp(key, "aim_error") ||
+        !Q_stricmp(key, "aimerror") ||
+        !Q_stricmp(key, "accuracy_error")) {
+        Q_strlcpy(profile->aim_error, clean_value, sizeof(profile->aim_error));
+        return true;
+    }
+    if (!Q_stricmp(key, "preferred_weapon") ||
+        !Q_stricmp(key, "weapon") ||
+        !Q_stricmp(key, "favorite_weapon")) {
+        Q_strlcpy(profile->preferred_weapon, clean_value, sizeof(profile->preferred_weapon));
+        return true;
+    }
+    if (!Q_stricmp(key, "chat_personality") ||
+        !Q_stricmp(key, "chat") ||
+        !Q_stricmp(key, "personality")) {
+        Q_strlcpy(profile->chat_personality, clean_value, sizeof(profile->chat_personality));
+        return true;
+    }
+    if (!Q_stricmp(key, "role") ||
+        !Q_stricmp(key, "team_role")) {
+        Q_strlcpy(profile->role, clean_value, sizeof(profile->role));
+        return true;
+    }
+    if (!Q_stricmp(key, "movement_style") ||
+        !Q_stricmp(key, "movement") ||
+        !Q_stricmp(key, "move_style")) {
+        Q_strlcpy(profile->movement_style, clean_value, sizeof(profile->movement_style));
+        return true;
+    }
+
+    return false;
+}
+
+static int bot_profile_find_index(const char *id)
+{
+    if (!id || !id[0]) {
+        return -1;
+    }
+
+    for (int i = 0; i < bot_profile_count; i++) {
+        if (!Q_stricmp(bot_profiles[i].id, id)) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+static bool bot_profile_parse_file(const char *path, const char *id)
+{
+    bot_profile_t profile = { 0 };
+    char *buffer;
+    const char *parse;
+    char key[MAX_TOKEN_CHARS];
+    char value[MAX_TOKEN_CHARS];
+    int length;
+
+    if (bot_profile_count >= MAX_BOT_PROFILES) {
+        Com_Printf("Bot profile limit reached; skipping %s.\n", path);
+        return false;
+    }
+
+    if (bot_profile_find_index(id) >= 0) {
+        return false;
+    }
+
+    length = FS_LoadFile(path, (void **)&buffer);
+    if (length < 0 || !buffer) {
+        return false;
+    }
+
+    Q_strlcpy(profile.id, id, sizeof(profile.id));
+    Q_strlcpy(profile.source, path, sizeof(profile.source));
+
+    parse = buffer;
+    while (COM_ParseToken(&parse, key, sizeof(key), PARSE_FLAG_ESCAPE)) {
+        bot_strip_token_trailing_punctuation(key);
+
+        if (!strcmp(key, "{") || !strcmp(key, "}")) {
+            continue;
+        }
+
+        if (!COM_ParseToken(&parse, value, sizeof(value), PARSE_FLAG_ESCAPE)) {
+            break;
+        }
+
+        if (!strcmp(value, "=")) {
+            if (!COM_ParseToken(&parse, value, sizeof(value), PARSE_FLAG_ESCAPE)) {
+                break;
+            }
+        }
+
+        bot_profile_set(&profile, key, value);
+    }
+
+    FS_FreeFile(buffer);
+
+    if (!profile.name[0]) {
+        Q_strlcpy(profile.name, profile.id, sizeof(profile.name));
+    }
+    if (!profile.skin[0]) {
+        Q_strlcpy(profile.skin, "male/grunt", sizeof(profile.skin));
+    }
+
+    bot_profiles[bot_profile_count++] = profile;
+    return true;
+}
+
+int SV_BotReloadProfiles(void)
+{
+    int loaded = 0;
+
+    memset(bot_profiles, 0, sizeof(bot_profiles));
+    bot_profile_count = 0;
+    bot_profiles_scanned = true;
+
+    for (size_t i = 0; i < q_countof(bot_profile_sources); i++) {
+        const bot_profile_source_t *source = &bot_profile_sources[i];
+        void **list;
+        int count = 0;
+
+        list = FS_ListFiles(source->dir, source->ext, FS_SEARCH_STRIPEXT,
+                            &count);
+        for (int j = 0; j < count; j++) {
+            char path[MAX_QPATH];
+            const char *id = list[j];
+
+            if (Q_snprintf(path, sizeof(path), "%s/%s%s", source->dir, id,
+                           source->ext) >= sizeof(path)) {
+                continue;
+            }
+
+            if (bot_profile_parse_file(path, id)) {
+                loaded++;
+            }
+        }
+        FS_FreeList(list);
+    }
+
+    return loaded;
+}
+
+static void bot_ensure_profiles_scanned(void)
+{
+    if (!bot_profiles_scanned) {
+        SV_BotReloadProfiles();
+    }
+}
+
+static const bot_profile_t *bot_find_profile(const char *profile_name)
+{
+    if (!profile_name || !profile_name[0]) {
+        return NULL;
+    }
+
+    bot_ensure_profiles_scanned();
+
+    for (int i = 0; i < bot_profile_count; i++) {
+        const bot_profile_t *profile = &bot_profiles[i];
+
+        if (!Q_stricmp(profile->id, profile_name) ||
+            !Q_stricmp(profile->name, profile_name)) {
+            return profile;
+        }
+    }
+
+    return NULL;
+}
+
+static bool bot_name_matches(const char *existing, const char *name)
+{
+    const char *prefix;
+    char prefixed[MAX_INFO_VALUE];
+
+    if (!existing || !existing[0]) {
+        return false;
+    }
+
+    if (!Q_stricmp(existing, name)) {
+        return true;
+    }
+
+    prefix = Cvar_VariableString("bot_name_prefix");
+    if (!prefix[0]) {
+        return false;
+    }
+
+    Q_strlcpy(prefixed, prefix, sizeof(prefixed));
+    Q_strlcat(prefixed, name, sizeof(prefixed));
+    return !Q_stricmp(existing, prefixed);
+}
+
+static bool bot_name_in_use(const char *name)
+{
+    int limit = bot_client_pool_limit();
+    int i;
+
+    for (i = 0; i < limit; i++) {
+        client_t *cl = &svs.client_pool[i];
+        if (cl->state > cs_zombie) {
+            const char *raw_name = Info_ValueForKey(cl->userinfo, "name");
+
+            if (bot_name_matches(raw_name, name) ||
+                bot_name_matches(cl->name, name)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+static void bot_default_name(char *name, size_t size);
+
+static void bot_unique_name_from_base(char *name, size_t size, const char *base)
+{
+    char suffix[16];
+    size_t suffix_len;
+    size_t base_len;
+
+    if (!base || !base[0] || COM_IsWhite(base)) {
+        bot_default_name(name, size);
+        return;
+    }
+
+    Q_strlcpy(name, base, size);
+    if (!bot_name_in_use(name)) {
+        return;
+    }
+
+    for (int i = 2; i < 1000; i++) {
+        Q_snprintf(suffix, sizeof(suffix), "%d", i);
+        suffix_len = strlen(suffix);
+        if (suffix_len + 1 >= size) {
+            break;
+        }
+
+        base_len = size - suffix_len - 1;
+        Q_snprintf(name, size, "%.*s%s", (int)base_len, base, suffix);
+        if (!bot_name_in_use(name)) {
+            return;
+        }
+    }
+
+    bot_default_name(name, size);
+}
+
+static void bot_default_name(char *name, size_t size)
+{
+    int i;
+
+    for (i = 1; i < 1000; i++) {
+        Q_snprintf(name, size, "bot%d", i);
+        if (!bot_name_in_use(name)) {
+            return;
+        }
+    }
+
+    Q_snprintf(name, size, "bot");
+}
+
+static bool bot_set_optional_userinfo(char *userinfo, const char *key,
+                                      const char *value)
+{
+    if (!value || !value[0]) {
+        return true;
+    }
+
+    return Info_SetValueForKey(userinfo, key, value);
+}
+
+static bool bot_build_userinfo(char *userinfo, const char *name,
+                               const char *team,
+                               const bot_profile_t *profile)
+{
+    const char *skin = profile && profile->skin[0] ? profile->skin : "male/grunt";
+    const char *final_team = team && team[0] ? team :
+        (profile && profile->team[0] ? profile->team : NULL);
+
+    userinfo[0] = 0;
+
+    if (!Info_SetValueForKey(userinfo, "name", name) ||
+        !Info_SetValueForKey(userinfo, "skin", skin) ||
+        !Info_SetValueForKey(userinfo, "rate", "0") ||
+        !Info_SetValueForKey(userinfo, "bot", "1") ||
+        !Info_SetValueForKey(userinfo, "ip", "bot")) {
+        return false;
+    }
+
+    if (profile &&
+        (!bot_set_optional_userinfo(userinfo, "bot_profile", profile->id) ||
+         !bot_set_optional_userinfo(userinfo, "skill", profile->skill) ||
+         !bot_set_optional_userinfo(userinfo, "bot_reaction", profile->reaction) ||
+         !bot_set_optional_userinfo(userinfo, "bot_aggression", profile->aggression) ||
+         !bot_set_optional_userinfo(userinfo, "bot_aim_error", profile->aim_error) ||
+         !bot_set_optional_userinfo(userinfo, "bot_preferred_weapon", profile->preferred_weapon) ||
+         !bot_set_optional_userinfo(userinfo, "bot_chat_personality", profile->chat_personality) ||
+         !bot_set_optional_userinfo(userinfo, "bot_role", profile->role) ||
+         !bot_set_optional_userinfo(userinfo, "bot_movement_style", profile->movement_style))) {
+        return false;
+    }
+
+    if (final_team && !Info_SetValueForKey(userinfo, "team", final_team)) {
+        return false;
+    }
+
+    userinfo[strlen(userinfo) + 1] = 0;
+    return true;
+}
+
+typedef struct {
+    bool active;
+    char name[MAX_CLIENT_NAME];
+    char team[MAX_INFO_VALUE];
+} bot_add_request_t;
+
+static bot_add_request_t bot_add_queue[MAX_CLIENTS];
+static int bot_add_frame = -1;
+static int bot_adds_this_frame;
+static bool bot_processing_queue;
+
+static void bot_update_add_frame(void)
+{
+    if (bot_add_frame != sv.framenum) {
+        bot_add_frame = sv.framenum;
+        bot_adds_this_frame = 0;
+    }
+}
+
+static void bot_clear_add_queue(void)
+{
+    memset(bot_add_queue, 0, sizeof(bot_add_queue));
+}
+
+static bool bot_enqueue_add(const char *name, const char *team)
+{
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        bot_add_request_t *request = &bot_add_queue[i];
+
+        if (request->active) {
+            continue;
+        }
+
+        request->active = true;
+        Q_strlcpy(request->name, name ? name : "", sizeof(request->name));
+        Q_strlcpy(request->team, team ? team : "", sizeof(request->team));
+        Com_Printf("Queued bot %s for the next server frame.\n",
+                   request->name[0] ? request->name : "<default>");
+        return true;
+    }
+
+    Com_Printf("Bot add queue is full.\n");
+    return false;
+}
+
+static client_t *bot_find_slot(const char *userinfo)
+{
+    edict_t *edict;
+    int limit = bot_public_client_limit();
+    int number;
+    int i;
+
+    if (ge->ClientChooseSlot) {
+        edict = ge->ClientChooseSlot(userinfo, "", true, NULL, 0, false);
+        if (edict) {
+            number = NUM_FOR_EDICT(edict) - 1;
+            if (number >= 0 && number < limit) {
+                client_t *cl = &svs.client_pool[number];
+                if (cl->state == cs_free) {
+                    return cl;
+                }
+            }
+        }
+    }
+
+    for (i = 0; i < limit; i++) {
+        client_t *cl = &svs.client_pool[i];
+        if (cl->state == cs_free) {
+            return cl;
+        }
+    }
+
+    return NULL;
+}
+
+static int SV_BotCount(void);
+
+static bool SV_BotAddImmediate(const char *name, const char *team,
+                               bool autofill)
+{
+    client_t *newcl;
+    const bot_profile_t *profile = NULL;
+    char userinfo[MAX_INFO_STRING * 2];
+    char botname[MAX_CLIENT_NAME];
+    const char *reason;
+    qboolean allow;
+    int number;
+
+    if (!svs.initialized || sv.state != ss_game || !ge) {
+        Com_Printf("No game map running.\n");
+        return false;
+    }
+
+    bot_update_add_frame();
+
+    if (name && name[0] && !COM_IsWhite(name)) {
+        profile = bot_find_profile(name);
+    }
+
+    if (profile) {
+        bot_unique_name_from_base(botname, sizeof(botname), profile->name);
+    } else if (!name || !name[0] || COM_IsWhite(name)) {
+        bot_default_name(botname, sizeof(botname));
+    } else {
+        Q_strlcpy(botname, name, sizeof(botname));
+    }
+
+    if (!bot_build_userinfo(userinfo, botname, team, profile)) {
+        Com_Printf("Invalid bot userinfo for '%s'.\n", botname);
+        return false;
+    }
+
+    newcl = bot_find_slot(userinfo);
+    if (!newcl) {
+        Com_Printf("No public client slot available for bot '%s'.\n", botname);
+        return false;
+    }
+
+    memset(newcl, 0, sizeof(*newcl));
+    number = newcl - svs.client_pool;
+    newcl->number = newcl->infonum = number;
+    newcl->protocol = -1;
+    newcl->bot = true;
+    newcl->bot_autofill = autofill;
+    newcl->nodata = true;
+    newcl->state = cs_connected;
+    newcl->AddMessage = bot_add_message;
+    newcl->edict = EDICT_NUM(number + 1);
+    newcl->gamedir = fs_game->string;
+    newcl->mapname = sv.name;
+    newcl->configstrings = sv.configstrings;
+    newcl->csr = &svs.csr;
+    newcl->ge = ge;
+    newcl->cm = &sv.cm;
+    newcl->spawncount = sv.spawncount;
+    newcl->maxclients = svs.maxclients;
+#if USE_FPS
+    newcl->framediv = 1;
+    newcl->settings[CLS_FPS] = sv.framerate;
+#endif
+    init_pmove_and_es_flags(newcl);
+    List_Init(&newcl->entry);
+
+    sv_client = newcl;
+    sv_player = newcl->edict;
+    allow = ge->ClientConnect(newcl->edict, userinfo, "", true);
+    sv_client = NULL;
+    sv_player = NULL;
+
+    if (!allow) {
+        reason = Info_ValueForKey(userinfo, "rejmsg");
+        Com_Printf("Bot '%s' rejected by game%s%s\n", botname,
+                   reason[0] ? ": " : ".", reason[0] ? reason : "");
+        newcl->state = cs_free;
+        newcl->name[0] = 0;
+        return false;
+    }
+
+    Q_strlcpy(newcl->userinfo, userinfo, sizeof(newcl->userinfo));
+    SV_UserinfoChanged(newcl);
+    newcl->rate = 0;
+
+    sv_client = newcl;
+    sv_player = newcl->edict;
+    ge->ClientBegin(sv_player);
+    sv_client = NULL;
+    sv_player = NULL;
+
+    newcl->state = cs_spawned;
+    newcl->framenum = 1;
+    newcl->lastframe = -1;
+    newcl->lastmessage = svs.realtime;
+    newcl->lastactivity = svs.realtime;
+    newcl->command_msec = 1800;
+    newcl->min_ping = 9999;
+    newcl->connect_time = time(NULL);
+
+    Com_Printf("Added bot %s in slot %d.\n", newcl->name, newcl->number);
+    bot_adds_this_frame++;
+    return true;
+}
+
+bool SV_BotAdd(const char *name, const char *team)
+{
+    bot_update_add_frame();
+
+    if (!bot_processing_queue && bot_adds_this_frame > 0 && SV_BotCount() > 0) {
+        return bot_enqueue_add(name, team);
+    }
+
+    return SV_BotAddImmediate(name, team, false);
+}
+
+static void SV_BotProcessAddQueue(void)
+{
+    bot_add_request_t request = { 0 };
+
+    if (!svs.initialized || sv.state != ss_game || !ge) {
+        return;
+    }
+
+    bot_update_add_frame();
+    if (bot_adds_this_frame > 0) {
+        return;
+    }
+
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (!bot_add_queue[i].active) {
+            continue;
+        }
+
+        request = bot_add_queue[i];
+        memset(&bot_add_queue[i], 0, sizeof(bot_add_queue[i]));
+        break;
+    }
+
+    if (!request.active) {
+        return;
+    }
+
+    bot_processing_queue = true;
+    SV_BotAddImmediate(request.name[0] ? request.name : NULL,
+                       request.team[0] ? request.team : NULL, false);
+    bot_processing_queue = false;
+}
+
+static bool SV_BotAddAutofill(void)
+{
+    const char *profile = NULL;
+
+    bot_update_add_frame();
+    if (bot_adds_this_frame > 0) {
+        return false;
+    }
+
+    if (sg_bot_profile && sg_bot_profile->string[0] &&
+        bot_find_profile(sg_bot_profile->string)) {
+        profile = sg_bot_profile->string;
+    }
+
+    return SV_BotAddImmediate(profile, NULL, true);
+}
+
+bool SV_BotRemove(client_t *client)
+{
+    if (!client || !client->bot || client->state <= cs_zombie) {
+        return false;
+    }
+
+    Com_Printf("Removed bot %s from slot %d.\n", client->name, client->number);
+    SV_DropClient(client, NULL);
+    SV_RemoveClient(client);
+    return true;
+}
+
+int SV_BotRemoveAll(void)
+{
+    int count = 0;
+    int limit = bot_client_pool_limit();
+
+    bot_clear_add_queue();
+
+    if (!svs.initialized || !limit) {
+        return 0;
+    }
+
+    for (int i = 0; i < limit; i++) {
+        client_t *cl = &svs.client_pool[i];
+        if (cl->bot && cl->state > cs_zombie && SV_BotRemove(cl)) {
+            count++;
+        }
+    }
+
+    return count;
+}
+
+client_t *SV_BotGetClient(const char *s, bool partial)
+{
+    client_t *match = NULL;
+    int limit = bot_client_pool_limit();
+    int count = 0;
+
+    if (!s || !s[0] || !svs.initialized || !limit) {
+        return NULL;
+    }
+
+    if (COM_IsUint(s)) {
+        int i = Q_atoi(s);
+        if (i < 0 || i >= limit) {
+            Com_Printf("Bad client slot number: %d\n", i);
+            return NULL;
+        }
+
+        client_t *cl = &svs.client_pool[i];
+        if (cl->state <= cs_zombie) {
+            Com_Printf("Client slot %d is not active.\n", i);
+            return NULL;
+        }
+        if (!cl->bot) {
+            Com_Printf("Client slot %d is not a bot.\n", i);
+            return NULL;
+        }
+        return cl;
+    }
+
+    for (int i = 0; i < limit; i++) {
+        client_t *cl = &svs.client_pool[i];
+        if (!cl->bot || cl->state <= cs_zombie) {
+            continue;
+        }
+        if (!strcmp(cl->name, s) || !Q_stricmp(cl->name, s)) {
+            return cl;
+        }
+    }
+
+    if (!partial) {
+        Com_Printf("Bot '%s' is not on the server.\n", s);
+        return NULL;
+    }
+
+    for (int i = 0; i < limit; i++) {
+        client_t *cl = &svs.client_pool[i];
+        if (!cl->bot || cl->state <= cs_zombie) {
+            continue;
+        }
+        if (Q_stristr(cl->name, s)) {
+            match = cl;
+            count++;
+        }
+    }
+
+    if (!match) {
+        Com_Printf("No bots matching '%s' found.\n", s);
+        return NULL;
+    }
+
+    if (count > 1) {
+        Com_Printf("'%s' matches multiple bots.\n", s);
+        return NULL;
+    }
+
+    return match;
+}
+
+static const char *bot_client_state_name(clstate_t state)
+{
+    switch (state) {
+    case cs_free:      return "free";
+    case cs_zombie:    return "zombie";
+    case cs_assigned:  return "assigned";
+    case cs_connected: return "connected";
+    case cs_primed:    return "primed";
+    case cs_spawned:   return "spawned";
+    default:           return "unknown";
+    }
+}
+
+void SV_BotList(void)
+{
+    int count = 0;
+    int limit = bot_client_pool_limit();
+
+    if (!svs.initialized || !limit) {
+        Com_Printf("No server running.\n");
+        return;
+    }
+
+    Com_Printf("num state     name\n"
+               "--- --------- ---------------\n");
+
+    for (int i = 0; i < limit; i++) {
+        client_t *cl = &svs.client_pool[i];
+        if (!cl->bot || cl->state <= cs_zombie) {
+            continue;
+        }
+
+        Com_Printf("%3i %-9s %-15.15s\n", cl->number,
+                   bot_client_state_name(cl->state), cl->name);
+        count++;
+    }
+
+    if (!count) {
+        Com_Printf("No bots on the server.\n");
+    }
+}
+
+static int SV_BotCount(void)
+{
+    int count = 0;
+    int limit = bot_client_pool_limit();
+
+    for (int i = 0; i < limit; i++) {
+        client_t *cl = &svs.client_pool[i];
+        if (cl->bot && cl->state > cs_zombie) {
+            count++;
+        }
+    }
+
+    return count;
+}
+
+static int SV_BotAutofillCount(void)
+{
+    int count = 0;
+    int limit = bot_client_pool_limit();
+
+    for (int i = 0; i < limit; i++) {
+        client_t *cl = &svs.client_pool[i];
+        if (cl->bot && cl->bot_autofill && cl->state > cs_zombie) {
+            count++;
+        }
+    }
+
+    return count;
+}
+
+static client_t *SV_BotFindAutofill(void)
+{
+    int limit = bot_client_pool_limit();
+
+    for (int i = limit - 1; i >= 0; i--) {
+        client_t *cl = &svs.client_pool[i];
+        if (cl->bot && cl->bot_autofill && cl->state > cs_zombie) {
+            return cl;
+        }
+    }
+
+    return NULL;
+}
+
+static void SV_BotMaintainMinPlayers(void)
+{
+    int target;
+    int public_limit;
+    int humans;
+    int bots;
+    int autofill;
+    int manual_bots;
+    int desired_autofill;
+
+    if (!sg_bot_min_players || !sg_bot_enable) {
+        return;
+    }
+    if (!svs.initialized || sv.state != ss_game || !ge) {
+        return;
+    }
+
+    public_limit = bot_public_client_limit();
+    if (!public_limit) {
+        return;
+    }
+
+    target = Cvar_ClampInteger(sg_bot_min_players, 0, public_limit);
+    humans = SV_CountClients();
+    bots = SV_BotCount();
+    autofill = SV_BotAutofillCount();
+    manual_bots = bots - autofill;
+
+    if (sg_bot_enable->integer <= 0) {
+        desired_autofill = 0;
+    } else {
+        desired_autofill = target - humans - manual_bots;
+        if (desired_autofill < 0) {
+            desired_autofill = 0;
+        }
+    }
+
+    while (autofill > desired_autofill) {
+        client_t *bot = SV_BotFindAutofill();
+        if (!bot || !SV_BotRemove(bot)) {
+            break;
+        }
+        autofill--;
+    }
+
+    if (autofill < desired_autofill) {
+        SV_BotAddAutofill();
+    }
+}
+
+static void SV_BotMinPlayersSmokeFrame(void)
+{
+    static int seen_spawncount;
+    static int stage;
+    int fill_target;
+
+    if (!sv_bot_min_players_smoke || sv_bot_min_players_smoke->integer <= 0) {
+        return;
+    }
+
+    if (!svs.initialized || sv.state != ss_game) {
+        return;
+    }
+
+    if (seen_spawncount != sv.spawncount) {
+        seen_spawncount = sv.spawncount;
+        stage = 0;
+    } else if (stage > 3) {
+        return;
+    }
+
+    fill_target = min(3, bot_public_client_limit());
+
+    if (stage == 0) {
+        SV_BotRemoveAll();
+        Cvar_Set("sg_bot_enable", "1");
+        Cvar_Set("sg_bot_min_players", va("%d", fill_target));
+        Com_Printf("q3a_bot_min_players_smoke=begin target=%d\n", fill_target);
+        stage = 1;
+        return;
+    }
+
+    if (stage == 1) {
+        if (SV_BotAutofillCount() < fill_target) {
+            return;
+        }
+
+        Com_Printf("q3a_bot_min_players_smoke_after_fill count=%d auto=%d humans=%d target=%d\n",
+                   SV_BotCount(), SV_BotAutofillCount(), SV_CountClients(),
+                   sg_bot_min_players->integer);
+        Cvar_Set("sg_bot_min_players", "1");
+        stage = 2;
+        return;
+    }
+
+    if (stage == 2) {
+        if (SV_BotAutofillCount() != 1 || SV_BotCount() != 1) {
+            return;
+        }
+
+        Com_Printf("q3a_bot_min_players_smoke_after_trim count=%d auto=%d target=%d\n",
+                   SV_BotCount(), SV_BotAutofillCount(),
+                   sg_bot_min_players->integer);
+        Cvar_Set("sg_bot_enable", "0");
+        stage = 3;
+        return;
+    }
+
+    if (SV_BotCount() != 0) {
+        return;
+    }
+
+    Cvar_Set("sg_bot_min_players", "0");
+    Com_Printf("q3a_bot_min_players_smoke_after_disable count=%d auto=%d enabled=%d\n",
+               SV_BotCount(), SV_BotAutofillCount(), sg_bot_enable->integer);
+    Com_Printf("q3a_bot_min_players_smoke=end final_count=%d\n", SV_BotCount());
+    stage = 4;
+
+    if (sv_bot_min_players_smoke->integer >= 2) {
+        Com_Quit(NULL, ERR_DISCONNECT);
+    }
+}
+
+static void SV_BotProfileSmokeFrame(void)
+{
+    static int seen_spawncount;
+    static int stage;
+    const bot_profile_t *profile;
+    client_t *bot;
+    bool added;
+    int loaded;
+    char profile_id[MAX_INFO_VALUE];
+    char skin[MAX_INFO_VALUE];
+    char skill[MAX_INFO_VALUE];
+    char reaction[MAX_INFO_VALUE];
+    char aggression[MAX_INFO_VALUE];
+    char aim_error[MAX_INFO_VALUE];
+    char preferred_weapon[MAX_INFO_VALUE];
+    char chat_personality[MAX_INFO_VALUE];
+    char role[MAX_INFO_VALUE];
+    char movement_style[MAX_INFO_VALUE];
+
+    if (!sv_bot_profile_smoke || sv_bot_profile_smoke->integer <= 0) {
+        return;
+    }
+
+    if (!svs.initialized || sv.state != ss_game) {
+        return;
+    }
+
+    if (seen_spawncount != sv.spawncount) {
+        seen_spawncount = sv.spawncount;
+        stage = 0;
+    } else if (stage > 1) {
+        return;
+    }
+
+    if (stage == 0) {
+        SV_BotRemoveAll();
+        loaded = SV_BotReloadProfiles();
+        profile = bot_find_profile("smoke");
+        Com_Printf("q3a_bot_profile_smoke=begin profiles=%d found=%d\n",
+                   loaded, profile ? 1 : 0);
+
+        if (!profile) {
+            Com_Printf("q3a_bot_profile_smoke=end final_count=%d\n",
+                       SV_BotCount());
+            stage = 2;
+            if (sv_bot_profile_smoke->integer >= 2) {
+                Com_Quit(NULL, ERR_DISCONNECT);
+            }
+            return;
+        }
+
+        added = SV_BotAdd("smoke", NULL);
+        Com_Printf("q3a_bot_profile_smoke_after_add_request added=%d count=%d\n",
+                   added, SV_BotCount());
+        stage = 1;
+        return;
+    }
+
+    bot = SV_BotGetClient("Smoke", true);
+    if (!bot) {
+        return;
+    }
+
+    Q_strlcpy(profile_id, Info_ValueForKey(bot->userinfo, "bot_profile"),
+              sizeof(profile_id));
+    Q_strlcpy(skin, Info_ValueForKey(bot->userinfo, "skin"), sizeof(skin));
+    Q_strlcpy(skill, Info_ValueForKey(bot->userinfo, "skill"), sizeof(skill));
+    Q_strlcpy(reaction, Info_ValueForKey(bot->userinfo, "bot_reaction"),
+              sizeof(reaction));
+    Q_strlcpy(aggression, Info_ValueForKey(bot->userinfo, "bot_aggression"),
+              sizeof(aggression));
+    Q_strlcpy(aim_error, Info_ValueForKey(bot->userinfo, "bot_aim_error"),
+              sizeof(aim_error));
+    Q_strlcpy(preferred_weapon,
+              Info_ValueForKey(bot->userinfo, "bot_preferred_weapon"),
+              sizeof(preferred_weapon));
+    Q_strlcpy(chat_personality,
+              Info_ValueForKey(bot->userinfo, "bot_chat_personality"),
+              sizeof(chat_personality));
+    Q_strlcpy(role, Info_ValueForKey(bot->userinfo, "bot_role"),
+              sizeof(role));
+    Q_strlcpy(movement_style,
+              Info_ValueForKey(bot->userinfo, "bot_movement_style"),
+              sizeof(movement_style));
+
+    Com_Printf("q3a_bot_profile_smoke_after_add count=%d name=%s "
+               "profile=%s skin=%s skill=%s reaction=%s aggression=%s "
+               "aim_error=%s preferred_weapon=%s chat=%s role=%s "
+               "movement=%s\n",
+               SV_BotCount(), bot->name, profile_id, skin, skill, reaction,
+               aggression, aim_error, preferred_weapon, chat_personality, role,
+               movement_style);
+    SV_BotRemoveAll();
+    Com_Printf("q3a_bot_profile_smoke_after_remove_all count=%d\n",
+               SV_BotCount());
+    Com_Printf("q3a_bot_profile_smoke=end final_count=%d\n", SV_BotCount());
+    stage = 2;
+
+    if (sv_bot_profile_smoke->integer >= 2) {
+        Com_Quit(NULL, ERR_DISCONNECT);
+    }
+}
+
+static void SV_BotTeamPolicySmokeStatus(int expected_playing,
+                                        int expected_spectators,
+                                        int expected_bots)
+{
+    const bot_team_policy_status_api_v1_t *api = NULL;
+
+    if (ge && ge->GetExtension) {
+        api = ge->GetExtension(BOT_TEAM_POLICY_STATUS_API_V1);
+    }
+
+    if (!api || api->api_version != 1 || !api->PrintStatus) {
+        Com_Printf("q3a_bot_team_policy_status unavailable=1 "
+                   "expected_playing=%d expected_spectators=%d "
+                   "expected_bots=%d pass=0\n",
+                   expected_playing, expected_spectators, expected_bots);
+        return;
+    }
+
+    api->PrintStatus(expected_playing, expected_spectators, expected_bots);
+}
+
+static void SV_BotTeamPolicySmokeFrame(void)
+{
+    static int seen_spawncount;
+    static int stage;
+    bool added_alpha;
+    bool added_bravo;
+    bool added_charlie;
+
+    if (!sv_bot_team_policy_smoke || sv_bot_team_policy_smoke->integer <= 0) {
+        return;
+    }
+
+    if (!svs.initialized || sv.state != ss_game || !ge) {
+        return;
+    }
+
+    if (seen_spawncount != sv.spawncount) {
+        seen_spawncount = sv.spawncount;
+        stage = 0;
+    } else if (stage > 2) {
+        return;
+    }
+
+    if (stage == 0) {
+        SV_BotRemoveAll();
+        Cvar_Set("g_gametype", "2");
+        Cvar_Set("minplayers", "2");
+        Cvar_Set("maxplayers", "2");
+        Cvar_Set("g_allow_duel_queue", "0");
+        Cvar_Set("match_lock", "0");
+        Cvar_Set("sg_bot_enable", "1");
+        Cvar_Set("sg_bot_min_players", "0");
+        Com_Printf("q3a_bot_team_policy_smoke=begin\n");
+        stage = 1;
+        return;
+    }
+
+    if (stage == 1) {
+        if (SV_BotCount() != 0) {
+            SV_BotRemoveAll();
+            return;
+        }
+
+        added_alpha = SV_BotAdd("DuelOne", NULL);
+        added_bravo = SV_BotAdd("DuelTwo", NULL);
+        added_charlie = SV_BotAdd("DuelThree", NULL);
+        Com_Printf("q3a_bot_team_policy_smoke_after_add_requests "
+                   "added_alpha=%d added_bravo=%d added_charlie=%d "
+                   "count=%d\n",
+                   added_alpha, added_bravo, added_charlie, SV_BotCount());
+        stage = 2;
+        return;
+    }
+
+    if (stage == 2) {
+        if (SV_BotCount() < 3) {
+            return;
+        }
+
+        Com_Printf("q3a_bot_team_policy_smoke_status_requested count=%d\n",
+                   SV_BotCount());
+        SV_BotTeamPolicySmokeStatus(2, 1, 3);
+
+        SV_BotRemoveAll();
+        Com_Printf("q3a_bot_team_policy_smoke_removed_all count=%d\n",
+                   SV_BotCount());
+        SV_BotTeamPolicySmokeStatus(0, 0, 0);
+
+        Cvar_Set("sg_bot_enable", "0");
+        Cvar_Set("sg_bot_min_players", "0");
+        Com_Printf("q3a_bot_team_policy_smoke=end final_count=%d\n",
+                   SV_BotCount());
+        stage = 3;
+
+        if (sv_bot_team_policy_smoke->integer >= 2) {
+            Com_Quit(NULL, ERR_DISCONNECT);
+        }
+    }
+}
+
+static const bot_frame_command_api_v1_t *SV_BotFrameCommandApi(void)
+{
+    const bot_frame_command_api_v1_t *api = NULL;
+
+    if (ge && ge->GetExtension) {
+        api = ge->GetExtension(BOT_FRAME_COMMAND_API_V1);
+    }
+
+    if (!api || api->api_version != 1 || !api->BuildCommand) {
+        return NULL;
+    }
+
+    return api;
+}
+
+static void SV_BotFrameCommandStatus(int expected_min_frames,
+                                     int expected_min_commands)
+{
+    const bot_frame_command_api_v1_t *api = SV_BotFrameCommandApi();
+
+    if (!api || !api->PrintStatus) {
+        Com_Printf("q3a_bot_frame_command_status unavailable=1 "
+                   "expected_min_frames=%d expected_min_commands=%d pass=0\n",
+                   expected_min_frames, expected_min_commands);
+        return;
+    }
+
+    api->PrintStatus(expected_min_frames, expected_min_commands);
+}
+
+static void SV_BotRunFrameCommands(void)
+{
+    const bot_frame_command_api_v1_t *api;
+    int limit;
+
+    if (!svs.initialized || sv.state != ss_game || !ge) {
+        return;
+    }
+
+    api = SV_BotFrameCommandApi();
+    if (!api) {
+        return;
+    }
+
+    limit = bot_client_pool_limit();
+    for (int i = 0; i < limit; i++) {
+        client_t *cl = &svs.client_pool[i];
+        usercmd_t cmd;
+
+        if (!cl->bot || cl->state != cs_spawned || !cl->edict) {
+            continue;
+        }
+
+        memset(&cmd, 0, sizeof(cmd));
+        if (api->BuildCommand(cl->edict, &cmd)) {
+            SV_BotClientThink(cl, &cmd);
+        }
+    }
+}
+
+static void SV_BotFrameCommandSmokeFrame(void)
+{
+    static int seen_spawncount;
+    static int stage;
+    static int settle_frames;
+    bool added;
+
+    if (!sv_bot_frame_command_smoke ||
+        sv_bot_frame_command_smoke->integer <= 0) {
+        return;
+    }
+
+    if (!svs.initialized || sv.state != ss_game || !ge) {
+        return;
+    }
+
+    if (seen_spawncount != sv.spawncount) {
+        seen_spawncount = sv.spawncount;
+        stage = 0;
+        settle_frames = 0;
+    } else if (stage > 2) {
+        return;
+    }
+
+    if (stage == 0) {
+        SV_BotRemoveAll();
+        Cvar_Set("sg_bot_enable", "1");
+        Cvar_Set("sg_bot_min_players", "0");
+        Cvar_Set("g_gametype", "0");
+        Com_Printf("q3a_bot_frame_command_smoke=begin\n");
+        settle_frames = 0;
+        stage = 1;
+        return;
+    }
+
+    if (stage == 1) {
+        if (SV_BotCount() != 0) {
+            SV_BotRemoveAll();
+            return;
+        }
+
+        added = SV_BotAdd("Mover", NULL);
+        Com_Printf("q3a_bot_frame_command_smoke_after_add_request "
+                   "added=%d count=%d\n",
+                   added, SV_BotCount());
+        stage = 2;
+        return;
+    }
+
+    if (SV_BotCount() < 1) {
+        return;
+    }
+
+    if (++settle_frames < 8) {
+        return;
+    }
+
+    Com_Printf("q3a_bot_frame_command_smoke_status_requested count=%d\n",
+               SV_BotCount());
+    SV_BotFrameCommandStatus(1, 1);
+
+    SV_BotRemoveAll();
+    Com_Printf("q3a_bot_frame_command_smoke_removed_all count=%d\n",
+               SV_BotCount());
+    Cvar_Set("sg_bot_enable", "0");
+    Cvar_Set("sg_bot_min_players", "0");
+    Com_Printf("q3a_bot_frame_command_smoke=end final_count=%d\n",
+               SV_BotCount());
+    stage = 3;
+
+    if (sv_bot_frame_command_smoke->integer >= 2) {
+        Com_Quit(NULL, ERR_DISCONNECT);
+    }
+}
+
+static void SV_BotSlotSmokeFrame(void)
+{
+    static int seen_spawncount;
+    static int stage;
+    client_t *alpha;
+    bool added_alpha;
+    bool added_bravo;
+    bool added_charlie;
+    int removed_all;
+
+    if (!sv_bot_slot_smoke || sv_bot_slot_smoke->integer <= 0) {
+        return;
+    }
+
+    if (!svs.initialized || sv.state != ss_game) {
+        return;
+    }
+
+    if (seen_spawncount != sv.spawncount) {
+        seen_spawncount = sv.spawncount;
+        stage = 0;
+    } else if (stage > 1) {
+        return;
+    }
+
+    if (stage == 1) {
+        Com_Printf("q3a_bot_slot_smoke_after_deferred_pair count=%d\n",
+                   SV_BotCount());
+
+        removed_all = SV_BotRemoveAll();
+        Com_Printf("q3a_bot_slot_smoke_removed_all=%d\n", removed_all);
+        Com_Printf("q3a_bot_slot_smoke_after_remove_all count=%d\n", SV_BotCount());
+        Com_Printf("q3a_bot_slot_smoke=end final_count=%d\n", SV_BotCount());
+
+        stage = 2;
+        if (sv_bot_slot_smoke->integer >= 2) {
+            Com_Quit(NULL, ERR_DISCONNECT);
+        }
+        return;
+    }
+
+    Com_Printf("q3a_bot_slot_smoke=begin\n");
+
+    added_alpha = SV_BotAdd("Alpha", NULL);
+    Com_Printf("q3a_bot_slot_smoke_after_alpha added=%d count=%d maxclients=%d soft=%d\n",
+               added_alpha, SV_BotCount(), svs.maxclients, svs.maxclients_soft);
+
+    alpha = SV_BotGetClient("Alpha", true);
+    if (alpha) {
+        SV_BotRemove(alpha);
+    }
+    Com_Printf("q3a_bot_slot_smoke_after_remove_alpha count=%d\n", SV_BotCount());
+
+    added_bravo = SV_BotAdd("Bravo", NULL);
+    added_charlie = SV_BotAdd("Charlie", NULL);
+    Com_Printf("q3a_bot_slot_smoke_after_pair added_bravo=%d added_charlie=%d count=%d\n",
+               added_bravo, added_charlie, SV_BotCount());
+
+    stage = 1;
+}
+
 static void send_connect_packet(client_t *newcl, int nctype)
 {
     const char *ncstring    = "";
@@ -1293,7 +2676,7 @@ int SV_CountClients(void)
     int count = 0;
 
     FOR_EACH_CLIENT(cl) {
-        if (cl->state > cs_zombie) {
+        if (cl->state > cs_zombie && !cl->bot) {
             count++;
         }
     }
@@ -1601,6 +2984,13 @@ static void SV_CheckTimeouts(void)
     unsigned    delta;
 
     FOR_EACH_CLIENT(client) {
+        if (client->bot) {
+            if (client->state == cs_zombie) {
+                SV_RemoveClient(client);
+            }
+            continue;
+        }
+
         if (Netchan_SeqTooBig(&client->netchan)) {
             SV_DropClient(client, "outgoing sequence too big");
             continue;
@@ -1889,8 +3279,24 @@ unsigned SV_Frame(unsigned msec)
         // give the clients some timeslices
         SV_GiveMsec();
 
+        // process at most one queued bot begin per frame
+        SV_BotProcessAddQueue();
+
+        // maintain automatic local bot population after explicit add requests
+        SV_BotMaintainMinPlayers();
+
+        // feed game-authored commands to spawned local bot clients
+        SV_BotRunFrameCommands();
+
         // let everything in the world think and move
         SV_RunGameFrame();
+
+        // run deterministic local bot slot smoke after a game map is active
+        SV_BotSlotSmokeFrame();
+        SV_BotMinPlayersSmokeFrame();
+        SV_BotProfileSmokeFrame();
+        SV_BotTeamPolicySmokeFrame();
+        SV_BotFrameCommandSmokeFrame();
 
         // send messages back to the UDP clients
         SV_SendClientMessages();
@@ -2183,6 +3589,14 @@ void SV_Init(void)
 #endif
 
     sv_enhanced_setplayer = Cvar_Get("sv_enhanced_setplayer", "0", 0);
+    sv_bot_slot_smoke = Cvar_Get("sv_bot_slot_smoke", "0", 0);
+    sv_bot_min_players_smoke = Cvar_Get("sv_bot_min_players_smoke", "0", 0);
+    sv_bot_profile_smoke = Cvar_Get("sv_bot_profile_smoke", "0", 0);
+    sv_bot_team_policy_smoke = Cvar_Get("sv_bot_team_policy_smoke", "0", 0);
+    sv_bot_frame_command_smoke = Cvar_Get("sv_bot_frame_command_smoke", "0", 0);
+    sg_bot_enable = Cvar_Get("sg_bot_enable", "0", 0);
+    sg_bot_min_players = Cvar_Get("sg_bot_min_players", "0", 0);
+    sg_bot_profile = Cvar_Get("sg_bot_profile", "", 0);
 
     sv_iplimit = Cvar_Get("sv_iplimit", "3", 0);
 
@@ -2268,7 +3682,7 @@ static void SV_FinalMessage(const char *message, error_type_t type)
     // stagger the packets to crutch operating system limited buffers
     for (i = 0; i < 2; i++) {
         FOR_EACH_CLIENT(client) {
-            if (client->state == cs_zombie) {
+            if (client->state == cs_zombie || client->bot) {
                 continue;
             }
             netchan = &client->netchan;
@@ -2319,6 +3733,8 @@ void SV_Shutdown(const char *finalmsg, error_type_t type)
     AC_Disconnect();
 
     SV_MvdShutdown(type);
+
+    SV_BotRemoveAll();
 
     SV_FinalMessage(finalmsg, type);
     SV_MasterShutdown();

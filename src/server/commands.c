@@ -1120,6 +1120,89 @@ static void SV_ServerCommand_f(void)
     ge->ServerCommand();
 }
 
+static void SV_BotAdd_f(void)
+{
+    const char *name = NULL;
+    const char *team = NULL;
+
+    if (!svs.initialized) {
+        Com_Printf("No server running.\n");
+        return;
+    }
+
+    if (Cmd_Argc() > 3) {
+        Com_Printf("Usage: %s [name] [team]\n", Cmd_Argv(0));
+        return;
+    }
+
+    if (Cmd_Argc() >= 2) {
+        name = Cmd_Argv(1);
+    }
+    if (Cmd_Argc() >= 3) {
+        team = Cmd_Argv(2);
+    }
+
+    SV_BotAdd(name, team);
+}
+
+static void SV_BotRemove_f(void)
+{
+    client_t *bot;
+    int count;
+
+    if (!svs.initialized) {
+        Com_Printf("No server running.\n");
+        return;
+    }
+
+    if (Cmd_Argc() != 2) {
+        Com_Printf("Usage: %s <name|slot|all>\n", Cmd_Argv(0));
+        return;
+    }
+
+    if (!Q_stricmp(Cmd_Argv(1), "all")) {
+        count = SV_BotRemoveAll();
+        Com_Printf("Removed %d bot%s.\n", count, count == 1 ? "" : "s");
+        return;
+    }
+
+    bot = SV_BotGetClient(Cmd_Argv(1), true);
+    if (bot) {
+        SV_BotRemove(bot);
+    }
+}
+
+static void SV_BotKickAll_f(void)
+{
+    int count;
+
+    if (!svs.initialized) {
+        Com_Printf("No server running.\n");
+        return;
+    }
+
+    count = SV_BotRemoveAll();
+    Com_Printf("Removed %d bot%s.\n", count, count == 1 ? "" : "s");
+}
+
+static void SV_BotList_f(void)
+{
+    SV_BotList();
+}
+
+static void SV_BotReloadProfiles_f(void)
+{
+    int count;
+
+    if (Cmd_Argc() != 1) {
+        Com_Printf("Usage: %s\n", Cmd_Argv(0));
+        return;
+    }
+
+    count = SV_BotReloadProfiles();
+    Com_Printf("Loaded %d bot profile%s.\n", count, count == 1 ? "" : "s");
+}
+
 static void make_mask(netadr_t *mask, netadrtype_t type, int bits)
 {
     memset(mask, 0, sizeof(*mask));
@@ -1847,6 +1930,11 @@ static const cmdreg_t c_server[] = {
     { "listmasters", SV_ListMasters_f },
     { "killserver", SV_KillServer_f },
     { "sv", SV_ServerCommand_f },
+    { "sg_bot_add", SV_BotAdd_f },
+    { "sg_bot_remove", SV_BotRemove_f },
+    { "sg_bot_kick_all", SV_BotKickAll_f },
+    { "sg_bot_list", SV_BotList_f },
+    { "sg_bot_reload_profiles", SV_BotReloadProfiles_f },
     { "pickclient", SV_PickClient_f },
     { "addban", SV_AddBan_f },
     { "delban", SV_DelBan_f },

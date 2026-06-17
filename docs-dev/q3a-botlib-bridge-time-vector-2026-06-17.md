@@ -88,5 +88,5 @@ Relevant log evidence from
   `docs-dev/q3a-botlib-bsp-collision-bridge-2026-06-17.md`.
 - Continue dynamic entity collision and final WORR collision ownership work.
 - Replace movement-prediction stubs with Q2 movement-aware BotLib bridges.
-- Replace debug-line stubs with WORR debug draw.
+- Q3A debug line/cross/arrow bridging is covered by `docs-dev/q3a-botlib-aas-debug-draw-bridge-2026-06-17.md`.
 - Feed the imported Q3A AAS main/start-frame path once that source subset lands.

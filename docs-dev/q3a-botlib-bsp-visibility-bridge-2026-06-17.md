@@ -88,7 +88,8 @@ Observed smoke lines:
 
 - Add dynamic area-portal and door-state visibility policy if imported bot
   runtime paths need it.
-- Continue dynamic entity collision, movement prediction, jump/drop helpers, and
-  debug drawing.
-- Import the Q3A AAS start-frame/runtime orchestration files once their callback
-  dependencies are ready.
+- Imported movement prediction/drop/jump helpers are covered by
+  `docs-dev/q3a-botlib-aas-movement-import-2026-06-17.md`; continue debug
+  drawing and any dynamic area-portal policy needed by future runtime paths.
+- Q3A AAS start-frame/runtime orchestration is covered by
+  `docs-dev/q3a-botlib-aas-start-frame-2026-06-17.md`.
