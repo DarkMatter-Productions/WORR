@@ -34,7 +34,10 @@ The implementation is WORR-owned. No imported source, profile assets, or user-fa
   `.\.install\worr_ded_x86_64.exe +set game basew +set basedir E:\Repositories\WORR\.install +set logfile 1 +set logfile_name q3a_bot_slot_smoke +set logfile_flush 1 +set developer 1 +set deathmatch 1 +set sv_bot_slot_smoke 2 +map mm-rage`
 - Dedicated min-player regression smoke:
   `.\.install\worr_ded_x86_64.exe +set game basew +set basedir E:\Repositories\WORR\.install +set logfile 1 +set logfile_name q3a_bot_min_players_smoke +set logfile_flush 1 +set developer 1 +set deathmatch 1 +set sv_bot_min_players_smoke 2 +map mm-rage`
-- Dedicated profile smoke launched cleanly, but the staged install had no `smoke` profile asset, so it exited with `profiles=0 found=0` and did not exercise a profile-backed spawn.
+- Historical profile-smoke note for this slice: the staged install had no
+  `smoke` profile asset, so it exited with `profiles=0 found=0` and did not
+  exercise a profile-backed spawn. Follow-up profile assets and
+  `profile_backed_spawn` coverage landed on 2026-06-18.
 - `git diff --check -- inc/shared/bot_team_policy_status.h inc/shared/gameext.h src/game/sgame/g_local.hpp src/game/sgame/gameplay/g_main.cpp src/game/sgame/gameplay/g_svcmds.cpp src/server/main.c`
 
 Key smoke evidence:
@@ -48,5 +51,7 @@ Key smoke evidence:
 
 ## Outstanding Work
 
-- Add curated profile assets only after source ownership and credits review.
+- Follow-up completed: first-party WORR profile assets now live under
+  `assets/botfiles/bots/`; see
+  `docs-dev/q3a-botlib-native-botfiles-assets-2026-06-18.md`.
 - Connect spawned bot slots to AAS-backed movement and the BotLib command dispatcher.

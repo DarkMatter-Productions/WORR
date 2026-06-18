@@ -1,0 +1,71 @@
+//===========================================================================
+//
+// Name:			inv.h
+// Function:		Quake II inventory symbols for WORR BotLib-style weights
+// Source:			WORR original compatibility table
+// Tab Size:		4 (real tabs)
+//===========================================================================
+
+#define INVENTORY_NONE				0
+
+#define INVENTORY_ARMOR_BODY		1
+#define INVENTORY_ARMOR_COMBAT		2
+#define INVENTORY_ARMOR_JACKET		3
+#define INVENTORY_ARMOR_SHARD		4
+#define INVENTORY_POWER_SCREEN		5
+#define INVENTORY_POWER_SHIELD		6
+#define INVENTORY_ARMOR				45
+
+#define INVENTORY_BLASTER			7
+#define INVENTORY_SHOTGUN			8
+#define INVENTORY_SUPER_SHOTGUN		9
+#define INVENTORY_MACHINEGUN		10
+#define INVENTORY_CHAINGUN			11
+#define INVENTORY_GRENADES			12
+#define INVENTORY_GRENADELAUNCHER	13
+#define INVENTORY_ROCKETLAUNCHER	14
+#define INVENTORY_HYPERBLASTER		15
+#define INVENTORY_RAILGUN			16
+#define INVENTORY_BFG10K			17
+
+#define INVENTORY_SHELLS			18
+#define INVENTORY_BULLETS			19
+#define INVENTORY_CELLS				20
+#define INVENTORY_ROCKETS			21
+#define INVENTORY_SLUGS				22
+#define INVENTORY_BFGAMMO			23
+
+#define INVENTORY_QUAD				24
+#define INVENTORY_INVULNERABILITY	25
+#define INVENTORY_SILENCER			26
+#define INVENTORY_REBREATHER		27
+#define INVENTORY_ENVIRONMENTSUIT	28
+#define INVENTORY_HEALTH			29
+#define INVENTORY_AMMOPACK			30
+#define INVENTORY_BANDOLIER			31
+
+#define INVENTORY_GRAPPLE			42
+#define INVENTORY_FLAG1				43
+#define INVENTORY_FLAG2				44
+
+#define ENEMY_HORIZONTAL_DIST		200
+#define ENEMY_HEIGHT				201
+#define NUM_VISIBLE_ENEMIES			202
+#define NUM_VISIBLE_TEAMMATES		203
+
+#define USING_QUAD					204
+#define USING_INVULNERABILITY		205
+#define USING_POWER_SCREEN			206
+#define USING_POWER_SHIELD			207
+
+#define USING_BLASTER				215
+#define USING_SHOTGUN				216
+#define USING_SUPER_SHOTGUN			217
+#define USING_MACHINEGUN			218
+#define USING_CHAINGUN				219
+#define USING_GRENADELAUNCHER		220
+#define USING_ROCKETLAUNCHER		221
+#define USING_HYPERBLASTER			222
+#define USING_RAILGUN				223
+#define USING_BFG10K				224
+#define USING_GRENADES				225

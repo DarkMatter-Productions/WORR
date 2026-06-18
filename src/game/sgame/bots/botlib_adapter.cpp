@@ -11,6 +11,7 @@ static_assert(BOTLIB_ADAPTER_MAX_ROUTE_POINTS == Q3A_BOTLIB_IMPORT_MAX_ROUTE_POI
 
 namespace {
 BotLibAdapterStatus botLibAdapterStatus;
+BotLibAdapterSourceCounters botLibAdapterSourceCounters;
 BotLibAdapterPrintCallback botLibAdapterPrintCallback = nullptr;
 BotLibAdapterBotClientCommandCallback botLibAdapterBotClientCommandCallback = nullptr;
 BotLibAdapterFilesystemLoadCallback botLibAdapterFilesystemLoadCallback = nullptr;
@@ -114,6 +115,58 @@ int BotLibAdapter_Q3ADebugPolygon(int color, int pointCount, const float *points
 	return botLibAdapterDebugPolygonCallback(color, pointCount, points) ? 1 : 0;
 }
 
+void CopyImportSourceCounters() {
+	Q3ABotLibImportSourceCounters counters{};
+	Q3A_BotLibImport_GetSourceCounters(&counters);
+
+	botLibAdapterSourceCounters.q3aRouteBuildAttempts = counters.routeBuildAttempts;
+	botLibAdapterSourceCounters.q3aRouteBuildSuccesses = counters.routeBuildSuccesses;
+	botLibAdapterSourceCounters.q3aRouteBuildFailures = counters.routeBuildFailures;
+	botLibAdapterSourceCounters.q3aRouteCpuNs = counters.q3aRouteCpuNs;
+	botLibAdapterSourceCounters.q3aRouteCpuSamples = counters.q3aRouteCpuSamples;
+	botLibAdapterSourceCounters.q3aRouteCpuMaxNs = counters.q3aRouteCpuMaxNs;
+	botLibAdapterSourceCounters.q3aRouteCpuFailNs = counters.q3aRouteCpuFailNs;
+	botLibAdapterSourceCounters.q3aRouteCpuFailSamples = counters.q3aRouteCpuFailSamples;
+	botLibAdapterSourceCounters.q3aAasInpvsChecks = counters.aasInpvsChecks;
+	botLibAdapterSourceCounters.q3aAasInpvsVisible = counters.aasInpvsVisible;
+	botLibAdapterSourceCounters.q3aAasInpvsMisses = counters.aasInpvsMisses;
+	botLibAdapterSourceCounters.q3aAasInphsChecks = counters.aasInphsChecks;
+	botLibAdapterSourceCounters.q3aAasInphsVisible = counters.aasInphsVisible;
+	botLibAdapterSourceCounters.q3aAasInphsMisses = counters.aasInphsMisses;
+	botLibAdapterSourceCounters.q3aVisibilityClusterChecks = counters.visibilityClusterChecks;
+	botLibAdapterSourceCounters.q3aVisibilityClusterSame = counters.visibilityClusterSame;
+	botLibAdapterSourceCounters.q3aVisibilityClusterInvalid = counters.visibilityClusterInvalid;
+	botLibAdapterSourceCounters.q3aVisibilityDecompressCalls = counters.visibilityDecompressCalls;
+	botLibAdapterSourceCounters.q3aVisibilityDecompressBytes = counters.visibilityDecompressBytes;
+	botLibAdapterSourceCounters.q3aVisibilityDecompressRuns = counters.visibilityDecompressRuns;
+	botLibAdapterSourceCounters.q3aVisibilityDecompressFailures = counters.visibilityDecompressFailures;
+	botLibAdapterSourceCounters.q3aEntityTraceAttempts = counters.entityTraceAttempts;
+	botLibAdapterSourceCounters.q3aEntityTraceHits = counters.entityTraceHits;
+	botLibAdapterSourceCounters.q3aEntityTraceMisses = counters.entityTraceMisses;
+	botLibAdapterSourceCounters.q3aEntityTraceFailures = counters.entityTraceFailures;
+	botLibAdapterSourceCounters.q3aEntityTraceClipCalls = counters.entityTraceClipCalls;
+	botLibAdapterSourceCounters.q3aEntityTraceClipHits = counters.entityTraceClipHits;
+	botLibAdapterSourceCounters.q3aEntityTraceClipMisses = counters.entityTraceClipMisses;
+	botLibAdapterSourceCounters.q3aEntityTraceClipStartSolid = counters.entityTraceClipStartSolid;
+	botLibAdapterSourceCounters.q3aEntityTraceClipAllSolid = counters.entityTraceClipAllSolid;
+	botLibAdapterSourceCounters.q3aEntityTraceClipCpuNs = counters.entityTraceClipCpuNs;
+	botLibAdapterSourceCounters.q3aEntityTraceClipCpuMaxNs = counters.entityTraceClipCpuMaxNs;
+	botLibAdapterSourceCounters.q3aAasTraceCalls = counters.aasTraceCalls;
+	botLibAdapterSourceCounters.q3aBspTraceCalls = counters.bspTraceCalls;
+	botLibAdapterSourceCounters.q3aBspTracePointCalls = counters.bspTracePointCalls;
+	botLibAdapterSourceCounters.q3aBspTraceBoxCalls = counters.bspTraceBoxCalls;
+	botLibAdapterSourceCounters.q3aBspTraceZeroLengthCalls = counters.bspTraceZeroLengthCalls;
+	botLibAdapterSourceCounters.q3aBspTraceHits = counters.bspTraceHits;
+	botLibAdapterSourceCounters.q3aBspTraceMisses = counters.bspTraceMisses;
+	botLibAdapterSourceCounters.q3aBspTraceStartSolid = counters.bspTraceStartSolid;
+	botLibAdapterSourceCounters.q3aBspTraceAllSolid = counters.bspTraceAllSolid;
+	botLibAdapterSourceCounters.q3aBspTraceHullNodes = counters.bspTraceHullNodes;
+	botLibAdapterSourceCounters.q3aBspTraceBrushTests = counters.bspTraceBrushTests;
+	botLibAdapterSourceCounters.q3aBspTraceCpuNs = counters.bspTraceCpuNs;
+	botLibAdapterSourceCounters.q3aBspTraceCpuSamples = counters.bspTraceCpuSamples;
+	botLibAdapterSourceCounters.q3aBspTraceCpuMaxNs = counters.bspTraceCpuMaxNs;
+}
+
 void CopyImportStatus() {
 	const Q3ABotLibImportSmokeStatus *status = Q3A_BotLibImport_SmokeStatus();
 	botLibAdapterStatus.q3aUtilitySmokePassed = status->libvarSmokePassed != 0;
@@ -212,6 +265,14 @@ void CopyImportStatus() {
 	botLibAdapterStatus.q3aAasRouteReachability = status->aasRouteReachability;
 	botLibAdapterStatus.q3aAasRouteEndArea = status->aasRouteEndArea;
 	botLibAdapterStatus.q3aAasRouteStopEvent = status->aasRouteStopEvent;
+	botLibAdapterStatus.q3aRouteBuildAttempts = status->routeBuildAttempts;
+	botLibAdapterStatus.q3aRouteBuildSuccesses = status->routeBuildSuccesses;
+	botLibAdapterStatus.q3aRouteBuildFailures = status->routeBuildFailures;
+	botLibAdapterStatus.q3aRouteCpuNs = status->q3aRouteCpuNs;
+	botLibAdapterStatus.q3aRouteCpuSamples = status->q3aRouteCpuSamples;
+	botLibAdapterStatus.q3aRouteCpuMaxNs = status->q3aRouteCpuMaxNs;
+	botLibAdapterStatus.q3aRouteCpuFailNs = status->q3aRouteCpuFailNs;
+	botLibAdapterStatus.q3aRouteCpuFailSamples = status->q3aRouteCpuFailSamples;
 	botLibAdapterStatus.q3aAasAltRouteStartArea = status->aasAltRouteStartArea;
 	botLibAdapterStatus.q3aAasAltRouteGoalArea = status->aasAltRouteGoalArea;
 	botLibAdapterStatus.q3aAasAltRouteGoals = status->aasAltRouteGoals;
@@ -235,6 +296,13 @@ void CopyImportStatus() {
 	botLibAdapterStatus.q3aEntityTraceHits = status->entityTraceHits;
 	botLibAdapterStatus.q3aEntityTraceMisses = status->entityTraceMisses;
 	botLibAdapterStatus.q3aEntityTraceFailures = status->entityTraceFailures;
+	botLibAdapterStatus.q3aEntityTraceClipCalls = status->entityTraceClipCalls;
+	botLibAdapterStatus.q3aEntityTraceClipHits = status->entityTraceClipHits;
+	botLibAdapterStatus.q3aEntityTraceClipMisses = status->entityTraceClipMisses;
+	botLibAdapterStatus.q3aEntityTraceClipStartSolid = status->entityTraceClipStartSolid;
+	botLibAdapterStatus.q3aEntityTraceClipAllSolid = status->entityTraceClipAllSolid;
+	botLibAdapterStatus.q3aEntityTraceClipCpuNs = status->entityTraceClipCpuNs;
+	botLibAdapterStatus.q3aEntityTraceClipCpuMaxNs = status->entityTraceClipCpuMaxNs;
 	botLibAdapterStatus.q3aDebugDrawLines = status->debugDrawLines;
 	botLibAdapterStatus.q3aDebugDrawCrosses = status->debugDrawCrosses;
 	botLibAdapterStatus.q3aDebugDrawArrows = status->debugDrawArrows;
@@ -268,10 +336,37 @@ void CopyImportStatus() {
 	botLibAdapterStatus.q3aBspCollisionNodes = status->bspCollisionNodes;
 	botLibAdapterStatus.q3aBspCollisionLeafs = status->bspCollisionLeafs;
 	botLibAdapterStatus.q3aBspCollisionBrushes = status->bspCollisionBrushes;
+	botLibAdapterStatus.q3aAasTraceCalls = status->aasTraceCalls;
+	botLibAdapterStatus.q3aBspTraceCalls = status->bspTraceCalls;
+	botLibAdapterStatus.q3aBspTracePointCalls = status->bspTracePointCalls;
+	botLibAdapterStatus.q3aBspTraceBoxCalls = status->bspTraceBoxCalls;
+	botLibAdapterStatus.q3aBspTraceZeroLengthCalls = status->bspTraceZeroLengthCalls;
+	botLibAdapterStatus.q3aBspTraceHits = status->bspTraceHits;
+	botLibAdapterStatus.q3aBspTraceMisses = status->bspTraceMisses;
+	botLibAdapterStatus.q3aBspTraceStartSolid = status->bspTraceStartSolid;
+	botLibAdapterStatus.q3aBspTraceAllSolid = status->bspTraceAllSolid;
+	botLibAdapterStatus.q3aBspTraceHullNodes = status->bspTraceHullNodes;
+	botLibAdapterStatus.q3aBspTraceBrushTests = status->bspTraceBrushTests;
+	botLibAdapterStatus.q3aBspTraceCpuNs = status->bspTraceCpuNs;
+	botLibAdapterStatus.q3aBspTraceCpuSamples = status->bspTraceCpuSamples;
+	botLibAdapterStatus.q3aBspTraceCpuMaxNs = status->bspTraceCpuMaxNs;
 	botLibAdapterStatus.q3aBspLeafLinks = status->bspLeafLinks;
 	botLibAdapterStatus.q3aBspLeafLinkFailures = status->bspLeafLinkFailures;
 	botLibAdapterStatus.q3aBspBoxEntitiesCount = status->bspBoxEntitiesCount;
 	botLibAdapterStatus.q3aBspVisibilityClusters = status->bspVisibilityClusters;
+	botLibAdapterStatus.q3aAasInpvsChecks = status->aasInpvsChecks;
+	botLibAdapterStatus.q3aAasInpvsVisible = status->aasInpvsVisible;
+	botLibAdapterStatus.q3aAasInpvsMisses = status->aasInpvsMisses;
+	botLibAdapterStatus.q3aAasInphsChecks = status->aasInphsChecks;
+	botLibAdapterStatus.q3aAasInphsVisible = status->aasInphsVisible;
+	botLibAdapterStatus.q3aAasInphsMisses = status->aasInphsMisses;
+	botLibAdapterStatus.q3aVisibilityClusterChecks = status->visibilityClusterChecks;
+	botLibAdapterStatus.q3aVisibilityClusterSame = status->visibilityClusterSame;
+	botLibAdapterStatus.q3aVisibilityClusterInvalid = status->visibilityClusterInvalid;
+	botLibAdapterStatus.q3aVisibilityDecompressCalls = status->visibilityDecompressCalls;
+	botLibAdapterStatus.q3aVisibilityDecompressBytes = status->visibilityDecompressBytes;
+	botLibAdapterStatus.q3aVisibilityDecompressRuns = status->visibilityDecompressRuns;
+	botLibAdapterStatus.q3aVisibilityDecompressFailures = status->visibilityDecompressFailures;
 	botLibAdapterStatus.q3aMemoryZoneActiveBytes = status->memoryZoneActiveBytes;
 	botLibAdapterStatus.q3aMemoryZonePeakBytes = status->memoryZonePeakBytes;
 	botLibAdapterStatus.q3aMemoryZoneAllocations = status->memoryZoneAllocations;
@@ -316,6 +411,7 @@ void CopyImportStatus() {
 	botLibAdapterStatus.bspCollisionMessage = status->bspCollisionMessage != nullptr ? status->bspCollisionMessage : "";
 	botLibAdapterStatus.bspLeafLinkMessage = status->bspLeafLinkMessage != nullptr ? status->bspLeafLinkMessage : "";
 	botLibAdapterStatus.bspVisibilityMessage = status->bspVisibilityMessage != nullptr ? status->bspVisibilityMessage : "";
+	CopyImportSourceCounters();
 }
 
 void CopyRouteSteerResult(
@@ -648,6 +744,7 @@ bool BotLibAdapter_BuildRouteSteer(
 
 	const bool routed = Q3A_BotLibImport_BuildRouteSteer(origin, preferredGoalArea, &q3aResult) != 0;
 	CopyRouteSteerResult(q3aResult, result);
+	CopyImportStatus();
 	return routed;
 }
 
@@ -668,6 +765,7 @@ bool BotLibAdapter_BuildRouteSteerToGoal(
 		preferredGoalOrigin,
 		&q3aResult) != 0;
 	CopyRouteSteerResult(q3aResult, result);
+	CopyImportStatus();
 	return routed;
 }
 
@@ -683,6 +781,7 @@ bool BotLibAdapter_BuildRouteSteerForTravelType(
 
 	const bool routed = Q3A_BotLibImport_BuildRouteSteerForTravelType(origin, travelType, &q3aResult) != 0;
 	CopyRouteSteerResult(q3aResult, result);
+	CopyImportStatus();
 	return routed;
 }
 
@@ -711,6 +810,11 @@ bool BotLibAdapter_FindRouteAreaForPoint(
 	}
 
 	return Q3A_BotLibImport_FindRouteAreaForPoint(origin, outArea, outOrigin) != 0;
+}
+
+const BotLibAdapterSourceCounters &BotLibAdapter_GetSourceCounters() {
+	CopyImportSourceCounters();
+	return botLibAdapterSourceCounters;
 }
 
 const BotLibAdapterStatus &BotLibAdapter_GetStatus() {

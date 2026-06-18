@@ -1,4 +1,4 @@
-# Q3A BotLib Bot Performance Source Counter Proposal
+# Q3A BotLib Bot Performance Source Counter Proposal and Analyzer Support
 
 Date: 2026-06-18
 
@@ -6,9 +6,46 @@ Related tasks: `DV-05-T02`, `DV-05-T03`, `DV-05-T05`, `FR-04-T16`
 
 ## Summary
 
-The current bot performance analyzer derives useful route/debug/recovery pressure from `q3a_bot_frame_command_status`, but it cannot yet measure true CPU cost or visibility/trace pressure. This proposal defines the source counters needed to make those budgets direct instead of proxy-based.
+The bot performance analyzer derives useful route/debug/recovery pressure from `q3a_bot_frame_command_status`. This proposal defines the source counters needed to make CPU, visibility, and trace budgets direct instead of proxy-based.
 
-No source changes are made in this planning slice. The names below are proposed final `q3a_bot_frame_command_status` fields so `tools/bot_perf/analyze_bot_perf.py` can consume them without a second log format.
+No game source changes are made in this tooling slice. The names below remain the proposed final `q3a_bot_frame_command_status` fields.
+
+Analyzer support now exists in `tools/bot_perf/analyze_bot_perf.py`: when these fields appear in logs, the tool keeps old route/debug/recovery metrics, records present/missing source-counter groups, emits source counters in JSON, adds derived CPU/visibility/trace metrics to text/CSV/Markdown/comparison output, and leaves older logs analyzable with `n/a` optional metrics.
+
+## Analyzer Support Status
+
+Implemented under `DV-05-T02`, `DV-05-T03`, `DV-05-T05`, and `FR-04-T16`:
+
+- Bot command CPU: derives `bot_frame_cpu_total_ms`, `bot_frame_cpu_ms_per_sec`, `bot_frame_cpu_ms_per_bot_sec`, `bot_frame_cpu_avg_us`, `bot_frame_cpu_max_us`, and `bot_frame_cpu_success_avg_us` from `bot_frame_cpu_*` fields. Early alias support accepts `bot_cpu_ns`, `bot_cpu_ms`, and `bot_frame_cpu_ms` for total CPU only.
+- WORR route CPU: derives route-query and route-reuse CPU totals, per-second/per-bot rates, average microseconds, max microseconds, and failed-query average microseconds from `route_query_cpu_*` / `route_reuse_cpu_*` fields. Early alias support accepts `bot_route_cpu_ms` for total route-query CPU only.
+- Q3A route import CPU: derives `q3a_route_cpu_*` totals, per-second/per-bot rates, average/max microseconds, and failed-route average microseconds.
+- Visibility and PVS/PHS pressure: derives per-second and per-bot rates for `aas_inpvs_checks`, `aas_inphs_checks`, `visibility_cluster_checks`, `visibility_decompress_calls`, and `visibility_decompress_bytes`, plus visible ratios and decompression failure reporting.
+- Static BSP trace pressure: derives per-second/per-bot rates for `aas_trace_calls`, `bsp_trace_calls`, `bsp_trace_hull_nodes`, and `bsp_trace_brush_tests`, plus static BSP trace CPU rates/averages/max and hit ratio.
+- Dynamic entity trace pressure: derives per-second/per-bot rates for `entity_trace_attempts` and `entity_trace_clip_calls`, plus clip CPU rates/averages/max, clip hit ratio, and failure reporting.
+- Comparison output now includes the main source metrics: `bot_frame_cpu_ms_per_bot_sec`, `route_query_cpu_ms_per_bot_sec`, `q3a_route_cpu_ms_per_bot_sec`, `aas_inpvs_checks_per_bot_sec`, `aas_inphs_checks_per_bot_sec`, `bsp_trace_calls_per_bot_sec`, and `entity_trace_clip_calls_per_bot_sec`.
+
+Validation completed for this tooling slice:
+
+```powershell
+python -m py_compile .\tools\bot_perf\analyze_bot_perf.py .\tools\bot_perf\test_analyze_bot_perf.py
+python -m unittest .\tools\bot_perf\test_analyze_bot_perf.py
+```
+
+The unit coverage includes a legacy log with no source counters and a synthetic source-counter log covering CPU, visibility/PVS/PHS, static BSP trace, and dynamic entity trace fields. Source-side emission in `sgame`/BotLib remains pending.
+
+## Q3A Bot Port Validation Mapping
+
+The analyzer treats source counters as optional until the game-side emitters land, but each group now maps directly to the Phase 9 validation plan in `docs-dev/plans/q3a-botlib-aas-port.md`:
+
+| Source counter group | Analyzer outputs | Phase 9 validation use |
+| --- | --- | --- |
+| `bot_frame_cpu_*` | `bot_frame_cpu_ms_per_sec`, `bot_frame_cpu_ms_per_bot_sec`, `bot_frame_cpu_avg_us`, `bot_frame_cpu_max_us` | Measures `Performance / CPU cost per bot` without relying on command throughput as a proxy. |
+| `route_query_cpu_*`, `route_reuse_cpu_*` | `route_query_cpu_ms_per_bot_sec`, `route_query_cpu_avg_us`, `route_query_cpu_fail_avg_us`, `route_reuse_cpu_avg_us` | Pairs existing `Route recomputation rate` checks with real route CPU cost and failed-route cost. |
+| `q3a_route_cpu_*` | `q3a_route_cpu_ms_per_bot_sec`, `q3a_route_cpu_avg_us`, `q3a_route_cpu_fail_avg_us` | Splits imported Q3A route-builder cost from WORR-side route/cache policy cost. |
+| `aas_inpvs_*`, `aas_inphs_*`, `visibility_*` | `aas_inpvs_checks_per_bot_sec`, `aas_inphs_checks_per_bot_sec`, visible ratios, decompression rates/failures | Supplies direct data for `Performance / Visibility trace count` and visibility-lump regression checks. |
+| `aas_trace_calls`, `bsp_trace_*` | `bsp_trace_calls_per_bot_sec`, `bsp_trace_brush_tests_per_sec`, `bsp_trace_cpu_avg_us`, `bsp_trace_hit_ratio` | Tracks static collision pressure from imported AAS tracing and active-map BSP collision bridge validation. |
+| `entity_trace_*` | `entity_trace_attempts_per_sec`, `entity_trace_clip_calls_per_bot_sec`, `entity_trace_clip_cpu_avg_us`, `entity_trace_failures` | Tracks dynamic entity collision pressure behind `AAS_EntityCollision` and WORR `gi.clip(...)` bridge validation. |
+| Present/missing source groups | `source_counter_groups_present`, `source_counter_groups_missing`, `missing_instrumentation` | Lets old soak logs remain valid while new post-counter logs show which Phase 9 source data is still absent. |
 
 ## Existing Measurement Surface
 
@@ -31,7 +68,7 @@ The analyzer already budgets:
 - `recovery_command_uses_per_bot_sec`
 - raw `route_failures`, `route_invalid_slots`, `route_debug_missing_frames`, and `skipped_inactive`
 
-The counters below should be added to that same status line so the analyzer can add direct CPU, visibility, and trace budget fields.
+The counters below should be added to that same status line so the analyzer can populate direct CPU, visibility, and trace budget fields from real source data.
 
 ## Counter Contract
 
@@ -339,12 +376,14 @@ Expected first-pass assertions:
 
 Analyzer/budget validation:
 
-- Add parser tests that confirm new fields are parsed as raw status metrics.
-- Add derived analyzer metrics for CPU/visibility/trace rates.
-- Add optional budget checks for new fields, for example:
+- Parser tests now confirm new fields are parsed as raw status metrics while legacy logs keep optional source metrics absent.
+- Derived analyzer metrics now cover CPU/visibility/trace rates, averages, max timings, ratios, and failure counters.
+- Optional budget checks can now target new metric fields, for example:
   - `bot_frame_cpu_ms_per_bot_sec`
   - `route_query_cpu_ms_per_bot_sec`
+  - `q3a_route_cpu_ms_per_bot_sec`
   - `aas_inpvs_checks_per_bot_sec`
+  - `aas_inphs_checks_per_bot_sec`
   - `bsp_trace_calls_per_bot_sec`
   - `entity_trace_clip_calls_per_bot_sec`
 - Generate a Markdown comparison report for pre-counter and post-counter logs. Missing fields should be reported as absent for older logs, not crash the analyzer.

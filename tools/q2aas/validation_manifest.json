@@ -16,6 +16,12 @@
       "require_spawn_coverage": true,
       "require_item_coverage": true,
       "require_high_value_reachability": true,
+      "coverage_categories": [
+        "worr_current_dm",
+        "deathmatch_reference",
+        "item_reachability_reference",
+        "mover_reference"
+      ],
       "minimum_metrics": {
         "numareas": 428,
         "numareasettings": 428,
@@ -31,6 +37,194 @@
         "elevator": 1
       },
       "notes": "Current staged WORR smoke map. This anchors strict Q2 reachability validation until the canonical Quake II reference map set is staged."
+    },
+    {
+      "id": "q2dm1",
+      "path": ".install/basew/maps/q2dm1.bsp",
+      "required": false,
+      "require_reachability": true,
+      "require_clean_bsp_lumps": true,
+      "require_spawn_coverage": true,
+      "require_item_coverage": true,
+      "require_high_value_reachability": true,
+      "coverage_categories": [
+        "id_deathmatch_reference",
+        "deathmatch_reference",
+        "item_reachability_reference"
+      ],
+      "minimum_metrics": {},
+      "minimum_travel_counts": {},
+      "notes": "Optional id Quake II deathmatch reference candidate. Missing entries are reported until the BSP is staged."
+    },
+    {
+      "id": "q2dm2",
+      "path": ".install/basew/maps/q2dm2.bsp",
+      "required": false,
+      "require_reachability": true,
+      "require_clean_bsp_lumps": true,
+      "require_spawn_coverage": true,
+      "require_item_coverage": true,
+      "require_high_value_reachability": true,
+      "coverage_categories": [
+        "id_deathmatch_reference",
+        "deathmatch_reference",
+        "item_reachability_reference"
+      ],
+      "minimum_metrics": {},
+      "minimum_travel_counts": {},
+      "notes": "Optional id Quake II deathmatch reference candidate. Missing entries are reported until the BSP is staged."
+    },
+    {
+      "id": "q2dm8",
+      "path": ".install/basew/maps/q2dm8.bsp",
+      "required": false,
+      "require_reachability": true,
+      "require_clean_bsp_lumps": true,
+      "require_spawn_coverage": true,
+      "require_item_coverage": true,
+      "require_high_value_reachability": true,
+      "coverage_categories": [
+        "open_deathmatch_reference",
+        "deathmatch_reference"
+      ],
+      "minimum_metrics": {},
+      "minimum_travel_counts": {},
+      "notes": "Optional open-layout deathmatch reference candidate. Missing entries are reported until the BSP is staged."
+    },
+    {
+      "id": "q2ctf1",
+      "path": ".install/basew/maps/q2ctf1.bsp",
+      "required": false,
+      "require_reachability": true,
+      "require_clean_bsp_lumps": true,
+      "require_spawn_coverage": true,
+      "require_item_coverage": true,
+      "require_high_value_reachability": true,
+      "coverage_categories": [
+        "ctf_reference",
+        "team_objective_reference"
+      ],
+      "minimum_metrics": {},
+      "minimum_travel_counts": {},
+      "notes": "Optional CTF reference candidate. Missing entries are reported until the BSP is staged."
+    },
+    {
+      "id": "base1",
+      "path": ".install/basew/maps/base1.bsp",
+      "required": false,
+      "require_reachability": true,
+      "require_clean_bsp_lumps": true,
+      "require_spawn_coverage": true,
+      "require_item_coverage": true,
+      "require_high_value_reachability": true,
+      "coverage_categories": [
+        "campaign_reference",
+        "coop_reference"
+      ],
+      "minimum_metrics": {},
+      "minimum_travel_counts": {},
+      "notes": "Optional campaign/co-op reference candidate. Missing entries are reported until the BSP is staged."
+    },
+    {
+      "id": "base2",
+      "path": ".install/basew/maps/base2.bsp",
+      "required": false,
+      "require_reachability": true,
+      "require_clean_bsp_lumps": true,
+      "require_spawn_coverage": true,
+      "require_item_coverage": true,
+      "require_high_value_reachability": true,
+      "coverage_categories": [
+        "campaign_reference",
+        "liquid_or_hazard_reference"
+      ],
+      "minimum_metrics": {},
+      "minimum_travel_counts": {},
+      "notes": "Optional campaign liquid/hazard reference candidate. Missing entries are reported until the BSP is staged and confirmed."
+    },
+    {
+      "id": "train",
+      "path": ".install/basew/maps/train.bsp",
+      "required": false,
+      "require_reachability": true,
+      "require_clean_bsp_lumps": true,
+      "require_spawn_coverage": true,
+      "require_item_coverage": true,
+      "require_high_value_reachability": true,
+      "coverage_categories": [
+        "campaign_reference",
+        "mover_reference"
+      ],
+      "minimum_metrics": {},
+      "minimum_travel_counts": {},
+      "notes": "Optional mover-heavy campaign reference candidate. Missing entries are reported until the BSP is staged."
+    }
+  ],
+  "reference_coverage": [
+    {
+      "id": "worr_current_dm",
+      "description": "Current WORR packaged deathmatch map used by strict generator smoke tests.",
+      "map_ids": [
+        "mm-rage"
+      ],
+      "minimum_validated_maps": 1
+    },
+    {
+      "id": "id_deathmatch_reference",
+      "description": "Canonical id Quake II deathmatch maps for broader DM layout coverage.",
+      "map_ids": [
+        "q2dm1",
+        "q2dm2"
+      ],
+      "minimum_validated_maps": 1,
+      "notes": "Optional until reference BSPs are staged under .install/basew/maps."
+    },
+    {
+      "id": "open_deathmatch_reference",
+      "description": "Open-layout deathmatch reference coverage beyond the current WORR smoke map.",
+      "map_ids": [
+        "q2dm8"
+      ],
+      "minimum_validated_maps": 1,
+      "notes": "Optional until the BSP is staged."
+    },
+    {
+      "id": "ctf_reference",
+      "description": "Capture-the-flag reference coverage for team-objective map structure.",
+      "map_ids": [
+        "q2ctf1"
+      ],
+      "minimum_validated_maps": 1,
+      "notes": "Optional until a CTF BSP is staged."
+    },
+    {
+      "id": "campaign_reference",
+      "description": "Campaign/co-op map coverage for non-DM entity and traversal layouts.",
+      "map_ids": [
+        "base1",
+        "base2",
+        "train"
+      ],
+      "minimum_validated_maps": 1,
+      "notes": "Optional until campaign BSPs are staged."
+    },
+    {
+      "id": "liquid_or_hazard_reference",
+      "description": "Map coverage intended to exercise liquids, slime/lava, hurt volumes, swim, or water-jump routes.",
+      "map_ids": [
+        "base2"
+      ],
+      "minimum_validated_maps": 1,
+      "notes": "Candidate map must be confirmed after staging before adding travel-count baselines."
+    },
+    {
+      "id": "mover_reference",
+      "description": "Map coverage intended to exercise doors, plats, elevators, trains, buttons, or other moving geometry.",
+      "map_ids": [
+        "mm-rage",
+        "train"
+      ],
+      "minimum_validated_maps": 1
     }
   ],
   "pending_reference_maps": [

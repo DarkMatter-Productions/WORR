@@ -15,6 +15,7 @@ sequence. - Radius Damage: Implements `RadiusDamage` for explosions, calculating
 damage falloff and checking line-of-sight to affected entities.*/
 
 #include "../g_local.hpp"
+#include "../bots/bot_combat.hpp"
 #include "freezetag_damage.hpp"
 
 #include <cassert>
@@ -999,6 +1000,7 @@ void Damage(gentity_t *targ, gentity_t *inflictor, gentity_t *attacker,
   }
 
   // treat previous "save" like armor for HUD/indicators
+  const int protectionSave = save;
   armorSave += save;
 
   // additional protections and powerups
@@ -1104,6 +1106,12 @@ void Damage(gentity_t *targ, gentity_t *inflictor, gentity_t *attacker,
         attacker->client->ps.stats[STAT_HIT_MARKER] =
             static_cast<short>(next_total);
       }
+    }
+
+    if (!OnSameTeam(targ, attacker)) {
+      const int realHitDamage =
+          statTake + powerArmorSave + std::max(0, armorSave - protectionSave);
+      BotCombat_RecordDamageEvent(attacker, targ, realHitDamage);
     }
 
     attacker->client->pers.match.totalDmgDealt +=

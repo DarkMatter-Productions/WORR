@@ -9,6 +9,12 @@ import subprocess
 import sys
 from typing import Any
 
+TOOLS_DIR = pathlib.Path(__file__).resolve().parent
+if str(TOOLS_DIR) not in sys.path:
+    sys.path.insert(0, str(TOOLS_DIR))
+
+from package_assets import botfile_archive_member_requirements
+
 
 def run_step(label: str, command: list[str]) -> None:
     print(f"[refresh-install] {label}", flush=True)
@@ -44,6 +50,16 @@ def archive_member_for(staged_aas: pathlib.Path, base_game_dir: pathlib.Path) ->
     return f"maps/{staged_aas.name}"
 
 
+def normalize_sha256(value: Any, label: str, report_path: pathlib.Path) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise SystemExit(f"{label}: staged AAS SHA-256 is missing in {report_path}")
+
+    normalized = value.strip().lower()
+    if len(normalized) != 64 or any(character not in "0123456789abcdef" for character in normalized):
+        raise SystemExit(f"{label}: invalid staged AAS SHA-256 in {report_path}: {value!r}")
+    return normalized
+
+
 def q2aas_archive_member_requirements(
     stage_report_path: pathlib.Path,
     install_dir: pathlib.Path,
@@ -51,7 +67,7 @@ def q2aas_archive_member_requirements(
 ) -> list[str]:
     report = load_q2aas_stage_report(stage_report_path)
     base_game_dir = (install_dir / base_game).resolve()
-    requirements: list[str] = []
+    requirements_by_member: dict[str, str] = {}
 
     for index, map_entry in enumerate(report.get("maps", [])):
         if not isinstance(map_entry, dict):
@@ -78,12 +94,15 @@ def q2aas_archive_member_requirements(
 
         member = archive_member_for(staged_aas, base_game_dir)
         expected_hash = staged_output.get("aas_sha256") or map_entry.get("aas_sha256")
-        if isinstance(expected_hash, str) and expected_hash:
-            requirements.append(f"{member}={expected_hash.lower()}")
-        else:
-            requirements.append(member)
+        normalized_hash = normalize_sha256(expected_hash, map_id, stage_report_path)
+        previous_hash = requirements_by_member.get(member)
+        if previous_hash is not None and previous_hash != normalized_hash:
+            raise SystemExit(
+                f"{map_id}: conflicting staged AAS hashes for archive member {member} in {stage_report_path}"
+            )
+        requirements_by_member[member] = normalized_hash
 
-    return requirements
+    return [f"{member}={expected_hash}" for member, expected_hash in requirements_by_member.items()]
 
 
 def main() -> int:
@@ -219,6 +238,8 @@ def main() -> int:
             "--platform-id",
             args.platform_id,
         ]
+        for requirement in botfile_archive_member_requirements(pathlib.Path(args.assets_dir).resolve()):
+            validation_command.extend(["--required-archive-member", requirement])
         if args.package_q2aas_aas:
             for requirement in q2aas_archive_member_requirements(
                 pathlib.Path(args.q2aas_stage_report).resolve(),

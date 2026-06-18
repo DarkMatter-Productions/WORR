@@ -5,6 +5,7 @@ Modernized capture gameplay implementation covering Capture the Flag, One Flag C
 logic.*/
 
 #include "../g_local.hpp"
+#include "../bots/bot_objectives.hpp"
 #include "g_capture.hpp"
 #include "g_teamplay.hpp"
 
@@ -1233,6 +1234,7 @@ bool CTF_PickupFlag(gentity_t* ent, gentity_t* other) {
 				other->client->resp.ctf_flagsince = 0_ms;
 
 				AwardFlagCapture(ent, other, flagTeam, pickupTime);
+				BotObjectives_RecordFlagCapture(other, enemyFlagItem);
 				CTF_ResetFlags();
 
 				if (Game::Is(GameType::CaptureStrike)) {
@@ -1252,6 +1254,7 @@ bool CTF_PickupFlag(gentity_t* ent, gentity_t* other) {
 		other->client->resp.ctf_lastreturnedflag = level.time;
 		other->client->pers.match.ctfFlagReturns++;
 		gi.sound(ent, CHAN_RELIABLE | CHAN_NO_PHS_ADD | CHAN_AUX, gi.soundIndex("ctf/flagret.wav"), 1, ATTN_NONE, 0);
+		BotObjectives_RecordFlagPickup(other, ent);
 		SetFlagStatus(flagTeam, FlagStatus::AtBase);
 		CTF_ResetTeamFlag(flagTeam);
 		return false;
@@ -1269,6 +1272,7 @@ bool CTF_PickupFlag(gentity_t* ent, gentity_t* other) {
 		other->client->pers.teamState.flag_pickup_time = 0_ms;
 
 		AwardFlagCapture(ent, other, scoringTeam, pickupTime);
+		BotObjectives_RecordFlagCapture(other, IT_FLAG_NEUTRAL);
 		CTF_ResetTeamFlag(Team::Free);
 		return false;
 	}
@@ -1293,6 +1297,7 @@ bool CTF_PickupFlag(gentity_t* ent, gentity_t* other) {
 	}
 
 	GiveFlagToPlayer(ent, other, flagTeam, flagItem);
+	BotObjectives_RecordFlagPickup(other, ent);
 	return true;
 }
 

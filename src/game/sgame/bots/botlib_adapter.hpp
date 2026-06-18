@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 
 enum BotLibAdapterEntityType {
@@ -64,6 +65,57 @@ struct BotLibAdapterTraceResult {
 	float planeDist = 0.0f;
 	int contents = 0;
 	int entnum = 0;
+};
+
+// Process-local Q3A source counters mirrored for later scenario/status printing.
+// The docs-dev source-counter note maps these names to final snake_case fields.
+struct BotLibAdapterSourceCounters {
+	int q3aRouteBuildAttempts = 0;
+	int q3aRouteBuildSuccesses = 0;
+	int q3aRouteBuildFailures = 0;
+	uint64_t q3aRouteCpuNs = 0;
+	int q3aRouteCpuSamples = 0;
+	uint64_t q3aRouteCpuMaxNs = 0;
+	uint64_t q3aRouteCpuFailNs = 0;
+	int q3aRouteCpuFailSamples = 0;
+	int q3aAasInpvsChecks = 0;
+	int q3aAasInpvsVisible = 0;
+	int q3aAasInpvsMisses = 0;
+	int q3aAasInphsChecks = 0;
+	int q3aAasInphsVisible = 0;
+	int q3aAasInphsMisses = 0;
+	int q3aVisibilityClusterChecks = 0;
+	int q3aVisibilityClusterSame = 0;
+	int q3aVisibilityClusterInvalid = 0;
+	int q3aVisibilityDecompressCalls = 0;
+	int q3aVisibilityDecompressBytes = 0;
+	int q3aVisibilityDecompressRuns = 0;
+	int q3aVisibilityDecompressFailures = 0;
+	int q3aEntityTraceAttempts = 0;
+	int q3aEntityTraceHits = 0;
+	int q3aEntityTraceMisses = 0;
+	int q3aEntityTraceFailures = 0;
+	int q3aEntityTraceClipCalls = 0;
+	int q3aEntityTraceClipHits = 0;
+	int q3aEntityTraceClipMisses = 0;
+	int q3aEntityTraceClipStartSolid = 0;
+	int q3aEntityTraceClipAllSolid = 0;
+	uint64_t q3aEntityTraceClipCpuNs = 0;
+	uint64_t q3aEntityTraceClipCpuMaxNs = 0;
+	int q3aAasTraceCalls = 0;
+	int q3aBspTraceCalls = 0;
+	int q3aBspTracePointCalls = 0;
+	int q3aBspTraceBoxCalls = 0;
+	int q3aBspTraceZeroLengthCalls = 0;
+	int q3aBspTraceHits = 0;
+	int q3aBspTraceMisses = 0;
+	int q3aBspTraceStartSolid = 0;
+	int q3aBspTraceAllSolid = 0;
+	int q3aBspTraceHullNodes = 0;
+	int q3aBspTraceBrushTests = 0;
+	uint64_t q3aBspTraceCpuNs = 0;
+	int q3aBspTraceCpuSamples = 0;
+	uint64_t q3aBspTraceCpuMaxNs = 0;
 };
 
 using BotLibAdapterEntityTraceCallback = bool (*)(
@@ -187,6 +239,14 @@ struct BotLibAdapterStatus {
 	int q3aAasRouteReachability = 0;
 	int q3aAasRouteEndArea = 0;
 	int q3aAasRouteStopEvent = 0;
+	int q3aRouteBuildAttempts = 0;
+	int q3aRouteBuildSuccesses = 0;
+	int q3aRouteBuildFailures = 0;
+	uint64_t q3aRouteCpuNs = 0;
+	int q3aRouteCpuSamples = 0;
+	uint64_t q3aRouteCpuMaxNs = 0;
+	uint64_t q3aRouteCpuFailNs = 0;
+	int q3aRouteCpuFailSamples = 0;
 	int q3aAasAltRouteStartArea = 0;
 	int q3aAasAltRouteGoalArea = 0;
 	int q3aAasAltRouteGoals = 0;
@@ -210,6 +270,13 @@ struct BotLibAdapterStatus {
 	int q3aEntityTraceHits = 0;
 	int q3aEntityTraceMisses = 0;
 	int q3aEntityTraceFailures = 0;
+	int q3aEntityTraceClipCalls = 0;
+	int q3aEntityTraceClipHits = 0;
+	int q3aEntityTraceClipMisses = 0;
+	int q3aEntityTraceClipStartSolid = 0;
+	int q3aEntityTraceClipAllSolid = 0;
+	uint64_t q3aEntityTraceClipCpuNs = 0;
+	uint64_t q3aEntityTraceClipCpuMaxNs = 0;
 	int q3aDebugDrawLines = 0;
 	int q3aDebugDrawCrosses = 0;
 	int q3aDebugDrawArrows = 0;
@@ -254,10 +321,37 @@ struct BotLibAdapterStatus {
 	int q3aBspCollisionNodes = 0;
 	int q3aBspCollisionLeafs = 0;
 	int q3aBspCollisionBrushes = 0;
+	int q3aAasTraceCalls = 0;
+	int q3aBspTraceCalls = 0;
+	int q3aBspTracePointCalls = 0;
+	int q3aBspTraceBoxCalls = 0;
+	int q3aBspTraceZeroLengthCalls = 0;
+	int q3aBspTraceHits = 0;
+	int q3aBspTraceMisses = 0;
+	int q3aBspTraceStartSolid = 0;
+	int q3aBspTraceAllSolid = 0;
+	int q3aBspTraceHullNodes = 0;
+	int q3aBspTraceBrushTests = 0;
+	uint64_t q3aBspTraceCpuNs = 0;
+	int q3aBspTraceCpuSamples = 0;
+	uint64_t q3aBspTraceCpuMaxNs = 0;
 	int q3aBspLeafLinks = 0;
 	int q3aBspLeafLinkFailures = 0;
 	int q3aBspBoxEntitiesCount = 0;
 	int q3aBspVisibilityClusters = 0;
+	int q3aAasInpvsChecks = 0;
+	int q3aAasInpvsVisible = 0;
+	int q3aAasInpvsMisses = 0;
+	int q3aAasInphsChecks = 0;
+	int q3aAasInphsVisible = 0;
+	int q3aAasInphsMisses = 0;
+	int q3aVisibilityClusterChecks = 0;
+	int q3aVisibilityClusterSame = 0;
+	int q3aVisibilityClusterInvalid = 0;
+	int q3aVisibilityDecompressCalls = 0;
+	int q3aVisibilityDecompressBytes = 0;
+	int q3aVisibilityDecompressRuns = 0;
+	int q3aVisibilityDecompressFailures = 0;
 	int q3aMemoryZoneActiveBytes = 0;
 	int q3aMemoryZonePeakBytes = 0;
 	int q3aMemoryZoneAllocations = 0;
@@ -360,4 +454,5 @@ bool BotLibAdapter_FindRouteAreaForPoint(
 	int *outArea,
 	float outOrigin[3]);
 
+const BotLibAdapterSourceCounters &BotLibAdapter_GetSourceCounters();
 const BotLibAdapterStatus &BotLibAdapter_GetStatus();

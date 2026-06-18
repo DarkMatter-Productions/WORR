@@ -348,6 +348,7 @@ sgame_src = bgame_src + [
   'src/game/sgame/bots/bot_combat.cpp',
   'src/game/sgame/bots/bot_items.cpp',
   'src/game/sgame/bots/bot_nav.cpp',
+  'src/game/sgame/bots/bot_objectives.cpp',
   'src/game/sgame/bots/botlib_adapter.cpp',
   'src/game/sgame/bots/bot_runtime.cpp',
   'src/game/sgame/bots/bot_think.cpp',

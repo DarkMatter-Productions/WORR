@@ -173,6 +173,7 @@ VALID_MANIFEST_KEYS = {
     "task_ids",
     "maps",
     "pending_reference_maps",
+    "reference_coverage",
 }
 
 VALID_MANIFEST_MAP_KEYS = {
@@ -186,8 +187,17 @@ VALID_MANIFEST_MAP_KEYS = {
     "require_spawn_coverage",
     "require_item_coverage",
     "require_high_value_reachability",
+    "coverage_categories",
     "minimum_metrics",
     "minimum_travel_counts",
+    "notes",
+}
+
+VALID_REFERENCE_COVERAGE_KEYS = {
+    "id",
+    "description",
+    "map_ids",
+    "minimum_validated_maps",
     "notes",
 }
 
@@ -1252,6 +1262,37 @@ def validate_bool_field(entry: dict[str, object], name: str, default: bool, map_
     return default, [f"{name} for {map_id} must be a boolean"]
 
 
+def normalize_string_list(
+    raw: object,
+    label: str,
+    owner: object,
+    *,
+    required: bool = False,
+) -> tuple[list[str], list[str]]:
+    if raw is None:
+        if required:
+            return [], [f"{label} for {owner} must be an array of non-empty strings"]
+        return [], []
+    if not isinstance(raw, list):
+        return [], [f"{label} for {owner} must be an array of non-empty strings"]
+
+    values: list[str] = []
+    errors: list[str] = []
+    seen: set[str] = set()
+    for index, value in enumerate(raw):
+        if not isinstance(value, str) or not value:
+            errors.append(f"{label}[{index}] for {owner} must be a non-empty string")
+            continue
+        if value in seen:
+            continue
+        seen.add(value)
+        values.append(value)
+
+    if required and not values:
+        errors.append(f"{label} for {owner} must contain at least one value")
+    return values, errors
+
+
 def normalize_thresholds(
     raw: object,
     label: str,
@@ -1284,6 +1325,227 @@ def normalize_thresholds(
     return thresholds, errors
 
 
+def normalize_reference_coverage(
+    raw: object,
+) -> tuple[list[dict[str, object]], list[str]]:
+    if raw is None:
+        return [], []
+    if not isinstance(raw, list):
+        return [], ["reference_coverage must be an array"]
+
+    categories: list[dict[str, object]] = []
+    errors: list[str] = []
+    seen_ids: set[str] = set()
+    for index, entry in enumerate(raw):
+        owner = f"reference_coverage[{index}]"
+        if not isinstance(entry, dict):
+            errors.append(f"{owner} must be an object")
+            continue
+
+        unknown_keys = sorted(set(entry) - VALID_REFERENCE_COVERAGE_KEYS)
+        for key in unknown_keys:
+            errors.append(f"{owner} has unknown key '{key}'")
+
+        raw_id = entry.get("id")
+        if not isinstance(raw_id, str) or not raw_id:
+            errors.append(f"{owner}.id must be a non-empty string")
+            category_id = f"invalid-{index}"
+        else:
+            category_id = raw_id
+            if category_id in seen_ids:
+                errors.append(f"{owner}.id duplicates reference coverage id '{category_id}'")
+            seen_ids.add(category_id)
+
+        description = entry.get("description", "")
+        if not isinstance(description, str):
+            errors.append(f"{owner}.description must be a string")
+            description = ""
+
+        notes = entry.get("notes", "")
+        if not isinstance(notes, str):
+            errors.append(f"{owner}.notes must be a string")
+            notes = ""
+
+        map_ids, map_id_errors = normalize_string_list(
+            entry.get("map_ids"),
+            "map_ids",
+            owner,
+            required=True,
+        )
+        errors.extend(map_id_errors)
+
+        minimum_validated_maps = entry.get("minimum_validated_maps", 1)
+        if (
+            isinstance(minimum_validated_maps, bool)
+            or not isinstance(minimum_validated_maps, int)
+            or minimum_validated_maps < 1
+        ):
+            errors.append(f"{owner}.minimum_validated_maps must be a positive integer")
+            minimum_validated_maps = 1
+
+        categories.append({
+            "id": category_id,
+            "description": description,
+            "map_ids": map_ids,
+            "minimum_validated_maps": minimum_validated_maps,
+            "notes": notes,
+        })
+
+    return categories, errors
+
+
+def build_reference_coverage_report(
+    categories: list[dict[str, object]],
+    map_status_by_id: dict[str, dict[str, object]],
+) -> dict[str, object]:
+    if not categories:
+        return {
+            "status": "not_configured",
+            "category_count": 0,
+            "incomplete_category_count": 0,
+            "missing_map_count": 0,
+            "missing_category_map_count": 0,
+            "unique_missing_map_ids": [],
+            "categories": [],
+            "incomplete_categories": [],
+            "missing_maps": [],
+        }
+
+    category_reports: list[dict[str, object]] = []
+    incomplete_categories: list[str] = []
+    missing_maps: list[dict[str, object]] = []
+
+    for category in categories:
+        category_id = str(category["id"])
+        map_ids = [str(map_id) for map_id in category.get("map_ids", [])]
+        candidate_reports: list[dict[str, object]] = []
+        validated_count = 0
+
+        for map_id in map_ids:
+            map_status = map_status_by_id.get(map_id)
+            if map_status is None:
+                candidate = {
+                    "id": map_id,
+                    "status": "not_declared",
+                }
+            else:
+                candidate = {
+                    "id": map_id,
+                    "status": map_status.get("status", "unknown"),
+                    "path": map_status.get("path"),
+                    "map_source": map_status.get("map_source"),
+                    "required": map_status.get("required", False),
+                    "coverage_categories": map_status.get("coverage_categories", []),
+                }
+            if candidate["status"] == "loaded":
+                validated_count += 1
+            else:
+                missing_maps.append({
+                    "category": category_id,
+                    "id": map_id,
+                    "status": candidate["status"],
+                    "path": candidate.get("path"),
+                    "map_source": candidate.get("map_source"),
+                })
+            candidate_reports.append(candidate)
+
+        minimum_validated_maps = int(category.get("minimum_validated_maps", 1))
+        category_status = "passed" if validated_count >= minimum_validated_maps else "incomplete"
+        if category_status == "incomplete":
+            incomplete_categories.append(category_id)
+
+        category_reports.append({
+            "id": category_id,
+            "description": category.get("description", ""),
+            "notes": category.get("notes", ""),
+            "status": category_status,
+            "validated_map_count": validated_count,
+            "minimum_validated_maps": minimum_validated_maps,
+            "candidate_maps": candidate_reports,
+        })
+
+    unique_missing_map_ids = sorted({
+        str(entry["id"])
+        for entry in missing_maps
+        if entry.get("id")
+    })
+
+    return {
+        "status": "incomplete" if incomplete_categories else "passed",
+        "category_count": len(category_reports),
+        "incomplete_category_count": len(incomplete_categories),
+        "missing_map_count": len(unique_missing_map_ids),
+        "missing_category_map_count": len(missing_maps),
+        "unique_missing_map_ids": unique_missing_map_ids,
+        "categories": category_reports,
+        "incomplete_categories": incomplete_categories,
+        "missing_maps": missing_maps,
+    }
+
+
+def summarize_manifest_reference_coverage(
+    manifest_reports: list[dict[str, object]],
+) -> dict[str, object]:
+    coverage_reports = [
+        report.get("reference_coverage")
+        for report in manifest_reports
+        if isinstance(report.get("reference_coverage"), dict)
+    ]
+    configured = [
+        report
+        for report in coverage_reports
+        if report.get("status") != "not_configured"
+    ]
+    incomplete = [
+        report
+        for report in configured
+        if report.get("status") == "incomplete"
+    ]
+    return {
+        "status": (
+            "not_configured"
+            if not configured
+            else "incomplete"
+            if incomplete
+            else "passed"
+        ),
+        "manifest_count": len(manifest_reports),
+        "configured_manifest_count": len(configured),
+        "incomplete_manifest_count": len(incomplete),
+        "missing_map_count": sum(int(report.get("missing_map_count", 0)) for report in configured),
+        "incomplete_categories": [
+            category
+            for report in configured
+            for category in report.get("incomplete_categories", [])
+            if isinstance(category, str)
+        ],
+    }
+
+
+def print_reference_coverage_warnings(manifest_report: dict[str, object]) -> None:
+    coverage = manifest_report.get("reference_coverage")
+    if not isinstance(coverage, dict) or coverage.get("status") != "incomplete":
+        return
+
+    for category in coverage.get("categories", []):
+        if not isinstance(category, dict) or category.get("status") != "incomplete":
+            continue
+        print(
+            "[q2aas] warning: reference coverage incomplete: "
+            f"{category.get('id')} has {category.get('validated_map_count')} validated maps, "
+            f"needs {category.get('minimum_validated_maps')}",
+        )
+        for candidate in category.get("candidate_maps", []):
+            if not isinstance(candidate, dict) or candidate.get("status") == "loaded":
+                continue
+            path = candidate.get("path")
+            suffix = f" ({path})" if path else ""
+            print(
+                "[q2aas] warning:   missing reference map "
+                f"{candidate.get('id')}: {candidate.get('status')}{suffix}",
+            )
+
+
 def load_manifest(
     root: Path,
     manifest: Path,
@@ -1299,6 +1561,18 @@ def load_manifest(
         "map_count": 0,
         "loaded_map_count": 0,
         "pending_reference_maps": [],
+        "reference_coverage": {
+            "status": "not_configured",
+            "category_count": 0,
+            "incomplete_category_count": 0,
+            "missing_map_count": 0,
+            "missing_category_map_count": 0,
+            "unique_missing_map_ids": [],
+            "categories": [],
+            "incomplete_categories": [],
+            "missing_maps": [],
+        },
+        "declared_maps": [],
         "errors": [],
         "skipped_maps": [],
     }
@@ -1344,6 +1618,12 @@ def load_manifest(
         pending_reference_maps = []
     manifest_report["pending_reference_maps"] = pending_reference_maps
 
+    reference_coverage, reference_coverage_errors = normalize_reference_coverage(
+        data.get("reference_coverage")
+    )
+    for error in reference_coverage_errors:
+        manifest_error(manifest_report, error)
+
     manifest_maps = data.get("maps", [])
     if not isinstance(manifest_maps, list):
         manifest_error(manifest_report, "maps must be an array")
@@ -1351,6 +1631,7 @@ def load_manifest(
     manifest_report["map_count"] = len(manifest_maps)
 
     maps: list[dict[str, object]] = []
+    map_status_by_id: dict[str, dict[str, object]] = {}
     ok = not bool(manifest_report["errors"])
     for index, entry in enumerate(manifest_maps):
         if not isinstance(entry, dict):
@@ -1458,6 +1739,11 @@ def load_manifest(
             False,
             map_id,
         )
+        coverage_categories, coverage_category_errors = normalize_string_list(
+            entry.get("coverage_categories"),
+            "coverage_categories",
+            map_id,
+        )
         minimum_metrics, metric_errors = normalize_thresholds(
             entry.get("minimum_metrics"),
             "minimum_metrics",
@@ -1484,6 +1770,7 @@ def load_manifest(
             + spawn_errors
             + item_errors
             + high_value_errors
+            + coverage_category_errors
             + metric_errors
             + travel_errors
             + note_errors
@@ -1491,16 +1778,28 @@ def load_manifest(
             manifest_error(manifest_report, error)
             ok = False
 
+        map_report = {
+            "id": map_id,
+            "path": str(map_path),
+            "map_source": map_source,
+            "required": required,
+            "coverage_categories": coverage_categories,
+            "status": "missing" if missing else "loaded",
+        }
+        map_status_by_id[map_id] = map_report
+
         if missing:
             message = f"manifest map missing: {map_path}"
             if skip_missing:
                 print(f"[q2aas] warning: {message}; skipping")
+                map_report["status"] = "skipped_missing"
                 skipped_maps = manifest_report["skipped_maps"]
                 if isinstance(skipped_maps, list):
                     skipped_maps.append({
                         "id": map_id,
                         "path": str(map_path),
                         "map_source": map_source,
+                        "coverage_categories": coverage_categories,
                         "reason": "missing",
                         "required": required,
                     })
@@ -1519,6 +1818,7 @@ def load_manifest(
             "require_spawn_coverage": require_spawn_coverage,
             "require_item_coverage": require_item_coverage,
             "require_high_value_reachability": require_high_value_reachability,
+            "coverage_categories": coverage_categories,
             "minimum_metrics": minimum_metrics,
             "minimum_travel_counts": minimum_travel_counts,
             "notes": notes,
@@ -1526,6 +1826,11 @@ def load_manifest(
         })
 
     manifest_report["loaded_map_count"] = len(maps)
+    manifest_report["declared_maps"] = list(map_status_by_id.values())
+    manifest_report["reference_coverage"] = build_reference_coverage_report(
+        reference_coverage,
+        map_status_by_id,
+    )
     return maps, ok, manifest_report
 
 
@@ -1565,6 +1870,17 @@ def run_manifest_schema_smoke(root: Path, output: Path, packaged_map_cache_dir: 
         "schema": VALIDATION_MANIFEST_SCHEMA,
         "version": VALIDATION_MANIFEST_VERSION,
         "task_ids": ["FR-04-T11"],
+        "reference_coverage": [
+            {
+                "id": "bad-reference-minimum",
+                "map_ids": ["invalid-threshold-smoke"],
+                "minimum_validated_maps": 0,
+            },
+            {
+                "id": "bad-reference-map-list",
+                "map_ids": "invalid-threshold-smoke",
+            },
+        ],
         "maps": [
             {
                 "id": "invalid-threshold-smoke",
@@ -1615,6 +1931,8 @@ def run_manifest_schema_smoke(root: Path, output: Path, packaged_map_cache_dir: 
         "must define path or archive plus archive_member",
         "archive_member must be a relative path inside the archive",
         "archive_member has an unsafe path component",
+        "reference_coverage[0].minimum_validated_maps",
+        "map_ids for reference_coverage[1]",
     )
     failed_as_expected = not ok and all(
         any(fragment in message for message in error_messages)
@@ -1693,6 +2011,7 @@ def create_package_map_smoke_spec(
         "require_spawn_coverage": True,
         "require_item_coverage": True,
         "require_high_value_reachability": True,
+        "coverage_categories": ["package_map_extraction_smoke"],
         "minimum_metrics": {},
         "minimum_travel_counts": {},
         "notes": "Scratch pkz smoke generated from the current staged BSP to validate package-backed map extraction.",
@@ -1754,6 +2073,11 @@ def main() -> int:
         "--allow-empty-map-set",
         action="store_true",
         help="Allow manifest/direct map selection to resolve to no maps.",
+    )
+    parser.add_argument(
+        "--require-reference-coverage",
+        action="store_true",
+        help="Fail when manifest reference_coverage categories do not have enough validated maps.",
     )
     parser.add_argument(
         "--threads",
@@ -1873,6 +2197,7 @@ def main() -> int:
             "require_spawn_coverage": args.require_spawn_coverage,
             "require_item_coverage": args.require_item_coverage,
             "require_high_value_reachability": args.require_high_value_reachability,
+            "coverage_categories": [],
             "minimum_metrics": {},
             "minimum_travel_counts": {},
             "notes": "",
@@ -1893,6 +2218,15 @@ def main() -> int:
         map_specs.extend(manifest_maps)
         manifest_reports.append(manifest_report)
         manifest_ok = manifest_ok and ok
+        print_reference_coverage_warnings(manifest_report)
+
+    reference_coverage_summary = summarize_manifest_reference_coverage(manifest_reports)
+    if (
+        args.require_reference_coverage
+        and reference_coverage_summary["status"] == "incomplete"
+    ):
+        print("[q2aas] reference coverage is incomplete", file=sys.stderr)
+        manifest_ok = False
 
     package_map_smoke_report: dict[str, object] | None = None
     if args.package_map_smoke:
@@ -1941,6 +2275,7 @@ def main() -> int:
             "generation_time_policy": "Omitted by default. Use hashes and metadata sidecars for deterministic identity.",
         },
         "manifests": manifest_reports,
+        "reference_coverage": reference_coverage_summary,
         "maps": [],
     }
     if package_map_smoke_report is not None:
@@ -2111,6 +2446,7 @@ def main() -> int:
                 "required_spawn_coverage": require_spawn_coverage,
                 "required_item_coverage": require_item_coverage,
                 "required_high_value_reachability": require_high_value_reachability,
+                "coverage_categories": spec.get("coverage_categories", []),
                 "minimum_metrics": minimum_metrics,
                 "minimum_travel_counts": minimum_travel_counts,
                 "status": "passed" if ok else "failed",

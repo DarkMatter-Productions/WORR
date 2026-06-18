@@ -15,6 +15,7 @@ startup to precache assets and set up server configuration strings for all items
 #include "../g_local.hpp"
 #include "g_proball.hpp"
 #include "../bots/bot_includes.hpp"
+#include "../bots/bot_items.hpp"
 #include "../monsters/m_player.hpp"	//doppelganger
 
 #include <array>
@@ -3542,12 +3543,16 @@ TOUCH(Touch_Item) (gentity_t* ent, gentity_t* other, const trace_t& tr, bool /*o
 		return;
 
 	// Attempt pickup
+	const BotItemPickupSnapshot botPickupSnapshot =
+		BotItems_CapturePickupSnapshot(other, it, ent->s.number);
 	const bool pickedUp = it->pickup(ent, other);
 
 	// Keep selected-item sanity in sync regardless of pickup success
 	ValidateSelectedItem(other);
 
 	if (pickedUp) {
+		BotItems_RecordPickupObservation(botPickupSnapshot, other);
+
 		// Feedback flash
 		other->client->feedback.bonusAlpha = 0.25f;
 

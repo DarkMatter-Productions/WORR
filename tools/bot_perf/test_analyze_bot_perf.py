@@ -34,6 +34,7 @@ def synthetic_log(
     route_failures: int = 0,
     recovery_command_uses: int = 4,
     stuck_detections: int = 1,
+    source_counters: str = "",
 ) -> str:
     complete_line = ""
     if elapsed_ms is not None:
@@ -64,9 +65,64 @@ def synthetic_log(
         f"recovery_command_uses={recovery_command_uses} "
         "route_goal_assignments=3 item_goal_assignments=2 "
         "item_goal_reservation_skips=1 item_goal_peak_active_reservations=2 "
+        f"{source_counters}"
         "skipped_inactive=0 "
         f"expected_min_frames={bots} expected_min_commands={bots} pass=1\n"
     )
+
+
+SOURCE_COUNTERS = (
+    "bot_frame_cpu_ns=8000000 bot_frame_cpu_samples=40 "
+    "bot_frame_cpu_max_ns=1000000 bot_frame_cpu_success_ns=6000000 "
+    "bot_frame_cpu_success_samples=30 "
+    "route_query_cpu_ns=2000000 route_query_cpu_samples=5 "
+    "route_query_cpu_max_ns=700000 route_query_cpu_fail_ns=200000 "
+    "route_query_cpu_fail_samples=1 route_reuse_cpu_ns=500000 "
+    "route_reuse_cpu_samples=15 "
+    "q3a_route_cpu_ns=1500000 q3a_route_cpu_samples=5 "
+    "q3a_route_cpu_max_ns=600000 q3a_route_cpu_fail_ns=100000 "
+    "q3a_route_cpu_fail_samples=1 "
+    "q3a_memory_zone_active=240000 q3a_memory_zone_peak=300000 "
+    "q3a_memory_hunk_active=690000 q3a_memory_hunk_peak=720000 "
+    "q3a_memory_total_active=930000 q3a_memory_total_peak=1020000 "
+    "q3a_memory_failures=0 q3a_memory_available=66000000 "
+    "aas_inpvs_checks=80 aas_inpvs_visible=60 aas_inpvs_misses=20 "
+    "aas_inphs_checks=20 aas_inphs_visible=10 aas_inphs_misses=10 "
+    "visibility_cluster_checks=100 visibility_cluster_same=15 "
+    "visibility_cluster_invalid=1 visibility_decompress_calls=30 "
+    "visibility_decompress_bytes=300 visibility_decompress_runs=12 "
+    "visibility_decompress_failures=0 "
+    "aas_trace_calls=120 bsp_trace_calls=100 bsp_trace_point_calls=60 "
+    "bsp_trace_box_calls=40 bsp_trace_zero_length_calls=5 bsp_trace_hits=25 "
+    "bsp_trace_misses=75 bsp_trace_startsolid=2 bsp_trace_allsolid=1 "
+    "bsp_trace_hull_nodes=900 bsp_trace_brush_tests=400 "
+    "bsp_trace_cpu_ns=10000000 bsp_trace_cpu_samples=100 "
+    "bsp_trace_cpu_max_ns=900000 "
+    "entity_trace_attempts=50 entity_trace_hits=12 entity_trace_misses=38 "
+    "entity_trace_failures=0 entity_trace_clip_calls=40 "
+    "entity_trace_clip_hits=10 entity_trace_clip_misses=30 "
+    "entity_trace_clip_startsolid=1 entity_trace_clip_allsolid=0 "
+    "entity_trace_clip_cpu_ns=4000000 entity_trace_clip_cpu_max_ns=500000 "
+)
+
+
+CPU_SOURCE_COUNTERS = (
+    "bot_frame_cpu_ns=8000000 bot_frame_cpu_samples=40 "
+    "bot_frame_cpu_max_ns=1000000 bot_frame_cpu_success_ns=6000000 "
+    "bot_frame_cpu_success_samples=30 "
+    "route_query_cpu_ns=2000000 route_query_cpu_samples=5 "
+    "route_query_cpu_max_ns=700000 route_query_cpu_fail_ns=200000 "
+    "route_query_cpu_fail_samples=1 "
+    "q3a_route_cpu_ns=1500000 q3a_route_cpu_samples=5 "
+    "q3a_route_cpu_max_ns=600000 q3a_route_cpu_fail_ns=100000 "
+    "q3a_route_cpu_fail_samples=1 "
+)
+
+
+BSP_TRACE_CPU_SOURCE_COUNTERS = (
+    "bsp_trace_calls=5 bsp_trace_cpu_ns=12000 "
+    "bsp_trace_cpu_samples=6 bsp_trace_cpu_max_ns=5000 "
+)
 
 
 class BotPerfAnalyzerTests(unittest.TestCase):
@@ -90,6 +146,151 @@ class BotPerfAnalyzerTests(unittest.TestCase):
             self.assertEqual(report["bot_count"], 2)
             self.assertEqual(report["commands_per_bot_sec"], 10.0)
             self.assertEqual(report["route_refresh_ratio"], 0.25)
+            self.assertIsNone(report["bot_frame_cpu_ms_per_bot_sec"])
+            self.assertEqual(report["source_counter_groups_present"], [])
+            self.assertIn("bot_frame_cpu_ns", report["missing_instrumentation"])
+
+    def test_source_counters_derive_cpu_visibility_and_trace_metrics(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            path = self.write_text(
+                pathlib.Path(temp),
+                "source-counters.log",
+                synthetic_log(source_counters=SOURCE_COUNTERS),
+            )
+
+            parsed = perf.parse_log(path)
+            report = perf.analyze(parsed)
+
+            self.assertEqual(parsed.status["bot_frame_cpu_ns"], 8000000)
+            self.assertEqual(report["source_counter_groups_missing"], [])
+            self.assertEqual(
+                report["source_counter_groups_present"],
+                [
+                    "bot_frame_cpu",
+                    "route_query_cpu",
+                    "q3a_route_cpu",
+                    "q3a_memory",
+                    "visibility",
+                    "static_bsp_trace",
+                    "entity_trace",
+                ],
+            )
+            self.assertEqual(report["missing_instrumentation"], [])
+
+            self.assertEqual(report["bot_frame_cpu_ms_per_sec"], 4.0)
+            self.assertEqual(report["bot_frame_cpu_ms_per_bot_sec"], 2.0)
+            self.assertEqual(report["bot_frame_cpu_avg_us"], 200.0)
+            self.assertEqual(report["bot_frame_cpu_success_avg_us"], 200.0)
+            self.assertEqual(report["bot_frame_cpu_max_us"], 1000.0)
+            self.assertEqual(report["route_query_cpu_ms_per_bot_sec"], 0.5)
+            self.assertEqual(report["route_query_cpu_avg_us"], 400.0)
+            self.assertEqual(report["route_query_cpu_fail_avg_us"], 200.0)
+            self.assertEqual(report["route_reuse_cpu_avg_us"], 33.333)
+            self.assertEqual(report["q3a_route_cpu_ms_per_bot_sec"], 0.375)
+            self.assertEqual(report["q3a_route_cpu_fail_avg_us"], 100.0)
+            self.assertEqual(report["q3a_memory_total_active_bytes"], 930000)
+            self.assertEqual(report["q3a_memory_failures"], 0)
+
+            self.assertEqual(report["aas_inpvs_checks_per_bot_sec"], 20.0)
+            self.assertEqual(report["aas_inpvs_visible_ratio"], 0.75)
+            self.assertEqual(report["aas_inphs_checks_per_bot_sec"], 5.0)
+            self.assertEqual(report["aas_inphs_visible_ratio"], 0.5)
+            self.assertEqual(report["visibility_decompress_calls_per_sec"], 15.0)
+            self.assertEqual(report["visibility_decompress_failures"], 0)
+
+            self.assertEqual(report["bsp_trace_calls_per_bot_sec"], 25.0)
+            self.assertEqual(report["bsp_trace_cpu_avg_us"], 100.0)
+            self.assertEqual(report["bsp_trace_cpu_max_us"], 900.0)
+            self.assertEqual(report["bsp_trace_hit_ratio"], 0.25)
+            self.assertEqual(report["entity_trace_attempts_per_sec"], 25.0)
+            self.assertEqual(report["entity_trace_clip_calls_per_bot_sec"], 10.0)
+            self.assertEqual(report["entity_trace_clip_cpu_avg_us"], 100.0)
+            self.assertEqual(report["entity_trace_clip_hit_ratio"], 0.25)
+
+    def test_source_counter_marker_merges_with_frame_command_status(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            path = self.write_text(
+                pathlib.Path(temp),
+                "source-counter-marker.log",
+                synthetic_log() + f"{perf.SOURCE_STATUS_MARKER} {SOURCE_COUNTERS}\n",
+            )
+
+            parsed = perf.parse_log(path)
+            report = perf.analyze(parsed)
+
+            self.assertEqual(parsed.status_lines, 1)
+            self.assertEqual(parsed.status["aas_inpvs_checks"], 80)
+            self.assertEqual(parsed.status["bsp_trace_calls"], 100)
+            self.assertEqual(report["source_counter_groups_missing"], [])
+            self.assertEqual(report["aas_inpvs_checks_per_bot_sec"], 20.0)
+
+    def test_source_counter_marker_cpu_fields_report_without_false_missing_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            path = self.write_text(
+                pathlib.Path(temp),
+                "source-counter-cpu-marker.log",
+                synthetic_log() + f"{perf.SOURCE_STATUS_MARKER} {CPU_SOURCE_COUNTERS}\n",
+            )
+
+            parsed = perf.parse_log(path)
+            report = perf.analyze(parsed)
+
+            self.assertEqual(parsed.status_lines, 1)
+            self.assertEqual(parsed.status["commands"], 40)
+            self.assertEqual(parsed.status["bot_frame_cpu_ns"], 8000000)
+            self.assertEqual(parsed.status["route_query_cpu_ns"], 2000000)
+            self.assertEqual(parsed.status["q3a_route_cpu_ns"], 1500000)
+            self.assertEqual(
+                report["source_counter_groups_present"],
+                ["bot_frame_cpu", "route_query_cpu", "q3a_route_cpu"],
+            )
+            self.assertEqual(
+                report["source_counter_groups_missing"],
+                ["q3a_memory", "visibility", "static_bsp_trace", "entity_trace"],
+            )
+            self.assertNotIn("bot_frame_cpu_ns", report["missing_instrumentation"])
+            self.assertNotIn("route_query_cpu_ns", report["missing_instrumentation"])
+            self.assertNotIn("q3a_route_cpu_ns", report["missing_instrumentation"])
+            self.assertEqual(
+                report["missing_instrumentation"],
+                [
+                    "q3a_memory_zone_active",
+                    "aas_inpvs_checks",
+                    "aas_trace_calls",
+                    "entity_trace_attempts",
+                ],
+            )
+
+            self.assertEqual(report["bot_frame_cpu_ms_per_sec"], 4.0)
+            self.assertEqual(report["bot_frame_cpu_ms_per_bot_sec"], 2.0)
+            self.assertEqual(report["bot_frame_cpu_avg_us"], 200.0)
+            self.assertEqual(report["bot_frame_cpu_success_avg_us"], 200.0)
+            self.assertEqual(report["route_query_cpu_ms_per_bot_sec"], 0.5)
+            self.assertEqual(report["route_query_cpu_avg_us"], 400.0)
+            self.assertEqual(report["route_query_cpu_fail_avg_us"], 200.0)
+            self.assertEqual(report["q3a_route_cpu_ms_per_bot_sec"], 0.375)
+            self.assertEqual(report["q3a_route_cpu_avg_us"], 300.0)
+            self.assertEqual(report["q3a_route_cpu_fail_avg_us"], 100.0)
+
+    def test_source_counter_marker_static_bsp_cpu_fields_are_grouped(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            path = self.write_text(
+                pathlib.Path(temp),
+                "source-counter-bsp-trace-cpu-marker.log",
+                synthetic_log()
+                + f"{perf.SOURCE_STATUS_MARKER} {BSP_TRACE_CPU_SOURCE_COUNTERS}\n",
+            )
+
+            parsed = perf.parse_log(path)
+            report = perf.analyze(parsed)
+
+            self.assertEqual(parsed.status["bsp_trace_cpu_ns"], 12000)
+            self.assertEqual(parsed.status["bsp_trace_cpu_samples"], 6)
+            self.assertEqual(report["source_counter_groups_present"], ["static_bsp_trace"])
+            self.assertNotIn("aas_trace_calls", report["missing_instrumentation"])
+            self.assertEqual(report["bsp_trace_calls_per_bot_sec"], 1.25)
+            self.assertEqual(report["bsp_trace_cpu_avg_us"], 2.0)
+            self.assertEqual(report["bsp_trace_cpu_max_us"], 5.0)
 
     def test_progress_duration_fallback_without_complete_line(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

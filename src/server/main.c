@@ -99,6 +99,7 @@ cvar_t  *sv_enhanced_setplayer;
 static cvar_t  *sv_bot_slot_smoke;
 static cvar_t  *sv_bot_min_players_smoke;
 static cvar_t  *sv_bot_profile_smoke;
+static cvar_t  *sv_bot_profile_smoke_target;
 static cvar_t  *sv_bot_team_policy_smoke;
 static cvar_t  *sv_bot_frame_command_smoke;
 static cvar_t  *sv_bot_frame_command_smoke_soak_ms;
@@ -1018,11 +1019,24 @@ typedef struct {
     const char *ext;
 } bot_profile_source_t;
 
+typedef struct {
+    int reload;
+    int candidates;
+    int loaded;
+    int duplicates;
+    int load_failures;
+    int path_failures;
+    int limit_failures;
+    int malformed;
+} bot_profile_scan_status_t;
+
 #define MAX_BOT_PROFILES 128
 
 static bot_profile_t bot_profiles[MAX_BOT_PROFILES];
 static int bot_profile_count;
 static bool bot_profiles_scanned;
+static int bot_profile_reload_count;
+static bot_profile_scan_status_t bot_profile_last_scan;
 
 static const bot_profile_source_t bot_profile_sources[] = {
     { "botfiles/bots", ".c" },
@@ -1037,6 +1051,87 @@ static void bot_strip_token_trailing_punctuation(char *token)
     while (len > 0 && (token[len - 1] == ';' || token[len - 1] == ',')) {
         token[--len] = 0;
     }
+}
+
+static bool bot_profile_stem_has_suffix(const char *stem, const char *suffix)
+{
+    size_t stem_len;
+    size_t suffix_len;
+
+    if (!stem || !suffix) {
+        return false;
+    }
+
+    stem_len = strlen(stem);
+    suffix_len = strlen(suffix);
+    return stem_len > suffix_len &&
+           !Q_stricmp(stem + stem_len - suffix_len, suffix);
+}
+
+static bool bot_profile_source_id(const bot_profile_source_t *source,
+                                  const char *listed_id, char *id,
+                                  size_t id_size, const char **skip_reason)
+{
+    if (skip_reason) {
+        *skip_reason = NULL;
+    }
+
+    if (!source || !listed_id || !listed_id[0]) {
+        if (skip_reason) {
+            *skip_reason = "empty_id";
+        }
+        return false;
+    }
+
+    Q_strlcpy(id, listed_id, id_size);
+
+    if (source->dir && source->ext &&
+        !Q_stricmp(source->dir, "botfiles/bots") &&
+        !Q_stricmp(source->ext, ".c")) {
+        if (bot_profile_stem_has_suffix(id, "_i") ||
+            bot_profile_stem_has_suffix(id, "_t") ||
+            bot_profile_stem_has_suffix(id, "_w")) {
+            if (skip_reason) {
+                *skip_reason = "companion_script";
+            }
+            return false;
+        }
+
+        if (bot_profile_stem_has_suffix(id, "_c")) {
+            id[strlen(id) - 2] = 0;
+        }
+    }
+
+    return id[0] != 0;
+}
+
+static void bot_profile_parse_warning(bot_profile_scan_status_t *status,
+                                      const char *path, unsigned line,
+                                      const char *key, const char *reason)
+{
+    if (status) {
+        status->malformed++;
+    }
+
+    Com_Printf("q3a_bot_profile_parse_warning reload=%d path=%s line=%u "
+               "key=%s reason=%s\n",
+               status ? status->reload : 0, path ? path : "<none>", line,
+               key && key[0] ? key : "<none>", reason);
+}
+
+static void bot_profile_set_reaction_seconds(bot_profile_t *profile,
+                                             const char *value)
+{
+    float seconds = Q_atof(value);
+    int milliseconds;
+
+    if (seconds < 0.0f) {
+        seconds = 0.0f;
+    }
+
+    milliseconds = (int)(seconds * 1000.0f + 0.5f);
+    Q_snprintf(profile->reaction, sizeof(profile->reaction), "%d",
+               milliseconds);
 }
 
 static bool bot_profile_set(bot_profile_t *profile, const char *key,
@@ -1055,11 +1150,15 @@ static bool bot_profile_set(bot_profile_t *profile, const char *key,
         Q_strlcpy(profile->name, clean_value, sizeof(profile->name));
         return true;
     }
-    if (!Q_stricmp(key, "skin")) {
+    if (!Q_stricmp(key, "skin") ||
+        !Q_stricmp(key, "worr_skin") ||
+        !Q_stricmp(key, "characteristic_skin")) {
         Q_strlcpy(profile->skin, clean_value, sizeof(profile->skin));
         return true;
     }
-    if (!Q_stricmp(key, "team")) {
+    if (!Q_stricmp(key, "team") ||
+        !Q_stricmp(key, "worr_team") ||
+        !Q_stricmp(key, "characteristic_team")) {
         Q_strlcpy(profile->team, clean_value, sizeof(profile->team));
         return true;
     }
@@ -1069,42 +1168,57 @@ static bool bot_profile_set(bot_profile_t *profile, const char *key,
     }
     if (!Q_stricmp(key, "reaction") ||
         !Q_stricmp(key, "reaction_time") ||
-        !Q_stricmp(key, "reaction_ms")) {
+        !Q_stricmp(key, "reaction_ms") ||
+        !Q_stricmp(key, "worr_reaction_ms")) {
         Q_strlcpy(profile->reaction, clean_value, sizeof(profile->reaction));
         return true;
     }
+    if (!Q_stricmp(key, "characteristic_reactiontime")) {
+        bot_profile_set_reaction_seconds(profile, clean_value);
+        return true;
+    }
     if (!Q_stricmp(key, "aggression") ||
-        !Q_stricmp(key, "aggression_bias")) {
+        !Q_stricmp(key, "aggression_bias") ||
+        !Q_stricmp(key, "characteristic_aggression")) {
         Q_strlcpy(profile->aggression, clean_value, sizeof(profile->aggression));
         return true;
     }
     if (!Q_stricmp(key, "aim_error") ||
         !Q_stricmp(key, "aimerror") ||
-        !Q_stricmp(key, "accuracy_error")) {
+        !Q_stricmp(key, "accuracy_error") ||
+        !Q_stricmp(key, "worr_aim_error")) {
         Q_strlcpy(profile->aim_error, clean_value, sizeof(profile->aim_error));
         return true;
     }
     if (!Q_stricmp(key, "preferred_weapon") ||
         !Q_stricmp(key, "weapon") ||
-        !Q_stricmp(key, "favorite_weapon")) {
+        !Q_stricmp(key, "favorite_weapon") ||
+        !Q_stricmp(key, "worr_preferred_weapon")) {
         Q_strlcpy(profile->preferred_weapon, clean_value, sizeof(profile->preferred_weapon));
         return true;
     }
     if (!Q_stricmp(key, "chat_personality") ||
         !Q_stricmp(key, "chat") ||
-        !Q_stricmp(key, "personality")) {
+        !Q_stricmp(key, "personality") ||
+        !Q_stricmp(key, "worr_chat_personality")) {
         Q_strlcpy(profile->chat_personality, clean_value, sizeof(profile->chat_personality));
         return true;
     }
     if (!Q_stricmp(key, "role") ||
-        !Q_stricmp(key, "team_role")) {
+        !Q_stricmp(key, "team_role") ||
+        !Q_stricmp(key, "worr_role")) {
         Q_strlcpy(profile->role, clean_value, sizeof(profile->role));
         return true;
     }
     if (!Q_stricmp(key, "movement_style") ||
         !Q_stricmp(key, "movement") ||
-        !Q_stricmp(key, "move_style")) {
+        !Q_stricmp(key, "move_style") ||
+        !Q_stricmp(key, "worr_movement_style")) {
         Q_strlcpy(profile->movement_style, clean_value, sizeof(profile->movement_style));
+        return true;
+    }
+    if (!Q_stricmp(key, "characteristic_name")) {
+        Q_strlcpy(profile->name, clean_value, sizeof(profile->name));
         return true;
     }
 
@@ -1126,7 +1240,8 @@ static int bot_profile_find_index(const char *id)
     return -1;
 }
 
-static bool bot_profile_parse_file(const char *path, const char *id)
+static bool bot_profile_parse_file(const char *path, const char *id,
+                                   bot_profile_scan_status_t *status)
 {
     bot_profile_t profile = { 0 };
     char *buffer;
@@ -1134,18 +1249,41 @@ static bool bot_profile_parse_file(const char *path, const char *id)
     char key[MAX_TOKEN_CHARS];
     char value[MAX_TOKEN_CHARS];
     int length;
+    int duplicate;
+    int recognized = 0;
+    unsigned saved_linenum;
 
     if (bot_profile_count >= MAX_BOT_PROFILES) {
-        Com_Printf("Bot profile limit reached; skipping %s.\n", path);
+        if (status) {
+            status->limit_failures++;
+        }
+        Com_Printf("q3a_bot_profile_scan_skip reload=%d reason=limit "
+                   "path=%s id=%s max=%d\n",
+                   status ? status->reload : 0, path, id, MAX_BOT_PROFILES);
         return false;
     }
 
-    if (bot_profile_find_index(id) >= 0) {
+    duplicate = bot_profile_find_index(id);
+    if (duplicate >= 0) {
+        if (status) {
+            status->duplicates++;
+        }
+        Com_Printf("q3a_bot_profile_scan_skip reload=%d reason=duplicate "
+                   "path=%s id=%s original=%s\n",
+                   status ? status->reload : 0, path, id,
+                   bot_profiles[duplicate].source);
         return false;
     }
 
     length = FS_LoadFile(path, (void **)&buffer);
     if (length < 0 || !buffer) {
+        if (status) {
+            status->load_failures++;
+        }
+        Com_Printf("q3a_bot_profile_scan_skip reload=%d reason=load_failed "
+                   "path=%s id=%s error=%s\n",
+                   status ? status->reload : 0, path, id,
+                   Q_ErrorString(length));
         return false;
     }
 
@@ -1153,27 +1291,90 @@ static bool bot_profile_parse_file(const char *path, const char *id)
     Q_strlcpy(profile.source, path, sizeof(profile.source));
 
     parse = buffer;
-    while (COM_ParseToken(&parse, key, sizeof(key), PARSE_FLAG_ESCAPE)) {
-        bot_strip_token_trailing_punctuation(key);
+    saved_linenum = com_linenum;
+    com_linenum = 1;
 
-        if (!strcmp(key, "{") || !strcmp(key, "}")) {
-            continue;
-        }
+    while (parse) {
+        size_t key_len;
+        size_t value_len;
+        unsigned key_line;
+        char clean_value[MAX_TOKEN_CHARS];
 
-        if (!COM_ParseToken(&parse, value, sizeof(value), PARSE_FLAG_ESCAPE)) {
+        key_len = COM_ParseToken(&parse, key, sizeof(key), PARSE_FLAG_ESCAPE);
+        if (!key_len && !parse) {
             break;
         }
 
+        key_line = com_linenum;
+        if (key_len >= sizeof(key)) {
+            bot_profile_parse_warning(status, path, key_line, key,
+                                      "key_truncated");
+        }
+
+        bot_strip_token_trailing_punctuation(key);
+
+        if (!key[0] || !strcmp(key, "{") || !strcmp(key, "}")) {
+            continue;
+        }
+
+        if (!strcmp(key, "=")) {
+            bot_profile_parse_warning(status, path, key_line, key,
+                                      "unexpected_equals");
+            continue;
+        }
+
+        value_len = COM_ParseToken(&parse, value, sizeof(value),
+                                   PARSE_FLAG_ESCAPE);
+        if (!value_len && !parse) {
+            bot_profile_parse_warning(status, path, key_line, key,
+                                      "missing_value");
+            break;
+        }
+
+        if (value_len >= sizeof(value)) {
+            bot_profile_parse_warning(status, path, key_line, key,
+                                      "value_truncated");
+        }
+
         if (!strcmp(value, "=")) {
-            if (!COM_ParseToken(&parse, value, sizeof(value), PARSE_FLAG_ESCAPE)) {
+            value_len = COM_ParseToken(&parse, value, sizeof(value),
+                                       PARSE_FLAG_ESCAPE);
+            if (!value_len && !parse) {
+                bot_profile_parse_warning(status, path, key_line, key,
+                                          "missing_value_after_equals");
                 break;
+            }
+            if (value_len >= sizeof(value)) {
+                bot_profile_parse_warning(status, path, key_line, key,
+                                          "value_truncated");
             }
         }
 
-        bot_profile_set(&profile, key, value);
+        if (!strcmp(value, "{") || !strcmp(value, "}")) {
+            bot_profile_parse_warning(status, path, key_line, key,
+                                      "missing_value");
+            continue;
+        }
+
+        Q_strlcpy(clean_value, value, sizeof(clean_value));
+        bot_strip_token_trailing_punctuation(clean_value);
+        if (!clean_value[0] && value[0]) {
+            bot_profile_parse_warning(status, path, key_line, key,
+                                      "missing_value");
+            continue;
+        }
+
+        if (bot_profile_set(&profile, key, value)) {
+            recognized++;
+        }
     }
 
+    com_linenum = saved_linenum;
     FS_FreeFile(buffer);
+
+    if (!recognized) {
+        bot_profile_parse_warning(status, path, 1, id, "no_recognized_fields");
+    }
 
     if (!profile.name[0]) {
         Q_strlcpy(profile.name, profile.id, sizeof(profile.name));
@@ -1183,16 +1384,24 @@ static bool bot_profile_parse_file(const char *path, const char *id)
     }
 
     bot_profiles[bot_profile_count++] = profile;
+    if (status) {
+        status->loaded++;
+    }
     return true;
 }
 
 int SV_BotReloadProfiles(void)
 {
-    int loaded = 0;
+    bot_profile_scan_status_t status = { 0 };
+    const char *result;
 
     memset(bot_profiles, 0, sizeof(bot_profiles));
     bot_profile_count = 0;
     bot_profiles_scanned = true;
+    status.reload = ++bot_profile_reload_count;
+
+    Com_Printf("q3a_bot_profile_scan=begin reload=%d max=%d sources=%zu\n",
+               status.reload, MAX_BOT_PROFILES, q_countof(bot_profile_sources));
 
     for (size_t i = 0; i < q_countof(bot_profile_sources); i++) {
         const bot_profile_source_t *source = &bot_profile_sources[i];
@@ -1201,23 +1410,62 @@ int SV_BotReloadProfiles(void)
 
         list = FS_ListFiles(source->dir, source->ext, FS_SEARCH_STRIPEXT,
                             &count);
+        status.candidates += count;
+        Com_Printf("q3a_bot_profile_scan_source reload=%d dir=%s ext=%s "
+                   "candidates=%d\n",
+                   status.reload, source->dir, source->ext, count);
         for (int j = 0; j < count; j++) {
             char path[MAX_QPATH];
-            const char *id = list[j];
+            char id[MAX_QPATH];
+            const char *listed_id = list[j];
+            const char *skip_reason = NULL;
 
-            if (Q_snprintf(path, sizeof(path), "%s/%s%s", source->dir, id,
-                           source->ext) >= sizeof(path)) {
+            if (!bot_profile_source_id(source, listed_id, id, sizeof(id),
+                                       &skip_reason)) {
+                Com_Printf("q3a_bot_profile_scan_skip reload=%d "
+                           "reason=%s dir=%s id=%s ext=%s\n",
+                           status.reload,
+                           skip_reason ? skip_reason : "not_profile",
+                           source->dir, listed_id, source->ext);
                 continue;
             }
 
-            if (bot_profile_parse_file(path, id)) {
-                loaded++;
+            if (Q_snprintf(path, sizeof(path), "%s/%s%s", source->dir,
+                           listed_id,
+                           source->ext) >= sizeof(path)) {
+                status.path_failures++;
+                Com_Printf("q3a_bot_profile_scan_skip reload=%d "
+                           "reason=path_too_long dir=%s id=%s ext=%s\n",
+                           status.reload, source->dir, listed_id,
+                           source->ext);
+                continue;
             }
+
+            bot_profile_parse_file(path, id, &status);
         }
         FS_FreeList(list);
     }
 
-    return loaded;
+    if (!status.candidates) {
+        result = "empty";
+    } else if (status.duplicates || status.load_failures ||
+               status.path_failures || status.limit_failures ||
+               status.malformed) {
+        result = "warnings";
+    } else {
+        result = "ok";
+    }
+
+    bot_profile_last_scan = status;
+    Com_Printf("q3a_bot_profile_scan=end reload=%d candidates=%d loaded=%d "
+               "active=%d duplicates=%d load_failures=%d path_failures=%d "
+               "limit_failures=%d warnings=%d status=%s\n",
+               status.reload, status.candidates, status.loaded,
+               bot_profile_count, status.duplicates, status.load_failures,
+               status.path_failures, status.limit_failures, status.malformed,
+               result);
+
+    return status.loaded;
 }
 
 static void bot_ensure_profiles_scanned(void)
@@ -1941,11 +2189,24 @@ static void SV_BotMinPlayersSmokeFrame(void)
     }
 }
 
+static const char *SV_BotProfileSmokeTarget(void)
+{
+    if (sv_bot_profile_smoke_target &&
+        sv_bot_profile_smoke_target->string[0] &&
+        !COM_IsWhite(sv_bot_profile_smoke_target->string)) {
+        return sv_bot_profile_smoke_target->string;
+    }
+
+    return "smoke";
+}
+
 static void SV_BotProfileSmokeFrame(void)
 {
     static int seen_spawncount;
     static int stage;
+    static char smoke_profile_name[MAX_CLIENT_NAME];
     const bot_profile_t *profile;
+    const char *target;
     client_t *bot;
     bool added;
     int loaded;
@@ -1977,10 +2238,13 @@ static void SV_BotProfileSmokeFrame(void)
 
     if (stage == 0) {
         SV_BotRemoveAll();
+        target = SV_BotProfileSmokeTarget();
         loaded = SV_BotReloadProfiles();
-        profile = bot_find_profile("smoke");
-        Com_Printf("q3a_bot_profile_smoke=begin profiles=%d found=%d\n",
-                   loaded, profile ? 1 : 0);
+        profile = bot_find_profile(target);
+        Com_Printf("q3a_bot_profile_smoke=begin target=%s reload=%d "
+                   "profiles=%d warnings=%d found=%d\n",
+                   target, bot_profile_last_scan.reload, loaded,
+                   bot_profile_last_scan.malformed, profile ? 1 : 0);
 
         if (!profile) {
             Com_Printf("q3a_bot_profile_smoke=end final_count=%d\n",
@@ -1992,14 +2256,16 @@ static void SV_BotProfileSmokeFrame(void)
             return;
         }
 
-        added = SV_BotAdd("smoke", NULL);
+        Q_strlcpy(smoke_profile_name, profile->name,
+                  sizeof(smoke_profile_name));
+        added = SV_BotAdd(target, NULL);
         Com_Printf("q3a_bot_profile_smoke_after_add_request added=%d count=%d\n",
                    added, SV_BotCount());
         stage = 1;
         return;
     }
 
-    bot = SV_BotGetClient("Smoke", true);
+    bot = SV_BotGetClient(smoke_profile_name, true);
     if (!bot) {
         return;
     }
@@ -2176,7 +2442,7 @@ static void SV_BotFrameCommandStatus(int expected_min_frames,
 }
 
 #define SV_BOT_FRAME_COMMAND_STATUS_CAPTURE_TARGET 19
-#define SV_BOT_FRAME_COMMAND_STATUS_CAPTURE_SIZE 8192
+#define SV_BOT_FRAME_COMMAND_STATUS_CAPTURE_SIZE 32768
 
 static char sv_bot_frame_command_status_capture[
     SV_BOT_FRAME_COMMAND_STATUS_CAPTURE_SIZE];
@@ -2354,6 +2620,34 @@ static bool SV_BotFrameCommandSmokeIsMapRepeat(void)
     return SV_BotFrameCommandSmokeMode() == 19;
 }
 
+static bool SV_BotFrameCommandSmokeIsEngageEnemy(void)
+{
+    return SV_BotFrameCommandSmokeMode() == 20;
+}
+
+static bool SV_BotFrameCommandSmokeIsSwitchWeapons(void)
+{
+    return SV_BotFrameCommandSmokeMode() == 21;
+}
+
+static bool SV_BotFrameCommandSmokeIsHealthArmorPickup(void)
+{
+    return SV_BotFrameCommandSmokeMode() == 22;
+}
+
+static bool SV_BotFrameCommandSmokeIsTeamObjective(void)
+{
+    return SV_BotFrameCommandSmokeMode() == 23;
+}
+
+static bool SV_BotFrameCommandSmokeUsesScenarioCvars(void)
+{
+    return SV_BotFrameCommandSmokeIsEngageEnemy() ||
+        SV_BotFrameCommandSmokeIsSwitchWeapons() ||
+        SV_BotFrameCommandSmokeIsHealthArmorPickup() ||
+        SV_BotFrameCommandSmokeIsTeamObjective();
+}
+
 static int SV_BotFrameCommandSmokeSoakMilliseconds(void)
 {
     int duration_ms = sv_bot_frame_command_smoke_soak_ms ?
@@ -2475,6 +2769,19 @@ static bool SV_BotFrameCommandSmokeUsesTravelTypeGoal(void)
 
 static int SV_BotFrameCommandSmokeTargetBots(void)
 {
+    if (SV_BotFrameCommandSmokeIsTeamObjective()) {
+        return min(4, bot_public_client_limit());
+    }
+
+    if (SV_BotFrameCommandSmokeIsEngageEnemy() ||
+        SV_BotFrameCommandSmokeIsSwitchWeapons()) {
+        return min(2, bot_public_client_limit());
+    }
+
+    if (SV_BotFrameCommandSmokeIsHealthArmorPickup()) {
+        return 1;
+    }
+
     if (SV_BotFrameCommandSmokeUsesPositionGoal() ||
         SV_BotFrameCommandSmokeUsesTravelTypeGoal()) {
         return 1;
@@ -2568,6 +2875,76 @@ static int SV_BotFrameCommandSmokeExpectedCommands(int target_bots)
     return target_bots;
 }
 
+static int SV_BotFrameCommandSmokeSettleFrames(void)
+{
+    if (SV_BotFrameCommandSmokeStallsMovement()) {
+        return 14;
+    }
+
+    if (SV_BotFrameCommandSmokeUsesScenarioCvars()) {
+        return 60;
+    }
+
+    return 8;
+}
+
+static int SV_BotFrameCommandSmokeRuntimeWarmupLimit(void)
+{
+    if (SV_BotFrameCommandSmokeUsesScenarioCvars()) {
+        return 120;
+    }
+
+    return SV_BotFrameCommandSmokeSettleFrames();
+}
+
+static void SV_BotFrameCommandStatusPrintCaptured(const char *captured_status)
+{
+    const char *cursor;
+    size_t remaining;
+
+    if (!captured_status || !captured_status[0]) {
+        return;
+    }
+
+    cursor = captured_status;
+    remaining = strlen(captured_status);
+    while (remaining > 0) {
+        const char *line_end = memchr(cursor, '\n', remaining);
+        size_t line_len = line_end ?
+            (size_t)(line_end - cursor) + 1 :
+            remaining;
+
+        Com_Printf("%.*s", (int)line_len, cursor);
+        cursor += line_len;
+        remaining -= line_len;
+    }
+
+    if (sv_bot_frame_command_status_capture_len == 0 ||
+        captured_status[sv_bot_frame_command_status_capture_len - 1] != '\n') {
+        Com_Printf("\n");
+    }
+}
+
+static bool SV_BotFrameCommandSmokeStatusWaitingForRuntime(
+    const char *captured_status)
+{
+    int commands;
+    int skipped_runtime;
+
+    if (!SV_BotFrameCommandSmokeUsesScenarioCvars()) {
+        return false;
+    }
+
+    if (!SV_BotFrameCommandStatusReadInt(
+            captured_status, "commands", &commands) ||
+        !SV_BotFrameCommandStatusReadInt(
+            captured_status, "skipped_runtime", &skipped_runtime)) {
+        return false;
+    }
+
+    return commands <= 0 && skipped_runtime > 0;
+}
+
 static void SV_BotRunFrameCommands(void)
 {
     const bot_frame_command_api_v1_t *api;
@@ -2606,6 +2983,10 @@ static void SV_BotFrameCommandSmokeResetRuntimeCvars(void)
     Cvar_Set("sg_bot_enable", "0");
     Cvar_Set("sg_bot_min_players", "0");
     Cvar_Set("sg_bot_frame_command_smoke_travel_type", "0");
+    Cvar_Set("sg_bot_frame_command_smoke_combat", "0");
+    Cvar_Set("sg_bot_frame_command_smoke_weapon_switch", "0");
+    Cvar_Set("sg_bot_frame_command_smoke_item_focus", "0");
+    Cvar_Set("sg_bot_frame_command_smoke_team_objective", "0");
     Cvar_Set("sg_bot_nav_position_goal_enable", "0");
     Cvar_Set("sg_bot_nav_travel_type_goal", "0");
     Cvar_Set("sg_bot_nav_travel_type_goal_warp", "0");
@@ -2627,14 +3008,7 @@ static int SV_BotFrameCommandSmokeMapRepeatCleanupStatus(int cycle,
                cycle, phase, reason, SV_BotCount());
 
     captured_status = SV_BotFrameCommandStatusCapture(0, 0);
-    if (captured_status[0]) {
-        Com_Printf("%s", captured_status);
-        if (sv_bot_frame_command_status_capture_len == 0 ||
-            captured_status[sv_bot_frame_command_status_capture_len - 1] !=
-                '\n') {
-            Com_Printf("\n");
-        }
-    }
+    SV_BotFrameCommandStatusPrintCaptured(captured_status);
 
     pass = SV_BotFrameCommandStatusCapturedCleanupPass(
         captured_status, SV_BotCount(), &active_reservations);
@@ -2802,7 +3176,8 @@ static void SV_BotFrameCommandSmokeFrame(void)
         SV_BotRemoveAll();
         Cvar_Set("sg_bot_enable", "1");
         Cvar_Set("sg_bot_min_players", "0");
-        Cvar_Set("g_gametype", "0");
+        Cvar_Set("g_gametype",
+                 SV_BotFrameCommandSmokeIsTeamObjective() ? "1" : "0");
         Cvar_Set("sg_bot_allow_rocketjump",
                  SV_BotFrameCommandSmokeAllowsRocketJump() ? "1" : "0");
         Cvar_Set("sg_bot_nav_travel_type_goal_expect_blocked",
@@ -2842,6 +3217,38 @@ static void SV_BotFrameCommandSmokeFrame(void)
                        sv.spawncount,
                        SV_BotFrameCommandSmokeMapRepeatReloadCommand(),
                        SV_BotFrameCommandSmokeMapRepeatRestartReload() ? 1 : 0);
+        }
+        if (SV_BotFrameCommandSmokeUsesScenarioCvars()) {
+            const char *combat_mode =
+                SV_BotFrameCommandSmokeIsEngageEnemy() ? "engage_enemy" :
+                (SV_BotFrameCommandSmokeIsSwitchWeapons() ?
+                    "switch_weapons" : "0");
+            const char *item_focus =
+                SV_BotFrameCommandSmokeIsHealthArmorPickup() ?
+                    "health_armor" : "0";
+            const int weapon_switch =
+                SV_BotFrameCommandSmokeIsSwitchWeapons() ? 1 : 0;
+            const int team_objective =
+                SV_BotFrameCommandSmokeIsTeamObjective() ? 1 : 0;
+
+            Cvar_Set("sg_bot_frame_command_smoke_combat", combat_mode);
+            Cvar_Set("sg_bot_frame_command_smoke_weapon_switch",
+                     weapon_switch ? "1" : "0");
+            Cvar_Set("sg_bot_frame_command_smoke_item_focus", item_focus);
+            Cvar_Set("sg_bot_frame_command_smoke_team_objective",
+                     team_objective ? "1" : "0");
+            Com_Printf("q3a_bot_frame_command_smoke_scenario=begin "
+                       "mode=%d combat=%s weapon_switch=%d item_focus=%s "
+                       "team_objective=%d target=%d gametype=%s\n",
+                       SV_BotFrameCommandSmokeMode(), combat_mode,
+                       weapon_switch, item_focus, team_objective,
+                       target_bots,
+                       SV_BotFrameCommandSmokeIsTeamObjective() ? "1" : "0");
+        } else {
+            Cvar_Set("sg_bot_frame_command_smoke_combat", "0");
+            Cvar_Set("sg_bot_frame_command_smoke_weapon_switch", "0");
+            Cvar_Set("sg_bot_frame_command_smoke_item_focus", "0");
+            Cvar_Set("sg_bot_frame_command_smoke_team_objective", "0");
         }
         forced_travel_type = SV_BotFrameCommandSmokeForcedTravelType();
         if (forced_travel_type > 0) {
@@ -2944,8 +3351,7 @@ static void SV_BotFrameCommandSmokeFrame(void)
         Com_Printf("q3a_bot_frame_command_smoke_soak=complete "
                    "elapsed_ms=%u duration_ms=%d count=%d reports=%d\n",
                    elapsed_ms, duration_ms, SV_BotCount(), soak_progress_reports);
-    } else if (++settle_frames <
-               (SV_BotFrameCommandSmokeStallsMovement() ? 14 : 8)) {
+    } else if (++settle_frames < SV_BotFrameCommandSmokeSettleFrames()) {
         return;
     }
 
@@ -2973,14 +3379,7 @@ static void SV_BotFrameCommandSmokeFrame(void)
         bool official_pass;
         int status_pass;
 
-        if (captured_status[0]) {
-            Com_Printf("%s", captured_status);
-            if (sv_bot_frame_command_status_capture_len == 0 ||
-                captured_status[
-                    sv_bot_frame_command_status_capture_len - 1] != '\n') {
-                Com_Printf("\n");
-            }
-        }
+        SV_BotFrameCommandStatusPrintCaptured(captured_status);
 
         status_pass = SV_BotFrameCommandStatusCapturedPass(
             captured_status, target_bots, expected_commands, &official_pass);
@@ -3026,9 +3425,44 @@ static void SV_BotFrameCommandSmokeFrame(void)
                    map_repeat_map_changes, sv.name, sv.spawncount,
                    SV_BotCount());
     } else {
-        SV_BotFrameCommandStatus(
-            target_bots,
-            SV_BotFrameCommandSmokeExpectedCommands(target_bots));
+        const int expected_commands =
+            SV_BotFrameCommandSmokeExpectedCommands(target_bots);
+        const char *captured_status = NULL;
+
+        if (SV_BotFrameCommandSmokeUsesScenarioCvars()) {
+            captured_status = SV_BotFrameCommandStatusCapture(
+                target_bots, expected_commands);
+            if (SV_BotFrameCommandSmokeStatusWaitingForRuntime(
+                    captured_status) &&
+                settle_frames < SV_BotFrameCommandSmokeRuntimeWarmupLimit()) {
+                if (settle_frames == SV_BotFrameCommandSmokeSettleFrames() ||
+                    (settle_frames % 10) == 0 ||
+                    settle_frames + 1 >=
+                        SV_BotFrameCommandSmokeRuntimeWarmupLimit()) {
+                    int frames = 0;
+                    int skipped_runtime = 0;
+
+                    SV_BotFrameCommandStatusReadInt(
+                        captured_status, "frames", &frames);
+                    SV_BotFrameCommandStatusReadInt(
+                        captured_status, "skipped_runtime", &skipped_runtime);
+                    Com_Printf(
+                        "q3a_bot_frame_command_smoke_runtime_wait "
+                        "mode=%d frames=%d skipped_runtime=%d "
+                        "settle_frames=%d limit=%d\n",
+                        SV_BotFrameCommandSmokeMode(), frames,
+                        skipped_runtime, settle_frames,
+                        SV_BotFrameCommandSmokeRuntimeWarmupLimit());
+                }
+                return;
+            }
+        }
+
+        if (captured_status) {
+            SV_BotFrameCommandStatusPrintCaptured(captured_status);
+        } else {
+            SV_BotFrameCommandStatus(target_bots, expected_commands);
+        }
     }
 
     SV_BotRemoveAll();
@@ -4446,6 +4880,8 @@ void SV_Init(void)
     sv_bot_slot_smoke = Cvar_Get("sv_bot_slot_smoke", "0", 0);
     sv_bot_min_players_smoke = Cvar_Get("sv_bot_min_players_smoke", "0", 0);
     sv_bot_profile_smoke = Cvar_Get("sv_bot_profile_smoke", "0", 0);
+    sv_bot_profile_smoke_target =
+        Cvar_Get("sv_bot_profile_smoke_target", "smoke", 0);
     sv_bot_team_policy_smoke = Cvar_Get("sv_bot_team_policy_smoke", "0", 0);
     sv_bot_frame_command_smoke = Cvar_Get("sv_bot_frame_command_smoke", "0", 0);
     sv_bot_frame_command_smoke_soak_ms =

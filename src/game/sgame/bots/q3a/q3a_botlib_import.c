@@ -22,7 +22,11 @@
 #include "botlib/l_memory.h"
 
 #ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
 #include <malloc.h>
+#include <windows.h>
 #else
 #include <strings.h>
 #endif
@@ -33,6 +37,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 botlib_import_t botimport;
 int bot_developer = 0;
@@ -276,6 +281,14 @@ static Q3ABotLibImportSmokeStatus q3aSmokeStatus = {
 	.aasRouteReachability = 0,
 	.aasRouteEndArea = 0,
 	.aasRouteStopEvent = 0,
+	.routeBuildAttempts = 0,
+	.routeBuildSuccesses = 0,
+	.routeBuildFailures = 0,
+	.q3aRouteCpuNs = 0,
+	.q3aRouteCpuSamples = 0,
+	.q3aRouteCpuMaxNs = 0,
+	.q3aRouteCpuFailNs = 0,
+	.q3aRouteCpuFailSamples = 0,
 	.aasAltRouteAttempted = qfalse,
 	.aasAltRoutePassed = qfalse,
 	.aasAltRouteStartArea = 0,
@@ -310,6 +323,13 @@ static Q3ABotLibImportSmokeStatus q3aSmokeStatus = {
 	.entityTraceHits = 0,
 	.entityTraceMisses = 0,
 	.entityTraceFailures = 0,
+	.entityTraceClipCalls = 0,
+	.entityTraceClipHits = 0,
+	.entityTraceClipMisses = 0,
+	.entityTraceClipStartSolid = 0,
+	.entityTraceClipAllSolid = 0,
+	.entityTraceClipCpuNs = 0,
+	.entityTraceClipCpuMaxNs = 0,
 	.debugDrawCallbackSet = qfalse,
 	.debugDrawAttempted = qfalse,
 	.debugDrawPassed = qfalse,
@@ -364,6 +384,20 @@ static Q3ABotLibImportSmokeStatus q3aSmokeStatus = {
 	.bspCollisionBrushes = 0,
 	.bspCollisionPointContentsSmokePassed = qfalse,
 	.bspCollisionTraceSmokePassed = qfalse,
+	.aasTraceCalls = 0,
+	.bspTraceCalls = 0,
+	.bspTracePointCalls = 0,
+	.bspTraceBoxCalls = 0,
+	.bspTraceZeroLengthCalls = 0,
+	.bspTraceHits = 0,
+	.bspTraceMisses = 0,
+	.bspTraceStartSolid = 0,
+	.bspTraceAllSolid = 0,
+	.bspTraceHullNodes = 0,
+	.bspTraceBrushTests = 0,
+	.bspTraceCpuNs = 0,
+	.bspTraceCpuSamples = 0,
+	.bspTraceCpuMaxNs = 0,
 	.bspLeafLinkAttempted = qfalse,
 	.bspLeafLinks = 0,
 	.bspLeafLinkFailures = 0,
@@ -374,6 +408,19 @@ static Q3ABotLibImportSmokeStatus q3aSmokeStatus = {
 	.bspVisibilityClusters = 0,
 	.bspVisibilityPvsSmokePassed = qfalse,
 	.bspVisibilityPhsSmokePassed = qfalse,
+	.aasInpvsChecks = 0,
+	.aasInpvsVisible = 0,
+	.aasInpvsMisses = 0,
+	.aasInphsChecks = 0,
+	.aasInphsVisible = 0,
+	.aasInphsMisses = 0,
+	.visibilityClusterChecks = 0,
+	.visibilityClusterSame = 0,
+	.visibilityClusterInvalid = 0,
+	.visibilityDecompressCalls = 0,
+	.visibilityDecompressBytes = 0,
+	.visibilityDecompressRuns = 0,
+	.visibilityDecompressFailures = 0,
 	.memoryZoneActiveBytes = 0,
 	.memoryZonePeakBytes = 0,
 	.memoryZoneAllocations = 0,
@@ -430,6 +477,16 @@ static bsp_trace_t Q3A_BotLibImport_TraceQ2Bsp(
 	int contentmask);
 static int Q3A_BotLibImport_PointContentsQ2Bsp(vec3_t point);
 static qboolean Q3A_BotLibImport_PointsVisibleQ2Bsp(vec3_t p1, vec3_t p2, int mode);
+static void Q3A_BotLibImport_ResetBspTraceCounters(void);
+static void Q3A_BotLibImport_RecordBspTraceResult(const bsp_trace_t *trace);
+static void Q3A_BotLibImport_RecordBspTraceCpu(uint64_t elapsedNs);
+static void Q3A_BotLibImport_RecordEntityTraceClipResult(
+	const Q3ABotLibImportTraceResult *traceResult,
+	qboolean callbackSucceeded,
+	uint64_t elapsedNs);
+static void Q3A_BotLibImport_ResetVisibilityCounters(void);
+static uint64_t Q3A_BotLibImport_NowNanoseconds(void);
+static uint64_t Q3A_BotLibImport_ElapsedNanoseconds(uint64_t startNs);
 static int Q3A_BotLibImport_PlaneSignbits(const vec3_t normal);
 static int Q3A_BotLibImport_WorldHeadNode(void);
 static int Q3A_BotLibImport_BoxOnPlaneSide(vec3_t mins, vec3_t maxs, Q3ABspPlane *plane);
@@ -1168,6 +1225,8 @@ qboolean AAS_EntityCollision(
 	int contentmask,
 	bsp_trace_t *trace) {
 	Q3ABotLibImportTraceResult traceResult;
+	uint64_t clipStartNs;
+	qboolean clipSucceeded;
 
 	if (trace != NULL) {
 		Com_Memset(trace, 0, sizeof(*trace));
@@ -1189,7 +1248,14 @@ qboolean AAS_EntityCollision(
 	traceResult.fraction = 1.0f;
 	traceResult.entnum = entnum;
 	VectorCopy(end, traceResult.endPos);
-	if (!q3aEntityTraceCallback(entnum, start, boxmins, boxmaxs, end, contentmask, &traceResult)) {
+	clipStartNs = Q3A_BotLibImport_NowNanoseconds();
+	clipSucceeded =
+		q3aEntityTraceCallback(entnum, start, boxmins, boxmaxs, end, contentmask, &traceResult) ? qtrue : qfalse;
+	Q3A_BotLibImport_RecordEntityTraceClipResult(
+		&traceResult,
+		clipSucceeded,
+		Q3A_BotLibImport_ElapsedNanoseconds(clipStartNs));
+	if (!clipSucceeded) {
 		q3aSmokeStatus.entityTraceFailures++;
 		Q3A_BotLibImport_SetEntityTraceMessage("Q3A AAS entity trace failed");
 		return qfalse;
@@ -1225,20 +1291,43 @@ qboolean AAS_EntityCollision(
 }
 
 bsp_trace_t AAS_Trace(vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end, int passent, int contentmask) {
+	const uint64_t startNs = Q3A_BotLibImport_NowNanoseconds();
+	bsp_trace_t trace;
+
 	(void)passent;
-	return Q3A_BotLibImport_TraceQ2Bsp(start, mins, maxs, end, contentmask);
+	q3aSmokeStatus.aasTraceCalls++;
+	trace = Q3A_BotLibImport_TraceQ2Bsp(start, mins, maxs, end, contentmask);
+	Q3A_BotLibImport_RecordBspTraceCpu(Q3A_BotLibImport_ElapsedNanoseconds(startNs));
+	return trace;
 }
 
 int AAS_PointContents(vec3_t point) {
-	return Q3A_BotLibImport_PointContentsQ2Bsp(point);
+	const uint64_t startNs = Q3A_BotLibImport_NowNanoseconds();
+	const int contents = Q3A_BotLibImport_PointContentsQ2Bsp(point);
+	Q3A_BotLibImport_RecordBspTraceCpu(Q3A_BotLibImport_ElapsedNanoseconds(startNs));
+	return contents;
 }
 
 qboolean AAS_inPVS(vec3_t p1, vec3_t p2) {
-	return Q3A_BotLibImport_PointsVisibleQ2Bsp(p1, p2, Q3A_Q2_DVIS_PVS);
+	const qboolean visible = Q3A_BotLibImport_PointsVisibleQ2Bsp(p1, p2, Q3A_Q2_DVIS_PVS);
+	q3aSmokeStatus.aasInpvsChecks++;
+	if (visible) {
+		q3aSmokeStatus.aasInpvsVisible++;
+	} else {
+		q3aSmokeStatus.aasInpvsMisses++;
+	}
+	return visible;
 }
 
 qboolean AAS_inPHS(vec3_t p1, vec3_t p2) {
-	return Q3A_BotLibImport_PointsVisibleQ2Bsp(p1, p2, Q3A_Q2_DVIS_PHS);
+	const qboolean visible = Q3A_BotLibImport_PointsVisibleQ2Bsp(p1, p2, Q3A_Q2_DVIS_PHS);
+	q3aSmokeStatus.aasInphsChecks++;
+	if (visible) {
+		q3aSmokeStatus.aasInphsVisible++;
+	} else {
+		q3aSmokeStatus.aasInphsMisses++;
+	}
+	return visible;
 }
 
 static int Q3A_BotLibImport_EnsureBspLeafLinkTable(void) {
@@ -1706,6 +1795,23 @@ static void Q3A_BotLibImport_ClearBspLeafLinks(void) {
 	q3aSmokeStatus.bspLeafLinks = 0;
 }
 
+static void Q3A_BotLibImport_ResetBspTraceCounters(void) {
+	q3aSmokeStatus.aasTraceCalls = 0;
+	q3aSmokeStatus.bspTraceCalls = 0;
+	q3aSmokeStatus.bspTracePointCalls = 0;
+	q3aSmokeStatus.bspTraceBoxCalls = 0;
+	q3aSmokeStatus.bspTraceZeroLengthCalls = 0;
+	q3aSmokeStatus.bspTraceHits = 0;
+	q3aSmokeStatus.bspTraceMisses = 0;
+	q3aSmokeStatus.bspTraceStartSolid = 0;
+	q3aSmokeStatus.bspTraceAllSolid = 0;
+	q3aSmokeStatus.bspTraceHullNodes = 0;
+	q3aSmokeStatus.bspTraceBrushTests = 0;
+	q3aSmokeStatus.bspTraceCpuNs = 0;
+	q3aSmokeStatus.bspTraceCpuSamples = 0;
+	q3aSmokeStatus.bspTraceCpuMaxNs = 0;
+}
+
 static void Q3A_BotLibImport_FreeBspCollisionData(void) {
 	Q3A_BotLibImport_ClearBspLeafLinks();
 	free(q3aBspLeafLinkedEntities);
@@ -1745,6 +1851,7 @@ void Q3A_BotLibImport_ClearBspCollisionData(void) {
 	q3aSmokeStatus.bspCollisionBrushes = 0;
 	q3aSmokeStatus.bspCollisionPointContentsSmokePassed = qfalse;
 	q3aSmokeStatus.bspCollisionTraceSmokePassed = qfalse;
+	Q3A_BotLibImport_ResetBspTraceCounters();
 	q3aSmokeStatus.bspCollisionMessage = "Q3A BSP collision data has not run";
 }
 
@@ -1757,6 +1864,22 @@ static void Q3A_BotLibImport_FreeBspVisibilityData(void) {
 	q3aBspVisClusterCount = 0;
 }
 
+static void Q3A_BotLibImport_ResetVisibilityCounters(void) {
+	q3aSmokeStatus.aasInpvsChecks = 0;
+	q3aSmokeStatus.aasInpvsVisible = 0;
+	q3aSmokeStatus.aasInpvsMisses = 0;
+	q3aSmokeStatus.aasInphsChecks = 0;
+	q3aSmokeStatus.aasInphsVisible = 0;
+	q3aSmokeStatus.aasInphsMisses = 0;
+	q3aSmokeStatus.visibilityClusterChecks = 0;
+	q3aSmokeStatus.visibilityClusterSame = 0;
+	q3aSmokeStatus.visibilityClusterInvalid = 0;
+	q3aSmokeStatus.visibilityDecompressCalls = 0;
+	q3aSmokeStatus.visibilityDecompressBytes = 0;
+	q3aSmokeStatus.visibilityDecompressRuns = 0;
+	q3aSmokeStatus.visibilityDecompressFailures = 0;
+}
+
 void Q3A_BotLibImport_ClearBspVisibilityData(void) {
 	Q3A_BotLibImport_FreeBspVisibilityData();
 	q3aSmokeStatus.bspVisibilityLoadAttempted = qfalse;
@@ -1764,6 +1887,7 @@ void Q3A_BotLibImport_ClearBspVisibilityData(void) {
 	q3aSmokeStatus.bspVisibilityClusters = 0;
 	q3aSmokeStatus.bspVisibilityPvsSmokePassed = qfalse;
 	q3aSmokeStatus.bspVisibilityPhsSmokePassed = qfalse;
+	Q3A_BotLibImport_ResetVisibilityCounters();
 	q3aSmokeStatus.bspVisibilityMessage = "Q3A BSP visibility data has not run";
 }
 
@@ -1787,12 +1911,15 @@ static int Q3A_BotLibImport_DecompressVisByte(int cluster, int mode, int targetB
 	int offset = Q3A_BotLibImport_VisOffset(cluster, mode);
 	int outByte = 0;
 
+	q3aSmokeStatus.visibilityDecompressCalls++;
 	if (offset < 0 || offset >= q3aBspVisLength || targetByte < 0 || targetByte >= rowBytes) {
+		q3aSmokeStatus.visibilityDecompressFailures++;
 		return -1;
 	}
 
 	while (outByte < rowBytes && offset < q3aBspVisLength) {
 		const int value = q3aBspVisData[offset++];
+		q3aSmokeStatus.visibilityDecompressBytes++;
 		if (value != 0) {
 			if (outByte == targetByte) {
 				return value;
@@ -1802,12 +1929,16 @@ static int Q3A_BotLibImport_DecompressVisByte(int cluster, int mode, int targetB
 		}
 
 		if (offset >= q3aBspVisLength) {
+			q3aSmokeStatus.visibilityDecompressFailures++;
 			return -1;
 		}
 
 		{
 			const int count = q3aBspVisData[offset++];
+			q3aSmokeStatus.visibilityDecompressBytes++;
+			q3aSmokeStatus.visibilityDecompressRuns++;
 			if (count <= 0) {
+				q3aSmokeStatus.visibilityDecompressFailures++;
 				return -1;
 			}
 			if (targetByte >= outByte && targetByte < outByte + count) {
@@ -1817,6 +1948,7 @@ static int Q3A_BotLibImport_DecompressVisByte(int cluster, int mode, int targetB
 		}
 	}
 
+	q3aSmokeStatus.visibilityDecompressFailures++;
 	return -1;
 }
 
@@ -1824,13 +1956,16 @@ static int Q3A_BotLibImport_ClusterVisible(int fromCluster, int toCluster, int m
 	const int targetByte = toCluster >> 3;
 	int value;
 
+	q3aSmokeStatus.visibilityClusterChecks++;
 	if (fromCluster < 0 ||
 		toCluster < 0 ||
 		fromCluster >= q3aBspVisClusterCount ||
 		toCluster >= q3aBspVisClusterCount) {
+		q3aSmokeStatus.visibilityClusterInvalid++;
 		return qfalse;
 	}
 	if (fromCluster == toCluster) {
+		q3aSmokeStatus.visibilityClusterSame++;
 		return qtrue;
 	}
 
@@ -2029,6 +2164,7 @@ static void Q3A_BotLibImport_ClipBoxToBrush(vec3_t start, vec3_t end, bsp_trace_
 		brush->firstside + brush->numsides > q3aBspBrushSideCount) {
 		return;
 	}
+	q3aSmokeStatus.bspTraceBrushTests++;
 
 	for (i = 0; i < brush->numsides; ++i) {
 		Q3ABspBrushSide *side = &q3aBspBrushSides[brush->firstside + i];
@@ -2119,6 +2255,7 @@ static void Q3A_BotLibImport_TestBoxInBrush(vec3_t point, bsp_trace_t *trace, Q3
 		brush->firstside + brush->numsides > q3aBspBrushSideCount) {
 		return;
 	}
+	q3aSmokeStatus.bspTraceBrushTests++;
 
 	for (i = 0; i < brush->numsides; ++i) {
 		Q3ABspBrushSide *side = &q3aBspBrushSides[brush->firstside + i];
@@ -2331,6 +2468,7 @@ static void Q3A_BotLibImport_RecursiveHullCheck(int nodenum, float p1f, float p2
 	if (node->planenum < 0 || node->planenum >= q3aBspPlaneCount) {
 		return;
 	}
+	q3aSmokeStatus.bspTraceHullNodes++;
 
 	plane = &q3aBspPlanes[node->planenum];
 	if (plane->type >= PLANE_X && plane->type <= PLANE_Z) {
@@ -2434,6 +2572,55 @@ static qboolean Q3A_BotLibImport_PointsVisibleQ2Bsp(vec3_t p1, vec3_t p2, int mo
 	return Q3A_BotLibImport_ClusterVisible(cluster1, cluster2, mode) ? qtrue : qfalse;
 }
 
+static void Q3A_BotLibImport_RecordBspTraceResult(const bsp_trace_t *trace) {
+	if (trace == NULL) {
+		return;
+	}
+
+	if (trace->startsolid) {
+		q3aSmokeStatus.bspTraceStartSolid++;
+	}
+	if (trace->allsolid) {
+		q3aSmokeStatus.bspTraceAllSolid++;
+	}
+	if (trace->fraction < 1.0f || trace->startsolid || trace->allsolid) {
+		q3aSmokeStatus.bspTraceHits++;
+	} else {
+		q3aSmokeStatus.bspTraceMisses++;
+	}
+}
+
+static void Q3A_BotLibImport_RecordBspTraceCpu(uint64_t elapsedNs) {
+	q3aSmokeStatus.bspTraceCpuNs += elapsedNs;
+	q3aSmokeStatus.bspTraceCpuSamples++;
+	if (elapsedNs > q3aSmokeStatus.bspTraceCpuMaxNs) {
+		q3aSmokeStatus.bspTraceCpuMaxNs = elapsedNs;
+	}
+}
+
+static void Q3A_BotLibImport_RecordEntityTraceClipResult(
+	const Q3ABotLibImportTraceResult *traceResult,
+	qboolean callbackSucceeded,
+	uint64_t elapsedNs) {
+	q3aSmokeStatus.entityTraceClipCalls++;
+	q3aSmokeStatus.entityTraceClipCpuNs += elapsedNs;
+	if (elapsedNs > q3aSmokeStatus.entityTraceClipCpuMaxNs) {
+		q3aSmokeStatus.entityTraceClipCpuMaxNs = elapsedNs;
+	}
+
+	if (callbackSucceeded && traceResult != NULL && traceResult->startSolid) {
+		q3aSmokeStatus.entityTraceClipStartSolid++;
+	}
+	if (callbackSucceeded && traceResult != NULL && traceResult->allSolid) {
+		q3aSmokeStatus.entityTraceClipAllSolid++;
+	}
+	if (callbackSucceeded && traceResult != NULL && traceResult->hit) {
+		q3aSmokeStatus.entityTraceClipHits++;
+	} else {
+		q3aSmokeStatus.entityTraceClipMisses++;
+	}
+}
+
 static bsp_trace_t Q3A_BotLibImport_TraceQ2Bsp(
 	vec3_t start,
 	vec3_t mins,
@@ -2450,6 +2637,7 @@ static bsp_trace_t Q3A_BotLibImport_TraceQ2Bsp(
 
 	VectorClear(zero);
 	Q3A_BotLibImport_ClearTrace(&trace, start != NULL ? start : zero);
+	q3aSmokeStatus.bspTraceCalls++;
 	if (!q3aSmokeStatus.bspCollisionLoaded ||
 		start == NULL ||
 		end == NULL ||
@@ -2457,6 +2645,7 @@ static bsp_trace_t Q3A_BotLibImport_TraceQ2Bsp(
 		if (end != NULL) {
 			VectorCopy(end, trace.endpos);
 		}
+		Q3A_BotLibImport_RecordBspTraceResult(&trace);
 		return trace;
 	}
 
@@ -2495,17 +2684,21 @@ static bsp_trace_t Q3A_BotLibImport_TraceQ2Bsp(
 
 		Q3A_BotLibImport_BoxLeafs_r(Q3A_BotLibImport_WorldHeadNode(), c1, c2);
 		VectorCopy(start, trace.endpos);
+		q3aSmokeStatus.bspTraceZeroLengthCalls++;
+		Q3A_BotLibImport_RecordBspTraceResult(&trace);
 		return trace;
 	}
 
 	if (Q3A_BotLibImport_VectorsEqual(traceMins, zero) && Q3A_BotLibImport_VectorsEqual(traceMaxs, zero)) {
 		q3aBspTraceIsPoint = qtrue;
 		VectorClear(q3aBspTraceExtents);
+		q3aSmokeStatus.bspTracePointCalls++;
 	} else {
 		q3aBspTraceIsPoint = qfalse;
 		q3aBspTraceExtents[0] = fabsf(traceMins[0]) > fabsf(traceMaxs[0]) ? fabsf(traceMins[0]) : fabsf(traceMaxs[0]);
 		q3aBspTraceExtents[1] = fabsf(traceMins[1]) > fabsf(traceMaxs[1]) ? fabsf(traceMins[1]) : fabsf(traceMaxs[1]);
 		q3aBspTraceExtents[2] = fabsf(traceMins[2]) > fabsf(traceMaxs[2]) ? fabsf(traceMins[2]) : fabsf(traceMaxs[2]);
+		q3aSmokeStatus.bspTraceBoxCalls++;
 	}
 
 	Q3A_BotLibImport_RecursiveHullCheck(Q3A_BotLibImport_WorldHeadNode(), 0.0f, 1.0f, start, end);
@@ -2514,6 +2707,7 @@ static bsp_trace_t Q3A_BotLibImport_TraceQ2Bsp(
 	} else {
 		Q3A_BotLibImport_LerpVector(start, end, trace.fraction, trace.endpos);
 	}
+	Q3A_BotLibImport_RecordBspTraceResult(&trace);
 	return trace;
 }
 
@@ -3573,6 +3767,44 @@ int Sys_MilliSeconds(void) {
 	return q3aSmokeStatus.runtimeMilliseconds;
 }
 
+static uint64_t Q3A_BotLibImport_NowNanoseconds(void) {
+#ifdef _WIN32
+	static LARGE_INTEGER freq;
+	LARGE_INTEGER now;
+	uint64_t seconds;
+	uint64_t remainder;
+
+	if (freq.QuadPart == 0) {
+		QueryPerformanceFrequency(&freq);
+	}
+	if (freq.QuadPart <= 0) {
+		return 0;
+	}
+	QueryPerformanceCounter(&now);
+	seconds = (uint64_t)(now.QuadPart / freq.QuadPart);
+	remainder = (uint64_t)(now.QuadPart % freq.QuadPart);
+	return seconds * 1000000000ULL + remainder * 1000000000ULL / (uint64_t)freq.QuadPart;
+#else
+	struct timespec ts;
+#if defined(CLOCK_MONOTONIC)
+	if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0) {
+		return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
+	}
+#endif
+#if defined(TIME_UTC)
+	if (timespec_get(&ts, TIME_UTC) == TIME_UTC) {
+		return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
+	}
+#endif
+	return 0;
+#endif
+}
+
+static uint64_t Q3A_BotLibImport_ElapsedNanoseconds(uint64_t startNs) {
+	const uint64_t endNs = Q3A_BotLibImport_NowNanoseconds();
+	return endNs >= startNs ? endNs - startNs : 0;
+}
+
 void QDECL Log_Write(char *fmt, ...) {
 	va_list args;
 
@@ -3636,6 +3868,14 @@ static void Q3A_BotLibImport_ResetAASRouteStatus(const char *message) {
 	q3aSmokeStatus.aasRouteReachability = 0;
 	q3aSmokeStatus.aasRouteEndArea = 0;
 	q3aSmokeStatus.aasRouteStopEvent = 0;
+	q3aSmokeStatus.routeBuildAttempts = 0;
+	q3aSmokeStatus.routeBuildSuccesses = 0;
+	q3aSmokeStatus.routeBuildFailures = 0;
+	q3aSmokeStatus.q3aRouteCpuNs = 0;
+	q3aSmokeStatus.q3aRouteCpuSamples = 0;
+	q3aSmokeStatus.q3aRouteCpuMaxNs = 0;
+	q3aSmokeStatus.q3aRouteCpuFailNs = 0;
+	q3aSmokeStatus.q3aRouteCpuFailSamples = 0;
 	q3aSmokeStatus.aasRouteMessage = message;
 }
 
@@ -3732,6 +3972,13 @@ static void Q3A_BotLibImport_ResetEntityTraceStatus(const char *message) {
 	q3aSmokeStatus.entityTraceHits = 0;
 	q3aSmokeStatus.entityTraceMisses = 0;
 	q3aSmokeStatus.entityTraceFailures = 0;
+	q3aSmokeStatus.entityTraceClipCalls = 0;
+	q3aSmokeStatus.entityTraceClipHits = 0;
+	q3aSmokeStatus.entityTraceClipMisses = 0;
+	q3aSmokeStatus.entityTraceClipStartSolid = 0;
+	q3aSmokeStatus.entityTraceClipAllSolid = 0;
+	q3aSmokeStatus.entityTraceClipCpuNs = 0;
+	q3aSmokeStatus.entityTraceClipCpuMaxNs = 0;
 	q3aSmokeStatus.entityTraceMessage = message;
 }
 
@@ -3868,13 +4115,23 @@ static void Q3A_BotLibImport_SetEntityTraceMessage(const char *prefix) {
 	snprintf(
 		q3aEntityTraceMessage,
 		sizeof(q3aEntityTraceMessage),
-		"%s: callback=%s attempts=%d hits=%d misses=%d failures=%d",
+		"%s: callback=%s attempts=%d hits=%d misses=%d failures=%d "
+		"clip_calls=%d clip_hits=%d clip_misses=%d "
+		"clip_startsolid=%d clip_allsolid=%d "
+		"clip_cpu_ns=%llu clip_cpu_max_ns=%llu",
 		prefix,
 		q3aSmokeStatus.entityTraceCallbackSet ? "yes" : "no",
 		q3aSmokeStatus.entityTraceAttempted,
 		q3aSmokeStatus.entityTraceHits,
 		q3aSmokeStatus.entityTraceMisses,
-		q3aSmokeStatus.entityTraceFailures);
+		q3aSmokeStatus.entityTraceFailures,
+		q3aSmokeStatus.entityTraceClipCalls,
+		q3aSmokeStatus.entityTraceClipHits,
+		q3aSmokeStatus.entityTraceClipMisses,
+		q3aSmokeStatus.entityTraceClipStartSolid,
+		q3aSmokeStatus.entityTraceClipAllSolid,
+		(unsigned long long)q3aSmokeStatus.entityTraceClipCpuNs,
+		(unsigned long long)q3aSmokeStatus.entityTraceClipCpuMaxNs);
 	q3aSmokeStatus.entityTraceMessage = q3aEntityTraceMessage;
 }
 
@@ -4774,11 +5031,51 @@ static int Q3A_BotLibImport_FindRouteGoalForTravelType(
 	return qfalse;
 }
 
+static void Q3A_BotLibImport_RecordRouteBuildResult(
+	int routed,
+	const Q3ABotLibImportRouteSteerResult *result) {
+	q3aSmokeStatus.routeBuildAttempts++;
+	if (routed && result != NULL && result->success) {
+		q3aSmokeStatus.routeBuildSuccesses++;
+	} else {
+		q3aSmokeStatus.routeBuildFailures++;
+	}
+}
+
+static void Q3A_BotLibImport_RecordRouteCpu(
+	uint64_t elapsedNs,
+	int routed,
+	const Q3ABotLibImportRouteSteerResult *result) {
+	q3aSmokeStatus.q3aRouteCpuNs += elapsedNs;
+	q3aSmokeStatus.q3aRouteCpuSamples++;
+	if (elapsedNs > q3aSmokeStatus.q3aRouteCpuMaxNs) {
+		q3aSmokeStatus.q3aRouteCpuMaxNs = elapsedNs;
+	}
+	if (!routed || result == NULL || !result->success) {
+		q3aSmokeStatus.q3aRouteCpuFailNs += elapsedNs;
+		q3aSmokeStatus.q3aRouteCpuFailSamples++;
+	}
+}
+
+static void Q3A_BotLibImport_RecordRouteBuildAndCpu(
+	uint64_t startNs,
+	int routed,
+	const Q3ABotLibImportRouteSteerResult *result) {
+	Q3A_BotLibImport_RecordRouteBuildResult(routed, result);
+	Q3A_BotLibImport_RecordRouteCpu(
+		Q3A_BotLibImport_ElapsedNanoseconds(startNs),
+		routed,
+		result);
+}
+
 int Q3A_BotLibImport_BuildRouteSteer(
 	const float origin[3],
 	int preferredGoalArea,
 	Q3ABotLibImportRouteSteerResult *result) {
-	return Q3A_BotLibImport_BuildRouteSteerInternal(origin, preferredGoalArea, NULL, result);
+	const uint64_t startNs = Q3A_BotLibImport_NowNanoseconds();
+	const int routed = Q3A_BotLibImport_BuildRouteSteerInternal(origin, preferredGoalArea, NULL, result);
+	Q3A_BotLibImport_RecordRouteBuildAndCpu(startNs, routed, result);
+	return routed;
 }
 
 int Q3A_BotLibImport_BuildRouteSteerToGoal(
@@ -4786,17 +5083,21 @@ int Q3A_BotLibImport_BuildRouteSteerToGoal(
 	int preferredGoalArea,
 	const float preferredGoalOrigin[3],
 	Q3ABotLibImportRouteSteerResult *result) {
-	return Q3A_BotLibImport_BuildRouteSteerInternal(
+	const uint64_t startNs = Q3A_BotLibImport_NowNanoseconds();
+	const int routed = Q3A_BotLibImport_BuildRouteSteerInternal(
 		origin,
 		preferredGoalArea,
 		preferredGoalOrigin,
 		result);
+	Q3A_BotLibImport_RecordRouteBuildAndCpu(startNs, routed, result);
+	return routed;
 }
 
 int Q3A_BotLibImport_BuildRouteSteerForTravelType(
 	const float origin[3],
 	int travelType,
 	Q3ABotLibImportRouteSteerResult *result) {
+	const uint64_t startNs = Q3A_BotLibImport_NowNanoseconds();
 	int startArea = 0;
 	int goalArea = 0;
 	vec3_t startOrigin;
@@ -4804,6 +5105,7 @@ int Q3A_BotLibImport_BuildRouteSteerForTravelType(
 	vec3_t goalOrigin;
 
 	if (result == NULL) {
+		Q3A_BotLibImport_RecordRouteBuildAndCpu(startNs, qfalse, NULL);
 		return qfalse;
 	}
 
@@ -4817,9 +5119,11 @@ int Q3A_BotLibImport_BuildRouteSteerForTravelType(
 		origin == NULL ||
 		travelType <= 0 ||
 		!Q3A_BotLibImport_TravelTypeAllowedForRoutes(travelType)) {
+		Q3A_BotLibImport_RecordRouteBuildAndCpu(startNs, qfalse, result);
 		return qfalse;
 	}
 	if (!Q3A_BotLibImport_FindRouteAreaForPoint(origin, &startArea, startOrigin)) {
+		Q3A_BotLibImport_RecordRouteBuildAndCpu(startNs, qfalse, result);
 		return qfalse;
 	}
 
@@ -4837,6 +5141,7 @@ int Q3A_BotLibImport_BuildRouteSteerForTravelType(
 				result) &&
 			result->success &&
 			result->reachabilityTravelType == travelType) {
+			Q3A_BotLibImport_RecordRouteBuildAndCpu(startNs, qtrue, result);
 			return qtrue;
 		}
 	}
@@ -4852,10 +5157,13 @@ int Q3A_BotLibImport_BuildRouteSteerForTravelType(
 			startOrigin,
 			travelType,
 			result)) {
-		return result->success && result->reachabilityTravelType == travelType;
+		const int routed = result->success && result->reachabilityTravelType == travelType;
+		Q3A_BotLibImport_RecordRouteBuildAndCpu(startNs, routed, result);
+		return routed;
 	}
 
 	result->startArea = startArea;
+	Q3A_BotLibImport_RecordRouteBuildAndCpu(startNs, qfalse, result);
 	return qfalse;
 }
 
@@ -6355,4 +6663,57 @@ void Q3A_BotLibImport_UnloadAAS(void) {
 
 const Q3ABotLibImportSmokeStatus *Q3A_BotLibImport_SmokeStatus(void) {
 	return &q3aSmokeStatus;
+}
+
+void Q3A_BotLibImport_GetSourceCounters(Q3ABotLibImportSourceCounters *outCounters) {
+	if (outCounters == NULL) {
+		return;
+	}
+
+	outCounters->routeBuildAttempts = q3aSmokeStatus.routeBuildAttempts;
+	outCounters->routeBuildSuccesses = q3aSmokeStatus.routeBuildSuccesses;
+	outCounters->routeBuildFailures = q3aSmokeStatus.routeBuildFailures;
+	outCounters->q3aRouteCpuNs = q3aSmokeStatus.q3aRouteCpuNs;
+	outCounters->q3aRouteCpuSamples = q3aSmokeStatus.q3aRouteCpuSamples;
+	outCounters->q3aRouteCpuMaxNs = q3aSmokeStatus.q3aRouteCpuMaxNs;
+	outCounters->q3aRouteCpuFailNs = q3aSmokeStatus.q3aRouteCpuFailNs;
+	outCounters->q3aRouteCpuFailSamples = q3aSmokeStatus.q3aRouteCpuFailSamples;
+	outCounters->aasInpvsChecks = q3aSmokeStatus.aasInpvsChecks;
+	outCounters->aasInpvsVisible = q3aSmokeStatus.aasInpvsVisible;
+	outCounters->aasInpvsMisses = q3aSmokeStatus.aasInpvsMisses;
+	outCounters->aasInphsChecks = q3aSmokeStatus.aasInphsChecks;
+	outCounters->aasInphsVisible = q3aSmokeStatus.aasInphsVisible;
+	outCounters->aasInphsMisses = q3aSmokeStatus.aasInphsMisses;
+	outCounters->visibilityClusterChecks = q3aSmokeStatus.visibilityClusterChecks;
+	outCounters->visibilityClusterSame = q3aSmokeStatus.visibilityClusterSame;
+	outCounters->visibilityClusterInvalid = q3aSmokeStatus.visibilityClusterInvalid;
+	outCounters->visibilityDecompressCalls = q3aSmokeStatus.visibilityDecompressCalls;
+	outCounters->visibilityDecompressBytes = q3aSmokeStatus.visibilityDecompressBytes;
+	outCounters->visibilityDecompressRuns = q3aSmokeStatus.visibilityDecompressRuns;
+	outCounters->visibilityDecompressFailures = q3aSmokeStatus.visibilityDecompressFailures;
+	outCounters->entityTraceAttempts = q3aSmokeStatus.entityTraceAttempted;
+	outCounters->entityTraceHits = q3aSmokeStatus.entityTraceHits;
+	outCounters->entityTraceMisses = q3aSmokeStatus.entityTraceMisses;
+	outCounters->entityTraceFailures = q3aSmokeStatus.entityTraceFailures;
+	outCounters->entityTraceClipCalls = q3aSmokeStatus.entityTraceClipCalls;
+	outCounters->entityTraceClipHits = q3aSmokeStatus.entityTraceClipHits;
+	outCounters->entityTraceClipMisses = q3aSmokeStatus.entityTraceClipMisses;
+	outCounters->entityTraceClipStartSolid = q3aSmokeStatus.entityTraceClipStartSolid;
+	outCounters->entityTraceClipAllSolid = q3aSmokeStatus.entityTraceClipAllSolid;
+	outCounters->entityTraceClipCpuNs = q3aSmokeStatus.entityTraceClipCpuNs;
+	outCounters->entityTraceClipCpuMaxNs = q3aSmokeStatus.entityTraceClipCpuMaxNs;
+	outCounters->aasTraceCalls = q3aSmokeStatus.aasTraceCalls;
+	outCounters->bspTraceCalls = q3aSmokeStatus.bspTraceCalls;
+	outCounters->bspTracePointCalls = q3aSmokeStatus.bspTracePointCalls;
+	outCounters->bspTraceBoxCalls = q3aSmokeStatus.bspTraceBoxCalls;
+	outCounters->bspTraceZeroLengthCalls = q3aSmokeStatus.bspTraceZeroLengthCalls;
+	outCounters->bspTraceHits = q3aSmokeStatus.bspTraceHits;
+	outCounters->bspTraceMisses = q3aSmokeStatus.bspTraceMisses;
+	outCounters->bspTraceStartSolid = q3aSmokeStatus.bspTraceStartSolid;
+	outCounters->bspTraceAllSolid = q3aSmokeStatus.bspTraceAllSolid;
+	outCounters->bspTraceHullNodes = q3aSmokeStatus.bspTraceHullNodes;
+	outCounters->bspTraceBrushTests = q3aSmokeStatus.bspTraceBrushTests;
+	outCounters->bspTraceCpuNs = q3aSmokeStatus.bspTraceCpuNs;
+	outCounters->bspTraceCpuSamples = q3aSmokeStatus.bspTraceCpuSamples;
+	outCounters->bspTraceCpuMaxNs = q3aSmokeStatus.bspTraceCpuMaxNs;
 }

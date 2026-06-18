@@ -1,78 +1,108 @@
 {
   "schema": "worr-bot-perf-budget-v1",
-  "description": "Generous baseline budget for the 2026-06-18 ten-minute eight-bot mm-rage frame-command soak.",
+  "description": "Generous baseline budget for the manual high_bot_soak_degradation policy: a ten-minute eight-bot mm-rage frame-command soak that preserves command throughput, route throughput, active bots, route cleanliness, debug coverage, and progress reporting while allowing item-reservation occupancy to decay.",
   "checks": {
     "metrics": {
       "pass": {
         "min": 1,
         "max": 1,
-        "description": "The smoke harness must pass."
+        "description": "High-bot invariant: the smoke harness must pass."
       },
       "duration_sec": {
         "min": 540,
         "max": 720,
-        "description": "Expected ten-minute soak with room for local timing variance."
+        "description": "High-bot invariant: expected ten-minute soak with startup/shutdown timing slack."
       },
       "bot_count": {
         "min": 8,
         "max": 8,
-        "description": "This budget is scoped to the eight-bot soak."
+        "description": "High-bot invariant: this budget is scoped to the eight-bot soak."
       },
       "commands_per_bot_sec": {
         "min": 20,
         "max": 80,
-        "description": "Detects severe command starvation or runaway duplicate command submission."
+        "description": "High-bot invariant: detects severe command starvation or runaway duplicate command submission."
+      },
+      "route_commands_per_bot_sec": {
+        "min": 20,
+        "max": 80,
+        "description": "High-bot invariant: route-steered command throughput should track overall command throughput."
       },
       "route_queries_per_bot_sec": {
         "max": 25,
-        "description": "Derived route-query pressure budget from the current baseline plus slack."
+        "description": "Pressure budget: derived route-query rate from the current baseline plus slack."
       },
       "route_refresh_ratio": {
         "max": 0.55,
-        "description": "Route refreshes should remain well below total route requests."
+        "description": "Pressure budget: route refreshes should remain well below total route requests."
       },
       "route_reuse_ratio": {
         "min": 0.4,
-        "description": "Route cache reuse should remain a meaningful share of route requests."
+        "description": "Pressure budget: route cache reuse should remain a meaningful share of route requests."
       },
       "debug_work_units_per_bot_sec": {
         "max": 1500,
-        "description": "Debug overlay pressure proxy while route and goal debug are enabled."
+        "description": "Pressure budget: debug overlay work proxy while route and goal debug are enabled."
       },
       "recovery_command_uses_per_bot_sec": {
         "max": 45,
-        "description": "Recovery command churn budget with headroom over the first soak baseline."
+        "description": "Pressure budget: recovery command churn budget with headroom over the first soak baseline."
       },
       "progress_reports": {
         "min": 8,
         "max": 12,
-        "description": "Ten-minute soak should report roughly once per minute."
+        "description": "High-bot invariant: ten-minute soak should report roughly once per minute."
+      },
+      "bot_frame_cpu_ms_per_bot_sec": {
+        "max": 5.0,
+        "required": false,
+        "description": "Optional source-counter budget: bot frame CPU is not required until long-soak CPU baselines are stable."
+      },
+      "route_query_cpu_ms_per_bot_sec": {
+        "max": 2.0,
+        "required": false,
+        "description": "Optional source-counter budget: WORR route-query CPU is not required for legacy soak logs."
+      },
+      "route_reuse_cpu_ms_per_bot_sec": {
+        "max": 0.5,
+        "required": false,
+        "description": "Optional source-counter budget: route-reuse timing may be omitted by low-overhead builds."
+      },
+      "q3a_route_cpu_ms_per_bot_sec": {
+        "max": 2.0,
+        "required": false,
+        "description": "Optional source-counter budget: Q3A route CPU is not required for legacy soak logs."
       }
     },
     "status": {
+      "expected_min_commands": {
+        "min": 8,
+        "max": 8,
+        "description": "High-bot invariant: the final status should still identify the eight-bot target."
+      },
       "commands": {
         "min": 120000,
-        "description": "Raw final status command count should show sustained bot command throughput."
+        "description": "High-bot invariant: raw final status command count should show sustained bot command throughput."
       },
       "route_commands": {
         "min": 120000,
-        "description": "Raw final status route command count should show sustained route steering."
+        "description": "High-bot invariant: raw final status route command count should show sustained route steering."
       },
       "route_failures": {
         "max": 0,
-        "description": "No route failures are acceptable for this baseline smoke."
+        "description": "High-bot invariant: no route failures are acceptable for this baseline smoke."
       },
       "route_invalid_slots": {
         "max": 0,
-        "description": "No invalid route slots should be observed."
+        "description": "High-bot invariant: no invalid route slots should be observed."
       },
       "route_debug_missing_frames": {
         "max": 0,
-        "description": "Route debug output should keep pace with route command frames."
+        "description": "High-bot invariant: route debug output should keep pace with route command frames."
       },
       "skipped_inactive": {
         "max": 0,
-        "description": "All eight bots should stay active through the soak."
+        "description": "High-bot invariant: all eight bots should stay active through the soak."
       }
     }
   }

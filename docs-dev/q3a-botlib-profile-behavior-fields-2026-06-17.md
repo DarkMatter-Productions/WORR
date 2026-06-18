@@ -8,7 +8,7 @@ Tasks: `FR-04-T13`, `DV-07-T06`
 
 This round expands the server-owned bot profile bridge beyond display identity. Loaded profiles can now carry behavior metadata for later bot policy, brain, and movement work without requiring profile assets to be added yet.
 
-No curated profile assets were added in this slice. The temporary profile used for validation lived only under `.install/` and was removed before the final refresh-install pass.
+No curated profile assets were added in this slice. The temporary profile used for validation lived only under `.install/` and was removed before the final refresh-install pass. Current packaged WORR botfiles use Q3-style `*_c/_w/_i/_t.c` script families; see `docs-dev/q3a-botlib-q3-style-botfiles-2026-06-18.md`.
 
 ## Implementation Notes
 
@@ -36,7 +36,7 @@ No curated profile assets were added in this slice. The temporary profile used f
 
 - `meson compile -C builddir-win worr_ded_engine_x86_64 worr_ded_x86_64 sgame_x86_64`
 - `python tools\refresh_install.py --build-dir builddir-win --install-dir .install --assets-dir assets --base-game basew --archive-name pak0.pkz --platform-id windows-x86_64 --package-q2aas-aas`
-- Temporary validation-only profile staged at `.install/basew/botfiles/bots/smoke.c`, then removed before the final refresh-install pass.
+- Temporary validation-only profile staged at `.install/basew/botfiles/bots/smoke.c`, then removed before the final refresh-install pass. This was a historical smoke fixture; current packaged profiles load from `*_c.c` entry points such as `smoke_c.c`.
 - Dedicated profile behavior smoke:
   `.\worr_ded_x86_64.exe +set game basew +set logfile 1 +set logfile_name q3a_bot_profile_behavior_smoke +set logfile_flush 1 +set developer 1 +set deathmatch 1 +set sg_bot_enable 1 +set sv_bot_profile_smoke 2 +map mm-rage`
 - Dedicated min-player regression smoke:
@@ -60,6 +60,8 @@ Key regression evidence:
 
 ## Outstanding Work
 
-- Add curated profile assets only after source ownership and credits review.
+- Follow-up completed: first-party WORR profile assets now live under
+  `assets/botfiles/bots/`; see
+  `docs-dev/q3a-botlib-native-botfiles-assets-2026-06-18.md`.
 - Feed the behavior metadata into bot-brain policy; team-limit and mode-change cleanup now have a first pass in `docs-dev/q3a-botlib-team-policy-cleanup-2026-06-17.md`.
 - Connect spawned bot slots to AAS-backed movement and the BotLib command dispatcher.

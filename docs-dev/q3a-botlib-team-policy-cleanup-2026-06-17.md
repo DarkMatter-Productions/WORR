@@ -41,5 +41,7 @@ Key regression evidence:
 ## Outstanding Work
 
 - Add a direct game-side team-policy smoke that can assert `gclient_t::sess.team` counts without relying on server-only bot list data.
-- Add curated profile assets only after source ownership and credits review.
+- Follow-up completed: first-party WORR profile assets now live under
+  `assets/botfiles/bots/`; see
+  `docs-dev/q3a-botlib-native-botfiles-assets-2026-06-18.md`.
 - Connect spawned bot slots to AAS-backed movement and the BotLib command dispatcher.

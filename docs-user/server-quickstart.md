@@ -1,6 +1,7 @@
 # Server Quickstart
 
-This is the practical setup for hosting a WORR dedicated server without digging through every cvar first.
+This is the practical setup for hosting a WORR dedicated server without digging
+through every cvar first.
 
 ## Start a Local Dedicated Server
 
@@ -33,10 +34,34 @@ set allow_download 1
 
 ## Common Admin Flow
 
-1. Keep a server config in `basew/server.cfg` for published releases, or `.install/basew/server.cfg` for a local staged build.
+1. Keep a server config in `basew/server.cfg` for published releases, or
+   `.install/basew/server.cfg` for a local staged build.
 2. Launch with `+exec server.cfg`.
 3. Test locally, then open your firewall/router port for WAN play.
 4. Watch console logs for bad configs, missing maps, or denied file loads.
+
+## Optional Bot Profiles
+
+For bot-enabled practice servers, start with:
+
+```text
+set sg_bot_enable 1
+set sg_bot_profile vanguard
+set sg_bot_min_players 4
+```
+
+Release and staged server installs keep botfiles under `basew/botfiles/` as
+loose files beside `basew/pak0.pkz`. Operators can edit those loose files or add
+new complete profile families, then reload without restarting:
+
+```text
+sg_bot_reload_profiles
+sg_bot_add vanguard
+```
+
+Use [Bot Profiles](bot-profiles.md) for the full operator guide, including
+where installed botfiles live, what can be overridden, profile fields, and safe
+examples.
 
 ## Troubleshooting
 

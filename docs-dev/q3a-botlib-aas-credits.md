@@ -548,6 +548,31 @@ Tasks: `FR-04-T02`, `FR-04-T13`, `FR-04-T14`, `FR-04-T16`, `DV-07-T06`
 - Validation: `meson compile -C builddir-win`; `refresh_install.py --package-q2aas-aas`; forced restart mode `19` on `mm-rage` passed three proof cycles, two forced restart transitions, all cleanup checks with `count=0 active_reservations=0 pass=1`, final `cycles=3`, `map_changes=2`, `final_count=0`, and no `commandMsec underflow`; default `gamemap` regression still passes with two cycles, one map change, and final count zero.
 - Implementation log: `docs-dev/q3a-botlib-nav-map-restart-lifecycle-smoke-2026-06-18.md`.
 
+## Native Asset and Tooling Update: Botfiles Profile Pack
+
+Date: 2026-06-18
+
+Tasks: `FR-04-T13`, `DV-03-T05`, `DV-07-T06`, `DV-08-T05`
+
+- WORR native profile assets now live under `assets/botfiles/` with
+  Q3/Gladiator-style `botfiles/bots/*_c.c` character entry points plus
+  `_w.c`, `_i.c`, and `_t.c` companions for the first-party profile IDs
+  `smoke`, `vanguard`, `bulwark`, `relay`, and `vector`.
+- Local Quake III Arena and Gladiator botfiles were used as format references
+  for directory shape, suffix conventions, and broad script vocabulary only. No
+  Q3A, Gladiator, external profile pack, or imported script text was copied for
+  this slice.
+- WORR native file `src/server/main.c` now reports deterministic profile scan
+  markers, parse diagnostics, reload counts, and `sv_bot_profile_smoke_target`.
+- WORR native tools now include `tools/bot_profiles/validate_bot_profiles.py`
+  and `tools/test_package_assets.py`; the validator strips `_c` profile
+  suffixes, skips `_w/_i/_t` companions, and accepts the authored Q3-style
+  `CHARACTERISTIC_*` plus `WORR_*` bridge subset. `tools/package_assets.py`
+  packages botfiles into `pak0.pkz` and mirrors `botfiles` loose in refreshed
+  installs for no-zlib dedicated builds.
+- Validation: `meson compile -C builddir-win`; `refresh_install.py --package-q2aas-aas`; profile validator passed with 5 files, 5 profiles, 0 errors, and 0 warnings; `profile_backed_spawn` passed; the implemented bot scenario suite passed 5/5.
+- Implementation logs: `docs-dev/q3a-botlib-native-botfiles-assets-2026-06-18.md`, `docs-dev/q3a-botlib-botfiles-validation-tool-2026-06-18.md`, `docs-dev/q3a-botlib-profile-loader-hardening-2026-06-18.md`, `docs-dev/q3a-botlib-profile-scenario-smoke-2026-06-18.md`, `docs-dev/q3a-botlib-botfiles-loose-staging-2026-06-18.md`, `docs-dev/q3a-botlib-botfiles-user-docs-2026-06-18.md`, and `docs-dev/q3a-botlib-q3-style-botfiles-2026-06-18.md`.
+
 ## Native Bridge Update: Nav Natural Movement and Interaction Retry
 
 Date: 2026-06-18
@@ -590,9 +615,117 @@ Tasks: `DV-03-T05`, `DV-05-T02`, `DV-05-T03`, `DV-05-T05`, `FR-04-T16`, `DV-07-T
 - Validation: scenario harness tests pass with eight standard-library tests and fixture validation when `.tmp/bot_scenarios/latest_report.json` exists; pending-gap report against the current implemented report returns four blocked pending rows; perf analyzer tests pass with eight standard-library tests and the real soak fixture; the default soak budget passes the current ten-minute mode `18` log.
 - Implementation logs: `docs-dev/q3a-botlib-scenario-smoke-harness-2026-06-18.md`, `docs-dev/q3a-botlib-pending-scenario-counters-2026-06-18.md`, `docs-dev/q3a-botlib-scenario-pending-gap-report-2026-06-18.md`, `docs-dev/q3a-botlib-bot-perf-telemetry-2026-06-18.md`, `docs-dev/q3a-botlib-bot-perf-source-counters-2026-06-18.md`.
 
+## Native Tooling Update: High-Bot Degradation Policy
+
+Date: 2026-06-18
+
+Tasks: `DV-03-T05`, `FR-04-T16`
+
+- WORR native tool `tools/bot_scenarios/run_bot_scenarios.py` now records an explicit high-bot degradation policy that keeps the short eight-bot reservation pressure proof strict while allowing long-soak item reservation occupancy to decay under the manual mode `18` soak.
+- The policy is emitted through catalog, JSON, Markdown, and text reports so scenario evidence can distinguish expected long-run item churn from command-throughput, route-cleanliness, active-bot-count, route-slot, debug-coverage, or progress-report failures.
+- No new upstream source files or bot behavior imports were added for this slice; this is local scenario-harness status policy over the existing smoke modes and performance budget file.
+- Validation: `python -m py_compile tools\bot_scenarios\run_bot_scenarios.py tools\bot_scenarios\test_run_bot_scenarios.py`; `python tools\bot_scenarios\test_run_bot_scenarios.py` passed 23 tests; catalog text output reports `high_bot_soak_degradation` as manual-only with `high_bot_long_soak` policy metadata.
+- Implementation log: `docs-dev/q3a-botlib-high-bot-degradation-policy-2026-06-18.md`.
+
+## Native Tooling Update: High-Bot Soak Budget Sidecar
+
+Date: 2026-06-18
+
+Tasks: `DV-03-T05`, `DV-05-T02`, `DV-05-T05`, `FR-04-T16`
+
+- WORR native file `tools/bot_perf/default_soak_budget.json` now documents and enforces the manual eight-bot soak invariants that should remain strict even while long-run item-reservation occupancy is allowed to decay.
+- WORR native documentation in `tools/bot_perf/README.md` explains the manual mode `18` launch/analyze flow, the distinction between strict command/route guardrails and allowed reservation churn, and optional CPU checks for legacy soak logs.
+- No new upstream source files, copied algorithms, or behavior imports were added for this slice; this is local budget metadata and operator documentation over existing scenario and perf tooling.
+- Validation: JSON validation passed; the existing ten-minute fixture passed `tools/bot_perf/default_soak_budget.json` with 22 checks and expected optional CPU-field warnings; bot perf tests passed 12 tests; scenario catalog output reports `high_bot_soak_degradation` as manual-only mode `18`.
+- Implementation log: `docs-dev/q3a-botlib-high-bot-soak-budget-2026-06-18.md`.
+
+## Native Release Update: BotLib Packaging Hardening
+
+Date: 2026-06-18
+
+Tasks: `FR-04-T11`, `FR-04-T13`, `FR-04-T16`, `DV-08-T05`, `DV-07-T06`
+
+- WORR native release tools now enforce complete BotLib botfile payloads in `assets/botfiles`, validate required profile/script companion families, and hash-check both `pak0.pkz` members and loose `.install/basew/botfiles` mirrors against source assets.
+- `tools/refresh_install.py` now passes botfile and generated q2aas AAS archive-member expectations into `tools/release/validate_stage.py`, and requires staged q2aas AAS outputs to provide valid SHA-256 values before release archive validation.
+- No new upstream source files, botfile text, or AAS generator imports were added for this slice; this is WORR-native release packaging and staging hardening over existing local assets and q2aas stage reports.
+- Validation: Python compile passed for `tools\package_assets.py`, `tools\refresh_install.py`, and `tools\test_package_assets.py`; `python tools\test_package_assets.py -v` passed 8 tests; a scratch `refresh_install.py --package-q2aas-aas --platform-id windows-x86_64` run validated 30 botfile package/loose files and packaged `maps/mm-rage.aas` with SHA-256 `6459585e3c15eaa4170e23ca7465fc8255bd95b9b59d42e8615c39a67b707f9c`.
+- Implementation log: `docs-dev/q3a-botlib-release-packaging-hardening-2026-06-18.md`.
+
+## Native Tooling Update: Q2AAS Reference Map Coverage
+
+Date: 2026-06-18
+
+Tasks: `FR-04-T11`, `FR-04-T16`, `DV-07-T06`
+
+- WORR native q2aas validation now records manifest `coverage_categories`, optional reference map candidates, skipped missing optional maps, and reference-coverage summaries without implying that the current single staged map covers the full future reference set.
+- `tools/q2aas/validation_manifest.json`, `tools/q2aas/validate_worr_q2aas.py`, and `tools/aas_inventory/inventory_aas_assets.py` report the current `mm-rage` coverage as ready while marking id deathmatch, open deathmatch, CTF, campaign, and liquid/hazard reference categories incomplete until their BSPs are staged.
+- No `q2proto/` files were changed and no new upstream source files were imported for this slice; this is WORR-native validation, manifest, and inventory reporting around existing q2aas output.
+- Validation: Python compile and JSON manifest checks passed; q2aas validation unit tests passed 2 tests; AAS inventory unit tests passed 3 tests; inventory exits `0` for the current staged set; `meson compile -C builddir-win q2aas-staged-smoke` exits `0`; strict `--require-reference-coverage` exits `2` as expected while optional reference candidates remain unstaged.
+- Implementation log: `docs-dev/q2aas-reference-map-coverage-2026-06-18.md`.
+
+## Native Bridge Update: Static BSP Trace CPU Counters
+
+Date: 2026-06-18
+
+Tasks: `DV-05-T02`, `DV-05-T03`, `DV-05-T05`, `FR-04-T16`
+
+- WORR native adapter/status code now exposes CPU timing for active-map static BSP trace and point-contents work through `bsp_trace_cpu_ns`, `bsp_trace_cpu_samples`, and `bsp_trace_cpu_max_ns` on `q3a_bot_source_counter_status`.
+- `src/game/sgame/bots/q3a/q3a_botlib_import.*`, `botlib_adapter.*`, `bot_brain.cpp`, and `tools/bot_perf/analyze_bot_perf.py` carry the counters into scenario/perf logs and prefer `bsp_trace_cpu_samples` as the average denominator while preserving older log fallback behavior.
+- No new upstream source files were imported for this slice; this is WORR-native timing instrumentation around the existing Q3A BotLib import boundary and existing Q2 BSP collision callbacks.
+- Validation: Python compile passed for the bot perf analyzer/tests; analyzer unit tests passed 12 tests; focused Ninja object builds passed for `q3a_botlib_import.c`, `botlib_adapter.cpp`, and `bot_brain.cpp`; `meson compile -C builddir-win sgame_x86_64` passed.
+- Implementation log: `docs-dev/q3a-botlib-static-bsp-trace-cpu-2026-06-18.md`.
+
+## Native Bridge Update: Entity Trace Clip CPU Counters
+
+Date: 2026-06-18
+
+Tasks: `DV-05-T02`, `DV-05-T03`, `DV-05-T05`, `FR-04-T12`, `FR-04-T16`, `DV-07-T06`
+
+- WORR native adapter/status code now exposes CPU timing for the dynamic entity clip callback path used by imported Q3A BotLib AAS queries when they cross into WORR `gi.clip(...)`.
+- `src/game/sgame/bots/q3a/q3a_botlib_import.*`, `botlib_adapter.*`, and `bot_brain.cpp` carry `entity_trace_clip_calls`, result buckets, total CPU nanoseconds, and max CPU nanoseconds into `q3a_bot_source_counter_status`.
+- No new upstream source files or copied behavior logic were imported for this slice; this is local timing instrumentation around the existing WORR entity collision callback bridge.
+- Validation: Python compile and bot perf analyzer tests passed; focused object builds passed for `q3a_botlib_import.c`, `botlib_adapter.cpp`, and `bot_brain.cpp`; `meson compile -C builddir-win sgame_x86_64` passed.
+- Implementation log: `docs-dev/q3a-botlib-entity-trace-clip-cpu-2026-06-18.md`.
+
+## Native Bridge Update: Weapon and Inventory Command Request API
+
+Date: 2026-06-18
+
+Tasks: `FR-04-T03`, `FR-04-T15`, `DV-03-T05`, `DV-07-T06`
+
+- WORR native `src/game/sgame/bots/bot_actions.*` now translates validated pending weapon-switch or inventory-use decisions into inspectable command-request objects without submitting client commands or changing `bot_brain.cpp` command ownership.
+- The helper surface records command-request status counters, validates client/item/request kind safety, emits exact `use_index_only` requests for accepted weapon or inventory decisions, and intentionally leaves live inventory count, game state, selected-item state, and final command dispatch to future authoritative integration.
+- No new upstream source files or copied Q3A behavior code were imported for this slice; this is a local command-request API above the existing WORR-native action boundary.
+- Validation: focused `bot_actions.cpp` object compile passed; the initial full build exposed a separate team-role helper declaration issue, which the later team-role integration fixed; final round validation rebuilt `sgame_x86_64` successfully.
+- Implementation log: `docs-dev/q3a-botlib-weapon-inventory-command-api-2026-06-18.md`.
+
+## Native Bridge Update: Team Role Policy Helpers
+
+Date: 2026-06-18
+
+Tasks: `FR-04-T04`, `FR-04-T15`, `DV-03-T05`, `DV-07-T06`
+
+- WORR native `src/game/sgame/bots/bot_objectives.*` now adds deterministic returner/support role policy helpers above the existing objective proof layer, while preserving explicit requested roles for the current smoke paths.
+- `src/game/sgame/bots/bot_brain.cpp` now emits the new role-policy evaluation, selection, fallback, and priority-breakdown counters on `q3a_bot_objective_status`.
+- No new upstream source files or copied Q3A team behavior were imported for this slice; this is local policy scaffolding for future autonomous CTF/TDM role consumption.
+- Validation: `meson compile -C builddir-win sgame_x86_64` passed after the integration fix; `python tools\bot_scenarios\test_run_bot_scenarios.py` passed 23 tests.
+- Implementation log: `docs-dev/q3a-botlib-team-role-policy-2026-06-18.md`.
+
+## Native Bridge Update: AAS Memory Source Counters
+
+Date: 2026-06-18
+
+Tasks: `DV-05-T02`, `DV-05-T03`, `DV-05-T05`, `FR-04-T12`
+
+- WORR native source-counter status now includes the existing BotLib zone/hunk allocator active and peak byte counters on `q3a_bot_source_counter_status`, alongside route, visibility, trace, and CPU fields.
+- The current status surface records `q3a_memory_zone_active`, `q3a_memory_zone_peak`, `q3a_memory_hunk_active`, `q3a_memory_hunk_peak`, `q3a_memory_total_active`, `q3a_memory_total_peak`, `q3a_memory_failures`, and `q3a_memory_available`.
+- No new upstream source files were imported for this slice; this is local status emission over allocator counters already owned by the WORR BotLib adapter boundary.
+- Validation: final round validation rebuilt `sgame_x86_64` and `worr_ded_engine_x86_64`, refreshed `.install`, reran the 9/9 implemented bot scenario suite, passed the bot perf analyzer tests, and confirmed the latest `engage_enemy` parse reports the `q3a_memory` source-counter group with no missing source-counter groups.
+- Implementation log: `docs-dev/q3a-botlib-aas-memory-source-counters-2026-06-18.md`.
+
 ## Candidate Source Inventory
 
-These files were audited as likely first candidates or reference points. BSPC candidates now land through the `tools/q2aas/` snapshot; the first Q3A utility, AAS file-loader, AAS sampling, AAS reachability, AAS clustering, AAS route-query, AAS alternative-routing, AAS optimization, AAS start-frame, AAS entity-cache, AAS movement, and AAS debug helper subsets are imported and recorded above, while the WORR-owned entity-sync, entity-trace, BSP leaf-link/box-query, debug draw, route-overlay, debug-polygon, debug-area, cluster, alternative-route, memory allocator, filesystem, route-cache miss policy, lifecycle telemetry, bot frame command dispatch, route-steered frame command, nav route-cache, nav debug-overlay, nav reachability-debug, nav polyline-debug, nav debug-client-filter, nav persistent-goal, nav item-goal, nav item-reservation, nav look-ahead steering, nav velocity-aware steering, nav stuck-repath, nav stuck recovery command, nav goal-blacklist cooldown, nav failed-goal reason, nav movement-state commands, bot brain command ownership, nav position-goal, nav natural travel-goal including barrier-jump direct reach validation, nav rocket-jump route policy, nav four-bot frame-command smoke, nav eight-bot frame-command smoke, nav soak frame-command smoke, nav map-change repeat/restart smoke, nav natural movement support diagnostics, behavior action dispatcher and telemetry boundary, bot validation tooling, and legacy Q2R bot surface removal work is recorded as native adapter/replacement work. The remaining Q3A runtime and behavior files remain reference-only until matched to a pinned source.
+These files were audited as likely first candidates or reference points. BSPC candidates now land through the `tools/q2aas/` snapshot; the first Q3A utility, AAS file-loader, AAS sampling, AAS reachability, AAS clustering, AAS route-query, AAS alternative-routing, AAS optimization, AAS start-frame, AAS entity-cache, AAS movement, and AAS debug helper subsets are imported and recorded above, while the WORR-owned entity-sync, entity-trace, BSP leaf-link/box-query, debug draw, route-overlay, debug-polygon, debug-area, cluster, alternative-route, memory allocator, filesystem, route-cache miss policy, lifecycle telemetry, bot frame command dispatch, route-steered frame command, nav route-cache, nav debug-overlay, nav reachability-debug, nav polyline-debug, nav debug-client-filter, nav persistent-goal, nav item-goal, nav item-reservation, nav look-ahead steering, nav velocity-aware steering, nav stuck-repath, nav stuck recovery command, nav goal-blacklist cooldown, nav failed-goal reason, nav movement-state commands, bot brain command ownership, nav position-goal, nav natural travel-goal including barrier-jump direct reach validation, nav rocket-jump route policy, nav four-bot frame-command smoke, nav eight-bot frame-command smoke, nav soak frame-command smoke, nav map-change repeat/restart smoke, nav natural movement support diagnostics, behavior action dispatcher and telemetry boundary, weapon/inventory command-request API, static BSP trace CPU counters, entity-clip CPU counters, AAS memory source counters, team-role policy helpers, bot validation tooling, high-bot degradation policy and soak budget, q2aas reference-map coverage reporting, release packaging hardening, Q3-style WORR botfile layout correction, and legacy Q2R bot surface removal work is recorded as native adapter, tooling, status, or replacement work. The remaining Q3A runtime and behavior files remain reference-only until matched to a pinned source.
 
 | Candidate | Upstream / Local Ref | Current Use Decision | Required Before Import |
 |---|---|---|---|

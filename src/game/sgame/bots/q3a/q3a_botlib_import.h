@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -64,6 +66,14 @@ typedef struct Q3ABotLibImportSmokeStatus {
 	int aasRouteReachability;
 	int aasRouteEndArea;
 	int aasRouteStopEvent;
+	int routeBuildAttempts;
+	int routeBuildSuccesses;
+	int routeBuildFailures;
+	uint64_t q3aRouteCpuNs;
+	int q3aRouteCpuSamples;
+	uint64_t q3aRouteCpuMaxNs;
+	uint64_t q3aRouteCpuFailNs;
+	int q3aRouteCpuFailSamples;
 	int aasAltRouteAttempted;
 	int aasAltRoutePassed;
 	int aasAltRouteStartArea;
@@ -98,6 +108,13 @@ typedef struct Q3ABotLibImportSmokeStatus {
 	int entityTraceHits;
 	int entityTraceMisses;
 	int entityTraceFailures;
+	int entityTraceClipCalls;
+	int entityTraceClipHits;
+	int entityTraceClipMisses;
+	int entityTraceClipStartSolid;
+	int entityTraceClipAllSolid;
+	uint64_t entityTraceClipCpuNs;
+	uint64_t entityTraceClipCpuMaxNs;
 	int debugDrawCallbackSet;
 	int debugDrawAttempted;
 	int debugDrawPassed;
@@ -152,6 +169,20 @@ typedef struct Q3ABotLibImportSmokeStatus {
 	int bspCollisionBrushes;
 	int bspCollisionPointContentsSmokePassed;
 	int bspCollisionTraceSmokePassed;
+	int aasTraceCalls;
+	int bspTraceCalls;
+	int bspTracePointCalls;
+	int bspTraceBoxCalls;
+	int bspTraceZeroLengthCalls;
+	int bspTraceHits;
+	int bspTraceMisses;
+	int bspTraceStartSolid;
+	int bspTraceAllSolid;
+	int bspTraceHullNodes;
+	int bspTraceBrushTests;
+	uint64_t bspTraceCpuNs;
+	int bspTraceCpuSamples;
+	uint64_t bspTraceCpuMaxNs;
 	int bspLeafLinkAttempted;
 	int bspLeafLinks;
 	int bspLeafLinkFailures;
@@ -162,6 +193,19 @@ typedef struct Q3ABotLibImportSmokeStatus {
 	int bspVisibilityClusters;
 	int bspVisibilityPvsSmokePassed;
 	int bspVisibilityPhsSmokePassed;
+	int aasInpvsChecks;
+	int aasInpvsVisible;
+	int aasInpvsMisses;
+	int aasInphsChecks;
+	int aasInphsVisible;
+	int aasInphsMisses;
+	int visibilityClusterChecks;
+	int visibilityClusterSame;
+	int visibilityClusterInvalid;
+	int visibilityDecompressCalls;
+	int visibilityDecompressBytes;
+	int visibilityDecompressRuns;
+	int visibilityDecompressFailures;
 	int memoryZoneActiveBytes;
 	int memoryZonePeakBytes;
 	int memoryZoneAllocations;
@@ -209,6 +253,55 @@ typedef struct Q3ABotLibImportSmokeStatus {
 	const char *bspLeafLinkMessage;
 	const char *bspVisibilityMessage;
 } Q3ABotLibImportSmokeStatus;
+
+typedef struct Q3ABotLibImportSourceCounters {
+	int routeBuildAttempts;
+	int routeBuildSuccesses;
+	int routeBuildFailures;
+	uint64_t q3aRouteCpuNs;
+	int q3aRouteCpuSamples;
+	uint64_t q3aRouteCpuMaxNs;
+	uint64_t q3aRouteCpuFailNs;
+	int q3aRouteCpuFailSamples;
+	int aasInpvsChecks;
+	int aasInpvsVisible;
+	int aasInpvsMisses;
+	int aasInphsChecks;
+	int aasInphsVisible;
+	int aasInphsMisses;
+	int visibilityClusterChecks;
+	int visibilityClusterSame;
+	int visibilityClusterInvalid;
+	int visibilityDecompressCalls;
+	int visibilityDecompressBytes;
+	int visibilityDecompressRuns;
+	int visibilityDecompressFailures;
+	int entityTraceAttempts;
+	int entityTraceHits;
+	int entityTraceMisses;
+	int entityTraceFailures;
+	int entityTraceClipCalls;
+	int entityTraceClipHits;
+	int entityTraceClipMisses;
+	int entityTraceClipStartSolid;
+	int entityTraceClipAllSolid;
+	uint64_t entityTraceClipCpuNs;
+	uint64_t entityTraceClipCpuMaxNs;
+	int aasTraceCalls;
+	int bspTraceCalls;
+	int bspTracePointCalls;
+	int bspTraceBoxCalls;
+	int bspTraceZeroLengthCalls;
+	int bspTraceHits;
+	int bspTraceMisses;
+	int bspTraceStartSolid;
+	int bspTraceAllSolid;
+	int bspTraceHullNodes;
+	int bspTraceBrushTests;
+	uint64_t bspTraceCpuNs;
+	int bspTraceCpuSamples;
+	uint64_t bspTraceCpuMaxNs;
+} Q3ABotLibImportSourceCounters;
 
 typedef void (*Q3ABotLibImportPrintCallback)(int type, const char *message);
 typedef int (*Q3ABotLibImportBotClientCommandCallback)(int client, const char *command);
@@ -357,6 +450,7 @@ void Q3A_BotLibImport_ClearBspCollisionData(void);
 void Q3A_BotLibImport_ClearBspVisibilityData(void);
 void Q3A_BotLibImport_UnloadAAS(void);
 const Q3ABotLibImportSmokeStatus *Q3A_BotLibImport_SmokeStatus(void);
+void Q3A_BotLibImport_GetSourceCounters(Q3ABotLibImportSourceCounters *outCounters);
 
 #ifdef __cplusplus
 }

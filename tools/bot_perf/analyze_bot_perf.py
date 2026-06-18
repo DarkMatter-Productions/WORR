@@ -15,22 +15,104 @@ from typing import Any
 
 
 STATUS_MARKER = "q3a_bot_frame_command_status"
+SOURCE_STATUS_MARKER = "q3a_bot_source_counter_status"
 SOAK_BEGIN_MARKER = "q3a_bot_frame_command_smoke_soak=begin"
 SOAK_PROGRESS_MARKER = "q3a_bot_frame_command_smoke_soak_progress"
 SOAK_COMPLETE_MARKER = "q3a_bot_frame_command_smoke_soak=complete"
 KEY_VALUE_RE = re.compile(r"([A-Za-z0-9_]+)=(-?\d+(?:\.\d+)?)")
+NS_PER_MS = 1_000_000.0
+NS_PER_US = 1_000.0
 
-FUTURE_INSTRUMENTATION_COUNTERS = (
-    "bot_cpu_ms",
-    "bot_cpu_ns",
-    "bot_frame_cpu_ms",
-    "bot_route_cpu_ms",
-    "visibility_traces",
-    "visibility_trace_tests",
-    "pvs_checks",
-    "phs_checks",
-    "aas_inpvs_checks",
-    "aas_inphs_checks",
+SOURCE_COUNTER_GROUPS = {
+    "bot_frame_cpu": (
+        "bot_frame_cpu_ns",
+        "bot_frame_cpu_samples",
+        "bot_frame_cpu_max_ns",
+        "bot_frame_cpu_success_ns",
+        "bot_frame_cpu_success_samples",
+        "bot_cpu_ns",
+        "bot_cpu_ms",
+        "bot_frame_cpu_ms",
+    ),
+    "route_query_cpu": (
+        "route_query_cpu_ns",
+        "route_query_cpu_samples",
+        "route_query_cpu_max_ns",
+        "route_query_cpu_fail_ns",
+        "route_query_cpu_fail_samples",
+        "route_reuse_cpu_ns",
+        "route_reuse_cpu_samples",
+        "bot_route_cpu_ms",
+    ),
+    "q3a_route_cpu": (
+        "q3a_route_cpu_ns",
+        "q3a_route_cpu_samples",
+        "q3a_route_cpu_max_ns",
+        "q3a_route_cpu_fail_ns",
+        "q3a_route_cpu_fail_samples",
+    ),
+    "q3a_memory": (
+        "q3a_memory_zone_active",
+        "q3a_memory_zone_peak",
+        "q3a_memory_hunk_active",
+        "q3a_memory_hunk_peak",
+        "q3a_memory_total_active",
+        "q3a_memory_total_peak",
+        "q3a_memory_failures",
+        "q3a_memory_available",
+    ),
+    "visibility": (
+        "aas_inpvs_checks",
+        "aas_inpvs_visible",
+        "aas_inpvs_misses",
+        "aas_inphs_checks",
+        "aas_inphs_visible",
+        "aas_inphs_misses",
+        "visibility_cluster_checks",
+        "visibility_cluster_same",
+        "visibility_cluster_invalid",
+        "visibility_decompress_calls",
+        "visibility_decompress_bytes",
+        "visibility_decompress_runs",
+        "visibility_decompress_failures",
+        "visibility_traces",
+        "visibility_trace_tests",
+        "pvs_checks",
+        "phs_checks",
+    ),
+    "static_bsp_trace": (
+        "aas_trace_calls",
+        "bsp_trace_calls",
+        "bsp_trace_point_calls",
+        "bsp_trace_box_calls",
+        "bsp_trace_zero_length_calls",
+        "bsp_trace_hits",
+        "bsp_trace_misses",
+        "bsp_trace_startsolid",
+        "bsp_trace_allsolid",
+        "bsp_trace_hull_nodes",
+        "bsp_trace_brush_tests",
+        "bsp_trace_cpu_ns",
+        "bsp_trace_cpu_samples",
+        "bsp_trace_cpu_max_ns",
+    ),
+    "entity_trace": (
+        "entity_trace_attempts",
+        "entity_trace_hits",
+        "entity_trace_misses",
+        "entity_trace_failures",
+        "entity_trace_clip_calls",
+        "entity_trace_clip_hits",
+        "entity_trace_clip_misses",
+        "entity_trace_clip_startsolid",
+        "entity_trace_clip_allsolid",
+        "entity_trace_clip_cpu_ns",
+        "entity_trace_clip_cpu_max_ns",
+    ),
+}
+
+SOURCE_COUNTER_KEYS = tuple(
+    dict.fromkeys(key for keys in SOURCE_COUNTER_GROUPS.values() for key in keys)
 )
 
 COMPARISON_METRICS = (
@@ -74,6 +156,41 @@ COMPARISON_METRICS = (
         "label": "stuck detections/sec",
         "goal": "lower",
     },
+    {
+        "key": "bot_frame_cpu_ms_per_bot_sec",
+        "label": "bot frame CPU ms/bot/sec",
+        "goal": "lower",
+    },
+    {
+        "key": "route_query_cpu_ms_per_bot_sec",
+        "label": "route query CPU ms/bot/sec",
+        "goal": "lower",
+    },
+    {
+        "key": "q3a_route_cpu_ms_per_bot_sec",
+        "label": "Q3A route CPU ms/bot/sec",
+        "goal": "lower",
+    },
+    {
+        "key": "aas_inpvs_checks_per_bot_sec",
+        "label": "AAS inPVS checks/bot/sec",
+        "goal": "lower",
+    },
+    {
+        "key": "aas_inphs_checks_per_bot_sec",
+        "label": "AAS inPHS checks/bot/sec",
+        "goal": "lower",
+    },
+    {
+        "key": "bsp_trace_calls_per_bot_sec",
+        "label": "BSP traces/bot/sec",
+        "goal": "lower",
+    },
+    {
+        "key": "entity_trace_clip_calls_per_bot_sec",
+        "label": "entity clip traces/bot/sec",
+        "goal": "lower",
+    },
 )
 
 
@@ -113,6 +230,7 @@ def marker_payload(line: str, marker: str) -> str | None:
 
 def parse_log(path: pathlib.Path) -> ParsedLog:
     status: dict[str, int | float] | None = None
+    source_status: dict[str, int | float] | None = None
     soak_begin: dict[str, int | float] | None = None
     soak_complete: dict[str, int | float] | None = None
     progress: list[dict[str, int | float]] = []
@@ -143,9 +261,17 @@ def parse_log(path: pathlib.Path) -> ParsedLog:
         if payload is not None:
             status = parse_key_values(payload)
             status_lines += 1
+            continue
+
+        payload = marker_payload(line, SOURCE_STATUS_MARKER)
+        if payload is not None:
+            source_status = parse_key_values(payload)
 
     if status is None:
         raise SystemExit(f"No {STATUS_MARKER} line found in {path}")
+
+    if source_status is not None:
+        status = {**status, **source_status}
 
     return ParsedLog(
         path=path,
@@ -173,6 +299,14 @@ def as_int(payload: dict[str, int | float], key: str) -> int | None:
     return None
 
 
+def first_float(payload: dict[str, int | float], *keys: str) -> float | None:
+    for key in keys:
+        value = as_float(payload, key)
+        if value is not None:
+            return value
+    return None
+
+
 def safe_rate(total: float | None, seconds: float | None) -> float | None:
     if total is None or seconds is None or seconds <= 0:
         return None
@@ -189,6 +323,115 @@ def round_metric(value: float | None, digits: int = 3) -> float | None:
     if value is None:
         return None
     return round(value, digits)
+
+
+def ns_to_ms(value: float | None) -> float | None:
+    if value is None:
+        return None
+    return value / NS_PER_MS
+
+
+def ns_to_us(value: float | None) -> float | None:
+    if value is None:
+        return None
+    return value / NS_PER_US
+
+
+def average_ns_to_us(total_ns: float | None, samples: float | None) -> float | None:
+    if total_ns is None or samples is None or samples <= 0:
+        return None
+    return total_ns / samples / NS_PER_US
+
+
+def add_rate_metrics(
+    metrics: dict[str, Any],
+    status: dict[str, int | float],
+    key: str,
+    duration_sec: float | None,
+    per_bot_divisor: float | None,
+) -> None:
+    value = as_float(status, key)
+    metrics[f"{key}_per_sec"] = round_metric(safe_rate(value, duration_sec))
+    metrics[f"{key}_per_bot_sec"] = round_metric(safe_rate(value, per_bot_divisor))
+
+
+def add_ratio_metric(
+    metrics: dict[str, Any],
+    status: dict[str, int | float],
+    key: str,
+    part_key: str,
+    whole_key: str,
+) -> None:
+    metrics[key] = round_metric(
+        safe_ratio(as_float(status, part_key), as_float(status, whole_key)),
+        4,
+    )
+
+
+def add_cpu_metrics(
+    metrics: dict[str, Any],
+    status: dict[str, int | float],
+    prefix: str,
+    duration_sec: float | None,
+    per_bot_divisor: float | None,
+    *,
+    total_ns_keys: tuple[str, ...],
+    total_ms_keys: tuple[str, ...] = (),
+    samples_key: str | None = None,
+    samples_keys: tuple[str, ...] = (),
+    max_ns_key: str | None = None,
+    success_ns_key: str | None = None,
+    success_samples_key: str | None = None,
+    fail_ns_key: str | None = None,
+    fail_samples_key: str | None = None,
+) -> None:
+    total_ns = first_float(status, *total_ns_keys)
+    total_ms = ns_to_ms(total_ns)
+    if total_ms is None and total_ms_keys:
+        total_ms = first_float(status, *total_ms_keys)
+
+    sample_key_candidates = ((samples_key,) if samples_key else ()) + samples_keys
+    samples = first_float(status, *sample_key_candidates) if sample_key_candidates else None
+    max_ns = as_float(status, max_ns_key) if max_ns_key else None
+    success_ns = as_float(status, success_ns_key) if success_ns_key else None
+    success_samples = as_float(status, success_samples_key) if success_samples_key else None
+    fail_ns = as_float(status, fail_ns_key) if fail_ns_key else None
+    fail_samples = as_float(status, fail_samples_key) if fail_samples_key else None
+
+    metrics[f"{prefix}_total_ms"] = round_metric(total_ms)
+    metrics[f"{prefix}_ms_per_sec"] = round_metric(safe_rate(total_ms, duration_sec))
+    metrics[f"{prefix}_ms_per_bot_sec"] = round_metric(safe_rate(total_ms, per_bot_divisor))
+    metrics[f"{prefix}_avg_us"] = round_metric(average_ns_to_us(total_ns, samples))
+    metrics[f"{prefix}_max_us"] = round_metric(ns_to_us(max_ns))
+
+    if success_ns_key or success_samples_key:
+        metrics[f"{prefix}_success_avg_us"] = round_metric(
+            average_ns_to_us(success_ns, success_samples)
+        )
+    if fail_ns_key or fail_samples_key:
+        metrics[f"{prefix}_fail_avg_us"] = round_metric(
+            average_ns_to_us(fail_ns, fail_samples)
+        )
+
+
+def present_source_counter_groups(status: dict[str, int | float]) -> list[str]:
+    return [
+        group
+        for group, keys in SOURCE_COUNTER_GROUPS.items()
+        if any(key in status for key in keys)
+    ]
+
+
+def source_counter_subset(status: dict[str, int | float]) -> dict[str, int | float]:
+    return {
+        key: status[key]
+        for key in SOURCE_COUNTER_KEYS
+        if key in status
+    }
+
+
+def has_any_metric(report: dict[str, Any], keys: tuple[str, ...]) -> bool:
+    return any(report.get(key) is not None for key in keys)
 
 
 def choose_duration_ms(parsed: ParsedLog) -> float | None:
@@ -285,6 +528,7 @@ def analyze(
     debug_work_units = debug_direct_primitives + debug_polyline_segments
 
     per_bot_divisor = duration_sec * bot_count if duration_sec is not None and bot_count else None
+    present_source_groups = present_source_counter_groups(status)
 
     metrics: dict[str, Any] = {
         "file": str(parsed.path),
@@ -346,10 +590,137 @@ def analyze(
         ),
         "item_goal_peak_active_reservations": as_int(status, "item_goal_peak_active_reservations"),
         "soak_reports": as_int(parsed.soak_complete or {}, "reports"),
-        "missing_instrumentation": [
-            key for key in FUTURE_INSTRUMENTATION_COUNTERS if key not in status
+        "source_counter_groups_present": present_source_groups,
+        "source_counter_groups_missing": [
+            group for group in SOURCE_COUNTER_GROUPS if group not in present_source_groups
         ],
+        "source_counters": source_counter_subset(status),
+        "missing_instrumentation": [
+            key
+            for key, group in (
+                (keys[0], group) for group, keys in SOURCE_COUNTER_GROUPS.items()
+            )
+            if group not in present_source_groups
+        ],
+        "q3a_memory_zone_active_bytes": as_int(status, "q3a_memory_zone_active"),
+        "q3a_memory_zone_peak_bytes": as_int(status, "q3a_memory_zone_peak"),
+        "q3a_memory_hunk_active_bytes": as_int(status, "q3a_memory_hunk_active"),
+        "q3a_memory_hunk_peak_bytes": as_int(status, "q3a_memory_hunk_peak"),
+        "q3a_memory_total_active_bytes": as_int(status, "q3a_memory_total_active"),
+        "q3a_memory_total_peak_bytes": as_int(status, "q3a_memory_total_peak"),
+        "q3a_memory_failures": as_int(status, "q3a_memory_failures"),
+        "q3a_memory_available_bytes": as_int(status, "q3a_memory_available"),
     }
+
+    add_cpu_metrics(
+        metrics,
+        status,
+        "bot_frame_cpu",
+        duration_sec,
+        per_bot_divisor,
+        total_ns_keys=("bot_frame_cpu_ns", "bot_cpu_ns"),
+        total_ms_keys=("bot_frame_cpu_ms", "bot_cpu_ms"),
+        samples_key="bot_frame_cpu_samples",
+        max_ns_key="bot_frame_cpu_max_ns",
+        success_ns_key="bot_frame_cpu_success_ns",
+        success_samples_key="bot_frame_cpu_success_samples",
+    )
+    add_cpu_metrics(
+        metrics,
+        status,
+        "route_query_cpu",
+        duration_sec,
+        per_bot_divisor,
+        total_ns_keys=("route_query_cpu_ns",),
+        total_ms_keys=("bot_route_cpu_ms",),
+        samples_key="route_query_cpu_samples",
+        max_ns_key="route_query_cpu_max_ns",
+        fail_ns_key="route_query_cpu_fail_ns",
+        fail_samples_key="route_query_cpu_fail_samples",
+    )
+    add_cpu_metrics(
+        metrics,
+        status,
+        "route_reuse_cpu",
+        duration_sec,
+        per_bot_divisor,
+        total_ns_keys=("route_reuse_cpu_ns",),
+        samples_key="route_reuse_cpu_samples",
+    )
+    add_cpu_metrics(
+        metrics,
+        status,
+        "q3a_route_cpu",
+        duration_sec,
+        per_bot_divisor,
+        total_ns_keys=("q3a_route_cpu_ns",),
+        samples_key="q3a_route_cpu_samples",
+        max_ns_key="q3a_route_cpu_max_ns",
+        fail_ns_key="q3a_route_cpu_fail_ns",
+        fail_samples_key="q3a_route_cpu_fail_samples",
+    )
+    add_cpu_metrics(
+        metrics,
+        status,
+        "bsp_trace_cpu",
+        duration_sec,
+        per_bot_divisor,
+        total_ns_keys=("bsp_trace_cpu_ns",),
+        samples_key="bsp_trace_cpu_samples",
+        samples_keys=("bsp_trace_calls",),
+        max_ns_key="bsp_trace_cpu_max_ns",
+    )
+    add_cpu_metrics(
+        metrics,
+        status,
+        "entity_trace_clip_cpu",
+        duration_sec,
+        per_bot_divisor,
+        total_ns_keys=("entity_trace_clip_cpu_ns",),
+        samples_key="entity_trace_clip_calls",
+        max_ns_key="entity_trace_clip_cpu_max_ns",
+    )
+
+    for key in (
+        "aas_inpvs_checks",
+        "aas_inphs_checks",
+        "visibility_cluster_checks",
+        "visibility_decompress_calls",
+        "visibility_decompress_bytes",
+        "aas_trace_calls",
+        "bsp_trace_calls",
+        "bsp_trace_hull_nodes",
+        "bsp_trace_brush_tests",
+        "entity_trace_attempts",
+        "entity_trace_clip_calls",
+        "pvs_checks",
+        "phs_checks",
+        "visibility_traces",
+        "visibility_trace_tests",
+    ):
+        add_rate_metrics(metrics, status, key, duration_sec, per_bot_divisor)
+
+    for key in (
+        "visibility_decompress_failures",
+        "entity_trace_failures",
+        "bsp_trace_startsolid",
+        "bsp_trace_allsolid",
+        "entity_trace_clip_startsolid",
+        "entity_trace_clip_allsolid",
+    ):
+        metrics[key] = as_int(status, key)
+
+    add_ratio_metric(metrics, status, "aas_inpvs_visible_ratio", "aas_inpvs_visible", "aas_inpvs_checks")
+    add_ratio_metric(metrics, status, "aas_inphs_visible_ratio", "aas_inphs_visible", "aas_inphs_checks")
+    add_ratio_metric(metrics, status, "bsp_trace_hit_ratio", "bsp_trace_hits", "bsp_trace_calls")
+    add_ratio_metric(
+        metrics,
+        status,
+        "entity_trace_clip_hit_ratio",
+        "entity_trace_clip_hits",
+        "entity_trace_clip_calls",
+    )
+
     metrics.update(progress_summary(parsed.progress))
     return metrics
 
@@ -835,6 +1206,12 @@ def markdown_report(reports: list[dict[str, Any]], comparison: dict[str, Any]) -
             report.get("route_reuse_ratio"),
             report.get("debug_work_units_per_bot_sec"),
             report.get("recovery_command_uses_per_bot_sec"),
+            report.get("bot_frame_cpu_ms_per_bot_sec"),
+            report.get("route_query_cpu_ms_per_bot_sec"),
+            report.get("q3a_route_cpu_ms_per_bot_sec"),
+            report.get("aas_inpvs_checks_per_bot_sec"),
+            report.get("bsp_trace_calls_per_bot_sec"),
+            report.get("entity_trace_clip_calls_per_bot_sec"),
         ])
 
     lines.extend(markdown_table(
@@ -853,6 +1230,12 @@ def markdown_report(reports: list[dict[str, Any]], comparison: dict[str, Any]) -
             "Reuse Ratio",
             "Debug Work/Bot/Sec",
             "Recovery Cmd/Bot/Sec",
+            "Bot CPU Ms/Bot/Sec",
+            "Route CPU Ms/Bot/Sec",
+            "Q3A Route CPU Ms/Bot/Sec",
+            "inPVS/Bot/Sec",
+            "BSP Trace/Bot/Sec",
+            "Entity Clip/Bot/Sec",
         ],
         run_rows,
     ))
@@ -996,6 +1379,56 @@ def print_text(reports: list[dict[str, Any]]) -> None:
             f"min_interval_sec={report['progress_interval_min_sec']} "
             f"max_interval_sec={report['progress_interval_max_sec']}"
         )
+        present_groups = ", ".join(report["source_counter_groups_present"])
+        missing_groups = ", ".join(report["source_counter_groups_missing"])
+        print(
+            "  source_counters: "
+            f"present={present_groups if present_groups else 'none'} "
+            f"missing={missing_groups if missing_groups else 'none'}"
+        )
+        if has_any_metric(report, (
+            "bot_frame_cpu_ms_per_bot_sec",
+            "route_query_cpu_ms_per_bot_sec",
+            "q3a_route_cpu_ms_per_bot_sec",
+        )):
+            print(
+                "  source_cpu: "
+                f"bot_frame_ms/bot/sec={report['bot_frame_cpu_ms_per_bot_sec']} "
+                f"bot_frame_avg_us={report['bot_frame_cpu_avg_us']} "
+                f"bot_frame_max_us={report['bot_frame_cpu_max_us']} "
+                f"route_query_ms/bot/sec={report['route_query_cpu_ms_per_bot_sec']} "
+                f"route_query_avg_us={report['route_query_cpu_avg_us']} "
+                f"q3a_route_ms/bot/sec={report['q3a_route_cpu_ms_per_bot_sec']} "
+                f"q3a_route_avg_us={report['q3a_route_cpu_avg_us']}"
+            )
+        if has_any_metric(report, (
+            "aas_inpvs_checks_per_bot_sec",
+            "aas_inphs_checks_per_bot_sec",
+            "visibility_decompress_calls_per_sec",
+        )):
+            print(
+                "  source_visibility: "
+                f"inpvs/bot/sec={report['aas_inpvs_checks_per_bot_sec']} "
+                f"inpvs_visible_ratio={report['aas_inpvs_visible_ratio']} "
+                f"inphs/bot/sec={report['aas_inphs_checks_per_bot_sec']} "
+                f"inphs_visible_ratio={report['aas_inphs_visible_ratio']} "
+                f"decompress_calls/sec={report['visibility_decompress_calls_per_sec']} "
+                f"decompress_failures={report['visibility_decompress_failures']}"
+            )
+        if has_any_metric(report, (
+            "bsp_trace_calls_per_bot_sec",
+            "entity_trace_clip_calls_per_bot_sec",
+        )):
+            print(
+                "  source_trace: "
+                f"bsp_calls/bot/sec={report['bsp_trace_calls_per_bot_sec']} "
+                f"bsp_avg_us={report['bsp_trace_cpu_avg_us']} "
+                f"bsp_max_us={report['bsp_trace_cpu_max_us']} "
+                f"entity_attempts/sec={report['entity_trace_attempts_per_sec']} "
+                f"entity_clip/bot/sec={report['entity_trace_clip_calls_per_bot_sec']} "
+                f"entity_clip_avg_us={report['entity_trace_clip_cpu_avg_us']} "
+                f"entity_failures={report['entity_trace_failures']}"
+            )
         missing = ", ".join(report["missing_instrumentation"])
         print(f"  missing_instrumentation: {missing if missing else 'none'}")
         budget = report.get("budget")
@@ -1035,6 +1468,27 @@ def print_csv(reports: list[dict[str, Any]]) -> None:
         "debug_work_units_per_sec",
         "stuck_detections_per_sec",
         "recovery_command_uses_per_sec",
+        "bot_frame_cpu_ms_per_bot_sec",
+        "bot_frame_cpu_avg_us",
+        "bot_frame_cpu_max_us",
+        "route_query_cpu_ms_per_bot_sec",
+        "route_query_cpu_avg_us",
+        "route_query_cpu_max_us",
+        "q3a_route_cpu_ms_per_bot_sec",
+        "q3a_route_cpu_avg_us",
+        "aas_inpvs_checks_per_bot_sec",
+        "aas_inpvs_visible_ratio",
+        "aas_inphs_checks_per_bot_sec",
+        "aas_inphs_visible_ratio",
+        "visibility_decompress_calls_per_sec",
+        "visibility_decompress_failures",
+        "bsp_trace_calls_per_bot_sec",
+        "bsp_trace_cpu_avg_us",
+        "bsp_trace_hit_ratio",
+        "entity_trace_attempts_per_sec",
+        "entity_trace_clip_calls_per_bot_sec",
+        "entity_trace_clip_cpu_avg_us",
+        "entity_trace_failures",
         "progress_reports",
         "budget_pass",
         "budget_failures",

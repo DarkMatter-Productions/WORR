@@ -8,7 +8,7 @@ Tasks: `FR-04-T13`, `DV-07-T06`
 
 This round adds the first deterministic server-owned bot profile loader. `sg_bot_reload_profiles` scans the game filesystem for Q3A-style character files and WORR-local `.bot` profile files, and `sg_bot_add [profile] [team]` now resolves the first argument as a profile before falling back to the older display-name behavior.
 
-No profile assets were added in this slice. The loader and smoke coverage are WORR-owned code; future imported or curated profile assets still need source ownership and credits review before landing under `assets/`.
+No profile assets were added in this slice. The loader and smoke coverage are WORR-owned code; future imported or curated profile assets still need source ownership and credits review before landing under `assets/`. Current packaged WORR botfiles use Q3-style `*_c/_w/_i/_t.c` script families; see `docs-dev/q3a-botlib-q3-style-botfiles-2026-06-18.md`.
 
 ## Implementation Notes
 
@@ -27,7 +27,7 @@ No profile assets were added in this slice. The loader and smoke coverage are WO
 
 - `meson compile -C builddir-win worr_ded_engine_x86_64 worr_ded_x86_64`
 - `python tools\refresh_install.py --build-dir builddir-win --install-dir .install --assets-dir assets --base-game basew --archive-name pak0.pkz --platform-id windows-x86_64 --package-q2aas-aas`
-- Temporary validation-only profile staged at `.install/basew/botfiles/bots/smoke.c`, then removed and followed by another refresh-install pass.
+- Temporary validation-only profile staged at `.install/basew/botfiles/bots/smoke.c`, then removed and followed by another refresh-install pass. This was a historical smoke fixture; current packaged profiles load from `*_c.c` entry points such as `smoke_c.c`.
 - Dedicated profile smoke:
   `.\worr_ded_x86_64.exe +set game basew +set logfile 1 +set logfile_name q3a_bot_profile_self_smoke +set logfile_flush 1 +set developer 1 +set deathmatch 1 +set sg_bot_enable 1 +set sv_bot_profile_smoke 2 +map mm-rage`
 - Dedicated min-player regression smoke:
@@ -52,6 +52,8 @@ Key regression evidence:
 ## Outstanding Work
 
 - Richer profile behavior fields were added in `docs-dev/q3a-botlib-profile-behavior-fields-2026-06-17.md`; they still need game-side policy consumers.
-- Add curated profile assets only after source ownership and credits review.
+- Follow-up completed: first-party WORR profile assets now live under
+  `assets/botfiles/bots/`; see
+  `docs-dev/q3a-botlib-native-botfiles-assets-2026-06-18.md`.
 - Team-limit and mode-change cleanup have a first pass in `docs-dev/q3a-botlib-team-policy-cleanup-2026-06-17.md`; direct team-count smoke coverage is still pending.
 - Connect spawned bot slots to AAS-backed movement and the BotLib command dispatcher.

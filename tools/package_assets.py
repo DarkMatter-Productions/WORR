@@ -3,12 +3,225 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import pathlib
+import shutil
 import zipfile
+
+
+BOTFILE_SUPPORT_MEMBERS = (
+    'botfiles/chars.h',
+    'botfiles/fw_items.c',
+    'botfiles/fw_weap.c',
+    'botfiles/inv.h',
+    'botfiles/teamplay.h',
+)
+BOTFILE_PROFILE_SUFFIXES = ('_c.c', '_i.c', '_t.c', '_w.c')
+BOTFILE_CHARACTER_SUFFIX = '_c.c'
+BOTFILE_SCRIPT_SUFFIX = '_s.c'
 
 
 def collect_files(root: pathlib.Path) -> list[pathlib.Path]:
     return sorted(path for path in root.rglob('*') if path.is_file())
+
+
+def sha256_file(path: pathlib.Path) -> str:
+    digest = hashlib.sha256()
+    with path.open('rb') as stream:
+        while True:
+            chunk = stream.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def remove_path(path: pathlib.Path) -> None:
+    if not path.exists() and not path.is_symlink():
+        return
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    else:
+        path.unlink()
+
+
+def validated_relative_path(value: str) -> pathlib.Path:
+    rel = pathlib.PurePosixPath(value.replace('\\', '/'))
+    if rel.is_absolute() or not rel.parts or any(part in ('', '.', '..') for part in rel.parts):
+        raise SystemExit(f'Invalid loose asset path: {value!r}')
+    return pathlib.Path(*rel.parts)
+
+
+def path_from_member(member: str) -> pathlib.Path:
+    rel = pathlib.PurePosixPath(member)
+    return pathlib.Path(*rel.parts)
+
+
+def bot_name_from_suffix(path: pathlib.Path, suffix: str) -> str | None:
+    name = path.name
+    if not name.endswith(suffix):
+        return None
+    bot_name = name[:-len(suffix)]
+    return bot_name or None
+
+
+def collect_bot_names(directory: pathlib.Path, suffix: str) -> set[str]:
+    if not directory.is_dir():
+        return set()
+
+    names: set[str] = set()
+    for path in directory.glob(f'*{suffix}'):
+        if not path.is_file():
+            continue
+        bot_name = bot_name_from_suffix(path, suffix)
+        if bot_name is not None:
+            names.add(bot_name)
+    return names
+
+
+def botfile_release_members(assets_dir: pathlib.Path) -> list[str]:
+    botfiles_dir = assets_dir / 'botfiles'
+    bots_dir = botfiles_dir / 'bots'
+    scripts_dir = botfiles_dir / 'scripts'
+    failures: list[str] = []
+
+    if not botfiles_dir.is_dir():
+        raise SystemExit(f'Required botfiles directory not found: {botfiles_dir}')
+    if not bots_dir.is_dir():
+        failures.append(f'missing bot profile directory: {bots_dir}')
+    if not scripts_dir.is_dir():
+        failures.append(f'missing bot script directory: {scripts_dir}')
+
+    for member in BOTFILE_SUPPORT_MEMBERS:
+        source = assets_dir / path_from_member(member)
+        if not source.is_file():
+            failures.append(f'missing botfile support asset: {member}')
+
+    character_bots = collect_bot_names(bots_dir, BOTFILE_CHARACTER_SUFFIX)
+    script_bots = collect_bot_names(scripts_dir, BOTFILE_SCRIPT_SUFFIX)
+    if not character_bots:
+        failures.append(f'no bot character profiles found in {bots_dir}')
+    if not script_bots:
+        failures.append(f'no bot scripts found in {scripts_dir}')
+
+    for bot_name in sorted(character_bots):
+        for suffix in BOTFILE_PROFILE_SUFFIXES:
+            member = f'botfiles/bots/{bot_name}{suffix}'
+            if not (assets_dir / path_from_member(member)).is_file():
+                failures.append(f'missing bot profile companion: {member}')
+
+        script_member = f'botfiles/scripts/{bot_name}{BOTFILE_SCRIPT_SUFFIX}'
+        if not (assets_dir / path_from_member(script_member)).is_file():
+            failures.append(f'missing bot script companion: {script_member}')
+
+    for bot_name in sorted(script_bots - character_bots):
+        failures.append(
+            f'bot script has no character profile: '
+            f'botfiles/scripts/{bot_name}{BOTFILE_SCRIPT_SUFFIX}'
+        )
+
+    for suffix in BOTFILE_PROFILE_SUFFIXES[1:]:
+        companion_bots = collect_bot_names(bots_dir, suffix)
+        for bot_name in sorted(companion_bots - character_bots):
+            failures.append(
+                f'bot profile companion has no character profile: '
+                f'botfiles/bots/{bot_name}{suffix}'
+            )
+
+    members = sorted(
+        path.relative_to(assets_dir).as_posix()
+        for path in botfiles_dir.rglob('*')
+        if path.is_file()
+    )
+    if not members:
+        failures.append(f'no botfile assets found in {botfiles_dir}')
+
+    if failures:
+        details = '\n  - '.join(failures)
+        raise SystemExit(f'Invalid botfile release payload:\n  - {details}')
+    return members
+
+
+def botfile_archive_member_requirements(assets_dir: pathlib.Path) -> list[str]:
+    return [
+        f'{member}={sha256_file(assets_dir / path_from_member(member))}'
+        for member in botfile_release_members(assets_dir)
+    ]
+
+
+def archive_member_hashes(archive_path: pathlib.Path) -> dict[str, str]:
+    try:
+        with zipfile.ZipFile(archive_path) as archive:
+            members: dict[str, str] = {}
+            for info in archive.infolist():
+                member = info.filename.replace('\\', '/')
+                if member.endswith('/'):
+                    continue
+                if member in members:
+                    raise SystemExit(f'Duplicate archive member in {archive_path}: {member}')
+                members[member] = hashlib.sha256(archive.read(info)).hexdigest()
+            return members
+    except zipfile.BadZipFile as exc:
+        raise SystemExit(f'Package archive is not a readable zip/pkz file: {archive_path}: {exc}') from exc
+    except OSError as exc:
+        raise SystemExit(f'Unable to read package archive {archive_path}: {exc}') from exc
+
+
+def validate_botfile_payload(
+    assets_dir: pathlib.Path,
+    output_dir: pathlib.Path,
+    archive_path: pathlib.Path,
+    members: list[str],
+) -> None:
+    archive_hashes = archive_member_hashes(archive_path)
+    failures: list[str] = []
+
+    for member in members:
+        source = assets_dir / path_from_member(member)
+        expected_hash = sha256_file(source)
+
+        archive_hash = archive_hashes.get(member)
+        if archive_hash is None:
+            failures.append(f'missing archive member: {member}')
+        elif archive_hash.lower() != expected_hash.lower():
+            failures.append(
+                f'archive member hash mismatch for {member}: '
+                f'expected {expected_hash}, got {archive_hash}'
+            )
+
+        loose_path = output_dir / path_from_member(member)
+        if not loose_path.is_file():
+            failures.append(f'missing loose botfile mirror: {loose_path}')
+            continue
+
+        loose_hash = sha256_file(loose_path)
+        if loose_hash.lower() != expected_hash.lower():
+            failures.append(
+                f'loose botfile hash mismatch for {loose_path}: '
+                f'expected {expected_hash}, got {loose_hash}'
+            )
+
+    if failures:
+        details = '\n  - '.join(failures)
+        raise SystemExit(f'Invalid packaged botfile payload:\n  - {details}')
+
+
+def mirror_loose_asset(assets_dir: pathlib.Path, output_dir: pathlib.Path, rel: pathlib.Path) -> bool:
+    source = assets_dir / rel
+    dest = output_dir / rel
+
+    remove_path(dest)
+    if not source.exists():
+        return False
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if source.is_dir():
+        shutil.copytree(source, dest)
+        return True
+    if source.is_file():
+        shutil.copy2(source, dest)
+        return True
+    raise SystemExit(f'Unsupported loose asset source: {source}')
 
 
 def main() -> int:
@@ -20,6 +233,12 @@ def main() -> int:
     parser.add_argument(
         '--output-path',
         help='Optional output archive path relative to <install-dir>; overrides --base-game/--archive-name',
+    )
+    parser.add_argument(
+        '--loose-dir',
+        action='append',
+        default=['botfiles'],
+        help='Asset directory/file to mirror loose beside the archive; repeatable, relative to --assets-dir',
     )
     args = parser.parse_args()
 
@@ -38,6 +257,7 @@ def main() -> int:
     files = collect_files(assets_dir)
     if not files:
         raise SystemExit(f'No files found in assets directory: {assets_dir}')
+    botfile_members = botfile_release_members(assets_dir)
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -45,8 +265,19 @@ def main() -> int:
         for path in files:
             archive.write(path, path.relative_to(assets_dir).as_posix())
 
+    mirrored: list[str] = []
+    for value in args.loose_dir:
+        rel = validated_relative_path(value)
+        if mirror_loose_asset(assets_dir, output_dir, rel):
+            mirrored.append(rel.as_posix())
+
+    validate_botfile_payload(assets_dir, output_dir, archive_path, botfile_members)
+
     print(f'Wrote {archive_path}')
     print(f'Packed {len(files)} files from {assets_dir}')
+    print(f'Validated botfile release payload: {len(botfile_members)} package/loose file(s)')
+    if mirrored:
+        print(f'Mirrored loose asset paths: {", ".join(mirrored)}')
     return 0
 
 

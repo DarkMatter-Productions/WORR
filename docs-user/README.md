@@ -8,6 +8,8 @@ If you want deep engine internals, design notes, or migration writeups, see `doc
 
 - [Getting Started](getting-started.md): install basics, launch flow, and first-run checks.
 - [Server Quickstart](server-quickstart.md): host a dedicated server with sane defaults.
+- [Bot Profiles](bot-profiles.md): enable bots, find installed botfiles,
+  customize profiles, and reload changes.
 
 ## Full Reference Manuals
 

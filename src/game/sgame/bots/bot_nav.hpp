@@ -5,6 +5,8 @@
 
 #include "botlib_adapter.hpp"
 
+#include <cstdint>
+
 struct gentity_t;
 
 struct BotNavRecoveryMove {
@@ -29,6 +31,13 @@ struct BotNavRouteStatus {
 	int refreshes = 0;
 	int reuses = 0;
 	int failures = 0;
+	uint64_t routeQueryCpuNs = 0;
+	int routeQueryCpuSamples = 0;
+	uint64_t routeQueryCpuMaxNs = 0;
+	uint64_t routeQueryCpuFailNs = 0;
+	int routeQueryCpuFailSamples = 0;
+	uint64_t routeReuseCpuNs = 0;
+	int routeReuseCpuSamples = 0;
 	int invalidSlots = 0;
 	int cadenceRefreshes = 0;
 	int targetRefreshes = 0;
