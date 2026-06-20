@@ -26,6 +26,13 @@ constexpr int BOT_COMBAT_RANGE_MATCH_BONUS = 16;
 constexpr int BOT_COMBAT_RANGE_USABLE_BONUS = 8;
 constexpr int BOT_COMBAT_TOO_CLOSE_PENALTY = 24;
 constexpr int BOT_COMBAT_TOO_FAR_PENALTY = 16;
+constexpr int BOT_COMBAT_ESTIMATE_FINISHER_EFFECTIVE_HEALTH = 45;
+constexpr int BOT_COMBAT_ESTIMATE_ARMORED_THRESHOLD = 50;
+constexpr int BOT_COMBAT_ESTIMATE_DURABLE_EFFECTIVE_HEALTH = 100;
+constexpr int BOT_COMBAT_ESTIMATE_FINISHER_BONUS = 7;
+constexpr int BOT_COMBAT_ESTIMATE_ARMOR_PRESSURE_BONUS = 6;
+constexpr int BOT_COMBAT_ESTIMATE_UNDERPOWERED_PENALTY = 6;
+constexpr int BOT_COMBAT_ESTIMATE_PRESSURE_PRIORITY_THRESHOLD = 50;
 constexpr int BOT_COMBAT_DEFAULT_FIELD_OF_VIEW_DEGREES = 110;
 constexpr int BOT_COMBAT_MIN_FIELD_OF_VIEW_DEGREES = 30;
 constexpr int BOT_COMBAT_MAX_FIELD_OF_VIEW_DEGREES = 180;
@@ -782,8 +789,116 @@ struct BotWeaponScore {
 	bool usable = false;
 	bool safe = true;
 	const BotWeaponMetadata *metadata = nullptr;
+	int estimateAdjustment = 0;
+	bool usedEnemyEstimate = false;
+	bool finisherEstimateBonus = false;
+	bool armorPressureEstimateBonus = false;
+	bool underpoweredEstimatePenalty = false;
+	const char *estimateReason = "none";
 	const char *reason = "unusable";
 };
+
+struct BotWeaponEstimateAdjustment {
+	int scoreAdjustment = 0;
+	bool usedEnemyEstimate = false;
+	bool finisherBonus = false;
+	bool armorPressureBonus = false;
+	bool underpoweredPenalty = false;
+	const char *reason = "none";
+};
+
+int BotCombat_EstimatedHealthValue(int value) {
+	return std::max(0, value);
+}
+
+int BotCombat_EstimatedEffectiveHealth(const BotCombatContext &context) {
+	return BotCombat_EstimatedHealthValue(context.enemyHealthEstimate) +
+		BotCombat_EstimatedHealthValue(context.enemyArmorEstimate);
+}
+
+bool BotCombat_CanUseEnemyEstimate(const BotCombatContext &context) {
+	return context.enemyEstimateKnown && context.enemyHealthEstimate > 0;
+}
+
+bool BotCombat_IsEstimateFinisherWeapon(
+	const BotWeaponMetadata &metadata,
+	BotWeaponRangeBand range) {
+	if (metadata.attackModel == BotWeaponAttackModel::Hitscan ||
+		metadata.attackModel == BotWeaponAttackModel::Beam) {
+		return true;
+	}
+	if (metadata.attackModel == BotWeaponAttackModel::Melee) {
+		return range == BotWeaponRangeBand::Melee ||
+			range == BotWeaponRangeBand::Close;
+	}
+	return metadata.attackModel == BotWeaponAttackModel::Projectile &&
+		!metadata.splashDamage;
+}
+
+bool BotCombat_IsEstimateArmorPressureWeapon(
+	const BotWeaponMetadata &metadata,
+	BotWeaponRangeBand range) {
+	if (metadata.attackModel == BotWeaponAttackModel::Melee) {
+		return range == BotWeaponRangeBand::Melee;
+	}
+	if (metadata.attackModel != BotWeaponAttackModel::Hitscan &&
+		metadata.attackModel != BotWeaponAttackModel::Projectile &&
+		metadata.attackModel != BotWeaponAttackModel::Beam) {
+		return false;
+	}
+	return metadata.priority >= BOT_COMBAT_ESTIMATE_PRESSURE_PRIORITY_THRESHOLD;
+}
+
+bool BotCombat_IsEstimateUnderpoweredWeapon(const BotWeaponMetadata &metadata) {
+	if (metadata.attackModel == BotWeaponAttackModel::Utility ||
+		metadata.attackModel == BotWeaponAttackModel::Deployable) {
+		return true;
+	}
+	return metadata.priority < BOT_COMBAT_ESTIMATE_PRESSURE_PRIORITY_THRESHOLD;
+}
+
+BotWeaponEstimateAdjustment BotCombat_BuildEstimateWeaponAdjustment(
+	const BotWeaponMetadata &metadata,
+	const BotCombatContext &context,
+	BotWeaponRangeBand range) {
+	if (!BotCombat_CanUseEnemyEstimate(context)) {
+		return {};
+	}
+
+	const int armorEstimate = BotCombat_EstimatedHealthValue(context.enemyArmorEstimate);
+	const int effectiveHealth = BotCombat_EstimatedEffectiveHealth(context);
+	if (effectiveHealth <= BOT_COMBAT_ESTIMATE_FINISHER_EFFECTIVE_HEALTH &&
+		BotCombat_IsEstimateFinisherWeapon(metadata, range)) {
+		return {
+			.scoreAdjustment = BOT_COMBAT_ESTIMATE_FINISHER_BONUS,
+			.usedEnemyEstimate = true,
+			.finisherBonus = true,
+			.reason = "enemy_estimate_finisher",
+		};
+	}
+
+	if (armorEstimate >= BOT_COMBAT_ESTIMATE_ARMORED_THRESHOLD &&
+		effectiveHealth >= BOT_COMBAT_ESTIMATE_DURABLE_EFFECTIVE_HEALTH) {
+		if (BotCombat_IsEstimateUnderpoweredWeapon(metadata)) {
+			return {
+				.scoreAdjustment = -BOT_COMBAT_ESTIMATE_UNDERPOWERED_PENALTY,
+				.usedEnemyEstimate = true,
+				.underpoweredPenalty = true,
+				.reason = "enemy_estimate_underpowered",
+			};
+		}
+		if (BotCombat_IsEstimateArmorPressureWeapon(metadata, range)) {
+			return {
+				.scoreAdjustment = BOT_COMBAT_ESTIMATE_ARMOR_PRESSURE_BONUS,
+				.usedEnemyEstimate = true,
+				.armorPressureBonus = true,
+				.reason = "enemy_estimate_armor_pressure",
+			};
+		}
+	}
+
+	return {};
+}
 
 BotWeaponScore BotCombat_ScoreWeapon(
 	int weaponItem,
@@ -841,6 +956,13 @@ BotWeaponScore BotCombat_ScoreWeapon(
 		reason = "last_ammo";
 	}
 
+	const BotWeaponEstimateAdjustment estimateAdjustment =
+		BotCombat_BuildEstimateWeaponAdjustment(*metadata, context, range);
+	if (estimateAdjustment.scoreAdjustment != 0) {
+		score += estimateAdjustment.scoreAdjustment;
+		reason = estimateAdjustment.reason;
+	}
+
 	bool safe = !BotCombat_IsSelfDamageUnsafe(metadata, context);
 	if (!safe) {
 		score -= BOT_COMBAT_SPLASH_UNSAFE_PENALTY;
@@ -852,6 +974,12 @@ BotWeaponScore BotCombat_ScoreWeapon(
 		.usable = true,
 		.safe = safe,
 		.metadata = metadata,
+		.estimateAdjustment = estimateAdjustment.scoreAdjustment,
+		.usedEnemyEstimate = estimateAdjustment.usedEnemyEstimate,
+		.finisherEstimateBonus = estimateAdjustment.finisherBonus,
+		.armorPressureEstimateBonus = estimateAdjustment.armorPressureBonus,
+		.underpoweredEstimatePenalty = estimateAdjustment.underpoweredPenalty,
+		.estimateReason = estimateAdjustment.reason,
 		.reason = reason,
 	};
 }
@@ -883,9 +1011,29 @@ void BotCombat_RecordSelection(const BotCombatContext &context, const BotWeaponS
 	botCombatStatus.lastCurrentWeaponScore = selection.currentWeaponScore;
 	botCombatStatus.lastPreferredWeaponScore = selection.preferredWeaponScore;
 	botCombatStatus.lastSelectedWeaponScore = selection.selectedWeaponScore;
+	botCombatStatus.lastWeaponEstimateAdjustment = selection.selectedEstimateAdjustment;
 	botCombatStatus.lastPreferredWeaponItem = context.preferredWeaponItem;
 	botCombatStatus.lastSelectionReason = selection.reason;
+	botCombatStatus.lastEstimateSelectionReason = selection.estimateReason;
+	botCombatStatus.lastEnemyHealthEstimate = context.enemyEstimateKnown ?
+		BotCombat_EstimatedHealthValue(context.enemyHealthEstimate) : 0;
+	botCombatStatus.lastEnemyArmorEstimate = context.enemyEstimateKnown ?
+		BotCombat_EstimatedHealthValue(context.enemyArmorEstimate) : 0;
+	botCombatStatus.lastEnemyEffectiveHealthEstimate = context.enemyEstimateKnown ?
+		BotCombat_EstimatedEffectiveHealth(context) : 0;
 	botCombatStatus.lastEnemyRangeBand = BotCombat_RangeBandForDistanceSquared(context.enemyDistanceSquared);
+	if (selection.usedEnemyEstimate) {
+		botCombatStatus.weaponSelectionEstimateUses++;
+	}
+	if (selection.finisherEstimateBonus) {
+		botCombatStatus.weaponSelectionFinisherBonuses++;
+	}
+	if (selection.armorPressureEstimateBonus) {
+		botCombatStatus.weaponSelectionArmorPressureBonuses++;
+	}
+	if (selection.underpoweredEstimatePenalty) {
+		botCombatStatus.weaponSelectionUnderpoweredPenalties++;
+	}
 
 	if (selection.metadata != nullptr) {
 		botCombatStatus.knownWeaponSelections++;
@@ -941,9 +1089,8 @@ BotCombatDecision BotCombat_Evaluate(const BotCombatContext &context) {
 	if (context.preferredWeaponReady &&
 		context.preferredWeaponItem > 0 &&
 		context.currentWeaponItem > 0 &&
-		context.preferredWeaponItem != context.currentWeaponItem) {
-		const char *reason = weaponSelection.weaponItem == context.preferredWeaponItem ?
-			weaponSelection.reason : "preferred_weapon_pending";
+		context.preferredWeaponItem != context.currentWeaponItem &&
+		weaponSelection.weaponItem == context.preferredWeaponItem) {
 		botCombatStatus.weaponSwitchDecisions++;
 		botCombatStatus.lastWeaponItem = context.preferredWeaponItem;
 		botCombatStatus.lastPriority = BOT_COMBAT_SWITCH_WEAPON_PRIORITY;
@@ -951,7 +1098,7 @@ BotCombatDecision BotCombat_Evaluate(const BotCombatContext &context) {
 			.kind = BotCombatDecisionKind::SwitchWeapon,
 			.priority = BOT_COMBAT_SWITCH_WEAPON_PRIORITY,
 			.weaponItem = context.preferredWeaponItem,
-			.reason = reason,
+			.reason = weaponSelection.reason,
 		};
 	}
 
@@ -1559,17 +1706,34 @@ BotWeaponSelectionResult BotCombat_SelectPreferredWeapon(const BotCombatContext 
 	const bool selectPreferred = shouldSwitch || (!current.usable && preferred.usable);
 	const BotWeaponScore &selected = selectPreferred ? preferred : current;
 	const int selectedWeaponItem = selectPreferred ? context.preferredWeaponItem : context.currentWeaponItem;
+	const BotWeaponScore *estimateSource = selected.usedEnemyEstimate ? &selected : nullptr;
+	if (estimateSource == nullptr && preferred.usedEnemyEstimate) {
+		estimateSource = &preferred;
+	}
+	if (estimateSource == nullptr && current.usedEnemyEstimate) {
+		estimateSource = &current;
+	}
 
 	return {
 		.weaponItem = selectedWeaponItem,
 		.currentWeaponScore = current.score,
 		.preferredWeaponScore = preferred.score,
 		.selectedWeaponScore = selected.score,
+		.currentEstimateAdjustment = current.estimateAdjustment,
+		.preferredEstimateAdjustment = preferred.estimateAdjustment,
+		.selectedEstimateAdjustment = selected.estimateAdjustment,
+		.usedEnemyEstimate = current.usedEnemyEstimate || preferred.usedEnemyEstimate,
+		.finisherEstimateBonus = selected.finisherEstimateBonus,
+		.armorPressureEstimateBonus = selected.armorPressureEstimateBonus,
+		.underpoweredEstimatePenalty = current.underpoweredEstimatePenalty ||
+			preferred.underpoweredEstimatePenalty,
 		.hasKnownWeapon = selected.metadata != nullptr,
 		.shouldSwitch = shouldSwitch,
 		.preferredWeaponSafe = preferred.safe,
 		.metadata = selected.metadata,
 		.reason = selected.reason,
+		.estimateReason = estimateSource != nullptr ?
+			estimateSource->estimateReason : "none",
 	};
 }
 

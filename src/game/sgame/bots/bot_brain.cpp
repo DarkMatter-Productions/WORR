@@ -413,6 +413,42 @@ void BotBrain_PrintCompactActionStatus(
 		combatStatus.lastDamageSequence);
 	BotBrain_AppendCompactStatusField(
 		line,
+		"combat_weapon_selection_estimate_uses",
+		combatStatus.weaponSelectionEstimateUses);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"combat_weapon_selection_finisher_bonuses",
+		combatStatus.weaponSelectionFinisherBonuses);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"combat_weapon_selection_armor_pressure_bonuses",
+		combatStatus.weaponSelectionArmorPressureBonuses);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"combat_weapon_selection_underpowered_penalties",
+		combatStatus.weaponSelectionUnderpoweredPenalties);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_combat_enemy_health_estimate",
+		combatStatus.lastEnemyHealthEstimate);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_combat_enemy_armor_estimate",
+		combatStatus.lastEnemyArmorEstimate);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_combat_enemy_effective_health_estimate",
+		combatStatus.lastEnemyEffectiveHealthEstimate);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_combat_weapon_estimate_adjustment",
+		combatStatus.lastWeaponEstimateAdjustment);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_combat_estimate_selection_reason",
+		combatStatus.lastEstimateSelectionReason);
+	BotBrain_AppendCompactStatusField(
+		line,
 		"combat_weapon_switch_decisions",
 		combatStatus.weaponSwitchDecisions);
 	BotBrain_AppendCompactStatusField(

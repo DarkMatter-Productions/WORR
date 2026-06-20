@@ -20,13 +20,13 @@ The port is not a blind file drop. The target is a maintained WORR bot stack wit
 
 ## Completion Snapshot
 
-Last refreshed: 2026-06-20 enemy health/armor estimate round.
+Last refreshed: 2026-06-20 estimate-aware weapon-selection round.
 
-- Total checklist completion: 622 of 755 items complete, or 82.4%.
-- Phase checklist completion: 622 of 743 phase items complete, or 83.7%.
+- Total checklist completion: 623 of 756 items complete, or 82.4%.
+- Phase checklist completion: 623 of 744 phase items complete, or 83.7%.
 - Completed in the latest worker lanes: live combat aim-profile policy and brain-owned live-aim/projectile-lead consumption, live pickup/observed-respawn item timing consumers with status-friendly counters, coop and resource policy helper metadata, stricter scenario marker gates for live aim and match-policy evidence, reference-map required-feature diagnostics, long-soak source-counter completeness diagnostics, and richer first-party botfile behavior metadata. These land on top of the earlier same-day promotion, packaging, source-counter, scenario, botfile, and documentation lanes.
-- Latest implementation round: WORR-owned enemy health/armor estimate plumbing now lives in the combat blackboard. Visible observations snap per-bot estimates to current vitals, bot-attributed damage records split health/armor deltas with a sequence guard, and status markers expose the estimate fields for future behavior consumers.
-- Still pending: behavior-level weapon-selection use of the new enemy estimates, richer inventory policy, durable autonomous role consumption in live FFA/TDM/CTF flows, deeper coop behavior beyond policy helpers/readiness proof, staging additional reference maps beyond the current available `mm-rage` set, CI/platform breadth, fresh long-soak CPU baselines with current source-counter fields, and the final imported BotLib runtime/adapter catch-all log.
+- Latest implementation round: WORR-owned enemy health/armor estimates now feed the combat weapon scorer. Low effective-health enemies nudge precise/direct finisher weapons, durable armored enemies nudge high-pressure weapons, underpowered choices are penalized against armor-heavy targets, and preferred-weapon switches now honor the selected score result.
+- Still pending: broader carried-arsenal and inventory policy, durable autonomous role consumption in live FFA/TDM/CTF flows, deeper coop behavior beyond policy helpers/readiness proof, staging additional reference maps beyond the current available `mm-rage` set, CI/platform breadth, fresh long-soak CPU baselines with current source-counter fields, and the final imported BotLib runtime/adapter catch-all log.
 
 ## Source Baseline
 
@@ -251,6 +251,7 @@ Target source layout, subject to adjustment during implementation:
 - `docs-dev/q3a-botlib-aim-fairness-policy-2026-06-18.md`: opt-in aim/fairness helper policy for reaction, FOV, turn, settle, burst, error, and tracking-noise metadata.
 - `docs-dev/q3a-botlib-live-combat-policy-round-2026-06-18.md`: live combat aim profiles, status-rich live-aim results, and projectile-lead scaling for brain-owned aiming.
 - `docs-dev/q3a-botlib-enemy-health-armor-estimates-2026-06-20.md`: WORR-owned per-bot enemy health/armor estimates from visible observations and split bot-attributed damage deltas.
+- `docs-dev/q3a-botlib-estimate-aware-weapon-selection-2026-06-20.md`: first weapon-selection consumer for enemy estimates, including finisher, armor-pressure, and underpowered-choice scoring adjustments.
 - `docs-dev/q3a-botlib-live-item-timing-consumers-2026-06-18.md`: live pickup and observed respawn timing consumer frames/results plus conservative timing gates.
 - `docs-dev/q3a-botlib-special-item-utility-2026-06-18.md`: special-item utility buckets for damage boosts, protection, invisibility, mobility, utility powerups, techs, and CTF objectives.
 - `docs-dev/q3a-botlib-team-role-policy-2026-06-18.md`: deterministic team-objective role policy helpers and role-policy status output.
@@ -1115,6 +1116,7 @@ Implementation checklist:
   - [x] Ammo availability.
   - [x] Splash safety.
   - [x] Enemy armor/health estimate.
+  - [x] Estimate-aware finisher, armor-pressure, and underpowered-choice scoring.
   - [x] Self-damage risk.
   - [x] Projectile-leading helper/API for direct-projectile aim points.
 - [ ] Implement aim model:
@@ -1155,8 +1157,8 @@ Implementation checklist:
 - `bot_items.*` now exposes intent-only item utility scoring for existing health, armor, ammo, weapon, powerup, and generic pickup candidates, plus explicit observation hooks for future health/armor goal and pickup smoke counters. This does not scan maps, reserve route goals, mutate inventory, or claim pickup completion.
 - `bot_actions.*` and the `q3a_bot_action_status` line now carry weapon-switch request/completion/failure fields plus health/armor pickup counters for future scenario modes. `BotActions_ApplyDecisionDetailed()` distinguishes accepted button mutations from pending weapon/inventory intents and malformed decisions.
 - `bot_brain.*` now calls the detailed action-application helper after movement command construction. Accepted attack/use decisions can set `BUTTON_ATTACK` / `BUTTON_USE`; switch-weapon and inventory-use decisions remain pending intents until a later owner submits and observes those systems.
-- Follow-up proof slices closed several helper gaps before the promotion pass: `bot_combat.*` can build and merge real enemy facts plus filter bot-attributed damage records; the real `Damage()` path records qualifying bot-attributed damage; `bot_actions.*` can track validated pending weapon-switch requests through observed success/failure; and `bot_items.*` can set up deterministic health/armor proof state and record pickup counters only from successful item-touch resource deltas. Later helper lanes added opt-in aim/fairness metadata, live aim-profile/projectile-lead consumption through the brain-owned known-enemy aim path, item timer disable/fuzz policy, live pickup/observed-respawn timing consumers with conservative selection gates, special-item utility buckets, and accepted exact `use_index_only` weapon/inventory dispatch through the brain-owned frame path. The scenario-promotion and evidence-tightening slices wire these hooks into passing smoke rows for modes `20` through `26`, including live-aim firing proof, deterministic item-timer proof, trace-checked corner-cut proof, and FFA/TDM/coop readiness proof. The 2026-06-20 estimate round adds per-bot enemy health/armor estimates refreshed by visible observations and adjusted by split bot-attributed damage when the enemy is no longer visible. Behavior-level use of those estimates in weapon selection, broader inventory policy, richer timed-goal route ownership, and autonomous team/coop behavior remain pending.
-- Implementation logs: `docs-dev/q3a-botlib-behavior-action-dispatcher-2026-06-18.md`, `docs-dev/q3a-botlib-behavior-action-brain-telemetry-2026-06-18.md`, `docs-dev/q3a-botlib-action-item-utility-2026-06-18.md`, `docs-dev/q3a-botlib-special-item-utility-2026-06-18.md`, `docs-dev/q3a-botlib-combat-weapon-metadata-2026-06-18.md`, `docs-dev/q3a-botlib-aim-fairness-policy-2026-06-18.md`, `docs-dev/q3a-botlib-live-aim-policy-integration-2026-06-18.md`, `docs-dev/q3a-botlib-live-combat-policy-round-2026-06-18.md`, `docs-dev/q3a-botlib-item-timer-fairness-2026-06-18.md`, `docs-dev/q3a-botlib-live-item-timing-consumers-2026-06-18.md`, `docs-dev/q3a-botlib-action-application-helpers-2026-06-18.md`, `docs-dev/q3a-botlib-weapon-inventory-command-api-2026-06-18.md`, `docs-dev/q3a-botlib-weapon-inventory-dispatch-2026-06-18.md`, `docs-dev/q3a-botlib-engage-enemy-proof-2026-06-18.md`, `docs-dev/q3a-botlib-combat-damage-event-hook-2026-06-18.md`, `docs-dev/q3a-botlib-weapon-switch-proof-2026-06-18.md`, `docs-dev/q3a-botlib-health-armor-pickup-proof-2026-06-18.md`, `docs-dev/q3a-botlib-gameplay-item-hooks-2026-06-18.md`, `docs-dev/q3a-botlib-health-armor-scenario-promotion-gate-2026-06-18.md`, `docs-dev/q3a-botlib-scenario-promotion-cpu-status-2026-06-18.md`, `docs-dev/q3a-botlib-enemy-health-armor-estimates-2026-06-20.md`.
+- Follow-up proof slices closed several helper gaps before the promotion pass: `bot_combat.*` can build and merge real enemy facts plus filter bot-attributed damage records; the real `Damage()` path records qualifying bot-attributed damage; `bot_actions.*` can track validated pending weapon-switch requests through observed success/failure; and `bot_items.*` can set up deterministic health/armor proof state and record pickup counters only from successful item-touch resource deltas. Later helper lanes added opt-in aim/fairness metadata, live aim-profile/projectile-lead consumption through the brain-owned known-enemy aim path, item timer disable/fuzz policy, live pickup/observed-respawn timing consumers with conservative selection gates, special-item utility buckets, and accepted exact `use_index_only` weapon/inventory dispatch through the brain-owned frame path. The scenario-promotion and evidence-tightening slices wire these hooks into passing smoke rows for modes `20` through `26`, including live-aim firing proof, deterministic item-timer proof, trace-checked corner-cut proof, and FFA/TDM/coop readiness proof. The 2026-06-20 estimate rounds add per-bot enemy health/armor estimates refreshed by visible observations and adjusted by split bot-attributed damage when the enemy is no longer visible, then consume those estimates in weapon scoring for finisher, armor-pressure, and underpowered-choice adjustments. Broader carried-arsenal inventory policy, richer timed-goal route ownership, and autonomous team/coop behavior remain pending.
+- Implementation logs: `docs-dev/q3a-botlib-behavior-action-dispatcher-2026-06-18.md`, `docs-dev/q3a-botlib-behavior-action-brain-telemetry-2026-06-18.md`, `docs-dev/q3a-botlib-action-item-utility-2026-06-18.md`, `docs-dev/q3a-botlib-special-item-utility-2026-06-18.md`, `docs-dev/q3a-botlib-combat-weapon-metadata-2026-06-18.md`, `docs-dev/q3a-botlib-aim-fairness-policy-2026-06-18.md`, `docs-dev/q3a-botlib-live-aim-policy-integration-2026-06-18.md`, `docs-dev/q3a-botlib-live-combat-policy-round-2026-06-18.md`, `docs-dev/q3a-botlib-item-timer-fairness-2026-06-18.md`, `docs-dev/q3a-botlib-live-item-timing-consumers-2026-06-18.md`, `docs-dev/q3a-botlib-action-application-helpers-2026-06-18.md`, `docs-dev/q3a-botlib-weapon-inventory-command-api-2026-06-18.md`, `docs-dev/q3a-botlib-weapon-inventory-dispatch-2026-06-18.md`, `docs-dev/q3a-botlib-engage-enemy-proof-2026-06-18.md`, `docs-dev/q3a-botlib-combat-damage-event-hook-2026-06-18.md`, `docs-dev/q3a-botlib-weapon-switch-proof-2026-06-18.md`, `docs-dev/q3a-botlib-health-armor-pickup-proof-2026-06-18.md`, `docs-dev/q3a-botlib-gameplay-item-hooks-2026-06-18.md`, `docs-dev/q3a-botlib-health-armor-scenario-promotion-gate-2026-06-18.md`, `docs-dev/q3a-botlib-scenario-promotion-cpu-status-2026-06-18.md`, `docs-dev/q3a-botlib-enemy-health-armor-estimates-2026-06-20.md`, `docs-dev/q3a-botlib-estimate-aware-weapon-selection-2026-06-20.md`.
 
 Exit criteria:
 
@@ -1381,6 +1383,7 @@ Docs checklist:
 - [x] `docs-dev/q3a-botlib-docs-progress-tracking-round-2026-06-18.md`: docs-only final-stat placeholder and guardrail note for the current round.
 - [x] `docs-dev/q3a-botlib-live-combat-policy-round-2026-06-18.md`: live combat policy consumption and aim-profile status depth log.
 - [x] `docs-dev/q3a-botlib-enemy-health-armor-estimates-2026-06-20.md`: enemy health/armor estimate plumbing and status log.
+- [x] `docs-dev/q3a-botlib-estimate-aware-weapon-selection-2026-06-20.md`: estimate-aware weapon scoring and status log.
 - [x] `docs-dev/q3a-botlib-live-item-timing-consumers-2026-06-18.md`: live item timing consumer and status-depth log.
 - [x] `docs-dev/q3a-botlib-team-coop-policy-round-2026-06-18.md`: team/coop/resource policy helper log.
 - [x] `docs-dev/q2aas-reference-map-coverage-round-2026-06-18.md`: reference-map required-feature diagnostic coverage log.
@@ -1568,10 +1571,10 @@ coop flows.
 
 Broader outstanding plan work remains in Phase 4 fairness and blackboard state
 consumers, Phase 5 broader natural-movement/reference-map evidence, Phase 6
-behavioral weapon-selection use of enemy estimates, richer inventory policy, and
-timed-goal route ownership, Phase 7 live FFA/TDM/CTF role consumption plus
-deeper coop behavior, and Phase 9 broader reference-map, CI, strict
-performance-budget, and fresh long-soak CPU baseline coverage.
+richer carried-arsenal and inventory policy plus timed-goal route ownership,
+Phase 7 live FFA/TDM/CTF role consumption plus deeper coop behavior, and Phase 9
+broader reference-map, CI, strict performance-budget, and fresh long-soak CPU
+baseline coverage.
 
 Round-close evidence is tracked in
 `docs-dev/q3a-botlib-docs-progress-tracking-round-2026-06-18.md` and

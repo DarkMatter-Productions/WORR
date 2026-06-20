@@ -97,7 +97,10 @@ RAW_RESERVED_METRIC_PREFIX_SOURCE_HINTS = (
     ("corner_cut_", (NAV_POLICY_STATUS_MARKER,)),
     ("trace_checked_corner_", (NAV_POLICY_STATUS_MARKER,)),
     ("combat_enemy_", (ACTION_STATUS_MARKER, BLACKBOARD_STATUS_MARKER, STATUS_MARKER)),
+    ("combat_weapon_selection_", (ACTION_STATUS_MARKER, ACTION_DETAIL_STATUS_MARKER)),
     ("last_combat_enemy_", (ACTION_STATUS_MARKER, BLACKBOARD_STATUS_MARKER, STATUS_MARKER)),
+    ("last_combat_estimate_", (ACTION_STATUS_MARKER, ACTION_DETAIL_STATUS_MARKER)),
+    ("last_combat_weapon_estimate_", (ACTION_STATUS_MARKER, ACTION_DETAIL_STATUS_MARKER)),
     ("q3a_", (SOURCE_STATUS_MARKER,)),
     ("bsp_", (SOURCE_STATUS_MARKER,)),
 )
@@ -381,7 +384,10 @@ OPTIONAL_FIELD_FAMILIES: tuple[OptionalFieldFamily, ...] = (
         ),
         metric_prefixes=(
             "combat_enemy_",
+            "combat_weapon_selection_",
             "last_combat_enemy_",
+            "last_combat_estimate_",
+            "last_combat_weapon_estimate_",
             "combat_last_",
         ),
     ),

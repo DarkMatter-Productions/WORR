@@ -964,12 +964,31 @@ Tasks: `FR-04-T03`, `FR-04-T15`, `DV-07-T06`
 - The real WORR `Damage()` path supplies already-computed health and armor
   damage to the existing bot-attributed combat hook; no Q3A damage or combat
   behavior code was copied.
-- Status markers now expose the estimate state for future weapon-selection and
+- Status markers expose the estimate state for weapon-selection and
   inventory-policy consumers.
 - No new upstream Q3A, Gladiator, BSPC, idTech3, or q2proto source files were
   imported or modified for this update.
 - Implementation log:
   `docs-dev/q3a-botlib-enemy-health-armor-estimates-2026-06-20.md`.
+
+## Native Runtime Update: Estimate-Aware Weapon Selection
+
+Date: 2026-06-20
+
+Tasks: `FR-04-T03`, `FR-04-T15`, `DV-07-T06`
+
+- WORR-native combat work now consumes the local enemy health/armor estimates in
+  current-vs-preferred weapon scoring for finisher, armor-pressure, and
+  underpowered-choice adjustments.
+- Preferred-weapon switch decisions now follow the selected score result so the
+  scorer can keep a suitable current weapon instead of always chasing a pending
+  preferred weapon.
+- Compact action status exposes estimate-use counters and the last selected
+  estimate adjustment for scenario/tooling visibility.
+- No new upstream Q3A, Gladiator, BSPC, idTech3, or q2proto source files were
+  imported or modified for this update.
+- Implementation log:
+  `docs-dev/q3a-botlib-estimate-aware-weapon-selection-2026-06-20.md`.
 
 ## Candidate Source Inventory
 

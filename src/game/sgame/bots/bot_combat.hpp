@@ -88,11 +88,19 @@ struct BotWeaponSelectionResult {
 	int currentWeaponScore = 0;
 	int preferredWeaponScore = 0;
 	int selectedWeaponScore = 0;
+	int currentEstimateAdjustment = 0;
+	int preferredEstimateAdjustment = 0;
+	int selectedEstimateAdjustment = 0;
+	bool usedEnemyEstimate = false;
+	bool finisherEstimateBonus = false;
+	bool armorPressureEstimateBonus = false;
+	bool underpoweredEstimatePenalty = false;
 	bool hasKnownWeapon = false;
 	bool shouldSwitch = false;
 	bool preferredWeaponSafe = true;
 	const BotWeaponMetadata *metadata = nullptr;
 	const char *reason = "none";
+	const char *estimateReason = "none";
 };
 
 struct BotCombatEnemyFacts {
@@ -305,6 +313,10 @@ struct BotCombatStatus {
 	int liveAimPolicyBlocks = 0;
 	int liveAimProjectileLeadUses = 0;
 	int weaponSelectionEvaluations = 0;
+	int weaponSelectionEstimateUses = 0;
+	int weaponSelectionFinisherBonuses = 0;
+	int weaponSelectionArmorPressureBonuses = 0;
+	int weaponSelectionUnderpoweredPenalties = 0;
 	int knownWeaponSelections = 0;
 	int unknownWeaponSelections = 0;
 	int splashSafetyDeferrals = 0;
@@ -329,6 +341,9 @@ struct BotCombatStatus {
 	int lastEnemyHealth = 0;
 	int lastEnemyArmor = 0;
 	int lastEnemyEffectiveHealth = 0;
+	int lastEnemyHealthEstimate = 0;
+	int lastEnemyArmorEstimate = 0;
+	int lastEnemyEffectiveHealthEstimate = 0;
 	int lastDamage = 0;
 	int lastDamageAttackerClient = -1;
 	int lastDamageTargetClient = -1;
@@ -337,6 +352,7 @@ struct BotCombatStatus {
 	int lastCurrentWeaponScore = 0;
 	int lastPreferredWeaponScore = 0;
 	int lastSelectedWeaponScore = 0;
+	int lastWeaponEstimateAdjustment = 0;
 	int lastWeaponMetadataPriority = 0;
 	int lastWeaponAmmoPerShot = 0;
 	BotCombatAimPolicyFailure lastAimPolicyFailure = BotCombatAimPolicyFailure::None;
@@ -386,6 +402,7 @@ struct BotCombatStatus {
 	bool lastProjectileLeadClamped = false;
 	const char *lastLiveAimReason = "none";
 	const char *lastSelectionReason = "none";
+	const char *lastEstimateSelectionReason = "none";
 };
 
 void BotCombat_ResetStatus();
