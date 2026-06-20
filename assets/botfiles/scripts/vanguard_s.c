@@ -27,6 +27,7 @@ script "main"
 	movebox("vanguard quad door box", "vanguard quad door");
 	//
 	say("Vanguard moving to pressure.", NULL);
+	wave("gesture");
 	selectweapon(11);
 	moveto("vanguard rally box");
 	wait(touch(0, "vanguard rally box"));
@@ -45,3 +46,35 @@ script "main"
 	moveto("vanguard quad door box");
 	wait(touch(0, "vanguard quad door box"));
 } //end script main
+
+script "break_choke"
+{
+	//
+	point("vanguard stack point", 176, 64, 32);
+	point("vanguard entry flash", 240, 96, 40);
+	point("vanguard pressure exit", 320, 128, 44);
+	//
+	box("vanguard stack box", -22, -22, -24, 22, 22, 48);
+	box("vanguard entry flash box", -22, -22, -24, 22, 22, 48);
+	box("vanguard pressure exit box", -24, -24, -24, 24, 24, 52);
+	//
+	movebox("vanguard stack box", "vanguard stack point");
+	movebox("vanguard entry flash box", "vanguard entry flash");
+	movebox("vanguard pressure exit box", "vanguard pressure exit");
+	//
+	say("Vanguard breaking the choke.", NULL);
+	wave("point");
+	selectweapon(11);
+	moveto("vanguard stack box");
+	wait(touch(0, "vanguard stack box"));
+	aim("vanguard entry flash");
+	fireweapon();
+	wait(time(0.22));
+	moveto("vanguard entry flash box");
+	wait(touch(0, "vanguard entry flash box"));
+	aim("vanguard pressure exit");
+	fireweapon();
+	wait(time(0.18));
+	moveto("vanguard pressure exit box");
+	wait(touch(0, "vanguard pressure exit box"));
+} //end script break_choke

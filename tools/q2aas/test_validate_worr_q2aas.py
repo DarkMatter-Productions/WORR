@@ -59,6 +59,12 @@ class Q2AasManifestTests(unittest.TestCase):
                             "map_ids": ["q2dm1"],
                             "minimum_validated_maps": 1,
                         },
+                        {
+                            "id": "water_reference",
+                            "map_ids": [],
+                            "minimum_validated_maps": 1,
+                            "required_features": ["water"],
+                        },
                     ],
                 },
             )
@@ -85,6 +91,13 @@ class Q2AasManifestTests(unittest.TestCase):
             categories = {entry["id"]: entry for entry in coverage["categories"]}
             self.assertEqual(categories["worr_current_dm"]["status"], "passed")
             self.assertEqual(categories["id_deathmatch_reference"]["status"], "incomplete")
+            self.assertEqual(categories["water_reference"]["status"], "incomplete")
+            self.assertEqual(
+                categories["water_reference"]["candidate_absences"][0]["status"],
+                "no_candidate_declared",
+            )
+            self.assertIn("water_reference", coverage["strict_failed_categories"])
+            self.assertEqual(coverage["strict_gate"]["status"], "failed")
             self.assertEqual(coverage["missing_maps"][0]["id"], "q2dm1")
 
     def test_reference_coverage_schema_errors_are_reported(self) -> None:
@@ -103,6 +116,8 @@ class Q2AasManifestTests(unittest.TestCase):
                             "id": "bad-minimum",
                             "map_ids": ["q2dm1"],
                             "minimum_validated_maps": 0,
+                            "required_features": ["not_a_feature"],
+                            "strict_required": "yes",
                         },
                         {
                             "id": "bad-map-list",
@@ -122,7 +137,36 @@ class Q2AasManifestTests(unittest.TestCase):
             self.assertFalse(ok)
             errors = "\n".join(str(error) for error in report["errors"])
             self.assertIn("reference_coverage[0].minimum_validated_maps", errors)
+            self.assertIn("required_features.not_a_feature", errors)
+            self.assertIn("strict_required for reference_coverage[0]", errors)
             self.assertIn("map_ids for reference_coverage[1]", errors)
+
+    def test_coverage_feature_readiness_uses_contents_entities_and_travel_counts(self) -> None:
+        readiness = validator.build_coverage_feature_readiness(
+            {
+                "flag_counts": {
+                    "water": 2,
+                    "slime": 0,
+                    "lava": 1,
+                }
+            },
+            {
+                "doors": [{"classname": "func_door"}],
+                "elevators": [],
+                "teleports": [{"classname": "trigger_teleport"}],
+            },
+            {
+                "elevator": 1,
+                "teleport": 0,
+            },
+        )
+
+        self.assertEqual(readiness["features"]["water"]["status"], "present")
+        self.assertEqual(readiness["features"]["slime"]["status"], "absent")
+        self.assertEqual(readiness["features"]["lava"]["status"], "present")
+        self.assertEqual(readiness["features"]["teleport"]["status"], "present")
+        self.assertEqual(readiness["features"]["elevator"]["status"], "present")
+        self.assertEqual(readiness["features"]["door"]["status"], "present")
 
 
 if __name__ == "__main__":

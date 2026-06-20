@@ -27,6 +27,7 @@ script "main"
 	movebox("vector exit step box", "vector exit step");
 	//
 	say("Vector taking rail lane.", NULL);
+	wave("point");
 	selectweapon(16);
 	moveto("vector lower spawn box");
 	wait(touch(0, "vector lower spawn box"));
@@ -44,3 +45,34 @@ script "main"
 	moveto("vector exit step box");
 	wait(touch(0, "vector exit step box"));
 } //end script main
+
+script "reposition"
+{
+	//
+	point("vector reset pocket", -96, -96, 32);
+	point("vector cross return", 16, -176, 36);
+	point("vector deny lane", 96, -232, 48);
+	//
+	box("vector reset pocket box", -18, -18, -24, 18, 18, 44);
+	box("vector cross return box", -18, -18, -24, 18, 18, 44);
+	box("vector deny lane box", -20, -20, -24, 20, 20, 48);
+	//
+	movebox("vector reset pocket box", "vector reset pocket");
+	movebox("vector cross return box", "vector cross return");
+	movebox("vector deny lane box", "vector deny lane");
+	//
+	say("Vector resetting the lane.", NULL);
+	wave("gesture");
+	selectweapon(16);
+	moveto("vector reset pocket box");
+	wait(touch(0, "vector reset pocket box"));
+	aim("vector cross return");
+	wait(time(0.15));
+	moveto("vector cross return box");
+	wait(touch(0, "vector cross return box"));
+	aim("vector deny lane");
+	fireweapon();
+	wait(time(0.30));
+	moveto("vector deny lane box");
+	wait(touch(0, "vector deny lane box"));
+} //end script reposition

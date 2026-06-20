@@ -23,6 +23,13 @@ constexpr float BOT_NAV_TARGET_REACHED_DIST_SQUARED = 16.0f * 16.0f;
 constexpr float BOT_NAV_GOAL_REACHED_DIST_SQUARED = 48.0f * 48.0f;
 constexpr float BOT_NAV_PICKUP_RECORD_DIST_SQUARED = 96.0f * 96.0f;
 constexpr float BOT_NAV_ROUTE_DRIFT_DIST_SQUARED = 96.0f * 96.0f;
+constexpr float BOT_NAV_ROUTE_TARGET_STABILIZE_DIST_SQUARED = 24.0f * 24.0f;
+constexpr float BOT_NAV_ROUTE_TARGET_STABLE_MIN_DIST_SQUARED = 64.0f * 64.0f;
+constexpr float BOT_NAV_CORNER_CUT_MIN_DIST_SQUARED = 48.0f * 48.0f;
+constexpr float BOT_NAV_CORNER_CUT_MAX_DIST_SQUARED = 256.0f * 256.0f;
+constexpr float BOT_NAV_CORNER_CUT_GROUND_PROBE_DEPTH = STEPSIZE_BELOW + 8.0f;
+constexpr float BOT_NAV_CORNER_CUT_MIN_GROUND_NORMAL_Z = 0.7f;
+constexpr float BOT_NAV_CORNER_CUT_TRACE_FRACTION_SCALE = 1000.0f;
 constexpr float BOT_NAV_STUCK_MIN_PROGRESS_DELTA_SQUARED = 16.0f;
 constexpr float BOT_NAV_INTERACTION_NEAR_DIST_SQUARED = 192.0f * 192.0f;
 constexpr float BOT_NAV_ELEVATOR_INTERACTION_DIST_SQUARED = 384.0f * 384.0f;
@@ -30,6 +37,7 @@ constexpr float BOT_NAV_DEBUG_ROUTE_LIFETIME = 0.10f;
 constexpr float BOT_NAV_DEBUG_CROSS_SIZE = 10.0f;
 constexpr float BOT_NAV_DEBUG_LABEL_SIZE = 6.0f;
 
+constexpr int BOT_NAV_TRAVEL_WALK = 2;
 constexpr int BOT_NAV_TRAVEL_CROUCH = 3;
 constexpr int BOT_NAV_TRAVEL_SWIM = 8;
 constexpr int BOT_NAV_TRAVEL_WATER_JUMP = 9;
@@ -103,6 +111,22 @@ enum class BotNavItemFocusMode {
 	HealthArmor,
 };
 
+enum class BotNavBlackboardGoalType {
+	None = 0,
+	Item = 1,
+	Position = 2,
+	TravelType = 3,
+	RouteGoal = 4,
+};
+
+enum class BotNavCornerCutSkipReason {
+	None = 0,
+	Invalid = 1,
+	UnsupportedTravel = 2,
+	NoCandidate = 3,
+	NoSafeTrace = 4,
+};
+
 struct BotNavRouteSlot {
 	bool valid = false;
 	uint32_t nextRefreshFrame = 0;
@@ -130,6 +154,9 @@ struct BotNavRouteSlot {
 	int progressGoalArea = 0;
 	float lastProgressDistanceSquared = -1.0f;
 	int stagnantProgressFrames = 0;
+	int lastStuckReason = 0;
+	int lastStuckDistanceSq = 0;
+	int lastStuckProgressDelta = 0;
 	int lastFailedGoalReason = 0;
 	int lastFailedGoalArea = 0;
 	int lastFailedGoalEntityNumber = -1;
@@ -317,10 +344,119 @@ int BotNavStatusDistance(float distanceSquared) {
 	return static_cast<int>(std::max(distanceSquared, 0.0f));
 }
 
+int BotNavStatusTraceFraction(float fraction) {
+	const float scaledFraction =
+		std::clamp(fraction, 0.0f, 1.0f) * BOT_NAV_CORNER_CUT_TRACE_FRACTION_SCALE;
+	return static_cast<int>(std::round(scaledFraction));
+}
+
+void BotNavSetRouteMoveTarget(BotLibAdapterRouteSteer *route, const Vector3 &target) {
+	if (route == nullptr) {
+		return;
+	}
+
+	route->moveTarget[0] = target.x;
+	route->moveTarget[1] = target.y;
+	route->moveTarget[2] = target.z;
+}
+
+bool BotNavCornerCutTravelTypeSupported(int travelType) {
+	return travelType == BOT_NAV_TRAVEL_WALK ||
+		travelType == BOT_NAV_TRAVEL_CROUCH ||
+		travelType == BOT_NAV_TRAVEL_SWIM;
+}
+
+bool BotNavCornerCutNeedsGroundTrace(int travelType) {
+	return travelType == BOT_NAV_TRAVEL_WALK ||
+		travelType == BOT_NAV_TRAVEL_CROUCH;
+}
+
+bool BotNavGroundTraceSupportsPoint(
+	const gentity_t *bot,
+	const Vector3 &point,
+	const Vector3 &mins,
+	const Vector3 &maxs,
+	bool recordCornerCutStatus) {
+	const Vector3 end = point - Vector3{ 0.0f, 0.0f, BOT_NAV_CORNER_CUT_GROUND_PROBE_DEPTH };
+	if (recordCornerCutStatus) {
+		botNavRouteStatus.cornerCutGroundTraceAttempts++;
+	}
+	const trace_t trace = gi.trace(point, mins, maxs, end, bot, MASK_NAV_SOLID);
+	if (trace.startSolid ||
+		trace.allSolid ||
+		trace.fraction >= 1.0f ||
+		trace.plane.normal.z < BOT_NAV_CORNER_CUT_MIN_GROUND_NORMAL_Z) {
+		if (recordCornerCutStatus) {
+			botNavRouteStatus.cornerCutGroundTraceFailures++;
+		}
+		return false;
+	}
+	return true;
+}
+
+bool BotNavShortcutGroundSupported(
+	const gentity_t *bot,
+	const Vector3 &target,
+	const Vector3 &mins,
+	const Vector3 &maxs,
+	bool recordCornerCutStatus) {
+	if (bot == nullptr) {
+		return false;
+	}
+
+	const Vector3 origin = bot->s.origin;
+	const Vector3 delta = target - origin;
+	constexpr std::array<float, 3> sampleFractions = { 0.35f, 0.70f, 1.0f };
+	for (const float sampleFraction : sampleFractions) {
+		const Vector3 sample = origin + (delta * sampleFraction);
+		if (!BotNavGroundTraceSupportsPoint(bot, sample, mins, maxs, recordCornerCutStatus)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+bool BotNavRouteShortcutTraceClear(
+	const gentity_t *bot,
+	const Vector3 &target,
+	int travelType,
+	bool recordCornerCutStatus) {
+	if (bot == nullptr) {
+		return false;
+	}
+
+	const Vector3 mins = bot->mins;
+	const Vector3 maxs = bot->maxs;
+	const trace_t trace = gi.trace(bot->s.origin, mins, maxs, target, bot, MASK_PLAYERSOLID);
+	if (recordCornerCutStatus) {
+		botNavRouteStatus.cornerCutTraceAttempts++;
+		botNavRouteStatus.lastCornerCutTraceFraction =
+			BotNavStatusTraceFraction(trace.fraction);
+	}
+
+	const bool clear = !trace.startSolid && !trace.allSolid && trace.fraction >= 1.0f;
+	const bool supported = clear &&
+		(!BotNavCornerCutNeedsGroundTrace(travelType) ||
+		 BotNavShortcutGroundSupported(bot, target, mins, maxs, recordCornerCutStatus));
+	if (!supported) {
+		if (recordCornerCutStatus) {
+			botNavRouteStatus.cornerCutTraceFailures++;
+		}
+		return false;
+	}
+
+	if (recordCornerCutStatus) {
+		botNavRouteStatus.cornerCutTracePasses++;
+	}
+	return true;
+}
+
 void BotNavResetProgress(BotNavRouteSlot &slot) {
 	slot.progressGoalArea = 0;
 	slot.lastProgressDistanceSquared = -1.0f;
 	slot.stagnantProgressFrames = 0;
+	slot.lastStuckDistanceSq = 0;
+	slot.lastStuckProgressDelta = 0;
 }
 
 void BotNavClearRecovery(BotNavRouteSlot &slot) {
@@ -917,25 +1053,29 @@ bool BotNavCheckStuckProgress(BotNavRouteSlot &slot, const gentity_t *bot, int c
 	}
 
 	const float distanceSquared = BotNavHorizontalDistanceSquared(bot->s.origin, BotNavRouteGoal(slot.route));
+	slot.lastStuckDistanceSq = BotNavStatusDistance(distanceSquared);
 	botNavRouteStatus.stuckChecks++;
 	botNavRouteStatus.lastStuckClient = clientIndex;
-	botNavRouteStatus.lastStuckDistanceSq = BotNavStatusDistance(distanceSquared);
+	botNavRouteStatus.lastStuckDistanceSq = slot.lastStuckDistanceSq;
 
 	if (slot.progressGoalArea != slot.route.goalArea || slot.lastProgressDistanceSquared < 0.0f) {
 		slot.progressGoalArea = slot.route.goalArea;
 		slot.lastProgressDistanceSquared = distanceSquared;
 		slot.stagnantProgressFrames = 0;
+		slot.lastStuckProgressDelta = 0;
 		botNavRouteStatus.lastStuckProgressDelta = 0;
 		botNavRouteStatus.lastStuckFrames = 0;
 		return false;
 	}
 
 	const float progressDelta = slot.lastProgressDistanceSquared - distanceSquared;
-	botNavRouteStatus.lastStuckProgressDelta = static_cast<int>(progressDelta);
+	slot.lastStuckProgressDelta = static_cast<int>(progressDelta);
+	botNavRouteStatus.lastStuckProgressDelta = slot.lastStuckProgressDelta;
 	if (progressDelta >= BOT_NAV_STUCK_MIN_PROGRESS_DELTA_SQUARED ||
 		distanceSquared <= BOT_NAV_GOAL_REACHED_DIST_SQUARED) {
 		slot.lastProgressDistanceSquared = distanceSquared;
 		slot.stagnantProgressFrames = 0;
+		slot.lastStuckProgressDelta = 0;
 		botNavRouteStatus.lastStuckFrames = 0;
 		return false;
 	}
@@ -952,7 +1092,8 @@ bool BotNavCheckStuckProgress(BotNavRouteSlot &slot, const gentity_t *bot, int c
 	slot.stagnantProgressFrames = 0;
 	slot.lastProgressDistanceSquared = distanceSquared;
 	botNavRouteStatus.stuckDetections++;
-	botNavRouteStatus.lastStuckReason = static_cast<int>(BotNavStuckReason::NoGoalProgress);
+	slot.lastStuckReason = static_cast<int>(BotNavStuckReason::NoGoalProgress);
+	botNavRouteStatus.lastStuckReason = slot.lastStuckReason;
 	if (!BotNavActivateInteractionRetry(slot, bot, clientIndex, frame, slot.route, true)) {
 		BotNavActivateRecovery(slot, clientIndex, frame);
 		BotNavActivateGoalBlacklist(slot, clientIndex, frame);
@@ -1398,6 +1539,129 @@ void BotNavRecordRoute(int clientIndex, const BotLibAdapterRouteSteer &route) {
 	botNavRouteStatus.lastStopEvent = route.stopEvent;
 }
 
+void BotNavRecordCornerCutSkip(BotNavCornerCutSkipReason reason) {
+	botNavRouteStatus.cornerCutSkips++;
+	botNavRouteStatus.lastCornerCutSkipReason = static_cast<int>(reason);
+}
+
+void BotNavPromoteCornerCutPoint(BotLibAdapterRouteSteer *route, int pointIndex) {
+	if (route == nullptr || pointIndex < 0) {
+		return;
+	}
+
+	const Vector3 target = BotNavRoutePoint(*route, pointIndex);
+	BotNavSetRouteMoveTarget(route, target);
+	route->routePoints[0][0] = target.x;
+	route->routePoints[0][1] = target.y;
+	route->routePoints[0][2] = target.z;
+	route->routePointCount = 1;
+}
+
+void BotNavApplyTraceCheckedCornerCut(const gentity_t *bot, BotLibAdapterRouteSteer *route) {
+	botNavRouteStatus.cornerCutChecks++;
+	botNavRouteStatus.lastCornerCutPointIndex = -1;
+	botNavRouteStatus.lastCornerCutOriginalPointCount = 0;
+	botNavRouteStatus.lastCornerCutResultPointCount = 0;
+	botNavRouteStatus.lastCornerCutDistanceSq = 0;
+	botNavRouteStatus.lastCornerCutTraceFraction = 0;
+	botNavRouteStatus.lastCornerCutTravelType = route != nullptr ? route->reachabilityTravelType : 0;
+	botNavRouteStatus.lastCornerCutSkipReason = static_cast<int>(BotNavCornerCutSkipReason::None);
+
+	if (bot == nullptr || route == nullptr || !route->success) {
+		BotNavRecordCornerCutSkip(BotNavCornerCutSkipReason::Invalid);
+		return;
+	}
+
+	if (!BotNavCornerCutTravelTypeSupported(route->reachabilityTravelType)) {
+		BotNavRecordCornerCutSkip(BotNavCornerCutSkipReason::UnsupportedTravel);
+		return;
+	}
+
+	const int pointCount = BotNavRoutePointCount(*route);
+	botNavRouteStatus.lastCornerCutOriginalPointCount = pointCount;
+	if (pointCount <= 1) {
+		BotNavRecordCornerCutSkip(BotNavCornerCutSkipReason::NoCandidate);
+		return;
+	}
+
+	int bestPointIndex = -1;
+	float bestDistanceSquared = 0.0f;
+	bool consideredCandidate = false;
+	for (int pointIndex = 1; pointIndex < pointCount; ++pointIndex) {
+		const Vector3 routePoint = BotNavRoutePoint(*route, pointIndex);
+		const float distanceSquared = BotNavHorizontalDistanceSquared(bot->s.origin, routePoint);
+		if (distanceSquared < BOT_NAV_CORNER_CUT_MIN_DIST_SQUARED) {
+			continue;
+		}
+		if (distanceSquared > BOT_NAV_CORNER_CUT_MAX_DIST_SQUARED) {
+			break;
+		}
+
+		consideredCandidate = true;
+		if (BotNavRouteShortcutTraceClear(bot, routePoint, route->reachabilityTravelType, true)) {
+			bestPointIndex = pointIndex;
+			bestDistanceSquared = distanceSquared;
+		}
+	}
+
+	if (bestPointIndex <= 0) {
+		BotNavRecordCornerCutSkip(
+			consideredCandidate ?
+				BotNavCornerCutSkipReason::NoSafeTrace :
+				BotNavCornerCutSkipReason::NoCandidate);
+		return;
+	}
+
+	BotNavPromoteCornerCutPoint(route, bestPointIndex);
+	botNavRouteStatus.cornerCutApplications++;
+	botNavRouteStatus.lastCornerCutPointIndex = bestPointIndex;
+	botNavRouteStatus.lastCornerCutResultPointCount = BotNavRoutePointCount(*route);
+	botNavRouteStatus.lastCornerCutDistanceSq = BotNavStatusDistance(bestDistanceSquared);
+}
+
+void BotNavStabilizeRouteTarget(const gentity_t *bot, BotLibAdapterRouteSteer *route) {
+	if (bot == nullptr || route == nullptr || !route->success) {
+		return;
+	}
+
+	botNavRouteStatus.routeTargetStabilizationChecks++;
+	botNavRouteStatus.lastRouteTargetStablePointIndex = -1;
+
+	const Vector3 originalTarget = BotNavRouteTarget(*route);
+	const float originalDistanceSquared =
+		BotNavHorizontalDistanceSquared(bot->s.origin, originalTarget);
+	botNavRouteStatus.lastRouteTargetOriginalDistanceSq =
+		BotNavStatusDistance(originalDistanceSquared);
+	botNavRouteStatus.lastRouteTargetStableDistanceSq = 0;
+
+	if (originalDistanceSquared > BOT_NAV_ROUTE_TARGET_STABILIZE_DIST_SQUARED) {
+		botNavRouteStatus.routeTargetStabilizationSkips++;
+		return;
+	}
+
+	const int pointCount = BotNavRoutePointCount(*route);
+	for (int pointIndex = 0; pointIndex < pointCount; ++pointIndex) {
+		const Vector3 routePoint = BotNavRoutePoint(*route, pointIndex);
+		const float stableDistanceSquared =
+			BotNavHorizontalDistanceSquared(bot->s.origin, routePoint);
+		if (stableDistanceSquared < BOT_NAV_ROUTE_TARGET_STABLE_MIN_DIST_SQUARED) {
+			continue;
+		}
+		if (!BotNavRouteShortcutTraceClear(bot, routePoint, route->reachabilityTravelType, false)) {
+			continue;
+		}
+
+		BotNavSetRouteMoveTarget(route, routePoint);
+		botNavRouteStatus.routeTargetStabilizations++;
+		botNavRouteStatus.lastRouteTargetStableDistanceSq =
+			BotNavStatusDistance(stableDistanceSquared);
+		botNavRouteStatus.lastRouteTargetStablePointIndex = pointIndex;
+		return;
+	}
+
+	botNavRouteStatus.routeTargetStabilizationSkips++;
+}
+
 bool BotNavBuildRouteWithFallback(
 	const float origin[3],
 	int preferredGoalArea,
@@ -1736,6 +2000,9 @@ bool BotNavRefreshRoute(
 		return false;
 	}
 
+	BotNavStabilizeRouteTarget(bot, &refreshedRoute);
+	BotNavApplyTraceCheckedCornerCut(bot, &refreshedRoute);
+
 	BotNavRouteSlot &slot = botNavRouteSlots[clientIndex];
 	const int previousProgressGoalArea = slot.progressGoalArea;
 	slot.valid = true;
@@ -1770,6 +2037,22 @@ bool BotNavRefreshRoute(
 		*route = refreshedRoute;
 	}
 	return true;
+}
+
+int BotNavBlackboardGoalTypeForSlot(const BotNavRouteSlot &slot) {
+	if (slot.persistentGoalEntityNumber >= 0) {
+		return static_cast<int>(BotNavBlackboardGoalType::Item);
+	}
+	if (slot.persistentGoalIsPosition) {
+		return static_cast<int>(BotNavBlackboardGoalType::Position);
+	}
+	if (slot.persistentGoalTravelType > 0) {
+		return static_cast<int>(BotNavBlackboardGoalType::TravelType);
+	}
+	if (slot.persistentGoalArea > 0) {
+		return static_cast<int>(BotNavBlackboardGoalType::RouteGoal);
+	}
+	return static_cast<int>(BotNavBlackboardGoalType::None);
 }
 
 } // namespace
@@ -2027,4 +2310,59 @@ const BotNavRouteStatus &BotNav_GetRouteStatus() {
 	BotNavUpdateActiveReservations();
 	BotNavUpdateActiveGoalBlacklists();
 	return botNavRouteStatus;
+}
+
+bool BotNav_GetBlackboardSnapshot(int clientIndex, BotNavBlackboardSnapshot *snapshot) {
+	if (snapshot == nullptr) {
+		return false;
+	}
+
+	*snapshot = {};
+	if (clientIndex < 0 || clientIndex >= static_cast<int>(botNavRouteSlots.size())) {
+		return false;
+	}
+
+	const BotNavRouteSlot &slot = botNavRouteSlots[clientIndex];
+	const uint32_t frame = gi.ServerFrame();
+
+	snapshot->routeSlotValid = slot.valid;
+	snapshot->clientIndex = clientIndex;
+	snapshot->goalType = BotNavBlackboardGoalTypeForSlot(slot);
+	snapshot->goalArea = slot.persistentGoalArea;
+	snapshot->goalEntity = slot.persistentGoalEntityNumber;
+	snapshot->goalSpawnCount = slot.persistentGoalEntitySpawnCount;
+	snapshot->goalItem = static_cast<int>(slot.persistentGoalItem);
+	snapshot->goalPositionX = static_cast<int>(slot.persistentPositionGoal.x);
+	snapshot->goalPositionY = static_cast<int>(slot.persistentPositionGoal.y);
+	snapshot->goalPositionZ = static_cast<int>(slot.persistentPositionGoal.z);
+	snapshot->goalTravelType = slot.persistentGoalTravelType;
+	if (slot.valid) {
+		snapshot->routeStartArea = slot.route.startArea;
+		snapshot->routeGoalArea = slot.route.goalArea;
+		snapshot->routeEndArea = slot.route.routeEndArea;
+		snapshot->routePointCount = BotNavRoutePointCount(slot.route);
+		snapshot->routeTravelTime = slot.route.travelTime;
+		snapshot->routeReachability = slot.route.reachability;
+		snapshot->routeReachabilityTravelType = slot.route.reachabilityTravelType;
+		snapshot->routeReachabilityTravelFlags = slot.route.reachabilityTravelFlags;
+		snapshot->routeReachabilityEndArea = slot.route.reachabilityEndArea;
+		snapshot->routeStopEvent = slot.route.stopEvent;
+	}
+	snapshot->stuckReason = slot.lastStuckReason;
+	snapshot->stuckFrames = slot.stagnantProgressFrames;
+	snapshot->stuckDistanceSq = slot.lastStuckDistanceSq;
+	snapshot->stuckProgressDelta = slot.lastStuckProgressDelta;
+	if (slot.recoverySideSign != 0 && frame < slot.recoveryUntilFrame) {
+		snapshot->stuckRecoverySide = slot.recoverySideSign;
+		snapshot->stuckRecoveryFramesRemaining =
+			static_cast<int>(slot.recoveryUntilFrame - frame);
+	}
+	if (slot.persistentGoalEntityNumber >= 0 && slot.persistentGoalItem > IT_NULL) {
+		snapshot->itemReservationActive = 1;
+		snapshot->itemReservationEntity = slot.persistentGoalEntityNumber;
+		snapshot->itemReservationOwnerClient = clientIndex;
+		snapshot->itemReservationItem = static_cast<int>(slot.persistentGoalItem);
+		snapshot->itemReservationArea = slot.persistentGoalArea;
+	}
+	return true;
 }

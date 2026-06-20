@@ -27,6 +27,7 @@ script "main"
 	movebox("bulwark fallback corner box", "bulwark fallback corner");
 	//
 	say("Bulwark holding armor.", NULL);
+	wave("affirmative");
 	selectweapon(8);
 	moveto("bulwark armor anchor box");
 	wait(touch(0, "bulwark armor anchor box"));
@@ -44,3 +45,34 @@ script "main"
 	moveto("bulwark fallback corner box");
 	wait(touch(0, "bulwark fallback corner box"));
 } //end script main
+
+script "anchor_hold"
+{
+	//
+	point("bulwark armor stack", -168, 56, 32);
+	point("bulwark door check", -128, 128, 40);
+	point("bulwark reserve step", -216, 112, 32);
+	//
+	box("bulwark armor stack box", -24, -24, -24, 24, 24, 48);
+	box("bulwark door check box", -22, -22, -24, 22, 22, 46);
+	box("bulwark reserve step box", -24, -24, -24, 24, 24, 48);
+	//
+	movebox("bulwark armor stack box", "bulwark armor stack");
+	movebox("bulwark door check box", "bulwark door check");
+	movebox("bulwark reserve step box", "bulwark reserve step");
+	//
+	say("Bulwark anchoring armor.", NULL);
+	wave("affirmative");
+	selectweapon(8);
+	moveto("bulwark armor stack box");
+	wait(touch(0, "bulwark armor stack box"));
+	aim("bulwark door check");
+	wait(time(0.30));
+	fireweapon();
+	moveto("bulwark door check box");
+	wait(touch(0, "bulwark door check box"));
+	aim("bulwark reserve step");
+	wait(time(0.20));
+	moveto("bulwark reserve step box");
+	wait(touch(0, "bulwark reserve step box"));
+} //end script anchor_hold

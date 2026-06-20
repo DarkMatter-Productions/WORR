@@ -60,6 +60,41 @@ FIELD_ALIASES = {
     "movement": "movement_style",
     "move_style": "movement_style",
     "worr_movement_style": "movement_style",
+    "reaction_jitter": "reaction_jitter_ms",
+    "reaction_jitter_ms": "reaction_jitter_ms",
+    "worr_reaction_jitter_ms": "reaction_jitter_ms",
+    "aim_tracking_noise": "aim_tracking_noise",
+    "aim_noise": "aim_tracking_noise",
+    "tracking_noise": "aim_tracking_noise",
+    "worr_aim_tracking_noise": "aim_tracking_noise",
+    "aim_lead_scale": "aim_lead_scale",
+    "lead_scale": "aim_lead_scale",
+    "worr_aim_lead_scale": "aim_lead_scale",
+    "combat_fov": "combat_fov",
+    "view_fov": "combat_fov",
+    "worr_combat_fov": "combat_fov",
+    "teamplay_bias": "teamplay_bias",
+    "team_bias": "teamplay_bias",
+    "support_bias": "teamplay_bias",
+    "worr_teamplay_bias": "teamplay_bias",
+    "objective_bias": "objective_bias",
+    "goal_bias": "objective_bias",
+    "worr_objective_bias": "objective_bias",
+    "friendly_fire_care": "friendly_fire_care",
+    "ff_care": "friendly_fire_care",
+    "worr_friendly_fire_care": "friendly_fire_care",
+    "item_greed": "item_greed",
+    "pickup_greed": "item_greed",
+    "worr_item_greed": "item_greed",
+    "item_denial": "item_denial",
+    "denial_bias": "item_denial",
+    "worr_item_denial": "item_denial",
+    "powerup_timing": "powerup_timing",
+    "powerup_timing_bias": "powerup_timing",
+    "worr_powerup_timing": "powerup_timing",
+    "retreat_health": "retreat_health",
+    "retreat_health_threshold": "retreat_health",
+    "worr_retreat_health": "retreat_health",
 }
 
 REACTION_SECONDS_KEYS = {"characteristic_reactiontime"}
@@ -70,6 +105,132 @@ NUMERIC_RANGES = {
     "reaction": (0.0, 5000.0),
     "aggression": (0.0, 1.0),
     "aim_error": (0.0, 90.0),
+    "reaction_jitter_ms": (0.0, 2000.0),
+    "aim_tracking_noise": (0.0, 90.0),
+    "aim_lead_scale": (0.0, 2.0),
+    "combat_fov": (1.0, 360.0),
+    "teamplay_bias": (0.0, 1.0),
+    "objective_bias": (0.0, 1.0),
+    "friendly_fire_care": (0.0, 1.0),
+    "item_greed": (0.0, 1.0),
+    "item_denial": (0.0, 1.0),
+    "powerup_timing": (0.0, 1.0),
+    "retreat_health": (0.0, 200.0),
+}
+
+BEHAVIOR_METADATA_FIELDS = (
+    "reaction",
+    "aggression",
+    "aim_error",
+    "preferred_weapon",
+    "chat_personality",
+    "role",
+    "movement_style",
+    "reaction_jitter_ms",
+    "aim_tracking_noise",
+    "aim_lead_scale",
+    "combat_fov",
+    "teamplay_bias",
+    "objective_bias",
+    "friendly_fire_care",
+    "item_greed",
+    "item_denial",
+    "powerup_timing",
+    "retreat_health",
+)
+BEHAVIOR_LABEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _-]{0,31}$")
+KNOWN_BEHAVIOR_VALUES = {
+    "preferred_weapon": {
+        "bfg",
+        "bfg10k",
+        "bfg_10k",
+        "blaster",
+        "cg",
+        "chain_gun",
+        "chaingun",
+        "gl",
+        "grenade_launcher",
+        "grenadelauncher",
+        "hb",
+        "hyper_blaster",
+        "hyperblaster",
+        "machine_gun",
+        "machinegun",
+        "mg",
+        "rail",
+        "railgun",
+        "rg",
+        "rl",
+        "rocket_launcher",
+        "rocketlauncher",
+        "shotgun",
+        "ssg",
+        "super_shotgun",
+        "supershotgun",
+        "weapon_bfg",
+        "weapon_bfg10k",
+        "weapon_blaster",
+        "weapon_chaingun",
+        "weapon_grenadelauncher",
+        "weapon_hyperblaster",
+        "weapon_machinegun",
+        "weapon_railgun",
+        "weapon_rocketlauncher",
+        "weapon_shotgun",
+        "weapon_supershotgun",
+    },
+    "chat_personality": {
+        "brief",
+        "calm",
+        "chatty",
+        "default",
+        "direct",
+        "helpful",
+        "neutral",
+        "quiet",
+        "sarcastic",
+        "steady",
+        "stoic",
+        "supportive",
+        "talkative",
+        "taunting",
+    },
+    "role": {
+        "attack",
+        "attacker",
+        "carrier",
+        "defender",
+        "defense",
+        "duelist",
+        "escort",
+        "free",
+        "freelancer",
+        "midfielder",
+        "offense",
+        "roamer",
+        "scout",
+        "sniper",
+        "support",
+    },
+    "movement_style": {
+        "anchor",
+        "balanced",
+        "camp",
+        "cautious",
+        "circle",
+        "circle_strafe",
+        "defensive",
+        "flank",
+        "hold",
+        "kite",
+        "offensive",
+        "patrol",
+        "pressure",
+        "retreat",
+        "roam",
+        "rush",
+        "strafe",
+    },
 }
 
 SCRIPT_COMPANION_SUFFIX = "_s.c"
@@ -406,6 +567,48 @@ def validate_numeric_field(
     return []
 
 
+def normalize_behavior_label(value: str) -> str:
+    return re.sub(r"[\s-]+", "_", value.strip().lower())
+
+
+def validate_behavior_label_field(
+    path: pathlib.Path,
+    profile_id: str,
+    entry: Entry,
+    canonical_key: str,
+) -> list[Issue]:
+    known_values = KNOWN_BEHAVIOR_VALUES.get(canonical_key)
+    if known_values is None or not entry.value:
+        return []
+
+    if BEHAVIOR_LABEL_RE.fullmatch(entry.value) is None:
+        return [Issue(
+            "error",
+            "invalid_behavior_value",
+            f"{entry.key} must be a simple behavior label; got {entry.value!r}",
+            path=path,
+            line=entry.line,
+            column=entry.column,
+            profile_id=profile_id,
+            key=entry.key,
+        )]
+
+    normalized = normalize_behavior_label(entry.value)
+    if normalized not in known_values:
+        return [Issue(
+            "warning",
+            "unknown_behavior_value",
+            f"{entry.key} uses unrecognized {canonical_key} label {entry.value!r}",
+            path=path,
+            line=entry.line,
+            column=entry.column,
+            profile_id=profile_id,
+            key=entry.key,
+        )]
+
+    return []
+
+
 def normalize_profile_value(entry: Entry) -> str:
     key = entry.key.lower()
     value = entry.value
@@ -418,6 +621,53 @@ def normalize_profile_value(entry: Entry) -> str:
         return str(milliseconds)
 
     return value
+
+
+def is_packaged_q3_bot_character_path(path: pathlib.Path) -> bool:
+    parts = [part.lower() for part in path.parts]
+    return (
+        path.suffix.lower() == ".c"
+        and path.stem.lower().endswith("_c")
+        and len(parts) >= 4
+        and parts[-4:-1] == ["assets", "botfiles", "bots"]
+    )
+
+
+def validate_behavior_metadata_families(
+    path: pathlib.Path,
+    profile_id: str,
+    entries: list[Entry],
+) -> list[Issue]:
+    if not is_packaged_q3_bot_character_path(path):
+        return []
+
+    fields_by_skill: dict[str, set[str]] = {}
+    for entry in entries:
+        canonical_key = FIELD_ALIASES.get(entry.key.lower())
+        if canonical_key not in BEHAVIOR_METADATA_FIELDS:
+            continue
+        skill_block = entry.skill_block or "<global>"
+        fields_by_skill.setdefault(skill_block, set()).add(canonical_key)
+
+    issues: list[Issue] = []
+    required_fields = set(BEHAVIOR_METADATA_FIELDS)
+    for skill_block, present_fields in sorted(fields_by_skill.items()):
+        missing_fields = sorted(required_fields - present_fields)
+        if not missing_fields:
+            continue
+        if skill_block == "<global>":
+            scope = "global behavior metadata"
+        else:
+            scope = f"skill {skill_block} behavior metadata"
+        issues.append(Issue(
+            "warning",
+            "incomplete_behavior_metadata_family",
+            f"{scope} is missing {', '.join(missing_fields)}",
+            path=path,
+            profile_id=profile_id,
+        ))
+
+    return issues
 
 
 def validate_profile_file(
@@ -521,6 +771,12 @@ def validate_profile_file(
             Entry(entry.key, value, entry.line, entry.column),
             canonical_key,
         ))
+        issues.extend(validate_behavior_label_field(
+            path,
+            profile_id,
+            Entry(entry.key, value, entry.line, entry.column),
+            canonical_key,
+        ))
 
     for required in REQUIRED_FIELDS:
         if not fields.get(required):
@@ -532,6 +788,8 @@ def validate_profile_file(
                 profile_id=profile_id,
                 key=required,
             ))
+
+    issues.extend(validate_behavior_metadata_families(path, profile_id, entries))
 
     profile = Profile(
         path=path,

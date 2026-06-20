@@ -167,6 +167,15 @@ TRAVEL_NAMES = (
     "func bob",
 )
 
+REFERENCE_COVERAGE_FEATURES = (
+    "water",
+    "slime",
+    "lava",
+    "teleport",
+    "elevator",
+    "door",
+)
+
 VALID_MANIFEST_KEYS = {
     "schema",
     "version",
@@ -198,6 +207,8 @@ VALID_REFERENCE_COVERAGE_KEYS = {
     "description",
     "map_ids",
     "minimum_validated_maps",
+    "required_features",
+    "strict_required",
     "notes",
 }
 
@@ -683,11 +694,74 @@ def origin_coverage(
     }, area_counts
 
 
+def build_coverage_feature_readiness(
+    brush_contents: dict[str, object],
+    mover_report: dict[str, list[dict[str, object]]],
+    travel_counts: dict[str, int] | None = None,
+) -> dict[str, object]:
+    travel_counts = travel_counts or {}
+    flag_counts = brush_contents.get("flag_counts", {})
+    if not isinstance(flag_counts, dict):
+        flag_counts = {}
+
+    def flag_count(name: str) -> int:
+        value = flag_counts.get(name, 0)
+        return value if isinstance(value, int) else 0
+
+    def mover_count(name: str) -> int:
+        value = mover_report.get(name, [])
+        return len(value) if isinstance(value, list) else 0
+
+    feature_evidence = {
+        "water": {"brush_count": flag_count("water")},
+        "slime": {"brush_count": flag_count("slime")},
+        "lava": {"brush_count": flag_count("lava")},
+        "teleport": {
+            "entity_count": mover_count("teleports"),
+            "travel_count": travel_counts.get("teleport", 0),
+        },
+        "elevator": {
+            "entity_count": mover_count("elevators"),
+            "travel_count": travel_counts.get("elevator", 0),
+        },
+        "door": {"entity_count": mover_count("doors")},
+    }
+
+    features: dict[str, dict[str, object]] = {}
+    for feature in REFERENCE_COVERAGE_FEATURES:
+        evidence = feature_evidence[feature]
+        present = any(value > 0 for value in evidence.values())
+        features[feature] = {
+            "present": present,
+            "status": "present" if present else "absent",
+            "evidence": evidence,
+        }
+
+    return {
+        "features": features,
+        "ready_features": [
+            feature
+            for feature, report in features.items()
+            if report["present"]
+        ],
+        "missing_features": [
+            feature
+            for feature, report in features.items()
+            if not report["present"]
+        ],
+        "method": (
+            "Q2 BSP brush content flags, mover/teleport entity groups, "
+            "and generated AAS travel-count summaries."
+        ),
+    }
+
+
 def build_map_diagnostics(
     map_path: Path,
     bsp_header: dict[str, object],
     aas_path: Path,
     aas_header: dict[str, object],
+    travel_counts: dict[str, int] | None = None,
 ) -> dict[str, object]:
     data = map_path.read_bytes()
     lumps = bsp_header.get("lumps", {})
@@ -726,6 +800,9 @@ def build_map_diagnostics(
         "teleports": [entity_summary(entity) for entity in groups["teleports"][:32]],
         "hurt_triggers": [entity_summary(entity) for entity in groups["hurt"][:32]],
     }
+    brush_contents = bsp_header.get("brush_contents", {})
+    if not isinstance(brush_contents, dict):
+        brush_contents = {}
 
     return {
         "entities": {
@@ -733,7 +810,12 @@ def build_map_diagnostics(
             "classname_counts": dict(sorted(classname_counts.items())),
             "groups": summarize_entity_groups(groups),
         },
-        "brush_contents": bsp_header.get("brush_contents", {}),
+        "brush_contents": brush_contents,
+        "coverage_features": build_coverage_feature_readiness(
+            brush_contents,
+            mover_report,
+            travel_counts,
+        ),
         "origin_coverage": {
             "spawn_points": spawn_coverage,
             "items": item_coverage,
@@ -851,6 +933,7 @@ def print_diagnostics_summary(diagnostics: dict[str, object], map_label: str) ->
     origin_coverage = diagnostics["origin_coverage"]
     reachability = diagnostics["reachability_from_spawns"]
     movers = diagnostics["mover_entity_report"]
+    coverage_features = diagnostics["coverage_features"]
 
     print(f"[q2aas] diagnostics for {map_label}:")
     print(
@@ -876,6 +959,14 @@ def print_diagnostics_summary(diagnostics: dict[str, object], map_label: str) ->
         f"doors={len(movers['doors'])} "
         f"elevators={len(movers['elevators'])} "
         f"teleports={len(movers['teleports'])}"
+    )
+    feature_status = coverage_features["features"]
+    print(
+        "[q2aas]   feature readiness: "
+        + " ".join(
+            f"{feature}={feature_status[feature]['status']}"
+            for feature in REFERENCE_COVERAGE_FEATURES
+        )
     )
 
 
@@ -1293,6 +1384,18 @@ def normalize_string_list(
     return values, errors
 
 
+def normalize_reference_features(raw: object, owner: object) -> tuple[list[str], list[str]]:
+    values, errors = normalize_string_list(raw, "required_features", owner)
+    valid_features = set(REFERENCE_COVERAGE_FEATURES)
+    features: list[str] = []
+    for feature in values:
+        if feature not in valid_features:
+            errors.append(f"required_features.{feature} for {owner} is not a known reference feature")
+            continue
+        features.append(feature)
+    return features, errors
+
+
 def normalize_thresholds(
     raw: object,
     label: str,
@@ -1366,13 +1469,20 @@ def normalize_reference_coverage(
             errors.append(f"{owner}.notes must be a string")
             notes = ""
 
+        required_features, feature_errors = normalize_reference_features(
+            entry.get("required_features"),
+            owner,
+        )
+
         map_ids, map_id_errors = normalize_string_list(
             entry.get("map_ids"),
             "map_ids",
             owner,
-            required=True,
         )
         errors.extend(map_id_errors)
+        errors.extend(feature_errors)
+        if not map_ids and not required_features:
+            errors.append(f"{owner} must define map_ids or required_features")
 
         minimum_validated_maps = entry.get("minimum_validated_maps", 1)
         if (
@@ -1383,11 +1493,21 @@ def normalize_reference_coverage(
             errors.append(f"{owner}.minimum_validated_maps must be a positive integer")
             minimum_validated_maps = 1
 
+        strict_required, strict_errors = validate_bool_field(
+            entry,
+            "strict_required",
+            True,
+            owner,
+        )
+        errors.extend(strict_errors)
+
         categories.append({
             "id": category_id,
             "description": description,
             "map_ids": map_ids,
             "minimum_validated_maps": minimum_validated_maps,
+            "required_features": required_features,
+            "strict_required": strict_required,
             "notes": notes,
         })
 
@@ -1405,21 +1525,49 @@ def build_reference_coverage_report(
             "incomplete_category_count": 0,
             "missing_map_count": 0,
             "missing_category_map_count": 0,
+            "candidate_absence_count": 0,
+            "missing_optional_candidate_count": 0,
             "unique_missing_map_ids": [],
             "categories": [],
             "incomplete_categories": [],
             "missing_maps": [],
+            "strict_failed_categories": [],
+            "strict_required_category_count": 0,
+            "strict_gate": {
+                "status": "not_configured",
+                "passed": None,
+                "failed_categories": [],
+            },
         }
 
     category_reports: list[dict[str, object]] = []
     incomplete_categories: list[str] = []
     missing_maps: list[dict[str, object]] = []
+    candidate_absences: list[dict[str, object]] = []
+    missing_optional_candidate_count = 0
+    strict_failed_categories: list[str] = []
+    strict_required_category_count = 0
 
     for category in categories:
         category_id = str(category["id"])
         map_ids = [str(map_id) for map_id in category.get("map_ids", [])]
         candidate_reports: list[dict[str, object]] = []
         validated_count = 0
+        category_absences: list[dict[str, object]] = []
+
+        if not map_ids:
+            absence = {
+                "category": category_id,
+                "id": None,
+                "status": "no_candidate_declared",
+                "path": None,
+                "map_source": None,
+                "optional": True,
+            }
+            missing_maps.append(absence)
+            candidate_absences.append(absence)
+            category_absences.append(absence)
+            missing_optional_candidate_count += 1
 
         for map_id in map_ids:
             map_status = map_status_by_id.get(map_id)
@@ -1427,6 +1575,7 @@ def build_reference_coverage_report(
                 candidate = {
                     "id": map_id,
                     "status": "not_declared",
+                    "required": False,
                 }
             else:
                 candidate = {
@@ -1440,27 +1589,58 @@ def build_reference_coverage_report(
             if candidate["status"] == "loaded":
                 validated_count += 1
             else:
-                missing_maps.append({
+                absence = {
                     "category": category_id,
                     "id": map_id,
                     "status": candidate["status"],
                     "path": candidate.get("path"),
                     "map_source": candidate.get("map_source"),
-                })
+                    "optional": not bool(candidate.get("required", False)),
+                }
+                missing_maps.append(absence)
+                candidate_absences.append(absence)
+                category_absences.append(absence)
+                if absence["optional"]:
+                    missing_optional_candidate_count += 1
             candidate_reports.append(candidate)
 
         minimum_validated_maps = int(category.get("minimum_validated_maps", 1))
         category_status = "passed" if validated_count >= minimum_validated_maps else "incomplete"
         if category_status == "incomplete":
             incomplete_categories.append(category_id)
+        strict_required = bool(category.get("strict_required", True))
+        if strict_required:
+            strict_required_category_count += 1
+        strict_gate_status = (
+            "not_required"
+            if not strict_required
+            else "passed"
+            if category_status == "passed"
+            else "failed"
+        )
+        if strict_gate_status == "failed":
+            strict_failed_categories.append(category_id)
 
         category_reports.append({
             "id": category_id,
             "description": category.get("description", ""),
             "notes": category.get("notes", ""),
             "status": category_status,
+            "readiness": "candidate_ready" if category_status == "passed" else "candidate_absent",
             "validated_map_count": validated_count,
             "minimum_validated_maps": minimum_validated_maps,
+            "required_features": category.get("required_features", []),
+            "strict_required": strict_required,
+            "strict_gate": {
+                "status": strict_gate_status,
+                "passed": (
+                    None
+                    if strict_gate_status == "not_required"
+                    else strict_gate_status == "passed"
+                ),
+            },
+            "candidate_absence_count": len(category_absences),
+            "candidate_absences": category_absences,
             "candidate_maps": candidate_reports,
         })
 
@@ -1476,10 +1656,19 @@ def build_reference_coverage_report(
         "incomplete_category_count": len(incomplete_categories),
         "missing_map_count": len(unique_missing_map_ids),
         "missing_category_map_count": len(missing_maps),
+        "candidate_absence_count": len(candidate_absences),
+        "missing_optional_candidate_count": missing_optional_candidate_count,
         "unique_missing_map_ids": unique_missing_map_ids,
         "categories": category_reports,
         "incomplete_categories": incomplete_categories,
         "missing_maps": missing_maps,
+        "strict_failed_categories": strict_failed_categories,
+        "strict_required_category_count": strict_required_category_count,
+        "strict_gate": {
+            "status": "failed" if strict_failed_categories else "passed",
+            "passed": not strict_failed_categories,
+            "failed_categories": strict_failed_categories,
+        },
     }
 
 
@@ -1501,6 +1690,16 @@ def summarize_manifest_reference_coverage(
         for report in configured
         if report.get("status") == "incomplete"
     ]
+    strict_failed_categories = [
+        category
+        for report in configured
+        for category in report.get("strict_failed_categories", [])
+        if isinstance(category, str)
+    ]
+    strict_required_category_count = sum(
+        int(report.get("strict_required_category_count", 0))
+        for report in configured
+    )
     return {
         "status": (
             "not_configured"
@@ -1513,12 +1712,213 @@ def summarize_manifest_reference_coverage(
         "configured_manifest_count": len(configured),
         "incomplete_manifest_count": len(incomplete),
         "missing_map_count": sum(int(report.get("missing_map_count", 0)) for report in configured),
+        "candidate_absence_count": sum(
+            int(report.get("candidate_absence_count", 0))
+            for report in configured
+        ),
+        "missing_optional_candidate_count": sum(
+            int(report.get("missing_optional_candidate_count", 0))
+            for report in configured
+        ),
         "incomplete_categories": [
             category
             for report in configured
             for category in report.get("incomplete_categories", [])
             if isinstance(category, str)
         ],
+        "strict_failed_categories": strict_failed_categories,
+        "strict_required_category_count": strict_required_category_count,
+        "strict_gate": {
+            "status": (
+                "not_configured"
+                if not configured
+                else "failed"
+                if strict_failed_categories
+                else "passed"
+                if strict_required_category_count
+                else "not_required"
+            ),
+            "passed": (
+                None
+                if not configured or not strict_required_category_count
+                else not strict_failed_categories
+            ),
+            "failed_categories": strict_failed_categories,
+        },
+    }
+
+
+def build_reference_feature_readiness(
+    manifest_reports: list[dict[str, object]],
+    map_reports: list[dict[str, object]],
+) -> dict[str, object]:
+    converted_maps = {
+        str(report.get("id")): report
+        for report in map_reports
+        if report.get("id")
+    }
+    category_reports: list[dict[str, object]] = []
+    incomplete_categories: list[str] = []
+    strict_failed_categories: list[str] = []
+    strict_required_category_count = 0
+
+    for manifest_report in manifest_reports:
+        coverage = manifest_report.get("reference_coverage")
+        if not isinstance(coverage, dict):
+            continue
+        for category in coverage.get("categories", []):
+            if not isinstance(category, dict):
+                continue
+            required_features = [
+                str(feature)
+                for feature in category.get("required_features", [])
+                if isinstance(feature, str)
+            ]
+            if not required_features:
+                continue
+
+            category_id = str(category.get("id", ""))
+            minimum_validated_maps = int(category.get("minimum_validated_maps", 1))
+            strict_required = bool(category.get("strict_required", True))
+            if strict_required:
+                strict_required_category_count += 1
+
+            candidate_reports: list[dict[str, object]] = []
+            validated_feature_maps = 0
+            for candidate in category.get("candidate_maps", []):
+                if not isinstance(candidate, dict):
+                    continue
+                map_id = str(candidate.get("id", ""))
+                map_report = converted_maps.get(map_id)
+                if map_report is None:
+                    candidate_reports.append({
+                        "id": map_id,
+                        "status": candidate.get("status", "not_converted"),
+                        "path": candidate.get("path"),
+                        "feature_status": "not_validated",
+                        "required_features": required_features,
+                    })
+                    continue
+
+                diagnostics = map_report.get("diagnostics", {})
+                coverage_features = (
+                    diagnostics.get("coverage_features", {})
+                    if isinstance(diagnostics, dict)
+                    else {}
+                )
+                feature_reports = (
+                    coverage_features.get("features", {})
+                    if isinstance(coverage_features, dict)
+                    else {}
+                )
+                observed_features: dict[str, object] = {}
+                missing_features: list[str] = []
+                for feature in required_features:
+                    feature_report = (
+                        feature_reports.get(feature, {})
+                        if isinstance(feature_reports, dict)
+                        else {}
+                    )
+                    present = (
+                        bool(feature_report.get("present"))
+                        if isinstance(feature_report, dict)
+                        else False
+                    )
+                    observed_features[feature] = feature_report
+                    if not present:
+                        missing_features.append(feature)
+
+                feature_status = "passed" if not missing_features else "missing_features"
+                if feature_status == "passed":
+                    validated_feature_maps += 1
+                candidate_reports.append({
+                    "id": map_id,
+                    "status": map_report.get("status", "unknown"),
+                    "path": map_report.get("path"),
+                    "feature_status": feature_status,
+                    "required_features": required_features,
+                    "missing_features": missing_features,
+                    "observed_features": observed_features,
+                })
+
+            status = (
+                "passed"
+                if validated_feature_maps >= minimum_validated_maps
+                else "incomplete"
+            )
+            if status == "incomplete":
+                incomplete_categories.append(category_id)
+
+            strict_gate_status = (
+                "not_required"
+                if not strict_required
+                else "passed"
+                if status == "passed"
+                else "failed"
+            )
+            if strict_gate_status == "failed":
+                strict_failed_categories.append(category_id)
+
+            category_reports.append({
+                "id": category_id,
+                "status": status,
+                "readiness": "feature_ready" if status == "passed" else "feature_absent",
+                "required_features": required_features,
+                "validated_feature_map_count": validated_feature_maps,
+                "minimum_validated_maps": minimum_validated_maps,
+                "strict_required": strict_required,
+                "strict_gate": {
+                    "status": strict_gate_status,
+                    "passed": (
+                        None
+                        if strict_gate_status == "not_required"
+                        else strict_gate_status == "passed"
+                    ),
+                },
+                "candidate_absence_count": category.get("candidate_absence_count", 0),
+                "candidate_absences": category.get("candidate_absences", []),
+                "candidate_maps": candidate_reports,
+            })
+
+    if not category_reports:
+        return {
+            "status": "not_configured",
+            "category_count": 0,
+            "incomplete_category_count": 0,
+            "categories": [],
+            "incomplete_categories": [],
+            "strict_failed_categories": [],
+            "strict_required_category_count": 0,
+            "strict_gate": {
+                "status": "not_configured",
+                "passed": None,
+                "failed_categories": [],
+            },
+        }
+
+    return {
+        "status": "incomplete" if incomplete_categories else "passed",
+        "category_count": len(category_reports),
+        "incomplete_category_count": len(incomplete_categories),
+        "categories": category_reports,
+        "incomplete_categories": incomplete_categories,
+        "strict_failed_categories": strict_failed_categories,
+        "strict_required_category_count": strict_required_category_count,
+        "strict_gate": {
+            "status": (
+                "failed"
+                if strict_failed_categories
+                else "passed"
+                if strict_required_category_count
+                else "not_required"
+            ),
+            "passed": (
+                None
+                if not strict_required_category_count
+                else not strict_failed_categories
+            ),
+            "failed_categories": strict_failed_categories,
+        },
     }
 
 
@@ -1535,14 +1935,24 @@ def print_reference_coverage_warnings(manifest_report: dict[str, object]) -> Non
             f"{category.get('id')} has {category.get('validated_map_count')} validated maps, "
             f"needs {category.get('minimum_validated_maps')}",
         )
-        for candidate in category.get("candidate_maps", []):
-            if not isinstance(candidate, dict) or candidate.get("status") == "loaded":
-                continue
-            path = candidate.get("path")
-            suffix = f" ({path})" if path else ""
+        features = category.get("required_features", [])
+        if isinstance(features, list) and features:
             print(
-                "[q2aas] warning:   missing reference map "
-                f"{candidate.get('id')}: {candidate.get('status')}{suffix}",
+                "[q2aas] warning:   required features: "
+                + ", ".join(str(feature) for feature in features)
+            )
+        for absence in category.get("candidate_absences", []):
+            if not isinstance(absence, dict):
+                continue
+            if absence.get("status") == "no_candidate_declared":
+                print("[q2aas] warning:   no optional candidate map is declared yet")
+                continue
+            path = absence.get("path")
+            suffix = f" ({path})" if path else ""
+            optional = "optional " if absence.get("optional") else ""
+            print(
+                f"[q2aas] warning:   missing {optional}reference map "
+                f"{absence.get('id')}: {absence.get('status')}{suffix}",
             )
 
 
@@ -1567,10 +1977,19 @@ def load_manifest(
             "incomplete_category_count": 0,
             "missing_map_count": 0,
             "missing_category_map_count": 0,
+            "candidate_absence_count": 0,
+            "missing_optional_candidate_count": 0,
             "unique_missing_map_ids": [],
             "categories": [],
             "incomplete_categories": [],
             "missing_maps": [],
+            "strict_failed_categories": [],
+            "strict_required_category_count": 0,
+            "strict_gate": {
+                "status": "not_configured",
+                "passed": None,
+                "failed_categories": [],
+            },
         },
         "declared_maps": [],
         "errors": [],
@@ -1875,6 +2294,8 @@ def run_manifest_schema_smoke(root: Path, output: Path, packaged_map_cache_dir: 
                 "id": "bad-reference-minimum",
                 "map_ids": ["invalid-threshold-smoke"],
                 "minimum_validated_maps": 0,
+                "required_features": ["not_a_feature"],
+                "strict_required": "yes",
             },
             {
                 "id": "bad-reference-map-list",
@@ -1932,6 +2353,8 @@ def run_manifest_schema_smoke(root: Path, output: Path, packaged_map_cache_dir: 
         "archive_member must be a relative path inside the archive",
         "archive_member has an unsafe path component",
         "reference_coverage[0].minimum_validated_maps",
+        "required_features.not_a_feature",
+        "strict_required for reference_coverage[0]",
         "map_ids for reference_coverage[1]",
     )
     failed_as_expected = not ok and all(
@@ -2221,11 +2644,19 @@ def main() -> int:
         print_reference_coverage_warnings(manifest_report)
 
     reference_coverage_summary = summarize_manifest_reference_coverage(manifest_reports)
+    reference_strict_gate = reference_coverage_summary.get("strict_gate", {})
     if (
         args.require_reference_coverage
-        and reference_coverage_summary["status"] == "incomplete"
+        and isinstance(reference_strict_gate, dict)
+        and reference_strict_gate.get("status") == "failed"
     ):
-        print("[q2aas] reference coverage is incomplete", file=sys.stderr)
+        failed_categories = reference_strict_gate.get("failed_categories", [])
+        suffix = (
+            ": " + ", ".join(str(category) for category in failed_categories)
+            if isinstance(failed_categories, list) and failed_categories
+            else ""
+        )
+        print(f"[q2aas] reference coverage strict gate failed{suffix}", file=sys.stderr)
         manifest_ok = False
 
     package_map_smoke_report: dict[str, object] | None = None
@@ -2276,6 +2707,10 @@ def main() -> int:
         },
         "manifests": manifest_reports,
         "reference_coverage": reference_coverage_summary,
+        "reference_feature_readiness": build_reference_feature_readiness(
+            manifest_reports,
+            [],
+        ),
         "maps": [],
     }
     if package_map_smoke_report is not None:
@@ -2377,7 +2812,13 @@ def main() -> int:
             warnings.extend(baseline_warnings)
             ok = ok and baseline_ok
             aas_header = decode_aas_header(aas_path)
-            diagnostics = build_map_diagnostics(map_path, bsp_header, aas_path, aas_header)
+            diagnostics = build_map_diagnostics(
+                map_path,
+                bsp_header,
+                aas_path,
+                aas_header,
+                travel_counts,
+            )
             print_diagnostics_summary(diagnostics, str(spec["id"]))
             diagnostic_ok, diagnostic_warnings, diagnostic_requirements = validate_diagnostic_requirements(
                 diagnostics,
@@ -2458,6 +2899,28 @@ def main() -> int:
             })
             if not ok:
                 failed = True
+        reference_feature_readiness = build_reference_feature_readiness(
+            manifest_reports,
+            report["maps"] if isinstance(report["maps"], list) else [],
+        )
+        report["reference_feature_readiness"] = reference_feature_readiness
+        feature_strict_gate = reference_feature_readiness.get("strict_gate", {})
+        if (
+            args.require_reference_coverage
+            and isinstance(feature_strict_gate, dict)
+            and feature_strict_gate.get("status") == "failed"
+        ):
+            failed_categories = feature_strict_gate.get("failed_categories", [])
+            suffix = (
+                ": " + ", ".join(str(category) for category in failed_categories)
+                if isinstance(failed_categories, list) and failed_categories
+                else ""
+            )
+            print(
+                f"[q2aas] reference feature strict gate failed{suffix}",
+                file=sys.stderr,
+            )
+            failed = True
         if failed:
             cleanup_log(log_path, args.keep_log)
             return 1

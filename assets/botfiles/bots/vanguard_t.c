@@ -93,6 +93,24 @@ chat "vanguard"
 		WORR_SELFOWN0;
 	} //end type
 
+	type "death_lava"
+	{
+		"Pressure route overheated.";
+		"Bad push through heat.";
+	} //end type
+
+	type "death_slime"
+	{
+		"Wrong pit.";
+		"That route is too slow.";
+	} //end type
+
+	type "death_drown"
+	{
+		"Water stalled the push.";
+		"Need air before pressure.";
+	} //end type
+
 	type "death_suicide"
 	{
 		"Wrong route.";
@@ -111,10 +129,10 @@ chat "vanguard"
 		"Big shot, ", 0, ".";
 	} //end type
 
-	type "kill_praise"
+	type "kill_chaingun"
 	{
-		"Nice dodge. Still counted.";
-		"Good movement, ", 0, ".";
+		"Pressure paid.";
+		"Line broken, ", 0, ".";
 	} //end type
 
 	type "random_insult"

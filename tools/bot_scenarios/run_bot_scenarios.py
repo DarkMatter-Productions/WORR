@@ -17,21 +17,40 @@ from typing import Any
 STATUS_MARKER = "q3a_bot_frame_command_status"
 SCENARIO_BEGIN_MARKER = "q3a_bot_frame_command_smoke_scenario=begin"
 ACTION_STATUS_MARKER = "q3a_bot_action_status"
+ACTION_DETAIL_STATUS_MARKER = "q3a_bot_action_detail_status"
 BLACKBOARD_STATUS_MARKER = "q3a_bot_blackboard_status"
 OBJECTIVE_STATUS_MARKER = "q3a_bot_objective_status"
+OBJECTIVE_DETAIL_STATUS_MARKER = "q3a_bot_objective_detail_status"
+NAV_POLICY_STATUS_MARKER = "q3a_bot_nav_policy_status"
+NAV_NATURAL_SUPPORT_STATUS_MARKER = "q3a_bot_nav_natural_support_status"
+NAV_INTERACTION_CONTEXT_STATUS_MARKER = "q3a_bot_nav_interaction_context_status"
 SOURCE_STATUS_MARKER = "q3a_bot_source_counter_status"
+TEAM_POLICY_STATUS_MARKER = "q3a_bot_team_policy_status"
+MATCH_READINESS_STATUS_MARKER = "q3a_bot_match_readiness_status"
+COOP_READINESS_STATUS_MARKER = "q3a_bot_coop_readiness_status"
 SOAK_BEGIN_MARKER = "q3a_bot_frame_command_smoke_soak=begin"
 SOAK_COMPLETE_MARKER = "q3a_bot_frame_command_smoke_soak=complete"
 RAW_RESERVED_METRIC_MARKERS = (
     STATUS_MARKER,
     BLACKBOARD_STATUS_MARKER,
     ACTION_STATUS_MARKER,
+    ACTION_DETAIL_STATUS_MARKER,
     OBJECTIVE_STATUS_MARKER,
+    OBJECTIVE_DETAIL_STATUS_MARKER,
+    NAV_POLICY_STATUS_MARKER,
+    NAV_NATURAL_SUPPORT_STATUS_MARKER,
+    NAV_INTERACTION_CONTEXT_STATUS_MARKER,
     SOURCE_STATUS_MARKER,
+)
+RAW_RESERVED_OPTIONAL_ONLY_MARKERS = (
+    TEAM_POLICY_STATUS_MARKER,
+    MATCH_READINESS_STATUS_MARKER,
+    COOP_READINESS_STATUS_MARKER,
 )
 RAW_RESERVED_MODE_MARKERS = (
     SCENARIO_BEGIN_MARKER,
     *RAW_RESERVED_METRIC_MARKERS,
+    *RAW_RESERVED_OPTIONAL_ONLY_MARKERS,
 )
 RAW_RESERVED_METRIC_SOURCE_HINTS = {
     "pass": (STATUS_MARKER,),
@@ -60,8 +79,23 @@ RAW_RESERVED_METRIC_SOURCE_HINTS = {
     "last_armor_pickup_delta": (ACTION_STATUS_MARKER,),
 }
 RAW_RESERVED_METRIC_PREFIX_SOURCE_HINTS = (
-    ("team_objective_", (OBJECTIVE_STATUS_MARKER,)),
-    ("last_team_objective_", (OBJECTIVE_STATUS_MARKER,)),
+    ("team_objective_", (OBJECTIVE_STATUS_MARKER, OBJECTIVE_DETAIL_STATUS_MARKER)),
+    ("last_team_objective_", (OBJECTIVE_STATUS_MARKER, OBJECTIVE_DETAIL_STATUS_MARKER)),
+    ("aim_policy_", (ACTION_STATUS_MARKER, ACTION_DETAIL_STATUS_MARKER, BLACKBOARD_STATUS_MARKER)),
+    ("last_aim_policy_", (ACTION_STATUS_MARKER, ACTION_DETAIL_STATUS_MARKER, BLACKBOARD_STATUS_MARKER)),
+    ("live_aim_", (ACTION_STATUS_MARKER, ACTION_DETAIL_STATUS_MARKER)),
+    ("last_live_aim_", (ACTION_STATUS_MARKER, ACTION_DETAIL_STATUS_MARKER)),
+    ("projectile_lead_", (ACTION_STATUS_MARKER, ACTION_DETAIL_STATUS_MARKER)),
+    ("last_projectile_lead_", (ACTION_STATUS_MARKER, ACTION_DETAIL_STATUS_MARKER)),
+    ("item_timer_", (ACTION_DETAIL_STATUS_MARKER,)),
+    ("last_item_timer_", (ACTION_DETAIL_STATUS_MARKER,)),
+    ("item_timing_policy_", (ACTION_STATUS_MARKER, ACTION_DETAIL_STATUS_MARKER)),
+    ("item_last_timing_policy_", (ACTION_STATUS_MARKER, ACTION_DETAIL_STATUS_MARKER)),
+    ("item_timing_consumer_", (ACTION_STATUS_MARKER, ACTION_DETAIL_STATUS_MARKER)),
+    ("item_last_timing_consumer_", (ACTION_STATUS_MARKER, ACTION_DETAIL_STATUS_MARKER)),
+    ("route_corner_cut_", (STATUS_MARKER, NAV_POLICY_STATUS_MARKER)),
+    ("corner_cut_", (NAV_POLICY_STATUS_MARKER,)),
+    ("trace_checked_corner_", (NAV_POLICY_STATUS_MARKER,)),
     ("combat_enemy_", (ACTION_STATUS_MARKER, BLACKBOARD_STATUS_MARKER, STATUS_MARKER)),
     ("last_combat_enemy_", (ACTION_STATUS_MARKER, BLACKBOARD_STATUS_MARKER, STATUS_MARKER)),
     ("q3a_", (SOURCE_STATUS_MARKER,)),
@@ -72,7 +106,10 @@ RESERVED_MODE_SCENARIOS = {
     21: "switch_weapons",
     22: "health_armor_pickup",
     23: "team_objective",
+    24: "aim_fairness_policy_integration",
+    25: "item_timer_fairness_signals",
 }
+ITEM_TIMING_CONSUMER_READY_OR_LIVE_METRIC = "item_timing_consumer_ready_or_live"
 PROMOTION_RELATED_METRIC_PREFIXES = {
     "health_armor_pickup": (
         "item_goal_",
@@ -169,6 +206,16 @@ class Scenario:
         return self.smoke_mode is not None
 
 
+@dataclass(frozen=True)
+class OptionalFieldFamily:
+    name: str
+    title: str
+    description: str
+    markers: tuple[str, ...]
+    metric_names: tuple[str, ...] = field(default_factory=tuple)
+    metric_prefixes: tuple[str, ...] = field(default_factory=tuple)
+
+
 def reserved_mode_marker_checks(
     mode: int,
     *,
@@ -246,6 +293,375 @@ def marker_metric_checks(
         )
         for check in checks
     )
+
+
+POLICY_CONSUMER_MARKER_FIELDS: dict[str, tuple[tuple[str, str], ...]] = {
+    "aim_fairness_policy_integration": (
+        (ACTION_STATUS_MARKER, "live_aim_evaluations"),
+        (ACTION_STATUS_MARKER, "live_aim_fire_allowed"),
+    ),
+    "item_timer_fairness_signals": (
+        (ACTION_DETAIL_STATUS_MARKER, "item_timing_consumer_evaluations"),
+        (ACTION_DETAIL_STATUS_MARKER, ITEM_TIMING_CONSUMER_READY_OR_LIVE_METRIC),
+    ),
+}
+POLICY_CONSUMER_FIELD_NOTES = {
+    (ACTION_DETAIL_STATUS_MARKER, ITEM_TIMING_CONSUMER_READY_OR_LIVE_METRIC): (
+        "derived from item_timing_consumer_ready or item_timing_consumer_live_pickups"
+    ),
+}
+
+
+OPTIONAL_FIELD_FAMILIES: tuple[OptionalFieldFamily, ...] = (
+    OptionalFieldFamily(
+        name="action_dispatch_counters",
+        title="Action dispatch counters",
+        description=(
+            "Weapon/inventory command-request build, validation, dispatch, defer, "
+            "and failure telemetry emitted by the action layer."
+        ),
+        markers=(ACTION_STATUS_MARKER, ACTION_DETAIL_STATUS_MARKER),
+        metric_names=(
+            "action_pending_inventory_uses",
+            "action_use_inventory_decisions",
+            "action_applied_use_buttons",
+            "action_command_request_builds",
+            "action_command_request_accepted",
+            "action_command_request_rejected",
+            "action_weapon_command_requests",
+            "action_inventory_command_requests",
+            "action_command_request_dispatch_attempts",
+            "action_command_request_submitted",
+            "action_command_request_deferred",
+            "action_command_request_dispatch_failures",
+            "action_weapon_command_dispatches",
+            "action_inventory_command_dispatches",
+            "action_last_command_request_kind",
+            "action_last_command_request_failure",
+            "action_last_command_dispatch_outcome",
+            "action_last_command_dispatch_failure",
+            "action_last_command_request_kind_name",
+            "action_last_command_request_failure_name",
+            "action_last_command_dispatch_outcome_name",
+            "action_last_command_dispatch_failure_name",
+        ),
+        metric_prefixes=(
+            "action_command_request_",
+            "action_weapon_command_",
+            "action_inventory_command_",
+            "action_last_command_request_",
+            "action_last_command_dispatch_",
+        ),
+    ),
+    OptionalFieldFamily(
+        name="live_combat_firing_counters",
+        title="Live combat/firing counters",
+        description=(
+            "Enemy acquisition, combat evaluation, firing, attack-button, "
+            "withheld-fire, and damage proof counters for live combat smokes."
+        ),
+        markers=(STATUS_MARKER, ACTION_STATUS_MARKER, ACTION_DETAIL_STATUS_MARKER, BLACKBOARD_STATUS_MARKER),
+        metric_names=(
+            "combat_evaluations",
+            "combat_no_enemy",
+            "combat_enemy_acquisitions",
+            "combat_enemy_visible",
+            "combat_enemy_shootable",
+            "combat_blocked_sight",
+            "combat_fire_decisions",
+            "combat_withheld_fire",
+            "combat_damage_events",
+            "last_combat_damage",
+            "last_combat_enemy_client",
+            "action_attack_decisions",
+            "action_applied_cmds",
+            "action_applied_attack_buttons",
+            "action_last_intent",
+            "action_last_intent_name",
+        ),
+        metric_prefixes=(
+            "combat_enemy_",
+            "last_combat_enemy_",
+            "combat_last_",
+        ),
+    ),
+    OptionalFieldFamily(
+        name="aim_policy_counters",
+        title="Aim-policy counters",
+        description=(
+            "Fairness/aim policy evaluation, allowance, block-bucket, live-aim "
+            "consumer, projectile lead, and last policy metadata when combat "
+            "status owners expose it."
+        ),
+        markers=(STATUS_MARKER, ACTION_STATUS_MARKER, ACTION_DETAIL_STATUS_MARKER, BLACKBOARD_STATUS_MARKER),
+        metric_names=(
+            "aim_policy_evaluations",
+            "aim_policy_aim_allowed",
+            "aim_policy_fire_allowed",
+            "aim_policy_blocks_no_enemy",
+            "aim_policy_blocks_visibility",
+            "aim_policy_blocks_field_of_view",
+            "aim_policy_blocks_shootability",
+            "aim_policy_blocks_weapon_ready",
+            "aim_policy_blocks_skill",
+            "aim_policy_blocks_burst_cooldown",
+            "aim_policy_blocks_reaction",
+            "aim_policy_blocks_turn",
+            "aim_policy_blocks_aim_settle",
+            "aim_policy_blocks_burst_limit",
+            "last_aim_policy_failure",
+            "last_aim_policy_failure_name",
+            "last_aim_policy_skill",
+            "last_aim_policy_reaction_delay_ms",
+            "last_aim_policy_aim_settle_ms",
+            "last_aim_policy_visible_ms",
+            "last_aim_policy_tracked_ms",
+            "last_aim_policy_fov_degrees",
+            "last_aim_policy_yaw_delta_degrees",
+            "last_aim_policy_pitch_delta_degrees",
+            "last_aim_policy_max_turn_degrees",
+            "last_aim_policy_aim_error_tenths_degrees",
+            "last_aim_policy_tracking_noise_tenths_degrees",
+            "last_aim_policy_burst_shot_limit",
+            "last_aim_policy_burst_cooldown_ms",
+            "projectile_lead_evaluations",
+            "projectile_lead_uses",
+            "projectile_lead_no_projectile",
+            "projectile_lead_no_speed",
+            "projectile_lead_invalid_distance",
+            "last_projectile_lead_weapon",
+            "last_projectile_lead_speed",
+            "last_projectile_lead_ms",
+            "last_projectile_lead_target_speed_sq",
+            "last_projectile_lead_aim_distance_sq",
+            "last_projectile_lead_offset_sq",
+            "live_aim_evaluations",
+            "live_aim_aim_allowed",
+            "live_aim_fire_allowed",
+            "live_aim_policy_blocks",
+            "live_aim_projectile_lead_uses",
+            "last_live_aim_weapon",
+            "last_live_aim_reason",
+        ),
+        metric_prefixes=(
+            "aim_policy_",
+            "combat_aim_policy_",
+            "last_aim_policy_",
+            "combat_last_aim_policy_",
+            "projectile_lead_",
+            "last_projectile_lead_",
+            "live_aim_",
+            "last_live_aim_",
+        ),
+    ),
+    OptionalFieldFamily(
+        name="special_item_utility_buckets",
+        title="Special item utility buckets",
+        description=(
+            "Special pickup candidate, seek-decision, boost, and last-kind "
+            "telemetry for powerups, techs, mobility, protection, and objectives."
+        ),
+        markers=(STATUS_MARKER, ACTION_STATUS_MARKER, ACTION_DETAIL_STATUS_MARKER),
+        metric_names=(
+            "item_special_utility_boosts",
+            "item_high_value_boosts",
+            "item_focus_health_boosts",
+            "item_focus_armor_boosts",
+            "item_last_utility_kind",
+            "item_last_utility_kind_name",
+            "item_last_special_kind",
+            "item_last_special_kind_name",
+        ),
+        metric_prefixes=(
+            "item_damage_boost_",
+            "item_protection_",
+            "item_invisibility_",
+            "item_mobility_",
+            "item_utility_powerup_",
+            "item_tech_",
+            "item_ctf_objective_",
+            "item_special_",
+            "last_item_special_",
+        ),
+    ),
+    OptionalFieldFamily(
+        name="item_timer_fairness_signals",
+        title="Item timer fairness signals",
+        description=(
+            "Optional item-timer observation, allowance, fuzzing, cooldown, "
+            "live timing-consumer, and last-timer metadata for fair pickup "
+            "timing policy."
+        ),
+        markers=(STATUS_MARKER, ACTION_STATUS_MARKER, ACTION_DETAIL_STATUS_MARKER),
+        metric_names=(
+            "item_timer_evaluations",
+            "item_timer_known_pickups",
+            "item_timer_unknown_pickups",
+            "item_timer_allowed_uses",
+            "item_timer_blocked_uses",
+            "item_timer_fairness_blocks",
+            "item_timer_fuzzed_offsets",
+            "item_timer_cooldown_blocks",
+            "last_item_timer_item",
+            "last_item_timer_entity",
+            "last_item_timer_known_ms",
+            "last_item_timer_fuzz_ms",
+            "last_item_timer_allowed",
+            "last_item_timer_reason",
+            "item_timing_policy_evaluations",
+            "item_timing_policy_invalid",
+            "item_timing_policy_timers_disabled",
+            "item_timing_policy_unobserved_blocks",
+            "item_timing_policy_exact_uses",
+            "item_timing_policy_fuzzed_uses",
+            "item_timing_policy_ready",
+            "item_timing_policy_waiting",
+            "item_last_timing_policy_reason",
+            "item_last_timing_policy_reason_name",
+            "item_last_timing_policy_fuzz_ms",
+            "item_last_timing_policy_remaining_ms",
+            "item_timing_consumer_evaluations",
+            "item_timing_consumer_invalid",
+            "item_timing_consumer_live_pickups",
+            "item_timing_consumer_ready",
+            "item_timing_consumer_waiting",
+            "item_timing_consumer_fairness_blocks",
+            "item_timing_consumer_selection_deferrals",
+            ITEM_TIMING_CONSUMER_READY_OR_LIVE_METRIC,
+            "item_last_timing_consumer_reason",
+            "item_last_timing_consumer_reason_name",
+            "item_last_timing_consumer_policy_reason",
+            "item_last_timing_consumer_policy_reason_name",
+            "item_last_timing_consumer_fuzz_ms",
+            "item_last_timing_consumer_remaining_ms",
+        ),
+        metric_prefixes=(
+            "item_timer_",
+            "last_item_timer_",
+            "item_timing_policy_",
+            "item_last_timing_policy_",
+            "item_timing_consumer_",
+            "item_last_timing_consumer_",
+        ),
+    ),
+    OptionalFieldFamily(
+        name="route_target_stabilization_counters",
+        title="Route-target stabilization counters",
+        description=(
+            "Route target stabilization checks, applications, skips, and last "
+            "sample metadata emitted by frame-command route status."
+        ),
+        markers=(STATUS_MARKER,),
+        metric_names=(
+            "route_target_stabilization_checks",
+            "route_target_stabilizations",
+            "route_target_stabilization_skips",
+            "last_route_target_original_distance_sq",
+            "last_route_target_stable_distance_sq",
+            "last_route_target_stable_point_index",
+        ),
+        metric_prefixes=(
+            "route_target_stabilization_",
+            "last_route_target_",
+        ),
+    ),
+    OptionalFieldFamily(
+        name="trace_checked_corner_cutting_signals",
+        title="Trace-checked corner-cutting signals",
+        description=(
+            "Route-corner candidate, trace-check, acceptance, rejection, and "
+            "last-corner metadata emitted by trace-checked corner cutting."
+        ),
+        markers=(STATUS_MARKER, NAV_POLICY_STATUS_MARKER, SOURCE_STATUS_MARKER),
+        metric_names=(
+            "route_corner_cut_candidates",
+            "route_corner_cut_trace_checks",
+            "route_corner_cut_trace_hits",
+            "route_corner_cut_trace_misses",
+            "route_corner_cut_accepted",
+            "route_corner_cut_rejected",
+            "last_route_corner_cut_index",
+            "last_route_corner_cut_distance_sq",
+            "last_route_corner_cut_clearance",
+            "corner_cut_candidates",
+            "corner_cut_trace_checks",
+            "corner_cut_accepted",
+            "trace_checked_corner_cut_candidates",
+            "trace_checked_corner_cut_trace_checks",
+            "trace_checked_corner_cut_accepted",
+        ),
+        metric_prefixes=(
+            "route_corner_cut_",
+            "last_route_corner_cut_",
+            "corner_cut_",
+            "trace_checked_corner_",
+        ),
+    ),
+    OptionalFieldFamily(
+        name="team_mode_readiness_signals",
+        title="Team-mode readiness signals",
+        description=(
+            "Team policy, CTF objective role/lane, and blackboard team-role "
+            "signals used to stage FFA/TDM/CTF/coop readiness validation."
+        ),
+        markers=(
+            OBJECTIVE_STATUS_MARKER,
+            OBJECTIVE_DETAIL_STATUS_MARKER,
+            BLACKBOARD_STATUS_MARKER,
+            TEAM_POLICY_STATUS_MARKER,
+            MATCH_READINESS_STATUS_MARKER,
+            COOP_READINESS_STATUS_MARKER,
+        ),
+        metric_names=(
+            "ffa_pass",
+            "tdm_pass",
+            "pass",
+            "bots",
+            "playing",
+            "spectators",
+            "queued",
+            "free",
+            "red",
+            "blue",
+            "deathmatch",
+            "team_mode",
+            "coop",
+            "gametype",
+            "expected_playing",
+            "expected_spectators",
+            "expected_bots",
+            "team_objective_role_policy_evaluations",
+            "team_objective_role_policy_selections",
+            "team_objective_role_policy_requested",
+            "team_objective_role_policy_requested_honored",
+            "team_objective_role_policy_fallbacks",
+            "team_objective_role_policy_no_selection",
+            "team_objective_role_policy_attack_selections",
+            "team_objective_role_policy_defend_selections",
+            "team_objective_role_policy_return_selections",
+            "team_objective_role_policy_support_selections",
+            "team_objective_role_policy_lane_attack_selections",
+            "team_objective_role_policy_lane_defense_selections",
+            "team_objective_role_policy_lane_midfield_selections",
+            "team_objective_role_policy_carrier_support_selections",
+            "team_objective_role_policy_dropped_flag_responses",
+            "team_objective_role_policy_own_base_return_selections",
+            "last_team_objective_role",
+            "last_team_objective_lane",
+            "last_team_objective_lane_name",
+            "last_team_role",
+            "last_team_role_objective",
+            "last_team_role_team",
+            "last_team_role_target_team",
+        ),
+        metric_prefixes=(
+            "team_objective_role_",
+            "team_objective_role_policy_",
+            "last_team_objective_",
+            "last_team_role_",
+        ),
+    ),
+)
 
 
 SCENARIOS: tuple[Scenario, ...] = (
@@ -618,6 +1034,97 @@ SCENARIOS: tuple[Scenario, ...] = (
         ),
     ),
     Scenario(
+        name="team_policy_duel_readiness",
+        title="Team-policy duel readiness",
+        smoke_mode=2,
+        description=(
+            "Runs the existing team-policy smoke and verifies bot active/spectator "
+            "accounting before and after cleanup."
+        ),
+        task_ids=("FR-04-T04", "DV-03-T05", "FR-04-T16"),
+        budget_seconds=20,
+        smoke_cvar="sv_bot_team_policy_smoke",
+        marker_checks=(
+            MarkerMetricCheck(
+                "q3a_bot_team_policy_smoke_after_add_requests",
+                "added_alpha",
+                "eq",
+                1,
+                "first bot add must be accepted",
+            ),
+            MarkerMetricCheck(
+                "q3a_bot_team_policy_smoke_after_add_requests",
+                "added_bravo",
+                "eq",
+                1,
+                "second bot add must be accepted",
+            ),
+            MarkerMetricCheck(
+                "q3a_bot_team_policy_smoke_after_add_requests",
+                "added_charlie",
+                "eq",
+                1,
+                "queued third bot add must be accepted",
+            ),
+            MarkerMetricCheck(
+                "q3a_bot_team_policy_smoke_status_requested",
+                "count",
+                "ge",
+                3,
+                "team-policy status must run after all three bots are present",
+            ),
+            MarkerMetricCheck(
+                TEAM_POLICY_STATUS_MARKER,
+                "bots",
+                "any_eq",
+                3,
+                "pre-cleanup team policy status must count all three bots",
+            ),
+            MarkerMetricCheck(
+                TEAM_POLICY_STATUS_MARKER,
+                "playing",
+                "any_eq",
+                2,
+                "duel policy must keep two bots playing",
+            ),
+            MarkerMetricCheck(
+                TEAM_POLICY_STATUS_MARKER,
+                "spectators",
+                "any_eq",
+                1,
+                "duel policy must move one surplus bot to spectators",
+            ),
+            MarkerMetricCheck(
+                TEAM_POLICY_STATUS_MARKER,
+                "bots",
+                "eq",
+                0,
+                "latest cleanup status must report zero bots",
+            ),
+            MarkerMetricCheck(
+                TEAM_POLICY_STATUS_MARKER,
+                "pass",
+                "eq",
+                1,
+                "latest team policy status must pass",
+            ),
+            MarkerMetricCheck(
+                "q3a_bot_team_policy_smoke_removed_all",
+                "count",
+                "eq",
+                0,
+                "team-policy smoke cleanup must remove all bots",
+            ),
+            MarkerMetricCheck(
+                "q3a_bot_team_policy_smoke=end",
+                "final_count",
+                "eq",
+                0,
+                "team-policy smoke must end with no bots left behind",
+            ),
+        ),
+    ),
+    Scenario(
         name="engage_enemy",
         title="Engage enemy",
         smoke_mode=20,
@@ -647,8 +1154,23 @@ SCENARIOS: tuple[Scenario, ...] = (
             MetricCheck("action_attack_decisions", "ge", 1, "action layer must select attack intent"),
             MetricCheck("action_applied_attack_buttons", "ge", 1, "command must apply BUTTON_ATTACK"),
             MetricCheck("combat_damage_events", "ge", 1, "target must take attributed bot damage"),
+            MetricCheck("combat_withheld_fire", "eq", 0, "live firing proof must not withhold fire"),
             MetricCheck("last_combat_enemy_client", "ge", 0, "enemy client index must be recorded"),
             MetricCheck("last_combat_damage", "ge", 1, "last attributed damage must be positive"),
+            ),
+            *marker_metric_checks(
+                ACTION_DETAIL_STATUS_MARKER,
+            MetricCheck("combat_evaluations", "ge", 1, "combat detail status must evaluate"),
+            MetricCheck("combat_fire_decisions", "ge", 1, "combat detail status must decide to fire"),
+            MetricCheck("action_applied_cmds", "ge", 1, "action detail must apply commands"),
+            MetricCheck("action_applied_attack_buttons", "ge", 1, "action detail must apply attack"),
+            ),
+            MarkerMetricCheck(
+                ACTION_DETAIL_STATUS_MARKER,
+                "action_last_intent_name",
+                "eq",
+                "attack",
+                "last detailed action intent must be attack",
             ),
         ),
     ),
@@ -699,6 +1221,34 @@ SCENARIOS: tuple[Scenario, ...] = (
             MetricCheck("weapon_switch_actual_item", "ge", 1, "actual weapon item id must be reported"),
             MetricCheck("weapon_switch_expected_match", "eq", 1, "actual weapon must match expected weapon"),
             ),
+            *marker_metric_checks(
+                ACTION_DETAIL_STATUS_MARKER,
+            MetricCheck(
+                "action_command_request_dispatch_attempts",
+                "ge",
+                1,
+                "weapon-switch detail must attempt command dispatch",
+            ),
+            MetricCheck(
+                "action_weapon_command_requests",
+                "ge",
+                1,
+                "weapon-switch detail must build weapon command requests",
+            ),
+            MetricCheck(
+                "action_command_request_submitted",
+                "ge",
+                1,
+                "weapon-switch detail must submit command requests",
+            ),
+            ),
+            MarkerMetricCheck(
+                ACTION_DETAIL_STATUS_MARKER,
+                "action_last_command_dispatch_outcome_name",
+                "eq",
+                "submitted",
+                "last weapon-switch dispatch outcome must be submitted",
+            ),
         ),
     ),
     Scenario(
@@ -733,6 +1283,14 @@ SCENARIOS: tuple[Scenario, ...] = (
             MetricCheck("last_health_pickup_delta", "ge", 1, "health pickup delta must be positive"),
             MetricCheck("last_armor_pickup_delta", "ge", 1, "armor pickup delta must be positive"),
             ),
+            *marker_metric_checks(
+                ACTION_DETAIL_STATUS_MARKER,
+            MetricCheck("item_evaluations", "ge", 1, "item detail status must evaluate candidates"),
+            MetricCheck("item_focus_health_boosts", "ge", 1, "health focus must be visible in detail status"),
+            MetricCheck("item_focus_armor_boosts", "ge", 1, "armor focus must be visible in detail status"),
+            MetricCheck("item_health_seek_decisions", "ge", 1, "health seek decisions must be visible"),
+            MetricCheck("item_armor_seek_decisions", "ge", 1, "armor seek decisions must be visible"),
+            ),
         ),
     ),
     Scenario(
@@ -764,9 +1322,459 @@ SCENARIOS: tuple[Scenario, ...] = (
             MetricCheck("team_objective_route_commands", "ge", 1, "objective route must emit commands"),
             MetricCheck("team_objective_reaches", "ge", 1, "bot must reach the objective"),
             MetricCheck("team_objective_flag_pickups", "ge", 1, "bot must pick up the objective flag"),
+            MetricCheck(
+                "team_objective_role_policy_evaluations",
+                "ge",
+                1,
+                "team role policy must evaluate for the CTF smoke",
+            ),
+            MetricCheck(
+                "team_objective_role_policy_selections",
+                "ge",
+                1,
+                "team role policy must select a role",
+            ),
+            MetricCheck(
+                "team_objective_role_policy_lane_midfield_selections",
+                "ge",
+                1,
+                "CTF smoke should expose the current midfield lane selection",
+            ),
+            MetricCheck(
+                "team_objective_enemy_flag_assignments",
+                "ge",
+                1,
+                "CTF smoke must assign the enemy-flag objective",
+            ),
             MetricCheck("last_team_objective_type", "eq", 1, "first promoted objective is enemy flag pickup"),
+            MetricCheck("last_team_objective_role", "ge", 1, "last objective role must be recorded"),
+            MetricCheck("last_team_objective_lane", "ge", 1, "last objective lane must be recorded"),
             MetricCheck("last_team_objective_client", "ge", 0, "objective client index must be recorded"),
             MetricCheck("last_team_objective_item", "ge", 1, "objective item id must be reported"),
+            MetricCheck("last_team_objective_area", "gt", 0, "objective area must be reported"),
+            MetricCheck(
+                "team_objective_match_policy_evaluations",
+                "ge",
+                1,
+                "team-objective smoke must exercise match policy evaluation",
+            ),
+            MetricCheck(
+                "team_objective_match_policy_ffa",
+                "ge",
+                1,
+                "team-objective smoke must exercise the FFA match policy lane",
+            ),
+            MetricCheck(
+                "team_objective_match_policy_attack",
+                "ge",
+                1,
+                "team-objective smoke must choose an attack-side match policy",
+            ),
+            ),
+            *marker_metric_checks(
+                OBJECTIVE_DETAIL_STATUS_MARKER,
+            MetricCheck(
+                "team_objective_role_policy_requested_honored",
+                "ge",
+                1,
+                "detail status must show requested role policy was honored",
+            ),
+            MetricCheck(
+                "team_objective_role_policy_attack_selections",
+                "ge",
+                1,
+                "detail status must show attack role selections",
+            ),
+            MetricCheck(
+                "team_objective_role_policy_lane_midfield_selections",
+                "ge",
+                1,
+                "detail status must show midfield lane selections",
+            ),
+            MetricCheck(
+                "team_objective_enemy_flag_assignments",
+                "ge",
+                1,
+                "detail status must show enemy-flag assignments",
+            ),
+            ),
+        ),
+    ),
+    Scenario(
+        name="aim_fairness_policy_integration",
+        title="Aim fairness policy integration",
+        smoke_mode=24,
+        description=(
+            "Bot engages a live enemy through the aim/fairness policy lane and "
+            "proves firing is allowed by policy, not raw visibility alone."
+        ),
+        task_ids=("FR-04-T03", "FR-04-T15", "DV-07-T06"),
+        budget_seconds=20,
+        selection_tags=("policy", "combat", "aim"),
+        checks=(
+            MetricCheck("pass", "eq", 1, "source smoke status must pass"),
+            MetricCheck("route_failures", "eq", 0, "aim fairness proof must remain route-clean"),
+        ),
+        marker_checks=(
+            *reserved_mode_marker_checks(
+                24,
+                combat="engage_enemy",
+                weapon_switch=0,
+                item_focus=0,
+                team_objective=0,
+                target=2,
+                gametype=0,
+            ),
+            MarkerMetricCheck(
+                SCENARIO_BEGIN_MARKER,
+                "aim_fairness",
+                "eq",
+                1,
+                "reserved smoke must enable the aim/fairness proof lane",
+            ),
+            *marker_metric_checks(
+                ACTION_STATUS_MARKER,
+                MetricCheck(
+                    "aim_policy_evaluations",
+                    "ge",
+                    1,
+                    "live firing must evaluate the aim policy",
+                ),
+                MetricCheck(
+                    "aim_policy_fire_allowed",
+                    "ge",
+                    1,
+                    "at least one live fire decision must pass fairness policy",
+                ),
+                MetricCheck(
+                    "combat_withheld_fire",
+                    "eq",
+                    0,
+                    "aim fairness proof must not end by withholding fire",
+                ),
+                MetricCheck(
+                    "action_applied_attack_buttons",
+                    "ge",
+                    1,
+                    "aim fairness proof must still apply attack input",
+                ),
+                MetricCheck(
+                    "live_aim_evaluations",
+                    "ge",
+                    1,
+                    "brain-owned view aiming must consume the live aim helper",
+                ),
+                MetricCheck(
+                    "live_aim_fire_allowed",
+                    "ge",
+                    1,
+                    "live aim policy must eventually allow firing",
+                ),
+                MetricCheck(
+                    "last_live_aim_weapon",
+                    "ge",
+                    1,
+                    "live aim proof must record the weapon used for aiming",
+                ),
+            ),
+            MarkerMetricCheck(
+                ACTION_STATUS_MARKER,
+                "last_aim_policy_failure_name",
+                "eq",
+                "none",
+                "successful live firing proof should end with no aim-policy block",
+            ),
+        ),
+    ),
+    Scenario(
+        name="item_timer_fairness_signals",
+        title="Item timer fairness signals",
+        smoke_mode=25,
+        description=(
+            "Runs a deterministic observed-pickup timer proof and verifies the "
+            "item timing policy emits fairness-aware allowance telemetry."
+        ),
+        task_ids=("FR-04-T15", "DV-07-T06"),
+        budget_seconds=20,
+        selection_tags=("policy", "items", "fairness"),
+        checks=(
+            MetricCheck("pass", "eq", 1, "source smoke status must pass"),
+            MetricCheck("route_failures", "eq", 0, "item-timer proof must remain route-clean"),
+        ),
+        marker_checks=(
+            *reserved_mode_marker_checks(
+                25,
+                combat=0,
+                weapon_switch=0,
+                item_focus=0,
+                team_objective=0,
+                target=1,
+                gametype=0,
+            ),
+            MarkerMetricCheck(
+                SCENARIO_BEGIN_MARKER,
+                "item_timer",
+                "eq",
+                1,
+                "reserved smoke must enable the item-timer proof lane",
+            ),
+            *marker_metric_checks(
+                ACTION_DETAIL_STATUS_MARKER,
+                MetricCheck(
+                    "item_timer_evaluations",
+                    "ge",
+                    1,
+                    "item timer policy must evaluate at least one pickup",
+                ),
+                MetricCheck(
+                    "item_timer_allowed_uses",
+                    "ge",
+                    1,
+                    "item timer policy must allow at least one fair timer use",
+                ),
+                MetricCheck(
+                    "item_timing_consumer_evaluations",
+                    "ge",
+                    1,
+                    "item timing consumer must evaluate at least one pickup",
+                ),
+                MetricCheck(
+                    ITEM_TIMING_CONSUMER_READY_OR_LIVE_METRIC,
+                    "ge",
+                    1,
+                    "item timing consumer must report a ready timer or live pickup",
+                ),
+                MetricCheck(
+                    "item_timer_fairness_blocks",
+                    "ge",
+                    0,
+                    "item timer fairness block counter must be present",
+                ),
+                MetricCheck(
+                    "last_item_timer_allowed",
+                    "eq",
+                    1,
+                    "last timer decision should be an allowed observed timer",
+                ),
+            ),
+            MarkerMetricCheck(
+                ACTION_DETAIL_STATUS_MARKER,
+                "last_item_timer_reason",
+                "eq",
+                "exact_timer",
+                "deterministic timer proof should use the exact-timer path",
+            ),
+        ),
+    ),
+    Scenario(
+        name="trace_checked_corner_cutting",
+        title="Trace-checked corner cutting",
+        smoke_mode=21,
+        description=(
+            "Runs a route-rich reserved smoke and verifies corner-cut candidates, "
+            "trace checks, accepted shortcuts, and backing BSP trace telemetry."
+        ),
+        task_ids=("FR-04-T14", "FR-04-T16", "DV-07-T06"),
+        budget_seconds=20,
+        selection_tags=("nav", "corner_cutting", "trace"),
+        checks=(
+            MetricCheck("pass", "eq", 1, "source smoke status must pass"),
+            MetricCheck("route_failures", "eq", 0, "corner-cut proof must remain route-clean"),
+        ),
+        marker_checks=(
+            *reserved_mode_marker_checks(
+                21,
+                combat="switch_weapons",
+                weapon_switch=1,
+                item_focus=0,
+                team_objective=0,
+                target=2,
+                gametype=0,
+            ),
+            *marker_metric_checks(
+                NAV_POLICY_STATUS_MARKER,
+                MetricCheck(
+                    "route_corner_cut_candidates",
+                    "ge",
+                    1,
+                    "corner-cut policy must inspect at least one candidate",
+                ),
+                MetricCheck(
+                    "route_corner_cut_trace_checks",
+                    "ge",
+                    1,
+                    "corner-cut policy must perform clearance traces",
+                ),
+                MetricCheck(
+                    "route_corner_cut_trace_hits",
+                    "ge",
+                    1,
+                    "corner-cut policy must observe at least one clear trace",
+                ),
+                MetricCheck(
+                    "route_corner_cut_ground_trace_checks",
+                    "ge",
+                    1,
+                    "accepted walk shortcuts must be backed by ground probes",
+                ),
+                MetricCheck(
+                    "route_corner_cut_accepted",
+                    "ge",
+                    1,
+                    "at least one corner cut must be accepted after tracing",
+                ),
+                MetricCheck(
+                    "trace_checked_corner_cut_accepted",
+                    "ge",
+                    1,
+                    "trace-checked alias must report accepted corner cuts",
+                ),
+            ),
+            MarkerMetricCheck(
+                SOURCE_STATUS_MARKER,
+                "bsp_trace_calls",
+                "ge",
+                1,
+                "corner-cut proof should be backed by BSP trace counters",
+            ),
+        ),
+    ),
+    Scenario(
+        name="ffa_tdm_match_readiness",
+        title="FFA/TDM match readiness",
+        smoke_mode=26,
+        description=(
+            "Runs a multi-bot match-readiness smoke and verifies the dedicated "
+            "source proof reports both FFA and TDM readiness gates."
+        ),
+        task_ids=("FR-04-T04", "DV-03-T05", "DV-07-T06"),
+        budget_seconds=30,
+        selection_tags=("match", "ffa", "tdm"),
+        checks=(
+            MetricCheck("pass", "eq", 1, "source smoke status must pass"),
+            MetricCheck("route_failures", "eq", 0, "match-readiness proof must remain route-clean"),
+        ),
+        marker_checks=(
+            *reserved_mode_marker_checks(
+                26,
+                combat=0,
+                weapon_switch=0,
+                item_focus=0,
+                team_objective=0,
+                target=4,
+                gametype=3,
+            ),
+            MarkerMetricCheck(
+                SCENARIO_BEGIN_MARKER,
+                "match_readiness",
+                "eq",
+                1,
+                "reserved smoke must enable the match-readiness proof lane",
+            ),
+            MarkerMetricCheck(
+                MATCH_READINESS_STATUS_MARKER,
+                "proof",
+                "eq",
+                1,
+                "match readiness status must come from the dedicated proof lane",
+            ),
+            MarkerMetricCheck(
+                MATCH_READINESS_STATUS_MARKER,
+                "ffa_pass",
+                "eq",
+                1,
+                "FFA readiness status must pass",
+            ),
+            MarkerMetricCheck(
+                MATCH_READINESS_STATUS_MARKER,
+                "tdm_pass",
+                "eq",
+                1,
+                "TDM readiness status must pass",
+            ),
+            *marker_metric_checks(
+                OBJECTIVE_STATUS_MARKER,
+                MetricCheck(
+                    "team_objective_match_policy_evaluations",
+                    "ge",
+                    1,
+                    "TDM readiness smoke must exercise match policy evaluation",
+                ),
+                MetricCheck(
+                    "team_objective_match_policy_tdm",
+                    "ge",
+                    1,
+                    "TDM readiness smoke must choose the team-deathmatch lane",
+                ),
+                MetricCheck(
+                    "team_objective_match_policy_midfield",
+                    "ge",
+                    1,
+                    "TDM readiness smoke must distribute midfield policy roles",
+                ),
+                MetricCheck(
+                    "team_objective_match_policy_friendly_fire",
+                    "ge",
+                    1,
+                    "TDM readiness smoke must evaluate friendly-fire policy",
+                ),
+            ),
+        ),
+    ),
+    Scenario(
+        name="coop_match_readiness",
+        title="Coop match readiness",
+        smoke_mode=3,
+        description=(
+            "Runs the frame-command smoke under cooperative cvars and verifies "
+            "coop readiness reports active, playing bots."
+        ),
+        task_ids=("FR-04-T04", "DV-03-T05", "DV-07-T06"),
+        budget_seconds=30,
+        extra_cvars=(
+            ("deathmatch", "0"),
+            ("coop", "1"),
+        ),
+        selection_tags=("match", "coop"),
+        checks=(
+            MetricCheck("pass", "eq", 1, "source smoke status must pass"),
+            MetricCheck("route_failures", "eq", 0, "coop smoke must remain route-clean"),
+        ),
+        marker_checks=(
+            MarkerMetricCheck(
+                COOP_READINESS_STATUS_MARKER,
+                "pass",
+                "eq",
+                1,
+                "coop readiness status must pass",
+            ),
+            MarkerMetricCheck(
+                COOP_READINESS_STATUS_MARKER,
+                "bots",
+                "ge",
+                1,
+                "coop readiness status must include at least one bot",
+            ),
+            MarkerMetricCheck(
+                COOP_READINESS_STATUS_MARKER,
+                "playing",
+                "ge",
+                1,
+                "coop readiness status must include at least one playing bot",
+            ),
+            MarkerMetricCheck(
+                COOP_READINESS_STATUS_MARKER,
+                "coop",
+                "eq",
+                1,
+                "coop readiness smoke must run with coop enabled",
+            ),
+            MarkerMetricCheck(
+                MATCH_READINESS_STATUS_MARKER,
+                "deathmatch",
+                "eq",
+                0,
+                "coop readiness smoke must disable deathmatch",
             ),
         ),
     ),
@@ -863,43 +1871,72 @@ def evaluate_check(check: MetricCheck, metrics: dict[str, int]) -> dict[str, Any
     }
 
 
+def marker_value_passes(
+    op: str,
+    actual: int | float | str,
+    expected: int | float | str,
+) -> bool:
+    if op == "eq":
+        return actual == expected
+    if op == "ge":
+        return (
+            isinstance(actual, int | float)
+            and isinstance(expected, int | float)
+            and actual >= expected
+        )
+    if op == "gt":
+        return (
+            isinstance(actual, int | float)
+            and isinstance(expected, int | float)
+            and actual > expected
+        )
+    if op == "le":
+        return (
+            isinstance(actual, int | float)
+            and isinstance(expected, int | float)
+            and actual <= expected
+        )
+    if op == "lt":
+        return (
+            isinstance(actual, int | float)
+            and isinstance(expected, int | float)
+            and actual < expected
+        )
+    raise ValueError(f"unknown marker check operator: {op}")
+
+
 def evaluate_marker_check(
     check: MarkerMetricCheck,
     marker_metrics: dict[str, list[dict[str, int | float | str]]],
 ) -> dict[str, Any]:
     matches = marker_metrics.get(check.marker, [])
+    any_prefix = "any_"
+    if check.op.startswith(any_prefix):
+        base_op = check.op[len(any_prefix):]
+        actual_values = [
+            row[check.metric]
+            for row in matches
+            if check.metric in row
+        ]
+        passed = any(
+            marker_value_passes(base_op, value, check.expected)
+            for value in actual_values
+        )
+        return {
+            "marker": check.marker,
+            "metric": check.metric,
+            "op": check.op,
+            "expected": check.expected,
+            "actual": actual_values if actual_values else None,
+            "passed": passed,
+            "note": check.note,
+        }
+
     metrics = matches[-1] if matches else {}
     actual = metrics.get(check.metric)
     passed = False
     if actual is not None:
-        if check.op == "eq":
-            passed = actual == check.expected
-        elif check.op == "ge":
-            passed = (
-                isinstance(actual, int | float)
-                and isinstance(check.expected, int | float)
-                and actual >= check.expected
-            )
-        elif check.op == "gt":
-            passed = (
-                isinstance(actual, int | float)
-                and isinstance(check.expected, int | float)
-                and actual > check.expected
-            )
-        elif check.op == "le":
-            passed = (
-                isinstance(actual, int | float)
-                and isinstance(check.expected, int | float)
-                and actual <= check.expected
-            )
-        elif check.op == "lt":
-            passed = (
-                isinstance(actual, int | float)
-                and isinstance(check.expected, int | float)
-                and actual < check.expected
-            )
-        else:
-            raise ValueError(f"unknown marker check operator: {check.op}")
+        passed = marker_value_passes(check.op, actual, check.expected)
 
     return {
         "marker": check.marker,
@@ -940,16 +1977,82 @@ def parse_marker_value(value: str) -> int | float | str:
     return value
 
 
+def numeric_marker_value(
+    fields: dict[str, int | float | str],
+    metric: str,
+) -> int | float | None:
+    value = fields.get(metric)
+    return value if isinstance(value, int | float) else None
+
+
+def normalize_marker_fields(
+    fields: dict[str, int | float | str],
+) -> dict[str, int | float | str]:
+    if ITEM_TIMING_CONSUMER_READY_OR_LIVE_METRIC not in fields:
+        ready_or_live_values = [
+            value
+            for value in (
+                numeric_marker_value(fields, "item_timing_consumer_ready"),
+                numeric_marker_value(fields, "item_timing_consumer_live_pickups"),
+            )
+            if value is not None
+        ]
+        if ready_or_live_values:
+            fields[ITEM_TIMING_CONSUMER_READY_OR_LIVE_METRIC] = max(ready_or_live_values)
+    return fields
+
+
 def parse_marker_fields(line: str) -> dict[str, int | float | str]:
-    return {
+    fields = {
         match.group(1): parse_marker_value(match.group(2))
         for match in MARKER_FIELD_RE.finditer(line)
     }
+    return normalize_marker_fields(fields)
 
 
 def line_has_marker(line: str, marker: str) -> bool:
-    pattern = rf"(?<![A-Za-z0-9_]){re.escape(marker)}(?![A-Za-z0-9_])"
-    return re.search(pattern, line) is not None
+    return bool(marker_line_events(line, {marker}))
+
+
+def marker_occurrence_is_event(line: str, start: int, marker: str) -> bool:
+    end = start + len(marker)
+    if end < len(line) and not line[end].isspace():
+        return False
+    if start == 0 or line[start - 1].isspace():
+        return True
+    return line[start - 1] != "="
+
+
+def marker_line_events(line: str, markers: set[str]) -> list[tuple[int, str]]:
+    events: list[tuple[int, str]] = []
+    for marker in markers:
+        search_from = 0
+        while True:
+            start = line.find(marker, search_from)
+            if start == -1:
+                break
+            if marker_occurrence_is_event(line, start, marker):
+                events.append((start, marker))
+            search_from = start + 1
+
+    events.sort(key=lambda event: (event[0], -len(event[1])))
+    deduped: list[tuple[int, str]] = []
+    seen_starts: set[int] = set()
+    for start, marker in events:
+        if start in seen_starts:
+            continue
+        deduped.append((start, marker))
+        seen_starts.add(start)
+    return deduped
+
+
+def marker_line_segments(line: str, markers: set[str]) -> list[tuple[str, str]]:
+    events = marker_line_events(line, markers)
+    segments: list[tuple[str, str]] = []
+    for index, (start, marker) in enumerate(events):
+        end = events[index + 1][0] if index + 1 < len(events) else len(line)
+        segments.append((marker, line[start:end]))
+    return segments
 
 
 def parse_marker_metrics(text: str, markers: set[str]) -> dict[str, list[dict[str, int | float | str]]]:
@@ -961,9 +2064,8 @@ def parse_marker_metrics(text: str, markers: set[str]) -> dict[str, list[dict[st
         return marker_metrics
 
     for line in text.splitlines():
-        for marker in markers:
-            if line_has_marker(line, marker):
-                marker_metrics[marker].append(parse_marker_fields(line))
+        for marker, segment in marker_line_segments(line, markers):
+            marker_metrics[marker].append(parse_marker_fields(segment))
 
     return marker_metrics
 
@@ -1072,6 +2174,91 @@ def source_list_text(sources: list[str]) -> str:
     return "+".join(sources)
 
 
+def optional_field_family_catalog(family: OptionalFieldFamily) -> dict[str, Any]:
+    return {
+        "name": family.name,
+        "title": family.title,
+        "description": family.description,
+        "markers": list(family.markers),
+        "metric_names": list(family.metric_names),
+        "metric_prefixes": list(family.metric_prefixes),
+    }
+
+
+def optional_field_family_catalogs() -> list[dict[str, Any]]:
+    return [
+        optional_field_family_catalog(family)
+        for family in OPTIONAL_FIELD_FAMILIES
+    ]
+
+
+def optional_marker_names() -> set[str]:
+    return {
+        marker
+        for family in OPTIONAL_FIELD_FAMILIES
+        for marker in family.markers
+        if marker != STATUS_MARKER
+    }
+
+
+def optional_field_matches(metric: str, family: OptionalFieldFamily) -> bool:
+    return metric in family.metric_names or any(
+        metric.startswith(prefix)
+        for prefix in family.metric_prefixes
+    )
+
+
+def latest_marker_row(
+    marker_metrics: dict[str, list[dict[str, int | float | str]]],
+    marker: str,
+) -> dict[str, int | float | str]:
+    rows = marker_metrics.get(marker, [])
+    if not rows:
+        return {}
+    row = rows[-1]
+    return row if isinstance(row, dict) else {}
+
+
+def discover_optional_fields(
+    status_metrics: dict[str, Any],
+    marker_metrics: dict[str, list[dict[str, int | float | str]]],
+) -> list[dict[str, Any]]:
+    sources: list[tuple[str, dict[str, Any]]] = []
+    if status_metrics:
+        sources.append((STATUS_MARKER, status_metrics))
+    for marker in sorted(marker_metrics):
+        if marker == STATUS_MARKER:
+            continue
+        row = latest_marker_row(marker_metrics, marker)
+        if row:
+            sources.append((marker, row))
+
+    discovered: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for family in OPTIONAL_FIELD_FAMILIES:
+        for source, metrics in sources:
+            if source not in family.markers:
+                continue
+            family_metrics = {
+                metric: value
+                for metric, value in sorted(metrics.items())
+                if optional_field_matches(metric, family)
+            }
+            if not family_metrics:
+                continue
+            key = (family.name, source)
+            if key in seen:
+                continue
+            seen.add(key)
+            discovered.append({
+                "family": family.name,
+                "title": family.title,
+                "source": source,
+                "metrics": family_metrics,
+            })
+    return discovered
+
+
 def scenario_catalog(scenario: Scenario) -> dict[str, Any]:
     return {
         "name": scenario.name,
@@ -1114,6 +2301,7 @@ def catalog_report(scenarios: list[Scenario]) -> dict[str, Any]:
     return {
         "schema_version": 1,
         "generated_utc": utc_timestamp(),
+        "optional_field_families": optional_field_family_catalogs(),
         "summary": {
             "total": len(scenarios),
             "implemented": implemented,
@@ -1330,6 +2518,10 @@ def finalize_raw_reserved_diagnostic(diagnostic: dict[str, Any]) -> None:
         for marker, rows in markers.items()
         if rows
     }
+    diagnostic["optional_fields"] = discover_optional_fields(
+        latest_marker_row(markers, STATUS_MARKER),
+        markers,
+    )
 
 
 def parse_raw_reserved_mode_diagnostics(
@@ -1342,8 +2534,14 @@ def parse_raw_reserved_mode_diagnostics(
 
     for line_number, line in enumerate(text.splitlines(), start=1):
         stripped = line.strip()
-        if line_has_marker(stripped, SCENARIO_BEGIN_MARKER):
-            fields = parse_marker_fields(stripped)
+        marker_segments = marker_line_segments(stripped, set(RAW_RESERVED_MODE_MARKERS))
+        begin_segment = next((
+            segment
+            for marker, segment in marker_segments
+            if marker == SCENARIO_BEGIN_MARKER
+        ), None)
+        if begin_segment is not None:
+            fields = parse_marker_fields(begin_segment)
             mode = fields.get("mode")
             scenario_name = RESERVED_MODE_SCENARIOS.get(mode) if isinstance(mode, int) else None
             active = None
@@ -1371,17 +2569,16 @@ def parse_raw_reserved_mode_diagnostics(
         if active is None:
             continue
 
-        for marker in RAW_RESERVED_MODE_MARKERS:
+        for marker, segment in marker_segments:
             if marker == SCENARIO_BEGIN_MARKER:
                 continue
-            if line_has_marker(stripped, marker):
-                fields = parse_marker_fields(stripped)
-                active["markers"][marker].append(fields)
-                active["marker_events"].append({
-                    "line": line_number,
-                    "marker": marker,
-                    "metrics": fields,
-                })
+            fields = parse_marker_fields(segment)
+            active["markers"][marker].append(fields)
+            active["marker_events"].append({
+                "line": line_number,
+                "marker": marker,
+                "metrics": fields,
+            })
 
     for diagnostic in diagnostics:
         finalize_raw_reserved_diagnostic(diagnostic)
@@ -1398,6 +2595,7 @@ def raw_diagnostic_summary(diagnostic: dict[str, Any]) -> dict[str, Any]:
         "status": diagnostic.get("status"),
         "metric_count": len(diagnostic.get("metrics", {})),
         "marker_counts": diagnostic.get("marker_counts", {}),
+        "optional_fields": diagnostic.get("optional_fields", []),
     }
 
 
@@ -1508,6 +2706,33 @@ def health_armor_related_note(
     )
 
 
+def policy_consumer_marker_fields(scenario: Scenario) -> tuple[tuple[str, str], ...]:
+    return POLICY_CONSUMER_MARKER_FIELDS.get(scenario.name, ())
+
+
+def policy_consumer_field_text(marker_metric: tuple[str, str]) -> str:
+    marker, metric = marker_metric
+    text = f"{marker}::{metric}"
+    note = POLICY_CONSUMER_FIELD_NOTES.get(marker_metric)
+    if note:
+        text += f" ({note})"
+    return text
+
+
+def missing_policy_consumer_fields(
+    scenario: Scenario,
+    missing_metrics: list[str],
+    missing_marker_metrics: list[tuple[str, str]],
+) -> list[tuple[str, str]]:
+    expected = set(policy_consumer_marker_fields(scenario))
+    missing_metric_names = set(missing_metrics)
+    return [
+        marker_metric
+        for marker_metric in expected
+        if marker_metric in missing_marker_metrics or marker_metric[1] in missing_metric_names
+    ]
+
+
 def pending_gap_scenario(
     scenario: Scenario,
     fixture_result: dict[str, Any] | None,
@@ -1516,6 +2741,7 @@ def pending_gap_scenario(
     present_metrics: set[str] = set()
     present_marker_metrics: set[tuple[str, str]] = set()
     fixture_metrics: dict[str, Any] = {}
+    fixture_status_metrics: dict[str, Any] = {}
     fixture_markers: dict[str, list[dict[str, int | float | str]]] = {}
     metric_sources: dict[str, list[str]] = {}
     fixture_status = None
@@ -1540,6 +2766,7 @@ def pending_gap_scenario(
             raw_sources = raw_diagnostic.get("metric_sources", {})
             fixture_metrics = raw_metrics if isinstance(raw_metrics, dict) else {}
             fixture_markers = raw_markers if isinstance(raw_markers, dict) else {}
+            fixture_status_metrics = latest_marker_row(fixture_markers, STATUS_MARKER)
             metric_sources = raw_sources if isinstance(raw_sources, dict) else {}
             notes.append("using raw reserved-mode diagnostics because no scenario row exists")
     else:
@@ -1549,6 +2776,7 @@ def pending_gap_scenario(
         raw_metrics = fixture_result.get("metrics", {})
         raw_markers = fixture_result.get("markers", {})
         fixture_metrics = raw_metrics if isinstance(raw_metrics, dict) else {}
+        fixture_status_metrics = dict(fixture_metrics)
         fixture_markers = raw_markers if isinstance(raw_markers, dict) else {}
         metric_sources = {
             metric: [STATUS_MARKER]
@@ -1564,6 +2792,9 @@ def pending_gap_scenario(
                     if metric not in fixture_metrics:
                         fixture_metrics[metric] = value
             if isinstance(raw_markers, dict):
+                for metric, value in latest_marker_row(raw_markers, STATUS_MARKER).items():
+                    if metric not in fixture_status_metrics:
+                        fixture_status_metrics[metric] = value
                 fixture_markers = merge_marker_metrics(fixture_markers, raw_markers)
             if isinstance(raw_sources, dict):
                 for metric, sources in raw_sources.items():
@@ -1612,10 +2843,16 @@ def pending_gap_scenario(
         for marker_metric in required_marker_metrics
         if marker_metric not in present_marker_metrics
     ]
+    missing_policy_fields = missing_policy_consumer_fields(
+        scenario,
+        missing_metrics,
+        missing_marker_metrics,
+    )
     related_metrics = related_promotion_metrics(scenario, fixture_metrics)
     related_note = health_armor_related_note(scenario, related_metrics, missing_metrics)
     if related_note:
         notes.append(related_note)
+    optional_fields = discover_optional_fields(fixture_status_metrics, fixture_markers)
 
     check_results = [
         evaluate_check(check, fixture_metrics)
@@ -1640,6 +2877,11 @@ def pending_gap_scenario(
         blockers.append(
             "missing marker metrics: "
             + ", ".join(f"{marker}::{metric}" for marker, metric in missing_marker_metrics)
+        )
+    if missing_policy_fields:
+        blockers.append(
+            "missing policy-consumer fields: "
+            + ", ".join(policy_consumer_field_text(field) for field in missing_policy_fields)
         )
     if failed_checks:
         blockers.append(
@@ -1683,8 +2925,13 @@ def pending_gap_scenario(
         "failed_marker_checks": failed_marker_checks,
         "present_metrics": sorted(metric for metric in required_metrics if metric in present_metrics),
         "related_present_metrics": related_metrics,
+        "optional_fields": optional_fields,
         "missing_metrics": missing_metrics,
         "missing_metric_sources": missing_metric_sources,
+        "missing_policy_consumer_fields": [
+            marker_metric_catalog(marker_metric)
+            for marker_metric in missing_policy_fields
+        ],
         "metric_sources": {
             metric: metric_sources.get(metric, [])
             for metric in required_metrics
@@ -1732,6 +2979,10 @@ def pending_gap_report(
         "pending_rows": sum(1 for row in gap_rows if row["fixture_status"] == "pending"),
         "missing_status_metrics": sum(len(row["missing_metrics"]) for row in gap_rows),
         "missing_marker_metrics": sum(len(row["missing_marker_metrics"]) for row in gap_rows),
+        "missing_policy_consumer_fields": sum(
+            len(row.get("missing_policy_consumer_fields", []))
+            for row in gap_rows
+        ),
         "failed_metric_checks": sum(len(row["failed_metric_checks"]) for row in gap_rows),
         "failed_marker_checks": sum(len(row["failed_marker_checks"]) for row in gap_rows),
         "overall": "ready" if all(row["status"] == "ready" for row in gap_rows) else "blocked",
@@ -1742,6 +2993,7 @@ def pending_gap_report(
         "generated_utc": utc_timestamp(),
         "fixture_path": str(fixture_path),
         "fixture_summary": fixture_report.get("summary", {}),
+        "optional_field_families": optional_field_family_catalogs(),
         "raw_diagnostics": [
             raw_diagnostic_summary(diagnostic)
             for diagnostic in raw_diagnostics
@@ -1763,6 +3015,22 @@ def scenario_pending_text(scenario_result: dict[str, Any]) -> str:
         return scenario_result["pending_reason"]
     blockers = scenario_result.get("pending_blockers", [])
     return "; ".join(blockers)
+
+
+def optional_field_text(scenario_result: dict[str, Any]) -> str:
+    groups: list[str] = []
+    for group in scenario_result.get("optional_fields", []):
+        metrics = group.get("metrics", {})
+        if not isinstance(metrics, dict) or not metrics:
+            continue
+        metric_text = " ".join(
+            f"{metric}={display_value(value)}"
+            for metric, value in metrics.items()
+        )
+        family = group.get("family", "")
+        source = group.get("source", "")
+        groups.append(f"{family}<{source}> {metric_text}")
+    return "; ".join(groups)
 
 
 def degradation_policy_text(scenario_result: dict[str, Any]) -> str:
@@ -1798,8 +3066,8 @@ def build_pending_gap_markdown_report(report: dict[str, Any]) -> str:
         "",
         "## Scenarios",
         "",
-        "| Scenario | Status | Source | Planned Smoke | Fixture Status | Missing Metrics | Missing Metric Sources | Missing Marker Metrics | Related Metrics | Blockers |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| Scenario | Status | Source | Planned Smoke | Fixture Status | Missing Metrics | Missing Metric Sources | Missing Marker Metrics | Missing Policy Consumers | Related Metrics | Optional Fields | Blockers |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ))
 
     for scenario in report.get("scenarios", []):
@@ -1812,14 +3080,20 @@ def build_pending_gap_markdown_report(report: dict[str, Any]) -> str:
             f"{item['source']}::{item['metric']}"
             for item in scenario.get("missing_marker_metrics", [])
         ]
+        policy_missing = [
+            policy_consumer_field_text((item["source"], item["metric"]))
+            for item in scenario.get("missing_policy_consumer_fields", [])
+        ]
         related = ", ".join(
             f"{metric}={value}"
             for metric, value in scenario.get("related_present_metrics", {}).items()
         )
+        optional = optional_field_text(scenario)
         blockers = "; ".join(scenario.get("blockers", []))
         lines.append(
             "| {name} | {status} | {source} | {planned} | {fixture_status} | "
-            "{missing} | {missing_sources} | {marker_missing} | {related} | {blockers} |".format(
+            "{missing} | {missing_sources} | {marker_missing} | {policy_missing} | "
+            "{related} | {optional} | {blockers} |".format(
                 name=markdown_cell(scenario.get("name", "")),
                 status=markdown_cell(scenario.get("status", "")),
                 source=markdown_cell(scenario.get("fixture_source", "")),
@@ -1828,7 +3102,9 @@ def build_pending_gap_markdown_report(report: dict[str, Any]) -> str:
                 missing=markdown_cell(missing),
                 missing_sources=markdown_cell(missing_sources),
                 marker_missing=markdown_cell(", ".join(marker_missing)),
+                policy_missing=markdown_cell(", ".join(policy_missing)),
                 related=markdown_cell(related),
+                optional=markdown_cell(optional),
                 blockers=markdown_cell(blockers),
             )
         )
@@ -1863,19 +3139,20 @@ def build_markdown_report(report: dict[str, Any]) -> str:
 
     lines.append("## Scenarios")
     lines.append("")
-    lines.append("| Scenario | Status | Smoke | Tasks | Key Metrics | Degradation Policy | Pending Blockers | Artifacts |")
-    lines.append("| --- | --- | --- | --- | --- | --- | --- | --- |")
+    lines.append("| Scenario | Status | Smoke | Tasks | Key Metrics | Optional Fields | Degradation Policy | Pending Blockers | Artifacts |")
+    lines.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- |")
     for scenario in report.get("scenarios", []):
         tasks = ",".join(scenario.get("task_ids", []))
         smoke = smoke_display(scenario)
         artifacts = "<br>".join(f"`{artifact}`" for artifact in scenario_artifacts(scenario))
         lines.append(
-            "| {name} | {status} | {smoke} | {tasks} | {metrics} | {policy} | {pending} | {artifacts} |".format(
+            "| {name} | {status} | {smoke} | {tasks} | {metrics} | {optional} | {policy} | {pending} | {artifacts} |".format(
                 name=markdown_cell(scenario.get("name", "")),
                 status=markdown_cell(scenario.get("status", "")),
                 smoke=markdown_cell(smoke),
                 tasks=markdown_cell(tasks),
                 metrics=markdown_cell(scenario_metric_text(scenario)),
+                optional=markdown_cell(optional_field_text(scenario)),
                 policy=markdown_cell(degradation_policy_text(scenario)),
                 pending=markdown_cell(scenario_pending_text(scenario)),
                 artifacts=artifacts,
@@ -2046,6 +3323,7 @@ def run_implemented_scenario(
         "marker_checks": [],
         "markers": {},
         "metrics": {},
+        "optional_fields": [],
         "status_line": None,
         "returncode": None,
         "duration_seconds": None,
@@ -2084,6 +3362,7 @@ def run_implemented_scenario(
     combined_text = stdout_text + "\n" + stderr_text
     status_line, metrics = parse_status_line(combined_text)
     marker_names = {check.marker for check in scenario.marker_checks}
+    marker_names.update(optional_marker_names())
     if scenario.degradation_policy is not None:
         marker_names.update(
             check.marker
@@ -2093,6 +3372,7 @@ def run_implemented_scenario(
     result["status_line"] = status_line
     result["metrics"] = metrics
     result["markers"] = marker_metrics
+    result["optional_fields"] = discover_optional_fields(metrics, marker_metrics)
 
     if status_line is None and scenario.checks:
         result["failures"].append(f"missing {STATUS_MARKER} line")
@@ -2175,6 +3455,7 @@ def pending_result(scenario: Scenario) -> dict[str, Any]:
         "marker_checks": [],
         "markers": {},
         "metrics": {},
+        "optional_fields": [],
         "failures": [],
     }
 
@@ -2314,6 +3595,9 @@ def print_text_report(report: dict[str, Any]) -> None:
                         parts.append(f"{key}={marker_metrics[key]}")
             if parts:
                 print(f"  metrics: {' '.join(parts)}")
+            optional = optional_field_text(result)
+            if optional:
+                print(f"  optional_fields: {optional}")
             policy = degradation_policy_text(result)
             if policy:
                 print(f"  degradation_policy: {policy}")
@@ -2325,6 +3609,9 @@ def print_text_report(report: dict[str, Any]) -> None:
         elif result["status"] == "pending":
             print(f"  pending: {result['pending_reason']}")
         else:
+            optional = optional_field_text(result)
+            if optional:
+                print(f"  optional_fields: {optional}")
             for failure in result.get("failures", []):
                 print(f"  failure: {failure}")
             policy = degradation_policy_text(result)
@@ -2389,7 +3676,9 @@ def print_pending_gap_report(report: dict[str, Any]) -> None:
         "Scenarios: {total} ({ready} ready, {blocked} blocked, {missing_rows} missing rows, "
         "{raw_diagnostics} raw diagnostics, {raw_diagnostic_rows} raw diagnostic rows, "
         "{pending_rows} pending rows, {missing_status_metrics} missing status metrics, "
-        "{missing_marker_metrics} missing marker metrics, {failed_metric_checks} failed metric checks, "
+        "{missing_marker_metrics} missing marker metrics, "
+        "{missing_policy_consumer_fields} missing policy-consumer fields, "
+        "{failed_metric_checks} failed metric checks, "
         "{failed_marker_checks} failed marker checks)".format(**summary)
     )
     print(f"Overall: {summary['overall']}")
@@ -2427,6 +3716,12 @@ def print_pending_gap_report(report: dict[str, Any]) -> None:
                 for item in scenario["missing_marker_metrics"]
             ]
             print(f"  missing_marker_metrics: {', '.join(missing_marker_metrics)}")
+        if scenario.get("missing_policy_consumer_fields"):
+            missing_policy_fields = [
+                policy_consumer_field_text((item["source"], item["metric"]))
+                for item in scenario["missing_policy_consumer_fields"]
+            ]
+            print(f"  missing_policy_consumer_fields: {', '.join(missing_policy_fields)}")
         if scenario.get("metric_sources"):
             metric_source_parts = [
                 f"{metric}<-{'+'.join(sources)}"
@@ -2439,6 +3734,9 @@ def print_pending_gap_report(report: dict[str, Any]) -> None:
                 for metric, value in scenario["related_present_metrics"].items()
             ]
             print(f"  related_present_metrics: {', '.join(related_metrics)}")
+        optional = optional_field_text(scenario)
+        if optional:
+            print(f"  optional_fields: {optional}")
         for note in scenario.get("notes", []):
             print(f"  note: {note}")
         for blocker in scenario["blockers"]:
@@ -2577,6 +3875,7 @@ def main() -> int:
         "game": args.game,
         "timeout_seconds": args.timeout,
         "catalog": [scenario_catalog(scenario) for scenario in selected],
+        "optional_field_families": optional_field_family_catalogs(),
         "summary": summary,
         "scenarios": results,
     }

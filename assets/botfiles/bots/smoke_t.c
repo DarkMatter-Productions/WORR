@@ -93,6 +93,24 @@ chat "smoke"
 		WORR_SELFOWN0;
 	} //end type
 
+	type "death_lava"
+	{
+		"Hot floor.";
+		"Bad jump.";
+	} //end type
+
+	type "death_slime"
+	{
+		"Dirty route.";
+		"Noted.";
+	} //end type
+
+	type "death_drown"
+	{
+		"Out of air.";
+		"Too slow underwater.";
+	} //end type
+
 	type "death_suicide"
 	{
 		"Wrong route.";
@@ -111,10 +129,10 @@ chat "smoke"
 		"Big shot, ", 0, ".";
 	} //end type
 
-	type "kill_praise"
+	type "kill_rocket"
 	{
-		"Nice dodge. Still counted.";
-		"Good movement, ", 0, ".";
+		"Rocket landed.";
+		"Bounce read, ", 0, ".";
 	} //end type
 
 	type "random_insult"

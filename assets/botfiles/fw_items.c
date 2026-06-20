@@ -51,6 +51,30 @@
 #ifndef W_POWER_SHIELD
 #define W_POWER_SHIELD		70
 #endif
+#ifndef W_ADRENALINE
+#define W_ADRENALINE		70
+#endif
+#ifndef W_ANCIENT_HEAD
+#define W_ANCIENT_HEAD		70
+#endif
+#ifndef W_BANDOLIER
+#define W_BANDOLIER			60
+#endif
+#ifndef W_AMMOPACK
+#define W_AMMOPACK			70
+#endif
+#ifndef W_SILENCER
+#define W_SILENCER			35
+#endif
+#ifndef W_REBREATHER
+#define W_REBREATHER		45
+#endif
+#ifndef W_ENVIRO
+#define W_ENVIRO			45
+#endif
+#ifndef W_COOP_KEY
+#define W_COOP_KEY			90
+#endif
 #ifndef FLAG_WEIGHT
 #define FLAG_WEIGHT			80
 #endif
@@ -279,6 +303,33 @@ weight "ammo_bfg"
 	AMMO_WEIGHT(INVENTORY_BFGAMMO, W_BFGAMMO);
 } //end weight
 
+#define UNIQUE_ITEM_WEIGHT(inventory, weight) \
+	switch(inventory) \
+	{ \
+		case 0: return POWERUP_SCALE(weight); \
+		default: return POWERUP_SCALE($evalint(weight * 0.25)); \
+	}
+
+weight "item_adrenaline"
+{
+	UNIQUE_ITEM_WEIGHT(INVENTORY_ADRENALINE, W_ADRENALINE);
+} //end weight
+
+weight "item_ancient_head"
+{
+	UNIQUE_ITEM_WEIGHT(INVENTORY_ANCIENT_HEAD, W_ANCIENT_HEAD);
+} //end weight
+
+weight "item_bandolier"
+{
+	UNIQUE_ITEM_WEIGHT(INVENTORY_BANDOLIER, W_BANDOLIER);
+} //end weight
+
+weight "item_pack"
+{
+	UNIQUE_ITEM_WEIGHT(INVENTORY_AMMOPACK, W_AMMOPACK);
+} //end weight
+
 weight "item_quad"
 {
 	return POWERUP_SCALE(W_QUAD);
@@ -297,6 +348,68 @@ weight "item_power_screen"
 weight "item_power_shield"
 {
 	return POWERUP_SCALE(W_POWER_SHIELD);
+} //end weight
+
+weight "item_silencer"
+{
+	UNIQUE_ITEM_WEIGHT(INVENTORY_SILENCER, W_SILENCER);
+} //end weight
+
+weight "item_breather"
+{
+	UNIQUE_ITEM_WEIGHT(INVENTORY_REBREATHER, W_REBREATHER);
+} //end weight
+
+weight "item_enviro"
+{
+	UNIQUE_ITEM_WEIGHT(INVENTORY_ENVIRONMENTSUIT, W_ENVIRO);
+} //end weight
+
+#define KEY_WEIGHT(inventory) \
+	switch(inventory) \
+	{ \
+		case 0: return POWERUP_SCALE(W_COOP_KEY); \
+		default: return 0; \
+	}
+
+weight "key_blue_key"
+{
+	KEY_WEIGHT(INVENTORY_KEY_BLUE);
+} //end weight
+
+weight "key_red_key"
+{
+	KEY_WEIGHT(INVENTORY_KEY_RED);
+} //end weight
+
+weight "key_power_cube"
+{
+	KEY_WEIGHT(INVENTORY_KEY_POWER_CUBE);
+} //end weight
+
+weight "key_pyramid"
+{
+	KEY_WEIGHT(INVENTORY_KEY_PYRAMID);
+} //end weight
+
+weight "key_data_cd"
+{
+	KEY_WEIGHT(INVENTORY_KEY_DATA_CD);
+} //end weight
+
+weight "key_data_spinner"
+{
+	KEY_WEIGHT(INVENTORY_KEY_DATA_SPINNER);
+} //end weight
+
+weight "key_pass"
+{
+	KEY_WEIGHT(INVENTORY_KEY_PASS);
+} //end weight
+
+weight "key_commander_head"
+{
+	KEY_WEIGHT(INVENTORY_KEY_COMMANDER_HEAD);
 } //end weight
 
 weight "item_flag_team1"

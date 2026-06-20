@@ -93,6 +93,16 @@ It also keeps pressure budgets for route-query rate, route refresh/reuse ratios,
 
 CPU/source-counter checks such as `bot_frame_cpu_ms_per_bot_sec`, `route_query_cpu_ms_per_bot_sec`, `route_reuse_cpu_ms_per_bot_sec`, and `q3a_route_cpu_ms_per_bot_sec` are present but optional. Missing optional fields appear as budget warnings, not failures, until long-soak source-counter baselines are stable.
 
+Budgeted source-counter fields now carry explicit diagnostics:
+
+- `source_counter_status`, `source_counter_pass`, and `source_counter_pass_int` summarize whether every known source-counter group was present in the log.
+- `source_counter_groups_present_count` and `source_counter_groups_missing_count` make the readiness state easy to compare across runs.
+- `missing_current_counters` lists missing source-counter groups with their primary counter and accepted current counter names.
+- When `--budget` is used, flat fields such as `budget_status`, `budget_pass_int`, `budget_required_failed`, `budget_optional_missing`, and `budget_missing_current_counters` are added to each JSON/CSV run row.
+- The nested `budget.missing_current_counters` diagnostics map a missing budget metric back to the raw source-counter inputs that would satisfy it, for example `route_query_cpu_ms_per_bot_sec` to `route_query_cpu_ns` or `bot_route_cpu_ms`.
+
+Future strict source-counter soak budgets can check `source_counter_pass_int` with `min=1` and `max=1` once legacy pre-counter logs are no longer accepted for that lane.
+
 Exit behavior:
 
 - `0`: all required checks passed.
@@ -110,7 +120,7 @@ Write a Markdown report:
 python .\tools\bot_perf\analyze_bot_perf.py --budget .\tools\bot_perf\default_soak_budget.json --markdown-out .tmp\bot_perf\soak_compare.md .tmp\q3a_bot_nav_soak_10min_final.stdout.txt .tmp\q3a_bot_nav_soak_10min_final.stdout.txt
 ```
 
-The Markdown report contains run, comparison, and budget tables. `.tmp/bot_perf/` is a good local scratch location for generated reports.
+The Markdown report contains run, comparison, and budget tables. Run rows include source-counter pass/fail state, missing source-counter group counts, budget warning counts, and missing-current-counter counts. `.tmp/bot_perf/` is a good local scratch location for generated reports.
 
 Scenario comparison report:
 

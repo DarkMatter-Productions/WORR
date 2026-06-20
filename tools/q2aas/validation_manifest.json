@@ -20,7 +20,8 @@
         "worr_current_dm",
         "deathmatch_reference",
         "item_reachability_reference",
-        "mover_reference"
+        "mover_reference",
+        "elevator_reference"
       ],
       "minimum_metrics": {
         "numareas": 428,
@@ -225,6 +226,74 @@
         "train"
       ],
       "minimum_validated_maps": 1
+    },
+    {
+      "id": "water_reference",
+      "description": "Reference readiness for water brush contents and swim or water-adjacent route diagnostics.",
+      "map_ids": [],
+      "minimum_validated_maps": 1,
+      "required_features": [
+        "water"
+      ],
+      "strict_required": true,
+      "notes": "No local staged BSP candidate is declared yet; add a map only after validating that it exists and exercises water."
+    },
+    {
+      "id": "slime_reference",
+      "description": "Reference readiness for slime brush contents and hazard traversal diagnostics.",
+      "map_ids": [],
+      "minimum_validated_maps": 1,
+      "required_features": [
+        "slime"
+      ],
+      "strict_required": true,
+      "notes": "No local staged BSP candidate is declared yet; add a map only after validating that it exists and exercises slime."
+    },
+    {
+      "id": "lava_reference",
+      "description": "Reference readiness for lava brush contents and hazard traversal diagnostics.",
+      "map_ids": [],
+      "minimum_validated_maps": 1,
+      "required_features": [
+        "lava"
+      ],
+      "strict_required": true,
+      "notes": "No local staged BSP candidate is declared yet; add a map only after validating that it exists and exercises lava."
+    },
+    {
+      "id": "teleport_reference",
+      "description": "Reference readiness for teleport entity and generated teleport-travel diagnostics.",
+      "map_ids": [],
+      "minimum_validated_maps": 1,
+      "required_features": [
+        "teleport"
+      ],
+      "strict_required": true,
+      "notes": "No local staged BSP candidate is declared yet; add a map only after validating that it exists and exercises teleports."
+    },
+    {
+      "id": "elevator_reference",
+      "description": "Reference readiness for elevator/platform travel diagnostics.",
+      "map_ids": [
+        "mm-rage"
+      ],
+      "minimum_validated_maps": 1,
+      "required_features": [
+        "elevator"
+      ],
+      "strict_required": true,
+      "notes": "Currently backed by the staged mm-rage BSP and its generated elevator travel count."
+    },
+    {
+      "id": "door_reference",
+      "description": "Reference readiness for door entity diagnostics.",
+      "map_ids": [],
+      "minimum_validated_maps": 1,
+      "required_features": [
+        "door"
+      ],
+      "strict_required": true,
+      "notes": "No local staged BSP candidate is declared yet; add a map only after validating that it exists and exercises doors."
     }
   ],
   "pending_reference_maps": [
@@ -233,7 +302,10 @@
     "q2dm8 or another open deathmatch map",
     "capture-the-flag map",
     "campaign or co-op map",
-    "map with water, slime, lava, or hurt volumes",
-    "map with doors, plats, elevators, or other movers"
+    "map with water brush contents",
+    "map with slime brush contents",
+    "map with lava brush contents",
+    "map with teleports",
+    "map with doors"
   ]
 }

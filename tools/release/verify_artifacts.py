@@ -12,7 +12,7 @@ from typing import Any
 if __package__ is None or __package__ == "":
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
-from tools.release.targets import TARGETS, get_target
+from tools.release.targets import RELEASE_NOTICE_PATHS, TARGETS, get_target
 
 
 def choose_targets(platform_ids: list[str]) -> list[dict[str, Any]]:
@@ -99,6 +99,11 @@ def validate_manifest(
         for entry in files
         if isinstance(entry, dict) and isinstance(entry.get("path"), str)
     )
+    file_sizes = {
+        entry.get("path"): entry.get("size")
+        for entry in files
+        if isinstance(entry, dict) and isinstance(entry.get("path"), str)
+    }
 
     for pattern in required_paths:
         if not matching_paths(rel_paths, pattern):
@@ -111,6 +116,13 @@ def validate_manifest(
                 f"{platform_id} {role}: manifest contains forbidden path {hits[0]} "
                 f"(pattern {pattern})"
             )
+
+    for notice_path in RELEASE_NOTICE_PATHS:
+        if notice_path not in required_paths:
+            continue
+        size = file_sizes.get(notice_path)
+        if not isinstance(size, int) or size <= 0:
+            failures.append(f"{platform_id} {role}: manifest has empty release notice {notice_path}")
 
 
 def main() -> int:

@@ -28,10 +28,10 @@ chat "bulwark"
 		"Try the other corridor.";
 	} //end type
 
-	type "kill_praise"
+	type "kill_insult"
 	{
-		"Good pressure.";
-		"Clean push.";
+		"Route denied.";
+		"That lane is closed.";
 	} //end type
 
 	type "death_insult"
@@ -93,6 +93,24 @@ chat "bulwark"
 		WORR_SELFOWN0;
 	} //end type
 
+	type "death_lava"
+	{
+		"Bad step near heat.";
+		"Marking that floor hazard.";
+	} //end type
+
+	type "death_slime"
+	{
+		"Wrong liquid route.";
+		"Next path avoids the pit.";
+	} //end type
+
+	type "death_drown"
+	{
+		"Air route failed.";
+		"Need a cleaner water exit.";
+	} //end type
+
 	type "death_suicide"
 	{
 		"Wrong route.";
@@ -111,10 +129,16 @@ chat "bulwark"
 		"Big shot, ", 0, ".";
 	} //end type
 
+	type "kill_shotgun"
+	{
+		"Corner held.";
+		"Close route closed, ", 0, ".";
+	} //end type
+
 	type "kill_praise"
 	{
-		"Nice dodge. Still counted.";
-		"Good movement, ", 0, ".";
+		"Good pressure.";
+		"Clean push.";
 	} //end type
 
 	type "random_insult"

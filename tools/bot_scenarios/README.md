@@ -55,6 +55,16 @@ Implemented:
 - `multi_bot_reservation`: mode `17`, verifies eight-bot route pressure and item reservation peak.
 - `map_change_repeat`: mode `19`, verifies two map-repeat cycles, one map change, and final bot cleanup.
 - `profile_backed_spawn`: `sv_bot_profile_smoke 2`, verifies profile-backed spawn, userinfo profile fields, and final cleanup.
+- `team_policy_duel_readiness`: `sv_bot_team_policy_smoke 2`, verifies existing bot team-policy status before and after cleanup.
+- `engage_enemy`: mode `20`, verifies live enemy acquisition, attack intent, attack-button application, combat detail counters, and attributed damage.
+- `switch_weapons`: mode `21`, verifies weapon-switch decision/request/dispatch/completion counters.
+- `health_armor_pickup`: mode `22`, verifies health/armor focus boosts, goal assignments, seek-decision detail, pickups, and pickup deltas.
+- `team_objective`: mode `23`, verifies CTF objective route/reach/pickup plus role-policy and lane status.
+- `aim_fairness_policy_integration`: mode `24`, verifies live firing flows through aim/fairness policy counters and the live-aim consumer before applying attack input.
+- `item_timer_fairness_signals`: mode `25`, verifies deterministic observed-pickup item-timer policy telemetry plus timing-consumer evaluation and ready/live pickup evidence.
+- `trace_checked_corner_cutting`: mode `21`, verifies route corner-cut candidates, trace checks, accepted trace-checked shortcuts, and BSP trace telemetry from an existing route-rich smoke.
+- `ffa_tdm_match_readiness`: mode `26`, verifies dedicated FFA and TDM readiness proof status with four active bots.
+- `coop_match_readiness`: mode `3` with `deathmatch 0` and `coop 1`, verifies cooperative readiness status with active playing bots.
 
 Manual long-running:
 
@@ -62,12 +72,9 @@ Manual long-running:
 
 Pending placeholders:
 
-- `engage_enemy`
-- `switch_weapons`
-- `health_armor_pickup`
-- `team_objective`
+- None in the default catalog after the 2026-06-18 promotion round.
 
-Pending rows are reported but do not fail the suite unless `--fail-on-pending` is passed.
+Pending rows are reported but do not fail the suite unless `--fail-on-pending` is passed. With the current catalog, `--scenario pending` is a no-launch empty report unless new future rows are added.
 
 ## Catalog
 
@@ -79,7 +86,24 @@ python tools\bot_scenarios\run_bot_scenarios.py --catalog --format json --json-o
 
 Catalog entries include scenario status, task IDs, smoke mode, runtime budget, manual-only status, selection tags, required status metrics, marker metrics, degradation policy metadata, extra cvars, and pending blockers.
 
-Pending catalog rows also include planned source smoke modes, promotion-required metrics, and promotion check criteria. Those fields describe the counters and pass/fail values a future source-backed smoke must satisfy before the placeholder can become an implemented scenario.
+When pending catalog rows exist, they also include planned source smoke modes, promotion-required metrics, and promotion check criteria. Those fields describe the counters and pass/fail values a future source-backed smoke must satisfy before the placeholder can become an implemented scenario.
+
+## Optional Status Fields
+
+The harness tolerates and reports newly added status fields without making them hard gates. Scenario JSON rows include `optional_fields` when matching metrics appear in the selected `q3a_bot_frame_command_status` line or optional marker streams such as `q3a_bot_action_status`.
+
+Current optional discovery families:
+
+- `action_dispatch_counters`: weapon/inventory command-request build, accept/reject, dispatch, defer, submit, and failure counters from `q3a_bot_action_status`.
+- `live_combat_firing_counters`: enemy acquisition, combat evaluation, fire/withhold, attack-button, and damage proof counters.
+- `aim_policy_counters`: aim/fairness policy evaluation, allow/block, live-aim consumer, projectile lead, and last-policy metadata when combat status owners expose it.
+- `special_item_utility_buckets`: special item candidate, seek-decision, boost, and last-kind buckets for powerups, techs, mobility, protection, invisibility, and CTF objective pickups.
+- `item_timer_fairness_signals`: item-timer fairness observation, allowance/block, fuzzing, timing-policy details, timing-consumer details, and last-timer metadata. When `item_timing_consumer_ready` or `item_timing_consumer_live_pickups` is present, the parser also reports `item_timing_consumer_ready_or_live` as a derived ready/live proof.
+- `route_target_stabilization_counters`: route-target stabilization checks, applications, skips, and last sampled target metadata from frame-command status.
+- `trace_checked_corner_cutting_signals`: trace-checked corner-cut candidate, trace, accept/reject, and last-corner metadata.
+- `team_mode_readiness_signals`: team-policy, objective role/lane, and blackboard team-role signals used by FFA/TDM/CTF/coop readiness work.
+
+These fields are visible in text, JSON, Markdown, and pending-gap reports when present. They do not satisfy or fail scenario gates unless a scenario explicitly promotes one of them into `checks` or `marker_checks`.
 
 ## High-Bot Degradation Policy
 
@@ -97,9 +121,9 @@ Analyze an existing JSON report, usually `.tmp\bot_scenarios\latest_report.json`
 python tools\bot_scenarios\run_bot_scenarios.py --scenario pending --pending-gap-report .tmp\bot_scenarios\latest_report.json --format text --json-out .tmp\bot_scenarios\pending_gap_report.json
 ```
 
-This command does not launch the game. It compares pending placeholders against the report fixture and prints whether each scenario is ready for harness promotion or blocked by missing scenario rows, wrong smoke modes, pending fixture rows, absent status/marker metrics, or failed promotion metric checks.
+This command does not launch the game. It compares pending placeholders against the report fixture and prints whether each scenario is ready for harness promotion or blocked by missing scenario rows, wrong smoke modes, pending fixture rows, absent status/marker metrics, absent policy-consumer evidence, or failed promotion metric checks. After modes `20` through `26`, `trace_checked_corner_cutting`, and `coop_match_readiness` were promoted, the default pending set is empty.
 
-Raw reserved-mode logs can be included when modes `20` through `23` have been run outside the normal scenario catalog:
+Raw reserved-mode logs can be included when reserved modes have been run outside the normal scenario catalog:
 
 ```powershell
 python tools\bot_scenarios\run_bot_scenarios.py --scenario pending --pending-gap-report .tmp\bot_scenarios\latest_report.json --pending-gap-raw-log .tmp\bot_scenarios\raw_modes --format text --json-out .tmp\bot_scenarios\pending_gap_with_raw_modes.json
@@ -107,16 +131,24 @@ python tools\bot_scenarios\run_bot_scenarios.py --scenario pending --pending-gap
 
 `--pending-gap-raw-log` accepts a file or directory and may be repeated. The parser groups logs by `q3a_bot_frame_command_smoke_scenario=begin`, then reads the latest `q3a_bot_frame_command_status`, `q3a_bot_blackboard_status`, `q3a_bot_action_status`, `q3a_bot_objective_status`, and `q3a_bot_source_counter_status` markers for that reserved run. If repeated diagnostics exist for one reserved mode, the latest parsed run for that mode is the promotion source. Raw diagnostics can satisfy marker/metric presence in the gap report, but the scenarios remain pending until the real runtime counters pass their promotion checks.
 
-When the same metric appears on more than one raw marker inside a reserved run, the later log line wins. Gap reports also include `missing_metric_sources` so absent promotion counters identify the raw status marker that should emit them, for example `item_health_pickups<-q3a_bot_action_status`.
+When the same metric appears on more than one raw marker inside a reserved run, the later log line wins. Gap reports also include `missing_metric_sources` so absent promotion counters identify the raw status marker that should emit them, for example `item_health_pickups<-q3a_bot_action_status`. Policy scenarios additionally include `missing_policy_consumer_fields` so absent live-aim or item timing-consumer markers are visible without reading every marker check by hand.
 
-The planned source-backed smoke mode numbers are fixed for compatibility with in-progress server work:
+The promoted source-backed smoke mode numbers are fixed for compatibility with server work:
 
 - `engage_enemy`: mode `20`
 - `switch_weapons`: mode `21`
 - `health_armor_pickup`: mode `22`
 - `team_objective`: mode `23`
+- `aim_fairness_policy_integration`: mode `24`
+- `item_timer_fairness_signals`: mode `25`
+- `ffa_tdm_match_readiness`: mode `26`
 
-If one of those modes lands before every planned metric exists, the gap report should remain useful: it will show the row, mode, present metrics, missing metrics, failed metric checks, marker-check failures, and any scenario-specific related telemetry that helps explain the block without pretending the scenario is promoted.
+Additional promoted rows reuse existing smoke coverage:
+
+- `trace_checked_corner_cutting`: mode `21`, using the existing switch-weapon reserved smoke because it produces deterministic route corner-cut trace and acceptance telemetry.
+- `coop_match_readiness`: mode `3`, with extra cvars `deathmatch 0` and `coop 1`, so the existing frame-command smoke reports `q3a_bot_coop_readiness_status pass=1`.
+
+There are currently no default pending scenarios. Future pending rows should only be added when a new behavior has a concrete promotion contract and a known source-owned status surface.
 
 For `health_armor_pickup`, generic `item_goal_*`, `last_item_goal_*`, and `last_failed_goal_*` status metrics are surfaced as related telemetry when present. They do not satisfy the health/armor promotion gate by themselves; the gate still requires health/armor-specific boost, assignment, pickup, and delta counters.
 

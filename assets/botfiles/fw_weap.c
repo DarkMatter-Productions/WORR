@@ -131,5 +131,17 @@ weight "Railgun"
 
 weight "BFG10K"
 {
-	HAS_AMMO(INVENTORY_BFGAMMO, W_BFG10K);
+	switch(INVENTORY_BFGAMMO)
+	{
+		case 0: return 0;
+		default:
+		{
+			switch(NUM_VISIBLE_ENEMIES)
+			{
+				case 0: return $evalint(W_BFG10K * 0.25);
+				case 1: return W_BFG10K;
+				default: return $evalint(W_BFG10K * 1.35);
+			} //end switch
+		} //end default
+	} //end switch
 } //end weight

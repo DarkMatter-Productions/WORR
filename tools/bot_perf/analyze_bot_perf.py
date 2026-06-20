@@ -115,6 +115,155 @@ SOURCE_COUNTER_KEYS = tuple(
     dict.fromkeys(key for keys in SOURCE_COUNTER_GROUPS.values() for key in keys)
 )
 
+SOURCE_COUNTER_METRIC_INPUTS: dict[str, dict[str, Any]] = {
+    "bot_frame_cpu_total_ms": {
+        "group": "bot_frame_cpu",
+        "any_of": ("bot_frame_cpu_ns", "bot_cpu_ns", "bot_frame_cpu_ms", "bot_cpu_ms"),
+    },
+    "bot_frame_cpu_ms_per_sec": {
+        "group": "bot_frame_cpu",
+        "any_of": ("bot_frame_cpu_ns", "bot_cpu_ns", "bot_frame_cpu_ms", "bot_cpu_ms"),
+    },
+    "bot_frame_cpu_ms_per_bot_sec": {
+        "group": "bot_frame_cpu",
+        "any_of": ("bot_frame_cpu_ns", "bot_cpu_ns", "bot_frame_cpu_ms", "bot_cpu_ms"),
+    },
+    "bot_frame_cpu_avg_us": {
+        "group": "bot_frame_cpu",
+        "any_of": ("bot_frame_cpu_ns", "bot_cpu_ns"),
+        "all_of": ("bot_frame_cpu_samples",),
+    },
+    "bot_frame_cpu_max_us": {
+        "group": "bot_frame_cpu",
+        "all_of": ("bot_frame_cpu_max_ns",),
+    },
+    "bot_frame_cpu_success_avg_us": {
+        "group": "bot_frame_cpu",
+        "all_of": ("bot_frame_cpu_success_ns", "bot_frame_cpu_success_samples"),
+    },
+    "route_query_cpu_total_ms": {
+        "group": "route_query_cpu",
+        "any_of": ("route_query_cpu_ns", "bot_route_cpu_ms"),
+    },
+    "route_query_cpu_ms_per_sec": {
+        "group": "route_query_cpu",
+        "any_of": ("route_query_cpu_ns", "bot_route_cpu_ms"),
+    },
+    "route_query_cpu_ms_per_bot_sec": {
+        "group": "route_query_cpu",
+        "any_of": ("route_query_cpu_ns", "bot_route_cpu_ms"),
+    },
+    "route_query_cpu_avg_us": {
+        "group": "route_query_cpu",
+        "all_of": ("route_query_cpu_ns", "route_query_cpu_samples"),
+    },
+    "route_query_cpu_max_us": {
+        "group": "route_query_cpu",
+        "all_of": ("route_query_cpu_max_ns",),
+    },
+    "route_query_cpu_fail_avg_us": {
+        "group": "route_query_cpu",
+        "all_of": ("route_query_cpu_fail_ns", "route_query_cpu_fail_samples"),
+    },
+    "route_reuse_cpu_total_ms": {
+        "group": "route_query_cpu",
+        "all_of": ("route_reuse_cpu_ns",),
+    },
+    "route_reuse_cpu_ms_per_sec": {
+        "group": "route_query_cpu",
+        "all_of": ("route_reuse_cpu_ns",),
+    },
+    "route_reuse_cpu_ms_per_bot_sec": {
+        "group": "route_query_cpu",
+        "all_of": ("route_reuse_cpu_ns",),
+    },
+    "route_reuse_cpu_avg_us": {
+        "group": "route_query_cpu",
+        "all_of": ("route_reuse_cpu_ns", "route_reuse_cpu_samples"),
+    },
+    "q3a_route_cpu_total_ms": {
+        "group": "q3a_route_cpu",
+        "all_of": ("q3a_route_cpu_ns",),
+    },
+    "q3a_route_cpu_ms_per_sec": {
+        "group": "q3a_route_cpu",
+        "all_of": ("q3a_route_cpu_ns",),
+    },
+    "q3a_route_cpu_ms_per_bot_sec": {
+        "group": "q3a_route_cpu",
+        "all_of": ("q3a_route_cpu_ns",),
+    },
+    "q3a_route_cpu_avg_us": {
+        "group": "q3a_route_cpu",
+        "all_of": ("q3a_route_cpu_ns", "q3a_route_cpu_samples"),
+    },
+    "q3a_route_cpu_max_us": {
+        "group": "q3a_route_cpu",
+        "all_of": ("q3a_route_cpu_max_ns",),
+    },
+    "q3a_route_cpu_fail_avg_us": {
+        "group": "q3a_route_cpu",
+        "all_of": ("q3a_route_cpu_fail_ns", "q3a_route_cpu_fail_samples"),
+    },
+    "bsp_trace_cpu_total_ms": {
+        "group": "static_bsp_trace",
+        "all_of": ("bsp_trace_cpu_ns",),
+    },
+    "bsp_trace_cpu_ms_per_sec": {
+        "group": "static_bsp_trace",
+        "all_of": ("bsp_trace_cpu_ns",),
+    },
+    "bsp_trace_cpu_ms_per_bot_sec": {
+        "group": "static_bsp_trace",
+        "all_of": ("bsp_trace_cpu_ns",),
+    },
+    "bsp_trace_cpu_avg_us": {
+        "group": "static_bsp_trace",
+        "all_of": ("bsp_trace_cpu_ns",),
+        "any_of": ("bsp_trace_cpu_samples", "bsp_trace_calls"),
+    },
+    "bsp_trace_cpu_max_us": {
+        "group": "static_bsp_trace",
+        "all_of": ("bsp_trace_cpu_max_ns",),
+    },
+    "entity_trace_clip_cpu_total_ms": {
+        "group": "entity_trace",
+        "all_of": ("entity_trace_clip_cpu_ns",),
+    },
+    "entity_trace_clip_cpu_ms_per_sec": {
+        "group": "entity_trace",
+        "all_of": ("entity_trace_clip_cpu_ns",),
+    },
+    "entity_trace_clip_cpu_ms_per_bot_sec": {
+        "group": "entity_trace",
+        "all_of": ("entity_trace_clip_cpu_ns",),
+    },
+    "entity_trace_clip_cpu_avg_us": {
+        "group": "entity_trace",
+        "all_of": ("entity_trace_clip_cpu_ns", "entity_trace_clip_calls"),
+    },
+    "entity_trace_clip_cpu_max_us": {
+        "group": "entity_trace",
+        "all_of": ("entity_trace_clip_cpu_max_ns",),
+    },
+    "aas_inpvs_visible_ratio": {
+        "group": "visibility",
+        "all_of": ("aas_inpvs_visible", "aas_inpvs_checks"),
+    },
+    "aas_inphs_visible_ratio": {
+        "group": "visibility",
+        "all_of": ("aas_inphs_visible", "aas_inphs_checks"),
+    },
+    "bsp_trace_hit_ratio": {
+        "group": "static_bsp_trace",
+        "all_of": ("bsp_trace_hits", "bsp_trace_calls"),
+    },
+    "entity_trace_clip_hit_ratio": {
+        "group": "entity_trace",
+        "all_of": ("entity_trace_clip_hits", "entity_trace_clip_calls"),
+    },
+}
+
 COMPARISON_METRICS = (
     {
         "key": "commands_per_bot_sec",
@@ -430,6 +579,129 @@ def source_counter_subset(status: dict[str, int | float]) -> dict[str, int | flo
     }
 
 
+def source_counter_group_for_key(key: str) -> str | None:
+    for group, keys in SOURCE_COUNTER_GROUPS.items():
+        if key in keys:
+            return group
+    return None
+
+
+def source_counter_group_status(status: dict[str, int | float]) -> list[dict[str, Any]]:
+    groups: list[dict[str, Any]] = []
+    for group, keys in SOURCE_COUNTER_GROUPS.items():
+        present = [key for key in keys if key in status]
+        missing = [key for key in keys if key not in status]
+        groups.append({
+            "group": group,
+            "present": bool(present),
+            "primary_counter": keys[0],
+            "present_counters": present,
+            "missing_counters": missing,
+        })
+    return groups
+
+
+def missing_current_counter_groups(status: dict[str, int | float]) -> list[dict[str, Any]]:
+    return [
+        {
+            "group": item["group"],
+            "primary_counter": item["primary_counter"],
+            "present_counters": item["present_counters"],
+            "missing_counters": item["missing_counters"],
+        }
+        for item in source_counter_group_status(status)
+        if not item["present"]
+    ]
+
+
+def source_counter_input_spec(namespace: str, metric: str) -> dict[str, Any] | None:
+    if namespace == "status":
+        group = source_counter_group_for_key(metric)
+        if group is None:
+            return None
+        return {"group": group, "all_of": (metric,)}
+
+    if namespace != "metrics":
+        return None
+
+    explicit = SOURCE_COUNTER_METRIC_INPUTS.get(metric)
+    if explicit is not None:
+        return explicit
+
+    for suffix in ("_per_bot_sec", "_per_sec"):
+        if not metric.endswith(suffix):
+            continue
+        raw_key = metric[: -len(suffix)]
+        group = source_counter_group_for_key(raw_key)
+        if group is not None:
+            return {"group": group, "all_of": (raw_key,)}
+
+    return None
+
+
+def unique_strings(values: tuple[str, ...] | list[str]) -> list[str]:
+    return list(dict.fromkeys(values))
+
+
+def source_counter_budget_diagnostic(
+    status: dict[str, int | float],
+    check: dict[str, Any],
+) -> dict[str, Any] | None:
+    if check.get("value") is not None:
+        return None
+
+    namespace = str(check.get("namespace", ""))
+    metric = str(check.get("metric", ""))
+    spec = source_counter_input_spec(namespace, metric)
+    if spec is None:
+        return None
+
+    any_of = tuple(str(key) for key in spec.get("any_of", ()))
+    all_of = tuple(str(key) for key in spec.get("all_of", ()))
+    any_present = [key for key in any_of if key in status]
+    all_present = [key for key in all_of if key in status]
+    missing_any = [] if any_present or not any_of else list(any_of)
+    missing_all = [key for key in all_of if key not in status]
+    missing_counters = unique_strings(missing_any + missing_all)
+    if not missing_counters:
+        return None
+
+    expected_counters = unique_strings(list(any_of) + list(all_of))
+    present_counters = unique_strings(any_present + all_present)
+    group = str(spec["group"])
+    group_present = group in present_source_counter_groups(status)
+
+    return {
+        "namespace": namespace,
+        "metric": metric,
+        "required": bool(check.get("required", True)),
+        "result": check.get("result"),
+        "group": group,
+        "source_counter_group_present": group_present,
+        "expected_any_current_counters": list(any_of),
+        "expected_all_current_counters": list(all_of),
+        "expected_current_counters": expected_counters,
+        "present_current_counters": present_counters,
+        "missing_current_counters": missing_counters,
+        "message": (
+            f"{namespace}.{metric} is missing current source counter input: "
+            + ", ".join(missing_counters)
+        ),
+    }
+
+
+def budget_missing_current_counter_diagnostics(
+    status: dict[str, int | float],
+    checks: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    diagnostics: list[dict[str, Any]] = []
+    for check in checks:
+        diagnostic = source_counter_budget_diagnostic(status, check)
+        if diagnostic is not None:
+            diagnostics.append(diagnostic)
+    return diagnostics
+
+
 def has_any_metric(report: dict[str, Any], keys: tuple[str, ...]) -> bool:
     return any(report.get(key) is not None for key in keys)
 
@@ -529,6 +801,10 @@ def analyze(
 
     per_bot_divisor = duration_sec * bot_count if duration_sec is not None and bot_count else None
     present_source_groups = present_source_counter_groups(status)
+    missing_source_groups = [
+        group for group in SOURCE_COUNTER_GROUPS if group not in present_source_groups
+    ]
+    group_status = source_counter_group_status(status)
 
     metrics: dict[str, Any] = {
         "file": str(parsed.path),
@@ -590,11 +866,17 @@ def analyze(
         ),
         "item_goal_peak_active_reservations": as_int(status, "item_goal_peak_active_reservations"),
         "soak_reports": as_int(parsed.soak_complete or {}, "reports"),
+        "source_counter_status": "pass" if not missing_source_groups else "fail",
+        "source_counter_pass": not missing_source_groups,
+        "source_counter_pass_int": 1 if not missing_source_groups else 0,
+        "source_counter_groups_expected": list(SOURCE_COUNTER_GROUPS),
         "source_counter_groups_present": present_source_groups,
-        "source_counter_groups_missing": [
-            group for group in SOURCE_COUNTER_GROUPS if group not in present_source_groups
-        ],
+        "source_counter_groups_missing": missing_source_groups,
+        "source_counter_groups_present_count": len(present_source_groups),
+        "source_counter_groups_missing_count": len(missing_source_groups),
+        "source_counter_group_status": group_status,
         "source_counters": source_counter_subset(status),
+        "missing_current_counters": missing_current_counter_groups(status),
         "missing_instrumentation": [
             key
             for key, group in (
@@ -863,12 +1145,38 @@ def evaluate_budget(
             elif result["result"] == "missing_optional":
                 warnings.append(result["message"])
 
+    required_checks = [check for check in checks if check.get("required", True)]
+    optional_checks = [check for check in checks if not check.get("required", True)]
+    failed_checks = [check for check in checks if check.get("result") == "fail"]
+    passed_checks = [check for check in checks if check.get("result") == "pass"]
+    missing_optional_checks = [
+        check for check in checks if check.get("result") == "missing_optional"
+    ]
+    required_failed = [
+        check for check in required_checks if check.get("result") == "fail"
+    ]
+    missing_current_counters = budget_missing_current_counter_diagnostics(status, checks)
+    budget_pass = not failures
+
     return {
         "path": str(budget.path),
-        "pass": not failures,
+        "pass": budget_pass,
+        "pass_int": 1 if budget_pass else 0,
+        "status": "pass" if budget_pass else "fail",
         "failures": failures,
         "warnings": warnings,
         "checks": checks,
+        "check_count": len(checks),
+        "passed": len(passed_checks),
+        "failed": len(failed_checks),
+        "warning_count": len(warnings),
+        "required": len(required_checks),
+        "optional": len(optional_checks),
+        "required_passed": len(required_checks) - len(required_failed),
+        "required_failed": len(required_failed),
+        "optional_missing": len(missing_optional_checks),
+        "missing_current_counters": missing_current_counters,
+        "missing_current_counter_count": len(missing_current_counters),
     }
 
 
@@ -921,6 +1229,22 @@ def evaluate_budget_check(
     else:
         result["message"] = f"{label}={value} within budget"
     return result
+
+
+def attach_budget_result(report: dict[str, Any], budget_result: dict[str, Any]) -> None:
+    report["budget"] = budget_result
+    report["budget_status"] = budget_result.get("status")
+    report["budget_pass"] = bool(budget_result.get("pass"))
+    report["budget_pass_int"] = budget_result.get("pass_int")
+    report["budget_checks"] = budget_result.get("check_count")
+    report["budget_failures"] = len(budget_result.get("failures", []))
+    report["budget_warnings"] = len(budget_result.get("warnings", []))
+    report["budget_required_failed"] = budget_result.get("required_failed")
+    report["budget_required_passed"] = budget_result.get("required_passed")
+    report["budget_optional_missing"] = budget_result.get("optional_missing")
+    report["budget_missing_current_counters"] = budget_result.get(
+        "missing_current_counter_count"
+    )
 
 
 def is_number(value: Any) -> bool:
@@ -1086,6 +1410,7 @@ def build_comparison(reports: list[dict[str, Any]]) -> dict[str, Any]:
             "pass": bool(budget.get("pass")),
             "failures": len(budget.get("failures", [])),
             "warnings": len(budget.get("warnings", [])),
+            "missing_current_counters": budget.get("missing_current_counter_count", 0),
         })
 
     budget_summary = None
@@ -1128,7 +1453,10 @@ def print_comparison_text(comparison: dict[str, Any]) -> None:
             print(
                 "    "
                 f"run={run.get('run')} state={state} "
-                f"failures={run.get('failures')} file={run.get('file')}"
+                f"failures={run.get('failures')} "
+                f"warnings={run.get('warnings')} "
+                f"missing_current_counters={run.get('missing_current_counters')} "
+                f"file={run.get('file')}"
             )
 
     for metric in comparison.get("metrics", []):
@@ -1188,9 +1516,13 @@ def markdown_report(reports: list[dict[str, Any]], comparison: dict[str, Any]) -
         budget = report.get("budget")
         budget_state = "n/a"
         budget_failures = "n/a"
+        budget_warnings = "n/a"
+        budget_missing_current_counters = "n/a"
         if isinstance(budget, dict):
-            budget_state = bool(budget.get("pass"))
+            budget_state = budget.get("status")
             budget_failures = len(budget.get("failures", []))
+            budget_warnings = len(budget.get("warnings", []))
+            budget_missing_current_counters = budget.get("missing_current_counter_count")
         run_rows.append([
             index + 1,
             report.get("scenario_name"),
@@ -1198,6 +1530,10 @@ def markdown_report(reports: list[dict[str, Any]], comparison: dict[str, Any]) -
             report.get("pass"),
             budget_state,
             budget_failures,
+            budget_warnings,
+            budget_missing_current_counters,
+            report.get("source_counter_status"),
+            report.get("source_counter_groups_missing_count"),
             report.get("duration_sec"),
             report.get("bot_count"),
             report.get("commands_per_bot_sec"),
@@ -1222,6 +1558,10 @@ def markdown_report(reports: list[dict[str, Any]], comparison: dict[str, Any]) -
             "Smoke Pass",
             "Budget",
             "Budget Failures",
+            "Budget Warnings",
+            "Budget Missing Counters",
+            "Source Counters",
+            "Missing Source Groups",
             "Duration Sec",
             "Bots",
             "Cmd/Bot/Sec",
@@ -1267,13 +1607,14 @@ def markdown_report(reports: list[dict[str, Any]], comparison: dict[str, Any]) -
         )
         lines.append("")
         lines.extend(markdown_table(
-            ["Run", "Budget", "Failures", "Warnings", "File"],
+            ["Run", "Budget", "Failures", "Warnings", "Missing Current Counters", "File"],
             [
                 [
                     run.get("run"),
                     bool(run.get("pass")),
                     run.get("failures"),
                     run.get("warnings"),
+                    run.get("missing_current_counters"),
                     run.get("file"),
                 ]
                 for run in budget.get("runs", [])
@@ -1315,6 +1656,23 @@ def expand_inputs(values: list[str]) -> list[pathlib.Path]:
     if missing:
         raise SystemExit("Input is not a file: " + ", ".join(str(path) for path in missing))
     return files
+
+
+def compact_counter_detail(detail: dict[str, Any]) -> str:
+    group = detail.get("group")
+    metric = detail.get("metric")
+    primary = detail.get("primary_counter")
+    missing = detail.get("missing_current_counters") or detail.get("missing_counters") or []
+    if not isinstance(missing, list):
+        missing = [missing]
+    missing_text = ",".join(str(item) for item in missing) if missing else "none"
+
+    prefix = f"group={group}"
+    if metric:
+        prefix += f" metric={metric}"
+    if primary:
+        prefix += f" primary={primary}"
+    return f"{prefix} missing={missing_text}"
 
 
 def print_text(reports: list[dict[str, Any]]) -> None:
@@ -1383,7 +1741,11 @@ def print_text(reports: list[dict[str, Any]]) -> None:
         missing_groups = ", ".join(report["source_counter_groups_missing"])
         print(
             "  source_counters: "
-            f"present={present_groups if present_groups else 'none'} "
+            f"status={report['source_counter_status']} "
+            f"pass={report['source_counter_pass_int']} "
+            f"present={report['source_counter_groups_present_count']}/"
+            f"{len(report['source_counter_groups_expected'])} "
+            f"groups={present_groups if present_groups else 'none'} "
             f"missing={missing_groups if missing_groups else 'none'}"
         )
         if has_any_metric(report, (
@@ -1431,15 +1793,28 @@ def print_text(reports: list[dict[str, Any]]) -> None:
             )
         missing = ", ".join(report["missing_instrumentation"])
         print(f"  missing_instrumentation: {missing if missing else 'none'}")
+        for detail in report.get("missing_current_counters", []):
+            print(f"    missing_current_counter: {compact_counter_detail(detail)}")
         budget = report.get("budget")
         if isinstance(budget, dict):
             state = "pass" if budget.get("pass") else "fail"
             check_count = len(budget.get("checks", []))
-            print(f"  budget: {state} checks={check_count} path={budget.get('path')}")
+            print(
+                f"  budget: {state} "
+                f"pass={budget.get('pass_int')} "
+                f"checks={check_count} "
+                f"failures={len(budget.get('failures', []))} "
+                f"warnings={len(budget.get('warnings', []))} "
+                f"optional_missing={budget.get('optional_missing')} "
+                f"missing_current_counters={budget.get('missing_current_counter_count')} "
+                f"path={budget.get('path')}"
+            )
             for failure in budget.get("failures", []):
                 print(f"    failure: {failure}")
             for warning in budget.get("warnings", []):
                 print(f"    warning: {warning}")
+            for detail in budget.get("missing_current_counters", []):
+                print(f"    missing_current_counter: {compact_counter_detail(detail)}")
 
 
 def print_csv(reports: list[dict[str, Any]]) -> None:
@@ -1451,6 +1826,14 @@ def print_csv(reports: list[dict[str, Any]]) -> None:
         "scenario_duration_budget_passed",
         "duration_source",
         "pass",
+        "source_counter_status",
+        "source_counter_pass",
+        "source_counter_pass_int",
+        "source_counter_groups_present_count",
+        "source_counter_groups_missing_count",
+        "source_counter_groups_present",
+        "source_counter_groups_missing",
+        "missing_current_counters",
         "duration_sec",
         "bot_count",
         "commands_per_sec",
@@ -1490,17 +1873,43 @@ def print_csv(reports: list[dict[str, Any]]) -> None:
         "entity_trace_clip_cpu_avg_us",
         "entity_trace_failures",
         "progress_reports",
+        "budget_status",
         "budget_pass",
+        "budget_pass_int",
+        "budget_checks",
         "budget_failures",
+        "budget_warnings",
+        "budget_required_failed",
+        "budget_required_passed",
+        "budget_optional_missing",
+        "budget_missing_current_counters",
     ]
     writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames, lineterminator="\n")
     writer.writeheader()
     for report in reports:
         row = {key: report.get(key) for key in fieldnames}
+        row["source_counter_groups_present"] = ";".join(
+            report.get("source_counter_groups_present", [])
+        )
+        row["source_counter_groups_missing"] = ";".join(
+            report.get("source_counter_groups_missing", [])
+        )
+        row["missing_current_counters"] = ";".join(
+            compact_counter_detail(detail)
+            for detail in report.get("missing_current_counters", [])
+        )
         budget = report.get("budget")
         if isinstance(budget, dict):
+            row["budget_status"] = budget.get("status")
             row["budget_pass"] = budget.get("pass")
+            row["budget_pass_int"] = budget.get("pass_int")
+            row["budget_checks"] = budget.get("check_count")
             row["budget_failures"] = len(budget.get("failures", []))
+            row["budget_warnings"] = len(budget.get("warnings", []))
+            row["budget_required_failed"] = budget.get("required_failed")
+            row["budget_required_passed"] = budget.get("required_passed")
+            row["budget_optional_missing"] = budget.get("optional_missing")
+            row["budget_missing_current_counters"] = budget.get("missing_current_counter_count")
         writer.writerow(row)
 
 
@@ -1540,7 +1949,7 @@ def main(argv: list[str]) -> int:
     if args.budget:
         budget = load_budget(pathlib.Path(args.budget))
         for report, parsed in zip(reports, parsed_logs):
-            report["budget"] = evaluate_budget(report, parsed.status, budget)
+            attach_budget_result(report, evaluate_budget(report, parsed.status, budget))
 
     comparison = build_comparison(reports)
     if args.markdown_out:

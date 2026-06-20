@@ -27,6 +27,7 @@ script "main"
 	movebox("smoke reload cover box", "smoke reload cover");
 	//
 	say("Smoke checking rockets.", NULL);
+	wave("taunt");
 	selectweapon(14);
 	moveto("smoke spawn box");
 	wait(touch(0, "smoke spawn box"));
@@ -44,3 +45,34 @@ script "main"
 	moveto("smoke reload cover box");
 	wait(touch(0, "smoke reload cover box"));
 } //end script main
+
+script "corner_trap"
+{
+	//
+	point("smoke bait corner", -32, 48, 24);
+	point("smoke splash mark", 64, 64, 32);
+	point("smoke exit cover", 96, -32, 32);
+	//
+	box("smoke bait corner box", -18, -18, -24, 18, 18, 44);
+	box("smoke splash mark box", -20, -20, -24, 20, 20, 44);
+	box("smoke exit cover box", -18, -18, -24, 18, 18, 44);
+	//
+	movebox("smoke bait corner box", "smoke bait corner");
+	movebox("smoke splash mark box", "smoke splash mark");
+	movebox("smoke exit cover box", "smoke exit cover");
+	//
+	say("Smoke setting a corner trap.", NULL);
+	wave("taunt");
+	selectweapon(14);
+	moveto("smoke bait corner box");
+	wait(touch(0, "smoke bait corner box"));
+	aim("smoke splash mark");
+	wait(time(0.12));
+	fireweapon();
+	wait(time(0.24));
+	moveto("smoke splash mark box");
+	wait(touch(0, "smoke splash mark box"));
+	aim("smoke exit cover");
+	moveto("smoke exit cover box");
+	wait(touch(0, "smoke exit cover box"));
+} //end script corner_trap

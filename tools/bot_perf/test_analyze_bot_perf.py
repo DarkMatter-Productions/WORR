@@ -147,7 +147,15 @@ class BotPerfAnalyzerTests(unittest.TestCase):
             self.assertEqual(report["commands_per_bot_sec"], 10.0)
             self.assertEqual(report["route_refresh_ratio"], 0.25)
             self.assertIsNone(report["bot_frame_cpu_ms_per_bot_sec"])
+            self.assertEqual(report["source_counter_status"], "fail")
+            self.assertFalse(report["source_counter_pass"])
+            self.assertEqual(report["source_counter_pass_int"], 0)
             self.assertEqual(report["source_counter_groups_present"], [])
+            self.assertEqual(report["source_counter_groups_missing_count"], 7)
+            self.assertEqual(
+                report["missing_current_counters"][0]["primary_counter"],
+                "bot_frame_cpu_ns",
+            )
             self.assertIn("bot_frame_cpu_ns", report["missing_instrumentation"])
 
     def test_source_counters_derive_cpu_visibility_and_trace_metrics(self) -> None:
@@ -162,7 +170,11 @@ class BotPerfAnalyzerTests(unittest.TestCase):
             report = perf.analyze(parsed)
 
             self.assertEqual(parsed.status["bot_frame_cpu_ns"], 8000000)
+            self.assertEqual(report["source_counter_status"], "pass")
+            self.assertTrue(report["source_counter_pass"])
+            self.assertEqual(report["source_counter_pass_int"], 1)
             self.assertEqual(report["source_counter_groups_missing"], [])
+            self.assertEqual(report["source_counter_groups_missing_count"], 0)
             self.assertEqual(
                 report["source_counter_groups_present"],
                 [
@@ -248,6 +260,9 @@ class BotPerfAnalyzerTests(unittest.TestCase):
                 report["source_counter_groups_missing"],
                 ["q3a_memory", "visibility", "static_bsp_trace", "entity_trace"],
             )
+            self.assertEqual(report["source_counter_status"], "fail")
+            self.assertEqual(report["source_counter_groups_present_count"], 3)
+            self.assertEqual(report["source_counter_groups_missing_count"], 4)
             self.assertNotIn("bot_frame_cpu_ns", report["missing_instrumentation"])
             self.assertNotIn("route_query_cpu_ns", report["missing_instrumentation"])
             self.assertNotIn("q3a_route_cpu_ns", report["missing_instrumentation"])
@@ -329,6 +344,59 @@ class BotPerfAnalyzerTests(unittest.TestCase):
             failure = perf.evaluate_budget(report, parsed.status, fail_budget)
             self.assertFalse(failure["pass"])
             self.assertIn("commands_per_bot_sec", failure["failures"][0])
+
+    def test_budget_missing_current_counter_diagnostics_are_reported(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            path = self.write_text(pathlib.Path(temp), "smoke.log", synthetic_log())
+            parsed = perf.parse_log(path)
+            report = perf.analyze(parsed)
+            budget = perf.Budget(
+                path=pathlib.Path("source-budget.json"),
+                metrics={
+                    "bot_frame_cpu_ms_per_bot_sec": {"max": 5.0, "required": False},
+                    "route_query_cpu_ms_per_bot_sec": {"max": 2.0},
+                },
+                status={
+                    "visibility_decompress_failures": {"max": 0, "required": False},
+                },
+            )
+
+            result = perf.evaluate_budget(report, parsed.status, budget)
+            diagnostics = {
+                item["metric"]: item
+                for item in result["missing_current_counters"]
+            }
+
+            self.assertFalse(result["pass"])
+            self.assertEqual(result["status"], "fail")
+            self.assertEqual(result["pass_int"], 0)
+            self.assertEqual(result["required_failed"], 1)
+            self.assertEqual(result["optional_missing"], 2)
+            self.assertEqual(result["missing_current_counter_count"], 3)
+            self.assertEqual(
+                diagnostics["bot_frame_cpu_ms_per_bot_sec"]["missing_current_counters"],
+                ["bot_frame_cpu_ns", "bot_cpu_ns", "bot_frame_cpu_ms", "bot_cpu_ms"],
+            )
+            self.assertEqual(
+                diagnostics["route_query_cpu_ms_per_bot_sec"]["group"],
+                "route_query_cpu",
+            )
+            self.assertTrue(diagnostics["route_query_cpu_ms_per_bot_sec"]["required"])
+            self.assertEqual(
+                diagnostics["route_query_cpu_ms_per_bot_sec"]["missing_current_counters"],
+                ["route_query_cpu_ns", "bot_route_cpu_ms"],
+            )
+            self.assertEqual(
+                diagnostics["visibility_decompress_failures"]["missing_current_counters"],
+                ["visibility_decompress_failures"],
+            )
+
+            perf.attach_budget_result(report, result)
+            self.assertEqual(report["budget_status"], "fail")
+            self.assertEqual(report["budget_pass_int"], 0)
+            self.assertEqual(report["budget_required_failed"], 1)
+            self.assertEqual(report["budget_optional_missing"], 2)
+            self.assertEqual(report["budget_missing_current_counters"], 3)
 
     def test_budget_failure_exit_code(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

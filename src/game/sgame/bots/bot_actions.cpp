@@ -27,6 +27,8 @@ static_assert(static_cast<int>(BotActionIntent::None) == 0);
 static_assert(static_cast<int>(BotActionApplyFailure::None) == 0);
 static_assert(static_cast<int>(BotActionCommandRequestKind::None) == 0);
 static_assert(static_cast<int>(BotActionCommandRequestFailure::None) == 0);
+static_assert(static_cast<int>(BotActionCommandDispatchOutcome::None) == 0);
+static_assert(static_cast<int>(BotActionCommandDispatchFailure::None) == 0);
 static_assert(static_cast<int>(BotItemDecisionKind::None) == 0);
 static_assert(static_cast<int>(BotCombatDecisionKind::None) == 0);
 
@@ -286,6 +288,37 @@ void BotActions_RecordCommandRequestResult(const BotActionCommandRequest &reques
 		break;
 	case BotActionCommandRequestFailure::InventoryItemIsWeapon:
 		botActionStatus.commandRequestInventoryRejects++;
+		break;
+	default:
+		break;
+	}
+}
+
+void BotActions_RecordCommandDispatchResult(
+	const BotActionCommandRequest &request,
+	BotActionCommandDispatchOutcome outcome,
+	BotActionCommandDispatchFailure failure) {
+	botActionStatus.commandRequestDispatchAttempts++;
+	botActionStatus.lastCommandDispatchKind = request.kind;
+	botActionStatus.lastCommandDispatchOutcome = outcome;
+	botActionStatus.lastCommandDispatchFailure = failure;
+	botActionStatus.lastCommandDispatchClientIndex = request.clientIndex;
+	botActionStatus.lastCommandDispatchItem = request.item;
+
+	switch (outcome) {
+	case BotActionCommandDispatchOutcome::Submitted:
+		botActionStatus.commandRequestSubmitted++;
+		if (request.kind == BotActionCommandRequestKind::UseWeaponIndex) {
+			botActionStatus.weaponCommandDispatches++;
+		} else if (request.kind == BotActionCommandRequestKind::UseInventoryIndex) {
+			botActionStatus.inventoryCommandDispatches++;
+		}
+		break;
+	case BotActionCommandDispatchOutcome::Deferred:
+		botActionStatus.commandRequestDeferred++;
+		break;
+	case BotActionCommandDispatchOutcome::Failed:
+		botActionStatus.commandRequestDispatchFailures++;
 		break;
 	default:
 		break;
@@ -733,6 +766,13 @@ BotActionCommandRequestFailure BotActions_ValidateCommandRequest(const BotAction
 	return BotActions_ValidateCommandRequestDecision(decision);
 }
 
+void BotActions_RecordCommandDispatch(
+	const BotActionCommandRequest &request,
+	BotActionCommandDispatchOutcome outcome,
+	BotActionCommandDispatchFailure failure) {
+	BotActions_RecordCommandDispatchResult(request, outcome, failure);
+}
+
 bool BotActions_IsWeaponSwitchDecision(const BotActionDecision &decision) {
 	return decision.intent == BotActionIntent::SwitchWeapon &&
 		BotActions_ValidateApplicationDecision(decision) == BotActionApplyFailure::None;
@@ -938,6 +978,46 @@ const char *BotActions_CommandRequestFailureName(BotActionCommandRequestFailure 
 		return "item_not_weapon";
 	case BotActionCommandRequestFailure::InventoryItemIsWeapon:
 		return "inventory_item_is_weapon";
+	default:
+		return "none";
+	}
+}
+
+const char *BotActions_CommandDispatchOutcomeName(BotActionCommandDispatchOutcome outcome) {
+	switch (outcome) {
+	case BotActionCommandDispatchOutcome::Submitted:
+		return "submitted";
+	case BotActionCommandDispatchOutcome::Deferred:
+		return "deferred";
+	case BotActionCommandDispatchOutcome::Failed:
+		return "failed";
+	default:
+		return "none";
+	}
+}
+
+const char *BotActions_CommandDispatchFailureName(BotActionCommandDispatchFailure failure) {
+	switch (failure) {
+	case BotActionCommandDispatchFailure::InvalidRequest:
+		return "invalid_request";
+	case BotActionCommandDispatchFailure::InvalidClientIndex:
+		return "invalid_client_index";
+	case BotActionCommandDispatchFailure::ClientEntityUnavailable:
+		return "client_entity_unavailable";
+	case BotActionCommandDispatchFailure::NotBotClient:
+		return "not_bot_client";
+	case BotActionCommandDispatchFailure::InactiveClient:
+		return "inactive_client";
+	case BotActionCommandDispatchFailure::MissingItem:
+		return "missing_item";
+	case BotActionCommandDispatchFailure::MissingInventoryItem:
+		return "missing_inventory_item";
+	case BotActionCommandDispatchFailure::MissingUseCallback:
+		return "missing_use_callback";
+	case BotActionCommandDispatchFailure::UnsupportedCommand:
+		return "unsupported_command";
+	case BotActionCommandDispatchFailure::UnsupportedKind:
+		return "unsupported_kind";
 	default:
 		return "none";
 	}

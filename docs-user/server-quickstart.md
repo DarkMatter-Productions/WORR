@@ -21,6 +21,8 @@ From `.install/`:
 
 Published release server packages keep their runtime data and configs under `basew/`.
 Local `.install/` builds stage that data under `basew/`.
+Keep the package's `licenses/` directory beside the server binaries when copying
+or mirroring a release install.
 
 ## Recommended Baseline Cvars
 

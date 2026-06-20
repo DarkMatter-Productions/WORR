@@ -9,6 +9,41 @@ from typing import Any
 
 BASE_GAME = "basew"
 LOCAL_INSTALL_MANIFEST = "worr_install_manifest.json"
+RELEASE_NOTICE_PATHS = [
+    "licenses/WORR-LICENSE.txt",
+    "licenses/q2aas-bspc-LICENSE.txt",
+    "licenses/q3a-botlib-aas-credits.md",
+    "licenses/q2aas-README.WORR.md",
+    "licenses/q3a-botlib-README.WORR.md",
+]
+Q2AAS_TOOL_FORBIDDEN_PATHS = [
+    "worr_q2aas*",
+    "*/worr_q2aas*",
+    "q2aas",
+    "q2aas.exe",
+    "q2aas.pdb",
+    "q2aas.dll",
+    "q2aas.so",
+    "q2aas.dylib",
+    "*/q2aas",
+    "*/q2aas.exe",
+    "*/q2aas.pdb",
+    "*/q2aas.dll",
+    "*/q2aas.so",
+    "*/q2aas.dylib",
+    "bspc",
+    "bspc.exe",
+    "bspc.pdb",
+    "bspc.dll",
+    "bspc.so",
+    "bspc.dylib",
+    "*/bspc",
+    "*/bspc.exe",
+    "*/bspc.pdb",
+    "*/bspc.dll",
+    "*/bspc.so",
+    "*/bspc.dylib",
+]
 
 
 def binary_name(stem: str, arch: str, os_name: str) -> str:
@@ -45,6 +80,7 @@ def client_required_paths(target: dict[str, Any]) -> list[str]:
         f"{BASE_GAME}/sgame*",
         f"{BASE_GAME}/pak0.pkz",
         "worr_update.json",
+        *RELEASE_NOTICE_PATHS,
     ]
     updater_asset = target.get("autoupdater", {}).get("updater_asset")
     if updater_asset:
@@ -59,6 +95,7 @@ def server_required_paths(target: dict[str, Any]) -> list[str]:
         "worr_update.json",
         f"{BASE_GAME}/sgame*",
         f"{BASE_GAME}/pak0.pkz",
+        *RELEASE_NOTICE_PATHS,
     ]
     updater_asset = target.get("autoupdater", {}).get("updater_asset")
     if updater_asset:
@@ -74,6 +111,7 @@ def client_forbidden_paths(target: dict[str, Any]) -> list[str]:
         "worr/*",
         ".release/*",
         ".release/**/*",
+        *Q2AAS_TOOL_FORBIDDEN_PATHS,
     ]
 
 
@@ -87,6 +125,7 @@ def server_forbidden_paths(target: dict[str, Any]) -> list[str]:
         "worr/*",
         ".release/*",
         ".release/**/*",
+        *Q2AAS_TOOL_FORBIDDEN_PATHS,
     ]
 
 
@@ -100,6 +139,7 @@ def full_install_required_paths(target: dict[str, Any]) -> list[str]:
         f"{BASE_GAME}/sgame*",
         f"{BASE_GAME}/pak0.pkz",
         "worr_update.json",
+        *RELEASE_NOTICE_PATHS,
     ]
     updater_asset = target.get("autoupdater", {}).get("updater_asset")
     if updater_asset:
@@ -113,6 +153,7 @@ def full_install_forbidden_paths() -> list[str]:
         "worr/*",
         ".release/*",
         ".release/**/*",
+        *Q2AAS_TOOL_FORBIDDEN_PATHS,
     ]
 
 
@@ -161,6 +202,7 @@ def build_target(
                 "worr_vulkan_*",
                 "worr_rtx_*",
                 "worr_update.json",
+                "licenses/*",
                 f"{BASE_GAME}/*",
             ],
             "exclude": [
@@ -184,6 +226,7 @@ def build_target(
                 engine_library_glob("worr_ded", arch),
                 binary_glob("worr_updater", arch),
                 "worr_update.json",
+                "licenses/*",
                 f"{BASE_GAME}/*",
             ],
             "exclude": [
@@ -223,6 +266,7 @@ def build_target(
         "worr_vulkan_*",
         "worr_rtx_*",
         "worr_update.json",
+        "licenses/*",
         f"{BASE_GAME}/*",
     ]
     full_exclude = [

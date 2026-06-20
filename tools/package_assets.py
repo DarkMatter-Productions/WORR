@@ -19,10 +19,42 @@ BOTFILE_SUPPORT_MEMBERS = (
 BOTFILE_PROFILE_SUFFIXES = ('_c.c', '_i.c', '_t.c', '_w.c')
 BOTFILE_CHARACTER_SUFFIX = '_c.c'
 BOTFILE_SCRIPT_SUFFIX = '_s.c'
+Q2AAS_TOOL_BINARY_STEMS = ('worr_q2aas', 'q2aas', 'bspc')
+Q2AAS_TOOL_BINARY_EXTENSIONS = ('', '.exe', '.pdb', '.dll', '.so', '.dylib')
 
 
 def collect_files(root: pathlib.Path) -> list[pathlib.Path]:
     return sorted(path for path in root.rglob('*') if path.is_file())
+
+
+def is_q2aas_tool_binary(path: pathlib.Path) -> bool:
+    suffix = path.suffix.lower()
+    if suffix not in Q2AAS_TOOL_BINARY_EXTENSIONS:
+        return False
+
+    stem = path.stem.lower()
+    return any(stem == value or stem.startswith(f'{value}_') for value in Q2AAS_TOOL_BINARY_STEMS)
+
+
+def q2aas_tool_binary_members(paths: list[pathlib.Path], root: pathlib.Path) -> list[str]:
+    members: list[str] = []
+    for path in paths:
+        if is_q2aas_tool_binary(path):
+            members.append(path.relative_to(root).as_posix())
+    return sorted(members)
+
+
+def validate_no_q2aas_tool_binaries(paths: list[pathlib.Path], root: pathlib.Path) -> None:
+    members = q2aas_tool_binary_members(paths, root)
+    if not members:
+        return
+
+    details = '\n  - '.join(members)
+    raise SystemExit(
+        'q2aas/BSPC tool binaries are not packaged by default. '
+        'Remove these files from the asset payload before packaging:\n'
+        f'  - {details}'
+    )
 
 
 def sha256_file(path: pathlib.Path) -> str:
@@ -257,6 +289,7 @@ def main() -> int:
     files = collect_files(assets_dir)
     if not files:
         raise SystemExit(f'No files found in assets directory: {assets_dir}')
+    validate_no_q2aas_tool_binaries(files, assets_dir)
     botfile_members = botfile_release_members(assets_dir)
 
     output_dir.mkdir(parents=True, exist_ok=True)

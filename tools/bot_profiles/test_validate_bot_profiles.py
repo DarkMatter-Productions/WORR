@@ -298,6 +298,180 @@ class BotProfileValidatorTests(unittest.TestCase):
             )
             self.assertIn("invalid_numeric", self.issue_codes(report))
 
+    def test_behavior_metadata_value_aliases_are_accepted(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            profile = self.write_profile(
+                root,
+                "aliases.bot",
+                "\n".join((
+                    "name AliasBot",
+                    "skin female/athena",
+                    "reaction_time 320",
+                    "aggression_bias 0.70",
+                    "accuracy_error 3",
+                    'favorite_weapon "rocket launcher"',
+                    "personality Direct",
+                    "team_role offense",
+                    'movement_style "circle strafe"',
+                    "reaction_jitter 120",
+                    "aim_noise 2.75",
+                    "lead_scale 0.95",
+                    "view_fov 132",
+                    "support_bias 0.40",
+                    "goal_bias 0.65",
+                    "ff_care 0.70",
+                    "pickup_greed 0.55",
+                    "denial_bias 0.45",
+                    "powerup_timing_bias 0.80",
+                    "retreat_health_threshold 35",
+                )),
+            )
+
+            report = self.validate(root, profile)
+
+            self.assertEqual(report["summary"]["status"], "passed")
+            self.assertEqual(report["summary"]["warnings"], 0)
+            fields = report["profiles"][0]["fields"]
+            self.assertEqual(fields["preferred_weapon"], "rocket launcher")
+            self.assertEqual(fields["chat_personality"], "Direct")
+            self.assertEqual(fields["role"], "offense")
+            self.assertEqual(fields["movement_style"], "circle strafe")
+            self.assertEqual(fields["reaction_jitter_ms"], "120")
+            self.assertEqual(fields["aim_tracking_noise"], "2.75")
+            self.assertEqual(fields["aim_lead_scale"], "0.95")
+            self.assertEqual(fields["combat_fov"], "132")
+            self.assertEqual(fields["teamplay_bias"], "0.40")
+            self.assertEqual(fields["objective_bias"], "0.65")
+            self.assertEqual(fields["friendly_fire_care"], "0.70")
+            self.assertEqual(fields["item_greed"], "0.55")
+            self.assertEqual(fields["item_denial"], "0.45")
+            self.assertEqual(fields["powerup_timing"], "0.80")
+            self.assertEqual(fields["retreat_health"], "35")
+
+    def test_behavior_metadata_rejects_malformed_values_and_warns_unknown_labels(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            profile = self.write_profile(
+                root,
+                "bad_behavior.bot",
+                "\n".join((
+                    "name BadBehavior",
+                    "skin male/grunt",
+                    "preferred_weapon weapon/railgun",
+                    "chat_personality cryptic",
+                    "movement_style teleport",
+                )),
+            )
+
+            report = self.validate(root, profile)
+
+            self.assertEqual(report["summary"]["status"], "failed")
+            self.assertIn("invalid_behavior_value", self.issue_codes(report))
+            self.assertEqual(
+                self.issue_codes(report).count("unknown_behavior_value"),
+                2,
+            )
+
+    def test_behavior_policy_metadata_ranges_are_validated(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            profile = self.write_profile(
+                root,
+                "bad_policy.bot",
+                "\n".join((
+                    "name BadPolicy",
+                    "skin male/grunt",
+                    "worr_reaction_jitter_ms 2500",
+                    "worr_aim_tracking_noise 91",
+                    "worr_aim_lead_scale 2.5",
+                    "worr_combat_fov 0",
+                    "worr_teamplay_bias -0.1",
+                    "worr_objective_bias 1.1",
+                    "worr_friendly_fire_care 1.2",
+                    "worr_item_greed 1.2",
+                    "worr_item_denial 1.2",
+                    "worr_powerup_timing 1.2",
+                    "worr_retreat_health 250",
+                )),
+            )
+
+            report = self.validate(root, profile)
+
+            self.assertEqual(report["summary"]["status"], "failed")
+            self.assertEqual(
+                self.issue_codes(report).count("numeric_out_of_range"),
+                11,
+            )
+
+    def test_packaged_q3_behavior_metadata_family_warns_when_skill_block_is_partial(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            botfiles = self.write_minimal_q3_botfile_pack(root, "partial")
+            self.write_profile(
+                botfiles / "bots",
+                "partial_c.c",
+                """
+                #include "chars.h"
+                skill 2
+                {
+                    CHARACTERISTIC_NAME "Partial"
+                    WORR_SKIN "male/grunt"
+                    CHARACTERISTIC_WEAPONWEIGHTS "bots/partial_w.c"
+                    CHARACTERISTIC_ITEMWEIGHTS "bots/partial_i.c"
+                    CHARACTERISTIC_CHAT_FILE "bots/partial_t.c"
+                    CHARACTERISTIC_REACTIONTIME 0.320
+                    CHARACTERISTIC_AGGRESSION 0.60
+                }
+                """,
+            )
+
+            report = validator.validate_paths([], validator.ValidationOptions(), cwd=root)
+
+            self.assertEqual(report["summary"]["status"], "passed")
+            self.assertIn("incomplete_behavior_metadata_family", self.issue_codes(report))
+            messages = " ".join(issue["message"] for issue in report["issues"])
+            self.assertIn("reaction_jitter_ms", messages)
+            self.assertIn("retreat_health", messages)
+
+    def test_first_party_q3_profiles_include_full_behavior_policy_metadata(self) -> None:
+        repo_root = pathlib.Path(__file__).resolve().parents[2]
+
+        report = validator.validate_paths(
+            ["assets/botfiles/bots"],
+            validator.ValidationOptions(),
+            cwd=repo_root,
+        )
+
+        self.assertEqual(report["summary"]["status"], "passed")
+        self.assertEqual(report["summary"]["warnings"], 0)
+        profiles = {profile["id"]: profile for profile in report["profiles"]}
+        expected_fields = {
+            "reaction",
+            "aggression",
+            "aim_error",
+            "preferred_weapon",
+            "chat_personality",
+            "role",
+            "movement_style",
+            "reaction_jitter_ms",
+            "aim_tracking_noise",
+            "aim_lead_scale",
+            "combat_fov",
+            "teamplay_bias",
+            "objective_bias",
+            "friendly_fire_care",
+            "item_greed",
+            "item_denial",
+            "powerup_timing",
+            "retreat_health",
+        }
+        for bot_id in ("bulwark", "relay", "smoke", "vanguard", "vector"):
+            self.assertIn(bot_id, profiles)
+            self.assertTrue(expected_fields.issubset(profiles[bot_id]["fields"]))
+        self.assertEqual(profiles["smoke"]["fields"]["reaction_jitter_ms"], "80")
+        self.assertEqual(profiles["vanguard"]["fields"]["aim_lead_scale"], "1.10")
+
     def test_duplicate_ids_are_case_insensitive_across_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
@@ -437,6 +611,37 @@ class BotProfileValidatorTests(unittest.TestCase):
             self.assertEqual(report["summary"]["status"], "failed")
             self.assertIn("missing_companion", self.issue_codes(report))
             self.assertEqual(skipped["summary"]["status"], "passed")
+
+    def test_assets_botfiles_companion_family_checks_references_and_markers(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            botfiles = self.write_minimal_q3_botfile_pack(root, "brokenfamily")
+            self.write_profile(
+                botfiles / "bots",
+                "brokenfamily_c.c",
+                """
+                #include "chars.h"
+                skill 2
+                {
+                    name BrokenFamily
+                    skin male/grunt
+                    CHARACTERISTIC_WEAPONWEIGHTS "bots/brokenfamily_w.c"
+                    CHARACTERISTIC_ITEMWEIGHTS "bots/brokenfamily_i.c"
+                }
+                """,
+            )
+            self.write_profile(
+                botfiles / "bots",
+                "brokenfamily_w.c",
+                '#include "inv.h"\n#define W_ROCKETLAUNCHER 300\n',
+            )
+
+            report = validator.validate_paths([], validator.ValidationOptions(), cwd=root)
+
+            codes = self.issue_codes(report)
+            self.assertEqual(report["summary"]["status"], "failed")
+            self.assertIn("missing_companion_reference", codes)
+            self.assertIn("missing_companion_marker", codes)
 
     def test_cli_json_exit_code_and_output_shape(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

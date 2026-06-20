@@ -93,6 +93,24 @@ chat "vector"
 		WORR_SELFOWN0;
 	} //end type
 
+	type "death_lava"
+	{
+		"Bad angle over heat.";
+		"Crossing line was wrong.";
+	} //end type
+
+	type "death_slime"
+	{
+		"Bad footing.";
+		"Slime route costs too much.";
+	} //end type
+
+	type "death_drown"
+	{
+		"Air line lost.";
+		"Water angle failed.";
+	} //end type
+
 	type "death_suicide"
 	{
 		"Wrong route.";
@@ -111,10 +129,10 @@ chat "vector"
 		"Big shot, ", 0, ".";
 	} //end type
 
-	type "kill_praise"
+	type "kill_rail"
 	{
-		"Nice dodge. Still counted.";
-		"Good movement, ", 0, ".";
+		"Clean line.";
+		"Rail lane confirmed, ", 0, ".";
 	} //end type
 
 	type "random_insult"

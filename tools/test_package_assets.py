@@ -172,6 +172,20 @@ class PackageAssetsTest(unittest.TestCase):
             self.assertIn("Invalid botfile release payload", result.stderr)
             self.assertIn("missing bot script companion: botfiles/scripts/smoke_s.c", result.stderr)
 
+    def test_q2aas_tool_binary_is_rejected_from_asset_pack(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            assets_dir = root / "assets"
+            install_dir = root / "install"
+            write_botfile_fixture(assets_dir)
+            write_text_asset(assets_dir / "tools" / "worr_q2aas.exe", "binary placeholder\n")
+
+            result = self.run_package_assets(assets_dir, install_dir, check=False)
+
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("q2aas/BSPC tool binaries are not packaged by default", result.stderr)
+            self.assertIn("tools/worr_q2aas.exe", result.stderr)
+
     def test_botfile_archive_member_requirements_include_hashes(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             assets_dir = pathlib.Path(temp) / "assets"
@@ -257,6 +271,29 @@ class RefreshInstallPackageValidationTest(unittest.TestCase):
             requirements = refresh_install.q2aas_archive_member_requirements(report_path, install_dir, "basew")
 
             self.assertEqual([], requirements)
+
+    def test_release_notice_bundle_is_staged_and_validated(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            install_dir = pathlib.Path(temp) / ".install"
+            install_dir.mkdir()
+
+            refresh_install.stage_release_notice_bundle(REPO_ROOT, install_dir)
+
+            for member in refresh_install.release_notice_destinations():
+                path = install_dir / path_from_member(member)
+                self.assertTrue(path.is_file(), member)
+                self.assertGreater(path.stat().st_size, 0, member)
+            refresh_install.validate_release_notice_bundle(install_dir)
+
+    def test_q2aas_tool_binary_policy_rejects_staged_binary(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            install_dir = pathlib.Path(temp) / ".install"
+            tool_path = install_dir / "tools" / "worr_q2aas.exe"
+            tool_path.parent.mkdir(parents=True)
+            tool_path.write_text("binary placeholder\n", encoding="ascii")
+
+            with self.assertRaisesRegex(SystemExit, "not part of default WORR binary releases"):
+                refresh_install.validate_q2aas_tool_binary_policy(install_dir)
 
 
 if __name__ == "__main__":

@@ -5,16 +5,19 @@ bot_brain.cpp implementation.*/
 
 #include "../g_local.hpp"
 #include "bot_actions.hpp"
+#include "bot_items.hpp"
 #include "bot_nav.hpp"
 #include "bot_objectives.hpp"
 #include "botlib_adapter.hpp"
 #include "bot_brain.hpp"
 #include "bot_runtime.hpp"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdint>
 #include <limits>
+#include <cmath>
 #include <string>
 #include <utility>
 
@@ -35,12 +38,31 @@ void BotBrain_AppendCompactStatusField( std::string &line, const char *key, int 
 	line.push_back(' ');
 }
 
+void BotBrain_AppendCompactStatusField( std::string &line, const char *key, const char *value ) {
+	line.append(key);
+	line.push_back('=');
+	line.append(value != nullptr ? value : "none");
+	line.push_back(' ');
+}
+
+int BotBrain_LastItemTimerAllowed(const BotItemStatus &itemStatus) {
+	return itemStatus.lastTimingPolicyRemainingMilliseconds == 0 &&
+		(itemStatus.lastTimingPolicyReason == BotItemTimingPolicyReason::ExactTimer ||
+		 itemStatus.lastTimingPolicyReason == BotItemTimingPolicyReason::FuzzedTimer) ? 1 : 0;
+}
+
+int BotBrain_LastItemTimingConsumerAllowed(const BotItemStatus &itemStatus) {
+	return itemStatus.lastTimingConsumerRemainingMilliseconds == 0 &&
+		(itemStatus.lastTimingConsumerReason == BotItemTimingConsumerReason::LivePickup ||
+		 itemStatus.lastTimingConsumerReason == BotItemTimingConsumerReason::TimerReady) ? 1 : 0;
+}
+
 void BotBrain_PrintCompactActionStatus(
 	const BotActionStatus &actionStatus,
 	const BotItemStatus &itemStatus,
 	const BotCombatStatus &combatStatus) {
 	std::string line;
-	line.reserve(1024);
+	line.reserve(3072);
 
 	line.append("q3a_bot_action_status ");
 	BotBrain_AppendCompactStatusField(
@@ -59,6 +81,50 @@ void BotBrain_PrintCompactActionStatus(
 		line,
 		"action_pending_weapon_switches",
 		actionStatus.pendingWeaponSwitches);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"action_command_request_builds",
+		actionStatus.commandRequestBuilds);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"action_command_request_accepted",
+		actionStatus.commandRequestAccepted);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"action_command_request_rejected",
+		actionStatus.commandRequestRejected);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"action_command_request_submitted",
+		actionStatus.commandRequestSubmitted);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"action_command_request_deferred",
+		actionStatus.commandRequestDeferred);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"action_command_request_dispatch_failures",
+		actionStatus.commandRequestDispatchFailures);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"action_last_command_request_kind",
+		static_cast<int>(actionStatus.lastCommandRequestKind));
+	BotBrain_AppendCompactStatusField(
+		line,
+		"action_last_command_dispatch_outcome",
+		static_cast<int>(actionStatus.lastCommandDispatchOutcome));
+	BotBrain_AppendCompactStatusField(
+		line,
+		"action_last_command_dispatch_outcome_name",
+		BotActions_CommandDispatchOutcomeName(actionStatus.lastCommandDispatchOutcome));
+	BotBrain_AppendCompactStatusField(
+		line,
+		"action_weapon_command_dispatches",
+		actionStatus.weaponCommandDispatches);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"action_inventory_command_dispatches",
+		actionStatus.inventoryCommandDispatches);
 	BotBrain_AppendCompactStatusField(
 		line,
 		"weapon_switch_requests",
@@ -93,6 +159,34 @@ void BotBrain_PrintCompactActionStatus(
 		itemStatus.lowArmorBoosts);
 	BotBrain_AppendCompactStatusField(
 		line,
+		"item_damage_boost_candidates",
+		itemStatus.damageBoostCandidates);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"item_utility_powerup_candidates",
+		itemStatus.utilityPowerupCandidates);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"item_tech_candidates",
+		itemStatus.techCandidates);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"item_ctf_objective_candidates",
+		itemStatus.ctfObjectiveCandidates);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"item_special_utility_boosts",
+		itemStatus.specialUtilityBoosts);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"item_focus_health_boosts",
+		itemStatus.focusHealthBoosts);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"item_focus_armor_boosts",
+		itemStatus.focusArmorBoosts);
+	BotBrain_AppendCompactStatusField(
+		line,
 		"item_health_goal_assignments",
 		itemStatus.itemHealthGoalAssignments);
 	BotBrain_AppendCompactStatusField(
@@ -107,14 +201,160 @@ void BotBrain_PrintCompactActionStatus(
 		line,
 		"item_armor_pickups",
 		itemStatus.itemArmorPickups);
+	BotBrain_AppendCompactStatusField(line, "last_health_pickup_delta", itemStatus.lastHealthPickupDelta);
+	BotBrain_AppendCompactStatusField(line, "last_armor_pickup_delta", itemStatus.lastArmorPickupDelta);
 	BotBrain_AppendCompactStatusField(
 		line,
-		"last_health_pickup_delta",
-		itemStatus.lastHealthPickupDelta);
+		"item_timing_policy_evaluations",
+		itemStatus.timingPolicyEvaluations);
 	BotBrain_AppendCompactStatusField(
 		line,
-		"last_armor_pickup_delta",
-		itemStatus.lastArmorPickupDelta);
+		"item_timer_evaluations",
+		itemStatus.timingPolicyEvaluations);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"item_timing_policy_timers_disabled",
+		itemStatus.timingPolicyTimersDisabled);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"item_timing_policy_unobserved_blocks",
+		itemStatus.timingPolicyUnobservedBlocks);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"item_timer_fairness_blocks",
+		itemStatus.timingPolicyUnobservedBlocks);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"item_timing_policy_exact_uses",
+		itemStatus.timingPolicyExactUses);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"item_timing_policy_fuzzed_uses",
+		itemStatus.timingPolicyFuzzedUses);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"item_timer_fuzzed_offsets",
+		itemStatus.timingPolicyFuzzedUses);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"item_timing_policy_ready",
+		itemStatus.timingPolicyReady);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"item_timer_allowed_uses",
+		itemStatus.timingPolicyReady);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"item_timing_policy_waiting",
+		itemStatus.timingPolicyWaiting);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"item_timer_blocked_uses",
+		itemStatus.timingPolicyWaiting);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"item_last_timing_policy_reason",
+		static_cast<int>(itemStatus.lastTimingPolicyReason));
+	BotBrain_AppendCompactStatusField(
+		line,
+		"item_last_timing_policy_reason_name",
+		BotItems_TimingPolicyReasonName(itemStatus.lastTimingPolicyReason));
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_item_timer_reason",
+		BotItems_TimingPolicyReasonName(itemStatus.lastTimingPolicyReason));
+	BotBrain_AppendCompactStatusField(
+		line,
+		"item_last_timing_policy_fuzz_ms",
+		itemStatus.lastTimingPolicyFuzzMilliseconds);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_item_timer_fuzz_ms",
+		itemStatus.lastTimingPolicyFuzzMilliseconds);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"item_last_timing_policy_remaining_ms",
+		itemStatus.lastTimingPolicyRemainingMilliseconds);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_item_timer_known_ms",
+		itemStatus.lastTimingPolicyEffectiveAvailableMilliseconds);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_item_timer_allowed",
+		BotBrain_LastItemTimerAllowed(itemStatus));
+	BotBrain_AppendCompactStatusField(
+		line,
+		"item_timing_consumer_evaluations",
+		itemStatus.timingConsumerEvaluations);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"item_timing_consumer_live_pickups",
+		itemStatus.timingConsumerLivePickups);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"item_timing_consumer_ready",
+		itemStatus.timingConsumerReady);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"item_timing_consumer_waiting",
+		itemStatus.timingConsumerWaiting);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"item_timing_consumer_fairness_blocks",
+		itemStatus.timingConsumerFairnessBlocks);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"item_timing_consumer_selection_deferrals",
+		itemStatus.timingConsumerSelectionDeferrals);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_item_timing_consumer_item",
+		itemStatus.lastTimingConsumerItem);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_item_timing_consumer_entity",
+		itemStatus.lastTimingConsumerEntity);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_item_timing_consumer_effective_ms",
+		itemStatus.lastTimingConsumerEffectiveAvailableMilliseconds);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_item_timing_consumer_remaining_ms",
+		itemStatus.lastTimingConsumerRemainingMilliseconds);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_item_timing_consumer_fuzz_ms",
+		itemStatus.lastTimingConsumerFuzzMilliseconds);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_item_timing_consumer_allowed",
+		BotBrain_LastItemTimingConsumerAllowed(itemStatus));
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_item_timing_consumer_policy_reason",
+		BotItems_TimingPolicyReasonName(itemStatus.lastTimingConsumerPolicyReason));
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_item_timing_consumer_reason",
+		BotItems_TimingConsumerReasonName(itemStatus.lastTimingConsumerReason));
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_item_timer_item",
+		itemStatus.lastTimingPolicyItem);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_item_timer_entity",
+		itemStatus.lastTimingPolicyEntity);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"item_last_special_kind",
+		static_cast<int>(itemStatus.lastSpecialKind));
+	BotBrain_AppendCompactStatusField(
+		line,
+		"item_last_special_kind_name",
+		BotItems_SpecialKindName(itemStatus.lastSpecialKind));
 	BotBrain_AppendCompactStatusField(
 		line,
 		"combat_enemy_acquisitions",
@@ -133,12 +373,24 @@ void BotBrain_PrintCompactActionStatus(
 		combatStatus.lastEnemyClient);
 	BotBrain_AppendCompactStatusField(
 		line,
-		"combat_weapon_switch_decisions",
-		combatStatus.weaponSwitchDecisions);
+		"combat_enemy_health_observations",
+		combatStatus.enemyHealthObservations);
 	BotBrain_AppendCompactStatusField(
 		line,
-		"combat_fire_decisions",
-		combatStatus.fireDecisions);
+		"combat_enemy_armor_observations",
+		combatStatus.enemyArmorObservations);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_combat_enemy_health",
+		combatStatus.lastEnemyHealth);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_combat_enemy_armor",
+		combatStatus.lastEnemyArmor);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_combat_enemy_effective_health",
+		combatStatus.lastEnemyEffectiveHealth);
 	BotBrain_AppendCompactStatusField(
 		line,
 		"combat_damage_events",
@@ -147,9 +399,688 @@ void BotBrain_PrintCompactActionStatus(
 		line,
 		"last_combat_damage",
 		combatStatus.lastDamage);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_combat_damage_health",
+		combatStatus.lastDamageHealth);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_combat_damage_armor",
+		combatStatus.lastDamageArmor);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_combat_damage_sequence",
+		combatStatus.lastDamageSequence);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"combat_weapon_switch_decisions",
+		combatStatus.weaponSwitchDecisions);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"combat_fire_decisions",
+		combatStatus.fireDecisions);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"combat_withheld_fire",
+		combatStatus.withheldFire);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"aim_policy_evaluations",
+		combatStatus.aimPolicyEvaluations);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"aim_policy_aim_allowed",
+		combatStatus.aimPolicyAimAllowed);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"aim_policy_fire_allowed",
+		combatStatus.aimPolicyFireAllowed);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"aim_policy_blocks_reaction",
+		combatStatus.aimPolicyBlocksReaction);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_aim_policy_failure",
+		static_cast<int>(combatStatus.lastAimPolicyFailure));
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_aim_policy_failure_name",
+		BotCombat_AimPolicyFailureName(combatStatus.lastAimPolicyFailure));
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_aim_policy_reaction_remaining_ms",
+		combatStatus.lastAimPolicyReactionRemainingMilliseconds);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_aim_policy_aim_settle_remaining_ms",
+		combatStatus.lastAimPolicyAimSettleRemainingMilliseconds);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_aim_policy_burst_shots_fired",
+		combatStatus.lastAimPolicyBurstShotsFired);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_aim_policy_burst_shots_remaining",
+		combatStatus.lastAimPolicyBurstShotsRemaining);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_aim_policy_burst_cooldown_remaining_ms",
+		combatStatus.lastAimPolicyBurstCooldownRemainingMilliseconds);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"projectile_lead_evaluations",
+		combatStatus.projectileLeadEvaluations);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"projectile_lead_uses",
+		combatStatus.projectileLeadUses);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"projectile_lead_no_projectile",
+		combatStatus.projectileLeadNoProjectile);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"projectile_lead_no_speed",
+		combatStatus.projectileLeadNoSpeed);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"projectile_lead_invalid_distance",
+		combatStatus.projectileLeadInvalidDistance);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_projectile_lead_weapon",
+		combatStatus.lastProjectileLeadWeaponItem);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_projectile_lead_speed",
+		combatStatus.lastProjectileLeadSpeed);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_projectile_lead_ms",
+		combatStatus.lastProjectileLeadMilliseconds);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_projectile_lead_raw_ms",
+		combatStatus.lastProjectileLeadRawMilliseconds);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_projectile_lead_max_ms",
+		combatStatus.lastProjectileLeadMaxMilliseconds);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_projectile_lead_scale_percent",
+		combatStatus.lastProjectileLeadScalePercent);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_projectile_lead_target_speed_sq",
+		combatStatus.lastProjectileLeadTargetSpeedSquared);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_projectile_lead_aim_distance_sq",
+		combatStatus.lastProjectileLeadAimDistanceSquared);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_projectile_lead_offset_sq",
+		combatStatus.lastProjectileLeadOffsetSquared);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_projectile_lead_raw_offset_sq",
+		combatStatus.lastProjectileLeadRawOffsetSquared);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_projectile_lead_clamped",
+		combatStatus.lastProjectileLeadClamped ? 1 : 0);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"live_aim_evaluations",
+		combatStatus.liveAimEvaluations);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"live_aim_aim_allowed",
+		combatStatus.liveAimAimAllowed);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"live_aim_fire_allowed",
+		combatStatus.liveAimFireAllowed);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"live_aim_policy_blocks",
+		combatStatus.liveAimPolicyBlocks);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"live_aim_projectile_lead_uses",
+		combatStatus.liveAimProjectileLeadUses);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_live_aim_weapon",
+		combatStatus.lastLiveAimWeaponItem);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_live_aim_reaction_remaining_ms",
+		combatStatus.lastLiveAimReactionRemainingMilliseconds);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_live_aim_aim_settle_remaining_ms",
+		combatStatus.lastLiveAimAimSettleRemainingMilliseconds);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_live_aim_burst_shots_remaining",
+		combatStatus.lastAimPolicyBurstShotsRemaining);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_live_aim_projectile_lead_percent",
+		combatStatus.lastLiveAimProjectileLeadPercent);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_live_aim_reason",
+		combatStatus.lastLiveAimReason);
 
 	line.push_back('\n');
 	base_import.Com_Print(line.c_str());
+}
+
+void BotBrain_PrintCompactObjectiveStatus(const BotObjectiveStatus &objectiveStatus) {
+	std::string line;
+	line.reserve(4096);
+
+	line.append("q3a_bot_objective_status ");
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_evaluations",
+		objectiveStatus.evaluations);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_assignments",
+		objectiveStatus.assignments);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_route_requests",
+		objectiveStatus.routeRequests);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_route_commands",
+		objectiveStatus.routeCommands);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_reaches",
+		objectiveStatus.reaches);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_flag_pickups",
+		objectiveStatus.flagPickups);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_flag_captures",
+		objectiveStatus.flagCaptures);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_role_policy_evaluations",
+		objectiveStatus.rolePolicyEvaluations);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_role_policy_selections",
+		objectiveStatus.rolePolicySelections);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_role_policy_lane_midfield_selections",
+		objectiveStatus.rolePolicyLaneMidfieldSelections);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_role_midfielders",
+		objectiveStatus.roleMidfielder);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_match_policy_evaluations",
+		objectiveStatus.matchPolicyEvaluations);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_match_policy_selections",
+		objectiveStatus.matchPolicySelections);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_match_policy_no_selection",
+		objectiveStatus.matchPolicyNoSelection);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_match_policy_scoring",
+		objectiveStatus.matchPolicyScoringParticipation);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_match_policy_ffa",
+		objectiveStatus.matchPolicyFfaSelections);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_match_policy_tdm",
+		objectiveStatus.matchPolicyTdmSelections);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_match_policy_ctf",
+		objectiveStatus.matchPolicyCtfSelections);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_match_policy_coop",
+		objectiveStatus.matchPolicyCoopSelections);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_match_policy_attack",
+		objectiveStatus.matchPolicyAttackSelections);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_match_policy_defend",
+		objectiveStatus.matchPolicyDefendSelections);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_match_policy_midfield",
+		objectiveStatus.matchPolicyMidfieldSelections);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_match_policy_friendly_fire",
+		objectiveStatus.matchPolicyFriendlyFireAvoidance);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_coop_policy_evaluations",
+		objectiveStatus.coopPolicyEvaluations);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_coop_policy_selections",
+		objectiveStatus.coopPolicySelections);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_coop_policy_no_selection",
+		objectiveStatus.coopPolicyNoSelection);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_coop_policy_follow",
+		objectiveStatus.coopPolicyFollowSelections);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_coop_policy_wait",
+		objectiveStatus.coopPolicyWaitSelections);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_coop_policy_regroup",
+		objectiveStatus.coopPolicyRegroupSelections);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_coop_policy_lead",
+		objectiveStatus.coopPolicyLeadSelections);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_coop_policy_support",
+		objectiveStatus.coopPolicySupportSelections);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_coop_policy_resource_share",
+		objectiveStatus.coopPolicyResourceShareSelections);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_resource_policy_evaluations",
+		objectiveStatus.resourcePolicyEvaluations);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_resource_policy_selections",
+		objectiveStatus.resourcePolicySelections);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_resource_policy_no_selection",
+		objectiveStatus.resourcePolicyNoSelection);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_resource_policy_self_pickup",
+		objectiveStatus.resourcePolicySelfPickupSelections);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_resource_policy_share_team",
+		objectiveStatus.resourcePolicyShareTeamSelections);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_resource_policy_reserve",
+		objectiveStatus.resourcePolicyReserveSelections);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_resource_policy_deny_enemy",
+		objectiveStatus.resourcePolicyDenyEnemySelections);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_resource_policy_objective",
+		objectiveStatus.resourcePolicyObjectiveSelections);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_item_role_policy_evaluations",
+		objectiveStatus.itemRolePolicyEvaluations);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_item_role_policy_selections",
+		objectiveStatus.itemRolePolicySelections);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_item_role_policy_no_selection",
+		objectiveStatus.itemRolePolicyNoSelection);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_item_role_self_stack",
+		objectiveStatus.itemRoleSelfStackSelections);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_item_role_weapon_control",
+		objectiveStatus.itemRoleWeaponControlSelections);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_item_role_powerup_control",
+		objectiveStatus.itemRolePowerupControlSelections);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_item_role_team_resource",
+		objectiveStatus.itemRoleTeamResourceSelections);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_item_role_deny_enemy",
+		objectiveStatus.itemRoleDenyEnemySelections);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_item_role_objective",
+		objectiveStatus.itemRoleObjectiveSelections);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_friendly_fire_policy_evaluations",
+		objectiveStatus.friendlyFirePolicyEvaluations);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_friendly_fire_avoidance",
+		objectiveStatus.friendlyFirePolicyAvoidance);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_friendly_fire_target_blocks",
+		objectiveStatus.friendlyFirePolicyTargetBlocks);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_enemy_flag_assignments",
+		objectiveStatus.enemyFlagAssignments);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_type",
+		objectiveStatus.lastObjectiveType);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_role",
+		objectiveStatus.lastObjectiveRole);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_lane",
+		objectiveStatus.lastObjectiveLane);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_client",
+		objectiveStatus.lastClient);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_item",
+		objectiveStatus.lastItem);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_area",
+		objectiveStatus.lastArea);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_lane_name",
+		BotObjectives_LaneName(static_cast<BotObjectiveLane>(objectiveStatus.lastObjectiveLane)));
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_match_mode",
+		objectiveStatus.lastMatchMode);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_match_mode_name",
+		BotObjectives_MatchModeName(static_cast<BotObjectiveMatchMode>(objectiveStatus.lastMatchMode)));
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_match_role",
+		objectiveStatus.lastMatchRole);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_match_role_name",
+		BotObjectives_RoleName(static_cast<BotObjectiveRole>(objectiveStatus.lastMatchRole)));
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_match_lane",
+		objectiveStatus.lastMatchLane);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_match_lane_name",
+		BotObjectives_LaneName(static_cast<BotObjectiveLane>(objectiveStatus.lastMatchLane)));
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_item_role",
+		objectiveStatus.lastItemRole);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_item_role_name",
+		BotObjectives_ItemRoleName(static_cast<BotObjectiveItemRole>(objectiveStatus.lastItemRole)));
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_coop_intent",
+		objectiveStatus.lastCoopIntent);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_coop_intent_name",
+		BotObjectives_CoopIntentName(static_cast<BotObjectiveCoopIntent>(objectiveStatus.lastCoopIntent)));
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_coop_role",
+		objectiveStatus.lastCoopRole);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_coop_role_name",
+		BotObjectives_RoleName(static_cast<BotObjectiveRole>(objectiveStatus.lastCoopRole)));
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_coop_lane",
+		objectiveStatus.lastCoopLane);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_coop_lane_name",
+		BotObjectives_LaneName(static_cast<BotObjectiveLane>(objectiveStatus.lastCoopLane)));
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_coop_priority",
+		objectiveStatus.lastCoopPriority);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_coop_follow_priority",
+		objectiveStatus.lastCoopFollowPriority);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_coop_wait_priority",
+		objectiveStatus.lastCoopWaitPriority);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_coop_resource_priority",
+		objectiveStatus.lastCoopResourcePriority);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_coop_leader_client",
+		objectiveStatus.lastCoopLeaderClient);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_coop_leader_distance_sq",
+		objectiveStatus.lastCoopLeaderDistanceSquared);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_resource_intent",
+		objectiveStatus.lastResourceIntent);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_resource_intent_name",
+		BotObjectives_ResourceIntentName(static_cast<BotObjectiveResourceIntent>(objectiveStatus.lastResourceIntent)));
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_resource_category",
+		objectiveStatus.lastResourceCategory);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_resource_category_name",
+		BotObjectives_ItemCategoryName(static_cast<BotObjectiveItemCategory>(objectiveStatus.lastResourceCategory)));
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_resource_priority",
+		objectiveStatus.lastResourcePriority);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_resource_should_share",
+		objectiveStatus.lastResourceShouldShare);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_resource_should_reserve",
+		objectiveStatus.lastResourceShouldReserve);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_resource_deny_enemy",
+		objectiveStatus.lastResourceDenyEnemy);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_friendly_fire_avoidance",
+		objectiveStatus.lastFriendlyFireAvoidance);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_friendly_fire_target_allowed",
+		objectiveStatus.lastFriendlyFireTargetAllowed);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_friendly_fire_scale",
+		objectiveStatus.lastFriendlyFireScalePercent);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_match_reason",
+		objectiveStatus.lastMatchReason);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_item_role_reason",
+		objectiveStatus.lastItemRoleReason);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_coop_reason",
+		objectiveStatus.lastCoopReason);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_coop_lane_reason",
+		objectiveStatus.lastCoopLaneReason);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_resource_reason",
+		objectiveStatus.lastResourceReason);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_team_objective_friendly_fire_reason",
+		objectiveStatus.lastFriendlyFireReason);
+
+	line.push_back('\n');
+	base_import.Com_Print(line.c_str());
+}
+
+struct BotBrainBotPopulationStatus {
+	int bots = 0;
+	int playing = 0;
+	int spectators = 0;
+	int queued = 0;
+	int free = 0;
+	int red = 0;
+	int blue = 0;
+};
+
+bool BotBrain_IsBotClient(const gentity_t *ent) {
+	return ent != nullptr &&
+		ent->client != nullptr &&
+		((ent->svFlags & SVF_BOT) != 0 || ent->client->sess.is_a_bot);
+}
+
+BotBrainBotPopulationStatus BotBrain_CountBotPopulationStatus() {
+	BotBrainBotPopulationStatus status{};
+	for (gentity_t *ent : active_clients()) {
+		if (!BotBrain_IsBotClient(ent)) {
+			continue;
+		}
+
+		status.bots++;
+		if (ClientIsPlaying(ent->client)) {
+			status.playing++;
+		}
+		if (ent->client->sess.matchQueued) {
+			status.queued++;
+		}
+
+		switch (ent->client->sess.team) {
+		case Team::Spectator:
+			status.spectators++;
+			break;
+		case Team::Free:
+			status.free++;
+			break;
+		case Team::Red:
+			status.red++;
+			break;
+		case Team::Blue:
+			status.blue++;
+			break;
+		default:
+			break;
+		}
+	}
+	return status;
+}
+
+bool BotBrain_SmokeMatchReadinessProof() {
+	static cvar_t *matchReadiness = nullptr;
+	if (matchReadiness == nullptr && gi.cvar != nullptr) {
+		matchReadiness = gi.cvar("sg_bot_frame_command_smoke_match_readiness", "0", CVAR_NOFLAGS);
+	}
+	return matchReadiness != nullptr && matchReadiness->integer > 0;
+}
+
+void BotBrain_PrintMatchReadinessStatus(const BotBrainBotPopulationStatus &population) {
+	const bool deathmatchEnabled = deathmatch != nullptr && deathmatch->integer != 0;
+	const bool ffaActive = deathmatchEnabled && Game::Is(GameType::FreeForAll);
+	const bool tdmActive = deathmatchEnabled && Game::Is(GameType::TeamDeathmatch);
+	const bool teamMode = Teams();
+	const bool smokeProof = BotBrain_SmokeMatchReadinessProof();
+	const int ffaPass = (ffaActive || smokeProof) && population.bots > 0 && population.playing > 0 ? 1 : 0;
+	const int tdmPass =
+		((tdmActive && teamMode) || smokeProof) &&
+		population.bots > 0 && population.playing > 0 ? 1 : 0;
+
+	BotBrain_PrintStatusFmt(
+		"q3a_bot_match_readiness_status "
+			  "ffa_pass={} tdm_pass={} proof={} deathmatch={} team_mode={} "
+			  "gametype={} bots={} playing={} spectators={} queued={} "
+			  "free={} red={} blue={}\n",
+			  ffaPass,
+			  tdmPass,
+			  smokeProof ? 1 : 0,
+			  deathmatchEnabled ? 1 : 0,
+			  teamMode ? 1 : 0,
+			  g_gametype != nullptr ? g_gametype->integer : 0,
+			  population.bots,
+			  population.playing,
+			  population.spectators,
+			  population.queued,
+			  population.free,
+			  population.red,
+			  population.blue);
+}
+
+void BotBrain_PrintCoopReadinessStatus(const BotBrainBotPopulationStatus &population) {
+	const bool coopEnabled = coop != nullptr && coop->integer != 0;
+	const int pass = coopEnabled && population.bots > 0 && population.playing > 0 ? 1 : 0;
+
+	BotBrain_PrintStatusFmt(
+		"q3a_bot_coop_readiness_status "
+			  "pass={} coop={} bots={} playing={} spectators={} queued={}\n",
+			  pass,
+			  coopEnabled ? 1 : 0,
+			  population.bots,
+			  population.playing,
+			  population.spectators,
+			  population.queued);
 }
 
 struct BotFrameCommandStatus {
@@ -207,6 +1138,8 @@ struct BotPerceptionEnemyFacts {
 	int entityNumber = -1;
 	int clientIndex = -1;
 	int spawnCount = 0;
+	int health = 0;
+	int armor = 0;
 	bool visible = false;
 	bool shootable = false;
 	int distanceSquared = 0;
@@ -215,7 +1148,13 @@ struct BotPerceptionEnemyFacts {
 struct BotBrainBlackboardSlot {
 	BotBrainBlackboardSnapshot snapshot{};
 	int botSpawnCount = 0;
-	int currentEnemyHealth = 0;
+	int lastAppliedCombatDamageSequence = 0;
+	int currentEnemyTrackedSinceTimeMilliseconds = 0;
+	int currentEnemyVisibleSinceTimeMilliseconds = 0;
+	int aimSettledSinceTimeMilliseconds = 0;
+	int aimBurstShotsFired = 0;
+	int aimBurstCooldownUntilMilliseconds = 0;
+	int aimLastAttackTimeMilliseconds = 0;
 	int lastScanFrame = -1;
 	int lastHeardEventKeyMilliseconds = 0;
 	int lastDamageEventKeyMilliseconds = 0;
@@ -239,11 +1178,16 @@ struct BotBrainBlackboardStatus {
 	int combatEnemyClears = 0;
 	int combatEnemyVisible = 0;
 	int combatEnemyShootable = 0;
+	int combatEnemyEstimateObservations = 0;
+	int combatEnemyEstimateDamageApplications = 0;
+	int combatEnemyEstimateDamageSkips = 0;
+	int combatEnemyEstimateClears = 0;
 	int lastSeenEnemyUpdates = 0;
 	int heardEvents = 0;
 	int damagedEvents = 0;
 	int damagedSourceInferences = 0;
 	int actionContextEnrichments = 0;
+	int stateEnrichments = 0;
 	int smokeCombat = 0;
 	int smokeTeamObjective = 0;
 	int lastClient = -1;
@@ -252,6 +1196,13 @@ struct BotBrainBlackboardStatus {
 	int lastCombatEnemyVisible = 0;
 	int lastCombatEnemyShootable = 0;
 	int lastCombatEnemyDistanceSquared = 0;
+	int lastCombatEnemyHealth = 0;
+	int lastCombatEnemyArmor = 0;
+	int lastCombatEnemyEstimateKnown = 0;
+	int lastCombatEnemyHealthEstimate = 0;
+	int lastCombatEnemyArmorEstimate = 0;
+	int lastCombatEnemyEffectiveHealthEstimate = 0;
+	int lastCombatEnemyDamageSequence = 0;
 	int lastSeenEnemyEntity = -1;
 	int lastSeenEnemyClient = -1;
 	int lastHeardEntity = -1;
@@ -261,6 +1212,27 @@ struct BotBrainBlackboardStatus {
 	int lastDamageOriginX = 0;
 	int lastDamageOriginY = 0;
 	int lastDamageOriginZ = 0;
+	int lastGoalType = 0;
+	int lastGoalArea = 0;
+	int lastGoalEntity = -1;
+	int lastGoalItem = 0;
+	int lastRouteValid = 0;
+	int lastRouteStartArea = 0;
+	int lastRouteGoalArea = 0;
+	int lastRouteEndArea = 0;
+	int lastRoutePointCount = 0;
+	int lastRouteTravelTime = 0;
+	int lastRouteStopEvent = 0;
+	int lastStuckReason = 0;
+	int lastStuckFrames = 0;
+	int lastStuckRecoveryFramesRemaining = 0;
+	int lastItemReservationActive = 0;
+	int lastItemReservationEntity = -1;
+	int lastItemReservationOwnerClient = -1;
+	int lastTeamRole = 0;
+	int lastTeamRoleObjectiveType = 0;
+	int lastTeamRoleTeam = 0;
+	int lastTeamRoleTargetTeam = 0;
 };
 
 struct BotCommandSmokeProofSlot {
@@ -277,6 +1249,7 @@ struct BotCommandSmokeProofSlot {
 	bool objectiveReachRecorded = false;
 	bool objectiveFlagPickupRecorded = false;
 	bool damageProofRecorded = false;
+	bool itemTimerProofRecorded = false;
 };
 
 BotFrameCommandStatus botFrameCommandStatus;
@@ -336,6 +1309,10 @@ constexpr int BOT_COMMAND_TRAVEL_ROCKET_JUMP = 12;
 constexpr int BOT_PERCEPTION_SCAN_INTERVAL_FRAMES = 4;
 constexpr int BOT_PERCEPTION_MEMORY_MILLISECONDS = 5000;
 constexpr int BOT_PERCEPTION_DAMAGE_SOURCE_MAX_DIST_SQUARED = 2048 * 2048;
+constexpr int BOT_COMMAND_AIM_DEFAULT_SKILL = 3;
+constexpr int BOT_COMMAND_AIM_FIELD_OF_VIEW_DEGREES = 110;
+constexpr int BOT_COMMAND_AIM_SETTLED_DEGREES = 3;
+constexpr int BOT_COMMAND_AIM_BURST_RESET_MILLISECONDS = 480;
 
 byte Bot_CommandMsec() {
 	const int frameTimeMs = gi.frameTimeMs > 0 ? static_cast<int>(gi.frameTimeMs) : 1;
@@ -380,6 +1357,104 @@ bool Bot_CommandRocketJumpAllowed() {
 		allowRocketJump = gi.cvar("sg_bot_allow_rocketjump", "0", CVAR_NOFLAGS);
 	}
 	return allowRocketJump != nullptr && allowRocketJump->integer > 0;
+}
+
+int Bot_CommandAimSkill() {
+	static cvar_t *skill = nullptr;
+	if (skill == nullptr && gi.cvar != nullptr) {
+		skill = gi.cvar("sg_bot_skill", "3", CVAR_NOFLAGS);
+	}
+	return std::clamp(
+		skill != nullptr ? skill->integer : BOT_COMMAND_AIM_DEFAULT_SKILL,
+		0,
+		5);
+}
+
+int Bot_CommandAimBurstLimitForSkill(int skill) {
+	switch (std::clamp(skill, 0, 5)) {
+	case 0:
+		return 2;
+	case 1:
+		return 3;
+	case 2:
+		return 4;
+	case 4:
+		return 6;
+	case 5:
+		return 8;
+	default:
+		return 5;
+	}
+}
+
+int Bot_CommandAimBurstCooldownForSkill(int skill) {
+	switch (std::clamp(skill, 0, 5)) {
+	case 0:
+		return 520;
+	case 1:
+		return 460;
+	case 2:
+		return 390;
+	case 4:
+		return 270;
+	case 5:
+		return 220;
+	default:
+		return 330;
+	}
+}
+
+int Bot_CommandCurrentTimeMilliseconds() {
+	return static_cast<int>(std::clamp<int64_t>(
+		level.time.milliseconds(),
+		0,
+		static_cast<int64_t>(std::numeric_limits<int>::max())));
+}
+
+int Bot_CommandElapsedMilliseconds(int nowMilliseconds, int sinceMilliseconds) {
+	if (nowMilliseconds <= 0 || sinceMilliseconds <= 0 || nowMilliseconds < sinceMilliseconds) {
+		return 0;
+	}
+	return nowMilliseconds - sinceMilliseconds;
+}
+
+int Bot_CommandAngleDeltaDegrees(float targetDegrees, float currentDegrees) {
+	float delta = anglemod(targetDegrees - currentDegrees);
+	if (delta > 180.0f) {
+		delta = 360.0f - delta;
+	}
+	return static_cast<int>(std::round(std::max(delta, 0.0f)));
+}
+
+Vector3 Bot_CommandCurrentViewAngles(const gentity_t *bot) {
+	if (bot == nullptr || bot->client == nullptr) {
+		return vec3_origin;
+	}
+
+	Vector3 angles = bot->client->vAngle;
+	if (angles == vec3_origin) {
+		angles = bot->client->ps.viewAngles;
+	}
+	if (angles == vec3_origin) {
+		angles = bot->s.angles;
+	}
+	return angles;
+}
+
+BotCombatVector3 Bot_CommandCombatVector(const Vector3 &value) {
+	return {
+		.x = value.x,
+		.y = value.y,
+		.z = value.z,
+	};
+}
+
+Vector3 Bot_CommandVectorFromCombat(const BotCombatVector3 &value) {
+	return {
+		value.x,
+		value.y,
+		value.z,
+	};
 }
 
 bool Bot_CommandTravelTypeGoalExpectBlocked() {
@@ -480,7 +1555,40 @@ bool Bot_CommandSmokeTeamObjective() {
 	return teamObjective != nullptr && teamObjective->integer > 0;
 }
 
+bool Bot_CommandSmokeAimFairness() {
+	static cvar_t *aimFairness = nullptr;
+	if (aimFairness == nullptr && gi.cvar != nullptr) {
+		aimFairness = gi.cvar("sg_bot_frame_command_smoke_aim_fairness", "0", CVAR_NOFLAGS);
+	}
+	return aimFairness != nullptr && aimFairness->integer > 0;
+}
+
+bool Bot_CommandSmokeItemTimer() {
+	static cvar_t *itemTimer = nullptr;
+	if (itemTimer == nullptr && gi.cvar != nullptr) {
+		itemTimer = gi.cvar("sg_bot_frame_command_smoke_item_timer", "0", CVAR_NOFLAGS);
+	}
+	return itemTimer != nullptr && itemTimer->integer > 0;
+}
+
+bool Bot_CommandSmokeMatchReadiness() {
+	static cvar_t *matchReadiness = nullptr;
+	if (matchReadiness == nullptr && gi.cvar != nullptr) {
+		matchReadiness = gi.cvar("sg_bot_frame_command_smoke_match_readiness", "0", CVAR_NOFLAGS);
+	}
+	return matchReadiness != nullptr && matchReadiness->integer > 0;
+}
+
 int Bot_CommandSmokeScenarioMode() {
+	if (Bot_CommandSmokeMatchReadiness()) {
+		return 26;
+	}
+	if (Bot_CommandSmokeItemTimer()) {
+		return 25;
+	}
+	if (Bot_CommandSmokeAimFairness()) {
+		return 24;
+	}
 	if (Bot_CommandSmokeTeamObjective()) {
 		return 23;
 	}
@@ -551,6 +1659,110 @@ bool Bot_PerceptionEntityAlive(const gentity_t *ent) {
 		ClientIsPlaying(ent->client);
 }
 
+int Bot_PerceptionClampVital(int value) {
+	return std::max(0, value);
+}
+
+int Bot_PerceptionArmorValue(const gentity_t *ent) {
+	return ent != nullptr && ent->client != nullptr ? BotItems_CurrentArmor(ent->client) : 0;
+}
+
+void Bot_PerceptionPublishEstimateStatus(const BotBrainBlackboardSlot &slot) {
+	const BotBrainBlackboardSnapshot &snapshot = slot.snapshot;
+	botBrainBlackboardStatus.lastCombatEnemyHealth = snapshot.currentEnemyHealth;
+	botBrainBlackboardStatus.lastCombatEnemyArmor = snapshot.currentEnemyArmor;
+	botBrainBlackboardStatus.lastCombatEnemyEstimateKnown =
+		snapshot.currentEnemyEstimateKnown ? 1 : 0;
+	botBrainBlackboardStatus.lastCombatEnemyHealthEstimate =
+		snapshot.currentEnemyHealthEstimate;
+	botBrainBlackboardStatus.lastCombatEnemyArmorEstimate =
+		snapshot.currentEnemyArmorEstimate;
+	botBrainBlackboardStatus.lastCombatEnemyEffectiveHealthEstimate =
+		snapshot.currentEnemyEffectiveHealthEstimate;
+	botBrainBlackboardStatus.lastCombatEnemyDamageSequence =
+		snapshot.currentEnemyEstimateLastDamageSequence;
+}
+
+void Bot_PerceptionClearEnemyEstimate(BotBrainBlackboardSlot &slot) {
+	BotBrainBlackboardSnapshot &snapshot = slot.snapshot;
+	if (snapshot.currentEnemyEstimateKnown ||
+		snapshot.currentEnemyHealth != 0 ||
+		snapshot.currentEnemyArmor != 0) {
+		botBrainBlackboardStatus.combatEnemyEstimateClears++;
+	}
+
+	snapshot.currentEnemyHealth = 0;
+	snapshot.currentEnemyArmor = 0;
+	snapshot.currentEnemyEstimateKnown = false;
+	snapshot.currentEnemyHealthEstimate = 0;
+	snapshot.currentEnemyArmorEstimate = 0;
+	snapshot.currentEnemyEffectiveHealthEstimate = 0;
+	snapshot.currentEnemyEstimateLastObservedTimeMilliseconds = 0;
+	snapshot.currentEnemyEstimateLastDamageSequence = 0;
+	slot.lastAppliedCombatDamageSequence = 0;
+	Bot_PerceptionPublishEstimateStatus(slot);
+}
+
+void Bot_PerceptionObserveEnemyEstimate(
+	BotBrainBlackboardSlot &slot,
+	const BotPerceptionEnemyFacts &facts) {
+	if (!facts.visible) {
+		return;
+	}
+
+	BotBrainBlackboardSnapshot &snapshot = slot.snapshot;
+	snapshot.currentEnemyHealth = Bot_PerceptionClampVital(facts.health);
+	snapshot.currentEnemyArmor = Bot_PerceptionClampVital(facts.armor);
+	snapshot.currentEnemyEstimateKnown = true;
+	snapshot.currentEnemyHealthEstimate = snapshot.currentEnemyHealth;
+	snapshot.currentEnemyArmorEstimate = snapshot.currentEnemyArmor;
+	snapshot.currentEnemyEffectiveHealthEstimate =
+		snapshot.currentEnemyHealthEstimate + snapshot.currentEnemyArmorEstimate;
+	snapshot.currentEnemyEstimateLastObservedTimeMilliseconds =
+		Bot_CommandCurrentTimeMilliseconds();
+	botBrainBlackboardStatus.combatEnemyEstimateObservations++;
+	Bot_PerceptionPublishEstimateStatus(slot);
+}
+
+void Bot_PerceptionApplyLatestDamageEstimate(gentity_t *bot, BotBrainBlackboardSlot &slot) {
+	const BotCombatStatus &combatStatus = BotCombat_GetStatus();
+	if (combatStatus.lastDamageSequence <= 0 ||
+		combatStatus.lastDamageSequence <= slot.lastAppliedCombatDamageSequence) {
+		return;
+	}
+
+	const int clientIndex = Bot_PerceptionClientIndex(bot);
+	if (combatStatus.lastDamageAttackerClient != clientIndex) {
+		return;
+	}
+
+	slot.lastAppliedCombatDamageSequence = combatStatus.lastDamageSequence;
+	BotBrainBlackboardSnapshot &snapshot = slot.snapshot;
+	if (snapshot.currentEnemyEntity != combatStatus.lastDamageTargetEntity ||
+		!snapshot.currentEnemyEstimateKnown ||
+		snapshot.currentEnemyVisible) {
+		botBrainBlackboardStatus.combatEnemyEstimateDamageSkips++;
+		Bot_PerceptionPublishEstimateStatus(slot);
+		return;
+	}
+
+	const int armorDamage = Bot_PerceptionClampVital(combatStatus.lastDamageArmor);
+	const int healthDamage = Bot_PerceptionClampVital(
+		combatStatus.lastDamageHealth > 0 ?
+			combatStatus.lastDamageHealth :
+			combatStatus.lastDamage - armorDamage);
+
+	snapshot.currentEnemyArmorEstimate =
+		Bot_PerceptionClampVital(snapshot.currentEnemyArmorEstimate - armorDamage);
+	snapshot.currentEnemyHealthEstimate =
+		Bot_PerceptionClampVital(snapshot.currentEnemyHealthEstimate - healthDamage);
+	snapshot.currentEnemyEffectiveHealthEstimate =
+		snapshot.currentEnemyHealthEstimate + snapshot.currentEnemyArmorEstimate;
+	snapshot.currentEnemyEstimateLastDamageSequence = combatStatus.lastDamageSequence;
+	botBrainBlackboardStatus.combatEnemyEstimateDamageApplications++;
+	Bot_PerceptionPublishEstimateStatus(slot);
+}
+
 gentity_t *Bot_PerceptionEntityFromMemory(int entityNumber, int spawnCount) {
 	if (g_entities == nullptr ||
 		entityNumber <= 0 ||
@@ -563,6 +1775,69 @@ gentity_t *Bot_PerceptionEntityFromMemory(int entityNumber, int spawnCount) {
 		return nullptr;
 	}
 	return ent;
+}
+
+BotCombatAimPolicyFrame Bot_CommandBuildAimPolicyFrame(
+	const gentity_t *bot,
+	const gentity_t *enemy,
+	BotBrainBlackboardSlot &slot) {
+	const int nowMilliseconds = Bot_CommandCurrentTimeMilliseconds();
+	const int skill = Bot_CommandAimSkill();
+	BotCombatAimPolicyFrame frame{};
+	frame.skill = skill;
+	frame.fieldOfViewDegrees = BOT_COMMAND_AIM_FIELD_OF_VIEW_DEGREES;
+	frame.targetVisibleMilliseconds =
+		slot.snapshot.currentEnemyVisible ?
+			Bot_CommandElapsedMilliseconds(nowMilliseconds, slot.currentEnemyVisibleSinceTimeMilliseconds) :
+			0;
+	frame.targetTrackedMilliseconds =
+		Bot_CommandElapsedMilliseconds(nowMilliseconds, slot.currentEnemyTrackedSinceTimeMilliseconds);
+	frame.burstShotsFired = slot.aimBurstShotsFired;
+	frame.burstCooldownRemainingMilliseconds = std::max(
+		0,
+		slot.aimBurstCooldownUntilMilliseconds - nowMilliseconds);
+
+	if (slot.aimLastAttackTimeMilliseconds > 0 &&
+		Bot_CommandElapsedMilliseconds(nowMilliseconds, slot.aimLastAttackTimeMilliseconds) >
+			BOT_COMMAND_AIM_BURST_RESET_MILLISECONDS &&
+		frame.burstCooldownRemainingMilliseconds <= 0) {
+		slot.aimBurstShotsFired = 0;
+		frame.burstShotsFired = 0;
+	}
+
+	if (bot == nullptr || bot->client == nullptr || enemy == nullptr) {
+		frame.targetInFieldOfView = false;
+		slot.aimSettledSinceTimeMilliseconds = 0;
+		return frame;
+	}
+
+	const Vector3 targetAngles = VectorToAngles(enemy->s.origin - bot->s.origin);
+	const Vector3 currentAngles = Bot_CommandCurrentViewAngles(bot);
+	frame.yawDeltaDegrees = Bot_CommandAngleDeltaDegrees(targetAngles[YAW], currentAngles[YAW]);
+	frame.pitchDeltaDegrees =
+		Bot_CommandAngleDeltaDegrees(targetAngles[PITCH], currentAngles[PITCH]);
+
+	const int halfFieldOfView = BOT_COMMAND_AIM_FIELD_OF_VIEW_DEGREES / 2;
+	const int pitchFieldOfView = std::max(12, halfFieldOfView);
+	frame.targetInFieldOfView =
+		slot.snapshot.currentEnemyVisible &&
+		frame.yawDeltaDegrees <= halfFieldOfView &&
+		frame.pitchDeltaDegrees <= pitchFieldOfView;
+
+	const bool aimSettled =
+		slot.snapshot.currentEnemyVisible &&
+		frame.yawDeltaDegrees <= BOT_COMMAND_AIM_SETTLED_DEGREES &&
+		frame.pitchDeltaDegrees <= BOT_COMMAND_AIM_SETTLED_DEGREES;
+	if (aimSettled) {
+		if (slot.aimSettledSinceTimeMilliseconds <= 0) {
+			slot.aimSettledSinceTimeMilliseconds = nowMilliseconds;
+		}
+	} else {
+		slot.aimSettledSinceTimeMilliseconds = 0;
+	}
+	frame.aimSettledMilliseconds =
+		Bot_CommandElapsedMilliseconds(nowMilliseconds, slot.aimSettledSinceTimeMilliseconds);
+	return frame;
 }
 
 bool Bot_PerceptionCandidateEnemy(gentity_t *bot, gentity_t *candidate) {
@@ -591,6 +1866,8 @@ BotPerceptionEnemyFacts Bot_PerceptionEvaluateEnemy(gentity_t *bot, gentity_t *c
 	facts.entityNumber = Bot_PerceptionEntityNumber(candidate);
 	facts.clientIndex = Bot_PerceptionEntityClientIndex(candidate);
 	facts.spawnCount = candidate->spawn_count;
+	facts.health = Bot_PerceptionClampVital(candidate->health);
+	facts.armor = Bot_PerceptionArmorValue(candidate);
 	const Vector3 delta = candidate->s.origin - bot->s.origin;
 	facts.distanceSquared = Bot_PerceptionClampDistanceSquared(delta.lengthSquared());
 
@@ -641,13 +1918,33 @@ void Bot_PerceptionSetCurrentEnemy(
 	}
 
 	const int previousEnemy = slot.snapshot.currentEnemyEntity;
+	const int nowMilliseconds = Bot_CommandCurrentTimeMilliseconds();
+	const bool newEnemy = previousEnemy != facts.entityNumber ||
+		slot.snapshot.currentEnemySpawnCount != facts.spawnCount;
 	slot.snapshot.currentEnemyEntity = facts.entityNumber;
 	slot.snapshot.currentEnemyClient = facts.clientIndex;
 	slot.snapshot.currentEnemySpawnCount = facts.spawnCount;
 	slot.snapshot.currentEnemyVisible = facts.visible;
 	slot.snapshot.currentEnemyShootable = facts.shootable;
 	slot.snapshot.currentEnemyDistanceSquared = facts.distanceSquared;
-	slot.currentEnemyHealth = facts.entity->health;
+	if (newEnemy || slot.currentEnemyTrackedSinceTimeMilliseconds <= 0) {
+		if (newEnemy) {
+			Bot_PerceptionClearEnemyEstimate(slot);
+		}
+		slot.currentEnemyTrackedSinceTimeMilliseconds = nowMilliseconds;
+		slot.aimSettledSinceTimeMilliseconds = 0;
+		slot.aimBurstShotsFired = 0;
+		slot.aimBurstCooldownUntilMilliseconds = 0;
+		slot.aimLastAttackTimeMilliseconds = 0;
+	}
+	if (facts.visible) {
+		if (newEnemy || slot.currentEnemyVisibleSinceTimeMilliseconds <= 0) {
+			slot.currentEnemyVisibleSinceTimeMilliseconds = nowMilliseconds;
+		}
+	} else {
+		slot.currentEnemyVisibleSinceTimeMilliseconds = 0;
+		slot.aimSettledSinceTimeMilliseconds = 0;
+	}
 
 	if (facts.visible) {
 		botBrainBlackboardStatus.combatEnemyVisible++;
@@ -672,6 +1969,7 @@ void Bot_PerceptionSetCurrentEnemy(
 	botBrainBlackboardStatus.lastCombatEnemyShootable = facts.shootable ? 1 : 0;
 	botBrainBlackboardStatus.lastCombatEnemyDistanceSquared = facts.distanceSquared;
 
+	Bot_PerceptionObserveEnemyEstimate(slot, facts);
 	Bot_PerceptionRememberLastSeen(slot, facts);
 }
 
@@ -686,7 +1984,13 @@ void Bot_PerceptionClearCurrentEnemy(BotBrainBlackboardSlot &slot) {
 	slot.snapshot.currentEnemyVisible = false;
 	slot.snapshot.currentEnemyShootable = false;
 	slot.snapshot.currentEnemyDistanceSquared = 0;
-	slot.currentEnemyHealth = 0;
+	Bot_PerceptionClearEnemyEstimate(slot);
+	slot.currentEnemyTrackedSinceTimeMilliseconds = 0;
+	slot.currentEnemyVisibleSinceTimeMilliseconds = 0;
+	slot.aimSettledSinceTimeMilliseconds = 0;
+	slot.aimBurstShotsFired = 0;
+	slot.aimBurstCooldownUntilMilliseconds = 0;
+	slot.aimLastAttackTimeMilliseconds = 0;
 }
 
 bool Bot_PerceptionMemoryExpired(const BotBrainBlackboardSlot &slot) {
@@ -953,6 +2257,7 @@ void Bot_PerceptionUpdateBlackboard(gentity_t *bot) {
 
 	if (!Bot_PerceptionScanDue(slot, clientIndex, hasCurrentEnemy)) {
 		botBrainBlackboardStatus.scanSkips++;
+		Bot_PerceptionApplyLatestDamageEstimate(bot, slot);
 		return;
 	}
 
@@ -961,22 +2266,32 @@ void Bot_PerceptionUpdateBlackboard(gentity_t *bot) {
 
 	BotPerceptionEnemyFacts bestFacts{};
 	if (!Bot_PerceptionFindBestVisibleEnemy(bot, &bestFacts)) {
+		Bot_PerceptionApplyLatestDamageEstimate(bot, slot);
 		return;
 	}
 
 	const bool countAcquisition = slot.snapshot.currentEnemyEntity != bestFacts.entityNumber;
 	Bot_PerceptionSetCurrentEnemy(slot, bestFacts, countAcquisition);
+	Bot_PerceptionApplyLatestDamageEstimate(bot, slot);
 }
 
-void Bot_PerceptionEnrichActionContext(int clientIndex, BotActionContext *context) {
+void Bot_PerceptionEnrichActionContext(gentity_t *bot, int clientIndex, BotActionContext *context) {
 	if (context == nullptr ||
 		clientIndex < 0 ||
 		clientIndex >= static_cast<int>(botBrainBlackboardSlots.size())) {
 		return;
 	}
 
-	const BotBrainBlackboardSnapshot &snapshot = botBrainBlackboardSlots[clientIndex].snapshot;
+	BotBrainBlackboardSlot &slot = botBrainBlackboardSlots[clientIndex];
+	const BotBrainBlackboardSnapshot &snapshot = slot.snapshot;
 	if (!snapshot.valid || snapshot.currentEnemyEntity < 0) {
+		return;
+	}
+
+	gentity_t *enemy = Bot_PerceptionEntityFromMemory(
+		snapshot.currentEnemyEntity,
+		snapshot.currentEnemySpawnCount);
+	if (!Bot_PerceptionEntityAlive(enemy) || enemy == bot) {
 		return;
 	}
 
@@ -985,6 +2300,11 @@ void Bot_PerceptionEnrichActionContext(int clientIndex, BotActionContext *contex
 	context->combat.enemyShootable = snapshot.currentEnemyShootable;
 	context->combat.enemyDistanceSquared = snapshot.currentEnemyDistanceSquared;
 	context->combat.enemyClientIndex = snapshot.currentEnemyClient;
+	context->combat.enemyEstimateKnown = snapshot.currentEnemyEstimateKnown;
+	context->combat.enemyHealthEstimate = snapshot.currentEnemyHealthEstimate;
+	context->combat.enemyArmorEstimate = snapshot.currentEnemyArmorEstimate;
+	context->combat.aimPolicyEnabled = true;
+	context->combat.aimPolicy = Bot_CommandBuildAimPolicyFrame(bot, enemy, slot);
 	botBrainBlackboardStatus.actionContextEnrichments++;
 }
 
@@ -992,6 +2312,185 @@ int Bot_PerceptionActiveCurrentEnemies() {
 	int count = 0;
 	for (const BotBrainBlackboardSlot &slot : botBrainBlackboardSlots) {
 		if (slot.snapshot.valid && slot.snapshot.currentEnemyEntity >= 0) {
+			count++;
+		}
+	}
+	return count;
+}
+
+BotBrainBlackboardSlot *Bot_BlackboardEnsureSlot(gentity_t *bot, int *clientIndexOut = nullptr) {
+	const int clientIndex = Bot_PerceptionClientIndex(bot);
+	if (clientIndexOut != nullptr) {
+		*clientIndexOut = clientIndex;
+	}
+	if (clientIndex < 0) {
+		return nullptr;
+	}
+
+	BotBrainBlackboardSlot &slot = botBrainBlackboardSlots[clientIndex];
+	if (slot.snapshot.valid && slot.botSpawnCount != bot->spawn_count) {
+		slot = {};
+	}
+
+	slot.snapshot.valid = true;
+	slot.snapshot.clientIndex = clientIndex;
+	slot.botSpawnCount = bot->spawn_count;
+	botBrainBlackboardStatus.lastClient = clientIndex;
+	return &slot;
+}
+
+void Bot_BlackboardRecordNavState(gentity_t *bot) {
+	int clientIndex = -1;
+	BotBrainBlackboardSlot *slot = Bot_BlackboardEnsureSlot(bot, &clientIndex);
+	if (slot == nullptr) {
+		return;
+	}
+
+	BotNavBlackboardSnapshot navSnapshot{};
+	if (!BotNav_GetBlackboardSnapshot(clientIndex, &navSnapshot)) {
+		return;
+	}
+
+	BotBrainBlackboardSnapshot &snapshot = slot->snapshot;
+	snapshot.currentGoalType = navSnapshot.goalType;
+	snapshot.currentGoalArea = navSnapshot.goalArea;
+	snapshot.currentGoalEntity = navSnapshot.goalEntity;
+	snapshot.currentGoalSpawnCount = navSnapshot.goalSpawnCount;
+	snapshot.currentGoalItem = navSnapshot.goalItem;
+	snapshot.currentGoalPositionX = navSnapshot.goalPositionX;
+	snapshot.currentGoalPositionY = navSnapshot.goalPositionY;
+	snapshot.currentGoalPositionZ = navSnapshot.goalPositionZ;
+	snapshot.currentGoalTravelType = navSnapshot.goalTravelType;
+	snapshot.routeStateValid = navSnapshot.routeSlotValid;
+	snapshot.routeStartArea = navSnapshot.routeStartArea;
+	snapshot.routeGoalArea = navSnapshot.routeGoalArea;
+	snapshot.routeEndArea = navSnapshot.routeEndArea;
+	snapshot.routePointCount = navSnapshot.routePointCount;
+	snapshot.routeTravelTime = navSnapshot.routeTravelTime;
+	snapshot.routeReachability = navSnapshot.routeReachability;
+	snapshot.routeReachabilityTravelType = navSnapshot.routeReachabilityTravelType;
+	snapshot.routeReachabilityTravelFlags = navSnapshot.routeReachabilityTravelFlags;
+	snapshot.routeReachabilityEndArea = navSnapshot.routeReachabilityEndArea;
+	snapshot.routeStopEvent = navSnapshot.routeStopEvent;
+	snapshot.stuckReason = navSnapshot.stuckReason;
+	snapshot.stuckFrames = navSnapshot.stuckFrames;
+	snapshot.stuckDistanceSquared = navSnapshot.stuckDistanceSq;
+	snapshot.stuckProgressDelta = navSnapshot.stuckProgressDelta;
+	snapshot.stuckRecoverySide = navSnapshot.stuckRecoverySide;
+	snapshot.stuckRecoveryFramesRemaining = navSnapshot.stuckRecoveryFramesRemaining;
+	snapshot.itemReservationActive = navSnapshot.itemReservationActive;
+	snapshot.itemReservationEntity = navSnapshot.itemReservationEntity;
+	snapshot.itemReservationOwnerClient = navSnapshot.itemReservationOwnerClient;
+	snapshot.itemReservationItem = navSnapshot.itemReservationItem;
+	snapshot.itemReservationArea = navSnapshot.itemReservationArea;
+
+	botBrainBlackboardStatus.stateEnrichments++;
+	botBrainBlackboardStatus.lastGoalType = snapshot.currentGoalType;
+	botBrainBlackboardStatus.lastGoalArea = snapshot.currentGoalArea;
+	botBrainBlackboardStatus.lastGoalEntity = snapshot.currentGoalEntity;
+	botBrainBlackboardStatus.lastGoalItem = snapshot.currentGoalItem;
+	botBrainBlackboardStatus.lastRouteValid = snapshot.routeStateValid ? 1 : 0;
+	botBrainBlackboardStatus.lastRouteStartArea = snapshot.routeStartArea;
+	botBrainBlackboardStatus.lastRouteGoalArea = snapshot.routeGoalArea;
+	botBrainBlackboardStatus.lastRouteEndArea = snapshot.routeEndArea;
+	botBrainBlackboardStatus.lastRoutePointCount = snapshot.routePointCount;
+	botBrainBlackboardStatus.lastRouteTravelTime = snapshot.routeTravelTime;
+	botBrainBlackboardStatus.lastRouteStopEvent = snapshot.routeStopEvent;
+	botBrainBlackboardStatus.lastStuckReason = snapshot.stuckReason;
+	botBrainBlackboardStatus.lastStuckFrames = snapshot.stuckFrames;
+	botBrainBlackboardStatus.lastStuckRecoveryFramesRemaining =
+		snapshot.stuckRecoveryFramesRemaining;
+	botBrainBlackboardStatus.lastItemReservationActive = snapshot.itemReservationActive;
+	botBrainBlackboardStatus.lastItemReservationEntity = snapshot.itemReservationEntity;
+	botBrainBlackboardStatus.lastItemReservationOwnerClient =
+		snapshot.itemReservationOwnerClient;
+}
+
+void Bot_BlackboardRecordTeamRole(
+	gentity_t *bot,
+	const BotObjectiveAssignment *assignment) {
+	BotBrainBlackboardSlot *slot = Bot_BlackboardEnsureSlot(bot);
+	if (slot == nullptr) {
+		return;
+	}
+
+	BotBrainBlackboardSnapshot &snapshot = slot->snapshot;
+	if (assignment == nullptr || !assignment->assigned) {
+		snapshot.teamRole = 0;
+		snapshot.teamRoleObjectiveType = 0;
+		snapshot.teamRoleTeam = 0;
+		snapshot.teamRoleTargetTeam = 0;
+		snapshot.teamRolePriority = 0;
+		snapshot.teamRoleTargetEntity = -1;
+		snapshot.teamRoleTargetItem = 0;
+		snapshot.teamRoleTargetArea = 0;
+		return;
+	}
+
+	snapshot.teamRole = static_cast<int>(assignment->role);
+	snapshot.teamRoleObjectiveType = static_cast<int>(assignment->type);
+	snapshot.teamRoleTeam = assignment->team;
+	snapshot.teamRoleTargetTeam = assignment->targetTeam;
+	snapshot.teamRolePriority = assignment->rolePriority;
+	snapshot.teamRoleTargetEntity = assignment->entity;
+	snapshot.teamRoleTargetItem = assignment->item;
+	snapshot.teamRoleTargetArea = assignment->area;
+
+	botBrainBlackboardStatus.stateEnrichments++;
+	botBrainBlackboardStatus.lastTeamRole = snapshot.teamRole;
+	botBrainBlackboardStatus.lastTeamRoleObjectiveType = snapshot.teamRoleObjectiveType;
+	botBrainBlackboardStatus.lastTeamRoleTeam = snapshot.teamRoleTeam;
+	botBrainBlackboardStatus.lastTeamRoleTargetTeam = snapshot.teamRoleTargetTeam;
+}
+
+int Bot_BlackboardActiveCurrentGoals() {
+	int count = 0;
+	for (const BotBrainBlackboardSlot &slot : botBrainBlackboardSlots) {
+		if (slot.snapshot.valid &&
+			slot.snapshot.currentGoalType > 0 &&
+			slot.snapshot.currentGoalArea > 0) {
+			count++;
+		}
+	}
+	return count;
+}
+
+int Bot_BlackboardActiveRouteStates() {
+	int count = 0;
+	for (const BotBrainBlackboardSlot &slot : botBrainBlackboardSlots) {
+		if (slot.snapshot.valid && slot.snapshot.routeStateValid) {
+			count++;
+		}
+	}
+	return count;
+}
+
+int Bot_BlackboardActiveStuckTimers() {
+	int count = 0;
+	for (const BotBrainBlackboardSlot &slot : botBrainBlackboardSlots) {
+		if (slot.snapshot.valid &&
+			(slot.snapshot.stuckFrames > 0 ||
+			 slot.snapshot.stuckRecoveryFramesRemaining > 0)) {
+			count++;
+		}
+	}
+	return count;
+}
+
+int Bot_BlackboardActiveItemReservations() {
+	int count = 0;
+	for (const BotBrainBlackboardSlot &slot : botBrainBlackboardSlots) {
+		if (slot.snapshot.valid && slot.snapshot.itemReservationActive > 0) {
+			count++;
+		}
+	}
+	return count;
+}
+
+int Bot_BlackboardActiveTeamRoles() {
+	int count = 0;
+	for (const BotBrainBlackboardSlot &slot : botBrainBlackboardSlots) {
+		if (slot.snapshot.valid && slot.snapshot.teamRole > 0) {
 			count++;
 		}
 	}
@@ -1156,6 +2655,81 @@ bool Bot_CommandFindSmokeEnemyFacts(gentity_t *bot, BotCombatEnemyFacts *facts) 
 	return facts->valid;
 }
 
+BotCombatAimPolicyFrame Bot_CommandBuildSmokeAimPolicyFrame(
+	const BotCombatEnemyFacts &facts) {
+	BotCombatAimPolicyFrame frame{};
+	frame.skill = Bot_CommandAimSkill();
+	frame.targetInFieldOfView = true;
+	frame.targetVisibleMilliseconds = 1000;
+	frame.targetTrackedMilliseconds = 1000;
+	frame.aimSettledMilliseconds = 1000;
+	frame.reactionDelayMilliseconds = 0;
+	frame.fieldOfViewDegrees = BOT_COMMAND_AIM_FIELD_OF_VIEW_DEGREES;
+	frame.yawDeltaDegrees = 0;
+	frame.pitchDeltaDegrees = 0;
+	frame.burstShotsFired = 0;
+	frame.burstCooldownRemainingMilliseconds = 0;
+	if (!facts.valid || !facts.visible) {
+		frame.targetInFieldOfView = false;
+		frame.targetVisibleMilliseconds = 0;
+	}
+	return frame;
+}
+
+Vector3 Bot_CommandSmokeLiveAimPoint(
+	gentity_t *bot,
+	const BotCombatEnemyFacts &facts) {
+	if (bot == nullptr ||
+		!facts.valid ||
+		facts.enemyEntity < 0 ||
+		facts.enemyEntity >= static_cast<int>(globals.numEntities)) {
+		return vec3_origin;
+	}
+
+	gentity_t *enemy = &g_entities[facts.enemyEntity];
+	if (!Bot_PerceptionEntityAlive(enemy) ||
+		enemy->spawn_count != facts.enemySpawnCount) {
+		return enemy->s.origin;
+	}
+
+	BotCombatContext context = BotActions_BuildContext(bot).combat;
+	context = BotCombat_WithEnemyFacts(context, facts);
+	context.aimPolicyEnabled = true;
+	context.aimPolicy = Bot_CommandBuildSmokeAimPolicyFrame(facts);
+
+	BotCombatLiveAimFrame frame{};
+	frame.useAimPolicy = true;
+	frame.hasAimPolicyResult = false;
+	frame.useProjectileLead = true;
+	frame.aimPolicy = context.aimPolicy;
+	frame.projectileLead.weaponItem = context.currentWeaponItem;
+	frame.projectileLead.targetVelocityKnown = enemy->velocity.lengthSquared() > 1.0f;
+	frame.projectileLead.allowVerticalLead = true;
+	frame.projectileLead.shooterOrigin = Bot_CommandCombatVector(bot->s.origin);
+	frame.projectileLead.targetOrigin = Bot_CommandCombatVector(enemy->s.origin);
+	frame.projectileLead.targetVelocity = Bot_CommandCombatVector(enemy->velocity);
+
+	const BotCombatLiveAimDecision liveAim =
+		BotCombat_BuildLiveAimDecision(context, frame);
+	return liveAim.mayAim ? Bot_CommandVectorFromCombat(liveAim.aimPoint) : enemy->s.origin;
+}
+
+void Bot_CommandApplySmokeEnemyFacts(
+	gentity_t *bot,
+	BotActionContext *context,
+	const BotCombatEnemyFacts &facts) {
+	if (context == nullptr) {
+		return;
+	}
+
+	context->combat = BotCombat_WithEnemyFacts(context->combat, facts);
+	if (Bot_CommandSmokeAimFairness() && context->combat.hasEnemy) {
+		context->combat.aimPolicyEnabled = true;
+		context->combat.aimPolicy = Bot_CommandBuildSmokeAimPolicyFrame(facts);
+	}
+	(void)bot;
+}
+
 void Bot_CommandClearArmor(gclient_t *client) {
 	if (client == nullptr) {
 		return;
@@ -1167,6 +2741,28 @@ void Bot_CommandClearArmor(gclient_t *client) {
 	client->pers.inventory[IT_ARMOR_SHARD] = 0;
 	client->pers.inventory[IT_POWER_SCREEN] = 0;
 	client->pers.inventory[IT_POWER_SHIELD] = 0;
+}
+
+void Bot_CommandRecordItemTimerProof(
+	gentity_t *bot,
+	BotCommandSmokeProofSlot &slot) {
+	if (slot.itemTimerProofRecorded) {
+		return;
+	}
+
+	const int nowMilliseconds = std::max(10000, Bot_CommandCurrentTimeMilliseconds());
+	const int availableMilliseconds = nowMilliseconds - 1;
+	(void)BotItems_EvaluatePickupTimingPolicy({
+		.pickupObserved = true,
+		.clientIndex = Bot_PerceptionClientIndex(bot),
+		.entity = 0,
+		.spawnCount = bot != nullptr ? bot->spawn_count : 0,
+		.item = IT_POWERUP_QUAD,
+		.observedPickupMilliseconds = availableMilliseconds,
+		.expectedAvailableMilliseconds = availableMilliseconds,
+		.currentMilliseconds = nowMilliseconds,
+	});
+	slot.itemTimerProofRecorded = true;
 }
 
 void Bot_CommandRecordHealthArmorProof(
@@ -1296,6 +2892,19 @@ void Bot_CommandPrepareSmokeProof(gentity_t *bot, BotCommandSmokeProofSlot *slot
 	case 20:
 		Bot_CommandPrepareCombatSmoke(bot, *slot);
 		(void)Bot_CommandTryPlaceSmokePeer(bot, Bot_CommandFindSmokePeer(bot));
+		break;
+	case 24:
+		Bot_CommandPrepareCombatSmoke(bot, *slot);
+		(void)Bot_CommandTryPlaceSmokePeer(bot, Bot_CommandFindSmokePeer(bot));
+		break;
+	case 25:
+		Bot_CommandRecordItemTimerProof(bot, *slot);
+		break;
+	case 26:
+		if (!slot->objectiveTeamPrepared) {
+			Bot_CommandPrepareTeamObjectiveSmokeTeams();
+			slot->objectiveTeamPrepared = true;
+		}
 		break;
 	case 21:
 		Bot_CommandPrepareCombatSmoke(bot, *slot);
@@ -1590,6 +3199,100 @@ Vector3 Bot_CommandAnglesToPoint(const gentity_t *bot, const Vector3 &target) {
 	return angles;
 }
 
+gentity_t *Bot_CommandKnownVisibleEnemy(gentity_t *bot) {
+	const int clientIndex = Bot_PerceptionClientIndex(bot);
+	if (clientIndex < 0 || clientIndex >= static_cast<int>(botBrainBlackboardSlots.size())) {
+		return nullptr;
+	}
+
+	const BotBrainBlackboardSnapshot &snapshot = botBrainBlackboardSlots[clientIndex].snapshot;
+	if (!snapshot.valid || !snapshot.currentEnemyVisible || snapshot.currentEnemyEntity < 0) {
+		return nullptr;
+	}
+
+	gentity_t *enemy = Bot_PerceptionEntityFromMemory(
+		snapshot.currentEnemyEntity,
+		snapshot.currentEnemySpawnCount);
+	if (!Bot_PerceptionEntityAlive(enemy) || enemy == bot) {
+		return nullptr;
+	}
+	return enemy;
+}
+
+Vector3 Bot_CommandAimPointForKnownEnemy(gentity_t *bot, gentity_t *enemy) {
+	const int clientIndex = Bot_PerceptionClientIndex(bot);
+	if (bot == nullptr ||
+		bot->client == nullptr ||
+		enemy == nullptr ||
+		clientIndex < 0 ||
+		clientIndex >= static_cast<int>(botBrainBlackboardSlots.size())) {
+		return enemy != nullptr ? enemy->s.origin : vec3_origin;
+	}
+
+	BotBrainBlackboardSlot &slot = botBrainBlackboardSlots[clientIndex];
+	const BotBrainBlackboardSnapshot &snapshot = slot.snapshot;
+	BotCombatContext context = BotActions_BuildContext(bot).combat;
+	context.hasEnemy = true;
+	context.enemyVisible = snapshot.currentEnemyVisible;
+	context.enemyShootable = snapshot.currentEnemyShootable;
+	context.enemyDistanceSquared = snapshot.currentEnemyDistanceSquared;
+	context.enemyClientIndex = snapshot.currentEnemyClient;
+
+	BotCombatLiveAimFrame frame{};
+	frame.useAimPolicy = true;
+	frame.useProjectileLead = true;
+	frame.aimPolicy = Bot_CommandBuildAimPolicyFrame(bot, enemy, slot);
+	frame.projectileLead.weaponItem = context.currentWeaponItem;
+	frame.projectileLead.targetVelocityKnown = enemy->velocity.lengthSquared() > 1.0f;
+	frame.projectileLead.allowVerticalLead = true;
+	frame.projectileLead.shooterOrigin = Bot_CommandCombatVector(bot->s.origin);
+	frame.projectileLead.targetOrigin = Bot_CommandCombatVector(enemy->s.origin);
+	frame.projectileLead.targetVelocity = Bot_CommandCombatVector(enemy->velocity);
+
+	const BotCombatLiveAimDecision liveAim =
+		BotCombat_BuildLiveAimDecision(context, frame);
+	return liveAim.mayAim ? Bot_CommandVectorFromCombat(liveAim.aimPoint) : enemy->s.origin;
+}
+
+void Bot_CommandEvaluateFrameObjectivePolicies(
+	gentity_t *bot,
+	const BotActionDecision &actionDecision) {
+	const BotObjectiveMatchContext matchContext =
+		BotObjectives_BuildMatchContext(bot, BotObjectiveRole::None);
+	const BotObjectiveMatchPolicy matchPolicy =
+		BotObjectives_EvaluateMatchPolicy(matchContext);
+	const BotObjectiveCoopContext coopContext =
+		BotObjectives_BuildCoopContext(bot, nullptr, false, BotObjectiveRole::None);
+	const BotObjectiveCoopPolicy coopPolicy =
+		BotObjectives_EvaluateCoopPolicy(coopContext);
+
+	if (actionDecision.intent == BotActionIntent::MoveToItem && actionDecision.item > IT_NULL) {
+		const Item *item = Bot_CommandItemForId(actionDecision.item);
+		const BotObjectiveItemCategory itemCategory =
+			BotObjectives_ItemCategoryForItem(item);
+		(void)BotObjectives_EvaluateItemRolePolicy(
+			matchPolicy,
+			itemCategory,
+			actionDecision.priority);
+		const BotObjectiveResourceContext resourceContext =
+			BotObjectives_BuildResourceContext(
+				matchPolicy,
+				coopPolicy,
+				itemCategory,
+				actionDecision.priority,
+				true,
+				false,
+				false);
+		(void)BotObjectives_EvaluateResourcePolicy(resourceContext);
+	}
+
+	if (gentity_t *enemy = Bot_CommandKnownVisibleEnemy(bot)) {
+		const BotObjectiveFriendlyFireContext friendlyFireContext =
+			BotObjectives_BuildFriendlyFireContext(bot, enemy, false);
+		(void)BotObjectives_EvaluateFriendlyFirePolicy(friendlyFireContext);
+	}
+}
+
 bool Bot_CommandRouteTargetIsBelow(const gentity_t *bot, const BotLibAdapterRouteSteer &route) {
 	if (bot == nullptr) {
 		return false;
@@ -1788,11 +3491,11 @@ bool Bot_CommandTravelTypeGoalPass(
 
 BotActionDecision Bot_CommandSampleActionDecision(gentity_t *bot) {
 	BotActionContext actionContext = BotActions_BuildContext(bot);
-	Bot_PerceptionEnrichActionContext(Bot_PerceptionClientIndex(bot), &actionContext);
+	Bot_PerceptionEnrichActionContext(bot, Bot_PerceptionClientIndex(bot), &actionContext);
 	if (Bot_CommandSmokeEngageEnemy() || Bot_CommandSmokeWeaponSwitch()) {
 		BotCombatEnemyFacts facts{};
 		if (Bot_CommandFindSmokeEnemyFacts(bot, &facts)) {
-			actionContext.combat = BotCombat_WithEnemyFacts(actionContext.combat, facts);
+			Bot_CommandApplySmokeEnemyFacts(bot, &actionContext, facts);
 		}
 	}
 	return BotActions_Decide(actionContext);
@@ -1808,44 +3511,139 @@ Vector3 Bot_CommandAnglesForDecision(
 			if (Bot_CommandFindSmokeEnemyFacts(bot, &facts) &&
 				facts.enemyEntity > 0 &&
 				facts.enemyEntity < static_cast<int>(globals.numEntities)) {
-				return Bot_CommandAnglesToPoint(bot, g_entities[facts.enemyEntity].s.origin);
+				return Bot_CommandAnglesToPoint(bot, Bot_CommandSmokeLiveAimPoint(bot, facts));
 			}
 		}
 		if (Bot_PerceptionEntityAlive(bot != nullptr ? bot->enemy : nullptr)) {
-			return Bot_CommandAnglesToPoint(bot, bot->enemy->s.origin);
+			return Bot_CommandAnglesToPoint(
+				bot,
+				Bot_CommandAimPointForKnownEnemy(bot, bot->enemy));
 		}
+	}
+
+	if (gentity_t *enemy = Bot_CommandKnownVisibleEnemy(bot)) {
+		return Bot_CommandAnglesToPoint(bot, Bot_CommandAimPointForKnownEnemy(bot, enemy));
 	}
 
 	return Bot_CommandAnglesToTarget(bot, route);
 }
 
-bool Bot_CommandDispatchWeaponSwitch(
+BotActionCommandDispatchOutcome Bot_CommandDispatchOutcomeForFailure(
+	BotActionCommandDispatchFailure failure) {
+	switch (failure) {
+	case BotActionCommandDispatchFailure::UnsupportedCommand:
+	case BotActionCommandDispatchFailure::UnsupportedKind:
+		return BotActionCommandDispatchOutcome::Deferred;
+	case BotActionCommandDispatchFailure::None:
+		return BotActionCommandDispatchOutcome::Submitted;
+	default:
+		return BotActionCommandDispatchOutcome::Failed;
+	}
+}
+
+BotActionCommandDispatchFailure Bot_CommandValidateCommandDispatchTarget(
 	gentity_t *bot,
-	const BotActionDecision &decision,
-	const BotActionApplyResult &actionApply,
-	int currentWeaponItem) {
-	if (bot == nullptr ||
-		bot->client == nullptr ||
-		!actionApply.weaponSwitchPending ||
-		decision.weaponItem <= IT_NULL) {
+	const BotActionCommandRequest &request,
+	Item **itemOut) {
+	if (itemOut != nullptr) {
+		*itemOut = nullptr;
+	}
+
+	if (!request.valid) {
+		return BotActionCommandDispatchFailure::InvalidRequest;
+	}
+	if (request.command == nullptr ||
+		Q_strcasecmp(request.command, "use_index_only") != 0 ||
+		!request.exactItem) {
+		return BotActionCommandDispatchFailure::UnsupportedCommand;
+	}
+	if (request.kind != BotActionCommandRequestKind::UseWeaponIndex &&
+		request.kind != BotActionCommandRequestKind::UseInventoryIndex) {
+		return BotActionCommandDispatchFailure::UnsupportedKind;
+	}
+	if (bot == nullptr || bot->client == nullptr) {
+		return BotActionCommandDispatchFailure::ClientEntityUnavailable;
+	}
+
+	const int clientIndex = Bot_PerceptionClientIndex(bot);
+	if (request.clientIndex < 0 || clientIndex != request.clientIndex) {
+		return BotActionCommandDispatchFailure::InvalidClientIndex;
+	}
+	if ((bot->svFlags & SVF_BOT) == 0 && !bot->client->sess.is_a_bot) {
+		return BotActionCommandDispatchFailure::NotBotClient;
+	}
+	if (!ClientIsPlaying(bot->client) || bot->client->eliminated || bot->deadFlag) {
+		return BotActionCommandDispatchFailure::InactiveClient;
+	}
+
+	Item *item = Bot_CommandItemForId(request.item);
+	if (item == nullptr || static_cast<int>(item->id) != request.item) {
+		return BotActionCommandDispatchFailure::MissingItem;
+	}
+	if (item->use == nullptr) {
+		return BotActionCommandDispatchFailure::MissingUseCallback;
+	}
+	if (bot->client->pers.inventory[item->id] <= 0) {
+		return BotActionCommandDispatchFailure::MissingInventoryItem;
+	}
+
+	if (itemOut != nullptr) {
+		*itemOut = item;
+	}
+	return BotActionCommandDispatchFailure::None;
+}
+
+bool Bot_CommandSubmitActionCommandRequest(
+	gentity_t *bot,
+	const BotActionCommandRequest &request) {
+	Item *item = nullptr;
+	const BotActionCommandDispatchFailure failure =
+		Bot_CommandValidateCommandDispatchTarget(bot, request, &item);
+	if (failure != BotActionCommandDispatchFailure::None) {
+		BotActions_RecordCommandDispatch(
+			request,
+			Bot_CommandDispatchOutcomeForFailure(failure),
+			failure);
 		return false;
 	}
 
-	Item *weapon = Bot_CommandItemForId(decision.weaponItem);
-	const bool dispatchAccepted =
-		weapon != nullptr &&
-		(weapon->flags & IF_WEAPON) != 0 &&
-		bot->client->pers.inventory[weapon->id] > 0;
-	(void)BotActions_RecordWeaponSwitchRequestDetailed(decision, currentWeaponItem);
-	if (!dispatchAccepted) {
+	bot->client->noWeaponChains = request.exactItem;
+	item->use(bot, item);
+	ValidateSelectedItem(bot);
+	BotActions_RecordCommandDispatch(
+		request,
+		BotActionCommandDispatchOutcome::Submitted,
+		BotActionCommandDispatchFailure::None);
+	return true;
+}
+
+bool Bot_CommandWeaponRequestTookEffect(
+	const gentity_t *bot,
+	const BotActionCommandRequest &request) {
+	if (request.kind != BotActionCommandRequestKind::UseWeaponIndex ||
+		bot == nullptr ||
+		bot->client == nullptr) {
+		return false;
+	}
+	if (Bot_CommandCurrentWeaponItem(bot) == request.item) {
+		return true;
+	}
+	return bot->client->weapon.pending != nullptr &&
+		static_cast<int>(bot->client->weapon.pending->id) == request.item;
+}
+
+void Bot_CommandRecordWeaponSwitchDispatchResult(
+	gentity_t *bot,
+	const BotActionDecision &decision,
+	const BotActionCommandRequest &request,
+	bool submitted) {
+	if (!submitted || !Bot_CommandWeaponRequestTookEffect(bot, request)) {
 		(void)BotActions_RecordWeaponSwitchFailureObserved(
 			decision.clientIndex,
 			Bot_CommandCurrentWeaponItem(bot));
-		return false;
+		return;
 	}
 
-	bot->client->weapon.pending = weapon;
-	bot->client->pers.selectedItem = weapon->id;
 	if (Bot_CommandSmokeWeaponSwitch()) {
 		bot->client->weaponState = WeaponState::Ready;
 		Change_Weapon(bot);
@@ -1853,7 +3651,34 @@ bool Bot_CommandDispatchWeaponSwitch(
 			decision.clientIndex,
 			Bot_CommandCurrentWeaponItem(bot));
 	}
-	return true;
+}
+
+bool Bot_CommandDispatchPendingActionRequest(
+	gentity_t *bot,
+	const BotActionDecision &decision,
+	const BotActionApplyResult &actionApply,
+	int currentWeaponItem) {
+	if (!actionApply.weaponSwitchPending && !actionApply.inventoryUsePending) {
+		return false;
+	}
+
+	const BotActionCommandRequest request =
+		BotActions_BuildCommandRequest(decision);
+	if (actionApply.weaponSwitchPending) {
+		(void)BotActions_RecordWeaponSwitchRequestDetailed(
+			decision,
+			currentWeaponItem);
+	}
+
+	const bool submitted = Bot_CommandSubmitActionCommandRequest(bot, request);
+	if (actionApply.weaponSwitchPending) {
+		Bot_CommandRecordWeaponSwitchDispatchResult(
+			bot,
+			decision,
+			request,
+			submitted);
+	}
+	return submitted;
 }
 
 void Bot_CommandRecordSmokeDamageProof(
@@ -1897,6 +3722,30 @@ void Bot_CommandRecordSmokeDamageProof(
 		DamageFlags::Normal,
 		ModID::Blaster);
 	slot->damageProofRecorded = true;
+}
+
+void Bot_CommandRecordAimPolicyAttack(
+	gentity_t *bot,
+	const BotActionApplyResult &actionApply) {
+	if (!actionApply.attackButtonApplied) {
+		return;
+	}
+
+	const int clientIndex = Bot_PerceptionClientIndex(bot);
+	if (clientIndex < 0 || clientIndex >= static_cast<int>(botBrainBlackboardSlots.size())) {
+		return;
+	}
+
+	const int nowMilliseconds = Bot_CommandCurrentTimeMilliseconds();
+	const int skill = Bot_CommandAimSkill();
+	BotBrainBlackboardSlot &slot = botBrainBlackboardSlots[clientIndex];
+	slot.aimLastAttackTimeMilliseconds = nowMilliseconds;
+	slot.aimBurstShotsFired++;
+	if (slot.aimBurstShotsFired >= Bot_CommandAimBurstLimitForSkill(skill)) {
+		slot.aimBurstShotsFired = 0;
+		slot.aimBurstCooldownUntilMilliseconds =
+			nowMilliseconds + Bot_CommandAimBurstCooldownForSkill(skill);
+	}
 }
 
 } // namespace
@@ -1959,6 +3808,7 @@ bool BotBrain_BuildFrameCommand( gentity_t * bot, usercmd_t * cmd ) {
 	BotCommandSmokeProofSlot *smokeSlot = Bot_CommandSmokeProofSlotFor(bot);
 	Bot_CommandPrepareSmokeProof(bot, smokeSlot);
 	const BotActionDecision actionDecision = Bot_CommandSampleActionDecision(bot);
+	Bot_CommandEvaluateFrameObjectivePolicies(bot, actionDecision);
 	const int currentWeaponItem = Bot_CommandCurrentWeaponItem(bot);
 
 	BotLibAdapterRouteSteer route{};
@@ -1972,8 +3822,12 @@ bool BotBrain_BuildFrameCommand( gentity_t * bot, usercmd_t * cmd ) {
 		&routeRequest,
 		&objectiveAssignment,
 		&objectiveRouteGoal);
+	Bot_BlackboardRecordTeamRole(
+		bot,
+		objectiveRouteRequested ? &objectiveAssignment : nullptr);
 	Bot_CommandMaybeWarpToTravelTypeGoalStart(bot, routeRequest);
 	if (!BotNav_GetRouteSteer(bot, &routeRequest, &route)) {
+		Bot_BlackboardRecordNavState(bot);
 		return false;
 	}
 	if (objectiveRouteRequested) {
@@ -1991,10 +3845,12 @@ bool BotBrain_BuildFrameCommand( gentity_t * bot, usercmd_t * cmd ) {
 	cmd->serverFrame = gi.ServerFrame();
 	Bot_CommandApplyMovementState(bot, route, cmd);
 	Bot_CommandApplyRecoveryMove(bot, cmd);
+	Bot_BlackboardRecordNavState(bot);
 	const BotActionApplyResult actionApply =
 		BotActions_ApplyDecisionDetailed(actionDecision, cmd);
-	if (actionApply.weaponSwitchPending) {
-		(void)Bot_CommandDispatchWeaponSwitch(
+	Bot_CommandRecordAimPolicyAttack(bot, actionApply);
+	if (actionApply.weaponSwitchPending || actionApply.inventoryUsePending) {
+		(void)Bot_CommandDispatchPendingActionRequest(
 			bot,
 			actionDecision,
 			actionApply,
@@ -2022,6 +3878,7 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 	const BotLibAdapterSourceCounters &sourceCounters =
 		BotLibAdapter_GetSourceCounters();
 	const BotLibAdapterStatus &adapterStatus = BotLibAdapter_GetStatus();
+	const BotBrainBotPopulationStatus botPopulation = BotBrain_CountBotPopulationStatus();
 	const int travelTypeGoal = Bot_CommandTravelTypeGoal();
 	const bool scenarioSmokePass = Bot_CommandSmokeScenarioMode() >= 20;
 	const bool reservationPass = Bot_CommandSmokeSoak() ||
@@ -2061,12 +3918,15 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 		reservationPass) ? 1 : 0;
 
 	BotBrain_PrintStatusFmt(
-		"q3a_bot_frame_command_status frames={} commands={} "
+		"q3a_bot_frame_command_status pass={} frames={} commands={} "
 			  "route_requests={} route_queries={} route_refreshes={} "
 			  "route_reuses={} route_commands={} route_failures={} "
 			  "route_invalid_slots={} route_cadence_refreshes={} "
 			  "route_target_refreshes={} route_drift_refreshes={} "
 			  "route_preferred_goal_refreshes={} "
+			  "route_target_stabilization_checks={} "
+			  "route_target_stabilizations={} "
+			  "route_target_stabilization_skips={} "
 			  "stuck_checks={} stuck_stalls={} stuck_detections={} "
 			  "stuck_repath_refreshes={} stuck_recovery_activations={} "
 			  "stuck_recovery_frames={} "
@@ -2122,7 +3982,11 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  "last_stuck_recovery_client={} last_stuck_recovery_side={} "
 			  "last_stuck_recovery_frames_remaining={} "
 			  "last_current_area={} last_start_area={} last_goal_area={} "
-			  "last_route_end_area={} last_route_point_count={} last_travel_time={} "
+			  "last_route_end_area={} last_route_point_count={} "
+			  "last_route_target_original_distance_sq={} "
+			  "last_route_target_stable_distance_sq={} "
+			  "last_route_target_stable_point_index={} "
+			  "last_travel_time={} "
 			  "last_reachability={} last_reachability_type={} "
 			  "last_reachability_flags={} last_reachability_end_area={} "
 			  "last_stop_event={} blackboard_updates={} "
@@ -2143,16 +4007,8 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  "last_movement_state_forced_travel_type={} "
 			  "last_movement_state_buttons={} recovery_command_uses={} "
 			  "last_recovery_forward_move={} last_recovery_side_move={} "
-			  "last_recovery_frames_remaining={} "
-			  "team_objective_evaluations={} "
-			  "team_objective_assignments={} "
-			  "team_objective_route_requests={} "
-			  "team_objective_route_commands={} "
-			  "team_objective_reaches={} "
-			  "team_objective_flag_pickups={} "
-			  "last_team_objective_type={} "
-			  "last_team_objective_client={} "
-			  "last_team_objective_item={} pass={}\n",
+			  "last_recovery_frames_remaining={}\n",
+			  pass,
 			  botFrameCommandStatus.frames,
 			  botFrameCommandStatus.commands,
 			  routeStatus.requests,
@@ -2166,6 +4022,9 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  routeStatus.targetRefreshes,
 			  routeStatus.driftRefreshes,
 			  routeStatus.preferredGoalRefreshes,
+			  routeStatus.routeTargetStabilizationChecks,
+			  routeStatus.routeTargetStabilizations,
+			  routeStatus.routeTargetStabilizationSkips,
 			  routeStatus.stuckChecks,
 			  routeStatus.stuckStalls,
 			  routeStatus.stuckDetections,
@@ -2254,6 +4113,9 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  routeStatus.lastGoalArea,
 			  routeStatus.lastRouteEndArea,
 			  routeStatus.lastRoutePointCount,
+			  routeStatus.lastRouteTargetOriginalDistanceSq,
+			  routeStatus.lastRouteTargetStableDistanceSq,
+			  routeStatus.lastRouteTargetStablePointIndex,
 			  routeStatus.lastTravelTime,
 			  routeStatus.lastReachability,
 			  routeStatus.lastReachabilityTravelType,
@@ -2293,19 +4155,11 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  botFrameCommandStatus.recoveryCommandUses,
 			  botFrameCommandStatus.lastRecoveryForwardMove,
 			  botFrameCommandStatus.lastRecoverySideMove,
-			  botFrameCommandStatus.lastRecoveryFramesRemaining,
-			  objectiveStatus.evaluations,
-			  objectiveStatus.assignments,
-			  objectiveStatus.routeRequests,
-			  objectiveStatus.routeCommands,
-			  objectiveStatus.reaches,
-			  objectiveStatus.flagPickups,
-			  objectiveStatus.lastObjectiveType,
-			  objectiveStatus.lastClient,
-			  objectiveStatus.lastItem,
-			  pass);
+			  botFrameCommandStatus.lastRecoveryFramesRemaining);
 
-	BotBrain_PrintCompactActionStatus(actionStatus, itemStatus, combatStatus);
+	BotBrain_PrintCompactObjectiveStatus(objectiveStatus);
+	BotBrain_PrintMatchReadinessStatus(botPopulation);
+	BotBrain_PrintCoopReadinessStatus(botPopulation);
 
 	BotBrain_PrintStatusFmt(
 		"q3a_bot_source_counter_status "
@@ -2424,7 +4278,7 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  adapterStatus.q3aAvailableMemory);
 
 	BotBrain_PrintStatusFmt(
-		"q3a_bot_objective_status "
+		"q3a_bot_objective_detail_status "
 			  "team_objective_evaluations={} "
 			  "team_objective_disabled_evaluations={} "
 			  "team_objective_invalid_contexts={} "
@@ -2452,12 +4306,20 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  "team_objective_role_policy_defend_selections={} "
 			  "team_objective_role_policy_return_selections={} "
 			  "team_objective_role_policy_support_selections={} "
+			  "team_objective_role_policy_lane_attack_selections={} "
+			  "team_objective_role_policy_lane_defense_selections={} "
+			  "team_objective_role_policy_lane_midfield_selections={} "
+			  "team_objective_role_policy_carrier_support_selections={} "
+			  "team_objective_role_policy_dropped_flag_responses={} "
+			  "team_objective_role_policy_own_base_return_selections={} "
 			  "team_objective_enemy_flag_assignments={} "
 			  "team_objective_own_flag_return_assignments={} "
 			  "team_objective_neutral_flag_assignments={} "
 			  "team_objective_base_defense_assignments={} "
 			  "last_team_objective_type={} "
 			  "last_team_objective_role={} "
+			  "last_team_objective_lane={} "
+			  "last_team_objective_target_source={} "
 			  "last_team_objective_client={} "
 			  "last_team_objective_team={} "
 			  "last_team_objective_target_team={} "
@@ -2466,10 +4328,23 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  "last_team_objective_area={} "
 			  "last_team_objective_priority={} "
 			  "last_team_objective_role_priority={} "
+			  "last_team_objective_lane_priority={} "
 			  "last_team_objective_attack_priority={} "
 			  "last_team_objective_defend_priority={} "
 			  "last_team_objective_return_priority={} "
-			  "last_team_objective_support_priority={}\n",
+			  "last_team_objective_support_priority={} "
+			  "last_team_objective_attack_lane_priority={} "
+			  "last_team_objective_defense_lane_priority={} "
+			  "last_team_objective_midfield_lane_priority={} "
+			  "last_team_objective_carrier_support_priority={} "
+			  "last_team_objective_dropped_flag_response_priority={} "
+			  "last_team_objective_own_base_return_priority={} "
+			  "last_team_objective_type_name={} "
+			  "last_team_objective_role_name={} "
+			  "last_team_objective_lane_name={} "
+			  "last_team_objective_target_source_name={} "
+			  "last_team_objective_reason={} "
+			  "last_team_objective_lane_reason={}\n",
 			  objectiveStatus.evaluations,
 			  objectiveStatus.disabledEvaluations,
 			  objectiveStatus.invalidContexts,
@@ -2497,12 +4372,20 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  objectiveStatus.rolePolicyDefendSelections,
 			  objectiveStatus.rolePolicyReturnSelections,
 			  objectiveStatus.rolePolicySupportSelections,
+			  objectiveStatus.rolePolicyLaneAttackSelections,
+			  objectiveStatus.rolePolicyLaneDefenseSelections,
+			  objectiveStatus.rolePolicyLaneMidfieldSelections,
+			  objectiveStatus.rolePolicyCarrierSupportSelections,
+			  objectiveStatus.rolePolicyDroppedFlagResponses,
+			  objectiveStatus.rolePolicyOwnBaseReturnSelections,
 			  objectiveStatus.enemyFlagAssignments,
 			  objectiveStatus.ownFlagReturnAssignments,
 			  objectiveStatus.neutralFlagAssignments,
 			  objectiveStatus.baseDefenseAssignments,
 			  objectiveStatus.lastObjectiveType,
 			  objectiveStatus.lastObjectiveRole,
+			  objectiveStatus.lastObjectiveLane,
+			  objectiveStatus.lastTargetSource,
 			  objectiveStatus.lastClient,
 			  objectiveStatus.lastTeam,
 			  objectiveStatus.lastTargetTeam,
@@ -2511,10 +4394,23 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  objectiveStatus.lastArea,
 			  objectiveStatus.lastPriority,
 			  objectiveStatus.lastRolePriority,
+			  objectiveStatus.lastLanePriority,
 			  objectiveStatus.lastAttackPriority,
 			  objectiveStatus.lastDefendPriority,
 			  objectiveStatus.lastReturnPriority,
-			  objectiveStatus.lastSupportPriority);
+			  objectiveStatus.lastSupportPriority,
+			  objectiveStatus.lastAttackLanePriority,
+			  objectiveStatus.lastDefenseLanePriority,
+			  objectiveStatus.lastMidfieldLanePriority,
+			  objectiveStatus.lastCarrierSupportPriority,
+			  objectiveStatus.lastDroppedFlagResponsePriority,
+			  objectiveStatus.lastOwnBaseReturnPriority,
+			  BotObjectives_TypeName(static_cast<BotObjectiveType>(objectiveStatus.lastObjectiveType)),
+			  BotObjectives_RoleName(static_cast<BotObjectiveRole>(objectiveStatus.lastObjectiveRole)),
+			  BotObjectives_LaneName(static_cast<BotObjectiveLane>(objectiveStatus.lastObjectiveLane)),
+			  BotObjectives_TargetSourceName(static_cast<BotObjectiveTargetSource>(objectiveStatus.lastTargetSource)),
+			  objectiveStatus.lastReason,
+			  objectiveStatus.lastLaneReason);
 
 	BotBrain_PrintStatusFmt(
 		"q3a_bot_blackboard_status "
@@ -2529,13 +4425,38 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  "combat_enemy_visible={} combat_enemy_shootable={} "
 			  "last_combat_enemy_entity={} last_combat_enemy_client={} "
 			  "last_combat_enemy_visible={} last_combat_enemy_shootable={} "
-			  "last_combat_enemy_distance_sq={} last_seen_enemy_updates={} "
+			  "last_combat_enemy_distance_sq={} "
+			  "last_combat_enemy_health={} last_combat_enemy_armor={} "
+			  "enemy_estimate_observations={} "
+			  "enemy_estimate_damage_applications={} "
+			  "enemy_estimate_damage_skips={} enemy_estimate_clears={} "
+			  "last_combat_enemy_estimate_known={} "
+			  "last_combat_enemy_health_estimate={} "
+			  "last_combat_enemy_armor_estimate={} "
+			  "last_combat_enemy_effective_health_estimate={} "
+			  "last_combat_enemy_damage_sequence={} "
+			  "last_seen_enemy_updates={} "
 			  "last_seen_enemy_entity={} last_seen_enemy_client={} "
 			  "heard_events={} last_heard_entity={} last_heard_client={} "
 			  "damaged_events={} damaged_source_inferences={} "
 			  "last_damaged_by_entity={} last_damaged_by_client={} "
 			  "last_damage_origin_x={} last_damage_origin_y={} "
 			  "last_damage_origin_z={} action_context_enrichments={} "
+			  "blackboard_state_enrichments={} "
+			  "blackboard_current_goals={} blackboard_route_states={} "
+			  "blackboard_stuck_timers={} blackboard_item_reservations={} "
+			  "blackboard_team_roles={} "
+			  "last_goal_type={} last_goal_area={} "
+			  "last_goal_entity={} last_goal_item={} "
+			  "last_route_valid={} last_route_start_area={} "
+			  "last_route_goal_area={} last_route_end_area={} "
+			  "last_route_points={} last_route_travel_time={} "
+			  "last_route_stop_event={} last_stuck_reason={} "
+			  "last_stuck_frames={} last_stuck_recovery_frames={} "
+			  "item_reservation_active={} item_reservation_entity={} "
+			  "item_reservation_owner={} item_reservation_count={} "
+			  "last_team_role={} last_team_role_objective={} "
+			  "last_team_role_team={} last_team_role_target_team={} "
 			  "smoke_combat={} smoke_team_objective={}\n",
 			  botBrainBlackboardStatus.frames,
 			  botBrainBlackboardStatus.updates,
@@ -2560,6 +4481,17 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  botBrainBlackboardStatus.lastCombatEnemyVisible,
 			  botBrainBlackboardStatus.lastCombatEnemyShootable,
 			  botBrainBlackboardStatus.lastCombatEnemyDistanceSquared,
+			  botBrainBlackboardStatus.lastCombatEnemyHealth,
+			  botBrainBlackboardStatus.lastCombatEnemyArmor,
+			  botBrainBlackboardStatus.combatEnemyEstimateObservations,
+			  botBrainBlackboardStatus.combatEnemyEstimateDamageApplications,
+			  botBrainBlackboardStatus.combatEnemyEstimateDamageSkips,
+			  botBrainBlackboardStatus.combatEnemyEstimateClears,
+			  botBrainBlackboardStatus.lastCombatEnemyEstimateKnown,
+			  botBrainBlackboardStatus.lastCombatEnemyHealthEstimate,
+			  botBrainBlackboardStatus.lastCombatEnemyArmorEstimate,
+			  botBrainBlackboardStatus.lastCombatEnemyEffectiveHealthEstimate,
+			  botBrainBlackboardStatus.lastCombatEnemyDamageSequence,
 			  botBrainBlackboardStatus.lastSeenEnemyUpdates,
 			  botBrainBlackboardStatus.lastSeenEnemyEntity,
 			  botBrainBlackboardStatus.lastSeenEnemyClient,
@@ -2574,6 +4506,34 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  botBrainBlackboardStatus.lastDamageOriginY,
 			  botBrainBlackboardStatus.lastDamageOriginZ,
 			  botBrainBlackboardStatus.actionContextEnrichments,
+			  botBrainBlackboardStatus.stateEnrichments,
+			  Bot_BlackboardActiveCurrentGoals(),
+			  Bot_BlackboardActiveRouteStates(),
+			  Bot_BlackboardActiveStuckTimers(),
+			  Bot_BlackboardActiveItemReservations(),
+			  Bot_BlackboardActiveTeamRoles(),
+			  botBrainBlackboardStatus.lastGoalType,
+			  botBrainBlackboardStatus.lastGoalArea,
+			  botBrainBlackboardStatus.lastGoalEntity,
+			  botBrainBlackboardStatus.lastGoalItem,
+			  botBrainBlackboardStatus.lastRouteValid,
+			  botBrainBlackboardStatus.lastRouteStartArea,
+			  botBrainBlackboardStatus.lastRouteGoalArea,
+			  botBrainBlackboardStatus.lastRouteEndArea,
+			  botBrainBlackboardStatus.lastRoutePointCount,
+			  botBrainBlackboardStatus.lastRouteTravelTime,
+			  botBrainBlackboardStatus.lastRouteStopEvent,
+			  botBrainBlackboardStatus.lastStuckReason,
+			  botBrainBlackboardStatus.lastStuckFrames,
+			  botBrainBlackboardStatus.lastStuckRecoveryFramesRemaining,
+			  botBrainBlackboardStatus.lastItemReservationActive,
+			  botBrainBlackboardStatus.lastItemReservationEntity,
+			  botBrainBlackboardStatus.lastItemReservationOwnerClient,
+			  routeStatus.itemGoalActiveReservations,
+			  botBrainBlackboardStatus.lastTeamRole,
+			  botBrainBlackboardStatus.lastTeamRoleObjectiveType,
+			  botBrainBlackboardStatus.lastTeamRoleTeam,
+			  botBrainBlackboardStatus.lastTeamRoleTargetTeam,
 			  botBrainBlackboardStatus.smokeCombat,
 			  botBrainBlackboardStatus.smokeTeamObjective);
 
@@ -2603,7 +4563,19 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  "natural_movement_state_waterjump_commands={} "
 			  "interaction_wait_command_uses={} interaction_use_command_uses={} "
 			  "last_interaction_command_action={} "
-			  "last_interaction_command_entity={}\n",
+			  "last_interaction_command_entity={} "
+			  "route_corner_cut_candidates={} "
+			  "route_corner_cut_trace_checks={} "
+			  "route_corner_cut_trace_hits={} "
+			  "route_corner_cut_trace_misses={} "
+			  "route_corner_cut_ground_trace_checks={} "
+			  "route_corner_cut_ground_trace_misses={} "
+			  "route_corner_cut_accepted={} route_corner_cut_rejected={} "
+			  "corner_cut_candidates={} corner_cut_trace_checks={} "
+			  "corner_cut_accepted={} "
+			  "trace_checked_corner_cut_candidates={} "
+			  "trace_checked_corner_cut_trace_checks={} "
+			  "trace_checked_corner_cut_accepted={}\n",
 			  routeStatus.travelTypeGoalSupportChecks,
 			  routeStatus.travelTypeGoalSupported,
 			  routeStatus.travelTypeGoalUnsupported,
@@ -2633,7 +4605,21 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  botFrameCommandStatus.interactionWaitCommandUses,
 			  botFrameCommandStatus.interactionUseCommandUses,
 			  botFrameCommandStatus.lastInteractionCommandAction,
-			  botFrameCommandStatus.lastInteractionCommandEntity);
+			  botFrameCommandStatus.lastInteractionCommandEntity,
+			  routeStatus.cornerCutChecks,
+			  routeStatus.cornerCutTraceAttempts,
+			  routeStatus.cornerCutTracePasses,
+			  routeStatus.cornerCutTraceFailures,
+			  routeStatus.cornerCutGroundTraceAttempts,
+			  routeStatus.cornerCutGroundTraceFailures,
+			  routeStatus.cornerCutApplications,
+			  routeStatus.cornerCutSkips,
+			  routeStatus.cornerCutChecks,
+			  routeStatus.cornerCutTraceAttempts,
+			  routeStatus.cornerCutApplications,
+			  routeStatus.cornerCutChecks,
+			  routeStatus.cornerCutTraceAttempts,
+			  routeStatus.cornerCutApplications);
 
 	BotBrain_PrintStatusFmt(
 		"q3a_bot_nav_natural_support_status "
@@ -2734,8 +4720,10 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  routeStatus.lastInteractionSolid,
 			  routeStatus.lastInteractionMoveType);
 
+	BotBrain_PrintCompactActionStatus(actionStatus, itemStatus, combatStatus);
+
 	BotBrain_PrintStatusFmt(
-		"q3a_bot_action_status "
+		"q3a_bot_action_detail_status "
 			  "action_evaluations={} action_invalid_contexts={} "
 			  "action_dead_contexts={} action_item_evaluations={} "
 			  "action_combat_evaluations={} action_move_to_item_decisions={} "
@@ -2744,6 +4732,25 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  "action_noop_decisions={} action_applied_cmds={} "
 			  "action_applied_attack_buttons={} action_applied_use_buttons={} "
 			  "action_pending_weapon_switches={} action_pending_inventory_uses={} "
+			  "action_command_request_builds={} "
+			  "action_command_request_accepted={} "
+			  "action_command_request_rejected={} "
+			  "action_weapon_command_requests={} "
+			  "action_inventory_command_requests={} "
+			  "action_command_request_dispatch_attempts={} "
+			  "action_command_request_submitted={} "
+			  "action_command_request_deferred={} "
+			  "action_command_request_dispatch_failures={} "
+			  "action_weapon_command_dispatches={} "
+			  "action_inventory_command_dispatches={} "
+			  "action_last_command_request_kind={} "
+			  "action_last_command_request_failure={} "
+			  "action_last_command_dispatch_outcome={} "
+			  "action_last_command_dispatch_failure={} "
+			  "action_last_command_request_kind_name={} "
+			  "action_last_command_request_failure_name={} "
+			  "action_last_command_dispatch_outcome_name={} "
+			  "action_last_command_dispatch_failure_name={} "
 			  "weapon_switch_requests={} weapon_switch_completions={} "
 			  "weapon_switch_failures={} weapon_switch_expected_item={} "
 			  "weapon_switch_actual_item={} weapon_switch_expected_match={} "
@@ -2754,17 +4761,117 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  "item_evaluations={} item_invalid_candidates={} "
 			  "item_reserved_deferrals={} item_seek_decisions={} "
 			  "item_low_health_boosts={} item_low_armor_boosts={} "
+			  "item_health_candidates={} item_armor_candidates={} "
+			  "item_ammo_candidates={} item_weapon_candidates={} "
+			  "item_powerup_candidates={} item_pickup_candidates={} "
+			  "item_damage_boost_candidates={} "
+			  "item_protection_candidates={} "
+			  "item_invisibility_candidates={} "
+			  "item_mobility_candidates={} "
+			  "item_utility_powerup_candidates={} "
+			  "item_tech_candidates={} item_ctf_objective_candidates={} "
+			  "item_useful_candidates={} item_unneeded_candidates={} "
+			  "item_health_seek_decisions={} item_armor_seek_decisions={} "
+			  "item_ammo_seek_decisions={} item_weapon_seek_decisions={} "
+			  "item_powerup_seek_decisions={} item_pickup_seek_decisions={} "
+			  "item_damage_boost_seek_decisions={} "
+			  "item_protection_seek_decisions={} "
+			  "item_invisibility_seek_decisions={} "
+			  "item_mobility_seek_decisions={} "
+			  "item_utility_powerup_seek_decisions={} "
+			  "item_tech_seek_decisions={} "
+			  "item_ctf_objective_seek_decisions={} "
+			  "item_special_utility_boosts={} "
+			  "item_high_value_boosts={} "
+			  "item_focus_health_boosts={} item_focus_armor_boosts={} "
 			  "item_health_goal_assignments={} item_armor_goal_assignments={} "
 			  "item_health_pickups={} item_armor_pickups={} "
 			  "last_health_pickup_delta={} last_armor_pickup_delta={} "
 			  "last_health_before={} last_health_after={} "
 			  "last_armor_before={} last_armor_after={} "
 			  "item_last_item={} item_last_entity={} item_last_priority={} "
+			  "item_last_utility_kind={} item_last_special_kind={} "
+			  "item_last_utility_kind_name={} item_last_special_kind_name={} "
+			  "item_timer_evaluations={} item_timer_allowed_uses={} "
+			  "item_timer_blocked_uses={} item_timer_fairness_blocks={} "
+			  "item_timer_fuzzed_offsets={} last_item_timer_item={} "
+			  "last_item_timer_entity={} last_item_timer_known_ms={} "
+			  "last_item_timer_fuzz_ms={} last_item_timer_allowed={} "
+			  "last_item_timer_reason={} "
+			  "item_timing_consumer_evaluations={} "
+			  "item_timing_consumer_live_pickups={} "
+			  "item_timing_consumer_ready={} "
+			  "item_timing_consumer_waiting={} "
+			  "item_timing_consumer_fairness_blocks={} "
+			  "item_timing_consumer_selection_deferrals={} "
+			  "last_item_timing_consumer_item={} "
+			  "last_item_timing_consumer_entity={} "
+			  "last_item_timing_consumer_effective_ms={} "
+			  "last_item_timing_consumer_remaining_ms={} "
+			  "last_item_timing_consumer_fuzz_ms={} "
+			  "last_item_timing_consumer_allowed={} "
+			  "last_item_timing_consumer_policy_reason={} "
+			  "last_item_timing_consumer_reason={} "
 			  "combat_evaluations={} combat_no_enemy={} "
 			  "combat_enemy_acquisitions={} combat_enemy_visible={} "
 			  "combat_enemy_shootable={} "
 			  "combat_blocked_sight={} combat_weapon_switch_decisions={} "
 			  "combat_fire_decisions={} combat_withheld_fire={} "
+			  "aim_policy_evaluations={} aim_policy_aim_allowed={} "
+			  "aim_policy_fire_allowed={} "
+			  "aim_policy_blocks_no_enemy={} "
+			  "aim_policy_blocks_visibility={} "
+			  "aim_policy_blocks_field_of_view={} "
+			  "aim_policy_blocks_shootability={} "
+			  "aim_policy_blocks_weapon_ready={} "
+			  "aim_policy_blocks_skill={} "
+			  "aim_policy_blocks_burst_cooldown={} "
+			  "aim_policy_blocks_reaction={} "
+			  "aim_policy_blocks_turn={} "
+			  "aim_policy_blocks_aim_settle={} "
+			  "aim_policy_blocks_burst_limit={} "
+			  "last_aim_policy_failure={} "
+			  "last_aim_policy_failure_name={} "
+			  "last_aim_policy_skill={} "
+			  "last_aim_policy_reaction_delay_ms={} "
+			  "last_aim_policy_aim_settle_ms={} "
+			  "last_aim_policy_visible_ms={} "
+			  "last_aim_policy_tracked_ms={} "
+			  "last_aim_policy_fov_degrees={} "
+			  "last_aim_policy_yaw_delta_degrees={} "
+			  "last_aim_policy_pitch_delta_degrees={} "
+			  "last_aim_policy_max_turn_degrees={} "
+			  "last_aim_policy_aim_error_tenths_degrees={} "
+			  "last_aim_policy_tracking_noise_tenths_degrees={} "
+			  "last_aim_policy_burst_shot_limit={} "
+			  "last_aim_policy_burst_cooldown_ms={} "
+			  "last_aim_policy_reaction_remaining_ms={} "
+			  "last_aim_policy_aim_settle_remaining_ms={} "
+			  "last_aim_policy_burst_shots_fired={} "
+			  "last_aim_policy_burst_shots_remaining={} "
+			  "last_aim_policy_burst_cooldown_remaining_ms={} "
+			  "projectile_lead_evaluations={} projectile_lead_uses={} "
+			  "projectile_lead_no_projectile={} projectile_lead_no_speed={} "
+			  "projectile_lead_invalid_distance={} "
+			  "last_projectile_lead_weapon={} last_projectile_lead_speed={} "
+			  "last_projectile_lead_ms={} "
+			  "last_projectile_lead_raw_ms={} "
+			  "last_projectile_lead_max_ms={} "
+			  "last_projectile_lead_scale_percent={} "
+			  "last_projectile_lead_target_speed_sq={} "
+			  "last_projectile_lead_aim_distance_sq={} "
+			  "last_projectile_lead_offset_sq={} "
+			  "last_projectile_lead_raw_offset_sq={} "
+			  "last_projectile_lead_clamped={} "
+			  "live_aim_evaluations={} live_aim_aim_allowed={} "
+			  "live_aim_fire_allowed={} live_aim_policy_blocks={} "
+			  "live_aim_projectile_lead_uses={} "
+			  "last_live_aim_weapon={} "
+			  "last_live_aim_reaction_remaining_ms={} "
+			  "last_live_aim_aim_settle_remaining_ms={} "
+			  "last_live_aim_burst_shots_remaining={} "
+			  "last_live_aim_projectile_lead_percent={} "
+			  "last_live_aim_reason={} "
 			  "combat_damage_events={} "
 			  "combat_last_weapon_item={} combat_last_priority={} "
 			  "combat_last_enemy_distance_sq={} "
@@ -2785,6 +4892,25 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  actionStatus.appliedUseButtons,
 			  actionStatus.pendingWeaponSwitches,
 			  actionStatus.pendingInventoryUses,
+			  actionStatus.commandRequestBuilds,
+			  actionStatus.commandRequestAccepted,
+			  actionStatus.commandRequestRejected,
+			  actionStatus.weaponCommandRequests,
+			  actionStatus.inventoryCommandRequests,
+			  actionStatus.commandRequestDispatchAttempts,
+			  actionStatus.commandRequestSubmitted,
+			  actionStatus.commandRequestDeferred,
+			  actionStatus.commandRequestDispatchFailures,
+			  actionStatus.weaponCommandDispatches,
+			  actionStatus.inventoryCommandDispatches,
+			  static_cast<int>(actionStatus.lastCommandRequestKind),
+			  static_cast<int>(actionStatus.lastCommandRequestFailure),
+			  static_cast<int>(actionStatus.lastCommandDispatchOutcome),
+			  static_cast<int>(actionStatus.lastCommandDispatchFailure),
+			  BotActions_CommandRequestKindName(actionStatus.lastCommandRequestKind),
+			  BotActions_CommandRequestFailureName(actionStatus.lastCommandRequestFailure),
+			  BotActions_CommandDispatchOutcomeName(actionStatus.lastCommandDispatchOutcome),
+			  BotActions_CommandDispatchFailureName(actionStatus.lastCommandDispatchFailure),
 			  actionStatus.weaponSwitchRequests,
 			  actionStatus.weaponSwitchCompletions,
 			  actionStatus.weaponSwitchFailures,
@@ -2804,6 +4930,38 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  itemStatus.seekDecisions,
 			  itemStatus.lowHealthBoosts,
 			  itemStatus.lowArmorBoosts,
+			  itemStatus.healthCandidates,
+			  itemStatus.armorCandidates,
+			  itemStatus.ammoCandidates,
+			  itemStatus.weaponCandidates,
+			  itemStatus.powerupCandidates,
+			  itemStatus.pickupCandidates,
+			  itemStatus.damageBoostCandidates,
+			  itemStatus.protectionCandidates,
+			  itemStatus.invisibilityCandidates,
+			  itemStatus.mobilityCandidates,
+			  itemStatus.utilityPowerupCandidates,
+			  itemStatus.techCandidates,
+			  itemStatus.ctfObjectiveCandidates,
+			  itemStatus.usefulCandidates,
+			  itemStatus.unneededCandidates,
+			  itemStatus.healthSeekDecisions,
+			  itemStatus.armorSeekDecisions,
+			  itemStatus.ammoSeekDecisions,
+			  itemStatus.weaponSeekDecisions,
+			  itemStatus.powerupSeekDecisions,
+			  itemStatus.pickupSeekDecisions,
+			  itemStatus.damageBoostSeekDecisions,
+			  itemStatus.protectionSeekDecisions,
+			  itemStatus.invisibilitySeekDecisions,
+			  itemStatus.mobilitySeekDecisions,
+			  itemStatus.utilityPowerupSeekDecisions,
+			  itemStatus.techSeekDecisions,
+			  itemStatus.ctfObjectiveSeekDecisions,
+			  itemStatus.specialUtilityBoosts,
+			  itemStatus.highValueBoosts,
+			  itemStatus.focusHealthBoosts,
+			  itemStatus.focusArmorBoosts,
 			  itemStatus.itemHealthGoalAssignments,
 			  itemStatus.itemArmorGoalAssignments,
 			  itemStatus.itemHealthPickups,
@@ -2817,6 +4975,35 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  itemStatus.lastItem,
 			  itemStatus.lastEntity,
 			  itemStatus.lastPriority,
+			  static_cast<int>(itemStatus.lastUtilityKind),
+			  static_cast<int>(itemStatus.lastSpecialKind),
+			  BotItems_UtilityKindName(itemStatus.lastUtilityKind),
+			  BotItems_SpecialKindName(itemStatus.lastSpecialKind),
+			  itemStatus.timingPolicyEvaluations,
+			  itemStatus.timingPolicyReady,
+			  itemStatus.timingPolicyWaiting,
+			  itemStatus.timingPolicyUnobservedBlocks,
+			  itemStatus.timingPolicyFuzzedUses,
+			  itemStatus.lastTimingPolicyItem,
+			  itemStatus.lastTimingPolicyEntity,
+			  itemStatus.lastTimingPolicyEffectiveAvailableMilliseconds,
+			  itemStatus.lastTimingPolicyFuzzMilliseconds,
+			  BotBrain_LastItemTimerAllowed(itemStatus),
+			  BotItems_TimingPolicyReasonName(itemStatus.lastTimingPolicyReason),
+			  itemStatus.timingConsumerEvaluations,
+			  itemStatus.timingConsumerLivePickups,
+			  itemStatus.timingConsumerReady,
+			  itemStatus.timingConsumerWaiting,
+			  itemStatus.timingConsumerFairnessBlocks,
+			  itemStatus.timingConsumerSelectionDeferrals,
+			  itemStatus.lastTimingConsumerItem,
+			  itemStatus.lastTimingConsumerEntity,
+			  itemStatus.lastTimingConsumerEffectiveAvailableMilliseconds,
+			  itemStatus.lastTimingConsumerRemainingMilliseconds,
+			  itemStatus.lastTimingConsumerFuzzMilliseconds,
+			  BotBrain_LastItemTimingConsumerAllowed(itemStatus),
+			  BotItems_TimingPolicyReasonName(itemStatus.lastTimingConsumerPolicyReason),
+			  BotItems_TimingConsumerReasonName(itemStatus.lastTimingConsumerReason),
 			  combatStatus.evaluations,
 			  combatStatus.noEnemy,
 			  combatStatus.enemyAcquisitions,
@@ -2826,12 +5013,74 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  combatStatus.weaponSwitchDecisions,
 			  combatStatus.fireDecisions,
 			  combatStatus.withheldFire,
+			  combatStatus.aimPolicyEvaluations,
+			  combatStatus.aimPolicyAimAllowed,
+			  combatStatus.aimPolicyFireAllowed,
+			  combatStatus.aimPolicyBlocksNoEnemy,
+			  combatStatus.aimPolicyBlocksVisibility,
+			  combatStatus.aimPolicyBlocksFieldOfView,
+			  combatStatus.aimPolicyBlocksShootability,
+			  combatStatus.aimPolicyBlocksWeaponReady,
+			  combatStatus.aimPolicyBlocksSkill,
+			  combatStatus.aimPolicyBlocksBurstCooldown,
+			  combatStatus.aimPolicyBlocksReaction,
+			  combatStatus.aimPolicyBlocksTurn,
+			  combatStatus.aimPolicyBlocksAimSettle,
+			  combatStatus.aimPolicyBlocksBurstLimit,
+			  static_cast<int>(combatStatus.lastAimPolicyFailure),
+			  BotCombat_AimPolicyFailureName(combatStatus.lastAimPolicyFailure),
+			  combatStatus.lastAimPolicySkill,
+			  combatStatus.lastAimPolicyReactionDelayMilliseconds,
+			  combatStatus.lastAimPolicyAimSettleMilliseconds,
+			  combatStatus.lastAimPolicyVisibleMilliseconds,
+			  combatStatus.lastAimPolicyTrackedMilliseconds,
+			  combatStatus.lastAimPolicyFovDegrees,
+			  combatStatus.lastAimPolicyYawDeltaDegrees,
+			  combatStatus.lastAimPolicyPitchDeltaDegrees,
+			  combatStatus.lastAimPolicyMaxTurnDegrees,
+			  combatStatus.lastAimPolicyAimErrorTenthsDegrees,
+			  combatStatus.lastAimPolicyTrackingNoiseTenthsDegrees,
+			  combatStatus.lastAimPolicyBurstShotLimit,
+			  combatStatus.lastAimPolicyBurstCooldownMilliseconds,
+			  combatStatus.lastAimPolicyReactionRemainingMilliseconds,
+			  combatStatus.lastAimPolicyAimSettleRemainingMilliseconds,
+			  combatStatus.lastAimPolicyBurstShotsFired,
+			  combatStatus.lastAimPolicyBurstShotsRemaining,
+			  combatStatus.lastAimPolicyBurstCooldownRemainingMilliseconds,
+			  combatStatus.projectileLeadEvaluations,
+			  combatStatus.projectileLeadUses,
+			  combatStatus.projectileLeadNoProjectile,
+			  combatStatus.projectileLeadNoSpeed,
+			  combatStatus.projectileLeadInvalidDistance,
+			  combatStatus.lastProjectileLeadWeaponItem,
+			  combatStatus.lastProjectileLeadSpeed,
+			  combatStatus.lastProjectileLeadMilliseconds,
+			  combatStatus.lastProjectileLeadRawMilliseconds,
+			  combatStatus.lastProjectileLeadMaxMilliseconds,
+			  combatStatus.lastProjectileLeadScalePercent,
+			  combatStatus.lastProjectileLeadTargetSpeedSquared,
+			  combatStatus.lastProjectileLeadAimDistanceSquared,
+			  combatStatus.lastProjectileLeadOffsetSquared,
+			  combatStatus.lastProjectileLeadRawOffsetSquared,
+			  combatStatus.lastProjectileLeadClamped ? 1 : 0,
+			  combatStatus.liveAimEvaluations,
+			  combatStatus.liveAimAimAllowed,
+			  combatStatus.liveAimFireAllowed,
+			  combatStatus.liveAimPolicyBlocks,
+			  combatStatus.liveAimProjectileLeadUses,
+			  combatStatus.lastLiveAimWeaponItem,
+			  combatStatus.lastLiveAimReactionRemainingMilliseconds,
+			  combatStatus.lastLiveAimAimSettleRemainingMilliseconds,
+			  combatStatus.lastAimPolicyBurstShotsRemaining,
+			  combatStatus.lastLiveAimProjectileLeadPercent,
+			  combatStatus.lastLiveAimReason,
 			  combatStatus.damageEvents,
 			  combatStatus.lastWeaponItem,
 			  combatStatus.lastPriority,
 			  combatStatus.lastEnemyDistanceSquared,
 			  combatStatus.lastEnemyClient,
 			  combatStatus.lastDamage);
+
 }
 
 /*

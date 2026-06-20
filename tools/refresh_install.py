@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import shutil
 import subprocess
 import sys
 from typing import Any
@@ -13,12 +14,74 @@ TOOLS_DIR = pathlib.Path(__file__).resolve().parent
 if str(TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(TOOLS_DIR))
 
-from package_assets import botfile_archive_member_requirements
+from package_assets import botfile_archive_member_requirements, q2aas_tool_binary_members
+
+
+RELEASE_NOTICE_FILES = (
+    ("LICENSE", "licenses/WORR-LICENSE.txt"),
+    ("tools/q2aas/LICENSE", "licenses/q2aas-bspc-LICENSE.txt"),
+    ("docs-dev/q3a-botlib-aas-credits.md", "licenses/q3a-botlib-aas-credits.md"),
+    ("tools/q2aas/README.WORR.md", "licenses/q2aas-README.WORR.md"),
+    ("src/game/sgame/bots/q3a/README.WORR.md", "licenses/q3a-botlib-README.WORR.md"),
+)
 
 
 def run_step(label: str, command: list[str]) -> None:
     print(f"[refresh-install] {label}", flush=True)
     subprocess.run(command, check=True)
+
+
+def rel_path(value: str) -> pathlib.Path:
+    return pathlib.Path(*pathlib.PurePosixPath(value).parts)
+
+
+def release_notice_destinations() -> list[str]:
+    return [dest for _, dest in RELEASE_NOTICE_FILES]
+
+
+def validate_q2aas_tool_binary_policy(install_dir: pathlib.Path) -> None:
+    files = sorted(path for path in install_dir.rglob("*") if path.is_file())
+    members = q2aas_tool_binary_members(files, install_dir)
+    if not members:
+        return
+
+    details = "\n  - ".join(members)
+    raise SystemExit(
+        "q2aas/BSPC tool binaries are not part of default WORR binary releases. "
+        "Remove these staged files or add a dedicated opt-in release flow with "
+        "license/credit sidecar validation:\n"
+        f"  - {details}"
+    )
+
+
+def validate_release_notice_bundle(install_dir: pathlib.Path) -> None:
+    failures: list[str] = []
+    for dest in release_notice_destinations():
+        path = install_dir / rel_path(dest)
+        if not path.is_file():
+            failures.append(f"missing release notice sidecar: {dest}")
+        elif path.stat().st_size == 0:
+            failures.append(f"empty release notice sidecar: {dest}")
+
+    if failures:
+        details = "\n  - ".join(failures)
+        raise SystemExit(f"Invalid release notice bundle:\n  - {details}")
+
+
+def stage_release_notice_bundle(repo_root: pathlib.Path, install_dir: pathlib.Path) -> None:
+    notices_dir = install_dir / "licenses"
+    if notices_dir.exists():
+        shutil.rmtree(notices_dir)
+
+    for source_rel, dest_rel in RELEASE_NOTICE_FILES:
+        source = repo_root / rel_path(source_rel)
+        if not source.is_file():
+            raise SystemExit(f"Required release notice source not found: {source}")
+        dest = install_dir / rel_path(dest_rel)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, dest)
+
+    validate_release_notice_bundle(install_dir)
 
 
 def is_under(path: pathlib.Path, root: pathlib.Path) -> bool:
@@ -171,6 +234,10 @@ def main() -> int:
         ],
     )
 
+    install_dir = pathlib.Path(args.install_dir).resolve()
+    validate_q2aas_tool_binary_policy(install_dir)
+    stage_release_notice_bundle(repo_root, install_dir)
+
     run_step(
         f"Package staged runtime assets ({args.base_game}/{args.archive_name})",
         [
@@ -253,7 +320,6 @@ def main() -> int:
             validation_command,
         )
 
-    install_dir = pathlib.Path(args.install_dir).resolve()
     print(f"[refresh-install] Completed: {install_dir}")
     return 0
 

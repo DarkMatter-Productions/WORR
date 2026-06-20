@@ -1109,9 +1109,12 @@ void Damage(gentity_t *targ, gentity_t *inflictor, gentity_t *attacker,
     }
 
     if (!OnSameTeam(targ, attacker)) {
+      const int realArmorDamage =
+          powerArmorSave + std::max(0, armorSave - protectionSave);
       const int realHitDamage =
-          statTake + powerArmorSave + std::max(0, armorSave - protectionSave);
-      BotCombat_RecordDamageEvent(attacker, targ, realHitDamage);
+          statTake + realArmorDamage;
+      BotCombat_RecordDamageEvent(attacker, targ, realHitDamage, statTake,
+                                  realArmorDamage);
     }
 
     attacker->client->pers.match.totalDmgDealt +=

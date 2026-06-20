@@ -85,6 +85,27 @@ enum class BotActionCommandRequestFailure {
 	InventoryItemIsWeapon,
 };
 
+enum class BotActionCommandDispatchOutcome {
+	None,
+	Submitted,
+	Deferred,
+	Failed,
+};
+
+enum class BotActionCommandDispatchFailure {
+	None,
+	InvalidRequest,
+	InvalidClientIndex,
+	ClientEntityUnavailable,
+	NotBotClient,
+	InactiveClient,
+	MissingItem,
+	MissingInventoryItem,
+	MissingUseCallback,
+	UnsupportedCommand,
+	UnsupportedKind,
+};
+
 struct BotActionApplyResult {
 	bool accepted = false;
 	bool commandMutated = false;
@@ -169,10 +190,21 @@ struct BotActionStatus {
 	int commandRequestUnusableItems = 0;
 	int commandRequestWeaponRejects = 0;
 	int commandRequestInventoryRejects = 0;
+	int commandRequestDispatchAttempts = 0;
+	int commandRequestSubmitted = 0;
+	int commandRequestDeferred = 0;
+	int commandRequestDispatchFailures = 0;
+	int weaponCommandDispatches = 0;
+	int inventoryCommandDispatches = 0;
 	int lastCommandRequestClientIndex = -1;
 	int lastCommandRequestItem = 0;
 	BotActionCommandRequestKind lastCommandRequestKind = BotActionCommandRequestKind::None;
 	BotActionCommandRequestFailure lastCommandRequestFailure = BotActionCommandRequestFailure::None;
+	int lastCommandDispatchClientIndex = -1;
+	int lastCommandDispatchItem = 0;
+	BotActionCommandRequestKind lastCommandDispatchKind = BotActionCommandRequestKind::None;
+	BotActionCommandDispatchOutcome lastCommandDispatchOutcome = BotActionCommandDispatchOutcome::None;
+	BotActionCommandDispatchFailure lastCommandDispatchFailure = BotActionCommandDispatchFailure::None;
 	int weaponSwitchRequests = 0;
 	int weaponSwitchValidatedRequests = 0;
 	int weaponSwitchRejectedRequests = 0;
@@ -206,6 +238,10 @@ bool BotActions_ApplyDecision(const BotActionDecision &decision, usercmd_t *cmd)
 BotActionApplyFailure BotActions_ValidateDecisionForApplication(const BotActionDecision &decision);
 BotActionCommandRequest BotActions_BuildCommandRequest(const BotActionDecision &decision);
 BotActionCommandRequestFailure BotActions_ValidateCommandRequest(const BotActionDecision &decision);
+void BotActions_RecordCommandDispatch(
+	const BotActionCommandRequest &request,
+	BotActionCommandDispatchOutcome outcome,
+	BotActionCommandDispatchFailure failure);
 bool BotActions_IsWeaponSwitchDecision(const BotActionDecision &decision);
 bool BotActions_RecordWeaponSwitchRequest(const BotActionDecision &decision);
 void BotActions_RecordWeaponSwitchRequest(int expectedWeaponItem);
@@ -230,4 +266,6 @@ const char *BotActions_IntentName(BotActionIntent intent);
 const char *BotActions_ApplyFailureName(BotActionApplyFailure failure);
 const char *BotActions_CommandRequestKindName(BotActionCommandRequestKind kind);
 const char *BotActions_CommandRequestFailureName(BotActionCommandRequestFailure failure);
+const char *BotActions_CommandDispatchOutcomeName(BotActionCommandDispatchOutcome outcome);
+const char *BotActions_CommandDispatchFailureName(BotActionCommandDispatchFailure failure);
 const char *BotActions_WeaponSwitchProofEventName(BotWeaponSwitchProofEvent event);

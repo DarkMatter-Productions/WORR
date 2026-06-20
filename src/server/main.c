@@ -2640,12 +2640,30 @@ static bool SV_BotFrameCommandSmokeIsTeamObjective(void)
     return SV_BotFrameCommandSmokeMode() == 23;
 }
 
+static bool SV_BotFrameCommandSmokeIsAimFairness(void)
+{
+    return SV_BotFrameCommandSmokeMode() == 24;
+}
+
+static bool SV_BotFrameCommandSmokeIsItemTimer(void)
+{
+    return SV_BotFrameCommandSmokeMode() == 25;
+}
+
+static bool SV_BotFrameCommandSmokeIsMatchReadiness(void)
+{
+    return SV_BotFrameCommandSmokeMode() == 26;
+}
+
 static bool SV_BotFrameCommandSmokeUsesScenarioCvars(void)
 {
     return SV_BotFrameCommandSmokeIsEngageEnemy() ||
         SV_BotFrameCommandSmokeIsSwitchWeapons() ||
         SV_BotFrameCommandSmokeIsHealthArmorPickup() ||
-        SV_BotFrameCommandSmokeIsTeamObjective();
+        SV_BotFrameCommandSmokeIsTeamObjective() ||
+        SV_BotFrameCommandSmokeIsAimFairness() ||
+        SV_BotFrameCommandSmokeIsItemTimer() ||
+        SV_BotFrameCommandSmokeIsMatchReadiness();
 }
 
 static int SV_BotFrameCommandSmokeSoakMilliseconds(void)
@@ -2769,16 +2787,22 @@ static bool SV_BotFrameCommandSmokeUsesTravelTypeGoal(void)
 
 static int SV_BotFrameCommandSmokeTargetBots(void)
 {
+    if (SV_BotFrameCommandSmokeIsMatchReadiness()) {
+        return min(4, bot_public_client_limit());
+    }
+
     if (SV_BotFrameCommandSmokeIsTeamObjective()) {
         return min(4, bot_public_client_limit());
     }
 
-    if (SV_BotFrameCommandSmokeIsEngageEnemy() ||
+    if (SV_BotFrameCommandSmokeIsAimFairness() ||
+        SV_BotFrameCommandSmokeIsEngageEnemy() ||
         SV_BotFrameCommandSmokeIsSwitchWeapons()) {
         return min(2, bot_public_client_limit());
     }
 
-    if (SV_BotFrameCommandSmokeIsHealthArmorPickup()) {
+    if (SV_BotFrameCommandSmokeIsHealthArmorPickup() ||
+        SV_BotFrameCommandSmokeIsItemTimer()) {
         return 1;
     }
 
@@ -2987,6 +3011,9 @@ static void SV_BotFrameCommandSmokeResetRuntimeCvars(void)
     Cvar_Set("sg_bot_frame_command_smoke_weapon_switch", "0");
     Cvar_Set("sg_bot_frame_command_smoke_item_focus", "0");
     Cvar_Set("sg_bot_frame_command_smoke_team_objective", "0");
+    Cvar_Set("sg_bot_frame_command_smoke_aim_fairness", "0");
+    Cvar_Set("sg_bot_frame_command_smoke_item_timer", "0");
+    Cvar_Set("sg_bot_frame_command_smoke_match_readiness", "0");
     Cvar_Set("sg_bot_nav_position_goal_enable", "0");
     Cvar_Set("sg_bot_nav_travel_type_goal", "0");
     Cvar_Set("sg_bot_nav_travel_type_goal_warp", "0");
@@ -3177,7 +3204,8 @@ static void SV_BotFrameCommandSmokeFrame(void)
         Cvar_Set("sg_bot_enable", "1");
         Cvar_Set("sg_bot_min_players", "0");
         Cvar_Set("g_gametype",
-                 SV_BotFrameCommandSmokeIsTeamObjective() ? "1" : "0");
+                 SV_BotFrameCommandSmokeIsMatchReadiness() ? "3" :
+                 (SV_BotFrameCommandSmokeIsTeamObjective() ? "1" : "0"));
         Cvar_Set("sg_bot_allow_rocketjump",
                  SV_BotFrameCommandSmokeAllowsRocketJump() ? "1" : "0");
         Cvar_Set("sg_bot_nav_travel_type_goal_expect_blocked",
@@ -3220,7 +3248,8 @@ static void SV_BotFrameCommandSmokeFrame(void)
         }
         if (SV_BotFrameCommandSmokeUsesScenarioCvars()) {
             const char *combat_mode =
-                SV_BotFrameCommandSmokeIsEngageEnemy() ? "engage_enemy" :
+                (SV_BotFrameCommandSmokeIsEngageEnemy() ||
+                 SV_BotFrameCommandSmokeIsAimFairness()) ? "engage_enemy" :
                 (SV_BotFrameCommandSmokeIsSwitchWeapons() ?
                     "switch_weapons" : "0");
             const char *item_focus =
@@ -3230,6 +3259,15 @@ static void SV_BotFrameCommandSmokeFrame(void)
                 SV_BotFrameCommandSmokeIsSwitchWeapons() ? 1 : 0;
             const int team_objective =
                 SV_BotFrameCommandSmokeIsTeamObjective() ? 1 : 0;
+            const int aim_fairness =
+                SV_BotFrameCommandSmokeIsAimFairness() ? 1 : 0;
+            const int item_timer =
+                SV_BotFrameCommandSmokeIsItemTimer() ? 1 : 0;
+            const int match_readiness =
+                SV_BotFrameCommandSmokeIsMatchReadiness() ? 1 : 0;
+            const char *gametype =
+                SV_BotFrameCommandSmokeIsMatchReadiness() ? "3" :
+                (SV_BotFrameCommandSmokeIsTeamObjective() ? "1" : "0");
 
             Cvar_Set("sg_bot_frame_command_smoke_combat", combat_mode);
             Cvar_Set("sg_bot_frame_command_smoke_weapon_switch",
@@ -3237,18 +3275,28 @@ static void SV_BotFrameCommandSmokeFrame(void)
             Cvar_Set("sg_bot_frame_command_smoke_item_focus", item_focus);
             Cvar_Set("sg_bot_frame_command_smoke_team_objective",
                      team_objective ? "1" : "0");
+            Cvar_Set("sg_bot_frame_command_smoke_aim_fairness",
+                     aim_fairness ? "1" : "0");
+            Cvar_Set("sg_bot_frame_command_smoke_item_timer",
+                     item_timer ? "1" : "0");
+            Cvar_Set("sg_bot_frame_command_smoke_match_readiness",
+                     match_readiness ? "1" : "0");
             Com_Printf("q3a_bot_frame_command_smoke_scenario=begin "
                        "mode=%d combat=%s weapon_switch=%d item_focus=%s "
-                       "team_objective=%d target=%d gametype=%s\n",
+                       "team_objective=%d target=%d gametype=%s "
+                       "aim_fairness=%d item_timer=%d match_readiness=%d\n",
                        SV_BotFrameCommandSmokeMode(), combat_mode,
                        weapon_switch, item_focus, team_objective,
-                       target_bots,
-                       SV_BotFrameCommandSmokeIsTeamObjective() ? "1" : "0");
+                       target_bots, gametype, aim_fairness, item_timer,
+                       match_readiness);
         } else {
             Cvar_Set("sg_bot_frame_command_smoke_combat", "0");
             Cvar_Set("sg_bot_frame_command_smoke_weapon_switch", "0");
             Cvar_Set("sg_bot_frame_command_smoke_item_focus", "0");
             Cvar_Set("sg_bot_frame_command_smoke_team_objective", "0");
+            Cvar_Set("sg_bot_frame_command_smoke_aim_fairness", "0");
+            Cvar_Set("sg_bot_frame_command_smoke_item_timer", "0");
+            Cvar_Set("sg_bot_frame_command_smoke_match_readiness", "0");
         }
         forced_travel_type = SV_BotFrameCommandSmokeForcedTravelType();
         if (forced_travel_type > 0) {

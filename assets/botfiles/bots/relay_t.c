@@ -93,6 +93,24 @@ chat "relay"
 		WORR_SELFOWN0;
 	} //end type
 
+	type "death_lava"
+	{
+		"Bad heat route.";
+		"Need a safer return path.";
+	} //end type
+
+	type "death_slime"
+	{
+		"Slime route is not worth it.";
+		"Marking that hazard.";
+	} //end type
+
+	type "death_drown"
+	{
+		"Lost the air timer.";
+		"Water route needs support.";
+	} //end type
+
 	type "death_suicide"
 	{
 		"Wrong route.";
@@ -111,10 +129,10 @@ chat "relay"
 		"Big shot, ", 0, ".";
 	} //end type
 
-	type "kill_praise"
+	type "kill_hyperblaster"
 	{
-		"Nice dodge. Still counted.";
-		"Good movement, ", 0, ".";
+		"Cells delivered.";
+		"Beam route worked, ", 0, ".";
 	} //end type
 
 	type "random_insult"

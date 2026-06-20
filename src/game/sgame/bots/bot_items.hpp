@@ -22,6 +22,35 @@ enum class BotItemUtilityKind {
 	Pickup,
 };
 
+enum class BotItemSpecialKind {
+	None,
+	DamageBoost,
+	Protection,
+	Invisibility,
+	Mobility,
+	Utility,
+	Tech,
+	CtfObjective,
+};
+
+enum class BotItemTimingPolicyReason {
+	None,
+	Invalid,
+	TimersDisabled,
+	UnobservedPickup,
+	ExactTimer,
+	FuzzedTimer,
+};
+
+enum class BotItemTimingConsumerReason {
+	None,
+	Invalid,
+	LivePickup,
+	TimerReady,
+	TimerWaiting,
+	TimerBlocked,
+};
+
 enum class BotItemFocus {
 	None,
 	Health,
@@ -36,11 +65,25 @@ struct BotItemContext {
 	bool candidateUseful = true;
 	bool candidateAlreadyOwned = false;
 	bool candidateHighValue = false;
+	bool candidateTech = false;
+	bool candidateCtfObjective = false;
 	bool lowHealth = false;
 	bool lowArmor = false;
 	BotItemUtilityKind candidateKind = BotItemUtilityKind::None;
+	BotItemSpecialKind specialKind = BotItemSpecialKind::None;
 	BotItemFocus focus = BotItemFocus::None;
+	bool timingEvaluated = false;
+	bool timingCandidateSelectable = false;
+	bool timingKnown = false;
+	bool timingWaitingForRespawn = false;
+	bool timingFairnessBlocked = false;
+	int timingEffectiveAvailableMilliseconds = 0;
+	int timingRemainingMilliseconds = 0;
+	int timingFuzzMilliseconds = 0;
+	BotItemTimingPolicyReason timingPolicyReason = BotItemTimingPolicyReason::None;
+	BotItemTimingConsumerReason timingConsumerReason = BotItemTimingConsumerReason::None;
 	int candidateEntity = -1;
+	int candidateSpawnCount = 0;
 	int candidateItem = 0;
 	int candidateScore = 0;
 	int candidateQuantity = 0;
@@ -49,6 +92,58 @@ struct BotItemContext {
 	int health = 0;
 	int maxHealth = 0;
 	int armor = 0;
+};
+
+struct BotItemTimingPolicyConfig {
+	bool allowItemTimers = true;
+	bool requireObservedPickup = true;
+	int timerFuzzMilliseconds = 0;
+};
+
+struct BotItemTimingPolicyFrame {
+	bool pickupObserved = false;
+	int clientIndex = -1;
+	int entity = -1;
+	int spawnCount = 0;
+	int item = 0;
+	int observedPickupMilliseconds = 0;
+	int expectedAvailableMilliseconds = 0;
+	int currentMilliseconds = 0;
+};
+
+struct BotItemTimingPolicyResult {
+	bool mayUseTimer = false;
+	bool pickupWindowOpen = false;
+	int effectiveAvailableMilliseconds = 0;
+	int remainingMilliseconds = 0;
+	int fuzzMilliseconds = 0;
+	BotItemTimingPolicyReason reason = BotItemTimingPolicyReason::None;
+};
+
+struct BotItemTimingConsumerFrame {
+	bool livePickup = false;
+	bool pickupObserved = false;
+	int clientIndex = -1;
+	int entity = -1;
+	int spawnCount = 0;
+	int item = 0;
+	int observedPickupMilliseconds = 0;
+	int expectedAvailableMilliseconds = 0;
+	int currentMilliseconds = 0;
+};
+
+struct BotItemTimingConsumerResult {
+	bool evaluated = false;
+	bool candidateSelectable = false;
+	bool livePickup = false;
+	bool timingKnown = false;
+	bool waitingForRespawn = false;
+	bool fairnessBlocked = false;
+	int effectiveAvailableMilliseconds = 0;
+	int remainingMilliseconds = 0;
+	int fuzzMilliseconds = 0;
+	BotItemTimingPolicyReason policyReason = BotItemTimingPolicyReason::None;
+	BotItemTimingConsumerReason reason = BotItemTimingConsumerReason::None;
 };
 
 // SeekCandidate means "prefer moving toward this pickup" and does not mutate
@@ -93,6 +188,13 @@ struct BotItemStatus {
 	int weaponCandidates = 0;
 	int powerupCandidates = 0;
 	int pickupCandidates = 0;
+	int damageBoostCandidates = 0;
+	int protectionCandidates = 0;
+	int invisibilityCandidates = 0;
+	int mobilityCandidates = 0;
+	int utilityPowerupCandidates = 0;
+	int techCandidates = 0;
+	int ctfObjectiveCandidates = 0;
 	int usefulCandidates = 0;
 	int unneededCandidates = 0;
 	int healthSeekDecisions = 0;
@@ -101,6 +203,14 @@ struct BotItemStatus {
 	int weaponSeekDecisions = 0;
 	int powerupSeekDecisions = 0;
 	int pickupSeekDecisions = 0;
+	int damageBoostSeekDecisions = 0;
+	int protectionSeekDecisions = 0;
+	int invisibilitySeekDecisions = 0;
+	int mobilitySeekDecisions = 0;
+	int utilityPowerupSeekDecisions = 0;
+	int techSeekDecisions = 0;
+	int ctfObjectiveSeekDecisions = 0;
+	int specialUtilityBoosts = 0;
 	int highValueBoosts = 0;
 	int focusHealthBoosts = 0;
 	int focusArmorBoosts = 0;
@@ -112,6 +222,21 @@ struct BotItemStatus {
 	int pickupObservationAttempts = 0;
 	int pickupObservationRecords = 0;
 	int pickupObservationNoDelta = 0;
+	int timingPolicyEvaluations = 0;
+	int timingPolicyInvalid = 0;
+	int timingPolicyTimersDisabled = 0;
+	int timingPolicyUnobservedBlocks = 0;
+	int timingPolicyExactUses = 0;
+	int timingPolicyFuzzedUses = 0;
+	int timingPolicyReady = 0;
+	int timingPolicyWaiting = 0;
+	int timingConsumerEvaluations = 0;
+	int timingConsumerInvalid = 0;
+	int timingConsumerLivePickups = 0;
+	int timingConsumerReady = 0;
+	int timingConsumerWaiting = 0;
+	int timingConsumerFairnessBlocks = 0;
+	int timingConsumerSelectionDeferrals = 0;
 	int lastHealthBefore = 0;
 	int lastHealthAfter = 0;
 	int lastHealthPickupDelta = 0;
@@ -125,14 +250,38 @@ struct BotItemStatus {
 	int lastItem = 0;
 	int lastEntity = -1;
 	int lastPriority = 0;
+	int lastTimingPolicyClient = -1;
+	int lastTimingPolicyEntity = -1;
+	int lastTimingPolicyItem = 0;
+	int lastTimingPolicyFuzzMilliseconds = 0;
+	int lastTimingPolicyEffectiveAvailableMilliseconds = 0;
+	int lastTimingPolicyRemainingMilliseconds = 0;
+	int lastTimingConsumerClient = -1;
+	int lastTimingConsumerEntity = -1;
+	int lastTimingConsumerItem = 0;
+	int lastTimingConsumerFuzzMilliseconds = 0;
+	int lastTimingConsumerEffectiveAvailableMilliseconds = 0;
+	int lastTimingConsumerRemainingMilliseconds = 0;
 	BotItemUtilityKind lastUtilityKind = BotItemUtilityKind::None;
+	BotItemSpecialKind lastSpecialKind = BotItemSpecialKind::None;
+	BotItemTimingPolicyReason lastTimingPolicyReason = BotItemTimingPolicyReason::None;
+	BotItemTimingPolicyReason lastTimingConsumerPolicyReason = BotItemTimingPolicyReason::None;
+	BotItemTimingConsumerReason lastTimingConsumerReason = BotItemTimingConsumerReason::None;
 };
 
 void BotItems_ResetStatus();
+void BotItems_SetTimingPolicyConfig(const BotItemTimingPolicyConfig &config);
+void BotItems_ResetTimingPolicyConfig();
+BotItemTimingPolicyConfig BotItems_GetTimingPolicyConfig();
+BotItemTimingPolicyResult BotItems_EvaluatePickupTimingPolicy(const BotItemTimingPolicyFrame &frame);
+BotItemTimingConsumerFrame BotItems_BuildTimingConsumerFrameForEntity(const gentity_t *bot, const gentity_t *candidate, bool pickupObserved, int observedPickupMilliseconds = 0);
+BotItemTimingConsumerResult BotItems_EvaluateTimingConsumer(const BotItemTimingConsumerFrame &frame);
+BotItemContext BotItems_ApplyTimingConsumerResult(BotItemContext context, const BotItemTimingConsumerResult &timing);
 int BotItems_CurrentArmor(const gclient_t *client);
 BotItemUtilityKind BotItems_ClassifyUtility(const Item *item);
 BotItemContext BotItems_BuildContextForEntity(const gentity_t *bot, const gentity_t *candidate, int candidateScore, bool candidateReserved, BotItemFocus focus);
-BotItemContext BotItems_BuildContextForItem(const gentity_t *bot, const Item *candidateItem, int candidateEntity, int candidateScore, bool candidateAvailable, bool candidateReserved, int candidateCount, BotItemFocus focus);
+BotItemContext BotItems_BuildContextForTimedEntity(const gentity_t *bot, const gentity_t *candidate, int candidateScore, bool candidateReserved, BotItemFocus focus, bool pickupObserved, int observedPickupMilliseconds = 0);
+BotItemContext BotItems_BuildContextForItem(const gentity_t *bot, const Item *candidateItem, int candidateEntity, int candidateScore, bool candidateAvailable, bool candidateReserved, int candidateCount, BotItemFocus focus, int candidateSpawnCount = 0);
 BotItemDecision BotItems_Evaluate(const BotItemContext &context);
 bool BotItems_ApplyHealthArmorProofSetup(gentity_t *bot, BotItemHealthArmorProofSetup *setup = nullptr);
 BotItemPickupSnapshot BotItems_CapturePickupSnapshot(const gentity_t *bot, const Item *item, int entity = -1);
@@ -144,5 +293,8 @@ void BotItems_RecordPickup(const Item *item, int before, int after);
 const BotItemStatus &BotItems_GetStatus();
 const char *BotItems_DecisionName(BotItemDecisionKind kind);
 const char *BotItems_UtilityKindName(BotItemUtilityKind kind);
+const char *BotItems_SpecialKindName(BotItemSpecialKind kind);
+const char *BotItems_TimingPolicyReasonName(BotItemTimingPolicyReason reason);
+const char *BotItems_TimingConsumerReasonName(BotItemTimingConsumerReason reason);
 BotItemFocus BotItems_FocusFromString(const char *focus);
 const char *BotItems_FocusName(BotItemFocus focus);
