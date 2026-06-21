@@ -2223,6 +2223,147 @@ BotObjectiveTarget BotObjectives_SelectEnemyFlagTarget(const gentity_t *bot, boo
 	return best;
 }
 
+BotObjectiveTarget BotObjectives_SelectEnemyFlagCarrierSupportTarget(const gentity_t *bot) {
+	botObjectiveStatus.targetSelections++;
+
+	const int botTeam = BotObjectives_BotTeam(bot);
+	if (!BotObjectives_IsPrimaryTeam(botTeam)) {
+		botObjectiveStatus.targetSelectionFailures++;
+		return {};
+	}
+
+	const int item = BotObjectives_EnemyFlagItemForTeam(botTeam);
+	if (!BotObjectives_IsFlagItem(item)) {
+		botObjectiveStatus.targetSelectionFailures++;
+		return {};
+	}
+
+	BotObjectiveTarget best{};
+	int bestScore = -999999;
+	for (int client = 0; client < game.maxClients; ++client) {
+		const int entnum = client + 1;
+		if (entnum >= globals.numEntities) {
+			break;
+		}
+
+		const gentity_t *carrier = &g_entities[entnum];
+		if (carrier == bot ||
+			!BotObjectives_IsAlivePlayer(carrier) ||
+			static_cast<int>(carrier->client->sess.team) != botTeam ||
+			carrier->client->pers.inventory[item] <= 0) {
+			continue;
+		}
+
+		BotObjectives_ConsiderTargetCandidate(
+			bot,
+			BotObjectives_BuildTargetForEntity(
+				bot,
+				carrier,
+				item,
+				BotObjectiveTargetSource::FlagCarrier,
+				client),
+			&best,
+			&bestScore);
+	}
+
+	if (bestScore < 0) {
+		botObjectiveStatus.targetSelectionFailures++;
+		return {};
+	}
+
+	BotObjectives_RecordTargetSource(best.source);
+	BotObjectives_RecordLastTarget(
+		best,
+		BotObjectives_ClientIndexForEntity(bot),
+		botTeam,
+		BotObjectiveRole::Support,
+		BotObjectives_RolePriorityForTarget(BotObjectiveRole::Support, best));
+	return best;
+}
+
+BotObjectiveTarget BotObjectives_SelectOwnFlagReturnTarget(const gentity_t *bot) {
+	botObjectiveStatus.targetSelections++;
+
+	const int botTeam = BotObjectives_BotTeam(bot);
+	if (!BotObjectives_IsPrimaryTeam(botTeam)) {
+		botObjectiveStatus.targetSelectionFailures++;
+		return {};
+	}
+
+	const int item = BotObjectives_OwnFlagItemForTeam(botTeam);
+	if (!BotObjectives_IsFlagItem(item)) {
+		botObjectiveStatus.targetSelectionFailures++;
+		return {};
+	}
+
+	BotObjectiveTarget best{};
+	int bestScore = -999999;
+	for (int client = 0; client < game.maxClients; ++client) {
+		const int entnum = client + 1;
+		if (entnum >= globals.numEntities) {
+			break;
+		}
+
+		const gentity_t *carrier = &g_entities[entnum];
+		if (carrier == bot ||
+			!BotObjectives_IsAlivePlayer(carrier) ||
+			static_cast<int>(carrier->client->sess.team) == botTeam ||
+			carrier->client->pers.inventory[item] <= 0) {
+			continue;
+		}
+
+		BotObjectives_ConsiderTargetCandidate(
+			bot,
+			BotObjectives_BuildTargetForEntity(
+				bot,
+				carrier,
+				item,
+				BotObjectiveTargetSource::FlagCarrier,
+				client),
+			&best,
+			&bestScore);
+	}
+
+	if (bestScore < 0) {
+		const char *className = BotObjectives_FlagClassNameForItem(item);
+		if (className == nullptr) {
+			botObjectiveStatus.targetSelectionFailures++;
+			return {};
+		}
+
+		gentity_t *flag = nullptr;
+		while ((flag = G_FindByString<&gentity_t::className>(flag, className)) != nullptr) {
+			if (flag->item == nullptr || flag->item->id != item) {
+				continue;
+			}
+
+			const BotObjectiveTargetSource source = BotObjectives_IsDroppedFlagEntity(flag)
+				? BotObjectiveTargetSource::DroppedFlagEntity
+				: BotObjectiveTargetSource::WorldFlagEntity;
+			BotObjectives_ConsiderTargetCandidate(
+				bot,
+				BotObjectives_BuildTargetForEntity(bot, flag, item, source, -1),
+				&best,
+				&bestScore);
+		}
+	}
+
+	if (bestScore < 0) {
+		botObjectiveStatus.targetSelectionFailures++;
+		return {};
+	}
+
+	BotObjectives_RecordTargetSource(best.source);
+	const BotObjectiveRole defaultRole = BotObjectives_DefaultRoleForTarget(best);
+	BotObjectives_RecordLastTarget(
+		best,
+		BotObjectives_ClientIndexForEntity(bot),
+		botTeam,
+		defaultRole,
+		BotObjectives_RolePriorityForTarget(defaultRole, best));
+	return best;
+}
+
 BotObjectiveAssignment BotObjectives_Assign(const BotObjectiveContext &context) {
 	botObjectiveStatus.evaluations++;
 
@@ -2310,6 +2451,30 @@ BotObjectiveAssignment BotObjectives_AssignEnemyFlagObjective(
 	const BotObjectiveTarget target = BotObjectives_SelectEnemyFlagTarget(bot, allowEnemyTeamAnchor);
 	return BotObjectives_Assign(
 		BotObjectives_BuildContextForTarget(bot, target, smokeEnabled, requestedRole));
+}
+
+BotObjectiveAssignment BotObjectives_AssignEnemyFlagCarrierSupportObjective(
+	const gentity_t *bot,
+	bool smokeEnabled) {
+	const BotObjectiveTarget target = BotObjectives_SelectEnemyFlagCarrierSupportTarget(bot);
+	return BotObjectives_Assign(
+		BotObjectives_BuildContextForTarget(
+			bot,
+			target,
+			smokeEnabled,
+			BotObjectiveRole::Support));
+}
+
+BotObjectiveAssignment BotObjectives_AssignOwnFlagReturnObjective(
+	const gentity_t *bot,
+	bool smokeEnabled) {
+	const BotObjectiveTarget target = BotObjectives_SelectOwnFlagReturnTarget(bot);
+	return BotObjectives_Assign(
+		BotObjectives_BuildContextForTarget(
+			bot,
+			target,
+			smokeEnabled,
+			BotObjectiveRole::Returner));
 }
 
 bool BotObjectives_BuildRouteGoal(const BotObjectiveAssignment &assignment, BotObjectiveRouteGoal *goal) {

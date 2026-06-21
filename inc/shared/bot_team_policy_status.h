@@ -22,5 +22,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 typedef struct {
     int api_version;
-    void (*PrintStatus)(int expected_playing, int expected_spectators, int expected_bots);
+    void (*PrintStatus)(int expected_playing, int expected_spectators,
+                        int expected_bots, int expected_queued);
 } bot_team_policy_status_api_v1_t;

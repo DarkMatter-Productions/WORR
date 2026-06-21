@@ -47,6 +47,52 @@ RESERVED_MODE_BEGIN_LINES = {
         "weapon_switch=0 item_focus=0 team_objective=0 target=4 gametype=3 "
         "aim_fairness=0 item_timer=0 match_readiness=1"
     ),
+    37: (
+        f"{harness.SCENARIO_BEGIN_MARKER} mode=37 combat=0 "
+        "weapon_switch=0 item_focus=0 team_objective=0 target=4 gametype=5 "
+        "ctf_dropped_flag_route=1"
+    ),
+    38: (
+        f"{harness.SCENARIO_BEGIN_MARKER} mode=38 combat=0 "
+        "weapon_switch=0 item_focus=0 team_objective=0 target=4 gametype=5 "
+        "ctf_carrier_support_route=1"
+    ),
+    39: (
+        f"{harness.SCENARIO_BEGIN_MARKER} mode=39 combat=0 "
+        "weapon_switch=0 item_focus=0 team_objective=0 target=4 gametype=5 "
+        "ctf_base_return_route=1"
+    ),
+    40: (
+        f"{harness.SCENARIO_BEGIN_MARKER} mode=40 combat=0 "
+        "weapon_switch=0 item_focus=0 team_objective=0 target=4 gametype=5 "
+        "ctf_objective_route=1"
+    ),
+    41: (
+        f"{harness.SCENARIO_BEGIN_MARKER} mode=41 combat=0 "
+        "weapon_switch=0 item_focus=0 team_objective=0 target=4 gametype=5 "
+        "ctf_role_route=1 ctf_objective_route=1 "
+        "ctf_objective_route_precedence=1"
+    ),
+    42: (
+        f"{harness.SCENARIO_BEGIN_MARKER} mode=42 combat=0 "
+        "weapon_switch=0 item_focus=0 team_objective=0 target=4 gametype=1 "
+        "ffa_roam_route=1"
+    ),
+    43: (
+        f"{harness.SCENARIO_BEGIN_MARKER} mode=43 combat=0 "
+        "weapon_switch=0 item_focus=0 team_objective=0 target=4 gametype=3 "
+        "team_role_combat=1"
+    ),
+    44: (
+        f"{harness.SCENARIO_BEGIN_MARKER} mode=44 combat=0 "
+        "weapon_switch=0 item_focus=0 team_objective=0 target=4 gametype=3 "
+        "team_fire_avoidance=1 team_role_combat=1"
+    ),
+    45: (
+        f"{harness.SCENARIO_BEGIN_MARKER} mode=45 combat=0 "
+        "weapon_switch=0 item_focus=0 team_objective=0 target=4 gametype=1 "
+        "ffa_roam_route=1 ffa_spawn_camp_avoidance=1"
+    ),
 }
 
 
@@ -622,11 +668,15 @@ class BotScenarioHarnessTests(unittest.TestCase):
             (harness.TEAM_POLICY_STATUS_MARKER, "bots", "eq", 0),
             required_marker_metrics,
         )
+        self.assertIn(
+            (harness.TEAM_POLICY_STATUS_MARKER, "queued", "any_eq", 0),
+            required_marker_metrics,
+        )
 
         marker_metrics = harness.parse_marker_metrics(
             "\n".join((
-                "q3a_bot_team_policy_status bots=3 playing=2 spectators=1 pass=1",
-                "q3a_bot_team_policy_status bots=0 playing=0 spectators=0 pass=1",
+                "q3a_bot_team_policy_status bots=3 playing=2 spectators=1 queued=0 pass=1",
+                "q3a_bot_team_policy_status bots=0 playing=0 spectators=0 queued=0 pass=1",
             )),
             {harness.TEAM_POLICY_STATUS_MARKER},
         )
@@ -654,6 +704,66 @@ class BotScenarioHarnessTests(unittest.TestCase):
         self.assertTrue(cleanup["passed"])
         self.assertEqual(cleanup["actual"], 0)
 
+    def test_duel_queue_spectator_requires_queued_policy_status(self) -> None:
+        scenario = harness.scenario_map()["duel_queue_spectator"]
+        report = harness.catalog_report([scenario])
+        row = report["scenarios"][0]
+
+        self.assertEqual(row["status"], "implemented")
+        self.assertEqual(row["smoke_cvar"], "sv_bot_team_policy_smoke")
+        self.assertEqual(row["smoke_mode"], 3)
+        required_marker_metrics = {
+            (check["source"], check["metric"], check["op"], check["expected"])
+            for check in row["required_marker_metrics"]
+        }
+        self.assertIn(
+            ("q3a_bot_team_policy_smoke=begin", "queue_enabled", "eq", 1),
+            required_marker_metrics,
+        )
+        self.assertIn(
+            (harness.TEAM_POLICY_STATUS_MARKER, "queued", "any_eq", 1),
+            required_marker_metrics,
+        )
+        self.assertIn(
+            (harness.TEAM_POLICY_STATUS_MARKER, "expected_queued", "any_eq", 1),
+            required_marker_metrics,
+        )
+
+        marker_metrics = harness.parse_marker_metrics(
+            "\n".join((
+                "q3a_bot_team_policy_smoke=begin queue_enabled=1",
+                "q3a_bot_team_policy_status bots=3 playing=2 spectators=1 queued=1 expected_queued=1 pass=1",
+                "q3a_bot_team_policy_status bots=0 playing=0 spectators=0 queued=0 expected_queued=0 pass=1",
+            )),
+            {
+                "q3a_bot_team_policy_smoke=begin",
+                harness.TEAM_POLICY_STATUS_MARKER,
+            },
+        )
+        queued = harness.evaluate_marker_check(
+            harness.MarkerMetricCheck(
+                harness.TEAM_POLICY_STATUS_MARKER,
+                "queued",
+                "any_eq",
+                1,
+            ),
+            marker_metrics,
+        )
+        cleanup = harness.evaluate_marker_check(
+            harness.MarkerMetricCheck(
+                harness.TEAM_POLICY_STATUS_MARKER,
+                "queued",
+                "eq",
+                0,
+            ),
+            marker_metrics,
+        )
+
+        self.assertTrue(queued["passed"])
+        self.assertEqual(queued["actual"], [1, 0])
+        self.assertTrue(cleanup["passed"])
+        self.assertEqual(cleanup["actual"], 0)
+
     def test_policy_trace_and_readiness_promotions_use_expected_smoke_rows(self) -> None:
         scenarios = harness.scenario_map()
         aim = scenarios["aim_fairness_policy_integration"]
@@ -661,6 +771,7 @@ class BotScenarioHarnessTests(unittest.TestCase):
         team_objective = scenarios["team_objective"]
         trace = scenarios["trace_checked_corner_cutting"]
         match = scenarios["ffa_tdm_match_readiness"]
+        duel_queue = scenarios["duel_queue_spectator"]
         coop = scenarios["coop_match_readiness"]
         leader_route = scenarios["coop_leader_route"]
         lead_advance = scenarios["coop_lead_advance"]
@@ -668,7 +779,17 @@ class BotScenarioHarnessTests(unittest.TestCase):
         anti_block = scenarios["coop_anti_blocking"]
         target_share = scenarios["coop_target_share"]
         door_elevator = scenarios["coop_door_elevator"]
+        ffa_roam_route = scenarios["ffa_roam_route"]
+        ffa_spawn_camp_avoidance = scenarios["ffa_spawn_camp_avoidance"]
         team_role_route = scenarios["team_role_route"]
+        team_role_combat = scenarios["team_role_combat"]
+        team_role_combat_avoidance = scenarios["team_role_combat_avoidance"]
+        ctf_role_combat = scenarios["ctf_role_combat"]
+        ctf_dropped_flag_route = scenarios["ctf_dropped_flag_route"]
+        ctf_carrier_support_route = scenarios["ctf_carrier_support_route"]
+        ctf_base_return_route = scenarios["ctf_base_return_route"]
+        ctf_objective_route = scenarios["ctf_objective_route"]
+        ctf_objective_route_precedence = scenarios["ctf_objective_route_precedence"]
         team_item_roles = scenarios["team_item_roles"]
         progress_wait = scenarios["coop_progress_wait"]
         interaction_retry = scenarios["coop_interaction_retry"]
@@ -678,6 +799,7 @@ class BotScenarioHarnessTests(unittest.TestCase):
             timers,
             trace,
             match,
+            duel_queue,
             coop,
             leader_route,
             lead_advance,
@@ -685,20 +807,31 @@ class BotScenarioHarnessTests(unittest.TestCase):
             anti_block,
             target_share,
             door_elevator,
+            ffa_roam_route,
+            ffa_spawn_camp_avoidance,
             team_role_route,
+            team_role_combat,
+            team_role_combat_avoidance,
+            ctf_role_combat,
+            ctf_dropped_flag_route,
+            ctf_carrier_support_route,
+            ctf_base_return_route,
+            ctf_objective_route,
+            ctf_objective_route_precedence,
             team_item_roles,
             progress_wait,
             interaction_retry,
         ])
         rows = {row["name"]: row for row in report["scenarios"]}
 
-        self.assertEqual(report["summary"]["implemented"], 16)
+        self.assertEqual(report["summary"]["implemented"], 27)
         self.assertEqual(report["summary"]["pending"], 0)
         self.assertEqual(rows["team_objective"]["smoke_mode"], 23)
         self.assertEqual(rows["aim_fairness_policy_integration"]["smoke_mode"], 24)
         self.assertEqual(rows["item_timer_fairness_signals"]["smoke_mode"], 25)
         self.assertEqual(rows["trace_checked_corner_cutting"]["smoke_mode"], 21)
         self.assertEqual(rows["ffa_tdm_match_readiness"]["smoke_mode"], 26)
+        self.assertEqual(rows["duel_queue_spectator"]["smoke_mode"], 3)
         self.assertEqual(rows["coop_match_readiness"]["smoke_mode"], 3)
         self.assertEqual(rows["coop_leader_route"]["smoke_mode"], 3)
         self.assertEqual(rows["coop_lead_advance"]["smoke_mode"], 27)
@@ -706,7 +839,17 @@ class BotScenarioHarnessTests(unittest.TestCase):
         self.assertEqual(rows["coop_anti_blocking"]["smoke_mode"], 29)
         self.assertEqual(rows["coop_target_share"]["smoke_mode"], 30)
         self.assertEqual(rows["coop_door_elevator"]["smoke_mode"], 31)
+        self.assertEqual(rows["ffa_roam_route"]["smoke_mode"], 42)
+        self.assertEqual(rows["ffa_spawn_camp_avoidance"]["smoke_mode"], 45)
         self.assertEqual(rows["team_role_route"]["smoke_mode"], 32)
+        self.assertEqual(rows["team_role_combat"]["smoke_mode"], 43)
+        self.assertEqual(rows["team_role_combat_avoidance"]["smoke_mode"], 44)
+        self.assertEqual(rows["ctf_role_combat"]["smoke_mode"], 36)
+        self.assertEqual(rows["ctf_dropped_flag_route"]["smoke_mode"], 37)
+        self.assertEqual(rows["ctf_carrier_support_route"]["smoke_mode"], 38)
+        self.assertEqual(rows["ctf_base_return_route"]["smoke_mode"], 39)
+        self.assertEqual(rows["ctf_objective_route"]["smoke_mode"], 40)
+        self.assertEqual(rows["ctf_objective_route_precedence"]["smoke_mode"], 41)
         self.assertEqual(rows["team_item_roles"]["smoke_mode"], 33)
         self.assertEqual(rows["coop_progress_wait"]["smoke_mode"], 3)
         self.assertEqual(rows["coop_interaction_retry"]["smoke_mode"], 12)
@@ -773,11 +916,94 @@ class BotScenarioHarnessTests(unittest.TestCase):
             ],
         )
         self.assertEqual(
+            rows["ffa_roam_route"]["extra_cvars"],
+            [
+                {"name": "deathmatch", "value": "1"},
+                {"name": "g_gametype", "value": "1"},
+                {"name": "sg_bot_ffa_roam_route", "value": "1"},
+            ],
+        )
+        self.assertEqual(
+            rows["ffa_spawn_camp_avoidance"]["extra_cvars"],
+            [
+                {"name": "deathmatch", "value": "1"},
+                {"name": "g_gametype", "value": "1"},
+                {"name": "sg_bot_ffa_roam_route", "value": "1"},
+                {"name": "sg_bot_ffa_spawn_camp_avoidance", "value": "1"},
+            ],
+        )
+        self.assertEqual(
             rows["team_role_route"]["extra_cvars"],
             [
                 {"name": "deathmatch", "value": "1"},
                 {"name": "g_gametype", "value": "3"},
                 {"name": "sg_bot_team_role_route", "value": "1"},
+            ],
+        )
+        self.assertEqual(
+            rows["team_role_combat"]["extra_cvars"],
+            [
+                {"name": "deathmatch", "value": "1"},
+                {"name": "g_gametype", "value": "3"},
+                {"name": "sg_bot_team_role_combat", "value": "1"},
+            ],
+        )
+        self.assertEqual(
+            rows["team_role_combat_avoidance"]["extra_cvars"],
+            [
+                {"name": "deathmatch", "value": "1"},
+                {"name": "g_gametype", "value": "3"},
+                {"name": "sg_bot_team_role_combat", "value": "1"},
+                {"name": "sg_bot_team_fire_avoidance", "value": "1"},
+            ],
+        )
+        self.assertEqual(
+            rows["ctf_role_combat"]["extra_cvars"],
+            [
+                {"name": "deathmatch", "value": "1"},
+                {"name": "g_gametype", "value": "5"},
+                {"name": "sg_bot_ctf_role_combat", "value": "1"},
+            ],
+        )
+        self.assertEqual(
+            rows["ctf_dropped_flag_route"]["extra_cvars"],
+            [
+                {"name": "deathmatch", "value": "1"},
+                {"name": "g_gametype", "value": "5"},
+                {"name": "sg_bot_ctf_dropped_flag_route", "value": "1"},
+            ],
+        )
+        self.assertEqual(
+            rows["ctf_carrier_support_route"]["extra_cvars"],
+            [
+                {"name": "deathmatch", "value": "1"},
+                {"name": "g_gametype", "value": "5"},
+                {"name": "sg_bot_ctf_carrier_support_route", "value": "1"},
+            ],
+        )
+        self.assertEqual(
+            rows["ctf_base_return_route"]["extra_cvars"],
+            [
+                {"name": "deathmatch", "value": "1"},
+                {"name": "g_gametype", "value": "5"},
+                {"name": "sg_bot_ctf_base_return_route", "value": "1"},
+            ],
+        )
+        self.assertEqual(
+            rows["ctf_objective_route"]["extra_cvars"],
+            [
+                {"name": "deathmatch", "value": "1"},
+                {"name": "g_gametype", "value": "5"},
+                {"name": "sg_bot_ctf_objective_route", "value": "1"},
+            ],
+        )
+        self.assertEqual(
+            rows["ctf_objective_route_precedence"]["extra_cvars"],
+            [
+                {"name": "deathmatch", "value": "1"},
+                {"name": "g_gametype", "value": "5"},
+                {"name": "sg_bot_ctf_role_route", "value": "1"},
+                {"name": "sg_bot_ctf_objective_route", "value": "1"},
             ],
         )
         self.assertEqual(
@@ -1098,6 +1324,92 @@ class BotScenarioHarnessTests(unittest.TestCase):
             door_elevator_marker_required,
         )
 
+        ffa_roam_route_marker_required = {
+            (check["source"], check["metric"], check["op"], check["expected"])
+            for check in rows["ffa_roam_route"]["required_marker_metrics"]
+        }
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "mode", "eq", 42),
+            ffa_roam_route_marker_required,
+        )
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "ffa_roam_route", "eq", 1),
+            ffa_roam_route_marker_required,
+        )
+        self.assertIn(
+            (harness.MATCH_READINESS_STATUS_MARKER, "ffa_pass", "eq", 1),
+            ffa_roam_route_marker_required,
+        )
+        self.assertIn(
+            (harness.OBJECTIVE_STATUS_MARKER, "team_objective_match_policy_ffa", "ge", 1),
+            ffa_roam_route_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_timed_route_goal_kind", "eq", 7),
+            ffa_roam_route_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "ffa_roam_route_activations", "ge", 1),
+            ffa_roam_route_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "ffa_roam_route_route_requests", "ge", 1),
+            ffa_roam_route_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_ffa_roam_route_mode", "eq", 1),
+            ffa_roam_route_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_ffa_roam_route_goal_distance_sq", "gt", 0),
+            ffa_roam_route_marker_required,
+        )
+
+        ffa_spawn_camp_marker_required = {
+            (check["source"], check["metric"], check["op"], check["expected"])
+            for check in rows["ffa_spawn_camp_avoidance"]["required_marker_metrics"]
+        }
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "mode", "eq", 45),
+            ffa_spawn_camp_marker_required,
+        )
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "ffa_roam_route", "eq", 1),
+            ffa_spawn_camp_marker_required,
+        )
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "ffa_spawn_camp_avoidance", "eq", 1),
+            ffa_spawn_camp_marker_required,
+        )
+        self.assertIn(
+            (harness.MATCH_READINESS_STATUS_MARKER, "ffa_pass", "eq", 1),
+            ffa_spawn_camp_marker_required,
+        )
+        self.assertIn(
+            (harness.OBJECTIVE_STATUS_MARKER, "team_objective_match_policy_ffa", "ge", 1),
+            ffa_spawn_camp_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_timed_route_goal_kind", "eq", 7),
+            ffa_spawn_camp_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "ffa_spawn_camp_avoidance_source_selections", "ge", 1),
+            ffa_spawn_camp_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "ffa_spawn_camp_avoidance_route_requests", "ge", 1),
+            ffa_spawn_camp_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_ffa_spawn_camp_avoidance_source_distance_sq", "lt", 147456),
+            ffa_spawn_camp_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_ffa_spawn_camp_avoidance_policy_avoid", "eq", 1),
+            ffa_spawn_camp_marker_required,
+        )
+
         team_role_route_marker_required = {
             (check["source"], check["metric"], check["op"], check["expected"])
             for check in rows["team_role_route"]["required_marker_metrics"]
@@ -1141,6 +1453,369 @@ class BotScenarioHarnessTests(unittest.TestCase):
         self.assertIn(
             (harness.STATUS_MARKER, "last_team_role_route_lane", "ge", 1),
             team_role_route_marker_required,
+        )
+
+        team_role_combat_marker_required = {
+            (check["source"], check["metric"], check["op"], check["expected"])
+            for check in rows["team_role_combat"]["required_marker_metrics"]
+        }
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "mode", "eq", 43),
+            team_role_combat_marker_required,
+        )
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "team_role_combat", "eq", 1),
+            team_role_combat_marker_required,
+        )
+        self.assertIn(
+            (harness.MATCH_READINESS_STATUS_MARKER, "tdm_pass", "eq", 1),
+            team_role_combat_marker_required,
+        )
+        self.assertIn(
+            (harness.OBJECTIVE_STATUS_MARKER, "team_objective_match_policy_tdm", "ge", 1),
+            team_role_combat_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "team_role_combat_attack_decisions", "ge", 1),
+            team_role_combat_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_team_role_combat_target_visible", "eq", 1),
+            team_role_combat_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_team_role_combat_target_shootable", "eq", 1),
+            team_role_combat_marker_required,
+        )
+        self.assertIn(
+            (harness.ACTION_STATUS_MARKER, "action_applied_attack_buttons", "ge", 1),
+            team_role_combat_marker_required,
+        )
+
+        team_role_combat_avoidance_marker_required = {
+            (check["source"], check["metric"], check["op"], check["expected"])
+            for check in rows["team_role_combat_avoidance"]["required_marker_metrics"]
+        }
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "mode", "eq", 44),
+            team_role_combat_avoidance_marker_required,
+        )
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "team_role_combat", "eq", 1),
+            team_role_combat_avoidance_marker_required,
+        )
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "team_fire_avoidance", "eq", 1),
+            team_role_combat_avoidance_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "team_role_combat_attack_decisions", "ge", 1),
+            team_role_combat_avoidance_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "team_fire_avoidance_blocks", "ge", 1),
+            team_role_combat_avoidance_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_team_fire_avoidance_blocked", "eq", 1),
+            team_role_combat_avoidance_marker_required,
+        )
+
+        ctf_role_combat_marker_required = {
+            (check["source"], check["metric"], check["op"], check["expected"])
+            for check in rows["ctf_role_combat"]["required_marker_metrics"]
+        }
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "mode", "eq", 36),
+            ctf_role_combat_marker_required,
+        )
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "ctf_role_combat", "eq", 1),
+            ctf_role_combat_marker_required,
+        )
+        self.assertIn(
+            (harness.MATCH_READINESS_STATUS_MARKER, "gametype", "eq", 5),
+            ctf_role_combat_marker_required,
+        )
+        self.assertIn(
+            (harness.OBJECTIVE_STATUS_MARKER, "team_objective_match_policy_ctf", "ge", 1),
+            ctf_role_combat_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "ctf_role_combat_attack_decisions", "ge", 1),
+            ctf_role_combat_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_ctf_role_combat_target_visible", "eq", 1),
+            ctf_role_combat_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_ctf_role_combat_target_shootable", "eq", 1),
+            ctf_role_combat_marker_required,
+        )
+        self.assertIn(
+            (harness.ACTION_STATUS_MARKER, "action_applied_attack_buttons", "ge", 1),
+            ctf_role_combat_marker_required,
+        )
+
+        ctf_dropped_flag_route_marker_required = {
+            (check["source"], check["metric"], check["op"], check["expected"])
+            for check in rows["ctf_dropped_flag_route"]["required_marker_metrics"]
+        }
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "mode", "eq", 37),
+            ctf_dropped_flag_route_marker_required,
+        )
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "ctf_dropped_flag_route", "eq", 1),
+            ctf_dropped_flag_route_marker_required,
+        )
+        self.assertIn(
+            (harness.MATCH_READINESS_STATUS_MARKER, "gametype", "eq", 5),
+            ctf_dropped_flag_route_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "ctf_dropped_flag_route_assignments", "ge", 1),
+            ctf_dropped_flag_route_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "ctf_dropped_flag_route_route_commands", "ge", 1),
+            ctf_dropped_flag_route_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_ctf_dropped_flag_route_lane", "eq", 5),
+            ctf_dropped_flag_route_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_ctf_dropped_flag_route_source", "eq", 2),
+            ctf_dropped_flag_route_marker_required,
+        )
+        self.assertIn(
+            (
+                harness.OBJECTIVE_DETAIL_STATUS_MARKER,
+                "team_objective_role_policy_dropped_flag_responses",
+                "ge",
+                1,
+            ),
+            ctf_dropped_flag_route_marker_required,
+        )
+
+        ctf_carrier_support_route_marker_required = {
+            (check["source"], check["metric"], check["op"], check["expected"])
+            for check in rows["ctf_carrier_support_route"]["required_marker_metrics"]
+        }
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "mode", "eq", 38),
+            ctf_carrier_support_route_marker_required,
+        )
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "ctf_carrier_support_route", "eq", 1),
+            ctf_carrier_support_route_marker_required,
+        )
+        self.assertIn(
+            (harness.MATCH_READINESS_STATUS_MARKER, "gametype", "eq", 5),
+            ctf_carrier_support_route_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "ctf_carrier_support_route_assignments", "ge", 1),
+            ctf_carrier_support_route_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "ctf_carrier_support_route_route_commands", "ge", 1),
+            ctf_carrier_support_route_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_ctf_carrier_support_route_role", "eq", 4),
+            ctf_carrier_support_route_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_ctf_carrier_support_route_lane", "eq", 4),
+            ctf_carrier_support_route_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_ctf_carrier_support_route_source", "eq", 3),
+            ctf_carrier_support_route_marker_required,
+        )
+        self.assertIn(
+            (
+                harness.OBJECTIVE_DETAIL_STATUS_MARKER,
+                "team_objective_role_policy_carrier_support_selections",
+                "ge",
+                1,
+            ),
+            ctf_carrier_support_route_marker_required,
+        )
+
+        ctf_base_return_route_marker_required = {
+            (check["source"], check["metric"], check["op"], check["expected"])
+            for check in rows["ctf_base_return_route"]["required_marker_metrics"]
+        }
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "mode", "eq", 39),
+            ctf_base_return_route_marker_required,
+        )
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "ctf_base_return_route", "eq", 1),
+            ctf_base_return_route_marker_required,
+        )
+        self.assertIn(
+            (harness.MATCH_READINESS_STATUS_MARKER, "gametype", "eq", 5),
+            ctf_base_return_route_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "ctf_base_return_route_assignments", "ge", 1),
+            ctf_base_return_route_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "ctf_base_return_route_route_commands", "ge", 1),
+            ctf_base_return_route_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_ctf_base_return_route_role", "eq", 3),
+            ctf_base_return_route_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_ctf_base_return_route_lane", "eq", 6),
+            ctf_base_return_route_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_ctf_base_return_route_type", "eq", 2),
+            ctf_base_return_route_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_ctf_base_return_route_source", "eq", 3),
+            ctf_base_return_route_marker_required,
+        )
+        self.assertIn(
+            (
+                harness.OBJECTIVE_DETAIL_STATUS_MARKER,
+                "team_objective_role_policy_own_base_return_selections",
+                "ge",
+                1,
+            ),
+            ctf_base_return_route_marker_required,
+        )
+
+        ctf_objective_route_marker_required = {
+            (check["source"], check["metric"], check["op"], check["expected"])
+            for check in rows["ctf_objective_route"]["required_marker_metrics"]
+        }
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "mode", "eq", 40),
+            ctf_objective_route_marker_required,
+        )
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "ctf_objective_route", "eq", 1),
+            ctf_objective_route_marker_required,
+        )
+        self.assertIn(
+            (harness.MATCH_READINESS_STATUS_MARKER, "gametype", "eq", 5),
+            ctf_objective_route_marker_required,
+        )
+        self.assertIn(
+            (
+                harness.STATUS_MARKER,
+                "ctf_objective_route_base_return_candidates",
+                "ge",
+                1,
+            ),
+            ctf_objective_route_marker_required,
+        )
+        self.assertIn(
+            (
+                harness.STATUS_MARKER,
+                "ctf_objective_route_carrier_support_candidates",
+                "ge",
+                1,
+            ),
+            ctf_objective_route_marker_required,
+        )
+        self.assertIn(
+            (
+                harness.STATUS_MARKER,
+                "ctf_objective_route_dropped_flag_candidates",
+                "ge",
+                1,
+            ),
+            ctf_objective_route_marker_required,
+        )
+        self.assertIn(
+            (
+                harness.STATUS_MARKER,
+                "ctf_objective_route_base_return_selections",
+                "ge",
+                1,
+            ),
+            ctf_objective_route_marker_required,
+        )
+        self.assertIn(
+            (
+                harness.STATUS_MARKER,
+                "ctf_objective_route_carrier_support_selections",
+                "ge",
+                1,
+            ),
+            ctf_objective_route_marker_required,
+        )
+        self.assertIn(
+            (
+                harness.STATUS_MARKER,
+                "ctf_objective_route_dropped_flag_deferrals",
+                "ge",
+                1,
+            ),
+            ctf_objective_route_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_ctf_objective_route_selection", "ge", 1),
+            ctf_objective_route_marker_required,
+        )
+
+        ctf_objective_route_precedence_marker_required = {
+            (check["source"], check["metric"], check["op"], check["expected"])
+            for check in rows["ctf_objective_route_precedence"]["required_marker_metrics"]
+        }
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "mode", "eq", 41),
+            ctf_objective_route_precedence_marker_required,
+        )
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "ctf_role_route", "eq", 1),
+            ctf_objective_route_precedence_marker_required,
+        )
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "ctf_objective_route", "eq", 1),
+            ctf_objective_route_precedence_marker_required,
+        )
+        self.assertIn(
+            (
+                harness.SCENARIO_BEGIN_MARKER,
+                "ctf_objective_route_precedence",
+                "eq",
+                1,
+            ),
+            ctf_objective_route_precedence_marker_required,
+        )
+        self.assertIn(
+            (
+                harness.STATUS_MARKER,
+                "ctf_role_route_objective_deferrals",
+                "ge",
+                1,
+            ),
+            ctf_objective_route_precedence_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "ctf_role_route_activations", "eq", 0),
+            ctf_objective_route_precedence_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "ctf_role_route_route_requests", "eq", 0),
+            ctf_objective_route_precedence_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "ctf_objective_route_route_commands", "ge", 1),
+            ctf_objective_route_precedence_marker_required,
         )
 
         team_item_roles_marker_required = {
@@ -1361,6 +2036,52 @@ class BotScenarioHarnessTests(unittest.TestCase):
             door_elevator_command.index("sv_bot_frame_command_smoke"),
         )
 
+        ffa_roam_route_command = harness.build_command(
+            pathlib.Path(".install/worr_ded_x86_64.exe"),
+            pathlib.Path(".install"),
+            ffa_roam_route,
+            "basew",
+            "mm-rage",
+            27982,
+            "ffa_roam_route",
+        )
+        self.assertEqual(ffa_roam_route_command[ffa_roam_route_command.index("deathmatch") + 1], "1")
+        self.assertEqual(ffa_roam_route_command[ffa_roam_route_command.index("g_gametype") + 1], "1")
+        self.assertEqual(
+            ffa_roam_route_command[ffa_roam_route_command.index("sg_bot_ffa_roam_route") + 1],
+            "1",
+        )
+        self.assertLess(
+            ffa_roam_route_command.index("sg_bot_ffa_roam_route"),
+            ffa_roam_route_command.index("sv_bot_frame_command_smoke"),
+        )
+
+        ffa_spawn_camp_command = harness.build_command(
+            pathlib.Path(".install/worr_ded_x86_64.exe"),
+            pathlib.Path(".install"),
+            ffa_spawn_camp_avoidance,
+            "basew",
+            "mm-rage",
+            27982,
+            "ffa_spawn_camp_avoidance",
+        )
+        self.assertEqual(ffa_spawn_camp_command[ffa_spawn_camp_command.index("deathmatch") + 1], "1")
+        self.assertEqual(ffa_spawn_camp_command[ffa_spawn_camp_command.index("g_gametype") + 1], "1")
+        self.assertEqual(
+            ffa_spawn_camp_command[ffa_spawn_camp_command.index("sg_bot_ffa_roam_route") + 1],
+            "1",
+        )
+        self.assertEqual(
+            ffa_spawn_camp_command[
+                ffa_spawn_camp_command.index("sg_bot_ffa_spawn_camp_avoidance") + 1
+            ],
+            "1",
+        )
+        self.assertLess(
+            ffa_spawn_camp_command.index("sg_bot_ffa_spawn_camp_avoidance"),
+            ffa_spawn_camp_command.index("sv_bot_frame_command_smoke"),
+        )
+
         team_role_route_command = harness.build_command(
             pathlib.Path(".install/worr_ded_x86_64.exe"),
             pathlib.Path(".install"),
@@ -1379,6 +2100,68 @@ class BotScenarioHarnessTests(unittest.TestCase):
         self.assertLess(
             team_role_route_command.index("sg_bot_team_role_route"),
             team_role_route_command.index("sv_bot_frame_command_smoke"),
+        )
+
+        team_role_combat_command = harness.build_command(
+            pathlib.Path(".install/worr_ded_x86_64.exe"),
+            pathlib.Path(".install"),
+            team_role_combat,
+            "basew",
+            "mm-rage",
+            27986,
+            "team_role_combat",
+        )
+        self.assertEqual(team_role_combat_command[team_role_combat_command.index("deathmatch") + 1], "1")
+        self.assertEqual(team_role_combat_command[team_role_combat_command.index("g_gametype") + 1], "3")
+        self.assertEqual(
+            team_role_combat_command[team_role_combat_command.index("sg_bot_team_role_combat") + 1],
+            "1",
+        )
+        self.assertLess(
+            team_role_combat_command.index("sg_bot_team_role_combat"),
+            team_role_combat_command.index("sv_bot_frame_command_smoke"),
+        )
+
+        team_role_combat_avoidance_command = harness.build_command(
+            pathlib.Path(".install/worr_ded_x86_64.exe"),
+            pathlib.Path(".install"),
+            team_role_combat_avoidance,
+            "basew",
+            "mm-rage",
+            27987,
+            "team_role_combat_avoidance",
+        )
+        self.assertEqual(
+            team_role_combat_avoidance_command[
+                team_role_combat_avoidance_command.index("deathmatch") + 1
+            ],
+            "1",
+        )
+        self.assertEqual(
+            team_role_combat_avoidance_command[
+                team_role_combat_avoidance_command.index("g_gametype") + 1
+            ],
+            "3",
+        )
+        self.assertEqual(
+            team_role_combat_avoidance_command[
+                team_role_combat_avoidance_command.index("sg_bot_team_role_combat") + 1
+            ],
+            "1",
+        )
+        self.assertEqual(
+            team_role_combat_avoidance_command[
+                team_role_combat_avoidance_command.index("sg_bot_team_fire_avoidance") + 1
+            ],
+            "1",
+        )
+        self.assertLess(
+            team_role_combat_avoidance_command.index("sg_bot_team_role_combat"),
+            team_role_combat_avoidance_command.index("sv_bot_frame_command_smoke"),
+        )
+        self.assertLess(
+            team_role_combat_avoidance_command.index("sg_bot_team_fire_avoidance"),
+            team_role_combat_avoidance_command.index("sv_bot_frame_command_smoke"),
         )
 
         team_item_roles_command = harness.build_command(
@@ -1455,7 +2238,11 @@ class BotScenarioHarnessTests(unittest.TestCase):
         anti_block = scenarios["coop_anti_blocking"]
         target_share = scenarios["coop_target_share"]
         door_elevator = scenarios["coop_door_elevator"]
+        ffa_roam_route = scenarios["ffa_roam_route"]
+        ffa_spawn_camp_avoidance = scenarios["ffa_spawn_camp_avoidance"]
         team_role_route = scenarios["team_role_route"]
+        team_role_combat = scenarios["team_role_combat"]
+        team_role_combat_avoidance = scenarios["team_role_combat_avoidance"]
         team_item_roles = scenarios["team_item_roles"]
         interaction_retry = scenarios["coop_interaction_retry"]
 
@@ -1712,6 +2499,87 @@ class BotScenarioHarnessTests(unittest.TestCase):
         ]
         self.assertEqual(door_elevator_failed, [])
 
+        ffa_roam_route_text = "\n".join((
+            f"{harness.SCENARIO_BEGIN_MARKER} mode=42 combat=0 "
+            "weapon_switch=0 item_focus=0 team_objective=0 target=4 "
+            "gametype=1 ffa_roam_route=1",
+            "q3a_bot_frame_command_status pass=1 route_commands=16 "
+            "route_failures=0 last_timed_route_goal_kind=7 "
+            "ffa_roam_route_requests=16 "
+            "ffa_roam_route_policy_selections=16 "
+            "ffa_roam_route_activations=4 "
+            "ffa_roam_route_route_requests=12 "
+            "ffa_roam_route_invalid_skips=0 "
+            "last_ffa_roam_route_client=2 "
+            "last_ffa_roam_route_mode=1 "
+            "last_ffa_roam_route_mode_name=free_for_all "
+            "last_ffa_roam_route_role=1 "
+            "last_ffa_roam_route_role_name=attacker "
+            "last_ffa_roam_route_lane=3 "
+            "last_ffa_roam_route_lane_name=midfield "
+            "last_ffa_roam_route_priority=660 "
+            "last_ffa_roam_route_goal_distance_sq=802816",
+            "q3a_bot_match_readiness_status ffa_pass=1 tdm_pass=0 "
+            "deathmatch=1 team_mode=0 gametype=1 bots=4 playing=4 "
+            "spectators=0 queued=0 free=0 red=0 blue=0",
+            "q3a_bot_objective_status "
+            "team_objective_match_policy_ffa=16",
+        ))
+        ffa_roam_route_marker_metrics = harness.parse_marker_metrics(
+            ffa_roam_route_text,
+            {check.marker for check in ffa_roam_route.marker_checks},
+        )
+        ffa_roam_route_failed = [
+            result
+            for result in (
+                harness.evaluate_marker_check(check, ffa_roam_route_marker_metrics)
+                for check in ffa_roam_route.marker_checks
+            )
+            if not result["passed"]
+        ]
+        self.assertEqual(ffa_roam_route_failed, [])
+
+        ffa_spawn_camp_text = "\n".join((
+            f"{harness.SCENARIO_BEGIN_MARKER} mode=45 combat=0 "
+            "weapon_switch=0 item_focus=0 team_objective=0 target=4 "
+            "gametype=1 ffa_roam_route=1 ffa_spawn_camp_avoidance=1",
+            "q3a_bot_frame_command_status pass=1 route_commands=16 "
+            "route_failures=0 last_timed_route_goal_kind=7 "
+            "ffa_roam_route_activations=4 "
+            "ffa_roam_route_route_requests=12 "
+            "ffa_spawn_camp_avoidance_requests=16 "
+            "ffa_spawn_camp_avoidance_policy_selections=16 "
+            "ffa_spawn_camp_avoidance_source_selections=4 "
+            "ffa_spawn_camp_avoidance_activations=4 "
+            "ffa_spawn_camp_avoidance_route_requests=12 "
+            "ffa_spawn_camp_avoidance_invalid_skips=0 "
+            "last_ffa_spawn_camp_avoidance_client=2 "
+            "last_ffa_spawn_camp_avoidance_source_client=1 "
+            "last_ffa_spawn_camp_avoidance_source_entity=1 "
+            "last_ffa_spawn_camp_avoidance_source_distance_sq=16384 "
+            "last_ffa_spawn_camp_avoidance_policy_avoid=1 "
+            "last_ffa_spawn_camp_avoidance_goal_distance_sq=802816 "
+            "last_ffa_spawn_camp_avoidance_reason=nearby_source",
+            "q3a_bot_match_readiness_status ffa_pass=1 tdm_pass=0 "
+            "deathmatch=1 team_mode=0 gametype=1 bots=4 playing=4 "
+            "spectators=0 queued=0 free=0 red=0 blue=0",
+            "q3a_bot_objective_status "
+            "team_objective_match_policy_ffa=16",
+        ))
+        ffa_spawn_camp_marker_metrics = harness.parse_marker_metrics(
+            ffa_spawn_camp_text,
+            {check.marker for check in ffa_spawn_camp_avoidance.marker_checks},
+        )
+        ffa_spawn_camp_failed = [
+            result
+            for result in (
+                harness.evaluate_marker_check(check, ffa_spawn_camp_marker_metrics)
+                for check in ffa_spawn_camp_avoidance.marker_checks
+            )
+            if not result["passed"]
+        ]
+        self.assertEqual(ffa_spawn_camp_failed, [])
+
         team_role_route_text = "\n".join((
             f"{harness.SCENARIO_BEGIN_MARKER} mode=32 combat=0 "
             "weapon_switch=0 item_focus=0 team_objective=0 target=4 "
@@ -1750,6 +2618,109 @@ class BotScenarioHarnessTests(unittest.TestCase):
             if not result["passed"]
         ]
         self.assertEqual(team_role_route_failed, [])
+
+        team_role_combat_text = "\n".join((
+            f"{harness.SCENARIO_BEGIN_MARKER} mode=43 combat=0 "
+            "weapon_switch=0 item_focus=0 team_objective=0 target=4 "
+            "gametype=3 team_role_combat=1",
+            "q3a_bot_frame_command_status pass=1 route_commands=16 "
+            "route_failures=0 team_role_combat_requests=16 "
+            "team_role_combat_policy_selections=16 "
+            "team_role_combat_target_selections=12 "
+            "team_role_combat_attack_decisions=12 "
+            "team_role_combat_decision_overrides=12 "
+            "team_role_combat_invalid_skips=0 "
+            "last_team_role_combat_client=2 "
+            "last_team_role_combat_mode=2 "
+            "last_team_role_combat_mode_name=team_deathmatch "
+            "last_team_role_combat_role=5 "
+            "last_team_role_combat_role_name=midfielder "
+            "last_team_role_combat_lane=3 "
+            "last_team_role_combat_lane_name=midfield "
+            "last_team_role_combat_priority=795 "
+            "last_team_role_combat_target_client=1 "
+            "last_team_role_combat_target_entity=2 "
+            "last_team_role_combat_target_distance_sq=16384 "
+            "last_team_role_combat_target_visible=1 "
+            "last_team_role_combat_target_shootable=1 "
+            "last_team_role_combat_reason=team_role_combat_engage",
+            "q3a_bot_match_readiness_status ffa_pass=0 tdm_pass=1 "
+            "deathmatch=1 team_mode=1 gametype=3 bots=4 playing=4 "
+            "spectators=0 queued=0 free=0 red=2 blue=2",
+            "q3a_bot_action_status action_applied_attack_buttons=12",
+            "q3a_bot_objective_status "
+            "team_objective_match_policy_tdm=16",
+        ))
+        team_role_combat_marker_metrics = harness.parse_marker_metrics(
+            team_role_combat_text,
+            {check.marker for check in team_role_combat.marker_checks},
+        )
+        team_role_combat_failed = [
+            result
+            for result in (
+                harness.evaluate_marker_check(check, team_role_combat_marker_metrics)
+                for check in team_role_combat.marker_checks
+            )
+            if not result["passed"]
+        ]
+        self.assertEqual(team_role_combat_failed, [])
+
+        team_role_combat_avoidance_text = "\n".join((
+            f"{harness.SCENARIO_BEGIN_MARKER} mode=44 combat=0 "
+            "weapon_switch=0 item_focus=0 team_objective=0 target=4 "
+            "gametype=3 team_fire_avoidance=1 team_role_combat=1",
+            "q3a_bot_frame_command_status pass=1 route_commands=16 "
+            "route_failures=0 team_role_combat_requests=16 "
+            "team_role_combat_policy_selections=16 "
+            "team_role_combat_target_selections=12 "
+            "team_role_combat_attack_decisions=12 "
+            "team_role_combat_decision_overrides=12 "
+            "team_role_combat_invalid_skips=0 "
+            "last_team_role_combat_client=2 "
+            "last_team_role_combat_mode=2 "
+            "last_team_role_combat_mode_name=team_deathmatch "
+            "last_team_role_combat_role=5 "
+            "last_team_role_combat_role_name=midfielder "
+            "last_team_role_combat_lane=3 "
+            "last_team_role_combat_lane_name=midfield "
+            "last_team_role_combat_priority=795 "
+            "last_team_role_combat_target_client=1 "
+            "last_team_role_combat_target_entity=2 "
+            "last_team_role_combat_target_distance_sq=16384 "
+            "last_team_role_combat_target_visible=1 "
+            "last_team_role_combat_target_shootable=1 "
+            "last_team_role_combat_reason=team_role_combat_engage "
+            "team_fire_avoidance_evaluations=12 "
+            "team_fire_avoidance_blocks=12 "
+            "team_fire_avoidance_line_blocks=12 "
+            "last_team_fire_avoidance_client=2 "
+            "last_team_fire_avoidance_target_client=1 "
+            "last_team_fire_avoidance_friendly_line=1 "
+            "last_team_fire_avoidance_target_allowed=1 "
+            "last_team_fire_avoidance_blocked=1 "
+            "last_team_fire_avoidance_reason=friendly_line_damage",
+            "q3a_bot_match_readiness_status ffa_pass=0 tdm_pass=1 "
+            "deathmatch=1 team_mode=1 gametype=3 bots=4 playing=4 "
+            "spectators=0 queued=0 free=0 red=2 blue=2",
+            "q3a_bot_action_status action_applied_attack_buttons=3",
+            "q3a_bot_objective_status "
+            "team_objective_match_policy_tdm=16 "
+            "team_objective_friendly_fire_policy_evaluations=12 "
+            "team_objective_friendly_fire_avoidance=12",
+        ))
+        team_role_combat_avoidance_marker_metrics = harness.parse_marker_metrics(
+            team_role_combat_avoidance_text,
+            {check.marker for check in team_role_combat_avoidance.marker_checks},
+        )
+        team_role_combat_avoidance_failed = [
+            result
+            for result in (
+                harness.evaluate_marker_check(check, team_role_combat_avoidance_marker_metrics)
+                for check in team_role_combat_avoidance.marker_checks
+            )
+            if not result["passed"]
+        ]
+        self.assertEqual(team_role_combat_avoidance_failed, [])
 
         ctf_role_route = harness.scenario_map()["ctf_role_route"]
         ctf_role_route_text = "\n".join((
@@ -1790,6 +2761,291 @@ class BotScenarioHarnessTests(unittest.TestCase):
             if not result["passed"]
         ]
         self.assertEqual(ctf_role_route_failed, [])
+
+        ctf_role_combat = harness.scenario_map()["ctf_role_combat"]
+        ctf_role_combat_text = "\n".join((
+            f"{harness.SCENARIO_BEGIN_MARKER} mode=36 combat=0 "
+            "weapon_switch=0 item_focus=0 team_objective=0 target=4 "
+            "gametype=5 ctf_role_combat=1",
+            "q3a_bot_frame_command_status pass=1 route_commands=16 "
+            "route_failures=0 ctf_role_combat_requests=16 "
+            "ctf_role_combat_policy_selections=16 "
+            "ctf_role_combat_target_selections=12 "
+            "ctf_role_combat_attack_decisions=12 "
+            "ctf_role_combat_decision_overrides=12 "
+            "ctf_role_combat_invalid_skips=0 "
+            "last_ctf_role_combat_client=2 "
+            "last_ctf_role_combat_mode=3 "
+            "last_ctf_role_combat_mode_name=capture_the_flag "
+            "last_ctf_role_combat_role=5 "
+            "last_ctf_role_combat_role_name=midfielder "
+            "last_ctf_role_combat_lane=3 "
+            "last_ctf_role_combat_lane_name=midfield "
+            "last_ctf_role_combat_priority=800 "
+            "last_ctf_role_combat_target_client=1 "
+            "last_ctf_role_combat_target_entity=2 "
+            "last_ctf_role_combat_target_distance_sq=16384 "
+            "last_ctf_role_combat_target_visible=1 "
+            "last_ctf_role_combat_target_shootable=1 "
+            "last_ctf_role_combat_reason=ctf_role_combat_engage",
+            "q3a_bot_match_readiness_status ffa_pass=0 tdm_pass=0 "
+            "deathmatch=1 team_mode=1 gametype=5 bots=4 playing=4 "
+            "spectators=0 queued=0 free=0 red=2 blue=2",
+            "q3a_bot_action_status action_applied_attack_buttons=12",
+            "q3a_bot_objective_status "
+            "team_objective_match_policy_ctf=16",
+        ))
+        ctf_role_combat_marker_metrics = harness.parse_marker_metrics(
+            ctf_role_combat_text,
+            {check.marker for check in ctf_role_combat.marker_checks},
+        )
+        ctf_role_combat_failed = [
+            result
+            for result in (
+                harness.evaluate_marker_check(check, ctf_role_combat_marker_metrics)
+                for check in ctf_role_combat.marker_checks
+            )
+            if not result["passed"]
+        ]
+        self.assertEqual(ctf_role_combat_failed, [])
+
+        ctf_dropped_flag_route = harness.scenario_map()["ctf_dropped_flag_route"]
+        ctf_dropped_flag_route_text = "\n".join((
+            f"{harness.SCENARIO_BEGIN_MARKER} mode=37 combat=0 "
+            "weapon_switch=0 item_focus=0 team_objective=0 target=4 "
+            "gametype=5 ctf_dropped_flag_route=1",
+            "q3a_bot_frame_command_status pass=1 route_commands=16 "
+            "route_failures=0 ctf_dropped_flag_route_requests=16 "
+            "ctf_dropped_flag_route_assignments=16 "
+            "ctf_dropped_flag_route_route_requests=16 "
+            "ctf_dropped_flag_route_route_commands=16 "
+            "ctf_dropped_flag_route_invalid_skips=0 "
+            "last_ctf_dropped_flag_route_client=2 "
+            "last_ctf_dropped_flag_route_role=1 "
+            "last_ctf_dropped_flag_route_role_name=attacker "
+            "last_ctf_dropped_flag_route_lane=5 "
+            "last_ctf_dropped_flag_route_lane_name=dropped_flag_response "
+            "last_ctf_dropped_flag_route_type=1 "
+            "last_ctf_dropped_flag_route_type_name=enemy_flag_pickup "
+            "last_ctf_dropped_flag_route_source=2 "
+            "last_ctf_dropped_flag_route_source_name=dropped_flag_entity "
+            "last_ctf_dropped_flag_route_entity=37 "
+            "last_ctf_dropped_flag_route_item=10 "
+            "last_ctf_dropped_flag_route_priority=2200 "
+            "last_ctf_dropped_flag_route_goal_distance_sq=50176",
+            "q3a_bot_match_readiness_status ffa_pass=0 tdm_pass=0 "
+            "deathmatch=1 team_mode=1 gametype=5 bots=4 playing=4 "
+            "spectators=0 queued=0 free=0 red=2 blue=2",
+            "q3a_bot_objective_detail_status "
+            "team_objective_role_policy_dropped_flag_responses=16 "
+            "last_team_objective_lane=5 "
+            "last_team_objective_target_source=2",
+        ))
+        ctf_dropped_flag_route_marker_metrics = harness.parse_marker_metrics(
+            ctf_dropped_flag_route_text,
+            {check.marker for check in ctf_dropped_flag_route.marker_checks},
+        )
+        ctf_dropped_flag_route_failed = [
+            result
+            for result in (
+                harness.evaluate_marker_check(check, ctf_dropped_flag_route_marker_metrics)
+                for check in ctf_dropped_flag_route.marker_checks
+            )
+            if not result["passed"]
+        ]
+        self.assertEqual(ctf_dropped_flag_route_failed, [])
+
+        ctf_carrier_support_route = harness.scenario_map()["ctf_carrier_support_route"]
+        ctf_carrier_support_route_text = "\n".join((
+            f"{harness.SCENARIO_BEGIN_MARKER} mode=38 combat=0 "
+            "weapon_switch=0 item_focus=0 team_objective=0 target=4 "
+            "gametype=5 ctf_carrier_support_route=1",
+            "q3a_bot_frame_command_status pass=1 route_commands=16 "
+            "route_failures=0 ctf_carrier_support_route_requests=16 "
+            "ctf_carrier_support_route_assignments=16 "
+            "ctf_carrier_support_route_route_requests=16 "
+            "ctf_carrier_support_route_route_commands=16 "
+            "ctf_carrier_support_route_invalid_skips=0 "
+            "last_ctf_carrier_support_route_client=2 "
+            "last_ctf_carrier_support_route_role=4 "
+            "last_ctf_carrier_support_route_role_name=support "
+            "last_ctf_carrier_support_route_lane=4 "
+            "last_ctf_carrier_support_route_lane_name=carrier_support "
+            "last_ctf_carrier_support_route_type=1 "
+            "last_ctf_carrier_support_route_type_name=enemy_flag_pickup "
+            "last_ctf_carrier_support_route_source=3 "
+            "last_ctf_carrier_support_route_source_name=flag_carrier "
+            "last_ctf_carrier_support_route_entity=3 "
+            "last_ctf_carrier_support_route_carrier_client=2 "
+            "last_ctf_carrier_support_route_item=10 "
+            "last_ctf_carrier_support_route_priority=930 "
+            "last_ctf_carrier_support_route_goal_distance_sq=36864",
+            "q3a_bot_match_readiness_status ffa_pass=0 tdm_pass=0 "
+            "deathmatch=1 team_mode=1 gametype=5 bots=4 playing=4 "
+            "spectators=0 queued=0 free=0 red=2 blue=2",
+            "q3a_bot_objective_detail_status "
+            "team_objective_role_policy_carrier_support_selections=16 "
+            "last_team_objective_lane=4 "
+            "last_team_objective_target_source=3",
+        ))
+        ctf_carrier_support_route_marker_metrics = harness.parse_marker_metrics(
+            ctf_carrier_support_route_text,
+            {check.marker for check in ctf_carrier_support_route.marker_checks},
+        )
+        ctf_carrier_support_route_failed = [
+            result
+            for result in (
+                harness.evaluate_marker_check(check, ctf_carrier_support_route_marker_metrics)
+                for check in ctf_carrier_support_route.marker_checks
+            )
+            if not result["passed"]
+        ]
+        self.assertEqual(ctf_carrier_support_route_failed, [])
+
+        ctf_base_return_route = harness.scenario_map()["ctf_base_return_route"]
+        ctf_base_return_route_text = "\n".join((
+            f"{harness.SCENARIO_BEGIN_MARKER} mode=39 combat=0 "
+            "weapon_switch=0 item_focus=0 team_objective=0 target=4 "
+            "gametype=5 ctf_base_return_route=1",
+            "q3a_bot_frame_command_status pass=1 route_commands=16 "
+            "route_failures=0 ctf_base_return_route_requests=16 "
+            "ctf_base_return_route_assignments=16 "
+            "ctf_base_return_route_route_requests=16 "
+            "ctf_base_return_route_route_commands=16 "
+            "ctf_base_return_route_invalid_skips=0 "
+            "last_ctf_base_return_route_client=2 "
+            "last_ctf_base_return_route_role=3 "
+            "last_ctf_base_return_route_role_name=returner "
+            "last_ctf_base_return_route_lane=6 "
+            "last_ctf_base_return_route_lane_name=own_base_return "
+            "last_ctf_base_return_route_type=2 "
+            "last_ctf_base_return_route_type_name=own_flag_return "
+            "last_ctf_base_return_route_source=3 "
+            "last_ctf_base_return_route_source_name=flag_carrier "
+            "last_ctf_base_return_route_entity=3 "
+            "last_ctf_base_return_route_carrier_client=2 "
+            "last_ctf_base_return_route_item=9 "
+            "last_ctf_base_return_route_priority=1120 "
+            "last_ctf_base_return_route_goal_distance_sq=36864",
+            "q3a_bot_match_readiness_status ffa_pass=0 tdm_pass=0 "
+            "deathmatch=1 team_mode=1 gametype=5 bots=4 playing=4 "
+            "spectators=0 queued=0 free=0 red=2 blue=2",
+            "q3a_bot_objective_detail_status "
+            "team_objective_role_policy_own_base_return_selections=16 "
+            "last_team_objective_lane=0 "
+            "last_team_objective_target_source=2",
+        ))
+        ctf_base_return_route_marker_metrics = harness.parse_marker_metrics(
+            ctf_base_return_route_text,
+            {check.marker for check in ctf_base_return_route.marker_checks},
+        )
+        ctf_base_return_route_failed = [
+            result
+            for result in (
+                harness.evaluate_marker_check(check, ctf_base_return_route_marker_metrics)
+                for check in ctf_base_return_route.marker_checks
+            )
+            if not result["passed"]
+        ]
+        self.assertEqual(ctf_base_return_route_failed, [])
+
+        ctf_objective_route = harness.scenario_map()["ctf_objective_route"]
+        ctf_objective_route_text = "\n".join((
+            f"{harness.SCENARIO_BEGIN_MARKER} mode=40 combat=0 "
+            "weapon_switch=0 item_focus=0 team_objective=0 target=4 "
+            "gametype=5 ctf_objective_route=1",
+            "q3a_bot_frame_command_status pass=1 route_commands=16 "
+            "route_failures=0 ctf_objective_route_requests=16 "
+            "ctf_objective_route_assignments=16 "
+            "ctf_objective_route_base_return_candidates=16 "
+            "ctf_objective_route_carrier_support_candidates=16 "
+            "ctf_objective_route_dropped_flag_candidates=16 "
+            "ctf_objective_route_base_return_selections=12 "
+            "ctf_objective_route_carrier_support_selections=2 "
+            "ctf_objective_route_dropped_flag_selections=2 "
+            "ctf_objective_route_carrier_support_deferrals=0 "
+            "ctf_objective_route_dropped_flag_deferrals=14 "
+            "ctf_objective_route_route_requests=16 "
+            "ctf_objective_route_route_commands=16 "
+            "ctf_objective_route_invalid_skips=0 "
+            "last_ctf_objective_route_client=2 "
+            "last_ctf_objective_route_selection=1 "
+            "last_ctf_objective_route_selection_name=base_return "
+            "last_ctf_objective_route_role=3 "
+            "last_ctf_objective_route_role_name=returner "
+            "last_ctf_objective_route_lane=6 "
+            "last_ctf_objective_route_lane_name=own_base_return "
+            "last_ctf_objective_route_type=2 "
+            "last_ctf_objective_route_type_name=own_flag_return "
+            "last_ctf_objective_route_source=3 "
+            "last_ctf_objective_route_source_name=flag_carrier "
+            "last_ctf_objective_route_entity=3 "
+            "last_ctf_objective_route_carrier_client=2 "
+            "last_ctf_objective_route_item=9 "
+            "last_ctf_objective_route_priority=1120 "
+            "last_ctf_objective_route_goal_distance_sq=36864",
+            "q3a_bot_match_readiness_status ffa_pass=0 tdm_pass=0 "
+            "deathmatch=1 team_mode=1 gametype=5 bots=4 playing=4 "
+            "spectators=0 queued=0 free=0 red=2 blue=2",
+        ))
+        ctf_objective_route_marker_metrics = harness.parse_marker_metrics(
+            ctf_objective_route_text,
+            {check.marker for check in ctf_objective_route.marker_checks},
+        )
+        ctf_objective_route_failed = [
+            result
+            for result in (
+                harness.evaluate_marker_check(check, ctf_objective_route_marker_metrics)
+                for check in ctf_objective_route.marker_checks
+            )
+            if not result["passed"]
+        ]
+        self.assertEqual(ctf_objective_route_failed, [])
+
+        ctf_objective_route_precedence = harness.scenario_map()[
+            "ctf_objective_route_precedence"
+        ]
+        ctf_objective_route_precedence_text = "\n".join((
+            f"{harness.SCENARIO_BEGIN_MARKER} mode=41 combat=0 "
+            "weapon_switch=0 item_focus=0 team_objective=0 target=4 "
+            "gametype=5 ctf_role_route=1 ctf_objective_route=1 "
+            "ctf_objective_route_precedence=1",
+            "q3a_bot_frame_command_status pass=1 route_commands=16 "
+            "route_failures=0 ctf_role_route_requests=16 "
+            "ctf_role_route_policy_selections=16 "
+            "ctf_role_route_activations=0 "
+            "ctf_role_route_objective_deferrals=16 "
+            "ctf_role_route_route_requests=0 "
+            "ctf_role_route_invalid_skips=0 "
+            "ctf_objective_route_requests=16 "
+            "ctf_objective_route_assignments=16 "
+            "ctf_objective_route_route_requests=16 "
+            "ctf_objective_route_route_commands=16 "
+            "ctf_objective_route_invalid_skips=0 "
+            "last_ctf_objective_route_selection=1 "
+            "last_ctf_objective_route_goal_distance_sq=36864",
+            "q3a_bot_match_readiness_status ffa_pass=0 tdm_pass=0 "
+            "deathmatch=1 team_mode=1 gametype=5 bots=4 playing=4 "
+            "spectators=0 queued=0 free=0 red=2 blue=2",
+        ))
+        ctf_objective_route_precedence_marker_metrics = (
+            harness.parse_marker_metrics(
+                ctf_objective_route_precedence_text,
+                {check.marker for check in ctf_objective_route_precedence.marker_checks},
+            )
+        )
+        ctf_objective_route_precedence_failed = [
+            result
+            for result in (
+                harness.evaluate_marker_check(
+                    check,
+                    ctf_objective_route_precedence_marker_metrics,
+                )
+                for check in ctf_objective_route_precedence.marker_checks
+            )
+            if not result["passed"]
+        ]
+        self.assertEqual(ctf_objective_route_precedence_failed, [])
 
         team_item_roles_text = "\n".join((
             f"{harness.SCENARIO_BEGIN_MARKER} mode=33 combat=0 "
@@ -2157,6 +3413,27 @@ class BotScenarioHarnessTests(unittest.TestCase):
             "route_target_stabilization_checks=3 route_target_stabilizations=1 "
             "route_target_stabilization_skips=2 last_route_target_original_distance_sq=16 "
             "last_route_target_stable_distance_sq=128 last_route_target_stable_point_index=2 "
+            "ffa_roam_route_requests=4 ffa_roam_route_policy_selections=4 "
+            "ffa_roam_route_activations=2 ffa_roam_route_route_requests=3 "
+            "last_ffa_roam_route_client=1 last_ffa_roam_route_mode=1 "
+            "last_ffa_roam_route_mode_name=free_for_all "
+            "last_ffa_roam_route_role=1 last_ffa_roam_route_role_name=attacker "
+            "last_ffa_roam_route_lane=3 last_ffa_roam_route_lane_name=midfield "
+            "last_ffa_roam_route_priority=660 "
+            "last_ffa_roam_route_goal_distance_sq=802816 "
+            "ffa_spawn_camp_avoidance_requests=4 "
+            "ffa_spawn_camp_avoidance_policy_selections=4 "
+            "ffa_spawn_camp_avoidance_source_selections=2 "
+            "ffa_spawn_camp_avoidance_activations=2 "
+            "ffa_spawn_camp_avoidance_route_requests=3 "
+            "ffa_spawn_camp_avoidance_invalid_skips=0 "
+            "last_ffa_spawn_camp_avoidance_client=1 "
+            "last_ffa_spawn_camp_avoidance_source_client=2 "
+            "last_ffa_spawn_camp_avoidance_source_entity=2 "
+            "last_ffa_spawn_camp_avoidance_source_distance_sq=16384 "
+            "last_ffa_spawn_camp_avoidance_policy_avoid=1 "
+            "last_ffa_spawn_camp_avoidance_goal_distance_sq=802816 "
+            "last_ffa_spawn_camp_avoidance_reason=nearby_source "
             "team_role_route_requests=4 team_role_route_policy_selections=4 "
             "team_role_route_activations=2 team_role_route_route_requests=3 "
             "last_team_role_route_client=1 last_team_role_route_mode=2 "
@@ -2165,14 +3442,133 @@ class BotScenarioHarnessTests(unittest.TestCase):
             "last_team_role_route_lane=3 last_team_role_route_lane_name=midfield "
             "last_team_role_route_priority=780 "
             "last_team_role_route_goal_distance_sq=802816 "
+            "team_role_combat_requests=4 team_role_combat_policy_selections=4 "
+            "team_role_combat_target_selections=3 "
+            "team_role_combat_attack_decisions=3 "
+            "team_role_combat_decision_overrides=3 "
+            "team_role_combat_invalid_skips=0 "
+            "last_team_role_combat_client=1 last_team_role_combat_mode=2 "
+            "last_team_role_combat_mode_name=team_deathmatch "
+            "last_team_role_combat_role=5 last_team_role_combat_role_name=midfielder "
+            "last_team_role_combat_lane=3 last_team_role_combat_lane_name=midfield "
+            "last_team_role_combat_priority=795 "
+            "last_team_role_combat_target_client=2 "
+            "last_team_role_combat_target_entity=3 "
+            "last_team_role_combat_target_distance_sq=16384 "
+            "last_team_role_combat_target_visible=1 "
+            "last_team_role_combat_target_shootable=1 "
+            "last_team_role_combat_reason=team_role_combat_engage "
             "ctf_role_route_requests=4 ctf_role_route_policy_selections=4 "
-            "ctf_role_route_activations=2 ctf_role_route_route_requests=3 "
+            "ctf_role_route_activations=2 "
+            "ctf_role_route_objective_deferrals=1 "
+            "ctf_role_route_route_requests=3 "
             "last_ctf_role_route_client=1 last_ctf_role_route_mode=3 "
             "last_ctf_role_route_mode_name=capture_the_flag "
             "last_ctf_role_route_role=5 last_ctf_role_route_role_name=midfielder "
             "last_ctf_role_route_lane=3 last_ctf_role_route_lane_name=midfield "
             "last_ctf_role_route_priority=760 "
             "last_ctf_role_route_goal_distance_sq=802816 "
+            "ctf_role_combat_requests=4 ctf_role_combat_policy_selections=4 "
+            "ctf_role_combat_target_selections=3 "
+            "ctf_role_combat_attack_decisions=3 "
+            "ctf_role_combat_decision_overrides=3 "
+            "ctf_role_combat_invalid_skips=0 "
+            "last_ctf_role_combat_client=1 last_ctf_role_combat_mode=3 "
+            "last_ctf_role_combat_mode_name=capture_the_flag "
+            "last_ctf_role_combat_role=5 last_ctf_role_combat_role_name=midfielder "
+            "last_ctf_role_combat_lane=3 last_ctf_role_combat_lane_name=midfield "
+            "last_ctf_role_combat_priority=800 "
+            "last_ctf_role_combat_target_client=2 "
+            "last_ctf_role_combat_target_entity=3 "
+            "last_ctf_role_combat_target_distance_sq=16384 "
+            "last_ctf_role_combat_target_visible=1 "
+            "last_ctf_role_combat_target_shootable=1 "
+            "last_ctf_role_combat_reason=ctf_role_combat_engage "
+            "ctf_dropped_flag_route_requests=4 "
+            "ctf_dropped_flag_route_assignments=4 "
+            "ctf_dropped_flag_route_route_requests=4 "
+            "ctf_dropped_flag_route_route_commands=4 "
+            "ctf_dropped_flag_route_invalid_skips=0 "
+            "last_ctf_dropped_flag_route_client=1 "
+            "last_ctf_dropped_flag_route_role=1 "
+            "last_ctf_dropped_flag_route_role_name=attacker "
+            "last_ctf_dropped_flag_route_lane=5 "
+            "last_ctf_dropped_flag_route_lane_name=dropped_flag_response "
+            "last_ctf_dropped_flag_route_type=1 "
+            "last_ctf_dropped_flag_route_type_name=enemy_flag_pickup "
+            "last_ctf_dropped_flag_route_source=2 "
+            "last_ctf_dropped_flag_route_source_name=dropped_flag_entity "
+            "last_ctf_dropped_flag_route_entity=37 "
+            "last_ctf_dropped_flag_route_item=10 "
+            "last_ctf_dropped_flag_route_priority=2200 "
+            "last_ctf_dropped_flag_route_goal_distance_sq=50176 "
+            "ctf_carrier_support_route_requests=4 "
+            "ctf_carrier_support_route_assignments=4 "
+            "ctf_carrier_support_route_route_requests=4 "
+            "ctf_carrier_support_route_route_commands=4 "
+            "ctf_carrier_support_route_invalid_skips=0 "
+            "last_ctf_carrier_support_route_client=1 "
+            "last_ctf_carrier_support_route_role=4 "
+            "last_ctf_carrier_support_route_role_name=support "
+            "last_ctf_carrier_support_route_lane=4 "
+            "last_ctf_carrier_support_route_lane_name=carrier_support "
+            "last_ctf_carrier_support_route_type=1 "
+            "last_ctf_carrier_support_route_type_name=enemy_flag_pickup "
+            "last_ctf_carrier_support_route_source=3 "
+            "last_ctf_carrier_support_route_source_name=flag_carrier "
+            "last_ctf_carrier_support_route_entity=3 "
+            "last_ctf_carrier_support_route_carrier_client=2 "
+            "last_ctf_carrier_support_route_item=10 "
+            "last_ctf_carrier_support_route_priority=930 "
+            "last_ctf_carrier_support_route_goal_distance_sq=36864 "
+            "ctf_base_return_route_requests=4 "
+            "ctf_base_return_route_assignments=4 "
+            "ctf_base_return_route_route_requests=4 "
+            "ctf_base_return_route_route_commands=4 "
+            "ctf_base_return_route_invalid_skips=0 "
+            "last_ctf_base_return_route_client=1 "
+            "last_ctf_base_return_route_role=3 "
+            "last_ctf_base_return_route_role_name=returner "
+            "last_ctf_base_return_route_lane=6 "
+            "last_ctf_base_return_route_lane_name=own_base_return "
+            "last_ctf_base_return_route_type=2 "
+            "last_ctf_base_return_route_type_name=own_flag_return "
+            "last_ctf_base_return_route_source=3 "
+            "last_ctf_base_return_route_source_name=flag_carrier "
+            "last_ctf_base_return_route_entity=3 "
+            "last_ctf_base_return_route_carrier_client=2 "
+            "last_ctf_base_return_route_item=9 "
+            "last_ctf_base_return_route_priority=1120 "
+            "last_ctf_base_return_route_goal_distance_sq=36864 "
+            "ctf_objective_route_requests=4 "
+            "ctf_objective_route_assignments=4 "
+            "ctf_objective_route_base_return_candidates=4 "
+            "ctf_objective_route_carrier_support_candidates=4 "
+            "ctf_objective_route_dropped_flag_candidates=4 "
+            "ctf_objective_route_base_return_selections=4 "
+            "ctf_objective_route_carrier_support_selections=0 "
+            "ctf_objective_route_dropped_flag_selections=0 "
+            "ctf_objective_route_carrier_support_deferrals=4 "
+            "ctf_objective_route_dropped_flag_deferrals=4 "
+            "ctf_objective_route_route_requests=4 "
+            "ctf_objective_route_route_commands=4 "
+            "ctf_objective_route_invalid_skips=0 "
+            "last_ctf_objective_route_client=1 "
+            "last_ctf_objective_route_selection=1 "
+            "last_ctf_objective_route_selection_name=base_return "
+            "last_ctf_objective_route_role=3 "
+            "last_ctf_objective_route_role_name=returner "
+            "last_ctf_objective_route_lane=6 "
+            "last_ctf_objective_route_lane_name=own_base_return "
+            "last_ctf_objective_route_type=2 "
+            "last_ctf_objective_route_type_name=own_flag_return "
+            "last_ctf_objective_route_source=3 "
+            "last_ctf_objective_route_source_name=flag_carrier "
+            "last_ctf_objective_route_entity=3 "
+            "last_ctf_objective_route_carrier_client=2 "
+            "last_ctf_objective_route_item=9 "
+            "last_ctf_objective_route_priority=1120 "
+            "last_ctf_objective_route_goal_distance_sq=36864 "
             "team_fire_avoidance_evaluations=4 "
             "team_fire_avoidance_blocks=2 "
             "team_fire_avoidance_line_blocks=2 "
@@ -2319,6 +3715,26 @@ class BotScenarioHarnessTests(unittest.TestCase):
         self.assertEqual(route_targets["route_target_stabilizations"], 1)
         self.assertEqual(route_targets["last_route_target_stable_point_index"], 2)
 
+        ffa_roam_route = groups[("ffa_roam_route_counters", harness.STATUS_MARKER)]
+        self.assertEqual(ffa_roam_route["ffa_roam_route_requests"], 4)
+        self.assertEqual(ffa_roam_route["ffa_roam_route_policy_selections"], 4)
+        self.assertEqual(ffa_roam_route["ffa_roam_route_activations"], 2)
+        self.assertEqual(ffa_roam_route["ffa_roam_route_route_requests"], 3)
+        self.assertEqual(ffa_roam_route["last_ffa_roam_route_mode"], 1)
+        self.assertEqual(ffa_roam_route["last_ffa_roam_route_role"], 1)
+        self.assertEqual(ffa_roam_route["last_ffa_roam_route_lane"], 3)
+        self.assertEqual(ffa_roam_route["last_ffa_roam_route_goal_distance_sq"], 802816)
+
+        ffa_spawn_camp = groups[("ffa_spawn_camp_avoidance_counters", harness.STATUS_MARKER)]
+        self.assertEqual(ffa_spawn_camp["ffa_spawn_camp_avoidance_requests"], 4)
+        self.assertEqual(ffa_spawn_camp["ffa_spawn_camp_avoidance_policy_selections"], 4)
+        self.assertEqual(ffa_spawn_camp["ffa_spawn_camp_avoidance_source_selections"], 2)
+        self.assertEqual(ffa_spawn_camp["ffa_spawn_camp_avoidance_activations"], 2)
+        self.assertEqual(ffa_spawn_camp["ffa_spawn_camp_avoidance_route_requests"], 3)
+        self.assertEqual(ffa_spawn_camp["last_ffa_spawn_camp_avoidance_source_client"], 2)
+        self.assertEqual(ffa_spawn_camp["last_ffa_spawn_camp_avoidance_source_distance_sq"], 16384)
+        self.assertEqual(ffa_spawn_camp["last_ffa_spawn_camp_avoidance_policy_avoid"], 1)
+
         team_role_route = groups[("team_role_route_counters", harness.STATUS_MARKER)]
         self.assertEqual(team_role_route["team_role_route_requests"], 4)
         self.assertEqual(team_role_route["team_role_route_policy_selections"], 4)
@@ -2329,15 +3745,90 @@ class BotScenarioHarnessTests(unittest.TestCase):
         self.assertEqual(team_role_route["last_team_role_route_lane"], 3)
         self.assertEqual(team_role_route["last_team_role_route_goal_distance_sq"], 802816)
 
+        team_role_combat = groups[("team_role_combat_counters", harness.STATUS_MARKER)]
+        self.assertEqual(team_role_combat["team_role_combat_requests"], 4)
+        self.assertEqual(team_role_combat["team_role_combat_policy_selections"], 4)
+        self.assertEqual(team_role_combat["team_role_combat_target_selections"], 3)
+        self.assertEqual(team_role_combat["team_role_combat_attack_decisions"], 3)
+        self.assertEqual(team_role_combat["last_team_role_combat_mode"], 2)
+        self.assertEqual(team_role_combat["last_team_role_combat_role"], 5)
+        self.assertEqual(team_role_combat["last_team_role_combat_lane"], 3)
+        self.assertEqual(team_role_combat["last_team_role_combat_target_visible"], 1)
+        self.assertEqual(team_role_combat["last_team_role_combat_target_shootable"], 1)
+
         ctf_role_route = groups[("ctf_role_route_counters", harness.STATUS_MARKER)]
         self.assertEqual(ctf_role_route["ctf_role_route_requests"], 4)
         self.assertEqual(ctf_role_route["ctf_role_route_policy_selections"], 4)
         self.assertEqual(ctf_role_route["ctf_role_route_activations"], 2)
+        self.assertEqual(ctf_role_route["ctf_role_route_objective_deferrals"], 1)
         self.assertEqual(ctf_role_route["ctf_role_route_route_requests"], 3)
         self.assertEqual(ctf_role_route["last_ctf_role_route_mode"], 3)
         self.assertEqual(ctf_role_route["last_ctf_role_route_role"], 5)
         self.assertEqual(ctf_role_route["last_ctf_role_route_lane"], 3)
         self.assertEqual(ctf_role_route["last_ctf_role_route_goal_distance_sq"], 802816)
+
+        ctf_role_combat = groups[("ctf_role_combat_counters", harness.STATUS_MARKER)]
+        self.assertEqual(ctf_role_combat["ctf_role_combat_requests"], 4)
+        self.assertEqual(ctf_role_combat["ctf_role_combat_policy_selections"], 4)
+        self.assertEqual(ctf_role_combat["ctf_role_combat_target_selections"], 3)
+        self.assertEqual(ctf_role_combat["ctf_role_combat_attack_decisions"], 3)
+        self.assertEqual(ctf_role_combat["last_ctf_role_combat_mode"], 3)
+        self.assertEqual(ctf_role_combat["last_ctf_role_combat_role"], 5)
+        self.assertEqual(ctf_role_combat["last_ctf_role_combat_lane"], 3)
+        self.assertEqual(ctf_role_combat["last_ctf_role_combat_target_visible"], 1)
+        self.assertEqual(ctf_role_combat["last_ctf_role_combat_target_shootable"], 1)
+
+        ctf_dropped_flag_route = groups[
+            ("ctf_dropped_flag_route_counters", harness.STATUS_MARKER)
+        ]
+        self.assertEqual(ctf_dropped_flag_route["ctf_dropped_flag_route_requests"], 4)
+        self.assertEqual(ctf_dropped_flag_route["ctf_dropped_flag_route_assignments"], 4)
+        self.assertEqual(ctf_dropped_flag_route["ctf_dropped_flag_route_route_commands"], 4)
+        self.assertEqual(ctf_dropped_flag_route["last_ctf_dropped_flag_route_lane"], 5)
+        self.assertEqual(ctf_dropped_flag_route["last_ctf_dropped_flag_route_source"], 2)
+        self.assertEqual(ctf_dropped_flag_route["last_ctf_dropped_flag_route_item"], 10)
+
+        ctf_carrier_support_route = groups[
+            ("ctf_carrier_support_route_counters", harness.STATUS_MARKER)
+        ]
+        self.assertEqual(ctf_carrier_support_route["ctf_carrier_support_route_requests"], 4)
+        self.assertEqual(ctf_carrier_support_route["ctf_carrier_support_route_assignments"], 4)
+        self.assertEqual(ctf_carrier_support_route["ctf_carrier_support_route_route_commands"], 4)
+        self.assertEqual(ctf_carrier_support_route["last_ctf_carrier_support_route_role"], 4)
+        self.assertEqual(ctf_carrier_support_route["last_ctf_carrier_support_route_lane"], 4)
+        self.assertEqual(ctf_carrier_support_route["last_ctf_carrier_support_route_source"], 3)
+        self.assertEqual(ctf_carrier_support_route["last_ctf_carrier_support_route_carrier_client"], 2)
+
+        ctf_base_return_route = groups[
+            ("ctf_base_return_route_counters", harness.STATUS_MARKER)
+        ]
+        self.assertEqual(ctf_base_return_route["ctf_base_return_route_requests"], 4)
+        self.assertEqual(ctf_base_return_route["ctf_base_return_route_assignments"], 4)
+        self.assertEqual(ctf_base_return_route["ctf_base_return_route_route_commands"], 4)
+        self.assertEqual(ctf_base_return_route["last_ctf_base_return_route_role"], 3)
+        self.assertEqual(ctf_base_return_route["last_ctf_base_return_route_lane"], 6)
+        self.assertEqual(ctf_base_return_route["last_ctf_base_return_route_type"], 2)
+        self.assertEqual(ctf_base_return_route["last_ctf_base_return_route_source"], 3)
+        self.assertEqual(ctf_base_return_route["last_ctf_base_return_route_carrier_client"], 2)
+
+        ctf_objective_route = groups[
+            ("ctf_objective_route_counters", harness.STATUS_MARKER)
+        ]
+        self.assertEqual(ctf_objective_route["ctf_objective_route_requests"], 4)
+        self.assertEqual(ctf_objective_route["ctf_objective_route_assignments"], 4)
+        self.assertEqual(ctf_objective_route["ctf_objective_route_base_return_candidates"], 4)
+        self.assertEqual(ctf_objective_route["ctf_objective_route_carrier_support_candidates"], 4)
+        self.assertEqual(ctf_objective_route["ctf_objective_route_dropped_flag_candidates"], 4)
+        self.assertEqual(ctf_objective_route["ctf_objective_route_base_return_selections"], 4)
+        self.assertEqual(ctf_objective_route["ctf_objective_route_carrier_support_selections"], 0)
+        self.assertEqual(ctf_objective_route["ctf_objective_route_dropped_flag_selections"], 0)
+        self.assertEqual(ctf_objective_route["ctf_objective_route_carrier_support_deferrals"], 4)
+        self.assertEqual(ctf_objective_route["ctf_objective_route_dropped_flag_deferrals"], 4)
+        self.assertEqual(ctf_objective_route["ctf_objective_route_route_commands"], 4)
+        self.assertEqual(ctf_objective_route["last_ctf_objective_route_selection"], 1)
+        self.assertEqual(ctf_objective_route["last_ctf_objective_route_lane"], 6)
+        self.assertEqual(ctf_objective_route["last_ctf_objective_route_source"], 3)
+        self.assertEqual(ctf_objective_route["last_ctf_objective_route_carrier_client"], 2)
 
         team_fire_avoidance = groups[("team_fire_avoidance_counters", harness.STATUS_MARKER)]
         self.assertEqual(team_fire_avoidance["team_fire_avoidance_evaluations"], 4)
@@ -2401,8 +3892,16 @@ class BotScenarioHarnessTests(unittest.TestCase):
         text_report = harness.optional_field_text({"optional_fields": optional_fields})
         self.assertIn("action_dispatch_counters<q3a_bot_action_status>", text_report)
         self.assertIn("route_target_stabilization_counters<q3a_bot_frame_command_status>", text_report)
+        self.assertIn("ffa_roam_route_counters<q3a_bot_frame_command_status>", text_report)
+        self.assertIn("ffa_spawn_camp_avoidance_counters<q3a_bot_frame_command_status>", text_report)
         self.assertIn("team_role_route_counters<q3a_bot_frame_command_status>", text_report)
+        self.assertIn("team_role_combat_counters<q3a_bot_frame_command_status>", text_report)
         self.assertIn("ctf_role_route_counters<q3a_bot_frame_command_status>", text_report)
+        self.assertIn("ctf_role_combat_counters<q3a_bot_frame_command_status>", text_report)
+        self.assertIn("ctf_dropped_flag_route_counters<q3a_bot_frame_command_status>", text_report)
+        self.assertIn("ctf_carrier_support_route_counters<q3a_bot_frame_command_status>", text_report)
+        self.assertIn("ctf_base_return_route_counters<q3a_bot_frame_command_status>", text_report)
+        self.assertIn("ctf_objective_route_counters<q3a_bot_frame_command_status>", text_report)
         self.assertIn("team_item_role_counters<q3a_bot_nav_policy_status>", text_report)
         self.assertIn("item_timer_fairness_signals<q3a_bot_action_detail_status>", text_report)
         self.assertIn("coop_leader_route_counters<q3a_bot_coop_command_status>", text_report)

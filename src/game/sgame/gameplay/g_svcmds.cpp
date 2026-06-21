@@ -482,15 +482,19 @@ namespace
 		int expectedPlaying = -1;
 		int expectedSpectators = -1;
 		int expectedBots = -1;
+		int expectedQueued = -1;
 
 		ParseExpectedInt(2, expectedPlaying);
 		ParseExpectedInt(3, expectedSpectators);
 		ParseExpectedInt(4, expectedBots);
-		BotTeamPolicy_PrintStatus(expectedPlaying, expectedSpectators, expectedBots);
+		ParseExpectedInt(5, expectedQueued);
+		BotTeamPolicy_PrintStatus(expectedPlaying, expectedSpectators,
+			expectedBots, expectedQueued);
 	}
 } // anonymous namespace
 
-void BotTeamPolicy_PrintStatus(int expectedPlaying, int expectedSpectators, int expectedBots)
+void BotTeamPolicy_PrintStatus(int expectedPlaying, int expectedSpectators,
+	int expectedBots, int expectedQueued)
 {
 	const BotTeamPolicyStatus status = CountBotTeamPolicyStatus();
 	bool pass = true;
@@ -501,14 +505,16 @@ void BotTeamPolicy_PrintStatus(int expectedPlaying, int expectedSpectators, int 
 		pass = false;
 	if (expectedBots >= 0 && status.bots != expectedBots)
 		pass = false;
+	if (expectedQueued >= 0 && status.queued != expectedQueued)
+		pass = false;
 
 	base_import.Com_Print(G_Fmt(
 		"q3a_bot_team_policy_status bots={} playing={} spectators={} queued={} "
 		"none={} free={} red={} blue={} expected_playing={} "
-		"expected_spectators={} expected_bots={} pass={}\n",
+		"expected_spectators={} expected_bots={} expected_queued={} pass={}\n",
 		status.bots, status.playing, status.spectators, status.queued,
 		status.none, status.free, status.red, status.blue, expectedPlaying,
-		expectedSpectators, expectedBots, pass ? 1 : 0).data());
+		expectedSpectators, expectedBots, expectedQueued, pass ? 1 : 0).data());
 }
 
 /*

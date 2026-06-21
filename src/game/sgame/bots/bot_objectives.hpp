@@ -571,6 +571,12 @@ BotObjectiveAssignment BotObjectives_AssignEnemyFlagObjective(
 	bool smokeEnabled,
 	BotObjectiveRole requestedRole,
 	bool allowEnemyTeamAnchor);
+BotObjectiveAssignment BotObjectives_AssignEnemyFlagCarrierSupportObjective(
+	const gentity_t *bot,
+	bool smokeEnabled);
+BotObjectiveAssignment BotObjectives_AssignOwnFlagReturnObjective(
+	const gentity_t *bot,
+	bool smokeEnabled);
 bool BotObjectives_BuildRouteGoal(const BotObjectiveAssignment &assignment, BotObjectiveRouteGoal *goal);
 void BotObjectives_RecordRouteRequest(const BotObjectiveAssignment &assignment);
 void BotObjectives_RecordRouteCommand(const BotObjectiveAssignment &assignment);

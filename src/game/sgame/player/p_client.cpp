@@ -3594,6 +3594,11 @@ static void BotMoveToInitialSpectator(gentity_t *ent) {
 
 static bool BotAssignInitialTeam(gentity_t *ent) {
   if (!BotMayJoinInitialMatch(ent)) {
+    if (Game::Has(GameFlags::OneVOne) && g_allow_duel_queue &&
+        g_allow_duel_queue->integer && !Tournament_IsActive() &&
+        SetTeam(ent, Team::None, false, false, true))
+      return false;
+
     BotMoveToInitialSpectator(ent);
     return false;
   }

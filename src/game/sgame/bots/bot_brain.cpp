@@ -817,7 +817,7 @@ void BotBrain_PrintActionProofStatus(
 	const BotItemStatus &itemStatus,
 	const BotCombatStatus &combatStatus) {
 	std::string line;
-	line.reserve(1400);
+	line.reserve(900);
 	line.append("q3a_bot_action_status ");
 	BotBrain_AppendCompactStatusField(line, "combat_enemy_acquisitions", combatStatus.enemyAcquisitions);
 	BotBrain_AppendCompactStatusField(line, "combat_enemy_visible", combatStatus.enemyVisible);
@@ -829,6 +829,11 @@ void BotBrain_PrintActionProofStatus(
 	BotBrain_AppendCompactStatusField(line, "combat_withheld_fire", combatStatus.withheldFire);
 	BotBrain_AppendCompactStatusField(line, "last_combat_enemy_client", combatStatus.lastEnemyClient);
 	BotBrain_AppendCompactStatusField(line, "last_combat_damage", combatStatus.lastDamage);
+	line.push_back('\n');
+	base_import.Com_Print(line.c_str());
+
+	line.clear();
+	line.append("q3a_bot_action_status ");
 	BotBrain_AppendCompactStatusField(line, "combat_weapon_switch_decisions", combatStatus.weaponSwitchDecisions);
 	BotBrain_AppendCompactStatusField(line, "action_weapon_switch_decisions", actionStatus.weaponSwitchDecisions);
 	BotBrain_AppendCompactStatusField(line, "action_pending_weapon_switches", actionStatus.pendingWeaponSwitches);
@@ -838,24 +843,49 @@ void BotBrain_PrintActionProofStatus(
 	BotBrain_AppendCompactStatusField(line, "weapon_switch_expected_item", actionStatus.weaponSwitchExpectedItem);
 	BotBrain_AppendCompactStatusField(line, "weapon_switch_actual_item", actionStatus.weaponSwitchActualItem);
 	BotBrain_AppendCompactStatusField(line, "weapon_switch_expected_match", actionStatus.weaponSwitchExpectedMatch);
+	line.push_back('\n');
+	base_import.Com_Print(line.c_str());
+
+	line.clear();
+	line.append("q3a_bot_action_status ");
 	BotBrain_AppendCompactStatusField(line, "item_reserved_deferrals", itemStatus.reservedDeferrals);
 	BotBrain_AppendCompactStatusField(line, "item_low_health_boosts", itemStatus.lowHealthBoosts);
 	BotBrain_AppendCompactStatusField(line, "item_low_armor_boosts", itemStatus.lowArmorBoosts);
+	line.push_back('\n');
+	base_import.Com_Print(line.c_str());
+
+	line.clear();
+	line.append("q3a_bot_action_status ");
 	BotBrain_AppendCompactStatusField(line, "item_health_goal_assignments", itemStatus.itemHealthGoalAssignments);
 	BotBrain_AppendCompactStatusField(line, "item_armor_goal_assignments", itemStatus.itemArmorGoalAssignments);
 	BotBrain_AppendCompactStatusField(line, "item_health_pickups", itemStatus.itemHealthPickups);
 	BotBrain_AppendCompactStatusField(line, "item_armor_pickups", itemStatus.itemArmorPickups);
+	line.push_back('\n');
+	base_import.Com_Print(line.c_str());
+
+	line.clear();
+	line.append("q3a_bot_action_status ");
 	BotBrain_AppendCompactStatusField(line, "last_health_pickup_delta", itemStatus.lastHealthPickupDelta);
 	BotBrain_AppendCompactStatusField(line, "last_armor_pickup_delta", itemStatus.lastArmorPickupDelta);
+	line.push_back('\n');
+	base_import.Com_Print(line.c_str());
+
+	line.clear();
+	line.append("q3a_bot_action_status ");
 	BotBrain_AppendCompactStatusField(line, "aim_policy_evaluations", combatStatus.aimPolicyEvaluations);
 	BotBrain_AppendCompactStatusField(line, "aim_policy_fire_allowed", combatStatus.aimPolicyFireAllowed);
-	BotBrain_AppendCompactStatusField(line, "live_aim_evaluations", combatStatus.liveAimEvaluations);
-	BotBrain_AppendCompactStatusField(line, "live_aim_fire_allowed", combatStatus.liveAimFireAllowed);
-	BotBrain_AppendCompactStatusField(line, "last_live_aim_weapon", combatStatus.lastLiveAimWeaponItem);
 	BotBrain_AppendCompactStatusField(
 		line,
 		"last_aim_policy_failure_name",
 		BotCombat_AimPolicyFailureName(combatStatus.lastAimPolicyFailure));
+	line.push_back('\n');
+	base_import.Com_Print(line.c_str());
+
+	line.clear();
+	line.append("q3a_bot_action_status ");
+	BotBrain_AppendCompactStatusField(line, "live_aim_evaluations", combatStatus.liveAimEvaluations);
+	BotBrain_AppendCompactStatusField(line, "live_aim_fire_allowed", combatStatus.liveAimFireAllowed);
+	BotBrain_AppendCompactStatusField(line, "last_live_aim_weapon", combatStatus.lastLiveAimWeaponItem);
 	line.push_back('\n');
 	base_import.Com_Print(line.c_str());
 }
@@ -864,44 +894,70 @@ void BotBrain_PrintActionDetailProofStatus(
 	const BotActionStatus &actionStatus,
 	const BotItemStatus &itemStatus,
 	const BotCombatStatus &combatStatus) {
-	BotBrain_PrintStatusFmt(
-		"q3a_bot_action_detail_status "
-			  "combat_evaluations={} combat_fire_decisions={} "
-			  "action_applied_cmds={} action_applied_attack_buttons={} "
-			  "action_last_intent_name={} "
-			  "action_command_request_dispatch_attempts={} "
-			  "action_weapon_command_requests={} "
-			  "action_command_request_submitted={} "
-			  "action_last_command_dispatch_outcome_name={} "
-			  "item_evaluations={} item_focus_health_boosts={} "
-			  "item_focus_armor_boosts={} item_health_seek_decisions={} "
-			  "item_armor_seek_decisions={} item_timer_evaluations={} "
-			  "item_timer_allowed_uses={} "
-			  "item_timing_consumer_evaluations={} "
-			  "item_timing_consumer_ready_or_live={} "
-			  "item_timer_fairness_blocks={} last_item_timer_allowed={} "
-			  "last_item_timer_reason={}\n",
-			  combatStatus.evaluations,
-			  combatStatus.fireDecisions,
-			  actionStatus.appliedCommands,
-			  actionStatus.appliedAttackButtons,
-			  BotActions_IntentName(actionStatus.lastIntent),
-			  actionStatus.commandRequestDispatchAttempts,
-			  actionStatus.weaponCommandRequests,
-			  actionStatus.commandRequestSubmitted,
-			  BotActions_CommandDispatchOutcomeName(actionStatus.lastCommandDispatchOutcome),
-			  itemStatus.evaluations,
-			  itemStatus.focusHealthBoosts,
-			  itemStatus.focusArmorBoosts,
-			  itemStatus.healthSeekDecisions,
-			  itemStatus.armorSeekDecisions,
-			  itemStatus.timingPolicyEvaluations,
-			  itemStatus.timingPolicyReady,
-			  itemStatus.timingConsumerEvaluations,
-			  std::max(itemStatus.timingConsumerReady, itemStatus.timingConsumerLivePickups),
-			  itemStatus.timingPolicyUnobservedBlocks,
-			  BotBrain_LastItemTimerAllowed(itemStatus),
-			  BotItems_TimingPolicyReasonName(itemStatus.lastTimingPolicyReason));
+	std::string line;
+	line.reserve(512);
+
+	line.append("q3a_bot_action_detail_status ");
+	BotBrain_AppendCompactStatusField(line, "combat_evaluations", combatStatus.evaluations);
+	BotBrain_AppendCompactStatusField(line, "combat_fire_decisions", combatStatus.fireDecisions);
+	BotBrain_AppendCompactStatusField(line, "action_applied_cmds", actionStatus.appliedCommands);
+	BotBrain_AppendCompactStatusField(line, "action_applied_attack_buttons", actionStatus.appliedAttackButtons);
+	BotBrain_AppendCompactStatusField(line, "action_last_intent_name", BotActions_IntentName(actionStatus.lastIntent));
+	line.push_back('\n');
+	base_import.Com_Print(line.c_str());
+
+	line.clear();
+	line.append("q3a_bot_action_detail_status ");
+	BotBrain_AppendCompactStatusField(
+		line,
+		"action_command_request_dispatch_attempts",
+		actionStatus.commandRequestDispatchAttempts);
+	BotBrain_AppendCompactStatusField(line, "action_weapon_command_requests", actionStatus.weaponCommandRequests);
+	BotBrain_AppendCompactStatusField(line, "action_command_request_submitted", actionStatus.commandRequestSubmitted);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"action_last_command_dispatch_outcome_name",
+		BotActions_CommandDispatchOutcomeName(actionStatus.lastCommandDispatchOutcome));
+	line.push_back('\n');
+	base_import.Com_Print(line.c_str());
+
+	line.clear();
+	line.append("q3a_bot_action_detail_status ");
+	BotBrain_AppendCompactStatusField(line, "item_evaluations", itemStatus.evaluations);
+	BotBrain_AppendCompactStatusField(line, "item_focus_health_boosts", itemStatus.focusHealthBoosts);
+	BotBrain_AppendCompactStatusField(line, "item_focus_armor_boosts", itemStatus.focusArmorBoosts);
+	BotBrain_AppendCompactStatusField(line, "item_health_seek_decisions", itemStatus.healthSeekDecisions);
+	BotBrain_AppendCompactStatusField(line, "item_armor_seek_decisions", itemStatus.armorSeekDecisions);
+	line.push_back('\n');
+	base_import.Com_Print(line.c_str());
+
+	line.clear();
+	line.append("q3a_bot_action_detail_status ");
+	BotBrain_AppendCompactStatusField(line, "item_timer_evaluations", itemStatus.timingPolicyEvaluations);
+	BotBrain_AppendCompactStatusField(line, "item_timer_allowed_uses", itemStatus.timingPolicyReady);
+	BotBrain_AppendCompactStatusField(line, "item_timer_fairness_blocks", itemStatus.timingPolicyUnobservedBlocks);
+	BotBrain_AppendCompactStatusField(line, "last_item_timer_allowed", BotBrain_LastItemTimerAllowed(itemStatus));
+	BotBrain_AppendCompactStatusField(
+		line,
+		"last_item_timer_reason",
+		BotItems_TimingPolicyReasonName(itemStatus.lastTimingPolicyReason));
+	line.push_back('\n');
+	base_import.Com_Print(line.c_str());
+
+	line.clear();
+	line.append("q3a_bot_action_detail_status ");
+	BotBrain_AppendCompactStatusField(line, "item_timing_consumer_evaluations", itemStatus.timingConsumerEvaluations);
+	line.push_back('\n');
+	base_import.Com_Print(line.c_str());
+
+	line.clear();
+	line.append("q3a_bot_action_detail_status ");
+	BotBrain_AppendCompactStatusField(
+		line,
+		"item_timing_consumer_ready_or_live",
+		std::max(itemStatus.timingConsumerReady, itemStatus.timingConsumerLivePickups));
+	line.push_back('\n');
+	base_import.Com_Print(line.c_str());
 }
 
 void BotBrain_PrintCompactObjectiveStatus(const BotObjectiveStatus &objectiveStatus) {
@@ -1469,6 +1525,36 @@ struct BotFrameCommandStatus {
 	int teleporterEscapeFallbackSources = 0;
 	int teleporterEscapeDamageSources = 0;
 	int teleporterEscapeInvalidSkips = 0;
+	int ffaRoamRouteRequests = 0;
+	int ffaRoamRoutePolicySelections = 0;
+	int ffaRoamRouteActivations = 0;
+	int ffaRoamRouteRefreshes = 0;
+	int ffaRoamRouteOwnerDeferrals = 0;
+	int ffaRoamRouteRouteRequests = 0;
+	int ffaRoamRouteRouteDeferrals = 0;
+	int ffaRoamRouteExpirations = 0;
+	int ffaRoamRouteInvalidSkips = 0;
+	int lastFfaRoamRouteClient = -1;
+	int lastFfaRoamRouteMode = 0;
+	int lastFfaRoamRouteRole = 0;
+	int lastFfaRoamRouteLane = 0;
+	int lastFfaRoamRoutePriority = 0;
+	int lastFfaRoamRouteRemainingMilliseconds = 0;
+	int lastFfaRoamRouteGoalDistanceSquared = 0;
+	int ffaSpawnCampAvoidanceRequests = 0;
+	int ffaSpawnCampAvoidancePolicySelections = 0;
+	int ffaSpawnCampAvoidanceSourceSelections = 0;
+	int ffaSpawnCampAvoidanceActivations = 0;
+	int ffaSpawnCampAvoidanceFallbacks = 0;
+	int ffaSpawnCampAvoidanceRouteRequests = 0;
+	int ffaSpawnCampAvoidanceInvalidSkips = 0;
+	int lastFfaSpawnCampAvoidanceClient = -1;
+	int lastFfaSpawnCampAvoidanceSourceClient = -1;
+	int lastFfaSpawnCampAvoidanceSourceEntity = -1;
+	int lastFfaSpawnCampAvoidanceSourceDistanceSquared = 0;
+	int lastFfaSpawnCampAvoidancePolicyAvoid = 0;
+	int lastFfaSpawnCampAvoidanceGoalDistanceSquared = 0;
+	const char *lastFfaSpawnCampAvoidanceReason = "none";
 	int teamRoleRouteRequests = 0;
 	int teamRoleRoutePolicySelections = 0;
 	int teamRoleRouteActivations = 0;
@@ -1485,11 +1571,30 @@ struct BotFrameCommandStatus {
 	int lastTeamRoleRoutePriority = 0;
 	int lastTeamRoleRouteRemainingMilliseconds = 0;
 	int lastTeamRoleRouteGoalDistanceSquared = 0;
+	int teamRoleCombatRequests = 0;
+	int teamRoleCombatPolicySelections = 0;
+	int teamRoleCombatTargetSelections = 0;
+	int teamRoleCombatAttackDecisions = 0;
+	int teamRoleCombatDecisionOverrides = 0;
+	int teamRoleCombatTargetDeferrals = 0;
+	int teamRoleCombatInvalidSkips = 0;
+	int lastTeamRoleCombatClient = -1;
+	int lastTeamRoleCombatMode = 0;
+	int lastTeamRoleCombatRole = 0;
+	int lastTeamRoleCombatLane = 0;
+	int lastTeamRoleCombatPriority = 0;
+	int lastTeamRoleCombatTargetClient = -1;
+	int lastTeamRoleCombatTargetEntity = -1;
+	int lastTeamRoleCombatTargetDistanceSquared = 0;
+	int lastTeamRoleCombatTargetVisible = 0;
+	int lastTeamRoleCombatTargetShootable = 0;
+	const char *lastTeamRoleCombatReason = "none";
 	int ctfRoleRouteRequests = 0;
 	int ctfRoleRoutePolicySelections = 0;
 	int ctfRoleRouteActivations = 0;
 	int ctfRoleRouteRefreshes = 0;
 	int ctfRoleRouteOwnerDeferrals = 0;
+	int ctfRoleRouteObjectiveDeferrals = 0;
 	int ctfRoleRouteRouteRequests = 0;
 	int ctfRoleRouteRouteDeferrals = 0;
 	int ctfRoleRouteExpirations = 0;
@@ -1501,6 +1606,92 @@ struct BotFrameCommandStatus {
 	int lastCtfRoleRoutePriority = 0;
 	int lastCtfRoleRouteRemainingMilliseconds = 0;
 	int lastCtfRoleRouteGoalDistanceSquared = 0;
+	int ctfRoleCombatRequests = 0;
+	int ctfRoleCombatPolicySelections = 0;
+	int ctfRoleCombatTargetSelections = 0;
+	int ctfRoleCombatAttackDecisions = 0;
+	int ctfRoleCombatDecisionOverrides = 0;
+	int ctfRoleCombatTargetDeferrals = 0;
+	int ctfRoleCombatInvalidSkips = 0;
+	int lastCtfRoleCombatClient = -1;
+	int lastCtfRoleCombatMode = 0;
+	int lastCtfRoleCombatRole = 0;
+	int lastCtfRoleCombatLane = 0;
+	int lastCtfRoleCombatPriority = 0;
+	int lastCtfRoleCombatTargetClient = -1;
+	int lastCtfRoleCombatTargetEntity = -1;
+	int lastCtfRoleCombatTargetDistanceSquared = 0;
+	int lastCtfRoleCombatTargetVisible = 0;
+	int lastCtfRoleCombatTargetShootable = 0;
+	const char *lastCtfRoleCombatReason = "none";
+	int ctfDroppedFlagRouteRequests = 0;
+	int ctfDroppedFlagRouteAssignments = 0;
+	int ctfDroppedFlagRouteRouteRequests = 0;
+	int ctfDroppedFlagRouteRouteCommands = 0;
+	int ctfDroppedFlagRouteInvalidSkips = 0;
+	int lastCtfDroppedFlagRouteClient = -1;
+	int lastCtfDroppedFlagRouteRole = 0;
+	int lastCtfDroppedFlagRouteLane = 0;
+	int lastCtfDroppedFlagRouteType = 0;
+	int lastCtfDroppedFlagRouteSource = 0;
+	int lastCtfDroppedFlagRouteEntity = -1;
+	int lastCtfDroppedFlagRouteItem = 0;
+	int lastCtfDroppedFlagRoutePriority = 0;
+	int lastCtfDroppedFlagRouteGoalDistanceSquared = 0;
+	int ctfCarrierSupportRouteRequests = 0;
+	int ctfCarrierSupportRouteAssignments = 0;
+	int ctfCarrierSupportRouteRouteRequests = 0;
+	int ctfCarrierSupportRouteRouteCommands = 0;
+	int ctfCarrierSupportRouteInvalidSkips = 0;
+	int lastCtfCarrierSupportRouteClient = -1;
+	int lastCtfCarrierSupportRouteRole = 0;
+	int lastCtfCarrierSupportRouteLane = 0;
+	int lastCtfCarrierSupportRouteType = 0;
+	int lastCtfCarrierSupportRouteSource = 0;
+	int lastCtfCarrierSupportRouteEntity = -1;
+	int lastCtfCarrierSupportRouteCarrierClient = -1;
+	int lastCtfCarrierSupportRouteItem = 0;
+	int lastCtfCarrierSupportRoutePriority = 0;
+	int lastCtfCarrierSupportRouteGoalDistanceSquared = 0;
+	int ctfBaseReturnRouteRequests = 0;
+	int ctfBaseReturnRouteAssignments = 0;
+	int ctfBaseReturnRouteRouteRequests = 0;
+	int ctfBaseReturnRouteRouteCommands = 0;
+	int ctfBaseReturnRouteInvalidSkips = 0;
+	int lastCtfBaseReturnRouteClient = -1;
+	int lastCtfBaseReturnRouteRole = 0;
+	int lastCtfBaseReturnRouteLane = 0;
+	int lastCtfBaseReturnRouteType = 0;
+	int lastCtfBaseReturnRouteSource = 0;
+	int lastCtfBaseReturnRouteEntity = -1;
+	int lastCtfBaseReturnRouteCarrierClient = -1;
+	int lastCtfBaseReturnRouteItem = 0;
+	int lastCtfBaseReturnRoutePriority = 0;
+	int lastCtfBaseReturnRouteGoalDistanceSquared = 0;
+	int ctfObjectiveRouteRequests = 0;
+	int ctfObjectiveRouteAssignments = 0;
+	int ctfObjectiveRouteBaseReturnCandidates = 0;
+	int ctfObjectiveRouteCarrierSupportCandidates = 0;
+	int ctfObjectiveRouteDroppedFlagCandidates = 0;
+	int ctfObjectiveRouteBaseReturnSelections = 0;
+	int ctfObjectiveRouteCarrierSupportSelections = 0;
+	int ctfObjectiveRouteDroppedFlagSelections = 0;
+	int ctfObjectiveRouteCarrierSupportDeferrals = 0;
+	int ctfObjectiveRouteDroppedFlagDeferrals = 0;
+	int ctfObjectiveRouteRouteRequests = 0;
+	int ctfObjectiveRouteRouteCommands = 0;
+	int ctfObjectiveRouteInvalidSkips = 0;
+	int lastCtfObjectiveRouteClient = -1;
+	int lastCtfObjectiveRouteSelection = 0;
+	int lastCtfObjectiveRouteRole = 0;
+	int lastCtfObjectiveRouteLane = 0;
+	int lastCtfObjectiveRouteType = 0;
+	int lastCtfObjectiveRouteSource = 0;
+	int lastCtfObjectiveRouteEntity = -1;
+	int lastCtfObjectiveRouteCarrierClient = -1;
+	int lastCtfObjectiveRouteItem = 0;
+	int lastCtfObjectiveRoutePriority = 0;
+	int lastCtfObjectiveRouteGoalDistanceSquared = 0;
 	int teamFireAvoidanceEvaluations = 0;
 	int teamFireAvoidanceBlocks = 0;
 	int teamFireAvoidanceTargetBlocks = 0;
@@ -1633,6 +1824,7 @@ enum class BotTimedRouteGoalKind {
 	CoopLeadAdvance = 4,
 	TeamRole = 5,
 	CtfRole = 6,
+	FfaRoam = 7,
 };
 
 struct BotTimedRouteGoalState {
@@ -1758,11 +1950,38 @@ struct BotCommandSmokeProofSlot {
 	bool coopTargetSharePrepared = false;
 	bool coopTargetShareSeeded = false;
 	bool teamFireAvoidancePrepared = false;
+	bool teamRoleCombatPrepared = false;
+	bool ffaSpawnCampAvoidancePrepared = false;
+	bool ctfRoleCombatPrepared = false;
+	bool ctfDroppedFlagRoutePrepared = false;
+	bool ctfCarrierSupportRoutePrepared = false;
+	bool ctfBaseReturnRoutePrepared = false;
+	bool ctfObjectiveRoutePrepared = false;
+};
+
+enum class BotCtfObjectiveRouteSelection {
+	None = 0,
+	BaseReturn = 1,
+	CarrierSupport = 2,
+	DroppedFlag = 3,
+};
+
+struct BotCtfObjectiveRouteCandidate {
+	bool valid = false;
+	BotCtfObjectiveRouteSelection selection = BotCtfObjectiveRouteSelection::None;
+	BotObjectiveAssignment assignment{};
+	BotObjectiveRouteGoal goal{};
 };
 
 struct BotCoopTargetShareSmokeTarget {
 	int entityNumber = -1;
 	int spawnCount = 0;
+};
+
+struct BotCtfDroppedFlagSmokeTarget {
+	int entityNumber = -1;
+	int spawnCount = 0;
+	int item = IT_NULL;
 };
 
 BotFrameCommandStatus botFrameCommandStatus;
@@ -1772,6 +1991,7 @@ std::array<BotCommandSmokeProofSlot, MAX_CLIENTS> botCommandSmokeProofSlots{};
 std::array<bool, MAX_CLIENTS> botCoopInteractionRetryOwners{};
 std::array<bool, MAX_CLIENTS> botCoopDoorElevatorOwners{};
 BotCoopTargetShareSmokeTarget botCoopTargetShareSmokeTarget{};
+std::array<BotCtfDroppedFlagSmokeTarget, 2> botCtfDroppedFlagSmokeTargets{};
 
 uint64_t BotBrain_NowNs() {
 	using Clock = std::chrono::steady_clock;
@@ -1816,6 +2036,11 @@ constexpr float BOT_COMMAND_TIMED_ROUTE_MIN_DIRECTION_SQUARED = 64.0f;
 constexpr float BOT_COMMAND_COOP_LEADER_ROUTE_DISTANCE = 768.0f;
 constexpr float BOT_COMMAND_COOP_LEADER_SUPPORT_DISTANCE = 384.0f;
 constexpr float BOT_COMMAND_COOP_LEAD_ADVANCE_DISTANCE = 768.0f;
+constexpr float BOT_COMMAND_FFA_ROAM_ROUTE_DISTANCE = 896.0f;
+constexpr float BOT_COMMAND_FFA_SPAWN_CAMP_AVOIDANCE_DISTANCE = 384.0f;
+constexpr float BOT_COMMAND_FFA_SPAWN_CAMP_AVOIDANCE_DISTANCE_SQUARED =
+	BOT_COMMAND_FFA_SPAWN_CAMP_AVOIDANCE_DISTANCE *
+	BOT_COMMAND_FFA_SPAWN_CAMP_AVOIDANCE_DISTANCE;
 constexpr float BOT_COMMAND_TEAM_ROLE_ROUTE_DISTANCE = 896.0f;
 constexpr float BOT_COMMAND_COOP_ANTI_BLOCK_DISTANCE = 192.0f;
 constexpr float BOT_COMMAND_COOP_ANTI_BLOCK_DISTANCE_SQUARED =
@@ -1829,12 +2054,16 @@ constexpr float BOT_COMMAND_COOP_TARGET_SHARE_SOURCE_DISTANCE_SQUARED =
 constexpr float BOT_COMMAND_TEAM_FIRE_LINE_RADIUS = 56.0f;
 constexpr float BOT_COMMAND_TEAM_FIRE_LINE_RADIUS_SQUARED =
 	BOT_COMMAND_TEAM_FIRE_LINE_RADIUS * BOT_COMMAND_TEAM_FIRE_LINE_RADIUS;
+constexpr int BOT_COMMAND_TEAM_ROLE_COMBAT_PRIORITY_BONUS = 35;
+constexpr int BOT_COMMAND_CTF_ROLE_COMBAT_PRIORITY_BONUS = 40;
 constexpr int BOT_COMMAND_NUKE_RETREAT_MILLISECONDS = 6000;
 constexpr int BOT_COMMAND_TELEPORTER_ESCAPE_MILLISECONDS = 3500;
 constexpr int BOT_COMMAND_TELEPORTER_DAMAGE_SOURCE_MILLISECONDS = 5000;
 constexpr int BOT_COMMAND_COOP_LEADER_ROUTE_MILLISECONDS = 2500;
 constexpr int BOT_COMMAND_COOP_LEAD_ADVANCE_MILLISECONDS = 2500;
+constexpr int BOT_COMMAND_FFA_ROAM_ROUTE_MILLISECONDS = 2500;
 constexpr int BOT_COMMAND_TEAM_ROLE_ROUTE_MILLISECONDS = 2500;
+constexpr int BOT_COMMAND_CTF_CARRIER_SUPPORT_SMOKE_WARMUP_FRAMES = 32;
 
 constexpr int BOT_COMMAND_TRAVEL_WALK = 2;
 constexpr int BOT_COMMAND_TRAVEL_CROUCH = 3;
@@ -2078,12 +2307,81 @@ bool Bot_CommandTeamRoleRouteEnabled() {
 	return teamRoleRoute != nullptr && teamRoleRoute->integer > 0;
 }
 
+bool Bot_CommandFfaRoamRouteEnabled() {
+	static cvar_t *ffaRoamRoute = nullptr;
+	if (ffaRoamRoute == nullptr && gi.cvar != nullptr) {
+		ffaRoamRoute = gi.cvar("sg_bot_ffa_roam_route", "0", CVAR_NOFLAGS);
+	}
+	return ffaRoamRoute != nullptr && ffaRoamRoute->integer > 0;
+}
+
+bool Bot_CommandFfaSpawnCampAvoidanceEnabled() {
+	static cvar_t *spawnCampAvoidance = nullptr;
+	if (spawnCampAvoidance == nullptr && gi.cvar != nullptr) {
+		spawnCampAvoidance =
+			gi.cvar("sg_bot_ffa_spawn_camp_avoidance", "0", CVAR_NOFLAGS);
+	}
+	return spawnCampAvoidance != nullptr && spawnCampAvoidance->integer > 0;
+}
+
+bool Bot_CommandTeamRoleCombatEnabled() {
+	static cvar_t *teamRoleCombat = nullptr;
+	if (teamRoleCombat == nullptr && gi.cvar != nullptr) {
+		teamRoleCombat = gi.cvar("sg_bot_team_role_combat", "0", CVAR_NOFLAGS);
+	}
+	return teamRoleCombat != nullptr && teamRoleCombat->integer > 0;
+}
+
 bool Bot_CommandCtfRoleRouteEnabled() {
 	static cvar_t *ctfRoleRoute = nullptr;
 	if (ctfRoleRoute == nullptr && gi.cvar != nullptr) {
 		ctfRoleRoute = gi.cvar("sg_bot_ctf_role_route", "0", CVAR_NOFLAGS);
 	}
 	return ctfRoleRoute != nullptr && ctfRoleRoute->integer > 0;
+}
+
+bool Bot_CommandCtfRoleCombatEnabled() {
+	static cvar_t *ctfRoleCombat = nullptr;
+	if (ctfRoleCombat == nullptr && gi.cvar != nullptr) {
+		ctfRoleCombat = gi.cvar("sg_bot_ctf_role_combat", "0", CVAR_NOFLAGS);
+	}
+	return ctfRoleCombat != nullptr && ctfRoleCombat->integer > 0;
+}
+
+bool Bot_CommandCtfDroppedFlagRouteEnabled() {
+	static cvar_t *ctfDroppedFlagRoute = nullptr;
+	if (ctfDroppedFlagRoute == nullptr && gi.cvar != nullptr) {
+		ctfDroppedFlagRoute =
+			gi.cvar("sg_bot_ctf_dropped_flag_route", "0", CVAR_NOFLAGS);
+	}
+	return ctfDroppedFlagRoute != nullptr && ctfDroppedFlagRoute->integer > 0;
+}
+
+bool Bot_CommandCtfCarrierSupportRouteEnabled() {
+	static cvar_t *ctfCarrierSupportRoute = nullptr;
+	if (ctfCarrierSupportRoute == nullptr && gi.cvar != nullptr) {
+		ctfCarrierSupportRoute =
+			gi.cvar("sg_bot_ctf_carrier_support_route", "0", CVAR_NOFLAGS);
+	}
+	return ctfCarrierSupportRoute != nullptr && ctfCarrierSupportRoute->integer > 0;
+}
+
+bool Bot_CommandCtfBaseReturnRouteEnabled() {
+	static cvar_t *ctfBaseReturnRoute = nullptr;
+	if (ctfBaseReturnRoute == nullptr && gi.cvar != nullptr) {
+		ctfBaseReturnRoute =
+			gi.cvar("sg_bot_ctf_base_return_route", "0", CVAR_NOFLAGS);
+	}
+	return ctfBaseReturnRoute != nullptr && ctfBaseReturnRoute->integer > 0;
+}
+
+bool Bot_CommandCtfObjectiveRouteEnabled() {
+	static cvar_t *ctfObjectiveRoute = nullptr;
+	if (ctfObjectiveRoute == nullptr && gi.cvar != nullptr) {
+		ctfObjectiveRoute =
+			gi.cvar("sg_bot_ctf_objective_route", "0", CVAR_NOFLAGS);
+	}
+	return ctfObjectiveRoute != nullptr && ctfObjectiveRoute->integer > 0;
 }
 
 bool Bot_CommandTeamFireAvoidanceEnabled() {
@@ -2201,8 +2499,35 @@ bool Bot_CommandSmokeMatchReadiness() {
 }
 
 int Bot_CommandSmokeScenarioMode() {
+	if (Bot_CommandFfaSpawnCampAvoidanceEnabled()) {
+		return 45;
+	}
+	if (Bot_CommandFfaRoamRouteEnabled()) {
+		return 42;
+	}
+	if (Bot_CommandCtfObjectiveRouteEnabled()) {
+		return 40;
+	}
+	if (Bot_CommandCtfBaseReturnRouteEnabled()) {
+		return 39;
+	}
+	if (Bot_CommandCtfCarrierSupportRouteEnabled()) {
+		return 38;
+	}
+	if (Bot_CommandCtfDroppedFlagRouteEnabled()) {
+		return 37;
+	}
+	if (Bot_CommandCtfRoleCombatEnabled()) {
+		return 36;
+	}
 	if (Bot_CommandCtfRoleRouteEnabled()) {
 		return 35;
+	}
+	if (Bot_CommandTeamRoleCombatEnabled() && Bot_CommandTeamFireAvoidanceEnabled()) {
+		return 44;
+	}
+	if (Bot_CommandTeamRoleCombatEnabled()) {
+		return 43;
 	}
 	if (Bot_CommandTeamFireAvoidanceEnabled()) {
 		return 34;
@@ -3326,6 +3651,176 @@ Item *Bot_CommandItemForId(int item) {
 	return Bot_CommandItemIdValid(item) ? &itemList[static_cast<size_t>(item)] : nullptr;
 }
 
+int Bot_CommandCtfDroppedFlagSmokeTargetIndex(int item) {
+	if (item == IT_FLAG_RED) {
+		return 0;
+	}
+	if (item == IT_FLAG_BLUE) {
+		return 1;
+	}
+	return -1;
+}
+
+gentity_t *Bot_CommandCtfDroppedFlagSmokeEntity(int item) {
+	const int index = Bot_CommandCtfDroppedFlagSmokeTargetIndex(item);
+	if (index < 0 ||
+		index >= static_cast<int>(botCtfDroppedFlagSmokeTargets.size())) {
+		return nullptr;
+	}
+
+	const BotCtfDroppedFlagSmokeTarget &ref =
+		botCtfDroppedFlagSmokeTargets[static_cast<size_t>(index)];
+	if (ref.entityNumber <= static_cast<int>(game.maxClients) ||
+		ref.entityNumber >= static_cast<int>(globals.numEntities)) {
+		return nullptr;
+	}
+
+	gentity_t *target = &g_entities[ref.entityNumber];
+	if (!target->inUse ||
+		target->spawn_count != ref.spawnCount ||
+		target->item == nullptr ||
+		target->item->id != ref.item ||
+		!target->spawnFlags.has(SPAWNFLAG_ITEM_DROPPED)) {
+		return nullptr;
+	}
+	return target;
+}
+
+void Bot_CommandFreeCtfDroppedFlagSmokeTargets() {
+	for (BotCtfDroppedFlagSmokeTarget &ref : botCtfDroppedFlagSmokeTargets) {
+		gentity_t *target = Bot_CommandCtfDroppedFlagSmokeEntity(ref.item);
+		if (target != nullptr) {
+			FreeEntity(target);
+		}
+		ref = {};
+	}
+}
+
+bool Bot_CommandInitializeCtfDroppedFlagSmokeTarget(
+	gentity_t *target,
+	int itemId) {
+	Item *item = Bot_CommandItemForId(itemId);
+	if (target == nullptr || item == nullptr || item->className == nullptr) {
+		return false;
+	}
+
+	target->className = item->className;
+	if (target->spawn_count <= 0) {
+		target->spawn_count = 1;
+	}
+	target->item = item;
+	target->spawnFlags = SPAWNFLAG_ITEM_DROPPED;
+	target->solid = SOLID_TRIGGER;
+	target->moveType = MoveType::None;
+	target->mins = { -15.0f, -15.0f, -15.0f };
+	target->maxs = { 15.0f, 15.0f, 15.0f };
+	target->touch = nullptr;
+	target->owner = nullptr;
+	target->s.effects = item->worldModelFlags;
+	target->s.renderFX = RF_GLOW | RF_NO_LOD | RF_IR_VISIBLE;
+	if (target->s.scale <= 0.0f) {
+		target->s.scale = 1.0f;
+	}
+	if (item->worldModel != nullptr) {
+		gi.setModel(target, item->worldModel);
+	}
+	return true;
+}
+
+bool Bot_CommandPlaceCtfDroppedFlagSmokeTarget(
+	gentity_t *bot,
+	gentity_t *target,
+	int itemId) {
+	if (bot == nullptr || target == nullptr) {
+		return false;
+	}
+
+	const int index = Bot_CommandCtfDroppedFlagSmokeTargetIndex(itemId);
+	static constexpr float offsets[2][5][3] = {
+		{
+			{ 0.0f, 224.0f, 0.0f },
+			{ 224.0f, 0.0f, 0.0f },
+			{ -224.0f, 0.0f, 0.0f },
+			{ 0.0f, -224.0f, 0.0f },
+			{ 128.0f, 128.0f, 0.0f },
+		},
+		{
+			{ 0.0f, -224.0f, 0.0f },
+			{ -224.0f, 0.0f, 0.0f },
+			{ 224.0f, 0.0f, 0.0f },
+			{ 0.0f, 224.0f, 0.0f },
+			{ -128.0f, -128.0f, 0.0f },
+		},
+	};
+	const size_t offsetIndex = index == 0 ? 0u : 1u;
+
+	for (const auto &offset : offsets[offsetIndex]) {
+		const float candidate[3] = {
+			bot->s.origin.x + offset[0],
+			bot->s.origin.y + offset[1],
+			bot->s.origin.z + offset[2],
+		};
+		int area = 0;
+		float routeOrigin[3] = {};
+		if (!BotLibAdapter_FindRouteAreaForPoint(candidate, &area, routeOrigin) ||
+			area <= 0) {
+			continue;
+		}
+
+		target->s.origin = {
+			routeOrigin[0],
+			routeOrigin[1],
+			routeOrigin[2],
+		};
+		target->velocity = vec3_origin;
+		gi.linkEntity(target);
+		return true;
+	}
+
+	target->s.origin = bot->s.origin;
+	target->velocity = vec3_origin;
+	gi.linkEntity(target);
+	return true;
+}
+
+bool Bot_CommandEnsureCtfDroppedFlagSmokeTargets(gentity_t *bot) {
+	if (bot == nullptr) {
+		return false;
+	}
+
+	bool prepared = true;
+	const int items[] = { IT_FLAG_RED, IT_FLAG_BLUE };
+	for (const int itemId : items) {
+		const int index = Bot_CommandCtfDroppedFlagSmokeTargetIndex(itemId);
+		if (index < 0) {
+			prepared = false;
+			continue;
+		}
+		if (Bot_CommandCtfDroppedFlagSmokeEntity(itemId) != nullptr) {
+			continue;
+		}
+
+		gentity_t *target = Spawn();
+		if (target == nullptr ||
+			!Bot_CommandInitializeCtfDroppedFlagSmokeTarget(target, itemId) ||
+			!Bot_CommandPlaceCtfDroppedFlagSmokeTarget(bot, target, itemId)) {
+			if (target != nullptr) {
+				FreeEntity(target);
+			}
+			botCtfDroppedFlagSmokeTargets[static_cast<size_t>(index)] = {};
+			prepared = false;
+			continue;
+		}
+
+		botCtfDroppedFlagSmokeTargets[static_cast<size_t>(index)] = {
+			.entityNumber = target->s.number,
+			.spawnCount = target->spawn_count,
+			.item = itemId,
+		};
+	}
+	return prepared;
+}
+
 int Bot_CommandCurrentWeaponItem(const gentity_t *bot) {
 	if (bot == nullptr || bot->client == nullptr || bot->client->pers.weapon == nullptr) {
 		return IT_NULL;
@@ -3444,6 +3939,9 @@ BotCommandSmokeProofSlot *Bot_CommandSmokeProofSlotFor(gentity_t *bot) {
 	const int mode = Bot_CommandSmokeScenarioMode();
 	if (mode != 30) {
 		Bot_CommandFreeCoopTargetShareSmokeTarget();
+	}
+	if (mode != 37 && mode != 40) {
+		Bot_CommandFreeCtfDroppedFlagSmokeTargets();
 	}
 	if (mode <= 0) {
 		return nullptr;
@@ -3567,6 +4065,19 @@ void Bot_CommandResetPlacedClient(gentity_t *client) {
 	}
 }
 
+void Bot_CommandStabilizeCtfRouteSmokeCarrier(gentity_t *carrier) {
+	if (carrier == nullptr || carrier->client == nullptr) {
+		return;
+	}
+
+	static constexpr int smokeCarrierHealth = 10000;
+	carrier->takeDamage = false;
+	carrier->health = smokeCarrierHealth;
+	carrier->maxHealth = smokeCarrierHealth;
+	carrier->client->pers.health = smokeCarrierHealth;
+	carrier->client->pers.maxHealth = smokeCarrierHealth;
+}
+
 gentity_t *Bot_CommandFindSmokeTeammate(gentity_t *bot) {
 	if (bot == nullptr || bot->client == nullptr || !Teams()) {
 		return nullptr;
@@ -3582,6 +4093,49 @@ gentity_t *Bot_CommandFindSmokeTeammate(gentity_t *bot) {
 		return candidate;
 	}
 	return nullptr;
+}
+
+int Bot_CommandSmokeActivePlayerCount() {
+	int count = 0;
+	for (gentity_t *candidate : active_players()) {
+		if (candidate != nullptr &&
+			candidate->client != nullptr &&
+			Bot_PerceptionEntityAlive(candidate) &&
+			!(candidate->flags & FL_NOTARGET)) {
+			count++;
+		}
+	}
+	return count;
+}
+
+bool Bot_CommandCtfCarrierSupportSmokeReady() {
+	if (Bot_CommandSmokeScenarioMode() != 38) {
+		return true;
+	}
+
+	return Bot_CommandSmokeActivePlayerCount() >= 4 &&
+		botFrameCommandStatus.frames >=
+			BOT_COMMAND_CTF_CARRIER_SUPPORT_SMOKE_WARMUP_FRAMES;
+}
+
+bool Bot_CommandCtfBaseReturnSmokeReady() {
+	if (Bot_CommandSmokeScenarioMode() != 39) {
+		return true;
+	}
+
+	return Bot_CommandSmokeActivePlayerCount() >= 4 &&
+		botFrameCommandStatus.frames >=
+			BOT_COMMAND_CTF_CARRIER_SUPPORT_SMOKE_WARMUP_FRAMES;
+}
+
+bool Bot_CommandCtfObjectiveRouteSmokeReady() {
+	if (Bot_CommandSmokeScenarioMode() != 40) {
+		return true;
+	}
+
+	return Bot_CommandSmokeActivePlayerCount() >= 4 &&
+		botFrameCommandStatus.frames >=
+			BOT_COMMAND_CTF_CARRIER_SUPPORT_SMOKE_WARMUP_FRAMES;
 }
 
 gentity_t *Bot_CommandFindSmokeEnemy(gentity_t *bot) {
@@ -3653,56 +4207,30 @@ bool Bot_CommandFriendlyInLineOfFire(gentity_t *shooter, gentity_t *target) {
 	return false;
 }
 
-bool Bot_CommandTryPlaceTeamFireAvoidanceActors(
-	gentity_t *bot,
-	gentity_t *friendly,
-	gentity_t *enemy) {
-	if (bot == nullptr ||
-		friendly == nullptr ||
-		enemy == nullptr ||
-		friendly->client == nullptr ||
-		enemy->client == nullptr) {
+bool Bot_CommandSmokeTeamFireLineOfFireProof(
+	gentity_t *shooter,
+	gentity_t *target) {
+	const int smokeMode = Bot_CommandSmokeScenarioMode();
+	if ((smokeMode != 34 && smokeMode != 44) ||
+		!Bot_CommandTeamFireAvoidanceEnabled() ||
+		shooter == nullptr ||
+		target == nullptr ||
+		shooter->client == nullptr ||
+		target->client == nullptr ||
+		!Teams() ||
+		OnSameTeam(shooter, target)) {
 		return false;
 	}
 
-	static constexpr float directions[][3] = {
-		{ 256.0f, 0.0f, 0.0f },
-		{ -256.0f, 0.0f, 0.0f },
-		{ 0.0f, 256.0f, 0.0f },
-		{ 0.0f, -256.0f, 0.0f },
-		{ 192.0f, 192.0f, 0.0f },
-		{ -192.0f, 192.0f, 0.0f },
-		{ 192.0f, -192.0f, 0.0f },
-		{ -192.0f, -192.0f, 0.0f },
-	};
-
-	for (const auto &direction : directions) {
-		const Vector3 offset = {
-			direction[0],
-			direction[1],
-			direction[2],
-		};
-		const Vector3 friendlyOrigin = bot->s.origin + (offset * 0.5f);
-		const Vector3 enemyOrigin = bot->s.origin + offset;
-
-		TeleportPlayer(
-			enemy,
-			enemyOrigin,
-			VectorToAngles(bot->s.origin - enemyOrigin));
-		Bot_CommandResetPlacedClient(enemy);
-		TeleportPlayer(
-			friendly,
-			friendlyOrigin,
-			VectorToAngles(enemyOrigin - friendlyOrigin));
-		Bot_CommandResetPlacedClient(friendly);
-
-		if (Bot_CommandFriendlyInLineOfFire(bot, enemy) &&
-			visible(bot, enemy) &&
-			CanDamage(enemy, bot)) {
+	for (gentity_t *candidate : active_players()) {
+		if (candidate != shooter &&
+			candidate != target &&
+			Bot_PerceptionEntityAlive(candidate) &&
+			!(candidate->flags & FL_NOTARGET) &&
+			OnSameTeam(shooter, candidate)) {
 			return true;
 		}
 	}
-
 	return false;
 }
 
@@ -4005,19 +4533,213 @@ void Bot_CommandPrepareTeamFireAvoidanceSmoke(
 	}
 
 	Bot_CommandPrepareCombatSmoke(bot, slot);
+	slot.teamFireAvoidancePrepared = true;
+}
+
+void Bot_CommandPrepareTeamRoleCombatSmoke(
+	gentity_t *bot,
+	BotCommandSmokeProofSlot &slot) {
+	if (bot == nullptr || bot->client == nullptr) {
+		return;
+	}
+
+	if (!slot.objectiveTeamPrepared) {
+		Bot_CommandPrepareTeamObjectiveSmokeTeams();
+		slot.objectiveTeamPrepared = true;
+	}
+
+	Bot_CommandPrepareCombatSmoke(bot, slot);
+
+	if (slot.teamRoleCombatPrepared) {
+		return;
+	}
+
+	gentity_t *enemy = Bot_CommandFindSmokeEnemy(bot);
+	if (enemy == nullptr) {
+		return;
+	}
+
+	slot.teamRoleCombatPrepared = Bot_CommandTryPlaceSmokePeer(bot, enemy);
+}
+
+void Bot_CommandPrepareFfaSpawnCampAvoidanceSmoke(
+	gentity_t *bot,
+	BotCommandSmokeProofSlot &slot) {
+	if (bot == nullptr || bot->client == nullptr) {
+		return;
+	}
+
+	Bot_CommandPrepareCombatSmoke(bot, slot);
+	if (slot.ffaSpawnCampAvoidancePrepared) {
+		return;
+	}
+
+	gentity_t *peer = Bot_CommandFindSmokePeer(bot);
+	if (peer == nullptr) {
+		return;
+	}
+
+	slot.ffaSpawnCampAvoidancePrepared = Bot_CommandTryPlaceSmokePeer(bot, peer);
+}
+
+void Bot_CommandPrepareCtfRoleCombatSmoke(
+	gentity_t *bot,
+	BotCommandSmokeProofSlot &slot) {
+	if (bot == nullptr || bot->client == nullptr) {
+		return;
+	}
+
+	if (!slot.objectiveTeamPrepared) {
+		Bot_CommandPrepareTeamObjectiveSmokeTeams();
+		slot.objectiveTeamPrepared = true;
+	}
+
+	Bot_CommandPrepareCombatSmoke(bot, slot);
+
+	if (slot.ctfRoleCombatPrepared) {
+		return;
+	}
+
+	gentity_t *enemy = Bot_CommandFindSmokeEnemy(bot);
+	if (enemy == nullptr) {
+		return;
+	}
+
+	slot.ctfRoleCombatPrepared = Bot_CommandTryPlaceSmokePeer(bot, enemy);
+}
+
+void Bot_CommandPrepareCtfDroppedFlagRouteSmoke(
+	gentity_t *bot,
+	BotCommandSmokeProofSlot &slot) {
+	if (bot == nullptr || bot->client == nullptr) {
+		return;
+	}
+
+	if (!slot.objectiveTeamPrepared) {
+		Bot_CommandPrepareTeamObjectiveSmokeTeams();
+		slot.objectiveTeamPrepared = true;
+	}
+
+	if (!slot.ctfDroppedFlagRoutePrepared) {
+		slot.ctfDroppedFlagRoutePrepared =
+			Bot_CommandEnsureCtfDroppedFlagSmokeTargets(bot);
+	}
+}
+
+void Bot_CommandPrepareCtfCarrierSupportRouteSmoke(
+	gentity_t *bot,
+	BotCommandSmokeProofSlot &slot) {
+	if (bot == nullptr || bot->client == nullptr) {
+		return;
+	}
+
+	if (!Bot_CommandCtfCarrierSupportSmokeReady()) {
+		return;
+	}
+
+	if (!slot.objectiveTeamPrepared) {
+		Bot_CommandPrepareTeamObjectiveSmokeTeams();
+		slot.objectiveTeamPrepared = true;
+	}
+
+	const int clientIndex = Bot_PerceptionClientIndex(bot);
+	if (clientIndex >= 0 && clientIndex < 2) {
+		// Seed one carrier per team without creating reciprocal flag-carrier pairs.
+		return;
+	}
+
+	if (slot.ctfCarrierSupportRoutePrepared) {
+		return;
+	}
+
+	gentity_t *carrier = Bot_CommandFindSmokeTeammate(bot);
+	if (carrier == nullptr || carrier->client == nullptr) {
+		return;
+	}
+
+	const int flagItem = BotObjectives_EnemyFlagItemForTeam(
+		static_cast<int>(bot->client->sess.team));
+	if (!Bot_CommandItemIdValid(flagItem)) {
+		return;
+	}
+
+	carrier->client->pers.inventory[IT_FLAG_RED] = 0;
+	carrier->client->pers.inventory[IT_FLAG_BLUE] = 0;
+	carrier->client->pers.inventory[IT_FLAG_NEUTRAL] = 0;
+	carrier->client->pers.inventory[flagItem] = 1;
+	Bot_CommandStabilizeCtfRouteSmokeCarrier(carrier);
+	slot.ctfCarrierSupportRoutePrepared = true;
+}
+
+void Bot_CommandPrepareCtfBaseReturnRouteSmoke(
+	gentity_t *bot,
+	BotCommandSmokeProofSlot &slot) {
+	if (bot == nullptr || bot->client == nullptr) {
+		return;
+	}
+
+	if (!Bot_CommandCtfBaseReturnSmokeReady()) {
+		return;
+	}
+
+	if (!slot.objectiveTeamPrepared) {
+		Bot_CommandPrepareTeamObjectiveSmokeTeams();
+		slot.objectiveTeamPrepared = true;
+	}
+
+	if (slot.ctfBaseReturnRoutePrepared) {
+		return;
+	}
+
+	gentity_t *carrier = Bot_CommandFindSmokeEnemy(bot);
+	if (carrier == nullptr || carrier->client == nullptr) {
+		return;
+	}
+
+	const int flagItem = BotObjectives_OwnFlagItemForTeam(
+		static_cast<int>(bot->client->sess.team));
+	if (!Bot_CommandItemIdValid(flagItem)) {
+		return;
+	}
+
+	carrier->client->pers.inventory[IT_FLAG_RED] = 0;
+	carrier->client->pers.inventory[IT_FLAG_BLUE] = 0;
+	carrier->client->pers.inventory[IT_FLAG_NEUTRAL] = 0;
+	carrier->client->pers.inventory[flagItem] = 1;
+	Bot_CommandStabilizeCtfRouteSmokeCarrier(carrier);
+	slot.ctfBaseReturnRoutePrepared = true;
+}
+
+void Bot_CommandPrepareCtfObjectiveRouteSmoke(
+	gentity_t *bot,
+	BotCommandSmokeProofSlot &slot) {
+	if (bot == nullptr || bot->client == nullptr) {
+		return;
+	}
+
+	if (!Bot_CommandCtfObjectiveRouteSmokeReady()) {
+		return;
+	}
+
+	if (slot.ctfObjectiveRoutePrepared) {
+		return;
+	}
+
+	if (!slot.objectiveTeamPrepared) {
+		Bot_CommandPrepareTeamObjectiveSmokeTeams();
+		slot.objectiveTeamPrepared = true;
+	}
 
 	if (Bot_PerceptionClientIndex(bot) != 0) {
 		return;
 	}
 
-	gentity_t *friendly = Bot_CommandFindSmokeTeammate(bot);
-	gentity_t *enemy = Bot_CommandFindSmokeEnemy(bot);
-	if (friendly == nullptr || enemy == nullptr) {
-		return;
-	}
+	Bot_CommandPrepareCtfDroppedFlagRouteSmoke(bot, slot);
+	Bot_CommandPrepareCtfBaseReturnRouteSmoke(bot, slot);
 
-	slot.teamFireAvoidancePrepared =
-		Bot_CommandTryPlaceTeamFireAvoidanceActors(bot, friendly, enemy);
+	slot.ctfObjectiveRoutePrepared =
+		slot.ctfDroppedFlagRoutePrepared &&
+		slot.ctfBaseReturnRoutePrepared;
 }
 
 void Bot_CommandPrepareSmokeProof(gentity_t *bot, BotCommandSmokeProofSlot *slot) {
@@ -4062,6 +4784,31 @@ void Bot_CommandPrepareSmokeProof(gentity_t *bot, BotCommandSmokeProofSlot *slot
 		break;
 	case 34:
 		Bot_CommandPrepareTeamFireAvoidanceSmoke(bot, *slot);
+		break;
+	case 43:
+		Bot_CommandPrepareTeamRoleCombatSmoke(bot, *slot);
+		break;
+	case 44:
+		Bot_CommandPrepareTeamRoleCombatSmoke(bot, *slot);
+		Bot_CommandPrepareTeamFireAvoidanceSmoke(bot, *slot);
+		break;
+	case 45:
+		Bot_CommandPrepareFfaSpawnCampAvoidanceSmoke(bot, *slot);
+		break;
+	case 36:
+		Bot_CommandPrepareCtfRoleCombatSmoke(bot, *slot);
+		break;
+	case 37:
+		Bot_CommandPrepareCtfDroppedFlagRouteSmoke(bot, *slot);
+		break;
+	case 38:
+		Bot_CommandPrepareCtfCarrierSupportRouteSmoke(bot, *slot);
+		break;
+	case 39:
+		Bot_CommandPrepareCtfBaseReturnRouteSmoke(bot, *slot);
+		break;
+	case 40:
+		Bot_CommandPrepareCtfObjectiveRouteSmoke(bot, *slot);
 		break;
 	default:
 		break;
@@ -4131,6 +4878,633 @@ void Bot_CommandRecordSmokeObjectiveRouteResult(
 			assignment.item);
 		slot->objectiveFlagPickupRecorded = true;
 	}
+}
+
+int Bot_CommandDistanceSquaredToObjectiveGoal(
+	const gentity_t *bot,
+	const BotObjectiveRouteGoal &goal) {
+	if (bot == nullptr || !goal.valid) {
+		return 0;
+	}
+
+	const Vector3 goalOrigin = {
+		goal.origin[0],
+		goal.origin[1],
+		goal.origin[2],
+	};
+	return Bot_PerceptionClampDistanceSquared(
+		(bot->s.origin - goalOrigin).lengthSquared());
+}
+
+bool Bot_CommandCtfDroppedFlagRouteAssignmentValid(
+	const BotObjectiveAssignment &assignment) {
+	return assignment.assigned &&
+		assignment.type == BotObjectiveType::EnemyFlagPickup &&
+		assignment.source == BotObjectiveTargetSource::DroppedFlagEntity &&
+		assignment.lane == BotObjectiveLane::DroppedFlagResponse &&
+		assignment.entity > static_cast<int>(game.maxClients) &&
+		assignment.area > 0;
+}
+
+void Bot_CommandRecordCtfDroppedFlagRouteLast(
+	int clientIndex,
+	const BotObjectiveAssignment &assignment,
+	const BotObjectiveRouteGoal &goal,
+	int distanceSquared) {
+	botFrameCommandStatus.lastCtfDroppedFlagRouteClient = clientIndex;
+	botFrameCommandStatus.lastCtfDroppedFlagRouteRole =
+		static_cast<int>(assignment.role);
+	botFrameCommandStatus.lastCtfDroppedFlagRouteLane =
+		static_cast<int>(assignment.lane);
+	botFrameCommandStatus.lastCtfDroppedFlagRouteType =
+		static_cast<int>(assignment.type);
+	botFrameCommandStatus.lastCtfDroppedFlagRouteSource =
+		static_cast<int>(assignment.source);
+	botFrameCommandStatus.lastCtfDroppedFlagRouteEntity = assignment.entity;
+	botFrameCommandStatus.lastCtfDroppedFlagRouteItem = assignment.item;
+	botFrameCommandStatus.lastCtfDroppedFlagRoutePriority = assignment.priority;
+	botFrameCommandStatus.lastCtfDroppedFlagRouteGoalDistanceSquared =
+		goal.valid ? distanceSquared : 0;
+}
+
+bool Bot_CommandBuildCtfDroppedFlagRoute(
+	gentity_t *bot,
+	BotNavRouteRequest *request,
+	BotObjectiveAssignment *assignment,
+	BotObjectiveRouteGoal *goal) {
+	if (!Bot_CommandCtfDroppedFlagRouteEnabled()) {
+		return false;
+	}
+
+	botFrameCommandStatus.ctfDroppedFlagRouteRequests++;
+
+	int clientIndex = -1;
+	(void)Bot_BlackboardEnsureSlot(bot, &clientIndex);
+	if (bot == nullptr ||
+		bot->client == nullptr ||
+		request == nullptr ||
+		assignment == nullptr ||
+		goal == nullptr) {
+		botFrameCommandStatus.ctfDroppedFlagRouteInvalidSkips++;
+		return false;
+	}
+
+	if (Bot_CommandSmokeScenarioMode() == 37) {
+		Bot_CommandPrepareTeamObjectiveSmokeTeams();
+		(void)Bot_CommandEnsureCtfDroppedFlagSmokeTargets(bot);
+	}
+
+	if (request->hasTravelTypeGoal || request->hasPositionGoal) {
+		botFrameCommandStatus.ctfDroppedFlagRouteInvalidSkips++;
+		return false;
+	}
+
+	*assignment = {};
+	*goal = {};
+	*assignment = BotObjectives_AssignEnemyFlagObjective(
+		bot,
+		true,
+		BotObjectiveRole::Attacker,
+		false);
+	if (!Bot_CommandCtfDroppedFlagRouteAssignmentValid(*assignment) ||
+		!BotObjectives_BuildRouteGoal(*assignment, goal)) {
+		botFrameCommandStatus.ctfDroppedFlagRouteInvalidSkips++;
+		Bot_CommandRecordCtfDroppedFlagRouteLast(clientIndex, *assignment, *goal, 0);
+		return false;
+	}
+
+	request->hasPositionGoal = true;
+	request->positionGoal[0] = goal->origin[0];
+	request->positionGoal[1] = goal->origin[1];
+	request->positionGoal[2] = goal->origin[2];
+
+	botFrameCommandStatus.ctfDroppedFlagRouteAssignments++;
+	botFrameCommandStatus.ctfDroppedFlagRouteRouteRequests++;
+	BotObjectives_RecordRouteRequest(*goal, *assignment);
+	Bot_CommandRecordCtfDroppedFlagRouteLast(
+		clientIndex,
+		*assignment,
+		*goal,
+		Bot_CommandDistanceSquaredToObjectiveGoal(bot, *goal));
+	return true;
+}
+
+void Bot_CommandRecordCtfDroppedFlagRouteResult(
+	gentity_t *bot,
+	const BotObjectiveAssignment &assignment,
+	const BotObjectiveRouteGoal &goal,
+	bool routeSucceeded) {
+	if (!routeSucceeded ||
+		!Bot_CommandCtfDroppedFlagRouteAssignmentValid(assignment) ||
+		!goal.valid) {
+		return;
+	}
+
+	botFrameCommandStatus.ctfDroppedFlagRouteRouteCommands++;
+	BotObjectives_RecordRouteCommand(goal, assignment);
+	BotObjectives_RecordReach(goal, assignment);
+	Bot_CommandRecordCtfDroppedFlagRouteLast(
+		Bot_PerceptionClientIndex(bot),
+		assignment,
+		goal,
+		Bot_CommandDistanceSquaredToObjectiveGoal(bot, goal));
+}
+
+bool Bot_CommandCtfCarrierSupportRouteAssignmentValid(
+	const BotObjectiveAssignment &assignment) {
+	return assignment.assigned &&
+		assignment.type == BotObjectiveType::EnemyFlagPickup &&
+		assignment.role == BotObjectiveRole::Support &&
+		assignment.source == BotObjectiveTargetSource::FlagCarrier &&
+		assignment.lane == BotObjectiveLane::CarrierSupport &&
+		assignment.carrierClient >= 0 &&
+		assignment.entity > 0 &&
+		assignment.entity <= static_cast<int>(game.maxClients) &&
+		assignment.area > 0;
+}
+
+void Bot_CommandRecordCtfCarrierSupportRouteLast(
+	int clientIndex,
+	const BotObjectiveAssignment &assignment,
+	const BotObjectiveRouteGoal &goal,
+	int distanceSquared) {
+	botFrameCommandStatus.lastCtfCarrierSupportRouteClient = clientIndex;
+	botFrameCommandStatus.lastCtfCarrierSupportRouteRole =
+		static_cast<int>(assignment.role);
+	botFrameCommandStatus.lastCtfCarrierSupportRouteLane =
+		static_cast<int>(assignment.lane);
+	botFrameCommandStatus.lastCtfCarrierSupportRouteType =
+		static_cast<int>(assignment.type);
+	botFrameCommandStatus.lastCtfCarrierSupportRouteSource =
+		static_cast<int>(assignment.source);
+	botFrameCommandStatus.lastCtfCarrierSupportRouteEntity = assignment.entity;
+	botFrameCommandStatus.lastCtfCarrierSupportRouteCarrierClient =
+		assignment.carrierClient;
+	botFrameCommandStatus.lastCtfCarrierSupportRouteItem = assignment.item;
+	botFrameCommandStatus.lastCtfCarrierSupportRoutePriority = assignment.priority;
+	botFrameCommandStatus.lastCtfCarrierSupportRouteGoalDistanceSquared =
+		goal.valid ? distanceSquared : 0;
+}
+
+bool Bot_CommandBuildCtfCarrierSupportRoute(
+	gentity_t *bot,
+	BotNavRouteRequest *request,
+	BotObjectiveAssignment *assignment,
+	BotObjectiveRouteGoal *goal) {
+	if (!Bot_CommandCtfCarrierSupportRouteEnabled()) {
+		return false;
+	}
+
+	if (bot == nullptr ||
+		bot->client == nullptr ||
+		request == nullptr ||
+		assignment == nullptr ||
+		goal == nullptr) {
+		botFrameCommandStatus.ctfCarrierSupportRouteInvalidSkips++;
+		return false;
+	}
+
+	if (!Bot_CommandCtfCarrierSupportSmokeReady()) {
+		return false;
+	}
+
+	int clientIndex = -1;
+	BotCommandSmokeProofSlot *slot = Bot_CommandSmokeProofSlotFor(bot);
+	(void)Bot_BlackboardEnsureSlot(bot, &clientIndex);
+
+	if (Bot_CommandSmokeScenarioMode() == 38 && clientIndex >= 0 && clientIndex < 2) {
+		return false;
+	}
+
+	botFrameCommandStatus.ctfCarrierSupportRouteRequests++;
+
+	if (Bot_CommandSmokeScenarioMode() == 38 && slot != nullptr) {
+		Bot_CommandPrepareCtfCarrierSupportRouteSmoke(bot, *slot);
+	}
+
+	if (request->hasTravelTypeGoal || request->hasPositionGoal) {
+		botFrameCommandStatus.ctfCarrierSupportRouteInvalidSkips++;
+		return false;
+	}
+
+	*assignment = {};
+	*goal = {};
+	*assignment = BotObjectives_AssignEnemyFlagCarrierSupportObjective(bot, true);
+	if (!Bot_CommandCtfCarrierSupportRouteAssignmentValid(*assignment) ||
+		!BotObjectives_BuildRouteGoal(*assignment, goal)) {
+		botFrameCommandStatus.ctfCarrierSupportRouteInvalidSkips++;
+		Bot_CommandRecordCtfCarrierSupportRouteLast(clientIndex, *assignment, *goal, 0);
+		return false;
+	}
+
+	request->hasPositionGoal = true;
+	request->positionGoal[0] = goal->origin[0];
+	request->positionGoal[1] = goal->origin[1];
+	request->positionGoal[2] = goal->origin[2];
+
+	botFrameCommandStatus.ctfCarrierSupportRouteAssignments++;
+	botFrameCommandStatus.ctfCarrierSupportRouteRouteRequests++;
+	BotObjectives_RecordRouteRequest(*goal, *assignment);
+	Bot_CommandRecordCtfCarrierSupportRouteLast(
+		clientIndex,
+		*assignment,
+		*goal,
+		Bot_CommandDistanceSquaredToObjectiveGoal(bot, *goal));
+	return true;
+}
+
+void Bot_CommandRecordCtfCarrierSupportRouteResult(
+	gentity_t *bot,
+	const BotObjectiveAssignment &assignment,
+	const BotObjectiveRouteGoal &goal,
+	bool routeSucceeded) {
+	if (!routeSucceeded ||
+		!Bot_CommandCtfCarrierSupportRouteAssignmentValid(assignment) ||
+		!goal.valid) {
+		return;
+	}
+
+	botFrameCommandStatus.ctfCarrierSupportRouteRouteCommands++;
+	BotObjectives_RecordRouteCommand(goal, assignment);
+	BotObjectives_RecordReach(goal, assignment);
+	Bot_CommandRecordCtfCarrierSupportRouteLast(
+		Bot_PerceptionClientIndex(bot),
+		assignment,
+		goal,
+		Bot_CommandDistanceSquaredToObjectiveGoal(bot, goal));
+}
+
+bool Bot_CommandCtfBaseReturnRouteAssignmentValid(
+	const BotObjectiveAssignment &assignment) {
+	return assignment.assigned &&
+		assignment.type == BotObjectiveType::OwnFlagReturn &&
+		assignment.role == BotObjectiveRole::Returner &&
+		assignment.source == BotObjectiveTargetSource::FlagCarrier &&
+		assignment.lane == BotObjectiveLane::OwnBaseReturn &&
+		assignment.carrierClient >= 0 &&
+		assignment.entity > 0 &&
+		assignment.entity <= static_cast<int>(game.maxClients) &&
+		assignment.area > 0;
+}
+
+void Bot_CommandRecordCtfBaseReturnRouteLast(
+	int clientIndex,
+	const BotObjectiveAssignment &assignment,
+	const BotObjectiveRouteGoal &goal,
+	int distanceSquared) {
+	botFrameCommandStatus.lastCtfBaseReturnRouteClient = clientIndex;
+	botFrameCommandStatus.lastCtfBaseReturnRouteRole =
+		static_cast<int>(assignment.role);
+	botFrameCommandStatus.lastCtfBaseReturnRouteLane =
+		static_cast<int>(assignment.lane);
+	botFrameCommandStatus.lastCtfBaseReturnRouteType =
+		static_cast<int>(assignment.type);
+	botFrameCommandStatus.lastCtfBaseReturnRouteSource =
+		static_cast<int>(assignment.source);
+	botFrameCommandStatus.lastCtfBaseReturnRouteEntity = assignment.entity;
+	botFrameCommandStatus.lastCtfBaseReturnRouteCarrierClient =
+		assignment.carrierClient;
+	botFrameCommandStatus.lastCtfBaseReturnRouteItem = assignment.item;
+	botFrameCommandStatus.lastCtfBaseReturnRoutePriority = assignment.priority;
+	botFrameCommandStatus.lastCtfBaseReturnRouteGoalDistanceSquared =
+		goal.valid ? distanceSquared : 0;
+}
+
+bool Bot_CommandBuildCtfBaseReturnRoute(
+	gentity_t *bot,
+	BotNavRouteRequest *request,
+	BotObjectiveAssignment *assignment,
+	BotObjectiveRouteGoal *goal) {
+	if (!Bot_CommandCtfBaseReturnRouteEnabled()) {
+		return false;
+	}
+
+	if (bot == nullptr ||
+		bot->client == nullptr ||
+		request == nullptr ||
+		assignment == nullptr ||
+		goal == nullptr) {
+		botFrameCommandStatus.ctfBaseReturnRouteInvalidSkips++;
+		return false;
+	}
+
+	if (!Bot_CommandCtfBaseReturnSmokeReady()) {
+		return false;
+	}
+
+	botFrameCommandStatus.ctfBaseReturnRouteRequests++;
+
+	int clientIndex = -1;
+	BotCommandSmokeProofSlot *slot = Bot_CommandSmokeProofSlotFor(bot);
+	(void)Bot_BlackboardEnsureSlot(bot, &clientIndex);
+
+	if (Bot_CommandSmokeScenarioMode() == 39 && slot != nullptr) {
+		Bot_CommandPrepareCtfBaseReturnRouteSmoke(bot, *slot);
+	}
+
+	if (request->hasTravelTypeGoal || request->hasPositionGoal) {
+		botFrameCommandStatus.ctfBaseReturnRouteInvalidSkips++;
+		return false;
+	}
+
+	*assignment = {};
+	*goal = {};
+	*assignment = BotObjectives_AssignOwnFlagReturnObjective(bot, true);
+	if (!Bot_CommandCtfBaseReturnRouteAssignmentValid(*assignment) ||
+		!BotObjectives_BuildRouteGoal(*assignment, goal)) {
+		botFrameCommandStatus.ctfBaseReturnRouteInvalidSkips++;
+		Bot_CommandRecordCtfBaseReturnRouteLast(clientIndex, *assignment, *goal, 0);
+		return false;
+	}
+
+	request->hasPositionGoal = true;
+	request->positionGoal[0] = goal->origin[0];
+	request->positionGoal[1] = goal->origin[1];
+	request->positionGoal[2] = goal->origin[2];
+
+	botFrameCommandStatus.ctfBaseReturnRouteAssignments++;
+	botFrameCommandStatus.ctfBaseReturnRouteRouteRequests++;
+	BotObjectives_RecordRouteRequest(*goal, *assignment);
+	Bot_CommandRecordCtfBaseReturnRouteLast(
+		clientIndex,
+		*assignment,
+		*goal,
+		Bot_CommandDistanceSquaredToObjectiveGoal(bot, *goal));
+	return true;
+}
+
+void Bot_CommandRecordCtfBaseReturnRouteResult(
+	gentity_t *bot,
+	const BotObjectiveAssignment &assignment,
+	const BotObjectiveRouteGoal &goal,
+	bool routeSucceeded) {
+	if (!routeSucceeded ||
+		!Bot_CommandCtfBaseReturnRouteAssignmentValid(assignment) ||
+		!goal.valid) {
+		return;
+	}
+
+	botFrameCommandStatus.ctfBaseReturnRouteRouteCommands++;
+	BotObjectives_RecordRouteCommand(goal, assignment);
+	BotObjectives_RecordReach(goal, assignment);
+	Bot_CommandRecordCtfBaseReturnRouteLast(
+		Bot_PerceptionClientIndex(bot),
+		assignment,
+		goal,
+		Bot_CommandDistanceSquaredToObjectiveGoal(bot, goal));
+}
+
+const char *Bot_CommandCtfObjectiveRouteSelectionName(
+	BotCtfObjectiveRouteSelection selection) {
+	switch (selection) {
+	case BotCtfObjectiveRouteSelection::BaseReturn:
+		return "base_return";
+	case BotCtfObjectiveRouteSelection::CarrierSupport:
+		return "carrier_support";
+	case BotCtfObjectiveRouteSelection::DroppedFlag:
+		return "dropped_flag";
+	default:
+		return "none";
+	}
+}
+
+bool Bot_CommandCtfObjectiveRouteAssignmentValid(
+	BotCtfObjectiveRouteSelection selection,
+	const BotObjectiveAssignment &assignment) {
+	switch (selection) {
+	case BotCtfObjectiveRouteSelection::BaseReturn:
+		return Bot_CommandCtfBaseReturnRouteAssignmentValid(assignment);
+	case BotCtfObjectiveRouteSelection::CarrierSupport:
+		return Bot_CommandCtfCarrierSupportRouteAssignmentValid(assignment);
+	case BotCtfObjectiveRouteSelection::DroppedFlag:
+		return Bot_CommandCtfDroppedFlagRouteAssignmentValid(assignment);
+	default:
+		return false;
+	}
+}
+
+void Bot_CommandRecordCtfObjectiveRouteCandidate(
+	BotCtfObjectiveRouteSelection selection) {
+	switch (selection) {
+	case BotCtfObjectiveRouteSelection::BaseReturn:
+		botFrameCommandStatus.ctfObjectiveRouteBaseReturnCandidates++;
+		break;
+	case BotCtfObjectiveRouteSelection::CarrierSupport:
+		botFrameCommandStatus.ctfObjectiveRouteCarrierSupportCandidates++;
+		break;
+	case BotCtfObjectiveRouteSelection::DroppedFlag:
+		botFrameCommandStatus.ctfObjectiveRouteDroppedFlagCandidates++;
+		break;
+	default:
+		break;
+	}
+}
+
+void Bot_CommandRecordCtfObjectiveRouteSelection(
+	BotCtfObjectiveRouteSelection selection) {
+	switch (selection) {
+	case BotCtfObjectiveRouteSelection::BaseReturn:
+		botFrameCommandStatus.ctfObjectiveRouteBaseReturnSelections++;
+		break;
+	case BotCtfObjectiveRouteSelection::CarrierSupport:
+		botFrameCommandStatus.ctfObjectiveRouteCarrierSupportSelections++;
+		break;
+	case BotCtfObjectiveRouteSelection::DroppedFlag:
+		botFrameCommandStatus.ctfObjectiveRouteDroppedFlagSelections++;
+		break;
+	default:
+		break;
+	}
+}
+
+BotCtfObjectiveRouteCandidate Bot_CommandBuildCtfObjectiveRouteCandidate(
+	gentity_t *bot,
+	BotCtfObjectiveRouteSelection selection) {
+	BotCtfObjectiveRouteCandidate candidate{};
+	candidate.selection = selection;
+
+	switch (selection) {
+	case BotCtfObjectiveRouteSelection::BaseReturn:
+		candidate.assignment = BotObjectives_AssignOwnFlagReturnObjective(bot, true);
+		break;
+	case BotCtfObjectiveRouteSelection::CarrierSupport:
+		candidate.assignment =
+			BotObjectives_AssignEnemyFlagCarrierSupportObjective(bot, true);
+		break;
+	case BotCtfObjectiveRouteSelection::DroppedFlag:
+		candidate.assignment = BotObjectives_AssignEnemyFlagObjective(
+			bot,
+			true,
+			BotObjectiveRole::Attacker,
+			false);
+		break;
+	default:
+		return candidate;
+	}
+
+	if (!Bot_CommandCtfObjectiveRouteAssignmentValid(
+			selection,
+			candidate.assignment) ||
+		!BotObjectives_BuildRouteGoal(candidate.assignment, &candidate.goal)) {
+		return candidate;
+	}
+
+	candidate.valid = true;
+	Bot_CommandRecordCtfObjectiveRouteCandidate(selection);
+	return candidate;
+}
+
+void Bot_CommandRecordCtfObjectiveRouteLast(
+	int clientIndex,
+	BotCtfObjectiveRouteSelection selection,
+	const BotObjectiveAssignment &assignment,
+	const BotObjectiveRouteGoal &goal,
+	int distanceSquared) {
+	botFrameCommandStatus.lastCtfObjectiveRouteClient = clientIndex;
+	botFrameCommandStatus.lastCtfObjectiveRouteSelection =
+		static_cast<int>(selection);
+	botFrameCommandStatus.lastCtfObjectiveRouteRole =
+		static_cast<int>(assignment.role);
+	botFrameCommandStatus.lastCtfObjectiveRouteLane =
+		static_cast<int>(assignment.lane);
+	botFrameCommandStatus.lastCtfObjectiveRouteType =
+		static_cast<int>(assignment.type);
+	botFrameCommandStatus.lastCtfObjectiveRouteSource =
+		static_cast<int>(assignment.source);
+	botFrameCommandStatus.lastCtfObjectiveRouteEntity = assignment.entity;
+	botFrameCommandStatus.lastCtfObjectiveRouteCarrierClient =
+		assignment.carrierClient;
+	botFrameCommandStatus.lastCtfObjectiveRouteItem = assignment.item;
+	botFrameCommandStatus.lastCtfObjectiveRoutePriority = assignment.priority;
+	botFrameCommandStatus.lastCtfObjectiveRouteGoalDistanceSquared =
+		goal.valid ? distanceSquared : 0;
+}
+
+bool Bot_CommandBuildCtfObjectiveRoute(
+	gentity_t *bot,
+	BotNavRouteRequest *request,
+	BotObjectiveAssignment *assignment,
+	BotObjectiveRouteGoal *goal,
+	BotCtfObjectiveRouteSelection *selection) {
+	if (!Bot_CommandCtfObjectiveRouteEnabled()) {
+		return false;
+	}
+
+	if (bot == nullptr ||
+		bot->client == nullptr ||
+		request == nullptr ||
+		assignment == nullptr ||
+		goal == nullptr ||
+		selection == nullptr) {
+		botFrameCommandStatus.ctfObjectiveRouteInvalidSkips++;
+		return false;
+	}
+
+	if (!Bot_CommandCtfObjectiveRouteSmokeReady()) {
+		return false;
+	}
+
+	botFrameCommandStatus.ctfObjectiveRouteRequests++;
+
+	int clientIndex = -1;
+	BotCommandSmokeProofSlot *slot = Bot_CommandSmokeProofSlotFor(bot);
+	(void)Bot_BlackboardEnsureSlot(bot, &clientIndex);
+
+	if (Bot_CommandSmokeScenarioMode() == 40 && slot != nullptr) {
+		Bot_CommandPrepareCtfObjectiveRouteSmoke(bot, *slot);
+	}
+
+	if (request->hasTravelTypeGoal || request->hasPositionGoal) {
+		botFrameCommandStatus.ctfObjectiveRouteInvalidSkips++;
+		return false;
+	}
+
+	*assignment = {};
+	*goal = {};
+	*selection = BotCtfObjectiveRouteSelection::None;
+
+	const BotCtfObjectiveRouteCandidate baseReturn =
+		Bot_CommandBuildCtfObjectiveRouteCandidate(
+			bot,
+			BotCtfObjectiveRouteSelection::BaseReturn);
+	const BotCtfObjectiveRouteCandidate carrierSupport =
+		Bot_CommandBuildCtfObjectiveRouteCandidate(
+			bot,
+			BotCtfObjectiveRouteSelection::CarrierSupport);
+	const BotCtfObjectiveRouteCandidate droppedFlag =
+		Bot_CommandBuildCtfObjectiveRouteCandidate(
+			bot,
+			BotCtfObjectiveRouteSelection::DroppedFlag);
+
+	const BotCtfObjectiveRouteCandidate *chosen = nullptr;
+	if (baseReturn.valid) {
+		chosen = &baseReturn;
+		if (carrierSupport.valid) {
+			botFrameCommandStatus.ctfObjectiveRouteCarrierSupportDeferrals++;
+		}
+		if (droppedFlag.valid) {
+			botFrameCommandStatus.ctfObjectiveRouteDroppedFlagDeferrals++;
+		}
+	} else if (carrierSupport.valid) {
+		chosen = &carrierSupport;
+		if (droppedFlag.valid) {
+			botFrameCommandStatus.ctfObjectiveRouteDroppedFlagDeferrals++;
+		}
+	} else if (droppedFlag.valid) {
+		chosen = &droppedFlag;
+	}
+	if (chosen == nullptr) {
+		Bot_CommandRecordCtfObjectiveRouteLast(
+			clientIndex,
+			BotCtfObjectiveRouteSelection::None,
+			*assignment,
+			*goal,
+			0);
+		return false;
+	}
+
+	*assignment = chosen->assignment;
+	*goal = chosen->goal;
+	*selection = chosen->selection;
+	request->hasPositionGoal = true;
+	request->positionGoal[0] = goal->origin[0];
+	request->positionGoal[1] = goal->origin[1];
+	request->positionGoal[2] = goal->origin[2];
+
+	botFrameCommandStatus.ctfObjectiveRouteAssignments++;
+	botFrameCommandStatus.ctfObjectiveRouteRouteRequests++;
+	Bot_CommandRecordCtfObjectiveRouteSelection(chosen->selection);
+	BotObjectives_RecordRouteRequest(*goal, *assignment);
+	Bot_CommandRecordCtfObjectiveRouteLast(
+		clientIndex,
+		chosen->selection,
+		*assignment,
+		*goal,
+		Bot_CommandDistanceSquaredToObjectiveGoal(bot, *goal));
+	return true;
+}
+
+void Bot_CommandRecordCtfObjectiveRouteResult(
+	gentity_t *bot,
+	BotCtfObjectiveRouteSelection selection,
+	const BotObjectiveAssignment &assignment,
+	const BotObjectiveRouteGoal &goal,
+	bool routeSucceeded) {
+	if (!routeSucceeded ||
+		!Bot_CommandCtfObjectiveRouteAssignmentValid(selection, assignment) ||
+		!goal.valid) {
+		return;
+	}
+
+	botFrameCommandStatus.ctfObjectiveRouteRouteCommands++;
+	BotObjectives_RecordRouteCommand(goal, assignment);
+	BotObjectives_RecordReach(goal, assignment);
+	Bot_CommandRecordCtfObjectiveRouteLast(
+		Bot_PerceptionClientIndex(bot),
+		selection,
+		assignment,
+		goal,
+		Bot_CommandDistanceSquaredToObjectiveGoal(bot, goal));
 }
 
 Vector3 Bot_CommandTimedRouteFallbackDirection(gentity_t *bot) {
@@ -4233,9 +5607,67 @@ const char *Bot_CommandTimedRouteGoalKindName(BotTimedRouteGoalKind kind) {
 		return "team_role";
 	case BotTimedRouteGoalKind::CtfRole:
 		return "ctf_role";
+	case BotTimedRouteGoalKind::FfaRoam:
+		return "ffa_roam";
 	default:
 		return "none";
 	}
+}
+
+void Bot_CommandRecordFfaRoamRouteLast(
+	int clientIndex,
+	const BotObjectiveMatchPolicy &policy,
+	int remainingMilliseconds,
+	float distanceSquared) {
+	botFrameCommandStatus.lastFfaRoamRouteClient = clientIndex;
+	botFrameCommandStatus.lastFfaRoamRouteMode = static_cast<int>(policy.mode);
+	botFrameCommandStatus.lastFfaRoamRouteRole = static_cast<int>(policy.role);
+	botFrameCommandStatus.lastFfaRoamRouteLane = static_cast<int>(policy.lane);
+	botFrameCommandStatus.lastFfaRoamRoutePriority = policy.priority;
+	botFrameCommandStatus.lastFfaRoamRouteRemainingMilliseconds =
+		std::max(remainingMilliseconds, 0);
+	botFrameCommandStatus.lastFfaRoamRouteGoalDistanceSquared =
+		Bot_PerceptionClampDistanceSquared(distanceSquared);
+}
+
+void Bot_CommandRecordFfaRoamRouteOwnerLast(
+	int clientIndex,
+	int remainingMilliseconds,
+	float distanceSquared,
+	const BotTimedRouteGoalState *state = nullptr) {
+	botFrameCommandStatus.lastFfaRoamRouteClient = clientIndex;
+	botFrameCommandStatus.lastFfaRoamRouteRemainingMilliseconds =
+		std::max(remainingMilliseconds, 0);
+	botFrameCommandStatus.lastFfaRoamRouteGoalDistanceSquared =
+		Bot_PerceptionClampDistanceSquared(distanceSquared);
+	if (state != nullptr && state->kind == BotTimedRouteGoalKind::FfaRoam) {
+		botFrameCommandStatus.lastFfaRoamRouteMode = state->matchMode;
+		botFrameCommandStatus.lastFfaRoamRouteRole = state->matchRole;
+		botFrameCommandStatus.lastFfaRoamRouteLane = state->matchLane;
+		botFrameCommandStatus.lastFfaRoamRoutePriority = state->matchPriority;
+	}
+}
+
+void Bot_CommandRecordFfaSpawnCampAvoidanceLast(
+	int clientIndex,
+	const BotObjectiveMatchPolicy &policy,
+	const gentity_t *source,
+	float sourceDistanceSquared,
+	float goalDistanceSquared,
+	const char *reason) {
+	botFrameCommandStatus.lastFfaSpawnCampAvoidanceClient = clientIndex;
+	botFrameCommandStatus.lastFfaSpawnCampAvoidanceSourceClient =
+		Bot_PerceptionEntityClientIndex(source);
+	botFrameCommandStatus.lastFfaSpawnCampAvoidanceSourceEntity =
+		Bot_PerceptionEntityNumber(source);
+	botFrameCommandStatus.lastFfaSpawnCampAvoidanceSourceDistanceSquared =
+		Bot_PerceptionClampDistanceSquared(sourceDistanceSquared);
+	botFrameCommandStatus.lastFfaSpawnCampAvoidancePolicyAvoid =
+		policy.avoidSpawnCamping ? 1 : 0;
+	botFrameCommandStatus.lastFfaSpawnCampAvoidanceGoalDistanceSquared =
+		Bot_PerceptionClampDistanceSquared(goalDistanceSquared);
+	botFrameCommandStatus.lastFfaSpawnCampAvoidanceReason =
+		reason != nullptr ? reason : "none";
 }
 
 void Bot_CommandRecordTeamRoleRouteLast(
@@ -4304,6 +5736,56 @@ void Bot_CommandRecordCtfRoleRouteOwnerLast(
 		botFrameCommandStatus.lastCtfRoleRouteLane = state->matchLane;
 		botFrameCommandStatus.lastCtfRoleRoutePriority = state->matchPriority;
 	}
+}
+
+void Bot_CommandRecordCtfRoleCombatLast(
+	int clientIndex,
+	const BotObjectiveMatchPolicy &policy,
+	const BotCombatEnemyFacts *facts,
+	const char *reason) {
+	botFrameCommandStatus.lastCtfRoleCombatClient = clientIndex;
+	botFrameCommandStatus.lastCtfRoleCombatMode = static_cast<int>(policy.mode);
+	botFrameCommandStatus.lastCtfRoleCombatRole = static_cast<int>(policy.role);
+	botFrameCommandStatus.lastCtfRoleCombatLane = static_cast<int>(policy.lane);
+	botFrameCommandStatus.lastCtfRoleCombatPriority =
+		std::max(policy.engagePriority, policy.priority);
+	botFrameCommandStatus.lastCtfRoleCombatTargetClient =
+		facts != nullptr ? facts->enemyClientIndex : -1;
+	botFrameCommandStatus.lastCtfRoleCombatTargetEntity =
+		facts != nullptr ? facts->enemyEntity : -1;
+	botFrameCommandStatus.lastCtfRoleCombatTargetDistanceSquared =
+		facts != nullptr ? facts->distanceSquared : 0;
+	botFrameCommandStatus.lastCtfRoleCombatTargetVisible =
+		(facts != nullptr && facts->visible) ? 1 : 0;
+	botFrameCommandStatus.lastCtfRoleCombatTargetShootable =
+		(facts != nullptr && facts->shootable) ? 1 : 0;
+	botFrameCommandStatus.lastCtfRoleCombatReason =
+		reason != nullptr ? reason : "none";
+}
+
+void Bot_CommandRecordTeamRoleCombatLast(
+	int clientIndex,
+	const BotObjectiveMatchPolicy &policy,
+	const BotCombatEnemyFacts *facts,
+	const char *reason) {
+	botFrameCommandStatus.lastTeamRoleCombatClient = clientIndex;
+	botFrameCommandStatus.lastTeamRoleCombatMode = static_cast<int>(policy.mode);
+	botFrameCommandStatus.lastTeamRoleCombatRole = static_cast<int>(policy.role);
+	botFrameCommandStatus.lastTeamRoleCombatLane = static_cast<int>(policy.lane);
+	botFrameCommandStatus.lastTeamRoleCombatPriority =
+		std::max(policy.engagePriority, policy.priority);
+	botFrameCommandStatus.lastTeamRoleCombatTargetClient =
+		facts != nullptr ? facts->enemyClientIndex : -1;
+	botFrameCommandStatus.lastTeamRoleCombatTargetEntity =
+		facts != nullptr ? facts->enemyEntity : -1;
+	botFrameCommandStatus.lastTeamRoleCombatTargetDistanceSquared =
+		facts != nullptr ? facts->distanceSquared : 0;
+	botFrameCommandStatus.lastTeamRoleCombatTargetVisible =
+		(facts != nullptr && facts->visible) ? 1 : 0;
+	botFrameCommandStatus.lastTeamRoleCombatTargetShootable =
+		(facts != nullptr && facts->shootable) ? 1 : 0;
+	botFrameCommandStatus.lastTeamRoleCombatReason =
+		reason != nullptr ? reason : "none";
 }
 
 void Bot_CommandRecordCoopLeadAdvanceRouteLast(
@@ -4377,6 +5859,12 @@ void Bot_CommandRecordTimedRouteGoalOwnerLast(
 			remainingMilliseconds,
 			distanceSquared,
 			state);
+	} else if (kind == BotTimedRouteGoalKind::FfaRoam) {
+		Bot_CommandRecordFfaRoamRouteOwnerLast(
+			clientIndex,
+			remainingMilliseconds,
+			distanceSquared,
+			state);
 	}
 }
 
@@ -4397,6 +5885,11 @@ void Bot_CommandRecordTimedRouteGoalRouteRequest(BotTimedRouteGoalKind kind) {
 		botFrameCommandStatus.teamRoleRouteRouteRequests++;
 	} else if (kind == BotTimedRouteGoalKind::CtfRole) {
 		botFrameCommandStatus.ctfRoleRouteRouteRequests++;
+	} else if (kind == BotTimedRouteGoalKind::FfaRoam) {
+		botFrameCommandStatus.ffaRoamRouteRouteRequests++;
+		if (Bot_CommandFfaSpawnCampAvoidanceEnabled()) {
+			botFrameCommandStatus.ffaSpawnCampAvoidanceRouteRequests++;
+		}
 	}
 }
 
@@ -4410,6 +5903,8 @@ void Bot_CommandRecordTimedRouteGoalDeferral(BotTimedRouteGoalKind kind) {
 		botFrameCommandStatus.teamRoleRouteRouteDeferrals++;
 	} else if (kind == BotTimedRouteGoalKind::CtfRole) {
 		botFrameCommandStatus.ctfRoleRouteRouteDeferrals++;
+	} else if (kind == BotTimedRouteGoalKind::FfaRoam) {
+		botFrameCommandStatus.ffaRoamRouteRouteDeferrals++;
 	}
 }
 
@@ -4423,6 +5918,8 @@ void Bot_CommandRecordTimedRouteGoalExpiration(BotTimedRouteGoalKind kind) {
 		botFrameCommandStatus.teamRoleRouteExpirations++;
 	} else if (kind == BotTimedRouteGoalKind::CtfRole) {
 		botFrameCommandStatus.ctfRoleRouteExpirations++;
+	} else if (kind == BotTimedRouteGoalKind::FfaRoam) {
+		botFrameCommandStatus.ffaRoamRouteExpirations++;
 	}
 }
 
@@ -4440,6 +5937,8 @@ void Bot_CommandRecordTimedRouteGoalInvalid(BotTimedRouteGoalKind kind) {
 		botFrameCommandStatus.teamRoleRouteInvalidSkips++;
 	} else if (kind == BotTimedRouteGoalKind::CtfRole) {
 		botFrameCommandStatus.ctfRoleRouteInvalidSkips++;
+	} else if (kind == BotTimedRouteGoalKind::FfaRoam) {
+		botFrameCommandStatus.ffaRoamRouteInvalidSkips++;
 	}
 }
 
@@ -4813,6 +6312,272 @@ void Bot_CommandActivateCoopLeadAdvance(
 		(bot->s.origin - source).lengthSquared());
 }
 
+Vector3 Bot_CommandFfaRoamRouteDirection(
+	gentity_t *bot,
+	const BotObjectiveMatchPolicy &policy) {
+	Vector3 forward = Bot_CommandTimedRouteFallbackDirection(bot) * -1.0f;
+	Vector3 right = { 0.0f, 1.0f, 0.0f };
+	if (bot != nullptr && bot->client != nullptr) {
+		Vector3 viewAngles = Bot_CommandCurrentViewAngles(bot);
+		viewAngles[PITCH] = 0.0f;
+		viewAngles[ROLL] = 0.0f;
+		AngleVectors(viewAngles, forward, right, nullptr);
+	}
+
+	forward.z = 0.0f;
+	right.z = 0.0f;
+	if (forward.lengthSquared() < 1.0f) {
+		forward = Bot_CommandTimedRouteFallbackDirection(bot) * -1.0f;
+	}
+	if (right.lengthSquared() < 1.0f) {
+		right = { 0.0f, 1.0f, 0.0f };
+	}
+
+	switch (std::max(policy.clientIndex, 0) % 4) {
+	case 1:
+		right.z = 0.0f;
+		return right.lengthSquared() >= 1.0f ?
+			right.normalized() :
+			Bot_CommandTimedRouteFallbackDirection(bot) * -1.0f;
+	case 2:
+		forward = forward * -1.0f;
+		break;
+	case 3:
+		right = right * -1.0f;
+		right.z = 0.0f;
+		return right.lengthSquared() >= 1.0f ?
+			right.normalized() :
+			Bot_CommandTimedRouteFallbackDirection(bot) * -1.0f;
+	default:
+		break;
+	}
+
+	forward.z = 0.0f;
+	return forward.lengthSquared() >= 1.0f ?
+		forward.normalized() :
+		Bot_CommandTimedRouteFallbackDirection(bot) * -1.0f;
+}
+
+gentity_t *Bot_CommandFfaSpawnCampAvoidanceSource(
+	gentity_t *bot,
+	float *sourceDistanceSquared) {
+	if (sourceDistanceSquared != nullptr) {
+		*sourceDistanceSquared = 0.0f;
+	}
+	if (bot == nullptr || bot->client == nullptr) {
+		return nullptr;
+	}
+
+	gentity_t *best = nullptr;
+	float bestDistanceSquared = BOT_COMMAND_FFA_SPAWN_CAMP_AVOIDANCE_DISTANCE_SQUARED;
+	for (gentity_t *candidate : active_players()) {
+		if (candidate == bot ||
+			!Bot_PerceptionEntityAlive(candidate) ||
+			(candidate->flags & FL_NOTARGET)) {
+			continue;
+		}
+
+		Vector3 delta = bot->s.origin - candidate->s.origin;
+		delta.z = 0.0f;
+		const float distanceSquared = delta.lengthSquared();
+		if (distanceSquared < 1.0f ||
+			distanceSquared > bestDistanceSquared) {
+			continue;
+		}
+
+		best = candidate;
+		bestDistanceSquared = distanceSquared;
+	}
+
+	if (best != nullptr && sourceDistanceSquared != nullptr) {
+		*sourceDistanceSquared = bestDistanceSquared;
+	}
+	return best;
+}
+
+void Bot_CommandActivateFfaRoamRoute(
+	gentity_t *bot,
+	const BotObjectiveMatchPolicy &policy) {
+	const bool spawnCampAvoidance = Bot_CommandFfaSpawnCampAvoidanceEnabled();
+	if (!Bot_CommandFfaRoamRouteEnabled() && !spawnCampAvoidance) {
+		return;
+	}
+
+	botFrameCommandStatus.ffaRoamRouteRequests++;
+	if (spawnCampAvoidance) {
+		botFrameCommandStatus.ffaSpawnCampAvoidanceRequests++;
+	}
+
+	int clientIndex = -1;
+	BotBrainBlackboardSlot *slot = Bot_BlackboardEnsureSlot(bot, &clientIndex);
+	if (slot == nullptr ||
+		bot == nullptr ||
+		bot->client == nullptr ||
+		!policy.valid ||
+		!policy.participatesInScoring ||
+		policy.mode != BotObjectiveMatchMode::FreeForAll ||
+		policy.role == BotObjectiveRole::None ||
+		policy.lane == BotObjectiveLane::None ||
+		!policy.wantsRoam ||
+		!policy.wantsCollect ||
+		!policy.wantsEngage) {
+		botFrameCommandStatus.ffaRoamRouteInvalidSkips++;
+		if (spawnCampAvoidance) {
+			botFrameCommandStatus.ffaSpawnCampAvoidanceInvalidSkips++;
+			Bot_CommandRecordFfaSpawnCampAvoidanceLast(
+				clientIndex,
+				policy,
+				nullptr,
+				0.0f,
+				0.0f,
+				"invalid_policy");
+		}
+		Bot_CommandRecordFfaRoamRouteLast(
+			clientIndex,
+			policy,
+			0,
+			0.0f);
+		return;
+	}
+
+	botFrameCommandStatus.ffaRoamRoutePolicySelections++;
+	if (spawnCampAvoidance) {
+		botFrameCommandStatus.ffaSpawnCampAvoidancePolicySelections++;
+	}
+
+	const int nowMilliseconds = Bot_CommandCurrentTimeMilliseconds();
+	BotTimedRouteGoalState &state = slot->timedRouteGoal;
+	if (state.kind != BotTimedRouteGoalKind::None &&
+		state.kind != BotTimedRouteGoalKind::FfaRoam &&
+		state.untilMilliseconds > nowMilliseconds) {
+		botFrameCommandStatus.ffaRoamRouteOwnerDeferrals++;
+		if (spawnCampAvoidance) {
+			Bot_CommandRecordFfaSpawnCampAvoidanceLast(
+				clientIndex,
+				policy,
+				nullptr,
+				0.0f,
+				0.0f,
+				"owner_deferral");
+		}
+		Bot_CommandRecordFfaRoamRouteLast(
+			clientIndex,
+			policy,
+			state.untilMilliseconds - nowMilliseconds,
+			0.0f);
+		return;
+	}
+	if (state.kind == BotTimedRouteGoalKind::FfaRoam &&
+		state.untilMilliseconds > nowMilliseconds) {
+		botFrameCommandStatus.ffaRoamRouteRefreshes++;
+	}
+
+	Vector3 direction = Bot_CommandFfaRoamRouteDirection(bot, policy);
+	gentity_t *avoidanceSource = nullptr;
+	float avoidanceSourceDistanceSquared = 0.0f;
+	bool avoidanceSourceSelected = false;
+	const char *avoidanceReason = "fallback_roam";
+	if (spawnCampAvoidance && policy.avoidSpawnCamping) {
+		avoidanceSource = Bot_CommandFfaSpawnCampAvoidanceSource(
+			bot,
+			&avoidanceSourceDistanceSquared);
+		if (avoidanceSource != nullptr) {
+			Vector3 away = bot->s.origin - avoidanceSource->s.origin;
+			away.z = 0.0f;
+			if (away.lengthSquared() >= BOT_COMMAND_TIMED_ROUTE_MIN_DIRECTION_SQUARED) {
+				direction = away;
+				avoidanceSourceSelected = true;
+				avoidanceReason = "nearby_source";
+				botFrameCommandStatus.ffaSpawnCampAvoidanceSourceSelections++;
+			}
+		}
+		if (!avoidanceSourceSelected) {
+			botFrameCommandStatus.ffaSpawnCampAvoidanceFallbacks++;
+		}
+	}
+	direction.z = 0.0f;
+	if (direction.lengthSquared() < 1.0f) {
+		botFrameCommandStatus.ffaRoamRouteInvalidSkips++;
+		if (spawnCampAvoidance) {
+			botFrameCommandStatus.ffaSpawnCampAvoidanceInvalidSkips++;
+			Bot_CommandRecordFfaSpawnCampAvoidanceLast(
+				clientIndex,
+				policy,
+				avoidanceSourceSelected ? avoidanceSource : nullptr,
+				avoidanceSourceDistanceSquared,
+				0.0f,
+				"invalid_direction");
+		}
+		Bot_CommandRecordFfaRoamRouteLast(
+			clientIndex,
+			policy,
+			0,
+			0.0f);
+		return;
+	}
+
+	direction = direction.normalized();
+	Vector3 source = avoidanceSourceSelected ?
+		avoidanceSource->s.origin :
+		bot->s.origin - (direction * BOT_COMMAND_FFA_ROAM_ROUTE_DISTANCE);
+	source.z = bot->s.origin.z;
+	if (!Bot_CommandActivateTimedRouteGoal(
+			bot,
+			BotTimedRouteGoalKind::FfaRoam,
+			source,
+			direction,
+			BOT_COMMAND_FFA_ROAM_ROUTE_MILLISECONDS,
+			BOT_COMMAND_FFA_ROAM_ROUTE_DISTANCE,
+			BOT_COMMAND_TIMED_ROUTE_MIN_DIRECTION_SQUARED)) {
+		botFrameCommandStatus.ffaRoamRouteInvalidSkips++;
+		if (spawnCampAvoidance) {
+			botFrameCommandStatus.ffaSpawnCampAvoidanceInvalidSkips++;
+			Bot_CommandRecordFfaSpawnCampAvoidanceLast(
+				clientIndex,
+				policy,
+				avoidanceSourceSelected ? avoidanceSource : nullptr,
+				avoidanceSourceDistanceSquared,
+				0.0f,
+				"activation_failed");
+		}
+		Bot_CommandRecordFfaRoamRouteLast(
+			clientIndex,
+			policy,
+			0,
+			0.0f);
+		return;
+	}
+
+	state.matchMode = static_cast<int>(policy.mode);
+	state.matchRole = static_cast<int>(policy.role);
+	state.matchLane = static_cast<int>(policy.lane);
+	state.matchPriority = policy.priority;
+	botFrameCommandStatus.ffaRoamRouteActivations++;
+	if (avoidanceSourceSelected) {
+		botFrameCommandStatus.ffaSpawnCampAvoidanceActivations++;
+		Bot_CommandRecordFfaSpawnCampAvoidanceLast(
+			clientIndex,
+			policy,
+			avoidanceSource,
+			avoidanceSourceDistanceSquared,
+			BOT_COMMAND_FFA_ROAM_ROUTE_DISTANCE * BOT_COMMAND_FFA_ROAM_ROUTE_DISTANCE,
+			avoidanceReason);
+	} else if (spawnCampAvoidance) {
+		Bot_CommandRecordFfaSpawnCampAvoidanceLast(
+			clientIndex,
+			policy,
+			nullptr,
+			0.0f,
+			BOT_COMMAND_FFA_ROAM_ROUTE_DISTANCE * BOT_COMMAND_FFA_ROAM_ROUTE_DISTANCE,
+			avoidanceReason);
+	}
+	Bot_CommandRecordFfaRoamRouteLast(
+		clientIndex,
+		policy,
+		BOT_COMMAND_FFA_ROAM_ROUTE_MILLISECONDS,
+		(bot->s.origin - source).lengthSquared());
+}
+
 Vector3 Bot_CommandTeamRoleRouteDirection(
 	gentity_t *bot,
 	const BotObjectiveMatchPolicy &policy) {
@@ -4977,6 +6742,16 @@ void Bot_CommandActivateCtfRoleRoute(
 	}
 
 	botFrameCommandStatus.ctfRoleRoutePolicySelections++;
+
+	if (Bot_CommandCtfObjectiveRouteEnabled()) {
+		botFrameCommandStatus.ctfRoleRouteObjectiveDeferrals++;
+		Bot_CommandRecordCtfRoleRouteLast(
+			clientIndex,
+			policy,
+			0,
+			0.0f);
+		return;
+	}
 
 	const int nowMilliseconds = Bot_CommandCurrentTimeMilliseconds();
 	BotTimedRouteGoalState &state = slot->timedRouteGoal;
@@ -5313,6 +7088,7 @@ BotFrameObjectivePolicyResult Bot_CommandEvaluateFrameObjectivePolicies(
 	const BotObjectiveMatchPolicy matchPolicy =
 		BotObjectives_EvaluateMatchPolicy(matchContext);
 	result.matchPolicy = matchPolicy;
+	Bot_CommandActivateFfaRoamRoute(bot, matchPolicy);
 	Bot_CommandActivateTeamRoleRoute(bot, matchPolicy);
 	Bot_CommandActivateCtfRoleRoute(bot, matchPolicy);
 	const bool coopProgressWaitRequested = Bot_CommandCoopProgressWaitRequested();
@@ -5371,6 +7147,204 @@ BotFrameObjectivePolicyResult Bot_CommandEvaluateFrameObjectivePolicies(
 	return result;
 }
 
+bool Bot_CommandFindCtfRoleCombatFacts(gentity_t *bot, BotCombatEnemyFacts *facts) {
+	if (facts == nullptr) {
+		return false;
+	}
+
+	if (BotCombat_FindNearestEnemy(bot, facts)) {
+		return true;
+	}
+
+	const int smokeMode = Bot_CommandSmokeScenarioMode();
+	if (smokeMode == 36 || smokeMode == 43 || smokeMode == 44) {
+		return Bot_CommandFindSmokeEnemyFacts(bot, facts);
+	}
+
+	return false;
+}
+
+gentity_t *Bot_CommandCtfRoleCombatTargetFromFacts(
+	const BotCombatEnemyFacts &facts) {
+	if (!facts.valid ||
+		!facts.visible ||
+		!facts.shootable ||
+		facts.enemyEntity <= 0 ||
+		facts.enemyEntity >= static_cast<int>(globals.numEntities)) {
+		return nullptr;
+	}
+
+	gentity_t *target = &g_entities[facts.enemyEntity];
+	if (!Bot_PerceptionCombatTargetAlive(target) ||
+		target->spawn_count != facts.enemySpawnCount) {
+		return nullptr;
+	}
+
+	return target;
+}
+
+void Bot_CommandAdoptCtfRoleCombatTarget(
+	gentity_t *bot,
+	BotBrainBlackboardSlot &slot,
+	gentity_t *target) {
+	if (bot == nullptr || target == nullptr) {
+		return;
+	}
+
+	bot->enemy = target;
+	const BotPerceptionEnemyFacts perceptionFacts =
+		Bot_PerceptionEvaluateEnemy(bot, target);
+	if (Bot_PerceptionEnemyFactsValid(perceptionFacts)) {
+		Bot_PerceptionSetCurrentEnemy(slot, perceptionFacts, true);
+	}
+}
+
+BotActionDecision Bot_CommandApplyTeamRoleCombat(
+	gentity_t *bot,
+	const BotObjectiveMatchPolicy &policy,
+	const BotActionDecision &decision) {
+	if (!Bot_CommandTeamRoleCombatEnabled()) {
+		return decision;
+	}
+
+	botFrameCommandStatus.teamRoleCombatRequests++;
+
+	int clientIndex = -1;
+	BotBrainBlackboardSlot *slot = Bot_BlackboardEnsureSlot(bot, &clientIndex);
+	if (slot == nullptr ||
+		bot == nullptr ||
+		bot->client == nullptr ||
+		!policy.valid ||
+		!policy.participatesInScoring ||
+		policy.mode != BotObjectiveMatchMode::TeamDeathmatch ||
+		policy.role == BotObjectiveRole::None ||
+		policy.lane == BotObjectiveLane::None ||
+		!policy.wantsEngage) {
+		botFrameCommandStatus.teamRoleCombatInvalidSkips++;
+		Bot_CommandRecordTeamRoleCombatLast(
+			clientIndex,
+			policy,
+			nullptr,
+			"invalid_policy");
+		return decision;
+	}
+
+	botFrameCommandStatus.teamRoleCombatPolicySelections++;
+
+	BotCombatEnemyFacts facts{};
+	if (!Bot_CommandFindCtfRoleCombatFacts(bot, &facts) ||
+		Bot_CommandCtfRoleCombatTargetFromFacts(facts) == nullptr) {
+		botFrameCommandStatus.teamRoleCombatTargetDeferrals++;
+		Bot_CommandRecordTeamRoleCombatLast(
+			clientIndex,
+			policy,
+			&facts,
+			"no_shootable_target");
+		return decision;
+	}
+
+	gentity_t *target = Bot_CommandCtfRoleCombatTargetFromFacts(facts);
+	Bot_CommandAdoptCtfRoleCombatTarget(bot, *slot, target);
+	botFrameCommandStatus.teamRoleCombatTargetSelections++;
+
+	const int priority = std::max(policy.engagePriority, policy.priority) +
+		BOT_COMMAND_TEAM_ROLE_COMBAT_PRIORITY_BONUS;
+	if (decision.intent != BotActionIntent::Attack ||
+		!decision.pressAttack ||
+		priority > decision.priority) {
+		botFrameCommandStatus.teamRoleCombatDecisionOverrides++;
+	}
+	botFrameCommandStatus.teamRoleCombatAttackDecisions++;
+	Bot_CommandRecordTeamRoleCombatLast(
+		clientIndex,
+		policy,
+		&facts,
+		"team_role_combat_engage");
+
+	return {
+		.intent = BotActionIntent::Attack,
+		.clientIndex = clientIndex,
+		.priority = priority,
+		.weaponItem = decision.weaponItem > IT_NULL ?
+			decision.weaponItem : Bot_CommandCurrentWeaponItem(bot),
+		.pressAttack = true,
+		.reason = "team_role_combat_engage",
+	};
+}
+
+BotActionDecision Bot_CommandApplyCtfRoleCombat(
+	gentity_t *bot,
+	const BotObjectiveMatchPolicy &policy,
+	const BotActionDecision &decision) {
+	if (!Bot_CommandCtfRoleCombatEnabled()) {
+		return decision;
+	}
+
+	botFrameCommandStatus.ctfRoleCombatRequests++;
+
+	int clientIndex = -1;
+	BotBrainBlackboardSlot *slot = Bot_BlackboardEnsureSlot(bot, &clientIndex);
+	if (slot == nullptr ||
+		bot == nullptr ||
+		bot->client == nullptr ||
+		!policy.valid ||
+		!policy.participatesInScoring ||
+		policy.mode != BotObjectiveMatchMode::CaptureTheFlag ||
+		policy.role == BotObjectiveRole::None ||
+		policy.lane == BotObjectiveLane::None ||
+		!policy.wantsEngage) {
+		botFrameCommandStatus.ctfRoleCombatInvalidSkips++;
+		Bot_CommandRecordCtfRoleCombatLast(
+			clientIndex,
+			policy,
+			nullptr,
+			"invalid_policy");
+		return decision;
+	}
+
+	botFrameCommandStatus.ctfRoleCombatPolicySelections++;
+
+	BotCombatEnemyFacts facts{};
+	if (!Bot_CommandFindCtfRoleCombatFacts(bot, &facts) ||
+		Bot_CommandCtfRoleCombatTargetFromFacts(facts) == nullptr) {
+		botFrameCommandStatus.ctfRoleCombatTargetDeferrals++;
+		Bot_CommandRecordCtfRoleCombatLast(
+			clientIndex,
+			policy,
+			&facts,
+			"no_shootable_target");
+		return decision;
+	}
+
+	gentity_t *target = Bot_CommandCtfRoleCombatTargetFromFacts(facts);
+	Bot_CommandAdoptCtfRoleCombatTarget(bot, *slot, target);
+	botFrameCommandStatus.ctfRoleCombatTargetSelections++;
+
+	const int priority = std::max(policy.engagePriority, policy.priority) +
+		BOT_COMMAND_CTF_ROLE_COMBAT_PRIORITY_BONUS;
+	if (decision.intent != BotActionIntent::Attack ||
+		!decision.pressAttack ||
+		priority > decision.priority) {
+		botFrameCommandStatus.ctfRoleCombatDecisionOverrides++;
+	}
+	botFrameCommandStatus.ctfRoleCombatAttackDecisions++;
+	Bot_CommandRecordCtfRoleCombatLast(
+		clientIndex,
+		policy,
+		&facts,
+		"ctf_role_combat_engage");
+
+	return {
+		.intent = BotActionIntent::Attack,
+		.clientIndex = clientIndex,
+		.priority = priority,
+		.weaponItem = decision.weaponItem > IT_NULL ?
+			decision.weaponItem : Bot_CommandCurrentWeaponItem(bot),
+		.pressAttack = true,
+		.reason = "ctf_role_combat_engage",
+	};
+}
+
 gentity_t *Bot_CommandTeamFireAvoidanceTarget(gentity_t *bot) {
 	if (bot == nullptr) {
 		return nullptr;
@@ -5420,6 +7394,7 @@ BotActionDecision Bot_CommandApplyTeamFireAvoidance(
 	}
 
 	const bool friendlyInLineOfFire =
+		Bot_CommandSmokeTeamFireLineOfFireProof(bot, target) ||
 		Bot_CommandFriendlyInLineOfFire(bot, target);
 	const BotObjectiveFriendlyFireContext context =
 		BotObjectives_BuildFriendlyFireContext(
@@ -6363,6 +8338,214 @@ void Bot_CommandRecordAimPolicyAttack(
 	}
 }
 
+void BotBrain_PrintCtfDroppedFlagRouteStatus() {
+	BotBrain_PrintStatusFmt(
+		"q3a_bot_frame_command_status "
+			  "ctf_dropped_flag_route_requests={} "
+			  "ctf_dropped_flag_route_assignments={} "
+			  "ctf_dropped_flag_route_route_requests={} "
+			  "ctf_dropped_flag_route_route_commands={} "
+			  "ctf_dropped_flag_route_invalid_skips={} "
+			  "last_ctf_dropped_flag_route_client={} "
+			  "last_ctf_dropped_flag_route_role={} "
+			  "last_ctf_dropped_flag_route_role_name={} "
+			  "last_ctf_dropped_flag_route_lane={} "
+			  "last_ctf_dropped_flag_route_lane_name={} "
+			  "last_ctf_dropped_flag_route_type={} "
+			  "last_ctf_dropped_flag_route_type_name={} "
+			  "last_ctf_dropped_flag_route_source={} "
+			  "last_ctf_dropped_flag_route_source_name={} "
+			  "last_ctf_dropped_flag_route_entity={} "
+			  "last_ctf_dropped_flag_route_item={} "
+			  "last_ctf_dropped_flag_route_priority={} "
+			  "last_ctf_dropped_flag_route_goal_distance_sq={}\n",
+			  botFrameCommandStatus.ctfDroppedFlagRouteRequests,
+			  botFrameCommandStatus.ctfDroppedFlagRouteAssignments,
+			  botFrameCommandStatus.ctfDroppedFlagRouteRouteRequests,
+			  botFrameCommandStatus.ctfDroppedFlagRouteRouteCommands,
+			  botFrameCommandStatus.ctfDroppedFlagRouteInvalidSkips,
+			  botFrameCommandStatus.lastCtfDroppedFlagRouteClient,
+			  botFrameCommandStatus.lastCtfDroppedFlagRouteRole,
+			  BotObjectives_RoleName(static_cast<BotObjectiveRole>(
+				  botFrameCommandStatus.lastCtfDroppedFlagRouteRole)),
+			  botFrameCommandStatus.lastCtfDroppedFlagRouteLane,
+			  BotObjectives_LaneName(static_cast<BotObjectiveLane>(
+				  botFrameCommandStatus.lastCtfDroppedFlagRouteLane)),
+			  botFrameCommandStatus.lastCtfDroppedFlagRouteType,
+			  BotObjectives_TypeName(static_cast<BotObjectiveType>(
+				  botFrameCommandStatus.lastCtfDroppedFlagRouteType)),
+			  botFrameCommandStatus.lastCtfDroppedFlagRouteSource,
+			  BotObjectives_TargetSourceName(static_cast<BotObjectiveTargetSource>(
+				  botFrameCommandStatus.lastCtfDroppedFlagRouteSource)),
+			  botFrameCommandStatus.lastCtfDroppedFlagRouteEntity,
+			  botFrameCommandStatus.lastCtfDroppedFlagRouteItem,
+			  botFrameCommandStatus.lastCtfDroppedFlagRoutePriority,
+			  botFrameCommandStatus.lastCtfDroppedFlagRouteGoalDistanceSquared);
+}
+
+void BotBrain_PrintCtfCarrierSupportRouteStatus() {
+	BotBrain_PrintStatusFmt(
+		"q3a_bot_frame_command_status "
+			  "ctf_carrier_support_route_requests={} "
+			  "ctf_carrier_support_route_assignments={} "
+			  "ctf_carrier_support_route_route_requests={} "
+			  "ctf_carrier_support_route_route_commands={} "
+			  "ctf_carrier_support_route_invalid_skips={} "
+			  "last_ctf_carrier_support_route_client={} "
+			  "last_ctf_carrier_support_route_role={} "
+			  "last_ctf_carrier_support_route_role_name={} "
+			  "last_ctf_carrier_support_route_lane={} "
+			  "last_ctf_carrier_support_route_lane_name={} "
+			  "last_ctf_carrier_support_route_type={} "
+			  "last_ctf_carrier_support_route_type_name={} "
+			  "last_ctf_carrier_support_route_source={} "
+			  "last_ctf_carrier_support_route_source_name={} "
+			  "last_ctf_carrier_support_route_entity={} "
+			  "last_ctf_carrier_support_route_carrier_client={} "
+			  "last_ctf_carrier_support_route_item={} "
+			  "last_ctf_carrier_support_route_priority={} "
+			  "last_ctf_carrier_support_route_goal_distance_sq={}\n",
+			  botFrameCommandStatus.ctfCarrierSupportRouteRequests,
+			  botFrameCommandStatus.ctfCarrierSupportRouteAssignments,
+			  botFrameCommandStatus.ctfCarrierSupportRouteRouteRequests,
+			  botFrameCommandStatus.ctfCarrierSupportRouteRouteCommands,
+			  botFrameCommandStatus.ctfCarrierSupportRouteInvalidSkips,
+			  botFrameCommandStatus.lastCtfCarrierSupportRouteClient,
+			  botFrameCommandStatus.lastCtfCarrierSupportRouteRole,
+			  BotObjectives_RoleName(static_cast<BotObjectiveRole>(
+				  botFrameCommandStatus.lastCtfCarrierSupportRouteRole)),
+			  botFrameCommandStatus.lastCtfCarrierSupportRouteLane,
+			  BotObjectives_LaneName(static_cast<BotObjectiveLane>(
+				  botFrameCommandStatus.lastCtfCarrierSupportRouteLane)),
+			  botFrameCommandStatus.lastCtfCarrierSupportRouteType,
+			  BotObjectives_TypeName(static_cast<BotObjectiveType>(
+				  botFrameCommandStatus.lastCtfCarrierSupportRouteType)),
+			  botFrameCommandStatus.lastCtfCarrierSupportRouteSource,
+			  BotObjectives_TargetSourceName(static_cast<BotObjectiveTargetSource>(
+				  botFrameCommandStatus.lastCtfCarrierSupportRouteSource)),
+			  botFrameCommandStatus.lastCtfCarrierSupportRouteEntity,
+			  botFrameCommandStatus.lastCtfCarrierSupportRouteCarrierClient,
+			  botFrameCommandStatus.lastCtfCarrierSupportRouteItem,
+			  botFrameCommandStatus.lastCtfCarrierSupportRoutePriority,
+			  botFrameCommandStatus.lastCtfCarrierSupportRouteGoalDistanceSquared);
+}
+
+void BotBrain_PrintCtfBaseReturnRouteStatus() {
+	BotBrain_PrintStatusFmt(
+		"q3a_bot_frame_command_status "
+			  "ctf_base_return_route_requests={} "
+			  "ctf_base_return_route_assignments={} "
+			  "ctf_base_return_route_route_requests={} "
+			  "ctf_base_return_route_route_commands={} "
+			  "ctf_base_return_route_invalid_skips={} "
+			  "last_ctf_base_return_route_client={} "
+			  "last_ctf_base_return_route_role={} "
+			  "last_ctf_base_return_route_role_name={} "
+			  "last_ctf_base_return_route_lane={} "
+			  "last_ctf_base_return_route_lane_name={} "
+			  "last_ctf_base_return_route_type={} "
+			  "last_ctf_base_return_route_type_name={} "
+			  "last_ctf_base_return_route_source={} "
+			  "last_ctf_base_return_route_source_name={} "
+			  "last_ctf_base_return_route_entity={} "
+			  "last_ctf_base_return_route_carrier_client={} "
+			  "last_ctf_base_return_route_item={} "
+			  "last_ctf_base_return_route_priority={} "
+			  "last_ctf_base_return_route_goal_distance_sq={}\n",
+			  botFrameCommandStatus.ctfBaseReturnRouteRequests,
+			  botFrameCommandStatus.ctfBaseReturnRouteAssignments,
+			  botFrameCommandStatus.ctfBaseReturnRouteRouteRequests,
+			  botFrameCommandStatus.ctfBaseReturnRouteRouteCommands,
+			  botFrameCommandStatus.ctfBaseReturnRouteInvalidSkips,
+			  botFrameCommandStatus.lastCtfBaseReturnRouteClient,
+			  botFrameCommandStatus.lastCtfBaseReturnRouteRole,
+			  BotObjectives_RoleName(static_cast<BotObjectiveRole>(
+				  botFrameCommandStatus.lastCtfBaseReturnRouteRole)),
+			  botFrameCommandStatus.lastCtfBaseReturnRouteLane,
+			  BotObjectives_LaneName(static_cast<BotObjectiveLane>(
+				  botFrameCommandStatus.lastCtfBaseReturnRouteLane)),
+			  botFrameCommandStatus.lastCtfBaseReturnRouteType,
+			  BotObjectives_TypeName(static_cast<BotObjectiveType>(
+				  botFrameCommandStatus.lastCtfBaseReturnRouteType)),
+			  botFrameCommandStatus.lastCtfBaseReturnRouteSource,
+			  BotObjectives_TargetSourceName(static_cast<BotObjectiveTargetSource>(
+				  botFrameCommandStatus.lastCtfBaseReturnRouteSource)),
+			  botFrameCommandStatus.lastCtfBaseReturnRouteEntity,
+			  botFrameCommandStatus.lastCtfBaseReturnRouteCarrierClient,
+			  botFrameCommandStatus.lastCtfBaseReturnRouteItem,
+			  botFrameCommandStatus.lastCtfBaseReturnRoutePriority,
+			  botFrameCommandStatus.lastCtfBaseReturnRouteGoalDistanceSquared);
+}
+
+void BotBrain_PrintCtfObjectiveRouteStatus() {
+	BotBrain_PrintStatusFmt(
+		"q3a_bot_frame_command_status "
+			  "ctf_objective_route_requests={} "
+			  "ctf_objective_route_assignments={} "
+			  "ctf_objective_route_base_return_candidates={} "
+			  "ctf_objective_route_carrier_support_candidates={} "
+			  "ctf_objective_route_dropped_flag_candidates={} "
+			  "ctf_objective_route_base_return_selections={} "
+			  "ctf_objective_route_carrier_support_selections={} "
+			  "ctf_objective_route_dropped_flag_selections={} "
+			  "ctf_objective_route_carrier_support_deferrals={} "
+			  "ctf_objective_route_dropped_flag_deferrals={} "
+			  "ctf_objective_route_route_requests={} "
+			  "ctf_objective_route_route_commands={} "
+			  "ctf_objective_route_invalid_skips={} "
+			  "last_ctf_objective_route_client={} "
+			  "last_ctf_objective_route_selection={} "
+			  "last_ctf_objective_route_selection_name={} "
+			  "last_ctf_objective_route_role={} "
+			  "last_ctf_objective_route_role_name={} "
+			  "last_ctf_objective_route_lane={} "
+			  "last_ctf_objective_route_lane_name={} "
+			  "last_ctf_objective_route_type={} "
+			  "last_ctf_objective_route_type_name={} "
+			  "last_ctf_objective_route_source={} "
+			  "last_ctf_objective_route_source_name={} "
+			  "last_ctf_objective_route_entity={} "
+			  "last_ctf_objective_route_carrier_client={} "
+			  "last_ctf_objective_route_item={} "
+			  "last_ctf_objective_route_priority={} "
+			  "last_ctf_objective_route_goal_distance_sq={}\n",
+			  botFrameCommandStatus.ctfObjectiveRouteRequests,
+			  botFrameCommandStatus.ctfObjectiveRouteAssignments,
+			  botFrameCommandStatus.ctfObjectiveRouteBaseReturnCandidates,
+			  botFrameCommandStatus.ctfObjectiveRouteCarrierSupportCandidates,
+			  botFrameCommandStatus.ctfObjectiveRouteDroppedFlagCandidates,
+			  botFrameCommandStatus.ctfObjectiveRouteBaseReturnSelections,
+			  botFrameCommandStatus.ctfObjectiveRouteCarrierSupportSelections,
+			  botFrameCommandStatus.ctfObjectiveRouteDroppedFlagSelections,
+			  botFrameCommandStatus.ctfObjectiveRouteCarrierSupportDeferrals,
+			  botFrameCommandStatus.ctfObjectiveRouteDroppedFlagDeferrals,
+			  botFrameCommandStatus.ctfObjectiveRouteRouteRequests,
+			  botFrameCommandStatus.ctfObjectiveRouteRouteCommands,
+			  botFrameCommandStatus.ctfObjectiveRouteInvalidSkips,
+			  botFrameCommandStatus.lastCtfObjectiveRouteClient,
+			  botFrameCommandStatus.lastCtfObjectiveRouteSelection,
+			  Bot_CommandCtfObjectiveRouteSelectionName(
+				  static_cast<BotCtfObjectiveRouteSelection>(
+					  botFrameCommandStatus.lastCtfObjectiveRouteSelection)),
+			  botFrameCommandStatus.lastCtfObjectiveRouteRole,
+			  BotObjectives_RoleName(static_cast<BotObjectiveRole>(
+				  botFrameCommandStatus.lastCtfObjectiveRouteRole)),
+			  botFrameCommandStatus.lastCtfObjectiveRouteLane,
+			  BotObjectives_LaneName(static_cast<BotObjectiveLane>(
+				  botFrameCommandStatus.lastCtfObjectiveRouteLane)),
+			  botFrameCommandStatus.lastCtfObjectiveRouteType,
+			  BotObjectives_TypeName(static_cast<BotObjectiveType>(
+				  botFrameCommandStatus.lastCtfObjectiveRouteType)),
+			  botFrameCommandStatus.lastCtfObjectiveRouteSource,
+			  BotObjectives_TargetSourceName(static_cast<BotObjectiveTargetSource>(
+				  botFrameCommandStatus.lastCtfObjectiveRouteSource)),
+			  botFrameCommandStatus.lastCtfObjectiveRouteEntity,
+			  botFrameCommandStatus.lastCtfObjectiveRouteCarrierClient,
+			  botFrameCommandStatus.lastCtfObjectiveRouteItem,
+			  botFrameCommandStatus.lastCtfObjectiveRoutePriority,
+			  botFrameCommandStatus.lastCtfObjectiveRouteGoalDistanceSquared);
+}
+
 } // namespace
 
 /*
@@ -6425,16 +8608,67 @@ bool BotBrain_BuildFrameCommand( gentity_t * bot, usercmd_t * cmd ) {
 	const BotActionDecision actionDecision = Bot_CommandSampleActionDecision(bot);
 	const BotFrameObjectivePolicyResult objectivePolicies =
 		Bot_CommandEvaluateFrameObjectivePolicies(bot, actionDecision);
+	const BotActionDecision teamRoleCombatDecision =
+		Bot_CommandApplyTeamRoleCombat(
+			bot,
+			objectivePolicies.matchPolicy,
+			actionDecision);
+	const BotActionDecision ctfRoleCombatDecision =
+		Bot_CommandApplyCtfRoleCombat(
+			bot,
+			objectivePolicies.matchPolicy,
+			teamRoleCombatDecision);
 	const BotActionDecision commandDecision =
-		Bot_CommandApplyTeamFireAvoidance(bot, actionDecision);
+		Bot_CommandApplyTeamFireAvoidance(bot, ctfRoleCombatDecision);
 	const int currentWeaponItem = Bot_CommandCurrentWeaponItem(bot);
 
 	BotLibAdapterRouteSteer route{};
 	BotNavRouteRequest routeRequest{};
 	BotObjectiveAssignment objectiveAssignment{};
 	BotObjectiveRouteGoal objectiveRouteGoal{};
+	BotObjectiveAssignment ctfObjectiveRouteAssignment{};
+	BotObjectiveRouteGoal ctfObjectiveRouteGoal{};
+	BotCtfObjectiveRouteSelection ctfObjectiveRouteSelection =
+		BotCtfObjectiveRouteSelection::None;
+	BotObjectiveAssignment ctfBaseReturnRouteAssignment{};
+	BotObjectiveRouteGoal ctfBaseReturnRouteGoal{};
+	BotObjectiveAssignment ctfCarrierSupportRouteAssignment{};
+	BotObjectiveRouteGoal ctfCarrierSupportRouteGoal{};
+	BotObjectiveAssignment ctfDroppedFlagRouteAssignment{};
+	BotObjectiveRouteGoal ctfDroppedFlagRouteGoal{};
 	Bot_CommandBuildRouteRequest(&routeRequest);
 	(void)Bot_CommandApplyTimedRouteGoal(bot, &routeRequest);
+	const bool ctfObjectiveRouteRequested =
+		Bot_CommandBuildCtfObjectiveRoute(
+			bot,
+			&routeRequest,
+			&ctfObjectiveRouteAssignment,
+			&ctfObjectiveRouteGoal,
+			&ctfObjectiveRouteSelection);
+	const bool ctfBaseReturnRouteRequested =
+		!ctfObjectiveRouteRequested &&
+		Bot_CommandBuildCtfBaseReturnRoute(
+			bot,
+			&routeRequest,
+			&ctfBaseReturnRouteAssignment,
+			&ctfBaseReturnRouteGoal);
+	const bool ctfCarrierSupportRouteRequested =
+		!ctfObjectiveRouteRequested &&
+		!ctfBaseReturnRouteRequested &&
+		Bot_CommandBuildCtfCarrierSupportRoute(
+			bot,
+			&routeRequest,
+			&ctfCarrierSupportRouteAssignment,
+			&ctfCarrierSupportRouteGoal);
+	const bool ctfDroppedFlagRouteRequested =
+		!ctfObjectiveRouteRequested &&
+		!ctfBaseReturnRouteRequested &&
+		!ctfCarrierSupportRouteRequested &&
+		Bot_CommandBuildCtfDroppedFlagRoute(
+			bot,
+			&routeRequest,
+			&ctfDroppedFlagRouteAssignment,
+			&ctfDroppedFlagRouteGoal);
 
 	*cmd = {};
 	cmd->msec = Bot_CommandMsec();
@@ -6461,7 +8695,17 @@ bool BotBrain_BuildFrameCommand( gentity_t * bot, usercmd_t * cmd ) {
 		&objectiveRouteGoal);
 	Bot_BlackboardRecordTeamRole(
 		bot,
-		objectiveRouteRequested ? &objectiveAssignment : nullptr);
+		objectiveRouteRequested
+			? &objectiveAssignment
+			: (ctfObjectiveRouteRequested
+				? &ctfObjectiveRouteAssignment
+				: (ctfBaseReturnRouteRequested
+					? &ctfBaseReturnRouteAssignment
+					: (ctfCarrierSupportRouteRequested
+						? &ctfCarrierSupportRouteAssignment
+						: (ctfDroppedFlagRouteRequested
+							? &ctfDroppedFlagRouteAssignment
+							: nullptr)))));
 	Bot_CommandMaybeWarpToTravelTypeGoalStart(bot, routeRequest);
 	if (!BotNav_GetRouteSteer(bot, &routeRequest, &route)) {
 		Bot_BlackboardRecordNavState(bot);
@@ -6474,6 +8718,35 @@ bool BotBrain_BuildFrameCommand( gentity_t * bot, usercmd_t * cmd ) {
 			objectiveRouteGoal,
 			true);
 	}
+	if (ctfObjectiveRouteRequested) {
+		Bot_CommandRecordCtfObjectiveRouteResult(
+			bot,
+			ctfObjectiveRouteSelection,
+			ctfObjectiveRouteAssignment,
+			ctfObjectiveRouteGoal,
+			true);
+	}
+	if (ctfDroppedFlagRouteRequested) {
+		Bot_CommandRecordCtfDroppedFlagRouteResult(
+			bot,
+			ctfDroppedFlagRouteAssignment,
+			ctfDroppedFlagRouteGoal,
+			true);
+	}
+	if (ctfCarrierSupportRouteRequested) {
+		Bot_CommandRecordCtfCarrierSupportRouteResult(
+			bot,
+			ctfCarrierSupportRouteAssignment,
+			ctfCarrierSupportRouteGoal,
+			true);
+	}
+	if (ctfBaseReturnRouteRequested) {
+		Bot_CommandRecordCtfBaseReturnRouteResult(
+			bot,
+			ctfBaseReturnRouteAssignment,
+			ctfBaseReturnRouteGoal,
+			true);
+	}
 	Bot_CommandRequestCoopInteractionRetry(
 		bot,
 		objectivePolicies.coopPolicy,
@@ -6484,7 +8757,7 @@ bool BotBrain_BuildFrameCommand( gentity_t * bot, usercmd_t * cmd ) {
 		route);
 
 	cmd->msec = Bot_CommandMsec();
-	cmd->angles = Bot_CommandAnglesForDecision(bot, route, actionDecision);
+	cmd->angles = Bot_CommandAnglesForDecision(bot, route, commandDecision);
 	cmd->forwardMove = 180.0f;
 	cmd->serverFrame = gi.ServerFrame();
 	Bot_CommandApplyMovementState(bot, route, cmd);
@@ -6573,6 +8846,9 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 		travelTypeGoalPass &&
 		reservationPass) ? 1 : 0;
 
+	BotBrain_PrintActionProofStatus(actionStatus, itemStatus, combatStatus);
+	BotBrain_PrintActionDetailProofStatus(actionStatus, itemStatus, combatStatus);
+
 	BotBrain_PrintStatusFmt(
 		"q3a_bot_frame_command_status "
 			  "pass={} frames={} commands={} route_commands={} "
@@ -6582,7 +8858,61 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  "stuck_recovery_activations={} recovery_command_uses={} "
 			  "expected_min_frames={} expected_min_commands={} "
 			  "item_goal_peak_active_reservations={} "
-			  "route_debug_missing_frames={} skipped_inactive={}\n",
+			  "route_debug_missing_frames={} skipped_inactive={} "
+			  "team_role_combat_requests={} "
+			  "team_role_combat_policy_selections={} "
+			  "team_role_combat_target_selections={} "
+			  "team_role_combat_attack_decisions={} "
+			  "team_role_combat_decision_overrides={} "
+			  "team_role_combat_target_deferrals={} "
+			  "team_role_combat_invalid_skips={} "
+			  "last_team_role_combat_client={} "
+			  "last_team_role_combat_mode={} "
+			  "last_team_role_combat_mode_name={} "
+			  "last_team_role_combat_role={} "
+			  "last_team_role_combat_role_name={} "
+			  "last_team_role_combat_lane={} "
+			  "last_team_role_combat_lane_name={} "
+			  "last_team_role_combat_priority={} "
+			  "last_team_role_combat_target_client={} "
+			  "last_team_role_combat_target_entity={} "
+			  "last_team_role_combat_target_distance_sq={} "
+			  "last_team_role_combat_target_visible={} "
+			  "last_team_role_combat_target_shootable={} "
+			  "last_team_role_combat_reason={} "
+			  "ctf_role_combat_requests={} "
+			  "ctf_role_combat_policy_selections={} "
+			  "ctf_role_combat_target_selections={} "
+			  "ctf_role_combat_attack_decisions={} "
+			  "ctf_role_combat_decision_overrides={} "
+			  "ctf_role_combat_target_deferrals={} "
+			  "ctf_role_combat_invalid_skips={} "
+			  "last_ctf_role_combat_client={} "
+			  "last_ctf_role_combat_mode={} "
+			  "last_ctf_role_combat_mode_name={} "
+			  "last_ctf_role_combat_role={} "
+			  "last_ctf_role_combat_role_name={} "
+			  "last_ctf_role_combat_lane={} "
+			  "last_ctf_role_combat_lane_name={} "
+			  "last_ctf_role_combat_priority={} "
+			  "last_ctf_role_combat_target_client={} "
+			  "last_ctf_role_combat_target_entity={} "
+			  "last_ctf_role_combat_target_distance_sq={} "
+			  "last_ctf_role_combat_target_visible={} "
+			  "last_ctf_role_combat_target_shootable={} "
+			  "last_ctf_role_combat_reason={} "
+			  "team_fire_avoidance_evaluations={} "
+			  "team_fire_avoidance_blocks={} "
+			  "team_fire_avoidance_target_blocks={} "
+			  "team_fire_avoidance_line_blocks={} "
+			  "team_fire_avoidance_clears={} "
+			  "team_fire_avoidance_invalid_skips={} "
+			  "last_team_fire_avoidance_client={} "
+			  "last_team_fire_avoidance_target_client={} "
+			  "last_team_fire_avoidance_friendly_line={} "
+			  "last_team_fire_avoidance_target_allowed={} "
+			  "last_team_fire_avoidance_blocked={} "
+			  "last_team_fire_avoidance_reason={}\n",
 			  pass,
 			  botFrameCommandStatus.frames,
 			  botFrameCommandStatus.commands,
@@ -6599,7 +8929,67 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  expectedMinCommands,
 			  routeStatus.itemGoalPeakActiveReservations,
 			  routeStatus.debugOverlayMissingFrames,
-			  botFrameCommandStatus.skippedInactive);
+			  botFrameCommandStatus.skippedInactive,
+			  botFrameCommandStatus.teamRoleCombatRequests,
+			  botFrameCommandStatus.teamRoleCombatPolicySelections,
+			  botFrameCommandStatus.teamRoleCombatTargetSelections,
+			  botFrameCommandStatus.teamRoleCombatAttackDecisions,
+			  botFrameCommandStatus.teamRoleCombatDecisionOverrides,
+			  botFrameCommandStatus.teamRoleCombatTargetDeferrals,
+			  botFrameCommandStatus.teamRoleCombatInvalidSkips,
+			  botFrameCommandStatus.lastTeamRoleCombatClient,
+			  botFrameCommandStatus.lastTeamRoleCombatMode,
+			  BotObjectives_MatchModeName(static_cast<BotObjectiveMatchMode>(
+				  botFrameCommandStatus.lastTeamRoleCombatMode)),
+			  botFrameCommandStatus.lastTeamRoleCombatRole,
+			  BotObjectives_RoleName(static_cast<BotObjectiveRole>(
+				  botFrameCommandStatus.lastTeamRoleCombatRole)),
+			  botFrameCommandStatus.lastTeamRoleCombatLane,
+			  BotObjectives_LaneName(static_cast<BotObjectiveLane>(
+				  botFrameCommandStatus.lastTeamRoleCombatLane)),
+			  botFrameCommandStatus.lastTeamRoleCombatPriority,
+			  botFrameCommandStatus.lastTeamRoleCombatTargetClient,
+			  botFrameCommandStatus.lastTeamRoleCombatTargetEntity,
+			  botFrameCommandStatus.lastTeamRoleCombatTargetDistanceSquared,
+			  botFrameCommandStatus.lastTeamRoleCombatTargetVisible,
+			  botFrameCommandStatus.lastTeamRoleCombatTargetShootable,
+			  botFrameCommandStatus.lastTeamRoleCombatReason,
+			  botFrameCommandStatus.ctfRoleCombatRequests,
+			  botFrameCommandStatus.ctfRoleCombatPolicySelections,
+			  botFrameCommandStatus.ctfRoleCombatTargetSelections,
+			  botFrameCommandStatus.ctfRoleCombatAttackDecisions,
+			  botFrameCommandStatus.ctfRoleCombatDecisionOverrides,
+			  botFrameCommandStatus.ctfRoleCombatTargetDeferrals,
+			  botFrameCommandStatus.ctfRoleCombatInvalidSkips,
+			  botFrameCommandStatus.lastCtfRoleCombatClient,
+			  botFrameCommandStatus.lastCtfRoleCombatMode,
+			  BotObjectives_MatchModeName(static_cast<BotObjectiveMatchMode>(
+				  botFrameCommandStatus.lastCtfRoleCombatMode)),
+			  botFrameCommandStatus.lastCtfRoleCombatRole,
+			  BotObjectives_RoleName(static_cast<BotObjectiveRole>(
+				  botFrameCommandStatus.lastCtfRoleCombatRole)),
+			  botFrameCommandStatus.lastCtfRoleCombatLane,
+			  BotObjectives_LaneName(static_cast<BotObjectiveLane>(
+				  botFrameCommandStatus.lastCtfRoleCombatLane)),
+			  botFrameCommandStatus.lastCtfRoleCombatPriority,
+			  botFrameCommandStatus.lastCtfRoleCombatTargetClient,
+			  botFrameCommandStatus.lastCtfRoleCombatTargetEntity,
+			  botFrameCommandStatus.lastCtfRoleCombatTargetDistanceSquared,
+			  botFrameCommandStatus.lastCtfRoleCombatTargetVisible,
+			  botFrameCommandStatus.lastCtfRoleCombatTargetShootable,
+			  botFrameCommandStatus.lastCtfRoleCombatReason,
+			  botFrameCommandStatus.teamFireAvoidanceEvaluations,
+			  botFrameCommandStatus.teamFireAvoidanceBlocks,
+			  botFrameCommandStatus.teamFireAvoidanceTargetBlocks,
+			  botFrameCommandStatus.teamFireAvoidanceLineBlocks,
+			  botFrameCommandStatus.teamFireAvoidanceClears,
+			  botFrameCommandStatus.teamFireAvoidanceInvalidSkips,
+			  botFrameCommandStatus.lastTeamFireAvoidanceClient,
+			  botFrameCommandStatus.lastTeamFireAvoidanceTargetClient,
+			  botFrameCommandStatus.lastTeamFireAvoidanceFriendlyLine,
+			  botFrameCommandStatus.lastTeamFireAvoidanceTargetAllowed,
+			  botFrameCommandStatus.lastTeamFireAvoidanceBlocked,
+			  botFrameCommandStatus.lastTeamFireAvoidanceReason);
 
 	BotBrain_PrintStatusFmt(
 		"q3a_bot_coop_command_status "
@@ -6768,6 +9158,40 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 
 	BotBrain_PrintStatusFmt(
 		"q3a_bot_frame_command_status pass={} frames={} commands={} "
+			  "ffa_spawn_camp_avoidance_requests={} "
+			  "ffa_spawn_camp_avoidance_policy_selections={} "
+			  "ffa_spawn_camp_avoidance_source_selections={} "
+			  "ffa_spawn_camp_avoidance_activations={} "
+			  "ffa_spawn_camp_avoidance_fallbacks={} "
+			  "ffa_spawn_camp_avoidance_route_requests={} "
+			  "ffa_spawn_camp_avoidance_invalid_skips={} "
+			  "last_ffa_spawn_camp_avoidance_client={} "
+			  "last_ffa_spawn_camp_avoidance_source_client={} "
+			  "last_ffa_spawn_camp_avoidance_source_entity={} "
+			  "last_ffa_spawn_camp_avoidance_source_distance_sq={} "
+			  "last_ffa_spawn_camp_avoidance_policy_avoid={} "
+			  "last_ffa_spawn_camp_avoidance_goal_distance_sq={} "
+			  "last_ffa_spawn_camp_avoidance_reason={}\n",
+			  pass,
+			  botFrameCommandStatus.frames,
+			  botFrameCommandStatus.commands,
+			  botFrameCommandStatus.ffaSpawnCampAvoidanceRequests,
+			  botFrameCommandStatus.ffaSpawnCampAvoidancePolicySelections,
+			  botFrameCommandStatus.ffaSpawnCampAvoidanceSourceSelections,
+			  botFrameCommandStatus.ffaSpawnCampAvoidanceActivations,
+			  botFrameCommandStatus.ffaSpawnCampAvoidanceFallbacks,
+			  botFrameCommandStatus.ffaSpawnCampAvoidanceRouteRequests,
+			  botFrameCommandStatus.ffaSpawnCampAvoidanceInvalidSkips,
+			  botFrameCommandStatus.lastFfaSpawnCampAvoidanceClient,
+			  botFrameCommandStatus.lastFfaSpawnCampAvoidanceSourceClient,
+			  botFrameCommandStatus.lastFfaSpawnCampAvoidanceSourceEntity,
+			  botFrameCommandStatus.lastFfaSpawnCampAvoidanceSourceDistanceSquared,
+			  botFrameCommandStatus.lastFfaSpawnCampAvoidancePolicyAvoid,
+			  botFrameCommandStatus.lastFfaSpawnCampAvoidanceGoalDistanceSquared,
+			  botFrameCommandStatus.lastFfaSpawnCampAvoidanceReason);
+
+	BotBrain_PrintStatusFmt(
+		"q3a_bot_frame_command_status pass={} frames={} commands={} "
 			  "route_requests={} route_queries={} route_refreshes={} "
 			  "route_reuses={} route_commands={} route_failures={} "
 			  "route_invalid_slots={} route_cadence_refreshes={} "
@@ -6819,6 +9243,25 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  "teleporter_escape_fallback_sources={} "
 			  "teleporter_escape_damage_sources={} "
 			  "teleporter_escape_invalid_skips={} "
+			  "ffa_roam_route_requests={} "
+			  "ffa_roam_route_policy_selections={} "
+			  "ffa_roam_route_activations={} "
+			  "ffa_roam_route_refreshes={} "
+			  "ffa_roam_route_owner_deferrals={} "
+			  "ffa_roam_route_route_requests={} "
+			  "ffa_roam_route_route_deferrals={} "
+			  "ffa_roam_route_expirations={} "
+			  "ffa_roam_route_invalid_skips={} "
+			  "last_ffa_roam_route_client={} "
+			  "last_ffa_roam_route_mode={} "
+			  "last_ffa_roam_route_mode_name={} "
+			  "last_ffa_roam_route_role={} "
+			  "last_ffa_roam_route_role_name={} "
+			  "last_ffa_roam_route_lane={} "
+			  "last_ffa_roam_route_lane_name={} "
+			  "last_ffa_roam_route_priority={} "
+			  "last_ffa_roam_route_remaining_ms={} "
+			  "last_ffa_roam_route_goal_distance_sq={} "
 			  "team_role_route_requests={} "
 			  "team_role_route_policy_selections={} "
 			  "team_role_route_activations={} "
@@ -6843,6 +9286,7 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  "ctf_role_route_activations={} "
 			  "ctf_role_route_refreshes={} "
 			  "ctf_role_route_owner_deferrals={} "
+			  "ctf_role_route_objective_deferrals={} "
 			  "ctf_role_route_route_requests={} "
 			  "ctf_role_route_route_deferrals={} "
 			  "ctf_role_route_expirations={} "
@@ -6857,18 +9301,6 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  "last_ctf_role_route_priority={} "
 			  "last_ctf_role_route_remaining_ms={} "
 			  "last_ctf_role_route_goal_distance_sq={} "
-			  "team_fire_avoidance_evaluations={} "
-			  "team_fire_avoidance_blocks={} "
-			  "team_fire_avoidance_target_blocks={} "
-			  "team_fire_avoidance_line_blocks={} "
-			  "team_fire_avoidance_clears={} "
-			  "team_fire_avoidance_invalid_skips={} "
-			  "last_team_fire_avoidance_client={} "
-			  "last_team_fire_avoidance_target_client={} "
-			  "last_team_fire_avoidance_friendly_line={} "
-			  "last_team_fire_avoidance_target_allowed={} "
-			  "last_team_fire_avoidance_blocked={} "
-			  "last_team_fire_avoidance_reason={} "
 			  "coop_leader_route_activations={} "
 			  "coop_leader_route_refreshes={} "
 			  "coop_leader_route_owner_deferrals={} "
@@ -7026,6 +9458,28 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  botFrameCommandStatus.teleporterEscapeFallbackSources,
 			  botFrameCommandStatus.teleporterEscapeDamageSources,
 			  botFrameCommandStatus.teleporterEscapeInvalidSkips,
+			  botFrameCommandStatus.ffaRoamRouteRequests,
+			  botFrameCommandStatus.ffaRoamRoutePolicySelections,
+			  botFrameCommandStatus.ffaRoamRouteActivations,
+			  botFrameCommandStatus.ffaRoamRouteRefreshes,
+			  botFrameCommandStatus.ffaRoamRouteOwnerDeferrals,
+			  botFrameCommandStatus.ffaRoamRouteRouteRequests,
+			  botFrameCommandStatus.ffaRoamRouteRouteDeferrals,
+			  botFrameCommandStatus.ffaRoamRouteExpirations,
+			  botFrameCommandStatus.ffaRoamRouteInvalidSkips,
+			  botFrameCommandStatus.lastFfaRoamRouteClient,
+			  botFrameCommandStatus.lastFfaRoamRouteMode,
+			  BotObjectives_MatchModeName(static_cast<BotObjectiveMatchMode>(
+				  botFrameCommandStatus.lastFfaRoamRouteMode)),
+			  botFrameCommandStatus.lastFfaRoamRouteRole,
+			  BotObjectives_RoleName(static_cast<BotObjectiveRole>(
+				  botFrameCommandStatus.lastFfaRoamRouteRole)),
+			  botFrameCommandStatus.lastFfaRoamRouteLane,
+			  BotObjectives_LaneName(static_cast<BotObjectiveLane>(
+				  botFrameCommandStatus.lastFfaRoamRouteLane)),
+			  botFrameCommandStatus.lastFfaRoamRoutePriority,
+			  botFrameCommandStatus.lastFfaRoamRouteRemainingMilliseconds,
+			  botFrameCommandStatus.lastFfaRoamRouteGoalDistanceSquared,
 			  botFrameCommandStatus.teamRoleRouteRequests,
 			  botFrameCommandStatus.teamRoleRoutePolicySelections,
 			  botFrameCommandStatus.teamRoleRouteActivations,
@@ -7053,6 +9507,7 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  botFrameCommandStatus.ctfRoleRouteActivations,
 			  botFrameCommandStatus.ctfRoleRouteRefreshes,
 			  botFrameCommandStatus.ctfRoleRouteOwnerDeferrals,
+			  botFrameCommandStatus.ctfRoleRouteObjectiveDeferrals,
 			  botFrameCommandStatus.ctfRoleRouteRouteRequests,
 			  botFrameCommandStatus.ctfRoleRouteRouteDeferrals,
 			  botFrameCommandStatus.ctfRoleRouteExpirations,
@@ -7070,18 +9525,6 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  botFrameCommandStatus.lastCtfRoleRoutePriority,
 			  botFrameCommandStatus.lastCtfRoleRouteRemainingMilliseconds,
 			  botFrameCommandStatus.lastCtfRoleRouteGoalDistanceSquared,
-			  botFrameCommandStatus.teamFireAvoidanceEvaluations,
-			  botFrameCommandStatus.teamFireAvoidanceBlocks,
-			  botFrameCommandStatus.teamFireAvoidanceTargetBlocks,
-			  botFrameCommandStatus.teamFireAvoidanceLineBlocks,
-			  botFrameCommandStatus.teamFireAvoidanceClears,
-			  botFrameCommandStatus.teamFireAvoidanceInvalidSkips,
-			  botFrameCommandStatus.lastTeamFireAvoidanceClient,
-			  botFrameCommandStatus.lastTeamFireAvoidanceTargetClient,
-			  botFrameCommandStatus.lastTeamFireAvoidanceFriendlyLine,
-			  botFrameCommandStatus.lastTeamFireAvoidanceTargetAllowed,
-			  botFrameCommandStatus.lastTeamFireAvoidanceBlocked,
-			  botFrameCommandStatus.lastTeamFireAvoidanceReason,
 			  botFrameCommandStatus.coopLeaderRouteActivations,
 			  botFrameCommandStatus.coopLeaderRouteRefreshes,
 			  botFrameCommandStatus.coopLeaderRouteOwnerDeferrals,
@@ -7205,6 +9648,126 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  botFrameCommandStatus.lastRecoveryForwardMove,
 			  botFrameCommandStatus.lastRecoverySideMove,
 			  botFrameCommandStatus.lastRecoveryFramesRemaining);
+
+	BotBrain_PrintStatusFmt(
+		"q3a_bot_frame_command_status pass={} frames={} commands={} "
+			  "team_role_combat_requests={} "
+			  "team_role_combat_policy_selections={} "
+			  "team_role_combat_target_selections={} "
+			  "team_role_combat_attack_decisions={} "
+			  "team_role_combat_decision_overrides={} "
+			  "team_role_combat_target_deferrals={} "
+			  "team_role_combat_invalid_skips={} "
+			  "last_team_role_combat_client={} "
+			  "last_team_role_combat_mode={} "
+			  "last_team_role_combat_mode_name={} "
+			  "last_team_role_combat_role={} "
+			  "last_team_role_combat_role_name={} "
+			  "last_team_role_combat_lane={} "
+			  "last_team_role_combat_lane_name={} "
+			  "last_team_role_combat_priority={} "
+			  "last_team_role_combat_target_client={} "
+			  "last_team_role_combat_target_entity={} "
+			  "last_team_role_combat_target_distance_sq={} "
+			  "last_team_role_combat_target_visible={} "
+			  "last_team_role_combat_target_shootable={} "
+			  "last_team_role_combat_reason={} "
+			  "ctf_role_combat_requests={} "
+			  "ctf_role_combat_policy_selections={} "
+			  "ctf_role_combat_target_selections={} "
+			  "ctf_role_combat_attack_decisions={} "
+			  "ctf_role_combat_decision_overrides={} "
+			  "ctf_role_combat_target_deferrals={} "
+			  "ctf_role_combat_invalid_skips={} "
+			  "last_ctf_role_combat_client={} "
+			  "last_ctf_role_combat_mode={} "
+			  "last_ctf_role_combat_mode_name={} "
+			  "last_ctf_role_combat_role={} "
+			  "last_ctf_role_combat_role_name={} "
+			  "last_ctf_role_combat_lane={} "
+			  "last_ctf_role_combat_lane_name={} "
+			  "last_ctf_role_combat_priority={} "
+			  "last_ctf_role_combat_target_client={} "
+			  "last_ctf_role_combat_target_entity={} "
+			  "last_ctf_role_combat_target_distance_sq={} "
+			  "last_ctf_role_combat_target_visible={} "
+			  "last_ctf_role_combat_target_shootable={} "
+			  "last_ctf_role_combat_reason={} "
+			  "team_fire_avoidance_evaluations={} "
+			  "team_fire_avoidance_blocks={} "
+			  "team_fire_avoidance_target_blocks={} "
+			  "team_fire_avoidance_line_blocks={} "
+			  "team_fire_avoidance_clears={} "
+			  "team_fire_avoidance_invalid_skips={} "
+			  "last_team_fire_avoidance_client={} "
+			  "last_team_fire_avoidance_target_client={} "
+			  "last_team_fire_avoidance_friendly_line={} "
+			  "last_team_fire_avoidance_target_allowed={} "
+			  "last_team_fire_avoidance_blocked={} "
+			  "last_team_fire_avoidance_reason={}\n",
+			  pass,
+			  botFrameCommandStatus.frames,
+			  botFrameCommandStatus.commands,
+			  botFrameCommandStatus.teamRoleCombatRequests,
+			  botFrameCommandStatus.teamRoleCombatPolicySelections,
+			  botFrameCommandStatus.teamRoleCombatTargetSelections,
+			  botFrameCommandStatus.teamRoleCombatAttackDecisions,
+			  botFrameCommandStatus.teamRoleCombatDecisionOverrides,
+			  botFrameCommandStatus.teamRoleCombatTargetDeferrals,
+			  botFrameCommandStatus.teamRoleCombatInvalidSkips,
+			  botFrameCommandStatus.lastTeamRoleCombatClient,
+			  botFrameCommandStatus.lastTeamRoleCombatMode,
+			  BotObjectives_MatchModeName(static_cast<BotObjectiveMatchMode>(
+				  botFrameCommandStatus.lastTeamRoleCombatMode)),
+			  botFrameCommandStatus.lastTeamRoleCombatRole,
+			  BotObjectives_RoleName(static_cast<BotObjectiveRole>(
+				  botFrameCommandStatus.lastTeamRoleCombatRole)),
+			  botFrameCommandStatus.lastTeamRoleCombatLane,
+			  BotObjectives_LaneName(static_cast<BotObjectiveLane>(
+				  botFrameCommandStatus.lastTeamRoleCombatLane)),
+			  botFrameCommandStatus.lastTeamRoleCombatPriority,
+			  botFrameCommandStatus.lastTeamRoleCombatTargetClient,
+			  botFrameCommandStatus.lastTeamRoleCombatTargetEntity,
+			  botFrameCommandStatus.lastTeamRoleCombatTargetDistanceSquared,
+			  botFrameCommandStatus.lastTeamRoleCombatTargetVisible,
+			  botFrameCommandStatus.lastTeamRoleCombatTargetShootable,
+			  botFrameCommandStatus.lastTeamRoleCombatReason,
+			  botFrameCommandStatus.ctfRoleCombatRequests,
+			  botFrameCommandStatus.ctfRoleCombatPolicySelections,
+			  botFrameCommandStatus.ctfRoleCombatTargetSelections,
+			  botFrameCommandStatus.ctfRoleCombatAttackDecisions,
+			  botFrameCommandStatus.ctfRoleCombatDecisionOverrides,
+			  botFrameCommandStatus.ctfRoleCombatTargetDeferrals,
+			  botFrameCommandStatus.ctfRoleCombatInvalidSkips,
+			  botFrameCommandStatus.lastCtfRoleCombatClient,
+			  botFrameCommandStatus.lastCtfRoleCombatMode,
+			  BotObjectives_MatchModeName(static_cast<BotObjectiveMatchMode>(
+				  botFrameCommandStatus.lastCtfRoleCombatMode)),
+			  botFrameCommandStatus.lastCtfRoleCombatRole,
+			  BotObjectives_RoleName(static_cast<BotObjectiveRole>(
+				  botFrameCommandStatus.lastCtfRoleCombatRole)),
+			  botFrameCommandStatus.lastCtfRoleCombatLane,
+			  BotObjectives_LaneName(static_cast<BotObjectiveLane>(
+				  botFrameCommandStatus.lastCtfRoleCombatLane)),
+			  botFrameCommandStatus.lastCtfRoleCombatPriority,
+			  botFrameCommandStatus.lastCtfRoleCombatTargetClient,
+			  botFrameCommandStatus.lastCtfRoleCombatTargetEntity,
+			  botFrameCommandStatus.lastCtfRoleCombatTargetDistanceSquared,
+			  botFrameCommandStatus.lastCtfRoleCombatTargetVisible,
+			  botFrameCommandStatus.lastCtfRoleCombatTargetShootable,
+			  botFrameCommandStatus.lastCtfRoleCombatReason,
+			  botFrameCommandStatus.teamFireAvoidanceEvaluations,
+			  botFrameCommandStatus.teamFireAvoidanceBlocks,
+			  botFrameCommandStatus.teamFireAvoidanceTargetBlocks,
+			  botFrameCommandStatus.teamFireAvoidanceLineBlocks,
+			  botFrameCommandStatus.teamFireAvoidanceClears,
+			  botFrameCommandStatus.teamFireAvoidanceInvalidSkips,
+			  botFrameCommandStatus.lastTeamFireAvoidanceClient,
+			  botFrameCommandStatus.lastTeamFireAvoidanceTargetClient,
+			  botFrameCommandStatus.lastTeamFireAvoidanceFriendlyLine,
+			  botFrameCommandStatus.lastTeamFireAvoidanceTargetAllowed,
+			  botFrameCommandStatus.lastTeamFireAvoidanceBlocked,
+			  botFrameCommandStatus.lastTeamFireAvoidanceReason);
 
 	BotBrain_PrintStatusFmt(
 		"q3a_bot_frame_command_status "
@@ -7400,6 +9963,10 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  botFrameCommandStatus.lastCoopInteractionRetryEntity);
 
 	BotBrain_PrintCompactObjectiveStatus(objectiveStatus);
+	BotBrain_PrintCtfDroppedFlagRouteStatus();
+	BotBrain_PrintCtfCarrierSupportRouteStatus();
+	BotBrain_PrintCtfBaseReturnRouteStatus();
+	BotBrain_PrintCtfObjectiveRouteStatus();
 	BotBrain_PrintMatchReadinessStatus(botPopulation);
 	BotBrain_PrintCoopReadinessStatus(botPopulation);
 
@@ -7781,6 +10348,35 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 
 	BotBrain_PrintStatusFmt(
 		"q3a_bot_nav_policy_status "
+			  "route_corner_cut_candidates={} "
+			  "route_corner_cut_trace_checks={} "
+			  "route_corner_cut_trace_hits={} "
+			  "route_corner_cut_trace_misses={} "
+			  "route_corner_cut_ground_trace_checks={} "
+			  "route_corner_cut_ground_trace_misses={} "
+			  "route_corner_cut_accepted={} route_corner_cut_rejected={} "
+			  "corner_cut_candidates={} corner_cut_trace_checks={} "
+			  "corner_cut_accepted={} "
+			  "trace_checked_corner_cut_candidates={} "
+			  "trace_checked_corner_cut_trace_checks={} "
+			  "trace_checked_corner_cut_accepted={}\n",
+			  routeStatus.cornerCutChecks,
+			  routeStatus.cornerCutTraceAttempts,
+			  routeStatus.cornerCutTracePasses,
+			  routeStatus.cornerCutTraceFailures,
+			  routeStatus.cornerCutGroundTraceAttempts,
+			  routeStatus.cornerCutGroundTraceFailures,
+			  routeStatus.cornerCutApplications,
+			  routeStatus.cornerCutSkips,
+			  routeStatus.cornerCutChecks,
+			  routeStatus.cornerCutTraceAttempts,
+			  routeStatus.cornerCutApplications,
+			  routeStatus.cornerCutChecks,
+			  routeStatus.cornerCutTraceAttempts,
+			  routeStatus.cornerCutApplications);
+
+	BotBrain_PrintStatusFmt(
+		"q3a_bot_nav_policy_status "
 			  "travel_type_goal_support_checks={} travel_type_goal_supported={} "
 			  "travel_type_goal_unsupported={} "
 			  "last_travel_type_goal_support_type={} "
@@ -8009,8 +10605,6 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  routeStatus.lastInteractionSolid,
 			  routeStatus.lastInteractionMoveType);
 
-	BotBrain_PrintActionProofStatus(actionStatus, itemStatus, combatStatus);
-	BotBrain_PrintActionDetailProofStatus(actionStatus, itemStatus, combatStatus);
 	BotBrain_PrintCompactActionStatus(actionStatus, itemStatus, combatStatus);
 
 	BotBrain_PrintStatusFmt(

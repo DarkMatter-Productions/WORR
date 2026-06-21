@@ -5067,7 +5067,7 @@ void player_die(gentity_t *self, gentity_t *inflictor, gentity_t *attacker,
 //
 void ServerCommand();
 void BotTeamPolicy_PrintStatus(int expectedPlaying, int expectedSpectators,
-                               int expectedBots);
+                               int expectedBots, int expectedQueued);
 bool G_FilterPacket(const char *from);
 void G_LoadIPFilters();
 void G_SaveIPFilters();

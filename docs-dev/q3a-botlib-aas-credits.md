@@ -109,6 +109,17 @@ Tasks: `FR-04-T12`, `FR-04-T14`, `DV-07-T06`
 - Validation: `meson compile -C builddir-win sgame_x86_64`; `refresh_install.py --package-q2aas-aas`; dedicated smoke with `sg_bot_debug_aas 3` reports `q3a_debug_polygon=Q3A debug polygon bridge passed: callback=yes creates=1 deletes=1 points=4 last_id=1 failures=0`.
 - Implementation log: `docs-dev/q3a-botlib-aas-debug-polygon-bridge-2026-06-17.md`.
 
+## Native Validation Update: Duel Queue Spectator Proof
+
+Date: 2026-06-21
+
+Tasks: `FR-04-T04`, `FR-04-T16`, `DV-03-T05`, `DV-07-T06`
+
+- WORR native files `inc/shared/bot_team_policy_status.h`, `src/game/sgame/g_local.hpp`, `src/game/sgame/gameplay/g_svcmds.cpp`, `src/game/sgame/player/p_client.cpp`, `src/server/main.c`, and `tools/bot_scenarios/*` now expose a queue-enabled Duel team-policy smoke proof. The server smoke enables `g_allow_duel_queue`, bot initial team assignment routes queue-capable surplus Duel bots through the normal `SetTeam` path, the game-side status extension verifies `queued=1` for the surplus spectator bot, and the promoted `duel_queue_spectator` scenario preserves the proof in the implemented suite.
+- No new Q3A, BSPC, or q2proto files were imported or modified. This is WORR-owned validation and harness code layered over the existing bot team-policy and scenario surfaces.
+- Validation: `meson compile -C builddir-win`; `refresh_install.py`; focused `duel_queue_spectator`; full implemented scenario suite reports 38 passed.
+- Implementation log: `docs-dev/q3a-botlib-duel-queue-spectator-2026-06-21.md`.
+
 ## Native Bridge Update: AAS Debug Area Helpers
 
 Date: 2026-06-17
@@ -931,8 +942,8 @@ Date: 2026-06-18
 Tasks: `FR-04-T03`, `FR-04-T04`, `FR-04-T13`, `FR-04-T14`, `FR-04-T15`, `FR-04-T16`, `DV-03-T05`, `DV-07-T06`, `DV-08-T05`
 
 - WORR-native server smoke modes `24`, `25`, and `26` now drive aim/fairness, item-timer, and FFA/TDM match-readiness proof lanes. The existing mode `21` route-rich smoke now gates trace-checked corner cutting, and the existing mode `3` frame-command smoke gates coop readiness under cooperative cvars.
-- WORR-native `bot_brain.*` status/proof plumbing records aim-policy, item-timer, and match-readiness proof fields through the existing action/detail/match status surfaces.
-- WORR-native `tools/bot_scenarios/` now treats `aim_fairness_policy_integration`, `item_timer_fairness_signals`, `trace_checked_corner_cutting`, `ffa_tdm_match_readiness`, `team_role_route`, `team_item_roles`, `team_fire_avoidance`, `ctf_role_route`, `coop_match_readiness`, `coop_leader_route`, `coop_lead_advance`, `coop_resource_share`, `coop_anti_blocking`, `coop_target_share`, `coop_door_elevator`, `coop_progress_wait`, and `coop_interaction_retry` as implemented rows. The default implemented suite reports 27 passed, 0 failed, 0 timed out, 0 errored, and 0 pending from `.tmp/bot_scenarios/latest_report.json`.
+- WORR-native `bot_brain.*` status/proof plumbing records aim-policy, item-timer, match-readiness, route-owner, FFA spawn-camp avoidance, friendly-fire, TDM role-combat, TDM role-combat/friendly-fire precedence, CTF role-route, CTF role-combat, CTF dropped-flag route, CTF carrier-support route, CTF base-return route, and CTF objective-route proof fields through the existing action/detail/match/frame-command status surfaces.
+- WORR-native `tools/bot_scenarios/` now treats `aim_fairness_policy_integration`, `item_timer_fairness_signals`, `trace_checked_corner_cutting`, `ffa_tdm_match_readiness`, `ffa_roam_route`, `ffa_spawn_camp_avoidance`, `team_role_route`, `team_item_roles`, `team_fire_avoidance`, `team_role_combat`, `team_role_combat_avoidance`, `ctf_role_route`, `ctf_role_combat`, `ctf_dropped_flag_route`, `ctf_carrier_support_route`, `ctf_base_return_route`, `ctf_objective_route`, `ctf_objective_route_precedence`, `coop_match_readiness`, `coop_leader_route`, `coop_lead_advance`, `coop_resource_share`, `coop_anti_blocking`, `coop_target_share`, `coop_door_elevator`, `coop_progress_wait`, and `coop_interaction_retry` as implemented rows. The default implemented suite reports 37 passed, 0 failed, 0 timed out, 0 errored, and 0 pending from `.tmp/bot_scenarios/latest_report.json`.
 - First-party WORR botfile scripts under `assets/botfiles/scripts/*_s.c` gained additive named tactical routines. Q3A and Gladiator assets were consulted for layout/vocabulary parity, but no reference script text was copied.
 - No new upstream Q3A, Gladiator, or BSPC source files were imported for this update.
 - Validation: `python -m unittest tools.bot_scenarios.test_run_bot_scenarios` passed 32 tests; `python -m py_compile tools\bot_scenarios\run_bot_scenarios.py tools\bot_scenarios\test_run_bot_scenarios.py` passed; `meson compile -C builddir-win` passed; `python tools\refresh_install.py --build-dir builddir-win --install-dir .install --package-q2aas-aas` passed; focused promotion and full implemented scenario runs passed from the refreshed `.install` payload.
@@ -1436,9 +1447,386 @@ Tasks: `FR-04-T04`, `FR-04-T15`, `DV-03-T05`, `DV-07-T06`
 - Implementation log:
   `docs-dev/q3a-botlib-ctf-role-route-2026-06-21.md`.
 
+## Native Runtime Update: CTF Role Combat Ownership
+
+Date: 2026-06-21
+
+Tasks: `FR-04-T04`, `FR-04-T15`, `DV-03-T05`, `DV-07-T06`
+
+- WORR-native brain command work now adds a default-off
+  `sg_bot_ctf_role_combat` bridge for live Capture the Flag role/lane combat
+  ownership.
+- The bridge consumes existing CTF match role/lane policy as an attack-decision
+  owner only when policy requests engagement and the selected target facts are
+  valid, alive, visible, shootable, and spawn-count matched.
+- The selected target is adopted into `bot->enemy` and the per-bot blackboard
+  before final frame-command angles are calculated, so the role-owned attack
+  command faces the same enemy it selected while later team-fire suppression can
+  still veto unsafe attack input.
+- Frame-command status exposes `ctf_role_combat_*` and
+  `last_ctf_role_combat_*` counters for request, policy-selection,
+  target-selection, attack-decision, override, deferral, invalid-skip, mode,
+  role, lane, priority, target identity, distance, visibility, shootability, and
+  reason evidence.
+- Server smoke mode `36` runs a four-bot CTF proof, and the promoted
+  `ctf_role_combat` scenario validates CTF readiness, Capture the Flag
+  match-policy selection, visible/shootable client target facts, role-owned
+  attack decisions, and applied attack input from the refreshed `.install`
+  payload.
+- No new upstream Q3A, Gladiator, BSPC, idTech3, or q2proto source files were
+  imported or modified for this update.
+- Validation: `python -m py_compile
+  tools\bot_scenarios\run_bot_scenarios.py
+  tools\bot_scenarios\test_run_bot_scenarios.py` passed; `python -m unittest
+  tools.bot_scenarios.test_run_bot_scenarios` passed 32 tests; `meson compile
+  -C builddir-win` passed; `python tools\refresh_install.py --build-dir
+  builddir-win --install-dir .install --package-q2aas-aas` passed; focused
+  `ctf_role_combat` and `team_fire_avoidance` scenario runs passed; and the
+  then-current full implemented scenario suite passed before the mode `37`
+  dropped-flag route row was added.
+- Implementation log:
+  `docs-dev/q3a-botlib-ctf-role-combat-2026-06-21.md`.
+
+## Native Runtime Update: CTF Dropped Flag Route Ownership
+
+Date: 2026-06-21
+
+Tasks: `FR-04-T04`, `FR-04-T15`, `DV-03-T05`, `DV-07-T06`
+
+- WORR-native brain command work now adds a default-off
+  `sg_bot_ctf_dropped_flag_route` bridge for live Capture the Flag dropped
+  enemy flag route ownership.
+- Server smoke mode `37` seeds routeable synthetic red and blue dropped flags
+  for the proof path, then restores that synthetic state outside the mode so
+  normal gameplay is unaffected.
+- The bridge asks existing objective role policy for an attacker enemy-flag
+  pickup assignment and requires the selected objective to come from
+  `DroppedFlagEntity` before it records a route request.
+- Frame-command status exposes `ctf_dropped_flag_route_*` and
+  `last_ctf_dropped_flag_route_*` counters for request, assignment, route
+  request, route command, invalid-skip, role, lane, objective type, target
+  source, entity, item, priority, and goal-distance evidence.
+- The promoted `ctf_dropped_flag_route` scenario validates CTF readiness,
+  dropped-flag response lane selection, dropped-flag target-source selection,
+  route requests, route commands, and zero invalid skips from the refreshed
+  `.install` payload.
+- No new upstream Q3A, Gladiator, BSPC, idTech3, or q2proto source files were
+  imported or modified for this update.
+- Validation: `python -m py_compile
+  tools\bot_scenarios\run_bot_scenarios.py
+  tools\bot_scenarios\test_run_bot_scenarios.py` passed; `python -m unittest
+  tools.bot_scenarios.test_run_bot_scenarios` passed 32 tests; `meson compile
+  -C builddir-win` passed; `python tools\refresh_install.py --build-dir
+  builddir-win --install-dir .install --base-game basew --platform-id
+  windows-x86_64` passed; focused `ctf_dropped_flag_route` passed with
+  `frames=246`, `commands=246`, `route_commands=246`, `route_failures=0`, and
+  `ctf_dropped_flag_route_invalid_skips=0`; and the full implemented scenario
+  suite reported 29 passed, 0 failed, 0 timed out, 0 errored, and 0 pending.
+- Implementation log:
+  `docs-dev/q3a-botlib-ctf-dropped-flag-route-2026-06-21.md`.
+
+## Native Runtime Update: CTF Carrier Support Route Ownership
+
+Date: 2026-06-21
+
+Tasks: `FR-04-T04`, `FR-04-T15`, `DV-03-T05`, `DV-07-T06`
+
+- WORR-native brain command work now adds a default-off
+  `sg_bot_ctf_carrier_support_route` bridge for live Capture the Flag
+  same-team enemy flag-carrier support route ownership.
+- Server smoke mode `38` waits for four active players plus a short command
+  warmup, then seeds a routeable same-team carrier with the enemy flag for the
+  proof path without changing normal gameplay outside the mode.
+- The bridge asks the objective helper for a support-role enemy-flag assignment
+  and requires the selected objective to come from `FlagCarrier` before it
+  records a route request.
+- Frame-command status exposes `ctf_carrier_support_route_*` and
+  `last_ctf_carrier_support_route_*` counters for request, assignment, route
+  request, route command, invalid-skip, role, lane, objective type, target
+  source, entity, carrier client, item, priority, and goal-distance evidence.
+- The promoted `ctf_carrier_support_route` scenario validates CTF readiness,
+  carrier-support lane selection, flag-carrier target-source selection, route
+  requests, route commands, carrier-client identity, and zero invalid skips from
+  the refreshed `.install` payload.
+- No new upstream Q3A, Gladiator, BSPC, idTech3, or q2proto source files were
+  imported or modified for this update.
+- Validation: `python -m py_compile
+  tools\bot_scenarios\run_bot_scenarios.py
+  tools\bot_scenarios\test_run_bot_scenarios.py` passed; `python -m unittest
+  tools.bot_scenarios.test_run_bot_scenarios` passed 32 tests; `meson compile
+  -C builddir-win` passed; `python tools\refresh_install.py --build-dir
+  builddir-win --install-dir .install --base-game basew --platform-id
+  windows-x86_64` passed; focused `ctf_carrier_support_route` passed with
+  `frames=246`, `commands=246`, `route_commands=246`, `route_failures=0`,
+  `ctf_carrier_support_route_invalid_skips=0`, and
+  `last_ctf_carrier_support_route_source=3`; and the then-current 30-row
+  implemented scenario suite passed without failures, timeouts, errors, or
+  pending rows.
+- Implementation log:
+  `docs-dev/q3a-botlib-ctf-carrier-support-route-2026-06-21.md`.
+
+## Native Runtime Update: CTF Base Return Route Ownership
+
+Date: 2026-06-21
+
+Tasks: `FR-04-T04`, `FR-04-T15`, `DV-03-T05`, `DV-07-T06`
+
+- WORR-native brain command work now adds a default-off
+  `sg_bot_ctf_base_return_route` bridge for live Capture the Flag own-flag
+  return route ownership against an enemy carrier.
+- Server smoke mode `39` waits for four active players plus a short command
+  warmup, then seeds an enemy carrier with the bot team's own flag inventory for
+  the proof path without moving live players or changing normal gameplay outside
+  the mode.
+- Carrier-support and base-return smoke setup now grant carrier flag inventory
+  only after team readiness and carrier validation, leaving player origins
+  intact during the proof warmup.
+- The bridge asks the objective helper for a returner-role own-flag assignment
+  and requires the selected objective to come from `FlagCarrier` before it
+  records a route request.
+- Frame-command status exposes `ctf_base_return_route_*` and
+  `last_ctf_base_return_route_*` counters for request, assignment, route
+  request, route command, invalid-skip, role, lane, objective type, target
+  source, entity, carrier client, item, priority, and goal-distance evidence.
+- The promoted `ctf_base_return_route` scenario validates CTF readiness,
+  returner role, own-base-return lane, own-flag target type, flag-carrier target
+  source, route requests, route commands, carrier-client identity, and zero
+  invalid skips from the refreshed `.install` payload.
+- No new upstream Q3A, Gladiator, BSPC, idTech3, or q2proto source files were
+  imported or modified for this update.
+- Validation: `python -m py_compile
+  tools\bot_scenarios\run_bot_scenarios.py
+  tools\bot_scenarios\test_run_bot_scenarios.py` passed; `python -m unittest
+  tools.bot_scenarios.test_run_bot_scenarios` passed 32 tests; `meson compile
+  -C builddir-win` passed; `python tools\refresh_install.py --build-dir
+  builddir-win --install-dir .install --base-game basew --platform-id
+  windows-x86_64` passed; focused `ctf_carrier_support_route` and
+  `ctf_base_return_route` runs passed; and the then-current implemented
+  scenario suite completed without failures, timeouts, errors, or pending rows.
+- Implementation log:
+  `docs-dev/q3a-botlib-ctf-base-return-route-2026-06-21.md`.
+
+## Native Runtime Update: CTF Objective Route Policy
+
+Date: 2026-06-21
+
+Tasks: `FR-04-T04`, `FR-04-T15`, `DV-03-T05`, `DV-07-T06`
+
+- WORR-native brain command work now adds a default-off
+  `sg_bot_ctf_objective_route` bridge that composes CTF base-return,
+  carrier-support, and dropped/enemy-flag fallback candidates through one
+  priority route owner.
+- Server smoke mode `40` uses the four-bot CTF setup, retains the seeded dropped
+  enemy flag target from the focused dropped-flag proof, and keeps smoke-seeded
+  flag carriers alive long enough for deterministic route-owner status capture.
+- Frame-command status exposes `ctf_objective_route_*` and
+  `last_ctf_objective_route_*` request, assignment, candidate, selection,
+  lower-priority deferral, route command, invalid-skip, role, lane, target,
+  carrier-client, item, priority, and goal-distance evidence.
+- The promoted `ctf_objective_route` scenario validates CTF readiness, route
+  ownership, base-return priority, carrier-support fallback selection,
+  dropped-flag deferral evidence, route commands, and zero invalid skips from
+  the refreshed `.install` payload.
+- No new upstream Q3A, Gladiator, BSPC, idTech3, or q2proto source files were
+  imported or modified for this update.
+- Validation: `python -m py_compile
+  tools\bot_scenarios\run_bot_scenarios.py
+  tools\bot_scenarios\test_run_bot_scenarios.py` passed; `python -m unittest
+  tools.bot_scenarios.test_run_bot_scenarios` passed 32 tests; `meson compile
+  -C builddir-win` passed; `python tools\refresh_install.py --build-dir
+  builddir-win --install-dir .install --base-game basew --platform-id
+  windows-x86_64` passed; focused `ctf_base_return_route` and
+  `ctf_objective_route` runs passed; and the full implemented scenario suite
+  reported 32 passed, 0 failed, 0 timed out, 0 errored, and 0 pending.
+- Implementation log:
+  `docs-dev/q3a-botlib-ctf-objective-route-policy-2026-06-21.md`.
+
+## Native Runtime Update: CTF Objective Route Precedence
+
+Date: 2026-06-21
+
+Tasks: `FR-04-T04`, `FR-04-T15`, `DV-03-T05`, `DV-07-T06`
+
+- WORR-native brain command work now records
+  `ctf_role_route_objective_deferrals` when the default-off
+  `sg_bot_ctf_objective_route` policy is active alongside
+  `sg_bot_ctf_role_route`.
+- The generic CTF role-route path still counts valid role-policy requests and
+  selections, but it exits before timed route activation so the more specific
+  objective-route policy owns the selected flag route.
+- Server smoke mode `41` uses the four-bot CTF setup, enables both CTF route
+  bridges, emits `ctf_objective_route_precedence=1` in the begin marker, and
+  keeps the role-route activation/route-request counters at zero while
+  objective-route route commands increase.
+- The same stabilization pass removes live-player teleport setup from the
+  adjacent CTF carrier-support/base-return proofs and supplies a smoke-only
+  friendly-line proof for the TDM team-fire scenario, preserving the policy
+  evidence while avoiding setup-induced command-frame stalls.
+- The promoted `ctf_objective_route_precedence` scenario validates CTF
+  readiness, role-route request/selection evidence, objective-route deferral
+  evidence, objective-route assignment/route-command evidence, latest selected
+  objective metadata, and zero invalid skips from the refreshed `.install`
+  payload.
+- No new upstream Q3A, Gladiator, BSPC, idTech3, or q2proto source files were
+  imported or modified for this update.
+- Validation: `python -m py_compile
+  tools\bot_scenarios\run_bot_scenarios.py
+  tools\bot_scenarios\test_run_bot_scenarios.py` passed; `python -m unittest
+  tools.bot_scenarios.test_run_bot_scenarios` passed 32 tests; `meson compile
+  -C builddir-win` passed; `python tools\refresh_install.py --build-dir
+  builddir-win --install-dir .install --base-game basew --platform-id
+  windows-x86_64` passed; focused `ctf_objective_route_precedence` passed; and
+  focused no-teleport stress loops for `ctf_carrier_support_route`,
+  `ctf_base_return_route`, and `team_fire_avoidance` each passed five
+  consecutive runs; the full implemented scenario suite reported 33 passed, 0
+  failed, 0 timed out, 0 errored, and 0 pending from
+  `.tmp\bot_scenarios\20260621T091013Z`.
+- Implementation log:
+  `docs-dev/q3a-botlib-ctf-objective-route-precedence-2026-06-21.md`.
+
+## Native Runtime Update: FFA Roam Route Ownership
+
+Date: 2026-06-21
+
+Tasks: `FR-04-T04`, `FR-04-T15`, `DV-03-T05`, `DV-07-T06`
+
+- WORR-native brain command work now lets default-off
+  `sg_bot_ffa_roam_route` consume FFA roam/collect/engage match policy as a
+  short timed route-goal owner.
+- The new `FfaRoam` timed route kind records route-owner status under
+  `ffa_roam_route_*` and `last_ffa_roam_route_*`, including request,
+  selection, activation, route request, invalid-skip, latest mode/role/lane,
+  priority, remaining time, and goal-distance fields.
+- Server smoke mode `42` runs a four-bot FFA setup, sets `deathmatch 1` and
+  `g_gametype 1`, enables `sg_bot_ffa_roam_route`, and emits
+  `ffa_roam_route=1` in the begin marker.
+- The promoted `ffa_roam_route` scenario validates FFA readiness, match-policy
+  selection evidence, timed owner kind `7`, FFA route activations and route
+  requests, zero invalid skips, and positive latest goal distance from the
+  refreshed `.install` payload.
+- No new upstream Q3A, Gladiator, BSPC, idTech3, or q2proto source files were
+  imported or modified for this update.
+- Validation: `python -m py_compile
+  tools\bot_scenarios\run_bot_scenarios.py
+  tools\bot_scenarios\test_run_bot_scenarios.py` passed; `python -m unittest
+  tools.bot_scenarios.test_run_bot_scenarios` passed 32 tests; `meson compile
+  -C builddir-win` passed; `python tools\refresh_install.py --build-dir
+  builddir-win --install-dir .install --base-game basew --platform-id
+  windows-x86_64` passed; focused `ffa_roam_route` passed with
+  `route_commands=246`, `route_failures=0`, and `pass=1`; and the full
+  implemented scenario suite reported 34 passed, 0 failed, 0 timed out, 0
+  errored, and 0 pending from `.tmp\bot_scenarios\20260621T092925Z`.
+- Implementation log:
+  `docs-dev/q3a-botlib-ffa-roam-route-2026-06-21.md`.
+
+## Native Runtime Update: Team Role Combat Ownership
+
+Date: 2026-06-21
+
+Tasks: `FR-04-T04`, `FR-04-T15`, `DV-03-T05`, `DV-07-T06`
+
+- WORR-native brain command work now lets default-off
+  `sg_bot_team_role_combat` consume TDM match role/lane policy as a live
+  attack-decision owner.
+- Frame-command status records `team_role_combat_*` and
+  `last_team_role_combat_*` counters for request, policy-selection,
+  target-selection, attack-decision, invalid-skip, last mode/role/lane,
+  priority, target, visibility, shootability, and reason metadata.
+- Server smoke mode `43` runs a four-bot TDM setup, sets `deathmatch 1` and
+  `g_gametype 3`, enables `sg_bot_team_role_combat`, and emits
+  `team_role_combat=1` in the begin marker.
+- The promoted `team_role_combat` scenario validates TDM readiness,
+  match-policy selection evidence, live visible/shootable target facts, attack
+  decisions, zero invalid skips, and attack-button application from the
+  refreshed `.install` payload.
+- Compact action/detail proof rows now print before oversized verbose
+  diagnostics so reserved-mode marker gates keep parsing the action evidence.
+- No new upstream Q3A, Gladiator, BSPC, idTech3, or q2proto source files were
+  imported or modified for this update.
+- Validation: `python -m py_compile
+  tools\bot_scenarios\run_bot_scenarios.py
+  tools\bot_scenarios\test_run_bot_scenarios.py` passed; `python -m unittest
+  tools.bot_scenarios.test_run_bot_scenarios` passed; `meson compile -C
+  builddir-win` passed; `python tools\refresh_install.py --build-dir
+  builddir-win --install-dir .install --base-game basew --platform-id
+  windows-x86_64` passed; focused `team_role_combat` passed with
+  `route_commands=246`, `route_failures=0`, and `pass=1`; and the full
+  implemented scenario suite reported 35 passed, 0 failed, 0 timed out, 0
+  errored, and 0 pending from `.tmp\bot_scenarios\20260621T101221Z`.
+- Implementation log:
+  `docs-dev/q3a-botlib-team-role-combat-2026-06-21.md`.
+
+## Native Runtime Update: Team Role Combat Friendly-Fire Precedence
+
+Date: 2026-06-21
+
+Tasks: `FR-04-T04`, `FR-04-T15`, `DV-03-T05`, `DV-07-T06`
+
+- WORR-native brain command work now treats smoke mode `44` as a composed TDM
+  proof that enables both `sg_bot_team_role_combat` and
+  `sg_bot_team_fire_avoidance`.
+- Mode `44` deliberately leaves the generic smoke combat cvar disabled, so the
+  attack decision must come from TDM role/lane policy before friendly-fire
+  suppression evaluates it.
+- Frame-command status reuses the existing `team_role_combat_*` and
+  `team_fire_avoidance_*` counters to prove policy stacking without adding a
+  new gameplay-facing cvar or status family.
+- The promoted `team_role_combat_avoidance` scenario validates TDM readiness,
+  match-policy selection evidence, visible/shootable role-combat target facts,
+  attack decisions, friendly-fire policy evaluations, friendly-line blocks, and
+  final blocked-state metadata.
+- No new upstream Q3A, Gladiator, BSPC, idTech3, or q2proto source files were
+  imported or modified for this update.
+- Validation: `python -m py_compile
+  tools\bot_scenarios\run_bot_scenarios.py
+  tools\bot_scenarios\test_run_bot_scenarios.py` passed; `python -m unittest
+  tools.bot_scenarios.test_run_bot_scenarios` passed; `meson compile -C
+  builddir-win` passed; `python tools\refresh_install.py --build-dir
+  builddir-win --install-dir .install --base-game basew --platform-id
+  windows-x86_64` passed; focused `team_role_combat_avoidance` passed with
+  `route_commands=246`, `route_failures=0`, and `pass=1`; and the full
+  implemented scenario suite reported 36 passed, 0 failed, 0 timed out, 0
+  errored, and 0 pending from `.tmp\bot_scenarios\20260621T103520Z`.
+- Implementation log:
+  `docs-dev/q3a-botlib-team-role-combat-avoidance-2026-06-21.md`.
+
+## Native Runtime Update: FFA Spawn-Camp Avoidance Route Source
+
+Date: 2026-06-21
+
+Tasks: `FR-04-T04`, `FR-04-T15`, `DV-03-T05`, `DV-07-T06`
+
+- WORR-native brain command work now treats smoke mode `45` as a composed FFA
+  proof that enables both `sg_bot_ffa_roam_route` and
+  `sg_bot_ffa_spawn_camp_avoidance`.
+- Mode `45` keeps the timed route-goal owner boundary from the FFA roam-route
+  proof, but chooses a nearby active player as the route source when FFA policy
+  says to avoid spawn-camp loops.
+- Frame-command status now reports compact
+  `ffa_spawn_camp_avoidance_*` counters before the verbose route diagnostic so
+  source selection, policy use, route requests, fallbacks, invalid skips, and
+  last source/goal metadata remain visible to the scenario parser.
+- The existing trace-checked corner-cut proof also now gets a compact
+  `q3a_bot_nav_policy_status` route-corner line before the long nav-policy
+  diagnostic so its alias counters are not lost to log-line truncation.
+- No new upstream Q3A, Gladiator, BSPC, idTech3, or q2proto source files were
+  imported or modified for this update.
+- Validation: `python -m py_compile
+  tools\bot_scenarios\run_bot_scenarios.py
+  tools\bot_scenarios\test_run_bot_scenarios.py` passed; `python -m unittest
+  tools.bot_scenarios.test_run_bot_scenarios` passed; `meson compile -C
+  builddir-win` passed; `python tools\refresh_install.py --build-dir
+  builddir-win --install-dir .install --base-game basew --platform-id
+  windows-x86_64` passed; focused `trace_checked_corner_cutting` and
+  `ffa_spawn_camp_avoidance` passed; and the full implemented scenario suite
+  reported 37 passed, 0 failed, 0 timed out, 0 errored, and 0 pending from
+  `.tmp\bot_scenarios\20260621T111215Z`.
+- Implementation log:
+  `docs-dev/q3a-botlib-ffa-spawn-camp-avoidance-2026-06-21.md`.
+
 ## Candidate Source Inventory
 
-These files were audited as likely first candidates or reference points. BSPC candidates now land through the `tools/q2aas/` snapshot; the first Q3A utility, AAS file-loader, AAS sampling, AAS reachability, AAS clustering, AAS route-query, AAS alternative-routing, AAS optimization, AAS start-frame, AAS entity-cache, AAS movement, and AAS debug helper subsets are imported and recorded above, while the WORR-owned entity-sync, entity-trace, BSP leaf-link/box-query, debug draw, route-overlay, debug-polygon, debug-area, cluster, alternative-route, memory allocator, filesystem, route-cache miss policy, lifecycle telemetry, bot frame command dispatch, route-steered frame command, nav route-cache, nav debug-overlay, nav reachability-debug, nav polyline-debug, nav debug-client-filter, nav persistent-goal, nav item-goal, nav item-reservation, nav look-ahead steering, nav velocity-aware steering, nav route-target stabilization, trace-checked corner cutting, nav stuck-repath, nav stuck recovery command, nav goal-blacklist cooldown, nav failed-goal reason, nav movement-state commands, bot brain command ownership, nuke retreat route ownership, timed route-goal ownership, teleporter escape route ownership, team role route ownership, team item-role route selection, team fire-avoidance command suppression, CTF role-route ownership, coop leader route ownership and validation gating, coop lead-advance route ownership, coop progress-wait command ownership, coop interaction-retry command ownership, coop resource-share route selection, coop anti-blocking command ownership, coop target-sharing blackboard adoption, coop door/elevator source-hold command ownership, nav position-goal, nav natural travel-goal including barrier-jump direct reach validation, nav rocket-jump route policy, nav four-bot frame-command smoke, nav eight-bot frame-command smoke, nav soak frame-command smoke, nav map-change repeat/restart smoke, nav natural movement support diagnostics, behavior action dispatcher and telemetry boundary, weapon/inventory command-request API and exact dispatch, aim/fairness and live-aim/projectile-leading helper APIs, live combat policy consumption, live item timing consumers, item timer fairness helper policy, special-item utility buckets, static BSP trace CPU counters, entity-clip CPU counters, AAS memory source counters, source-counter completeness diagnostics, FFA/TDM/CTF objective-side helper policy, team-role policy and lane/depth helpers, coop/resource policy helpers, status harness/status surface expansion, bot validation tooling, scenario coverage expansion and marker hardening, profile behavior validation, botfile behavior-depth metadata, botfile parity polish, public bot/user documentation, high-bot degradation policy and soak budget, q2aas reference-map coverage and available-reference validation reporting, q2aas required-feature gap diagnostics, q2aas binary/license notice policy, release packaging hardening, Q3-style WORR botfile layout correction, and legacy Q2R bot surface removal work is recorded as native adapter, tooling, asset, documentation, status, or replacement work. The remaining Q3A runtime and behavior files remain reference-only until matched to a pinned source.
+These files were audited as likely first candidates or reference points. BSPC candidates now land through the `tools/q2aas/` snapshot; the first Q3A utility, AAS file-loader, AAS sampling, AAS reachability, AAS clustering, AAS route-query, AAS alternative-routing, AAS optimization, AAS start-frame, AAS entity-cache, AAS movement, and AAS debug helper subsets are imported and recorded above, while the WORR-owned entity-sync, entity-trace, BSP leaf-link/box-query, debug draw, route-overlay, debug-polygon, debug-area, cluster, alternative-route, memory allocator, filesystem, route-cache miss policy, lifecycle telemetry, bot frame command dispatch, route-steered frame command, nav route-cache, nav debug-overlay, nav reachability-debug, nav polyline-debug, nav debug-client-filter, nav persistent-goal, nav item-goal, nav item-reservation, nav look-ahead steering, nav velocity-aware steering, nav route-target stabilization, trace-checked corner cutting, nav stuck-repath, nav stuck recovery command, nav goal-blacklist cooldown, nav failed-goal reason, nav movement-state commands, bot brain command ownership, nuke retreat route ownership, timed route-goal ownership, teleporter escape route ownership, team role route ownership, team item-role route selection, team fire-avoidance command suppression, team role-combat command ownership, FFA roam-route ownership, CTF role-route ownership, CTF role-combat command ownership, CTF dropped-flag route ownership, CTF carrier-support route ownership, CTF base-return route ownership, CTF objective route-policy ownership, CTF objective route precedence ownership, coop leader route ownership and validation gating, coop lead-advance route ownership, coop progress-wait command ownership, coop interaction-retry command ownership, coop resource-share route selection, coop anti-blocking command ownership, coop target-sharing blackboard adoption, coop door/elevator source-hold command ownership, nav position-goal, nav natural travel-goal including barrier-jump direct reach validation, nav rocket-jump route policy, nav four-bot frame-command smoke, nav eight-bot frame-command smoke, nav soak frame-command smoke, nav map-change repeat/restart smoke, nav natural movement support diagnostics, behavior action dispatcher and telemetry boundary, weapon/inventory command-request API and exact dispatch, aim/fairness and live-aim/projectile-leading helper APIs, live combat policy consumption, live item timing consumers, item timer fairness helper policy, special-item utility buckets, static BSP trace CPU counters, entity-clip CPU counters, AAS memory source counters, source-counter completeness diagnostics, FFA/TDM/CTF objective-side helper policy, team-role policy and lane/depth helpers, coop/resource policy helpers, status harness/status surface expansion, bot validation tooling, scenario coverage expansion and marker hardening, profile behavior validation, botfile behavior-depth metadata, botfile parity polish, public bot/user documentation, high-bot degradation policy and soak budget, q2aas reference-map coverage and available-reference validation reporting, q2aas required-feature gap diagnostics, q2aas binary/license notice policy, release packaging hardening, Q3-style WORR botfile layout correction, and legacy Q2R bot surface removal work is recorded as native adapter, tooling, asset, documentation, status, or replacement work. The remaining Q3A runtime and behavior files remain reference-only until matched to a pinned source.
 
 | Candidate | Upstream / Local Ref | Current Use Decision | Required Before Import |
 |---|---|---|---|
