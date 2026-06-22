@@ -68,6 +68,7 @@ typedef struct {
 
 #include "bot_frame_command.h"
 #include "bot_admin_audit_status.h"
+#include "bot_chat_policy_status.h"
 #include "bot_intermission_status.h"
 #include "bot_mapvote_status.h"
 #include "bot_mymap_status.h"

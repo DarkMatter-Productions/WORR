@@ -110,6 +110,7 @@ enum class BotNavItemFocusMode {
 	None,
 	Health,
 	Armor,
+	Ammo,
 	HealthArmor,
 };
 
@@ -150,6 +151,7 @@ struct BotNavItemGoalCandidate {
 	int ffaItemRoleItemRole = 0;
 	int ffaItemRolePriority = 0;
 	int ffaItemRoleScoreBoost = 0;
+	int ffaItemRoleProfileItemBonus = 0;
 	bool ctfItemRoleValid = false;
 	int ctfItemRoleMode = 0;
 	int ctfItemRoleRole = 0;
@@ -158,6 +160,7 @@ struct BotNavItemGoalCandidate {
 	int ctfItemRoleItemRole = 0;
 	int ctfItemRolePriority = 0;
 	int ctfItemRoleScoreBoost = 0;
+	int ctfItemRoleProfileItemBonus = 0;
 	bool teamItemRoleValid = false;
 	int teamItemRoleMode = 0;
 	int teamItemRoleRole = 0;
@@ -166,6 +169,7 @@ struct BotNavItemGoalCandidate {
 	int teamItemRoleItemRole = 0;
 	int teamItemRolePriority = 0;
 	int teamItemRoleScoreBoost = 0;
+	int teamItemRoleProfileItemBonus = 0;
 	bool teamResourceDenialValid = false;
 	int teamResourceDenialMode = 0;
 	int teamResourceDenialRole = 0;
@@ -174,6 +178,7 @@ struct BotNavItemGoalCandidate {
 	int teamResourceDenialIntent = 0;
 	int teamResourceDenialPriority = 0;
 	int teamResourceDenialScoreBoost = 0;
+	int teamResourceDenialProfileItemBonus = 0;
 	Vector3 origin = vec3_origin;
 };
 
@@ -242,12 +247,21 @@ bool BotNavRocketJumpAllowed() {
 	return allowRocketJump != nullptr && allowRocketJump->integer > 0;
 }
 
+bool BotNavBehaviorPolicyEnabled() {
+	static cvar_t *behaviorEnable = nullptr;
+	if (behaviorEnable == nullptr && gi.cvar != nullptr) {
+		behaviorEnable = gi.cvar("sg_bot_behavior_enable", "0", CVAR_NOFLAGS);
+	}
+	return behaviorEnable != nullptr && behaviorEnable->integer > 0;
+}
+
 bool BotNavCoopResourceShareEnabled() {
 	static cvar_t *resourceShare = nullptr;
 	if (resourceShare == nullptr && gi.cvar != nullptr) {
 		resourceShare = gi.cvar("sg_bot_coop_resource_share", "0", CVAR_NOFLAGS);
 	}
-	return resourceShare != nullptr && resourceShare->integer > 0;
+	return BotNavBehaviorPolicyEnabled() ||
+		(resourceShare != nullptr && resourceShare->integer > 0);
 }
 
 bool BotNavMatchItemPolicyEnabled() {
@@ -255,7 +269,8 @@ bool BotNavMatchItemPolicyEnabled() {
 	if (matchItemPolicy == nullptr && gi.cvar != nullptr) {
 		matchItemPolicy = gi.cvar("sg_bot_match_item_policy", "0", CVAR_NOFLAGS);
 	}
-	return matchItemPolicy != nullptr && matchItemPolicy->integer > 0;
+	return BotNavBehaviorPolicyEnabled() ||
+		(matchItemPolicy != nullptr && matchItemPolicy->integer > 0);
 }
 
 bool BotNavFfaItemRolesEnabled() {
@@ -356,6 +371,8 @@ BotNavItemFocusMode BotNavSmokeItemFocusMode() {
 		return BotNavItemFocusMode::Health;
 	case BotItemFocus::Armor:
 		return BotNavItemFocusMode::Armor;
+	case BotItemFocus::Ammo:
+		return BotNavItemFocusMode::Ammo;
 	default:
 		return BotNavItemFocusMode::None;
 	}
@@ -367,6 +384,8 @@ bool BotNavItemFocusAllowsKind(BotNavItemFocusMode mode, BotItemUtilityKind kind
 		return kind == BotItemUtilityKind::Health;
 	case BotNavItemFocusMode::Armor:
 		return kind == BotItemUtilityKind::Armor;
+	case BotNavItemFocusMode::Ammo:
+		return kind == BotItemUtilityKind::Ammo;
 	case BotNavItemFocusMode::HealthArmor:
 		return kind == BotItemUtilityKind::Health || kind == BotItemUtilityKind::Armor;
 	case BotNavItemFocusMode::None:
@@ -383,6 +402,9 @@ BotItemFocus BotNavItemFocusForKind(BotNavItemFocusMode mode, BotItemUtilityKind
 	if ((mode == BotNavItemFocusMode::Armor || mode == BotNavItemFocusMode::HealthArmor) &&
 		kind == BotItemUtilityKind::Armor) {
 		return BotItemFocus::Armor;
+	}
+	if (mode == BotNavItemFocusMode::Ammo && kind == BotItemUtilityKind::Ammo) {
+		return BotItemFocus::Ammo;
 	}
 	return BotItemFocus::None;
 }
@@ -1714,6 +1736,7 @@ bool BotNavFindPickupGoal(const gentity_t *bot, int clientIndex, uint32_t frame,
 				best.ffaItemRoleItemRole = static_cast<int>(itemRolePolicy.itemRole);
 				best.ffaItemRolePriority = itemRolePolicy.priority;
 				best.ffaItemRoleScoreBoost = std::max(0, itemRolePolicy.priority);
+				best.ffaItemRoleProfileItemBonus = itemRolePolicy.profileItemPolicyBonus;
 			} else if (itemRoleScope == BotNavItemRoleScope::CaptureTheFlag) {
 				best.ctfItemRoleValid = true;
 				best.ctfItemRoleMode = static_cast<int>(itemRolePolicy.mode);
@@ -1723,6 +1746,7 @@ bool BotNavFindPickupGoal(const gentity_t *bot, int clientIndex, uint32_t frame,
 				best.ctfItemRoleItemRole = static_cast<int>(itemRolePolicy.itemRole);
 				best.ctfItemRolePriority = itemRolePolicy.priority;
 				best.ctfItemRoleScoreBoost = std::max(0, itemRolePolicy.priority);
+				best.ctfItemRoleProfileItemBonus = itemRolePolicy.profileItemPolicyBonus;
 			} else {
 				best.teamItemRoleValid = true;
 				best.teamItemRoleMode = static_cast<int>(itemRolePolicy.mode);
@@ -1732,6 +1756,7 @@ bool BotNavFindPickupGoal(const gentity_t *bot, int clientIndex, uint32_t frame,
 				best.teamItemRoleItemRole = static_cast<int>(itemRolePolicy.itemRole);
 				best.teamItemRolePriority = itemRolePolicy.priority;
 				best.teamItemRoleScoreBoost = std::max(0, itemRolePolicy.priority);
+				best.teamItemRoleProfileItemBonus = itemRolePolicy.profileItemPolicyBonus;
 			}
 		}
 		if (resourceDenialPolicy.valid && resourceDenialPolicy.denyEnemyPickup) {
@@ -1743,6 +1768,7 @@ bool BotNavFindPickupGoal(const gentity_t *bot, int clientIndex, uint32_t frame,
 			best.teamResourceDenialIntent = static_cast<int>(resourceDenialPolicy.intent);
 			best.teamResourceDenialPriority = resourceDenialPolicy.priority;
 			best.teamResourceDenialScoreBoost = std::max(0, resourceDenialPolicy.priority);
+			best.teamResourceDenialProfileItemBonus = resourceDenialPolicy.profileItemPolicyBonus;
 		}
 		best.origin = { routeOrigin[0], routeOrigin[1], routeOrigin[2] };
 	}
@@ -1774,6 +1800,8 @@ bool BotNavFindPickupGoal(const gentity_t *bot, int clientIndex, uint32_t frame,
 		botNavRouteStatus.lastFfaItemRoleItemRole = best.ffaItemRoleItemRole;
 		botNavRouteStatus.lastFfaItemRolePriority = best.ffaItemRolePriority;
 		botNavRouteStatus.lastFfaItemRoleScoreBoost = best.ffaItemRoleScoreBoost;
+		botNavRouteStatus.lastFfaItemRoleProfileItemBonus =
+			best.ffaItemRoleProfileItemBonus;
 		botNavRouteStatus.lastFfaItemRoleEntity = best.entityNumber;
 		botNavRouteStatus.lastFfaItemRoleItem = static_cast<int>(best.item);
 		botNavRouteStatus.lastFfaItemRoleScore = best.score;
@@ -1788,6 +1816,8 @@ bool BotNavFindPickupGoal(const gentity_t *bot, int clientIndex, uint32_t frame,
 		botNavRouteStatus.lastCtfItemRoleItemRole = best.ctfItemRoleItemRole;
 		botNavRouteStatus.lastCtfItemRolePriority = best.ctfItemRolePriority;
 		botNavRouteStatus.lastCtfItemRoleScoreBoost = best.ctfItemRoleScoreBoost;
+		botNavRouteStatus.lastCtfItemRoleProfileItemBonus =
+			best.ctfItemRoleProfileItemBonus;
 		botNavRouteStatus.lastCtfItemRoleEntity = best.entityNumber;
 		botNavRouteStatus.lastCtfItemRoleItem = static_cast<int>(best.item);
 		botNavRouteStatus.lastCtfItemRoleScore = best.score;
@@ -1802,6 +1832,8 @@ bool BotNavFindPickupGoal(const gentity_t *bot, int clientIndex, uint32_t frame,
 		botNavRouteStatus.lastTeamItemRoleItemRole = best.teamItemRoleItemRole;
 		botNavRouteStatus.lastTeamItemRolePriority = best.teamItemRolePriority;
 		botNavRouteStatus.lastTeamItemRoleScoreBoost = best.teamItemRoleScoreBoost;
+		botNavRouteStatus.lastTeamItemRoleProfileItemBonus =
+			best.teamItemRoleProfileItemBonus;
 		botNavRouteStatus.lastTeamItemRoleEntity = best.entityNumber;
 		botNavRouteStatus.lastTeamItemRoleItem = static_cast<int>(best.item);
 		botNavRouteStatus.lastTeamItemRoleScore = best.score;
@@ -1816,6 +1848,8 @@ bool BotNavFindPickupGoal(const gentity_t *bot, int clientIndex, uint32_t frame,
 		botNavRouteStatus.lastTeamResourceDenialIntent = best.teamResourceDenialIntent;
 		botNavRouteStatus.lastTeamResourceDenialPriority = best.teamResourceDenialPriority;
 		botNavRouteStatus.lastTeamResourceDenialScoreBoost = best.teamResourceDenialScoreBoost;
+		botNavRouteStatus.lastTeamResourceDenialProfileItemBonus =
+			best.teamResourceDenialProfileItemBonus;
 		botNavRouteStatus.lastTeamResourceDenialEntity = best.entityNumber;
 		botNavRouteStatus.lastTeamResourceDenialItem = static_cast<int>(best.item);
 		botNavRouteStatus.lastTeamResourceDenialScore = best.score;

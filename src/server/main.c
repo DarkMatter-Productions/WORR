@@ -1022,6 +1022,13 @@ typedef struct {
     char chat_personality[MAX_INFO_VALUE];
     char role[MAX_INFO_VALUE];
     char movement_style[MAX_INFO_VALUE];
+    char teamplay_bias[MAX_INFO_VALUE];
+    char objective_bias[MAX_INFO_VALUE];
+    char friendly_fire_care[MAX_INFO_VALUE];
+    char item_greed[MAX_INFO_VALUE];
+    char item_denial[MAX_INFO_VALUE];
+    char powerup_timing[MAX_INFO_VALUE];
+    char retreat_health[MAX_INFO_VALUE];
 } bot_profile_t;
 
 typedef struct {
@@ -1225,6 +1232,49 @@ static bool bot_profile_set(bot_profile_t *profile, const char *key,
         !Q_stricmp(key, "move_style") ||
         !Q_stricmp(key, "worr_movement_style")) {
         Q_strlcpy(profile->movement_style, clean_value, sizeof(profile->movement_style));
+        return true;
+    }
+    if (!Q_stricmp(key, "teamplay_bias") ||
+        !Q_stricmp(key, "team_bias") ||
+        !Q_stricmp(key, "support_bias") ||
+        !Q_stricmp(key, "worr_teamplay_bias")) {
+        Q_strlcpy(profile->teamplay_bias, clean_value, sizeof(profile->teamplay_bias));
+        return true;
+    }
+    if (!Q_stricmp(key, "objective_bias") ||
+        !Q_stricmp(key, "goal_bias") ||
+        !Q_stricmp(key, "worr_objective_bias")) {
+        Q_strlcpy(profile->objective_bias, clean_value, sizeof(profile->objective_bias));
+        return true;
+    }
+    if (!Q_stricmp(key, "friendly_fire_care") ||
+        !Q_stricmp(key, "ff_care") ||
+        !Q_stricmp(key, "worr_friendly_fire_care")) {
+        Q_strlcpy(profile->friendly_fire_care, clean_value, sizeof(profile->friendly_fire_care));
+        return true;
+    }
+    if (!Q_stricmp(key, "item_greed") ||
+        !Q_stricmp(key, "pickup_greed") ||
+        !Q_stricmp(key, "worr_item_greed")) {
+        Q_strlcpy(profile->item_greed, clean_value, sizeof(profile->item_greed));
+        return true;
+    }
+    if (!Q_stricmp(key, "item_denial") ||
+        !Q_stricmp(key, "denial_bias") ||
+        !Q_stricmp(key, "worr_item_denial")) {
+        Q_strlcpy(profile->item_denial, clean_value, sizeof(profile->item_denial));
+        return true;
+    }
+    if (!Q_stricmp(key, "powerup_timing") ||
+        !Q_stricmp(key, "powerup_timing_bias") ||
+        !Q_stricmp(key, "worr_powerup_timing")) {
+        Q_strlcpy(profile->powerup_timing, clean_value, sizeof(profile->powerup_timing));
+        return true;
+    }
+    if (!Q_stricmp(key, "retreat_health") ||
+        !Q_stricmp(key, "retreat_health_threshold") ||
+        !Q_stricmp(key, "worr_retreat_health")) {
+        Q_strlcpy(profile->retreat_health, clean_value, sizeof(profile->retreat_health));
         return true;
     }
     if (!Q_stricmp(key, "characteristic_name")) {
@@ -1634,7 +1684,14 @@ static bool bot_build_userinfo(char *userinfo, const char *name,
          !bot_set_optional_userinfo(userinfo, "bot_preferred_weapon", profile->preferred_weapon) ||
          !bot_set_optional_userinfo(userinfo, "bot_chat_personality", profile->chat_personality) ||
          !bot_set_optional_userinfo(userinfo, "bot_role", profile->role) ||
-         !bot_set_optional_userinfo(userinfo, "bot_movement_style", profile->movement_style))) {
+         !bot_set_optional_userinfo(userinfo, "bot_movement_style", profile->movement_style) ||
+         !bot_set_optional_userinfo(userinfo, "bot_teamplay_bias", profile->teamplay_bias) ||
+         !bot_set_optional_userinfo(userinfo, "bot_objective_bias", profile->objective_bias) ||
+         !bot_set_optional_userinfo(userinfo, "bot_friendly_fire_care", profile->friendly_fire_care) ||
+         !bot_set_optional_userinfo(userinfo, "bot_item_greed", profile->item_greed) ||
+         !bot_set_optional_userinfo(userinfo, "bot_item_denial", profile->item_denial) ||
+         !bot_set_optional_userinfo(userinfo, "bot_powerup_timing", profile->powerup_timing) ||
+         !bot_set_optional_userinfo(userinfo, "bot_retreat_health", profile->retreat_health))) {
         return false;
     }
 
@@ -2230,6 +2287,13 @@ static void SV_BotProfileSmokeFrame(void)
     char chat_personality[MAX_INFO_VALUE];
     char role[MAX_INFO_VALUE];
     char movement_style[MAX_INFO_VALUE];
+    char teamplay_bias[MAX_INFO_VALUE];
+    char objective_bias[MAX_INFO_VALUE];
+    char friendly_fire_care[MAX_INFO_VALUE];
+    char item_greed[MAX_INFO_VALUE];
+    char item_denial[MAX_INFO_VALUE];
+    char powerup_timing[MAX_INFO_VALUE];
+    char retreat_health[MAX_INFO_VALUE];
 
     if (!sv_bot_profile_smoke || sv_bot_profile_smoke->integer <= 0) {
         return;
@@ -2301,14 +2365,37 @@ static void SV_BotProfileSmokeFrame(void)
     Q_strlcpy(movement_style,
               Info_ValueForKey(bot->userinfo, "bot_movement_style"),
               sizeof(movement_style));
+    Q_strlcpy(teamplay_bias,
+              Info_ValueForKey(bot->userinfo, "bot_teamplay_bias"),
+              sizeof(teamplay_bias));
+    Q_strlcpy(objective_bias,
+              Info_ValueForKey(bot->userinfo, "bot_objective_bias"),
+              sizeof(objective_bias));
+    Q_strlcpy(friendly_fire_care,
+              Info_ValueForKey(bot->userinfo, "bot_friendly_fire_care"),
+              sizeof(friendly_fire_care));
+    Q_strlcpy(item_greed, Info_ValueForKey(bot->userinfo, "bot_item_greed"),
+              sizeof(item_greed));
+    Q_strlcpy(item_denial, Info_ValueForKey(bot->userinfo, "bot_item_denial"),
+              sizeof(item_denial));
+    Q_strlcpy(powerup_timing,
+              Info_ValueForKey(bot->userinfo, "bot_powerup_timing"),
+              sizeof(powerup_timing));
+    Q_strlcpy(retreat_health,
+              Info_ValueForKey(bot->userinfo, "bot_retreat_health"),
+              sizeof(retreat_health));
 
     Com_Printf("q3a_bot_profile_smoke_after_add count=%d name=%s "
                "profile=%s skin=%s skill=%s reaction=%s aggression=%s "
                "aim_error=%s preferred_weapon=%s chat=%s role=%s "
-               "movement=%s\n",
+               "movement=%s teamplay_bias=%s objective_bias=%s "
+               "friendly_fire_care=%s item_greed=%s item_denial=%s "
+               "powerup_timing=%s retreat_health=%s\n",
                SV_BotCount(), bot->name, profile_id, skin, skill, reaction,
                aggression, aim_error, preferred_weapon, chat_personality, role,
-               movement_style);
+               movement_style, teamplay_bias, objective_bias,
+               friendly_fire_care, item_greed, item_denial, powerup_timing,
+               retreat_health);
     SV_BotRemoveAll();
     Com_Printf("q3a_bot_profile_smoke_after_remove_all count=%d\n",
                SV_BotCount());
@@ -4292,6 +4379,31 @@ static void SV_BotFrameCommandStatus(int expected_min_frames,
     api->PrintStatus(expected_min_frames, expected_min_commands);
 }
 
+static void SV_BotChatPolicySmokeStatus(int expected_bots,
+                                        int expected_profile_chat,
+                                        int expected_allow_chat,
+                                        int expected_dispatch_enabled)
+{
+    const bot_chat_policy_status_api_v1_t *api = NULL;
+
+    if (ge && ge->GetExtension) {
+        api = ge->GetExtension(BOT_CHAT_POLICY_STATUS_API_V1);
+    }
+
+    if (!api || api->api_version != 1 || !api->PrintStatus) {
+        Com_Printf("q3a_bot_chat_policy_status unavailable=1 "
+                   "expected_bots=%d expected_profile_chat=%d "
+                   "expected_allow_chat=%d expected_dispatch_enabled=%d "
+                   "pass=0\n",
+                   expected_bots, expected_profile_chat, expected_allow_chat,
+                   expected_dispatch_enabled);
+        return;
+    }
+
+    api->PrintStatus(expected_bots, expected_profile_chat,
+                     expected_allow_chat, expected_dispatch_enabled);
+}
+
 #define SV_BOT_FRAME_COMMAND_STATUS_CAPTURE_TARGET 19
 #define SV_BOT_FRAME_COMMAND_STATUS_CAPTURE_SIZE 32768
 
@@ -4361,7 +4473,17 @@ static bool SV_BotFrameCommandStatusReadInt(const char *status,
         return false;
     }
 
-    cursor = strstr(status, pattern);
+    cursor = status;
+    while ((cursor = strstr(cursor, pattern)) != NULL) {
+        if (cursor == status ||
+            cursor[-1] == ' ' ||
+            cursor[-1] == '\n' ||
+            cursor[-1] == '\r' ||
+            cursor[-1] == '\t') {
+            break;
+        }
+        cursor++;
+    }
     if (!cursor) {
         return false;
     }
@@ -4381,6 +4503,7 @@ static int SV_BotFrameCommandStatusCapturedPass(const char *status,
                                                 int expected_min_commands,
                                                 bool *official_pass)
 {
+    const char *frame_status;
     int pass;
     int frames;
     int commands;
@@ -4391,6 +4514,11 @@ static int SV_BotFrameCommandStatusCapturedPass(const char *status,
 
     if (official_pass) {
         *official_pass = false;
+    }
+
+    frame_status = strstr(status ? status : "", "q3a_bot_frame_command_status");
+    if (frame_status) {
+        status = frame_status;
     }
 
     if (SV_BotFrameCommandStatusReadInt(status, "pass", &pass) &&
@@ -4432,10 +4560,16 @@ static int SV_BotFrameCommandStatusCapturedCleanupPass(
     int bot_count,
     int *active_reservations)
 {
+    const char *frame_status;
     int reservations;
 
     if (active_reservations) {
         *active_reservations = -1;
+    }
+
+    frame_status = strstr(status ? status : "", "q3a_bot_frame_command_status");
+    if (frame_status) {
+        status = frame_status;
     }
 
     if (!SV_BotFrameCommandStatusReadInt(status,
@@ -4496,6 +4630,43 @@ static bool SV_BotFrameCommandSmokeIsAimFairness(void)
     return SV_BotFrameCommandSmokeMode() == 24;
 }
 
+static bool SV_BotFrameCommandSmokeIsAimFirePolicy(void)
+{
+    return SV_BotFrameCommandSmokeMode() == 66;
+}
+
+static bool SV_BotFrameCommandSmokeIsAmmoPressure(void)
+{
+    return SV_BotFrameCommandSmokeMode() == 67;
+}
+
+static bool SV_BotFrameCommandSmokeIsSurvivalInventory(void)
+{
+    return SV_BotFrameCommandSmokeMode() == 68;
+}
+
+static bool SV_BotFrameCommandSmokeIsSurvivalHealthRoute(void)
+{
+    return SV_BotFrameCommandSmokeMode() == 69;
+}
+
+static bool SV_BotFrameCommandSmokeIsSurvivalArmorRoute(void)
+{
+    return SV_BotFrameCommandSmokeMode() == 70;
+}
+
+static bool SV_BotFrameCommandSmokeIsCombatSurvivalRegression(void)
+{
+    return SV_BotFrameCommandSmokeMode() == 71;
+}
+
+static bool SV_BotFrameCommandSmokeIsSurvivalRoute(void)
+{
+    return SV_BotFrameCommandSmokeIsSurvivalHealthRoute() ||
+        SV_BotFrameCommandSmokeIsSurvivalArmorRoute() ||
+        SV_BotFrameCommandSmokeIsCombatSurvivalRegression();
+}
+
 static bool SV_BotFrameCommandSmokeIsItemTimer(void)
 {
     return SV_BotFrameCommandSmokeMode() == 25;
@@ -4549,6 +4720,92 @@ static bool SV_BotFrameCommandSmokeIsTeamResourceDenial(void)
 static bool SV_BotFrameCommandSmokeIsMatchItemPolicy(void)
 {
     return SV_BotFrameCommandSmokeMode() == 51;
+}
+
+static bool SV_BotFrameCommandSmokeIsBehaviorPolicy(void)
+{
+    return SV_BotFrameCommandSmokeMode() == 52;
+}
+
+static bool SV_BotFrameCommandSmokeIsBehaviorArbitration(void)
+{
+    return SV_BotFrameCommandSmokeMode() == 63;
+}
+
+static bool SV_BotFrameCommandSmokeIsTargetMemory(void)
+{
+    return SV_BotFrameCommandSmokeMode() == 64;
+}
+
+static bool SV_BotFrameCommandSmokeIsWeaponScoring(void)
+{
+    return SV_BotFrameCommandSmokeMode() == 65;
+}
+
+static bool SV_BotFrameCommandSmokeUsesBehaviorPolicy(void)
+{
+    return SV_BotFrameCommandSmokeIsBehaviorPolicy() ||
+        SV_BotFrameCommandSmokeIsBehaviorArbitration();
+}
+
+static bool SV_BotFrameCommandSmokeIsProfileRolePolicy(void)
+{
+    return SV_BotFrameCommandSmokeMode() == 53;
+}
+
+static bool SV_BotFrameCommandSmokeIsProfileTeamPolicy(void)
+{
+    return SV_BotFrameCommandSmokeMode() == 54;
+}
+
+static bool SV_BotFrameCommandSmokeIsProfileItemPolicy(void)
+{
+    return SV_BotFrameCommandSmokeMode() == 55;
+}
+
+static bool SV_BotFrameCommandSmokeIsProfileMovementPolicy(void)
+{
+    return SV_BotFrameCommandSmokeMode() == 56;
+}
+
+static bool SV_BotFrameCommandSmokeIsBotChatPolicy(void)
+{
+    return SV_BotFrameCommandSmokeMode() == 57;
+}
+
+static bool SV_BotFrameCommandSmokeIsBotChatTeamPolicy(void)
+{
+    return SV_BotFrameCommandSmokeMode() == 58;
+}
+
+static bool SV_BotFrameCommandSmokeIsBotChatRatePolicy(void)
+{
+    return SV_BotFrameCommandSmokeMode() == 59;
+}
+
+static bool SV_BotFrameCommandSmokeIsBotChatInitialPolicy(void)
+{
+    return SV_BotFrameCommandSmokeMode() == 60;
+}
+
+static bool SV_BotFrameCommandSmokeIsBotChatReplyPolicy(void)
+{
+    return SV_BotFrameCommandSmokeMode() == 61;
+}
+
+static bool SV_BotFrameCommandSmokeIsBotChatEventPolicy(void)
+{
+    return SV_BotFrameCommandSmokeMode() == 62;
+}
+
+static bool SV_BotFrameCommandSmokeUsesBotChatPolicy(void)
+{
+    return SV_BotFrameCommandSmokeIsBotChatPolicy() ||
+        SV_BotFrameCommandSmokeIsBotChatTeamPolicy() ||
+        SV_BotFrameCommandSmokeIsBotChatRatePolicy() ||
+        SV_BotFrameCommandSmokeIsBotChatInitialPolicy() ||
+        SV_BotFrameCommandSmokeIsBotChatReplyPolicy() ||
+        SV_BotFrameCommandSmokeIsBotChatEventPolicy();
 }
 
 static bool SV_BotFrameCommandSmokeIsFfaItemRoles(void)
@@ -4646,8 +4903,12 @@ static bool SV_BotFrameCommandSmokeUsesScenarioCvars(void)
     return SV_BotFrameCommandSmokeIsEngageEnemy() ||
         SV_BotFrameCommandSmokeIsSwitchWeapons() ||
         SV_BotFrameCommandSmokeIsHealthArmorPickup() ||
+        SV_BotFrameCommandSmokeIsAmmoPressure() ||
+        SV_BotFrameCommandSmokeIsSurvivalInventory() ||
+        SV_BotFrameCommandSmokeIsSurvivalRoute() ||
         SV_BotFrameCommandSmokeIsTeamObjective() ||
         SV_BotFrameCommandSmokeIsAimFairness() ||
+        SV_BotFrameCommandSmokeIsAimFirePolicy() ||
         SV_BotFrameCommandSmokeIsItemTimer() ||
         SV_BotFrameCommandSmokeIsMatchReadiness() ||
         SV_BotFrameCommandSmokeIsCoopLeadAdvance() ||
@@ -4662,6 +4923,14 @@ static bool SV_BotFrameCommandSmokeUsesScenarioCvars(void)
         SV_BotFrameCommandSmokeIsTeamItemRoles() ||
         SV_BotFrameCommandSmokeIsTeamResourceDenial() ||
         SV_BotFrameCommandSmokeIsMatchItemPolicy() ||
+        SV_BotFrameCommandSmokeUsesBehaviorPolicy() ||
+        SV_BotFrameCommandSmokeIsProfileRolePolicy() ||
+        SV_BotFrameCommandSmokeIsProfileTeamPolicy() ||
+        SV_BotFrameCommandSmokeIsProfileItemPolicy() ||
+        SV_BotFrameCommandSmokeIsProfileMovementPolicy() ||
+        SV_BotFrameCommandSmokeUsesBotChatPolicy() ||
+        SV_BotFrameCommandSmokeIsTargetMemory() ||
+        SV_BotFrameCommandSmokeIsWeaponScoring() ||
         SV_BotFrameCommandSmokeIsTeamFireAvoidance() ||
         SV_BotFrameCommandSmokeIsTeamRoleCombat() ||
         SV_BotFrameCommandSmokeIsCtfRoleRoute() ||
@@ -4816,6 +5085,13 @@ static int SV_BotFrameCommandSmokeTargetBots(void)
         return min(4, bot_public_client_limit());
     }
 
+    if (SV_BotFrameCommandSmokeIsTargetMemory() ||
+        SV_BotFrameCommandSmokeIsAimFirePolicy() ||
+        SV_BotFrameCommandSmokeIsWeaponScoring() ||
+        SV_BotFrameCommandSmokeIsCombatSurvivalRegression()) {
+        return min(2, bot_public_client_limit());
+    }
+
     if (SV_BotFrameCommandSmokeIsTeamRoleRoute()) {
         return min(4, bot_public_client_limit());
     }
@@ -4829,6 +5105,30 @@ static int SV_BotFrameCommandSmokeTargetBots(void)
     }
 
     if (SV_BotFrameCommandSmokeIsMatchItemPolicy()) {
+        return min(4, bot_public_client_limit());
+    }
+
+    if (SV_BotFrameCommandSmokeUsesBehaviorPolicy()) {
+        return min(4, bot_public_client_limit());
+    }
+
+    if (SV_BotFrameCommandSmokeIsProfileRolePolicy()) {
+        return min(4, bot_public_client_limit());
+    }
+
+    if (SV_BotFrameCommandSmokeIsProfileTeamPolicy()) {
+        return min(4, bot_public_client_limit());
+    }
+
+    if (SV_BotFrameCommandSmokeIsProfileItemPolicy()) {
+        return min(4, bot_public_client_limit());
+    }
+
+    if (SV_BotFrameCommandSmokeIsProfileMovementPolicy()) {
+        return min(4, bot_public_client_limit());
+    }
+
+    if (SV_BotFrameCommandSmokeUsesBotChatPolicy()) {
         return min(4, bot_public_client_limit());
     }
 
@@ -4858,6 +5158,9 @@ static int SV_BotFrameCommandSmokeTargetBots(void)
     }
 
     if (SV_BotFrameCommandSmokeIsHealthArmorPickup() ||
+        SV_BotFrameCommandSmokeIsAmmoPressure() ||
+        SV_BotFrameCommandSmokeIsSurvivalInventory() ||
+        SV_BotFrameCommandSmokeIsSurvivalRoute() ||
         SV_BotFrameCommandSmokeIsItemTimer() ||
         SV_BotFrameCommandSmokeIsCoopLeadAdvance()) {
         return 1;
@@ -4891,6 +5194,12 @@ static int SV_BotFrameCommandSmokeTargetBots(void)
 
 static const char *SV_BotFrameCommandSmokeBotName(int index)
 {
+    static const char *profile_names[] = {
+        "smoke",
+        "bulwark",
+        "relay",
+        "vanguard"
+    };
     static const char *names[] = {
         "Mover",
         "MoverTwo",
@@ -4901,6 +5210,17 @@ static const char *SV_BotFrameCommandSmokeBotName(int index)
         "MoverSeven",
         "MoverEight"
     };
+
+    if (SV_BotFrameCommandSmokeIsProfileRolePolicy() ||
+        SV_BotFrameCommandSmokeIsProfileTeamPolicy() ||
+        SV_BotFrameCommandSmokeIsProfileItemPolicy() ||
+        SV_BotFrameCommandSmokeIsProfileMovementPolicy() ||
+        SV_BotFrameCommandSmokeUsesBotChatPolicy()) {
+        if (index >= 0 && index < q_countof(profile_names)) {
+            return profile_names[index];
+        }
+        return NULL;
+    }
 
     if (index >= 0 && index < q_countof(names)) {
         return names[index];
@@ -5079,12 +5399,16 @@ static void SV_BotFrameCommandSmokeResetRuntimeCvars(void)
     Cvar_Set("sg_bot_frame_command_smoke_aim_fairness", "0");
     Cvar_Set("sg_bot_frame_command_smoke_item_timer", "0");
     Cvar_Set("sg_bot_frame_command_smoke_match_readiness", "0");
+    Cvar_Set("sg_bot_frame_command_smoke_survival_inventory", "0");
+    Cvar_Set("sg_bot_frame_command_smoke_survival_route", "0");
     Cvar_Set("sg_bot_nav_position_goal_enable", "0");
     Cvar_Set("sg_bot_nav_travel_type_goal", "0");
     Cvar_Set("sg_bot_nav_travel_type_goal_warp", "0");
     Cvar_Set("sg_bot_nav_travel_type_goal_expect_blocked", "0");
     Cvar_Set("sg_bot_frame_command_smoke_soak", "0");
     Cvar_Set("sg_bot_allow_rocketjump", "0");
+    Cvar_Set("sg_bot_behavior_enable", "0");
+    Cvar_Set("sg_bot_frame_command_smoke_target_memory", "0");
     Cvar_Set("sg_bot_coop_progress_wait", "0");
     Cvar_Set("sg_bot_coop_interaction_retry", "0");
     Cvar_Set("sg_bot_coop_lead_advance", "0");
@@ -5098,6 +5422,11 @@ static void SV_BotFrameCommandSmokeResetRuntimeCvars(void)
     Cvar_Set("sg_bot_ffa_item_roles", "0");
     Cvar_Set("sg_bot_ffa_role_combat", "0");
     Cvar_Set("sg_bot_match_item_policy", "0");
+    Cvar_Set("sg_bot_allow_chat", "0");
+    Cvar_Set("sg_bot_chat_team_only", "0");
+    Cvar_Set("sg_bot_chat_min_interval_ms", "0");
+    Cvar_Set("sg_bot_chat_reply_policy_smoke", "0");
+    Cvar_Set("sg_bot_chat_event_policy_smoke", "0");
     Cvar_Set("sg_bot_team_role_route", "0");
     Cvar_Set("sg_bot_team_item_roles", "0");
     Cvar_Set("sg_bot_team_resource_denial", "0");
@@ -5295,13 +5624,23 @@ static void SV_BotFrameCommandSmokeFrame(void)
         Cvar_Set("sg_bot_min_players", "0");
         Cvar_Set("g_gametype",
                  (SV_BotFrameCommandSmokeIsFfaRoamRoute() ||
-                  SV_BotFrameCommandSmokeIsFfaRoleCombat() ||
+                 SV_BotFrameCommandSmokeIsFfaRoleCombat() ||
+                  SV_BotFrameCommandSmokeIsAimFirePolicy() ||
+                  SV_BotFrameCommandSmokeIsAmmoPressure() ||
+                  SV_BotFrameCommandSmokeIsSurvivalInventory() ||
+                  SV_BotFrameCommandSmokeIsSurvivalRoute() ||
+                  SV_BotFrameCommandSmokeIsTargetMemory() ||
                   SV_BotFrameCommandSmokeIsFfaItemRoles()) ? "1" :
                  ((SV_BotFrameCommandSmokeIsMatchReadiness() ||
                  SV_BotFrameCommandSmokeIsTeamRoleRoute() ||
                  SV_BotFrameCommandSmokeIsTeamItemRoles() ||
-                 SV_BotFrameCommandSmokeIsTeamResourceDenial() ||
-                 SV_BotFrameCommandSmokeIsMatchItemPolicy() ||
+                  SV_BotFrameCommandSmokeIsTeamResourceDenial() ||
+                  SV_BotFrameCommandSmokeIsMatchItemPolicy() ||
+                  SV_BotFrameCommandSmokeIsProfileItemPolicy() ||
+                  SV_BotFrameCommandSmokeIsProfileMovementPolicy() ||
+                  SV_BotFrameCommandSmokeUsesBotChatPolicy() ||
+                  SV_BotFrameCommandSmokeUsesBehaviorPolicy() ||
+                  SV_BotFrameCommandSmokeIsProfileRolePolicy() ||
                  SV_BotFrameCommandSmokeIsTeamFireAvoidance() ||
                  SV_BotFrameCommandSmokeIsTeamRoleCombat()) ? "3" :
                  ((SV_BotFrameCommandSmokeIsCtfRoleRoute() ||
@@ -5311,10 +5650,21 @@ static void SV_BotFrameCommandSmokeFrame(void)
                    SV_BotFrameCommandSmokeIsCtfBaseReturnRoute() ||
                    SV_BotFrameCommandSmokeIsCtfObjectiveRoute() ||
                    SV_BotFrameCommandSmokeIsCtfObjectiveRoutePrecedence() ||
+                   SV_BotFrameCommandSmokeIsProfileTeamPolicy() ||
                    SV_BotFrameCommandSmokeIsCtfItemRoles()) ? "5" :
                   (SV_BotFrameCommandSmokeIsTeamObjective() ? "1" : "0"))));
         Cvar_Set("sg_bot_allow_rocketjump",
                  SV_BotFrameCommandSmokeAllowsRocketJump() ? "1" : "0");
+        Cvar_Set("sg_bot_allow_chat",
+                 SV_BotFrameCommandSmokeUsesBotChatPolicy() ? "1" : "0");
+        Cvar_Set("sg_bot_chat_team_only",
+                 SV_BotFrameCommandSmokeIsBotChatTeamPolicy() ? "1" : "0");
+        Cvar_Set("sg_bot_chat_min_interval_ms",
+                 SV_BotFrameCommandSmokeIsBotChatRatePolicy() ? "60000" : "0");
+        Cvar_Set("sg_bot_chat_reply_policy_smoke",
+                 SV_BotFrameCommandSmokeIsBotChatReplyPolicy() ? "1" : "0");
+        Cvar_Set("sg_bot_chat_event_policy_smoke",
+                 SV_BotFrameCommandSmokeIsBotChatEventPolicy() ? "1" : "0");
         Cvar_Set("sg_bot_nav_travel_type_goal_expect_blocked",
                  SV_BotFrameCommandSmokeExpectsBlockedTravelTypeGoal() ? "1" : "0");
         Cvar_Set("sg_bot_frame_command_smoke_soak",
@@ -5355,7 +5705,12 @@ static void SV_BotFrameCommandSmokeFrame(void)
         }
         if (SV_BotFrameCommandSmokeUsesScenarioCvars()) {
             const char *combat_mode =
+                SV_BotFrameCommandSmokeIsAimFirePolicy() ?
+                    "aim_fire_policy" :
+                SV_BotFrameCommandSmokeIsWeaponScoring() ?
+                    "weapon_scoring" :
                 (SV_BotFrameCommandSmokeIsEngageEnemy() ||
+                 SV_BotFrameCommandSmokeIsCombatSurvivalRegression() ||
                  SV_BotFrameCommandSmokeIsAimFairness() ||
                  (SV_BotFrameCommandSmokeIsTeamFireAvoidance() &&
                   !SV_BotFrameCommandSmokeIsTeamRoleCombatAvoidance())) ?
@@ -5363,14 +5718,20 @@ static void SV_BotFrameCommandSmokeFrame(void)
                 (SV_BotFrameCommandSmokeIsSwitchWeapons() ?
                     "switch_weapons" : "0");
             const char *item_focus =
+                SV_BotFrameCommandSmokeIsAmmoPressure() ?
+                    "ammo" :
                 SV_BotFrameCommandSmokeIsHealthArmorPickup() ?
                     "health_armor" : "0";
             const int weapon_switch =
-                SV_BotFrameCommandSmokeIsSwitchWeapons() ? 1 : 0;
+                (SV_BotFrameCommandSmokeIsSwitchWeapons() ||
+                 SV_BotFrameCommandSmokeIsWeaponScoring()) ? 1 : 0;
             const int team_objective =
                 SV_BotFrameCommandSmokeIsTeamObjective() ? 1 : 0;
             const int aim_fairness =
-                SV_BotFrameCommandSmokeIsAimFairness() ? 1 : 0;
+                (SV_BotFrameCommandSmokeIsAimFairness() ||
+                 SV_BotFrameCommandSmokeIsAimFirePolicy()) ? 1 : 0;
+            const int aim_fire_policy =
+                SV_BotFrameCommandSmokeIsAimFirePolicy() ? 1 : 0;
             const int item_timer =
                 SV_BotFrameCommandSmokeIsItemTimer() ? 1 : 0;
             const int match_readiness =
@@ -5396,7 +5757,50 @@ static void SV_BotFrameCommandSmokeFrame(void)
             const int team_resource_denial =
                 SV_BotFrameCommandSmokeIsTeamResourceDenial() ? 1 : 0;
             const int match_item_policy =
-                SV_BotFrameCommandSmokeIsMatchItemPolicy() ? 1 : 0;
+                (SV_BotFrameCommandSmokeIsMatchItemPolicy() ||
+                 SV_BotFrameCommandSmokeIsProfileItemPolicy()) ? 1 : 0;
+            const int behavior_policy =
+                SV_BotFrameCommandSmokeUsesBehaviorPolicy() ? 1 : 0;
+            const int behavior_arbitration =
+                SV_BotFrameCommandSmokeIsBehaviorArbitration() ? 1 : 0;
+            const int target_memory =
+                SV_BotFrameCommandSmokeIsTargetMemory() ? 1 : 0;
+            const int weapon_scoring =
+                SV_BotFrameCommandSmokeIsWeaponScoring() ? 1 : 0;
+            const int ammo_pressure =
+                SV_BotFrameCommandSmokeIsAmmoPressure() ? 1 : 0;
+            const int survival_inventory =
+                SV_BotFrameCommandSmokeIsSurvivalInventory() ? 1 : 0;
+            const int survival_route =
+                SV_BotFrameCommandSmokeIsSurvivalRoute() ? 1 : 0;
+            const char *survival_route_kind =
+                SV_BotFrameCommandSmokeIsCombatSurvivalRegression() ? "combat_health" :
+                SV_BotFrameCommandSmokeIsSurvivalArmorRoute() ? "armor" :
+                (SV_BotFrameCommandSmokeIsSurvivalHealthRoute() ? "health" : "0");
+            const int profile_role_policy =
+                SV_BotFrameCommandSmokeIsProfileRolePolicy() ? 1 : 0;
+            const int profile_team_policy =
+                SV_BotFrameCommandSmokeIsProfileTeamPolicy() ? 1 : 0;
+            const int profile_item_policy =
+                SV_BotFrameCommandSmokeIsProfileItemPolicy() ? 1 : 0;
+            const int profile_movement_policy =
+                SV_BotFrameCommandSmokeIsProfileMovementPolicy() ? 1 : 0;
+            const int bot_chat_policy =
+                SV_BotFrameCommandSmokeUsesBotChatPolicy() ? 1 : 0;
+            const int bot_chat_team_policy =
+                SV_BotFrameCommandSmokeIsBotChatTeamPolicy() ? 1 : 0;
+            const int bot_chat_rate_policy =
+                SV_BotFrameCommandSmokeIsBotChatRatePolicy() ? 1 : 0;
+            const int bot_chat_initial_policy =
+                SV_BotFrameCommandSmokeIsBotChatInitialPolicy() ? 1 : 0;
+            const int bot_chat_reply_policy =
+                SV_BotFrameCommandSmokeIsBotChatReplyPolicy() ? 1 : 0;
+            const int bot_chat_event_policy =
+                SV_BotFrameCommandSmokeIsBotChatEventPolicy() ? 1 : 0;
+            const int allow_chat = bot_chat_policy ? 1 : 0;
+            const int chat_team_only = bot_chat_team_policy ? 1 : 0;
+            const int chat_min_interval_ms =
+                bot_chat_rate_policy ? 60000 : 0;
             const int team_fire_avoidance =
                 SV_BotFrameCommandSmokeIsTeamFireAvoidance() ? 1 : 0;
             const int team_role_combat =
@@ -5422,12 +5826,24 @@ static void SV_BotFrameCommandSmokeFrame(void)
             const char *gametype =
                 (SV_BotFrameCommandSmokeIsFfaRoamRoute() ||
                  SV_BotFrameCommandSmokeIsFfaRoleCombat() ||
+                 SV_BotFrameCommandSmokeIsAimFirePolicy() ||
+                 SV_BotFrameCommandSmokeIsCombatSurvivalRegression() ||
+                 SV_BotFrameCommandSmokeIsAmmoPressure() ||
+                 SV_BotFrameCommandSmokeIsSurvivalInventory() ||
+                 SV_BotFrameCommandSmokeIsSurvivalRoute() ||
+                 SV_BotFrameCommandSmokeIsTargetMemory() ||
+                 SV_BotFrameCommandSmokeIsWeaponScoring() ||
                  SV_BotFrameCommandSmokeIsFfaItemRoles()) ? "1" :
                 ((SV_BotFrameCommandSmokeIsMatchReadiness() ||
                  SV_BotFrameCommandSmokeIsTeamRoleRoute() ||
                  SV_BotFrameCommandSmokeIsTeamItemRoles() ||
                  SV_BotFrameCommandSmokeIsTeamResourceDenial() ||
                  SV_BotFrameCommandSmokeIsMatchItemPolicy() ||
+                 SV_BotFrameCommandSmokeIsProfileItemPolicy() ||
+                 SV_BotFrameCommandSmokeIsProfileMovementPolicy() ||
+                 SV_BotFrameCommandSmokeUsesBotChatPolicy() ||
+                 SV_BotFrameCommandSmokeUsesBehaviorPolicy() ||
+                 SV_BotFrameCommandSmokeIsProfileRolePolicy() ||
                  SV_BotFrameCommandSmokeIsTeamFireAvoidance() ||
                  SV_BotFrameCommandSmokeIsTeamRoleCombat()) ? "3" :
                 ((SV_BotFrameCommandSmokeIsCtfRoleRoute() ||
@@ -5437,6 +5853,7 @@ static void SV_BotFrameCommandSmokeFrame(void)
                   SV_BotFrameCommandSmokeIsCtfBaseReturnRoute() ||
                   SV_BotFrameCommandSmokeIsCtfObjectiveRoute() ||
                   SV_BotFrameCommandSmokeIsCtfObjectiveRoutePrecedence() ||
+                  SV_BotFrameCommandSmokeIsProfileTeamPolicy() ||
                   SV_BotFrameCommandSmokeIsCtfItemRoles()) ? "5" :
                 (SV_BotFrameCommandSmokeIsTeamObjective() ? "1" : "0")));
 
@@ -5468,6 +5885,31 @@ static void SV_BotFrameCommandSmokeFrame(void)
                      ffa_role_combat ? "1" : "0");
             Cvar_Set("sg_bot_match_item_policy",
                      match_item_policy ? "1" : "0");
+            Cvar_Set("sg_bot_profile_item_policy_smoke",
+                     profile_item_policy ? "1" : "0");
+            Cvar_Set("sg_bot_profile_movement_policy_smoke",
+                     profile_movement_policy ? "1" : "0");
+            Cvar_Set("sg_bot_allow_chat",
+                     allow_chat ? "1" : "0");
+            Cvar_Set("sg_bot_chat_team_only",
+                     chat_team_only ? "1" : "0");
+            Cvar_Set("sg_bot_chat_min_interval_ms",
+                     chat_min_interval_ms ? "60000" : "0");
+            Cvar_Set("sg_bot_chat_reply_policy_smoke",
+                     bot_chat_reply_policy ? "1" : "0");
+            Cvar_Set("sg_bot_chat_event_policy_smoke",
+                     bot_chat_event_policy ? "1" : "0");
+            Cvar_Set("sg_bot_behavior_enable",
+                     behavior_policy ? "1" : "0");
+            Cvar_Set("sg_bot_frame_command_smoke_target_memory",
+                     target_memory ? "1" : "0");
+            Cvar_Set("sg_bot_frame_command_smoke_survival_inventory",
+                     survival_inventory ? "1" : "0");
+            Cvar_Set("sg_bot_frame_command_smoke_survival_route",
+                     SV_BotFrameCommandSmokeIsCombatSurvivalRegression() ?
+                         "combat_health" :
+                     SV_BotFrameCommandSmokeIsSurvivalArmorRoute() ? "armor" :
+                     (survival_route ? "1" : "0"));
             Cvar_Set("sg_bot_team_role_route",
                      team_role_route ? "1" : "0");
             Cvar_Set("sg_bot_team_item_roles",
@@ -5495,15 +5937,31 @@ static void SV_BotFrameCommandSmokeFrame(void)
             Com_Printf("q3a_bot_frame_command_smoke_scenario=begin "
                        "mode=%d combat=%s weapon_switch=%d item_focus=%s "
                        "team_objective=%d target=%d gametype=%s "
-                       "aim_fairness=%d item_timer=%d match_readiness=%d "
+                       "aim_fairness=%d aim_fire_policy=%d "
+                       "item_timer=%d match_readiness=%d "
                        "target_share=%d door_elevator=%d "
                        "ffa_roam_route=%d "
                        "ffa_spawn_camp_avoidance=%d "
                        "ffa_spawn_camp_combat_avoidance=%d "
                        "ffa_item_roles=%d "
                        "ffa_role_combat=%d "
-                       "match_item_policy=%d "
-                       "team_role_route=%d team_item_roles=%d "
+                       "match_item_policy=%d behavior_enable=%d "
+                       "behavior_arbitration=%d "
+                       "target_memory=%d weapon_scoring=%d "
+                       "ammo_pressure=%d survival_inventory=%d "
+                       "survival_route=%d survival_route_kind=%s "
+                       "profile_role_policy=%d "
+                        "profile_team_policy=%d "
+                        "profile_item_policy=%d "
+                        "profile_movement_policy=%d "
+                        "bot_chat_policy=%d bot_chat_team_policy=%d "
+                        "bot_chat_rate_policy=%d "
+                        "bot_chat_initial_policy=%d "
+                        "bot_chat_reply_policy=%d "
+                        "bot_chat_event_policy=%d "
+                        "allow_chat=%d chat_team_only=%d "
+                        "chat_min_interval_ms=%d "
+                        "team_role_route=%d team_item_roles=%d "
                        "team_resource_denial=%d "
                        "team_fire_avoidance=%d team_role_combat=%d "
                        "ctf_role_route=%d "
@@ -5515,13 +5973,23 @@ static void SV_BotFrameCommandSmokeFrame(void)
                        "ctf_item_roles=%d\n",
                        SV_BotFrameCommandSmokeMode(), combat_mode,
                        weapon_switch, item_focus, team_objective,
-                       target_bots, gametype, aim_fairness, item_timer,
-                       match_readiness, target_share, door_elevator,
+                       target_bots, gametype, aim_fairness, aim_fire_policy,
+                       item_timer, match_readiness, target_share, door_elevator,
                        ffa_roam_route, ffa_spawn_camp_avoidance,
                        ffa_spawn_camp_combat_avoidance,
                        ffa_item_roles, ffa_role_combat,
-                       match_item_policy,
-                       team_role_route, team_item_roles,
+                       match_item_policy, behavior_policy,
+                        behavior_arbitration, target_memory, weapon_scoring,
+                        ammo_pressure, survival_inventory, survival_route,
+                        survival_route_kind,
+                        profile_role_policy, profile_team_policy,
+                        profile_item_policy, profile_movement_policy,
+                        bot_chat_policy, bot_chat_team_policy,
+                        bot_chat_rate_policy, bot_chat_initial_policy,
+                        bot_chat_reply_policy, bot_chat_event_policy,
+                        allow_chat,
+                        chat_team_only, chat_min_interval_ms,
+                        team_role_route, team_item_roles,
                        team_resource_denial,
                        team_fire_avoidance, team_role_combat,
                        ctf_role_route,
@@ -5545,6 +6013,17 @@ static void SV_BotFrameCommandSmokeFrame(void)
             Cvar_Set("sg_bot_ffa_item_roles", "0");
             Cvar_Set("sg_bot_ffa_role_combat", "0");
             Cvar_Set("sg_bot_match_item_policy", "0");
+            Cvar_Set("sg_bot_profile_item_policy_smoke", "0");
+            Cvar_Set("sg_bot_profile_movement_policy_smoke", "0");
+            Cvar_Set("sg_bot_allow_chat", "0");
+            Cvar_Set("sg_bot_chat_team_only", "0");
+            Cvar_Set("sg_bot_chat_min_interval_ms", "0");
+            Cvar_Set("sg_bot_chat_reply_policy_smoke", "0");
+            Cvar_Set("sg_bot_chat_event_policy_smoke", "0");
+            Cvar_Set("sg_bot_behavior_enable", "0");
+            Cvar_Set("sg_bot_frame_command_smoke_target_memory", "0");
+            Cvar_Set("sg_bot_frame_command_smoke_survival_inventory", "0");
+            Cvar_Set("sg_bot_frame_command_smoke_survival_route", "0");
             Cvar_Set("sg_bot_team_role_route", "0");
             Cvar_Set("sg_bot_team_item_roles", "0");
             Cvar_Set("sg_bot_team_resource_denial", "0");
@@ -5771,6 +6250,10 @@ static void SV_BotFrameCommandSmokeFrame(void)
         } else {
             SV_BotFrameCommandStatus(target_bots, expected_commands);
         }
+    }
+
+    if (SV_BotFrameCommandSmokeUsesBotChatPolicy()) {
+        SV_BotChatPolicySmokeStatus(target_bots, target_bots, 1, 1);
     }
 
     SV_BotRemoveAll();

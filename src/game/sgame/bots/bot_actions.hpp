@@ -190,6 +190,10 @@ struct BotActionStatus {
 	int weaponInventoryPendingDeferrals = 0;
 	int weaponInventoryNoEnemySkips = 0;
 	int weaponInventoryNoCandidateSkips = 0;
+	int weaponInventoryAmmoSkips = 0;
+	int weaponInventorySplashUnsafeSkips = 0;
+	int weaponInventoryRangeSelections = 0;
+	int weaponInventoryEstimateSelections = 0;
 	int inventoryPolicyScans = 0;
 	int inventoryPolicyCandidates = 0;
 	int inventoryPolicyUsableCandidates = 0;
@@ -267,6 +271,13 @@ struct BotActionStatus {
 	int lastWeaponInventoryReadyCount = 0;
 	int lastWeaponInventoryCurrentScore = 0;
 	int lastWeaponInventorySelectedScore = 0;
+	int lastWeaponInventorySelectedAmmo = 0;
+	int lastWeaponInventorySelectedScoreMargin = 0;
+	int lastWeaponInventorySelectedPriority = 0;
+	int lastWeaponInventorySelectedAmmoPerShot = 0;
+	int lastWeaponInventorySelectedSplashDamage = 0;
+	int lastWeaponInventorySelectedSelfDamageRisk = 0;
+	int lastWeaponInventorySelectedEstimateAdjustment = 0;
 	int lastInventoryPolicyClientIndex = -1;
 	int lastInventoryPolicyItem = 0;
 	int lastInventoryPolicyCandidateCount = 0;
@@ -277,7 +288,10 @@ struct BotActionStatus {
 	BotActionApplyFailure lastApplyFailure = BotActionApplyFailure::None;
 	BotWeaponSwitchProofEvent lastWeaponSwitchEvent = BotWeaponSwitchProofEvent::None;
 	BotItemSpecialKind lastInventoryPolicySpecialKind = BotItemSpecialKind::None;
+	BotWeaponRangeBand lastWeaponInventorySelectedRangeBand = BotWeaponRangeBand::Unknown;
+	BotWeaponAttackModel lastWeaponInventorySelectedAttackModel = BotWeaponAttackModel::Unknown;
 	const char *lastWeaponInventoryReason = "none";
+	const char *lastWeaponInventoryEstimateReason = "none";
 	const char *lastInventoryPolicyReason = "none";
 };
 

@@ -636,6 +636,10 @@ void BotItems_RecordGoalAssignmentKind(BotItemUtilityKind kind) {
 		botItemStatus.itemHealthGoalAssignments++;
 	} else if (kind == BotItemUtilityKind::Armor) {
 		botItemStatus.itemArmorGoalAssignments++;
+	} else if (kind == BotItemUtilityKind::Ammo) {
+		botItemStatus.itemAmmoGoalAssignments++;
+	} else if (kind == BotItemUtilityKind::Weapon) {
+		botItemStatus.itemWeaponGoalAssignments++;
 	}
 }
 
@@ -1163,6 +1167,10 @@ BotItemDecision BotItems_Evaluate(const BotItemContext &context) {
 		priority += BOT_ITEM_FOCUS_PRIORITY_BOOST;
 		reason = "focus_armor";
 		botItemStatus.focusArmorBoosts++;
+	} else if (context.focus == BotItemFocus::Ammo && context.candidateKind == BotItemUtilityKind::Ammo) {
+		priority += BOT_ITEM_FOCUS_PRIORITY_BOOST;
+		reason = "focus_ammo";
+		botItemStatus.focusAmmoBoosts++;
 	}
 	if (context.candidateHighValue) {
 		priority += BOT_ITEM_HIGH_VALUE_PRIORITY_BOOST;
@@ -1318,6 +1326,9 @@ BotItemFocus BotItems_FocusFromString(const char *focus) {
 	if (BotItems_StringEqualsNoCase(focus, "armor")) {
 		return BotItemFocus::Armor;
 	}
+	if (BotItems_StringEqualsNoCase(focus, "ammo")) {
+		return BotItemFocus::Ammo;
+	}
 	return BotItemFocus::None;
 }
 
@@ -1327,6 +1338,8 @@ const char *BotItems_FocusName(BotItemFocus focus) {
 		return "health";
 	case BotItemFocus::Armor:
 		return "armor";
+	case BotItemFocus::Ammo:
+		return "ammo";
 	default:
 		return "none";
 	}

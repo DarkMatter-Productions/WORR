@@ -22,6 +22,7 @@ change game behavior on the fly.*/
 #include "../commands/commands.hpp"
 #include "../g_local.hpp"
 #include "../../../../inc/shared/bot_admin_audit_status.h"
+#include "../../../../inc/shared/bot_chat_policy_status.h"
 #include "../../../../inc/shared/bot_frame_command.h"
 #include "../../../../inc/shared/bot_intermission_status.h"
 #include "../../../../inc/shared/bot_mapvote_status.h"
@@ -152,6 +153,11 @@ cvar_t *sg_bot_debug_route;
 cvar_t *sg_bot_debug_goal;
 cvar_t *sg_bot_debug_client;
 cvar_t *sg_bot_cpu_budget_ms;
+cvar_t *sg_bot_allow_chat;
+cvar_t *sg_bot_chat_team_only;
+cvar_t *sg_bot_chat_min_interval_ms;
+cvar_t *sg_bot_chat_reply_policy_smoke;
+cvar_t *sg_bot_chat_event_policy_smoke;
 cvar_t *sg_bot_lifecycle_smoke;
 cvar_t *flood_msgs;
 cvar_t *flood_persecond;
@@ -1459,6 +1465,8 @@ static void *G_GetExtension(const char *name) {
       BotScoreboard_ResetStatus};
   static const bot_warmup_status_api_v1_t botWarmupStatusApi = {
       1, BotWarmup_PrintStatus};
+  static const bot_chat_policy_status_api_v1_t botChatPolicyStatusApi = {
+      1, BotChatPolicy_PrintStatus};
   static const match_logging_status_api_v1_t matchLoggingStatusApi = {
       1, MatchLogging_PrintSchemaStatus};
 
@@ -1501,6 +1509,10 @@ static void *G_GetExtension(const char *name) {
 
   if (!std::strcmp(name, BOT_WARMUP_STATUS_API_V1))
     return const_cast<bot_warmup_status_api_v1_t *>(&botWarmupStatusApi);
+
+  if (!std::strcmp(name, BOT_CHAT_POLICY_STATUS_API_V1))
+    return const_cast<bot_chat_policy_status_api_v1_t *>(
+        &botChatPolicyStatusApi);
 
   if (!std::strcmp(name, MATCH_LOGGING_STATUS_API_V1))
     return const_cast<match_logging_status_api_v1_t *>(

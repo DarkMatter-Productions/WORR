@@ -80,6 +80,14 @@ enum class BotObjectiveCoopIntent {
 	SupportCombat = 5,
 };
 
+enum class BotObjectiveMovementStyle {
+	None = 0,
+	Attack = 1,
+	Defense = 2,
+	Roam = 3,
+	Evasive = 4,
+};
+
 enum class BotObjectiveResourceIntent {
 	None = 0,
 	SelfPickup = 1,
@@ -198,8 +206,26 @@ struct BotObjectiveMatchContext {
 	int teamScore = 0;
 	int enemyTeamScore = 0;
 	int friendlyFireScalePercent = 0;
+	bool hasProfileTeamplayBias = false;
+	bool hasProfileObjectiveBias = false;
+	bool hasProfileFriendlyFireCare = false;
+	bool hasProfileMovementStyle = false;
+	bool hasProfileItemGreed = false;
+	bool hasProfileItemDenial = false;
+	bool hasProfilePowerupTiming = false;
+	bool hasProfileRetreatHealth = false;
+	int profileTeamplayBiasPermille = -1;
+	int profileObjectiveBiasPermille = -1;
+	int profileFriendlyFireCarePermille = -1;
+	int profileItemGreedPermille = -1;
+	int profileItemDenialPermille = -1;
+	int profilePowerupTimingPermille = -1;
+	int profileRetreatHealth = -1;
+	int health = 0;
 	BotObjectiveMatchMode mode = BotObjectiveMatchMode::None;
 	BotObjectiveRole requestedRole = BotObjectiveRole::None;
+	BotObjectiveRole profileRole = BotObjectiveRole::None;
+	BotObjectiveMovementStyle profileMovementStyle = BotObjectiveMovementStyle::None;
 };
 
 struct BotObjectiveMatchPolicy {
@@ -208,6 +234,24 @@ struct BotObjectiveMatchPolicy {
 	bool hasRequestedRole = false;
 	bool requestedRoleHonored = false;
 	bool fallbackRole = false;
+	bool hasProfileRole = false;
+	bool profileRoleHonored = false;
+	bool hasProfileTeamplayBias = false;
+	bool hasProfileObjectiveBias = false;
+	bool hasProfileFriendlyFireCare = false;
+	bool hasProfileMovementStyle = false;
+	bool hasProfileItemGreed = false;
+	bool hasProfileItemDenial = false;
+	bool hasProfilePowerupTiming = false;
+	bool hasProfileRetreatHealth = false;
+	bool profileTeamplayBiasApplied = false;
+	bool profileObjectiveBiasApplied = false;
+	bool profileFriendlyFireCareApplied = false;
+	bool profileMovementStyleApplied = false;
+	bool profileItemGreedApplied = false;
+	bool profileItemDenialApplied = false;
+	bool profilePowerupTimingApplied = false;
+	bool profileRetreatHealthApplied = false;
 	bool wantsRoam = false;
 	bool wantsCollect = false;
 	bool wantsEngage = false;
@@ -218,6 +262,9 @@ struct BotObjectiveMatchPolicy {
 	bool preferMajorItems = false;
 	bool shareTeamResources = false;
 	BotObjectiveMatchMode mode = BotObjectiveMatchMode::None;
+	BotObjectiveRole requestedRole = BotObjectiveRole::None;
+	BotObjectiveRole profileRole = BotObjectiveRole::None;
+	BotObjectiveMovementStyle profileMovementStyle = BotObjectiveMovementStyle::None;
 	BotObjectiveRole role = BotObjectiveRole::None;
 	BotObjectiveLane lane = BotObjectiveLane::None;
 	int clientIndex = -1;
@@ -231,6 +278,25 @@ struct BotObjectiveMatchPolicy {
 	int defendPriority = 0;
 	int midfieldPriority = 0;
 	int friendlyFireScalePercent = 0;
+	int profileTeamplayBiasPermille = -1;
+	int profileObjectiveBiasPermille = -1;
+	int profileFriendlyFireCarePermille = -1;
+	int profileItemGreedPermille = -1;
+	int profileItemDenialPermille = -1;
+	int profilePowerupTimingPermille = -1;
+	int profileRetreatHealth = -1;
+	int profileTeamplayPriorityBonus = 0;
+	int profileObjectivePriorityBonus = 0;
+	int profileFriendlyFireCarePriorityBonus = 0;
+	int profileMovementAttackPriorityBonus = 0;
+	int profileMovementDefensePriorityBonus = 0;
+	int profileMovementRoamPriorityBonus = 0;
+	int profileMovementCollectPriorityBonus = 0;
+	int profileMovementPriorityBonus = 0;
+	int profileItemGreedPriorityBonus = 0;
+	int profileItemDenialPriorityBonus = 0;
+	int profilePowerupTimingPriorityBonus = 0;
+	int profileRetreatHealthPriorityBonus = 0;
 	const char *reason = "none";
 	const char *laneReason = "none";
 };
@@ -294,6 +360,10 @@ struct BotObjectiveResourceContext {
 	bool enemyContested = false;
 	bool objectiveRelevant = false;
 	bool preferRoleResource = false;
+	int profileItemGreedPriorityBonus = 0;
+	int profileItemDenialPriorityBonus = 0;
+	int profilePowerupTimingPriorityBonus = 0;
+	int profileRetreatHealthPriorityBonus = 0;
 	BotObjectiveMatchMode mode = BotObjectiveMatchMode::None;
 	BotObjectiveRole role = BotObjectiveRole::None;
 	BotObjectiveLane lane = BotObjectiveLane::None;
@@ -308,6 +378,7 @@ struct BotObjectiveResourcePolicy {
 	bool shouldReserve = false;
 	bool denyEnemyPickup = false;
 	bool objectiveResource = false;
+	int profileItemPolicyBonus = 0;
 	BotObjectiveResourceIntent intent = BotObjectiveResourceIntent::None;
 	BotObjectiveMatchMode mode = BotObjectiveMatchMode::None;
 	BotObjectiveRole role = BotObjectiveRole::None;
@@ -322,6 +393,7 @@ struct BotObjectiveItemRolePolicy {
 	bool denyEnemyPickup = false;
 	bool shareWithTeam = false;
 	bool reserveForRole = false;
+	int profileItemPolicyBonus = 0;
 	BotObjectiveMatchMode mode = BotObjectiveMatchMode::None;
 	BotObjectiveRole role = BotObjectiveRole::None;
 	BotObjectiveLane lane = BotObjectiveLane::None;
@@ -412,6 +484,32 @@ struct BotObjectiveStatus {
 	int baseDefenseAssignments = 0;
 	int matchPolicyEvaluations = 0;
 	int matchPolicySelections = 0;
+	int matchPolicyRequested = 0;
+	int matchPolicyRequestedHonored = 0;
+	int matchPolicyFallbacks = 0;
+	int matchPolicyProfileRole = 0;
+	int matchPolicyProfileRoleHonored = 0;
+	int matchPolicyProfileRoleFallbacks = 0;
+	int matchPolicyProfileTeamplayBias = 0;
+	int matchPolicyProfileObjectiveBias = 0;
+	int matchPolicyProfileFriendlyFireCare = 0;
+	int matchPolicyProfileMovementStyle = 0;
+	int matchPolicyProfileMovementAttack = 0;
+	int matchPolicyProfileMovementDefense = 0;
+	int matchPolicyProfileMovementRoam = 0;
+	int matchPolicyProfileMovementEvasive = 0;
+	int matchPolicyProfileItemGreed = 0;
+	int matchPolicyProfileItemDenial = 0;
+	int matchPolicyProfilePowerupTiming = 0;
+	int matchPolicyProfileRetreatHealth = 0;
+	int matchPolicyProfileTeamplayBiasApplied = 0;
+	int matchPolicyProfileObjectiveBiasApplied = 0;
+	int matchPolicyProfileFriendlyFireCareApplied = 0;
+	int matchPolicyProfileMovementStyleApplied = 0;
+	int matchPolicyProfileItemGreedApplied = 0;
+	int matchPolicyProfileItemDenialApplied = 0;
+	int matchPolicyProfilePowerupTimingApplied = 0;
+	int matchPolicyProfileRetreatHealthApplied = 0;
 	int matchPolicyNoSelection = 0;
 	int matchPolicyScoringParticipation = 0;
 	int matchPolicyFfaSelections = 0;
@@ -439,6 +537,7 @@ struct BotObjectiveStatus {
 	int resourcePolicyReserveSelections = 0;
 	int resourcePolicyDenyEnemySelections = 0;
 	int resourcePolicyObjectiveSelections = 0;
+	int resourcePolicyProfileItemBonuses = 0;
 	int itemRolePolicyEvaluations = 0;
 	int itemRolePolicySelections = 0;
 	int itemRolePolicyNoSelection = 0;
@@ -448,6 +547,7 @@ struct BotObjectiveStatus {
 	int itemRoleTeamResourceSelections = 0;
 	int itemRoleDenyEnemySelections = 0;
 	int itemRoleObjectiveSelections = 0;
+	int itemRolePolicyProfileItemBonuses = 0;
 	int friendlyFirePolicyEvaluations = 0;
 	int friendlyFirePolicyAvoidance = 0;
 	int friendlyFirePolicyTargetBlocks = 0;
@@ -482,6 +582,8 @@ struct BotObjectiveStatus {
 	const char *lastReason = "none";
 	const char *lastLaneReason = "none";
 	int lastMatchMode = 0;
+	int lastMatchRequestedRole = 0;
+	int lastMatchProfileRole = 0;
 	int lastMatchRole = 0;
 	int lastMatchLane = 0;
 	int lastMatchPriority = 0;
@@ -492,6 +594,26 @@ struct BotObjectiveStatus {
 	int lastMatchAttackPriority = 0;
 	int lastMatchDefendPriority = 0;
 	int lastMatchMidfieldPriority = 0;
+	int lastMatchProfileTeamplayBias = -1;
+	int lastMatchProfileObjectiveBias = -1;
+	int lastMatchProfileFriendlyFireCare = -1;
+	int lastMatchProfileMovementStyle = 0;
+	int lastMatchProfileItemGreed = -1;
+	int lastMatchProfileItemDenial = -1;
+	int lastMatchProfilePowerupTiming = -1;
+	int lastMatchProfileRetreatHealth = -1;
+	int lastMatchProfileTeamplayBonus = 0;
+	int lastMatchProfileObjectiveBonus = 0;
+	int lastMatchProfileFriendlyFireCareBonus = 0;
+	int lastMatchProfileMovementBonus = 0;
+	int lastMatchProfileMovementAttackBonus = 0;
+	int lastMatchProfileMovementDefenseBonus = 0;
+	int lastMatchProfileMovementRoamBonus = 0;
+	int lastMatchProfileMovementCollectBonus = 0;
+	int lastMatchProfileItemGreedBonus = 0;
+	int lastMatchProfileItemDenialBonus = 0;
+	int lastMatchProfilePowerupTimingBonus = 0;
+	int lastMatchProfileRetreatHealthBonus = 0;
 	int lastCoopIntent = 0;
 	int lastCoopRole = 0;
 	int lastCoopLane = 0;
@@ -507,9 +629,11 @@ struct BotObjectiveStatus {
 	int lastResourceShouldShare = 0;
 	int lastResourceShouldReserve = 0;
 	int lastResourceDenyEnemy = 0;
+	int lastResourceProfileItemBonus = 0;
 	int lastItemCategory = 0;
 	int lastItemRole = 0;
 	int lastItemRolePriority = 0;
+	int lastItemRoleProfileItemBonus = 0;
 	int lastFriendlyFireAvoidance = 0;
 	int lastFriendlyFireTargetAllowed = 1;
 	int lastFriendlyFireScalePercent = 0;
@@ -613,6 +737,7 @@ const char *BotObjectives_RoleName(BotObjectiveRole role);
 const char *BotObjectives_LaneName(BotObjectiveLane lane);
 const char *BotObjectives_TargetSourceName(BotObjectiveTargetSource source);
 const char *BotObjectives_MatchModeName(BotObjectiveMatchMode mode);
+const char *BotObjectives_MovementStyleName(BotObjectiveMovementStyle style);
 const char *BotObjectives_ItemCategoryName(BotObjectiveItemCategory category);
 const char *BotObjectives_ItemRoleName(BotObjectiveItemRole role);
 const char *BotObjectives_CoopIntentName(BotObjectiveCoopIntent intent);

@@ -25,6 +25,9 @@ struct BotBrainBlackboardSnapshot {
 	int currentEnemyEstimateLastDamageSequence = 0;
 	int currentEnemyLastSeenFrame = 0;
 	int currentEnemyLastSeenTimeMilliseconds = 0;
+	bool currentEnemyRetainedFromMemory = false;
+	int currentEnemyMemoryAgeMilliseconds = 0;
+	int currentEnemyMemoryWindowMilliseconds = 0;
 	int lastSeenEnemyEntity = -1;
 	int lastSeenEnemyClient = -1;
 	int lastSeenEnemySpawnCount = 0;
@@ -92,5 +95,6 @@ struct BotBrainBlackboardSnapshot {
 void BotBrain_BeginFrame( gentity_t * bot );
 void BotBrain_EndFrame( gentity_t * bot );
 bool BotBrain_BuildFrameCommand( gentity_t * bot, usercmd_t * cmd );
+void BotBrain_ResetChatPolicyState();
 void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCommands );
 bool BotBrain_GetBlackboardSnapshot( int clientIndex, BotBrainBlackboardSnapshot * snapshot );

@@ -88,6 +88,26 @@ Implemented:
 - `team_item_roles`: mode `33` with `deathmatch 1`, `g_gametype 3`, and `sg_bot_team_item_roles 1`, verifies TDM match item-role policy can shape live pickup-goal scoring.
 - `team_resource_denial`: mode `50` with `deathmatch 1`, `g_gametype 3`, and `sg_bot_team_resource_denial 1`, verifies TDM resource policy can boost deny-enemy pickup-goal scoring for contested weapons, powerups, tech, and utility items.
 - `match_item_policy`: mode `51` with `deathmatch 1`, `g_gametype 3`, and `sg_bot_match_item_policy 1`, verifies the umbrella match item-policy cvar can activate both TDM item-role pickup scoring and deny-enemy resource scoring without setting the individual proof cvars.
+- `behavior_policy_umbrella`: mode `52` with `deathmatch 1`, `g_gametype 3`, and `sg_bot_behavior_enable 1`, verifies the integrated behavior switch activates role-route, role-combat, friendly-fire, and match item-policy helpers without setting the individual proof cvars.
+- `behavior_arbitration`: mode `63` with `deathmatch 1`, `g_gametype 3`, and `sg_bot_behavior_enable 1`, verifies central behavior owner arbitration, live/smoke/debug/deprecated cvar classification, route/item/combat candidates, combat ownership, and owner handoffs.
+- `target_memory_decay`: mode `64` with `deathmatch 1` and `g_gametype 1`, verifies blackboard enemy acquisition, retained unseen target memory, sticky target-memory smoke occlusion, `1000` ms decay, and clear-after-decay counters.
+- `weapon_scoring_arsenal`: mode `65` with `deathmatch 1` and `g_gametype 1`, verifies carried weapon inventory scanning, insufficient-ammo rejection, splash-risk pressure, close-range super-shotgun selection, enemy-estimate finisher scoring, and exact weapon-switch completion.
+- `aim_fire_policy_depth`: mode `66` with `deathmatch 1` and `g_gametype 1`, verifies reaction-delay withholding, aim-settle withholding, burst-cooldown pacing, live-aim policy blocks, rocket projectile lead, and eventual attack-button application.
+- `ammo_pressure_pickup`: mode `67` with `deathmatch 1`, `g_gametype 1`, and `item_focus=ammo`, verifies low-shell ammo pressure selects a staged shell pickup through item utility, route ownership, ammo-goal assignment counters, and ammo focus boosts.
+- `survival_inventory_use`: mode `68` with `deathmatch 1`, `g_gametype 1`, and `survival_inventory=1`, verifies a low-health/no-armor bot selects carried power armor, accepts pending inventory intent, and dispatches the live `use_index_only` inventory command.
+- `survival_health_route`: mode `69` with `deathmatch 1`, `g_gametype 1`, and `survival_route=1`, verifies low-health/no-armor survival pressure naturally selects a routeable health pickup without item focus and records health candidate, seek, utility-kind, and health goal-assignment telemetry.
+- `survival_armor_route`: mode `70` with `deathmatch 1`, `g_gametype 1`, and `survival_route=armor`, verifies full-health/no-armor survival pressure naturally selects a routeable armor pickup without item focus and records armor candidate, seek, utility-kind, and armor goal-assignment telemetry.
+- `combat_survival_regression`: mode `71` with `deathmatch 1`, `g_gametype 1`, and `survival_route=combat_health`, verifies visible enemy combat pressure and low-health survival item pressure coexist in one run, including blackboard/action target facts, withheld-fire evidence, health candidate/seek telemetry, health goal assignment, and item/recovery arbitration ownership.
+- `profile_role_policy`: mode `53` with `deathmatch 1` and `g_gametype 3`, verifies staged profile roles feed TDM match-policy requested-role selection.
+- `profile_team_policy`: mode `54` with `deathmatch 1` and `g_gametype 5`, verifies staged profile teamplay, objective, and friendly-fire-care hints feed CTF match-policy bonuses.
+- `profile_item_policy`: mode `55` with `deathmatch 1`, `g_gametype 3`, `sg_bot_match_item_policy 1`, and `sg_bot_profile_item_policy_smoke 1`, verifies staged profile item-greed, item-denial, powerup-timing, and retreat-health hints feed TDM match item/resource policy bonuses.
+- `profile_movement_policy`: mode `56` with `deathmatch 1`, `g_gametype 3`, and `sg_bot_profile_movement_policy_smoke 1`, verifies staged profile movement-style hints feed TDM match-policy attack, defense, roam, collect, and selected-role bonuses without relying on the umbrella behavior cvar.
+- `bot_chat_policy`: mode `57` with `deathmatch 1`, `g_gametype 3`, and `sg_bot_allow_chat 1`, verifies staged profile chat metadata and the default-off chat policy gate while proving the conservative live chat consumer submits at least one dispatch without failures.
+- `bot_chat_team_policy`: mode `58` with `deathmatch 1`, `g_gametype 3`, `sg_bot_allow_chat 1`, and `sg_bot_chat_team_only 1`, verifies the conservative live chat consumer routes through the team-only audience path.
+- `bot_chat_rate_policy`: mode `59` with `deathmatch 1`, `g_gametype 3`, `sg_bot_allow_chat 1`, and `sg_bot_chat_min_interval_ms 60000`, verifies the conservative live chat consumer submits the first dispatch and rate-limits later bot attempts without failures.
+- `bot_chat_initial_policy`: mode `60` with `deathmatch 1`, `g_gametype 3`, and `sg_bot_allow_chat 1`, verifies profile chat personalities select deterministic initial utterance buckets before live dispatch.
+- `bot_chat_reply_policy`: mode `61` with `deathmatch 1`, `g_gametype 3`, `sg_bot_allow_chat 1`, and `sg_bot_chat_reply_policy_smoke 1`, verifies profile chat personalities select deterministic reply utterances for the first team-ready proof event.
+- `bot_chat_event_policy`: mode `62` with `deathmatch 1`, `g_gametype 3`, `sg_bot_allow_chat 1`, and `sg_bot_chat_event_policy_smoke 1`, verifies profile chat personalities select deterministic reply utterances for team-ready and route-ready proof events.
 - `team_fire_avoidance`: mode `34` with `deathmatch 1`, `g_gametype 3`, and `sg_bot_team_fire_avoidance 1`, verifies TDM friendly-fire policy can suppress live attack input before `BUTTON_ATTACK` is applied.
 - `ctf_role_route`: mode `35` with `deathmatch 1`, `g_gametype 5`, and `sg_bot_ctf_role_route 1`, verifies CTF match role/lane policy can own timed route-goal commands.
 - `ctf_role_combat`: mode `36` with `deathmatch 1`, `g_gametype 5`, and `sg_bot_ctf_role_combat 1`, verifies CTF match role/lane policy can own live attack input from visible, shootable enemy facts.
@@ -113,7 +133,7 @@ Manual long-running:
 
 Pending placeholders:
 
-- None in the default catalog after the 2026-06-21 promotion round.
+- None in the default catalog after the 2026-06-22 aim/fire policy promotion round.
 
 Pending rows are reported but do not fail the suite unless `--fail-on-pending` is passed. With the current catalog, `--scenario pending` is a no-launch empty report unless new future rows are added.
 
@@ -135,7 +155,7 @@ The harness tolerates and reports newly added status fields without making them 
 
 Current optional discovery families:
 
-- `action_dispatch_counters`: weapon/inventory command-request build, accept/reject, dispatch, defer, submit, and failure counters from `q3a_bot_action_status`.
+- `action_dispatch_counters`: weapon/inventory command-request build, accept/reject, dispatch, defer, submit, failure, carried-weapon inventory scan, ammo-skip, splash-safety, range-selection, estimate-selection, and selected-weapon metadata counters from `q3a_bot_action_status`.
 - `live_combat_firing_counters`: enemy acquisition, combat evaluation, fire/withhold, attack-button, and damage proof counters.
 - `aim_policy_counters`: aim/fairness policy evaluation, allow/block, live-aim consumer, projectile lead, and last-policy metadata when combat status owners expose it.
 - `special_item_utility_buckets`: special item candidate, seek-decision, boost, and last-kind buckets for powerups, techs, mobility, protection, invisibility, and CTF objective pickups.
@@ -167,6 +187,8 @@ Current optional discovery families:
 - `team_fire_avoidance_counters`: default-off TDM friendly-fire policy evaluations, live attack suppressions, and latest blocked target/line metadata from frame-command status.
 - `team_item_role_counters`: default-off TDM match item-role scoring bridge evaluations, selected pickup goals, and latest role/category metadata from nav policy status.
 - `team_resource_denial_counters`: default-off TDM resource-denial scoring bridge evaluations, deny-enemy policy selections, selected pickup goals, and latest role/category/intent metadata from nav policy status.
+- `profile_item_policy_counters`: profile item-greed, item-denial, powerup-timing, and retreat-health match-policy presence/applied counters plus selected-goal bonus propagation from objective and nav policy status.
+- `profile_movement_policy_counters`: profile movement-style presence, attack/defense/roam/evasive buckets, applied counts, selected-role bonuses, and last movement style metadata from objective policy status.
 - `coop_leader_route_counters`: timed route-goal activation, refresh, source-selection, deferral, and last-leader metadata from frame-command and compact coop command status.
 - `coop_lead_advance_counters`: compact coop command-owner counters for the default-off no-leader LeadAdvance timed route-goal proof.
 - `coop_progress_wait_counters`: compact coop command-owner counters for the default-off WaitForLeader progression-wait proof.
@@ -174,6 +196,7 @@ Current optional discovery families:
 - `coop_anti_block_counters`: compact coop command-owner counters for the default-off close-leader anti-blocking proof.
 - `coop_target_share_counters`: compact coop target-sharing counters for blackboard source scans, adoptions, and last shared target/source metadata.
 - `coop_door_elevator_counters`: compact coop command-owner counters for source mover/elevator interaction ownership, teammate hold commands, and last interaction metadata.
+- `target_memory_counters`: blackboard enemy memory retention, target-memory smoke occlusion, decay, seed diagnostics, memory age/window, and final decay entity/client metadata from `q3a_bot_blackboard_status`.
 
 These fields are visible in text, JSON, Markdown, and pending-gap reports when present. They do not satisfy or fail scenario gates unless a scenario explicitly promotes one of them into `checks` or `marker_checks`.
 
@@ -193,7 +216,7 @@ Analyze an existing JSON report, usually `.tmp\bot_scenarios\latest_report.json`
 python tools\bot_scenarios\run_bot_scenarios.py --scenario pending --pending-gap-report .tmp\bot_scenarios\latest_report.json --format text --json-out .tmp\bot_scenarios\pending_gap_report.json
 ```
 
-This command does not launch the game. It compares pending placeholders against the report fixture and prints whether each scenario is ready for harness promotion or blocked by missing scenario rows, wrong smoke modes, pending fixture rows, absent status/marker metrics, absent policy-consumer evidence, or failed promotion metric checks. After modes `20` through `51`, `trace_checked_corner_cutting`, `coop_match_readiness`, `coop_leader_route`, `coop_progress_wait`, and `coop_interaction_retry` were promoted, the default pending set is empty.
+This command does not launch the game. It compares pending placeholders against the report fixture and prints whether each scenario is ready for harness promotion or blocked by missing scenario rows, wrong smoke modes, pending fixture rows, absent status/marker metrics, absent policy-consumer evidence, or failed promotion metric checks. After modes `20` through `66`, `trace_checked_corner_cutting`, `coop_match_readiness`, `coop_leader_route`, `coop_progress_wait`, and `coop_interaction_retry` were promoted, the default pending set is empty.
 
 Raw reserved-mode logs can be included when reserved modes have been run outside the normal scenario catalog:
 
@@ -239,6 +262,26 @@ The promoted source-backed smoke mode numbers are fixed for compatibility with s
 - `ffa_spawn_camp_combat_avoidance`: mode `49`
 - `team_resource_denial`: mode `50`
 - `match_item_policy`: mode `51`
+- `behavior_policy_umbrella`: mode `52`
+- `profile_role_policy`: mode `53`
+- `profile_team_policy`: mode `54`
+- `profile_item_policy`: mode `55`
+- `profile_movement_policy`: mode `56`
+- `bot_chat_policy`: mode `57`
+- `bot_chat_team_policy`: mode `58`
+- `bot_chat_rate_policy`: mode `59`
+- `bot_chat_initial_policy`: mode `60`
+- `bot_chat_reply_policy`: mode `61`
+- `bot_chat_event_policy`: mode `62`
+- `behavior_arbitration`: mode `63`
+- `target_memory_decay`: mode `64`
+- `weapon_scoring_arsenal`: mode `65`
+- `aim_fire_policy_depth`: mode `66`
+- `ammo_pressure_pickup`: mode `67`
+- `survival_inventory_use`: mode `68`
+- `survival_health_route`: mode `69`
+- `survival_armor_route`: mode `70`
+- `combat_survival_regression`: mode `71`
 
 Additional promoted rows reuse existing smoke coverage:
 

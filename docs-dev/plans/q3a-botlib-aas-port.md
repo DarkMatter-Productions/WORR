@@ -6,6 +6,9 @@ Status: Implementation In Progress
 
 Roadmap tasks: `FR-04-T01` through `FR-04-T07`, `FR-04-T10` through `FR-04-T16`, and `DV-07-T06`.
 
+Forward completion roadmap:
+`docs-dev/plans/bot-implementation-completion-roadmap.md`.
+
 ## Purpose
 
 Elegantly port the Quake III Arena bot system into WORR by bringing across the useful architecture, data formats, tooling, and behavior patterns while respecting WORR's Quake II Rerelease gameplay, server-game ownership, build layout, and documentation rules.
@@ -20,12 +23,57 @@ The port is not a blind file drop. The target is a maintained WORR bot stack wit
 
 ## Completion Snapshot
 
-Last refreshed: 2026-06-21 final bot/AAS checklist closeout.
+Last refreshed: 2026-06-22 smoke contract reconciliation round.
 
 - Phase checklist completion: 809 of 809 phase items complete, or 100.0%.
-- Raw markdown checkbox completion: 809 of 821 rows complete, or 98.5%, including the reusable 12-row checklist gate template in the Checklist System section.
-- Scenario catalog completion: 56 implemented short-run rows plus one manual degradation row, zero default pending rows, and the latest full implemented run passed all 56 short-run rows from `.tmp\bot_scenarios\20260621T210229Z`.
-- Completed in the latest worker lanes: live combat aim-profile policy and brain-owned live-aim/projectile-lead consumption, live pickup/observed-respawn item timing consumers with status-friendly counters, coop and resource policy helper metadata, stricter scenario marker gates for live aim and match-policy evidence, reference-map required-feature diagnostics, q2aas generator scope/presence/content-surface/BSPX policy semantics, q2aas reachability-policy/mover-route/metadata-policy diagnostics, optional `q2dm1` structural and travel-count baselines, expanded q2aas reference baselines for `q2dm2`, `q2dm8`, `q2ctf1`, `base1`, `base2`, and `train`, team-objective and campaign-progression diagnostics, eight-map AAS staging/packaging, the current Q3A AAS runtime C set compile proof, final WORR-owned static trace and entity trace adapter ownership, long-soak source-counter completeness diagnostics, richer first-party botfile behavior metadata, default-off FFA roam-route ownership, default-off FFA spawn-camp avoidance route ownership, default-off FFA role-combat ownership, default-off FFA spawn-camp combat-avoidance precedence proof, default-off TDM role-combat ownership, default-off TDM role-combat/friendly-fire precedence proof, duel surplus-bot spectator queue proof, tournament bot veto-exclusion proof, tournament replay reset proof, match logging schema/versioning proof, match logging catalog/downstream index proof, competitive server operator docs, map-restart cleanup scenario proof, warmup bot-start readiness proof, vote bot-exclusion proof, admin bot privilege audit proof, MyMap bot queue proof, scoreboard bot classification proof, intermission bot cleanup proof, queued nextmap transition proof, and map-vote bot-exclusion transition proof. These land on top of the earlier same-day promotion, packaging, source-counter, scenario, botfile, and documentation lanes.
+- Raw markdown checkbox completion: 809 of 809 rows complete, or 100.0%. The reusable 12-row checklist gate in the Checklist System section is now plain template guidance instead of raw unchecked task rows.
+- Scenario catalog completion: 77 implemented catalog rows total: 76 automated short-run rows plus one manual high-bot degradation-policy row, with zero default pending rows. The default `--catalog` view reports the 76 automated rows because it excludes manual-only rows unless explicitly requested. The latest full automated `implemented` run passed from `.tmp\bot_scenarios\implemented_after_next_round_stable_green\20260622T182201Z` with 76 passed rows, 0 failed rows, 0 timeouts, 0 errors, and 0 pending rows. Focused validation remains recorded in the per-slice logs for modes `52` through `71`, including the latest mode `71` `combat_survival_regression` artifact at `.tmp\bot_scenarios\combat_survival_regression\20260622T171717Z`.
+- Completed in the latest worker lanes: combat/survival regression staging and validation with dedicated mode `71`, visible/shootable enemy pressure, low-health health routing, withheld-fire evidence, item ownership, and recovery ownership in the same FFA run; natural survival armor-route telemetry, dedicated mode `70` `survival_armor_route` scenario proof, and expanded compact action status coverage for armor candidates, armor seek decisions, low-armor boosts, armor goal assignments, selected utility kind evidence, and route-clean AAS item-goal creation; natural survival health-route telemetry, dedicated mode `69` `survival_health_route` scenario proof, and expanded action status optional-field coverage for health candidates, health seek decisions, low-health boosts, health goal assignments, and selected utility kind evidence; carried survival inventory-use telemetry, dedicated mode `68` `survival_inventory_use` scenario proof, and expanded action dispatch optional-field coverage for pending inventory use, inventory command-request validation, inventory dispatch, last request kind, and last dispatch outcome evidence; ammo-focus item utility, ammo/weapon goal-assignment telemetry, dedicated mode `67` `ammo_pressure_pickup` scenario proof, and expanded item optional-field coverage for ammo candidates, ammo seek decisions, ammo focus boosts, last ammo item, and utility-kind evidence; staged aim/fire policy telemetry and mode `66` `aim_fire_policy_depth` scenario proof for reaction-delay withholding, aim-settle withholding, burst-cooldown pacing, live-aim policy blocks, rocket projectile lead, and attack application; carried-weapon arsenal scoring telemetry, mode `65` `weapon_scoring_arsenal` scenario proof, and expanded `action_dispatch_counters` optional-field coverage for weapon-inventory ammo, splash, range, estimate, and selected-weapon metadata; live blackboard target-memory retention and decay telemetry, mode `64` `target_memory_decay` scenario proof, and the `target_memory_counters` optional field family; central behavior arbitration owner selection, cvar classification, handoff telemetry, mode `63` `behavior_arbitration` scenario proof, and the `behavior_arbitration_counters` optional field family; smoke-only multi-event profile chat reply selection for team-ready and route-ready proof events, mode `62` `bot_chat_event_policy` scenario proof, route-ready reply telemetry in `q3a_bot_chat_policy_status`, proof-gated profile chat-personality reply selection for the first team-ready event, mode `61` `bot_chat_reply_policy` scenario proof, reply-selection telemetry in `q3a_bot_chat_policy_status`, profile chat-personality initial utterance selection, mode `60` `bot_chat_initial_policy` scenario proof, the default-off `sg_bot_chat_min_interval_ms` bot chat rate-limit policy, mode `59` `bot_chat_rate_policy` scenario proof, the default-off `sg_bot_chat_team_only` bot chat audience policy, mode `58` `bot_chat_team_policy` scenario proof, the default-off `sg_bot_allow_chat` live bot chat dispatch bridge, `BOT_CHAT_POLICY_STATUS_API_V1`, the expanded `q3a_bot_chat_policy_status` marker, mode `57` `bot_chat_policy` scenario proof, profile `WORR_MOVEMENT_STYLE` consumption by match policy, mode `56` profile movement-policy scenario proof, compact profile movement-style/bonus telemetry, profile `WORR_ITEM_GREED`, `WORR_ITEM_DENIAL`, `WORR_POWERUP_TIMING`, and `WORR_RETREAT_HEALTH` consumption by match item/resource policy, mode `55` profile item-policy scenario proof, compact profile item value/bonus telemetry, profile `WORR_TEAMPLAY_BIAS`, `WORR_OBJECTIVE_BIAS`, and `WORR_FRIENDLY_FIRE_CARE` consumption by match policy, mode `54` profile team-policy scenario proof, compact profile bias/value/bonus telemetry, profile `WORR_ROLE` consumption by match policy, mode `53` profile-role scenario proof, match-policy requested/profile-role telemetry, the default-off `sg_bot_behavior_enable` behavior policy umbrella, mode `52` scenario proof, and `q3a_bot_behavior_policy_status` marker family; live combat aim-profile policy and brain-owned live-aim/projectile-lead consumption, live pickup/observed-respawn item timing consumers with status-friendly counters, coop and resource policy helper metadata, stricter scenario marker gates for live aim and match-policy evidence, reference-map required-feature diagnostics, q2aas generator scope/presence/content-surface/BSPX policy semantics, q2aas reachability-policy/mover-route/metadata-policy diagnostics, optional `q2dm1` structural and travel-count baselines, expanded q2aas reference baselines for `q2dm2`, `q2dm8`, `q2ctf1`, `base1`, `base2`, and `train`, team-objective and campaign-progression diagnostics, eight-map AAS staging/packaging, the current Q3A AAS runtime C set compile proof, final WORR-owned static trace and entity trace adapter ownership, long-soak source-counter completeness diagnostics, richer first-party botfile behavior metadata, default-off FFA roam-route ownership, default-off FFA spawn-camp avoidance route ownership, default-off FFA role-combat ownership, default-off FFA spawn-camp combat-avoidance precedence proof, default-off TDM role-combat ownership, default-off TDM role-combat/friendly-fire precedence proof, duel surplus-bot spectator queue proof, tournament bot veto-exclusion proof, tournament replay reset proof, match logging schema/versioning proof, match logging catalog/downstream index proof, competitive server operator docs, map-restart cleanup scenario proof, warmup bot-start readiness proof, vote bot-exclusion proof, admin bot privilege audit proof, MyMap bot queue proof, scoreboard bot classification proof, intermission bot cleanup proof, queued nextmap transition proof, and map-vote bot-exclusion transition proof. These land on top of the earlier same-day promotion, packaging, source-counter, scenario, botfile, and documentation lanes.
+- Latest behavior-integration round: `sg_bot_behavior_enable` now activates the current default-off behavior proof family without requiring the individual proof cvars. Dedicated smoke mode `52` stages a four-bot TDM match, sets only the umbrella cvar, verifies the begin marker leaves `sg_bot_match_item_policy`, `sg_bot_team_role_route`, `sg_bot_team_role_combat`, `sg_bot_team_fire_avoidance`, `sg_bot_team_item_roles`, and `sg_bot_team_resource_denial` disabled, then proves runtime activation through `q3a_bot_behavior_policy_status`, TDM readiness, team role-route ownership, team role-combat decisions, friendly-fire suppression, and TDM match-policy evidence. Live item-role/resource-denial pickup-goal selection remains covered by mode `51`, because role-route ownership can legitimately preempt pickup-goal routing in the combined mode. Implementation log: `docs-dev/q3a-botlib-behavior-policy-umbrella-2026-06-22.md`.
+- Latest profile-role round: the match-policy builder now consumes bot profile `bot_role` userinfo, maps first-party role labels such as `attacker`, `defender`, `support`, and `duelist` into `BotObjectiveRole`, and treats that profile role as the requested match role when no caller supplied an explicit role. New compact status fields report requested/profile-role counts, honored counts, fallbacks, and the last requested/profile role. Dedicated smoke mode `53` adds the staged `smoke`, `bulwark`, `relay`, and `vanguard` profiles by id in a four-bot TDM match and proves attacker, defender, and support/midfield match-policy selections with zero profile-role fallbacks. Implementation log: `docs-dev/q3a-botlib-profile-role-policy-2026-06-22.md`.
+- Latest profile team-policy round: the server profile loader now accepts `teamplay_bias`, `objective_bias`, and `friendly_fire_care` plus WORR aliases, publishes them as bot userinfo, and `bot_objectives.*` consumes them as CTF/team match-policy priority and friendly-fire-care hints. New compact objective status fields expose profile bias presence, applied counts, last bias values, and last bonuses. Dedicated smoke mode `54` adds the staged `smoke`, `bulwark`, `relay`, and `vanguard` profiles by id in a four-bot CTF match and proves teamplay/objective/friendly-fire-care hints apply with positive bonuses, CTF readiness, route commands, and zero route failures. Implementation log: `docs-dev/q3a-botlib-profile-team-policy-2026-06-22.md`.
+- Latest profile item-policy round: the server profile loader now accepts `item_greed`, `item_denial`, `powerup_timing`, and `retreat_health` plus WORR aliases, publishes them as bot userinfo, and `bot_objectives.*` consumes them as match item/resource policy hints. Item greed raises self pickup priority, item denial raises deny-enemy pickup priority in team modes, powerup timing raises major item preference, and retreat health adds survival/recovery priority when the bot is at or below the configured threshold. New compact objective/nav status fields expose profile item-policy presence, applied counts, last values, last bonuses, and selected-goal bonus propagation. Dedicated smoke mode `55` adds the staged `smoke`, `bulwark`, `relay`, and `vanguard` profiles by id in a four-bot TDM match and proves all four item hints apply with positive objective/nav bonuses, TDM readiness, item assignments, and zero route failures. Implementation log: `docs-dev/q3a-botlib-profile-item-policy-2026-06-22.md`.
+- Latest profile movement-policy round: `bot_objectives.*` now consumes `bot_movement_style` profile userinfo as attack, defense, roam, or evasive movement policy. Attack styles raise attack/major-item pressure, defense styles raise defender/resource-sharing priority, roam styles raise midfield/roam/resource-sharing priority, and evasive styles raise roam/collect pressure. New compact objective status fields expose movement-style buckets, applied counts, last style names, and last bonus values. Dedicated smoke mode `56` adds the staged `smoke`, `bulwark`, `relay`, and `vanguard` profiles by id in a four-bot TDM match and proves movement hints apply without enabling `sg_bot_behavior_enable` or `sg_bot_match_item_policy`. Implementation log: `docs-dev/q3a-botlib-profile-movement-policy-2026-06-22.md`.
+- Latest bot chat dispatch round: `sg_bot_allow_chat` now gates a conservative live bot chat consumer. The bot brain emits one sanitized profile-chat proof line per bot spawn when the cvar is enabled and profile chat metadata exists; the dispatch path writes to the dedicated log and broadcasts only to real human clients, skipping bot reliable-message queues. Dedicated smoke mode `57` now verifies `consumer_ready=1`, `dispatch_enabled=1`, `dispatch_attempts>=1`, `dispatch_submitted>=1`, `dispatch_failures=0`, and `blocked_until_consumer=0`. Implementation log: `docs-dev/q3a-botlib-bot-chat-dispatch-2026-06-22.md`.
+- Latest bot chat team-policy round: `sg_bot_chat_team_only` now gates the first team-only audience path for the conservative bot chat consumer. Dedicated smoke mode `58` enables both `sg_bot_allow_chat` and `sg_bot_chat_team_only`, then verifies `team_only=1`, `dispatch_enabled=1`, `dispatch_submitted>=1`, `dispatch_failures=0`, `last_dispatch_team=1`, and `blocked_until_consumer=0`. Implementation log: `docs-dev/q3a-botlib-bot-chat-team-policy-2026-06-22.md`.
+- Latest bot chat rate-policy round: `sg_bot_chat_min_interval_ms` now provides a default-off global minimum interval for the conservative bot chat consumer. Dedicated smoke mode `59` enables `sg_bot_allow_chat`, sets `sg_bot_chat_min_interval_ms 60000`, and verifies `rate_limit_ms=60000`, `dispatch_attempts=4`, `dispatch_submitted=1`, `dispatch_rate_limited=3`, `dispatch_failures=0`, and `blocked_until_consumer=0`. Implementation log: `docs-dev/q3a-botlib-bot-chat-rate-policy-2026-06-22.md`.
+- Latest bot chat initial-policy round: profile `bot_chat_personality` metadata now selects deterministic initial utterance buckets before the conservative live dispatch. Dedicated smoke mode `60` verifies `initial_chat_selections=4`, `initial_chat_known_personalities=4`, `initial_chat_unknown_personalities=0`, `initial_chat_quiet=1`, `initial_chat_direct=1`, `initial_chat_helpful=1`, `initial_chat_steady=1`, and `dispatch_failures=0`. Implementation log: `docs-dev/q3a-botlib-bot-chat-initial-policy-2026-06-22.md`.
+- Latest bot chat reply-policy round: `sg_bot_chat_reply_policy_smoke` now gates a smoke-only deterministic reply selector that runs after the initial proof line and maps staged chat personalities to the first team-ready reply event. Dedicated smoke mode `61` verifies `dispatch_submitted=8`, `reply_chat_events=4`, `reply_chat_selections=4`, `reply_chat_known_personalities=4`, `reply_chat_team_ready=4`, `reply_chat_submitted=4`, `reply_chat_rate_limited=0`, `reply_chat_failures=0`, and `last_reply_chat_event=1`. Implementation log: `docs-dev/q3a-botlib-bot-chat-reply-policy-2026-06-22.md`.
+- Latest bot chat event-policy round: `sg_bot_chat_event_policy_smoke` now gates a smoke-only multi-event reply proof while preserving the mode `61` team-ready reply proof. Dedicated smoke mode `62` submits one initial line plus team-ready and route-ready reply events per staged bot, then verifies `dispatch_submitted=12`, `reply_chat_events=8`, `reply_chat_selections=8`, `reply_chat_known_personalities=8`, `reply_chat_team_ready=4`, `reply_chat_route_ready=4`, `reply_chat_submitted=8`, `reply_chat_rate_limited=0`, `reply_chat_failures=0`, and `last_reply_chat_event=2`. Implementation log: `docs-dev/q3a-botlib-bot-chat-event-policy-2026-06-22.md`.
+- Latest behavior arbitration round: `q3a_bot_behavior_policy_status` now exposes a central owner arbitration model with route/item/combat/objective/interaction/recovery candidates, winning owners, handoffs, last owner id/name/priority/reason, and live/smoke/debug/deprecated cvar classification. Dedicated smoke mode `63` runs the live `sg_bot_behavior_enable` umbrella without individual proof cvars and verifies route, item, and combat candidates, combat ownership, handoff evidence, and `behavior_live_policy_cvars=8` with all smoke/debug/deprecated counts at `0`. Focused validation passed from `.tmp\bot_scenarios\20260622T112202Z`. Implementation log: `docs-dev/q3a-botlib-behavior-arbitration-2026-06-22.md`.
+- Latest target-memory round: the per-bot blackboard now records whether the current enemy is retained from memory plus the current memory age/window, and the combat status marker reports memory retains, smoke occlusions, decays, final decay entity/client ids, and target-memory seed diagnostics. Dedicated smoke mode `64` runs a two-bot FFA target-memory proof with a short `1000` ms smoke decay window and verifies acquisition, retained unseen target pressure, sticky occlusion, decay, and clear-after-decay counters. Focused validation passed from `.tmp\bot_scenarios\20260622T120742Z`. Implementation log: `docs-dev/q3a-botlib-target-memory-decay-2026-06-22.md`.
+- Latest weapon scoring round: the action layer now records carried-weapon inventory scoring details for ammo skips, splash-risk pressure, range-backed selections, enemy-estimate selections, selected ammo/score metadata, selected range band, attack model, and estimate reason. Dedicated smoke mode `65` runs a two-bot FFA arsenal proof with unsafe close-range rockets, ready super shotgun, insufficient rail/BFG ammo, and a low-health enemy estimate; it verifies super-shotgun selection, finisher estimate scoring, and exact switch completion. Focused validation passed from `.tmp\bot_scenarios\20260622T123648Z`. Implementation log: `docs-dev/q3a-botlib-weapon-scoring-arsenal-2026-06-22.md`.
+- Latest aim/fire policy round: the frame-command smoke path now has dedicated mode `66` `aim_fire_policy_depth`, which stages a single rocket actor against a live moving peer and hard-gates reaction-delay withholding, aim-settle withholding, burst-cooldown pacing, live-aim policy blocks, rocket projectile lead, and eventual attack application. The smoke proof exposes the relevant aim-policy and projectile-lead counters through action status/detail markers and keeps the peer from overwriting proof-tail telemetry. Focused validation passed from `.tmp\bot_scenarios\20260622T125826Z`. Implementation log: `docs-dev/q3a-botlib-aim-fire-policy-depth-2026-06-22.md`.
+- Latest ammo pressure pickup round: item utility now supports ammo focus, ammo-specific boost telemetry, and ammo/weapon goal-assignment counters. Dedicated smoke mode `67` `ammo_pressure_pickup` stages a one-bot FFA low-shell shotgun state with a routeable shell pickup and proves ammo candidates, ammo seek decisions, ammo goal assignments, `item_last_item=30`, `item_last_utility_kind_name=ammo`, and zero route failures. Focused validation passed from `.tmp\bot_scenarios\ammo_pressure_pickup\20260622T132231Z`. Implementation log: `docs-dev/q3a-botlib-ammo-pressure-pickup-2026-06-22.md`.
+- Latest survival inventory use round: the action layer now publishes cumulative carried-inventory decision, pending-use, command-request, and command-dispatch counters through the action status markers. Dedicated smoke mode `68` `survival_inventory_use` stages a one-bot FFA low-health/no-armor state with a carried power shield and cells, then proves survival inventory scanning, power-armor selection, pending inventory intent acceptance, validated `use_inventory_index` command request, submitted dispatch outcome, and zero route failures. Focused validation passed from `.tmp\bot_scenarios\survival_inventory_use\20260622T161739Z`. Implementation log: `docs-dev/q3a-botlib-survival-inventory-use-2026-06-22.md`.
+- Latest survival health route round: the item/action status surface now publishes health candidate and health seek-decision counters alongside low-health boost and health goal-assignment proof fields. Dedicated smoke mode `69` `survival_health_route` stages a one-bot FFA low-health/no-armor state plus a routeable medium health pickup without item focus, then proves natural low-health utility pressure, health candidate/seek telemetry, health item goal assignment, AAS goal resolution, selected health utility metadata, and zero route failures. Focused validation passed from `.tmp\bot_scenarios\survival_health_route\20260622T164109Z`. Implementation log: `docs-dev/q3a-botlib-survival-health-route-2026-06-22.md`.
+- Latest survival armor route round: the compact action status surface now also publishes armor candidate and armor seek-decision counters beside the existing low-armor boost and armor goal-assignment proof fields. Dedicated smoke mode `70` `survival_armor_route` stages a one-bot FFA full-health/no-armor state plus a routeable jacket armor pickup without item focus, then proves natural low-armor utility pressure, armor candidate/seek telemetry, armor item-goal assignment, AAS goal resolution, selected armor utility metadata, and zero route failures. Focused validation passed from `.tmp\bot_scenarios\survival_armor_route\20260622T165918Z`. Implementation log: `docs-dev/q3a-botlib-survival-armor-route-2026-06-22.md`.
+- Latest combat survival regression round: dedicated smoke mode `71`
+  `combat_survival_regression` stages a two-bot FFA low-health health-route
+  proof with a visible, shootable enemy peer. The scenario now hard-gates that
+  blackboard/action combat target facts stay live while low-health item
+  pressure, withheld-fire policy, item ownership, and recovery ownership can
+  preempt attack input. Focused validation passed from
+  `.tmp\bot_scenarios\combat_survival_regression\20260622T171717Z`. The
+  follow-up smoke contract reconciliation round then turned the full 76-row
+  automated `implemented` catalog green from
+  `.tmp\bot_scenarios\implemented_after_next_round_stable_green\20260622T182201Z`.
+  Implementation log:
+  `docs-dev/q3a-botlib-combat-survival-regression-2026-06-22.md`.
+- Latest smoke contract reconciliation round: compact status emission now
+  preserves the route/objective/profile evidence that the expanded short-run
+  suite needs after long aggregate runs. The brain emits compact FFA roam-route
+  and TDM role-route proof lines, stabilizes aim-fairness failure status once
+  fire is allowed, lets the team-fire proof create attack intent before the
+  friendly-line veto, and keeps the expanded combat/survival row from
+  reclassifying non-combat smoke modes as enemy-engagement scenarios. Objective
+  telemetry now preserves the last positive profile-derived bonus instead of
+  letting later aggregate samples erase it, and the scenario harness no longer
+  requires stale objective-detail markers when route-specific status markers
+  are authoritative. Full validation passed 76 automated rows with 0 failures
+  from `.tmp\bot_scenarios\implemented_after_next_round_stable_green\20260622T182201Z`.
+  Implementation log:
+  `docs-dev/q3a-botlib-smoke-contract-reconciliation-2026-06-22.md`.
 - Latest implementation round: q2aas validation now reports
   `reachability_policy`, `mover_route_report`, `metadata_policy`,
   `team_objective_report`, and `campaign_progression_report` alongside the
@@ -48,13 +96,18 @@ Last refreshed: 2026-06-21 final bot/AAS checklist closeout.
   rollup, the q2aas generator tailoring rollup, roadmap/credits closeout
   notes, Linux/macOS CI build coverage evidence from the release matrix, and
   final reference-map validation evidence for the eight-map staged q2aas set.
-  The only unchecked markdown rows left are the reusable checklist gate template
-  in the Checklist System section.
+- Raw markdown checklist cleanup: the reusable Checklist System gate now uses
+  plain bullets so it remains copyable guidance without showing up as open raw
+  task debt.
 - Still pending beyond this checklist: future strategic depth such as broader
-  autonomous role behavior, campaign-specific trigger/key/objective
-  coordination, slime/lava-specific reference-map candidates beyond the current
-  water-backed set, fresh long-soak CPU baselines with current source-counter
-  fields, and any future FR-04 task expansion tracked in the roadmap.
+  autonomous role behavior beyond profile-seeded match-role selection,
+  campaign-specific trigger/key/objective
+  coordination, richer Q3A-style chat phrase libraries and live event triggers
+  beyond the current conservative dispatch, audience, global-rate,
+  initial-selection, single-reply, and multi-event smoke proofs,
+  slime/lava-specific reference-map candidates beyond the current water-backed
+  set, fresh long-soak CPU baselines with current source-counter fields, and
+  any future FR-04 task expansion tracked in the roadmap.
 
 ## Source Baseline
 
@@ -200,6 +253,15 @@ Target source layout, subject to adjustment during implementation:
 - `docs-dev/q3a-botlib-min-players-autofill-2026-06-17.md`: `sg_bot_min_players` auto-fill policy, auto/manual bot separation, generated-name fix, and fill/trim/disable smoke.
 - `docs-dev/q3a-botlib-profile-loading-2026-06-17.md`: `sg_bot_reload_profiles`, first Q3A-style profile parser, profile-aware add/autofill, and profile smoke.
 - `docs-dev/q3a-botlib-profile-behavior-fields-2026-06-17.md`: richer profile behavior field parsing, bot userinfo mapping, and expanded profile smoke.
+- `docs-dev/q3a-botlib-profile-role-policy-2026-06-22.md`: first live match-policy consumption of profile role metadata plus the mode `53` profile-role scenario proof.
+- `docs-dev/q3a-botlib-profile-team-policy-2026-06-22.md`: live match-policy consumption of profile teamplay, objective, and friendly-fire-care hints plus the mode `54` profile team-policy scenario proof.
+- `docs-dev/q3a-botlib-bot-chat-policy-boundary-2026-06-22.md`: prior default-off bot chat cvar/status boundary and profile chat metadata proof before the live-dispatch follow-up.
+- `docs-dev/q3a-botlib-bot-chat-dispatch-2026-06-22.md`: first conservative live bot chat dispatch bridge behind `sg_bot_allow_chat`, expanded status counters, and mode `57` scenario evidence.
+- `docs-dev/q3a-botlib-bot-chat-team-policy-2026-06-22.md`: default-off `sg_bot_chat_team_only` audience policy, status telemetry, and mode `58` scenario evidence.
+- `docs-dev/q3a-botlib-bot-chat-rate-policy-2026-06-22.md`: default-off `sg_bot_chat_min_interval_ms` global rate policy, status telemetry, and mode `59` scenario evidence.
+- `docs-dev/q3a-botlib-bot-chat-initial-policy-2026-06-22.md`: profile chat-personality initial utterance bucket selection, status telemetry, and mode `60` scenario evidence.
+- `docs-dev/q3a-botlib-bot-chat-reply-policy-2026-06-22.md`: smoke-only profile chat-personality reply selection, status telemetry, and mode `61` scenario evidence.
+- `docs-dev/q3a-botlib-bot-chat-event-policy-2026-06-22.md`: smoke-only multi-event chat reply proof, route-ready reply telemetry, and mode `62` scenario evidence.
 - `docs-dev/q3a-botlib-native-botfiles-assets-2026-06-18.md`: first WORR-authored `assets/botfiles/bots` profile pack, including the deterministic `smoke` profile.
 - `docs-dev/q3a-botlib-botfiles-validation-tool-2026-06-18.md`: CI-oriented standard-library validator for authored bot profile scripts.
 - `docs-dev/q3a-botlib-profile-loader-hardening-2026-06-18.md`: deterministic profile scan markers, parse diagnostics, and configurable profile-smoke target.
@@ -376,20 +438,20 @@ Use these tasks as the maintainable checklist backbone. Status values should fol
 
 ## Checklist System
 
-Every task above should be tracked with the same small checklist. If a task does not need one line, mark it `N/A` with a short reason in the implementation log.
+Every task above should be tracked with the same small checklist. If a task does not need one line, mark it `N/A` with a short reason in the implementation log. The reusable gate below is intentionally written as plain template guidance rather than raw markdown task checkboxes so project completion counters only count actionable checklist rows.
 
-- [ ] Scope and owner recorded in the roadmap or issue tracker.
-- [ ] Upstream/source files and concepts inventoried.
-- [ ] Credit ledger updated before code lands.
-- [ ] License headers retained or rewritten only when legally and historically correct.
-- [ ] Design notes added under `docs-dev/` for significant implementation choices.
-- [ ] Code implemented behind the planned ownership boundary.
-- [ ] Build validation run.
-- [ ] Runtime validation run on at least one reference map.
-- [ ] Debug/telemetry path verified.
-- [ ] `.install/` staging impact checked if binaries, maps, AAS files, or packaged assets changed.
-- [ ] User docs updated under `docs-user/` if new commands/cvars are exposed.
-- [ ] Roadmap task status updated.
+- Scope and owner recorded in the roadmap or issue tracker.
+- Upstream/source files and concepts inventoried.
+- Credit ledger updated before code lands.
+- License headers retained or rewritten only when legally and historically correct.
+- Design notes added under `docs-dev/` for significant implementation choices.
+- Code implemented behind the planned ownership boundary.
+- Build validation run.
+- Runtime validation run on at least one reference map.
+- Debug/telemetry path verified.
+- `.install/` staging impact checked if binaries, maps, AAS files, or packaged assets changed.
+- User docs updated under `docs-user/` if new commands/cvars are exposed.
+- Roadmap task status updated.
 
 ## Phase 0: Governance, Source Audit, and Credits
 
@@ -887,13 +949,13 @@ Implementation checklist:
   `pak0.pkz` and mirrors `botfiles` loose in refreshed installs so no-zlib
   dedicated builds can still scan the scripts.
 - `sv_bot_profile_smoke` provides an unattended dedicated-server profile smoke; mode `2` validates the repository-owned `smoke` profile, `B|Smoke` spawn, `bot_profile=smoke`, `skin=male/grunt`, `skill=4`, and full cleanup before exit.
-- Bot profiles now preserve reaction, aggression, aim error, preferred weapon, chat personality, team role, and movement-style fields, accepting common Q3A/WORR aliases, stripping `_c` entry-point suffixes from profile IDs, skipping `_w/_i/_t` companion scripts as profile records, and exposing the values as `bot_*` userinfo keys for later game-side policy.
+- Bot profiles now preserve reaction, aggression, aim error, preferred weapon, chat personality, team role, and movement-style fields, accepting common Q3A/WORR aliases, stripping `_c` entry-point suffixes from profile IDs, skipping `_w/_i/_t` companion scripts as profile records, and exposing the values as `bot_*` userinfo keys. Role, team, item, and movement profile hints now feed supported match-policy helpers; chat remains preserved metadata for future behavior work.
 - `sv_bot_profile_smoke` now validates the richer profile bridge with `reaction=250`, `aggression=0.65`, `aim_error=2.5`, `preferred_weapon=rocketlauncher`, `chat=quiet`, `role=attacker`, and `movement=strafe` on the staged `smoke` profile; `profile_backed_spawn` is part of the implemented scenario suite.
 - Bot initial team assignment now respects match lock, `GameFlags::OneVOne` two-player active caps, and positive `maxplayers` limits; surplus bots start as spectators instead of bypassing `SetTeam()` by direct session assignment.
 - `Bot_EnforceMatchTeamPolicy(true)` runs after cvar checks each game frame, preserving active humans first and moving surplus active bots to spectators when `maxplayers` or mode rules tighten.
 - `sv_bot_team_policy_smoke` now validates the policy directly from the game module: a three-bot Duel setup reports `playing=2`, `spectators=1`, `bots=3`, then cleanup reports zero bots with both status lines passing.
 - The fake-client frame-command path now requests an AAS route-steered command from `sgame`, faces the first predicted route step, and reports route counters through `sv_bot_frame_command_smoke`.
-- Remaining limitations: broader behavior consumption of profile metadata, general behavior-authored navigation goal policy, natural map-backed crouch/swim/waterjump movement-state validation, door/trigger retry, and higher-level behavior policy remain pending.
+- Remaining limitations: profile role plus teamplay/objective/friendly-fire, item, powerup, retreat-health, and movement metadata now feed supported match-policy helpers, but broader behavior consumption of chat metadata, general behavior-authored navigation goal policy, natural map-backed crouch/swim/waterjump movement-state validation, door/trigger retry, and higher-level behavior policy remain pending.
 
 Exit criteria:
 
@@ -1919,14 +1981,99 @@ Exit criteria:
 
 ## Outstanding Work Summary
 
+The phase checklist is complete, so the items below are post-checklist
+expansion lanes rather than raw markdown task rows. The detailed go-forward
+roadmap for turning these lanes into full live bot behavior is
+`docs-dev/plans/bot-implementation-completion-roadmap.md`.
+
+Outstanding work outline:
+
+- Behavior integration: `sg_bot_behavior_enable` now groups the current
+  default-off proof bridges behind one opt-in switch. The remaining work is to
+  turn that grouped proof surface into durable live decision loops, especially
+  FFA/TDM/CTF role selection, objective handoff, anti-camp/friendly-fire
+  precedence, and non-scripted enemy engagement.
+- Combat and inventory depth: broaden weapon, aim, health/armor, powerup,
+  special-inventory, and item-timer behavior across varied resource states
+  instead of relying on focused smoke setups.
+- Coop and campaign progression: turn follow/wait/lead, door/elevator,
+  resource-share, anti-blocking, and monster-target-share proof helpers into
+  map-backed campaign behavior, including trigger, key, mover, and objective
+  coordination.
+- Movement and map evidence: add broader natural movement validation for
+  crouch, swim, waterjump, slime/lava-adjacent hazards, movers, doors,
+  elevators, teleporters, and route recovery across more reference maps.
+- Reference-map and AAS breadth: expand beyond the current staged eight-map
+  q2aas set with more DM, CTF, coop, expansion, and BSPX-heavy candidates,
+  plus explicit known-failure diagnostics.
+- Performance and soak coverage: refresh long-soak CPU baselines using the
+  current source-counter fields, add strict budget thresholds where stable,
+  and keep high-bot degradation behavior observable.
+- Release and platform hardening: keep `.install/` packaging, botfiles, AAS
+  archive members, CI build coverage, and no-zlib dedicated-server profile/AAS
+  discovery aligned as future bot assets expand.
+- Match/admin ecosystem depth: add downstream consumers for match logging,
+  continue bot-boundary audits for admin/map/vote/tournament paths, and verify
+  bot cleanup through additional real match-flow transitions.
+- Planning hygiene: split each accepted lane into new roadmap task IDs and keep
+  `docs-dev/proposals/swot-feature-development-roadmap-2026-02-27.md`,
+  credits, implementation logs, and user docs synchronized with the work.
+
 The remaining work is now concentrated in depth, breadth, and release hardening
 rather than missing core proof-helper APIs. The default installed scenario suite
-now reports 56 implemented short-run rows plus one manual degradation row, and
-the latest full implemented run passed all 56 short-run rows from
-`.tmp\bot_scenarios\20260621T210229Z`; the newly promoted
-`match_item_policy` row also passed focused validation from
-`.tmp\bot_scenarios\20260621T203348Z`. Modes
-`20` through `51` are implemented smoke scenarios, `trace_checked_corner_cutting`
+now reports 77 implemented catalog rows total: 76 short-run rows plus one manual
+high-bot degradation-policy row. The default `--catalog` view reports 76
+short-run rows because manual-only rows are excluded unless requested, and
+the latest full automated `implemented` run passed the expanded 76-row
+short-run catalog from
+`.tmp\bot_scenarios\implemented_after_next_round_stable_green\20260622T182201Z`;
+focused validation passed for
+`behavior_policy_umbrella` from
+`.tmp\bot_scenarios\behavior_policy_umbrella\20260622T050833Z`,
+`match_item_policy` from
+`.tmp\bot_scenarios\match_item_policy_check\20260622T050722Z`, and
+`profile_role_policy` from
+`.tmp\bot_scenarios\profile_role_policy\20260622T052929Z`, and
+`profile_team_policy` from
+`.tmp\bot_scenarios\profile_team_policy\20260622T055119Z`, and
+`profile_item_policy` from
+`.tmp\bot_scenarios\profile_item_policy\20260622T062835Z`, and
+`profile_movement_policy` from
+`.tmp\bot_scenarios\profile_movement_policy\20260622T070032Z`, and
+`bot_chat_policy` from
+`.tmp\bot_scenarios\20260622T080531Z`, and
+`bot_chat_team_policy` from
+`.tmp\bot_scenarios\20260622T080044Z`, and
+`bot_chat_rate_policy` from
+`.tmp\bot_scenarios\20260622T081428Z`, and
+`bot_chat_initial_policy` from
+`.tmp\bot_scenarios\20260622T085845Z`, and
+`bot_chat_reply_policy` from
+`.tmp\bot_scenarios\20260622T092009Z`, and
+`bot_chat_event_policy` from
+`.tmp\bot_scenarios\20260622T093637Z`, and
+`behavior_arbitration` from
+`.tmp\bot_scenarios\20260622T112202Z`, and
+`target_memory_decay` from
+`.tmp\bot_scenarios\20260622T120742Z`, and
+`weapon_scoring_arsenal` from
+`.tmp\bot_scenarios\20260622T123648Z`, and
+`aim_fire_policy_depth` from
+`.tmp\bot_scenarios\20260622T125826Z`, and
+`ammo_pressure_pickup` from
+`.tmp\bot_scenarios\ammo_pressure_pickup\20260622T132231Z`, and
+`survival_inventory_use` from
+`.tmp\bot_scenarios\survival_inventory_use\20260622T161739Z`, and
+`survival_health_route` from
+`.tmp\bot_scenarios\survival_health_route\20260622T164109Z`, and
+`survival_armor_route` from
+`.tmp\bot_scenarios\survival_armor_route\20260622T165918Z`, and
+`combat_survival_regression` from
+`.tmp\bot_scenarios\combat_survival_regression\20260622T171717Z`.
+The full-suite reconciliation pass now records 76 passing rows, 0 failed rows,
+0 timeouts, 0 errors, and 0 pending rows.
+Modes
+`20` through `71` are implemented smoke scenarios, `trace_checked_corner_cutting`
 reuses the route-rich mode `21` proof, `ffa_roam_route` uses dedicated four-bot
 FFA mode `42`, `ffa_spawn_camp_avoidance` uses dedicated four-bot FFA mode
 `45`, `ffa_item_roles` uses dedicated four-bot FFA mode `46`,
@@ -1943,6 +2090,26 @@ cvars, `coop_lead_advance` uses dedicated one-bot coop mode `27`, and
 `team_item_roles` uses dedicated four-bot TDM mode `33`,
 `team_resource_denial` uses dedicated four-bot TDM mode `50`,
 `match_item_policy` uses dedicated four-bot TDM mode `51`,
+`behavior_policy_umbrella` uses dedicated four-bot TDM mode `52`,
+`profile_role_policy` uses dedicated four-bot TDM mode `53`,
+`profile_team_policy` uses dedicated four-bot CTF mode `54`,
+`profile_item_policy` uses dedicated four-bot TDM mode `55`,
+`profile_movement_policy` uses dedicated four-bot TDM mode `56`,
+`bot_chat_policy` uses dedicated four-bot TDM mode `57`,
+`bot_chat_team_policy` uses dedicated four-bot TDM mode `58`,
+`bot_chat_rate_policy` uses dedicated four-bot TDM mode `59`,
+`bot_chat_initial_policy` uses dedicated four-bot TDM mode `60`,
+`bot_chat_reply_policy` uses dedicated four-bot TDM mode `61`,
+`bot_chat_event_policy` uses dedicated four-bot TDM mode `62`,
+`behavior_arbitration` uses dedicated four-bot TDM mode `63`,
+`target_memory_decay` uses dedicated two-bot FFA mode `64`,
+`weapon_scoring_arsenal` uses dedicated two-bot FFA mode `65`,
+`aim_fire_policy_depth` uses dedicated two-bot FFA mode `66`,
+`ammo_pressure_pickup` uses dedicated one-bot FFA mode `67`,
+`survival_inventory_use` uses dedicated one-bot FFA mode `68`,
+`survival_health_route` uses dedicated one-bot FFA mode `69`,
+`survival_armor_route` uses dedicated one-bot FFA mode `70`,
+`combat_survival_regression` uses dedicated two-bot FFA mode `71`,
 `team_fire_avoidance` uses dedicated four-bot TDM mode `34`,
 `team_role_combat` uses dedicated four-bot TDM mode `43`,
 `team_role_combat_avoidance` uses dedicated four-bot TDM mode `44`, and
@@ -1990,7 +2157,12 @@ TDM/CTF route-owner,
 TDM/CTF combat-owner, TDM role-combat/friendly-fire precedence, focused CTF
 dropped-flag/carrier-support/base-return route-owner, combined CTF
 objective-route policy and precedence, FFA/TDM item-route selection, and TDM
-resource-denial pickup-scoring proofs.
+resource-denial pickup-scoring proofs. Profile chat metadata now has a safe
+default-off cvar/status boundary, conservative live-dispatch consumer,
+team-only audience and global minimum-interval policies, and profile
+chat-personality initial utterance selection; richer Q3A-style reply
+selection, event triggers, phrase libraries, and broader audience routing
+beyond the current proof gates remain future chat work.
 The mode `34`, `38`, and `39` proofs now avoid smoke-setup teleports of live
 players while preserving their friendly-fire and flag-carrier policy evidence.
 

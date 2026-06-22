@@ -198,15 +198,29 @@ anything with spaces.
 - `chat_personality`, `chat`, or `personality`: short chat style label, such as
   `quiet`. Packaged profiles should use one of the known labels such as
   `quiet`, `direct`, `taunting`, `helpful`, or `steady`, or expect a validator
-  warning until the new label is registered.
+  warning until the new label is registered. The `sg_bot_allow_chat` cvar is
+  default-off; when enabled, it allows the current conservative bot chat
+  dispatch proof and selects the initial proof line from the bot's chat
+  personality bucket. `sg_bot_chat_team_only` can route that proof through team
+  chat, and `sg_bot_chat_min_interval_ms <ms>` can require a global minimum
+  interval between submitted proof-chat lines. Smoke-only reply and multi-event
+  reply selectors also use this personality metadata for validation while the
+  richer chat system is still being built.
 - `WORR_CHAT_PERSONALITY`: Q3-style extension for WORR chat style.
 - `role` or `team_role`: team behavior hint, such as `attacker`, `defender`, or
-  `support`. Known aliases include `offense`, `defense`, `duelist`, `roamer`,
-  `scout`, `carrier`, and `escort`.
+  `support`. Known aliases include `attack`, `offense`, `defense`, `duelist`,
+  `anchor`, `relay`, `midfielder`, `midfield`, `roamer`, and `returner`.
+  Supported match roles now feed FFA/TDM/CTF match-policy selection when no
+  stronger role request is active.
 - `WORR_ROLE`: Q3-style extension for WORR team role.
 - `movement_style`, `movement`, or `move_style`: movement flavor hint, such as
   `strafe`. Known labels include `strafe`, `pressure`, `anchor`, `kite`,
   `patrol`, `roam`, `rush`, `camp`, `circle strafe`, `flank`, and `retreat`.
+  Supported movement styles now feed match-policy helpers: strafe, pressure,
+  rush, and circle-strafe styles favor attack and major-item pressure; anchor
+  and camp styles favor defense and team resource sharing; patrol, roam, and
+  flank styles favor midfield/roam behavior; kite, retreat, and evasive styles
+  favor roam and recovery collection.
 - `WORR_MOVEMENT_STYLE`: Q3-style extension for WORR movement flavor.
 - `reaction_jitter_ms`: extra reaction variation in milliseconds. Higher values
   make a bot less clockwork even when its base reaction is fast.
@@ -219,11 +233,12 @@ anything with spaces.
 - `WORR_AIM_LEAD_SCALE`: Q3-style extension for WORR projectile lead scale.
 - `combat_fov`: combat awareness cone in degrees.
 - `WORR_COMBAT_FOV`: Q3-style extension for WORR combat field of view.
-- `teamplay_bias`: how strongly the bot should favor team coordination.
+- `teamplay_bias`: how strongly the bot should favor team coordination. This
+  now feeds supported team match-policy helpers.
 - `objective_bias`: how strongly the bot should favor match objectives over
-  wandering or dueling.
+  wandering or dueling. This now feeds supported CTF objective policy helpers.
 - `friendly_fire_care`: how careful the bot should be about firing through
-  teammates.
+  teammates. This now feeds supported team friendly-fire policy helpers.
 - `WORR_TEAMPLAY_BIAS`, `WORR_OBJECTIVE_BIAS`, and
   `WORR_FRIENDLY_FIRE_CARE`: Q3-style extensions for WORR team policy hints.
 - `item_greed`: how strongly the bot should favor pickups for itself.
@@ -235,8 +250,22 @@ anything with spaces.
   `WORR_RETREAT_HEALTH`: Q3-style extensions for WORR item policy hints.
 
 Some behavior fields are parsed and preserved before every bot policy uses them.
-Treat them as safe profile metadata and tuning hints; exact behavior can change
-as the BotLib work continues.
+Role, teamplay, objective, friendly-fire-care, item-greed, item-denial,
+powerup-timing, retreat-health, and movement-style hints already affect
+supported match-policy helpers. The item-policy hints are used when match
+item/resource policy is active: greed favors self pickups, denial favors
+deny-enemy pickups in team modes, powerup timing favors major items, and retreat
+health raises survival-item priority once the bot is at or below that health
+threshold. Treat chat fields as safe profile metadata and tuning hints whose
+exact behavior can change as the BotLib work continues. `sg_bot_allow_chat`
+currently gates a narrow once-per-spawn live dispatch proof whose initial line
+comes from the profile chat personality, and `sg_bot_chat_team_only` can limit
+that proof to team chat. `sg_bot_chat_min_interval_ms <ms>` sets a global
+minimum interval between submitted proof-chat lines, with rate-limited attempts
+skipped rather than counted as failures. Current development builds also use
+chat personality for smoke-only reply and multi-event route-ready proofs;
+richer conversation and broader live event-triggered reply behavior remains
+future work.
 
 The profile validator checks behavior metadata before packaging:
 

@@ -468,15 +468,11 @@ Allows the losing player in a duel to forfeit the match.
 			}
 		}
 
-		void SayInternal(gentity_t* ent, const CommandArgs& args, bool team) {
+		bool SendMessageText(gentity_t* ent, std::string message, bool team) {
 			if (!ent || !ent->client)
-				return;
-			if (args.count() < 2)
-				return;
-
-			std::string message = args.joinFrom(1);
+				return false;
 			if (message.empty())
-				return;
+				return false;
 
 			const std::string safeName = G_ColorResetAfter(ent->client->sess.netName);
 			const std::string prefix = team
@@ -484,23 +480,23 @@ Allows the losing player in a duel to forfeit the match.
 				: std::format("{}: ", safeName);
 
 			if (prefix.size() >= kChatMaxLen)
-				return;
+				return false;
 
 			const size_t max_payload = kChatMaxLen - prefix.size();
 			if (message.size() > max_payload)
 				message.resize(max_payload);
 			if (message.empty())
-				return;
+				return false;
 
 			ExpandMacros(ent, message, max_payload);
 			if (message.empty())
-				return;
+				return false;
 
 			SanitizeMessage(message);
 
 			const std::string text = prefix + message + "\n";
 			if (CheckFlood(ent))
-				return;
+				return false;
 
 			if (g_dedicated->integer)
 				gi.Com_Print(text.c_str());
@@ -510,6 +506,16 @@ Allows the losing player in a duel to forfeit the match.
 					continue;
 				gi.LocClient_Print(other, PRINT_CHAT, text.c_str());
 			}
+			return true;
+		}
+
+		void SayInternal(gentity_t* ent, const CommandArgs& args, bool team) {
+			if (!ent || !ent->client)
+				return;
+			if (args.count() < 2)
+				return;
+
+			(void)SendMessageText(ent, args.joinFrom(1), team);
 		}
 	} // namespace chat
 
@@ -2561,4 +2567,145 @@ Toggles the eyecam view when following other players.
 } // namespace Commands
 
 
+namespace {
+
+struct BotChatPolicyDispatchStatus {
+	int attempts = 0;
+	int submitted = 0;
+	int failures = 0;
+	int rateLimited = 0;
+	int lastSubmittedTimeMs = -1;
+	int lastClient = -1;
+	int lastTeam = 0;
+};
+
+BotChatPolicyDispatchStatus botChatPolicyDispatchStatus{};
+
+int BotChatPolicy_ConfiguredRateLimitMilliseconds() {
+	if (!sg_bot_chat_min_interval_ms)
+		return 0;
+	return std::max(0, sg_bot_chat_min_interval_ms->integer);
+}
+
+bool BotChatPolicy_IsBotClient(const gentity_t* ent) {
+	return ent != nullptr &&
+		ent->client != nullptr &&
+		((ent->svFlags & SVF_BOT) != 0 || ent->client->sess.is_a_bot);
+}
+
+void BotChatPolicy_SanitizeMessage(std::string& text) {
+	for (char& ch : text) {
+		const unsigned char uch = static_cast<unsigned char>(ch);
+		if (ch == '\r' || ch == '\n' || uch == 127)
+			ch = '.';
+	}
+}
+
+} // namespace
+
+bool BotChatPolicy_Dispatch(gentity_t* ent, const char* message, bool team) {
+	botChatPolicyDispatchStatus.attempts++;
+	botChatPolicyDispatchStatus.lastClient =
+		(ent && ent->client) ? static_cast<int>(ent->s.number) - 1 : -1;
+	botChatPolicyDispatchStatus.lastTeam = team ? 1 : 0;
+
+	if (!sg_bot_allow_chat || sg_bot_allow_chat->integer <= 0) {
+		botChatPolicyDispatchStatus.failures++;
+		return false;
+	}
+
+	if (!ent || !ent->client || !message || !message[0]) {
+		botChatPolicyDispatchStatus.failures++;
+		return false;
+	}
+
+	const int rateLimitMs = BotChatPolicy_ConfiguredRateLimitMilliseconds();
+	if (rateLimitMs > 0 && botChatPolicyDispatchStatus.lastSubmittedTimeMs >= 0) {
+		const int nowMs = static_cast<int>(level.time.milliseconds());
+		const int elapsedMs = nowMs - botChatPolicyDispatchStatus.lastSubmittedTimeMs;
+		if (elapsedMs < rateLimitMs) {
+			botChatPolicyDispatchStatus.rateLimited++;
+			return false;
+		}
+	}
+
+	constexpr size_t kBotPolicyChatMaxLen = 256;
+	const std::string safeName = G_ColorResetAfter(ent->client->sess.netName);
+	const std::string prefix = team
+		? std::format("({}): ", safeName)
+		: std::format("{}: ", safeName);
+	if (prefix.size() >= kBotPolicyChatMaxLen) {
+		botChatPolicyDispatchStatus.failures++;
+		return false;
+	}
+
+	std::string payload(message);
+	const size_t maxPayload = kBotPolicyChatMaxLen - prefix.size();
+	if (payload.size() > maxPayload)
+		payload.resize(maxPayload);
+	BotChatPolicy_SanitizeMessage(payload);
+	if (payload.empty()) {
+		botChatPolicyDispatchStatus.failures++;
+		return false;
+	}
+
+	const std::string text = prefix + payload + "\n";
+	if (g_dedicated->integer)
+		gi.Com_Print(text.c_str());
+
+	for (auto other : active_clients()) {
+		if (BotChatPolicy_IsBotClient(other))
+			continue;
+		if (team && other != ent && !OnSameTeam(ent, other))
+			continue;
+		gi.LocClient_Print(other, PRINT_CHAT, text.c_str());
+	}
+
+	botChatPolicyDispatchStatus.submitted++;
+	botChatPolicyDispatchStatus.lastSubmittedTimeMs =
+		static_cast<int>(level.time.milliseconds());
+	return true;
+}
+
+void BotChatPolicy_ResetDispatchStatus() {
+	botChatPolicyDispatchStatus = {};
+	botChatPolicyDispatchStatus.lastClient = -1;
+	botChatPolicyDispatchStatus.lastSubmittedTimeMs = -1;
+}
+
+int BotChatPolicy_ConsumerReady() {
+	return 1;
+}
+
+int BotChatPolicy_DispatchAttempts() {
+	return botChatPolicyDispatchStatus.attempts;
+}
+
+int BotChatPolicy_DispatchSubmitted() {
+	return botChatPolicyDispatchStatus.submitted;
+}
+
+int BotChatPolicy_DispatchFailures() {
+	return botChatPolicyDispatchStatus.failures;
+}
+
+int BotChatPolicy_DispatchRateLimited() {
+	return botChatPolicyDispatchStatus.rateLimited;
+}
+
+int BotChatPolicy_RateLimitMilliseconds() {
+	return BotChatPolicy_ConfiguredRateLimitMilliseconds();
+}
+
+int BotChatPolicy_LastDispatchTimeMilliseconds() {
+	return botChatPolicyDispatchStatus.lastSubmittedTimeMs;
+}
+
+int BotChatPolicy_LastDispatchClient() {
+	return botChatPolicyDispatchStatus.lastClient;
+}
+
+int BotChatPolicy_LastDispatchTeam() {
+	return botChatPolicyDispatchStatus.lastTeam;
+}
 

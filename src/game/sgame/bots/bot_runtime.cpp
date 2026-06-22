@@ -3,6 +3,7 @@
 
 #include "../g_local.hpp"
 #include "../../bgame/logger.hpp"
+#include "bot_brain.hpp"
 #include "bot_nav.hpp"
 #include "botlib_adapter.hpp"
 #include "bot_runtime.hpp"
@@ -1222,6 +1223,11 @@ void Bot_RuntimeRegisterCvars() {
 	sg_bot_debug_goal = gi.cvar("sg_bot_debug_goal", "0", CVAR_NOFLAGS);
 	sg_bot_debug_client = gi.cvar("sg_bot_debug_client", "-1", CVAR_NOFLAGS);
 	sg_bot_cpu_budget_ms = gi.cvar("sg_bot_cpu_budget_ms", "2", CVAR_NOFLAGS);
+	sg_bot_allow_chat = gi.cvar("sg_bot_allow_chat", "0", CVAR_NOFLAGS);
+	sg_bot_chat_team_only = gi.cvar("sg_bot_chat_team_only", "0", CVAR_NOFLAGS);
+	sg_bot_chat_min_interval_ms = gi.cvar("sg_bot_chat_min_interval_ms", "0", CVAR_NOFLAGS);
+	sg_bot_chat_reply_policy_smoke = gi.cvar("sg_bot_chat_reply_policy_smoke", "0", CVAR_NOFLAGS);
+	sg_bot_chat_event_policy_smoke = gi.cvar("sg_bot_chat_event_policy_smoke", "0", CVAR_NOFLAGS);
 	sg_bot_lifecycle_smoke = gi.cvar("sg_bot_lifecycle_smoke", "0", CVAR_NOFLAGS);
 
 	BotLibAdapter_SetPrintCallback(BotRuntimeQ3APrint);
@@ -1235,6 +1241,8 @@ void Bot_RuntimeRegisterCvars() {
 
 void Bot_RuntimeBeginLevel() {
 	BotNav_ResetAll();
+	BotBrain_ResetChatPolicyState();
+	BotChatPolicy_ResetDispatchStatus();
 	ResetRuntimeStatusForMap();
 	lastDebugPrintTime = 0_ms;
 
@@ -1266,6 +1274,8 @@ void Bot_RuntimeBeginLevel() {
 
 void Bot_RuntimeEndLevel() {
 	BotNav_ResetAll();
+	BotBrain_ResetChatPolicyState();
+	BotChatPolicy_ResetDispatchStatus();
 	BotLibAdapter_EndLevel();
 	botRuntimeStatus = {};
 	botRuntimeStatus.state = BotAasRuntimeState::Disabled;

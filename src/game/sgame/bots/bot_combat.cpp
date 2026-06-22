@@ -1798,10 +1798,15 @@ BotWeaponSelectionResult BotCombat_SelectPreferredWeapon(const BotCombatContext 
 		.underpoweredEstimatePenalty = current.underpoweredEstimatePenalty ||
 			preferred.underpoweredEstimatePenalty,
 		.hasKnownWeapon = selected.metadata != nullptr,
+		.currentWeaponUsable = current.usable,
+		.preferredWeaponUsable = preferred.usable,
+		.currentWeaponSafe = current.safe,
 		.shouldSwitch = shouldSwitch,
 		.preferredWeaponSafe = preferred.safe,
 		.metadata = selected.metadata,
 		.reason = selected.reason,
+		.currentWeaponReason = current.reason,
+		.preferredWeaponReason = preferred.reason,
 		.estimateReason = estimateSource != nullptr ?
 			estimateSource->estimateReason : "none",
 	};

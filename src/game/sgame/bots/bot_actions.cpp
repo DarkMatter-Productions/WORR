@@ -124,6 +124,46 @@ bool BotActions_CarriedWeaponCandidate(const gclient_t *client, const Item *item
 		(item->flags & IF_WEAPON) != 0;
 }
 
+int BotActions_RangeRank(BotWeaponRangeBand band) {
+	switch (band) {
+	case BotWeaponRangeBand::Melee:
+		return 0;
+	case BotWeaponRangeBand::Close:
+		return 1;
+	case BotWeaponRangeBand::Medium:
+		return 2;
+	case BotWeaponRangeBand::Long:
+		return 3;
+	default:
+		return -1;
+	}
+}
+
+bool BotActions_RangeSupportsWeapon(
+	BotWeaponRangeBand range,
+	const BotWeaponMetadata &metadata) {
+	const int actual = BotActions_RangeRank(range);
+	const int minimum = BotActions_RangeRank(metadata.minimumRange);
+	const int maximum = BotActions_RangeRank(metadata.maximumRange);
+	return actual >= 0 && minimum >= 0 && maximum >= 0 &&
+		actual >= minimum && actual <= maximum;
+}
+
+bool BotActions_WeaponSelfDamageUnsafe(
+	const BotWeaponMetadata &metadata,
+	const BotCombatContext &context) {
+	return metadata.selfDamageRisk &&
+		metadata.selfDamageSafetyDistanceSquared > 0 &&
+		context.enemyDistanceSquared > 0 &&
+		context.enemyDistanceSquared <= metadata.selfDamageSafetyDistanceSquared;
+}
+
+bool BotActions_WeaponAmmoInsufficient(
+	const BotWeaponMetadata &metadata,
+	int ammo) {
+	return metadata.ammoPerShot > 0 && ammo < metadata.ammoPerShot;
+}
+
 bool BotActions_CarriedInventoryCandidate(const gclient_t *client, const Item *item) {
 	if (client == nullptr || item == nullptr) {
 		return false;
@@ -1160,7 +1200,17 @@ void BotActions_EnrichCombatInventory(const gentity_t *bot, BotActionContext *co
 	botActionStatus.lastWeaponInventoryReadyCount = 0;
 	botActionStatus.lastWeaponInventoryCurrentScore = 0;
 	botActionStatus.lastWeaponInventorySelectedScore = 0;
+	botActionStatus.lastWeaponInventorySelectedAmmo = 0;
+	botActionStatus.lastWeaponInventorySelectedScoreMargin = 0;
+	botActionStatus.lastWeaponInventorySelectedPriority = 0;
+	botActionStatus.lastWeaponInventorySelectedAmmoPerShot = 0;
+	botActionStatus.lastWeaponInventorySelectedSplashDamage = 0;
+	botActionStatus.lastWeaponInventorySelectedSelfDamageRisk = 0;
+	botActionStatus.lastWeaponInventorySelectedEstimateAdjustment = 0;
+	botActionStatus.lastWeaponInventorySelectedRangeBand = BotWeaponRangeBand::Unknown;
+	botActionStatus.lastWeaponInventorySelectedAttackModel = BotWeaponAttackModel::Unknown;
 	botActionStatus.lastWeaponInventoryReason = "invalid_context";
+	botActionStatus.lastWeaponInventoryEstimateReason = "none";
 
 	if (bot == nullptr || bot->client == nullptr ||
 		context == nullptr || !context->valid || !context->alive) {
@@ -1190,10 +1240,14 @@ void BotActions_EnrichCombatInventory(const gentity_t *bot, BotActionContext *co
 		BotCombat_SelectPreferredWeapon(baseCombat);
 	int candidateCount = 0;
 	int readyCount = 0;
+	int ammoSkipCount = 0;
+	int splashUnsafeCount = 0;
 	int selectedWeaponItem = baseCombat.currentWeaponItem;
 	int selectedWeaponAmmo = baseCombat.currentWeaponAmmo;
 	int selectedWeaponScore = baseSelection.currentWeaponScore;
-	const char *selectedReason = "keep_current";
+	int selectedEstimateAdjustment = baseSelection.currentEstimateAdjustment;
+	const char *selectedReason = baseSelection.reason;
+	const char *selectedEstimateReason = baseSelection.estimateReason;
 	bool selectedInventoryWeapon = false;
 
 	for (int itemId = static_cast<int>(IT_NULL) + 1;
@@ -1210,8 +1264,18 @@ void BotActions_EnrichCombatInventory(const gentity_t *bot, BotActionContext *co
 		if (ready) {
 			readyCount++;
 		}
+		const BotWeaponMetadata *candidateMetadata =
+			BotCombat_GetWeaponMetadata(itemId);
+		if (candidateMetadata != nullptr) {
+			if (BotActions_WeaponAmmoInsufficient(*candidateMetadata, ammo)) {
+				ammoSkipCount++;
+			}
+			if (BotActions_WeaponSelfDamageUnsafe(*candidateMetadata, baseCombat)) {
+				splashUnsafeCount++;
+			}
+		}
 		if (itemId == baseCombat.currentWeaponItem ||
-			BotCombat_GetWeaponMetadata(itemId) == nullptr) {
+			candidateMetadata == nullptr) {
 			continue;
 		}
 
@@ -1231,17 +1295,53 @@ void BotActions_EnrichCombatInventory(const gentity_t *bot, BotActionContext *co
 			selectedWeaponItem = itemId;
 			selectedWeaponAmmo = ammo;
 			selectedWeaponScore = candidateSelection.selectedWeaponScore;
+			selectedEstimateAdjustment =
+				candidateSelection.selectedEstimateAdjustment;
 			selectedReason = candidateSelection.reason;
+			selectedEstimateReason = candidateSelection.estimateReason;
 		}
 	}
 
 	botActionStatus.weaponInventoryCandidates += candidateCount;
 	botActionStatus.weaponInventoryReadyCandidates += readyCount;
+	botActionStatus.weaponInventoryAmmoSkips += ammoSkipCount;
+	botActionStatus.weaponInventorySplashUnsafeSkips += splashUnsafeCount;
 	botActionStatus.lastWeaponInventoryCandidateCount = candidateCount;
 	botActionStatus.lastWeaponInventoryReadyCount = readyCount;
 	botActionStatus.lastWeaponInventoryCurrentScore = baseSelection.currentWeaponScore;
 	botActionStatus.lastWeaponInventorySelectedScore = selectedWeaponScore;
 	botActionStatus.lastWeaponInventorySelectedItem = selectedWeaponItem;
+	botActionStatus.lastWeaponInventorySelectedAmmo = selectedWeaponAmmo;
+	botActionStatus.lastWeaponInventorySelectedScoreMargin =
+		selectedWeaponScore - baseSelection.currentWeaponScore;
+	botActionStatus.lastWeaponInventorySelectedEstimateAdjustment =
+		selectedEstimateAdjustment;
+	botActionStatus.lastWeaponInventoryEstimateReason = selectedEstimateReason;
+	const BotWeaponMetadata *selectedMetadata =
+		BotCombat_GetWeaponMetadata(selectedWeaponItem);
+	if (selectedMetadata != nullptr) {
+		const BotWeaponRangeBand selectedRange =
+			BotCombat_RangeBandForDistanceSquared(baseCombat.enemyDistanceSquared);
+		botActionStatus.lastWeaponInventorySelectedPriority =
+			selectedMetadata->priority;
+		botActionStatus.lastWeaponInventorySelectedAmmoPerShot =
+			selectedMetadata->ammoPerShot;
+		botActionStatus.lastWeaponInventorySelectedSplashDamage =
+			selectedMetadata->splashDamage ? 1 : 0;
+		botActionStatus.lastWeaponInventorySelectedSelfDamageRisk =
+			selectedMetadata->selfDamageRisk ? 1 : 0;
+		botActionStatus.lastWeaponInventorySelectedRangeBand = selectedRange;
+		botActionStatus.lastWeaponInventorySelectedAttackModel =
+			selectedMetadata->attackModel;
+		if (selectedInventoryWeapon &&
+			(selectedRange == selectedMetadata->idealRange ||
+			 BotActions_RangeSupportsWeapon(selectedRange, *selectedMetadata))) {
+			botActionStatus.weaponInventoryRangeSelections++;
+		}
+	}
+	if (selectedInventoryWeapon && selectedEstimateAdjustment != 0) {
+		botActionStatus.weaponInventoryEstimateSelections++;
+	}
 
 	if (candidateCount <= 0) {
 		botActionStatus.weaponInventoryNoCandidateSkips++;

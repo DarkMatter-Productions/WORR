@@ -4114,6 +4114,11 @@ extern cvar_t *sg_bot_debug_route;
 extern cvar_t *sg_bot_debug_goal;
 extern cvar_t *sg_bot_debug_client;
 extern cvar_t *sg_bot_cpu_budget_ms;
+extern cvar_t *sg_bot_allow_chat;
+extern cvar_t *sg_bot_chat_team_only;
+extern cvar_t *sg_bot_chat_min_interval_ms;
+extern cvar_t *sg_bot_chat_reply_policy_smoke;
+extern cvar_t *sg_bot_chat_event_policy_smoke;
 extern cvar_t *sg_bot_lifecycle_smoke;
 
 extern cvar_t *flood_msgs;
@@ -5093,6 +5098,45 @@ void BotMyMap_ResetStatus();
 void BotMyMap_ClearQueues();
 void BotWarmup_PrintStatus(int expectedBots, int expectedHumans,
                            int expectedPlaying, int expectedCanStart);
+bool BotChatPolicy_Dispatch(gentity_t* ent, const char* message, bool team);
+void BotChatPolicy_ResetDispatchStatus();
+int BotChatPolicy_ConsumerReady();
+int BotChatPolicy_DispatchAttempts();
+int BotChatPolicy_DispatchSubmitted();
+int BotChatPolicy_DispatchFailures();
+int BotChatPolicy_DispatchRateLimited();
+int BotChatPolicy_RateLimitMilliseconds();
+int BotChatPolicy_LastDispatchTimeMilliseconds();
+int BotChatPolicy_LastDispatchClient();
+int BotChatPolicy_LastDispatchTeam();
+int BotChatPolicy_InitialSelections();
+int BotChatPolicy_InitialKnownPersonalities();
+int BotChatPolicy_InitialUnknownPersonalities();
+int BotChatPolicy_InitialQuiet();
+int BotChatPolicy_InitialDirect();
+int BotChatPolicy_InitialTaunting();
+int BotChatPolicy_InitialHelpful();
+int BotChatPolicy_InitialSteady();
+int BotChatPolicy_LastInitialClient();
+int BotChatPolicy_LastInitialPersonality();
+int BotChatPolicy_LastInitialPhrase();
+int BotChatPolicy_ReplyEnabled();
+int BotChatPolicy_ReplyEvents();
+int BotChatPolicy_ReplySelections();
+int BotChatPolicy_ReplyKnownPersonalities();
+int BotChatPolicy_ReplyUnknownPersonalities();
+int BotChatPolicy_ReplyTeamReady();
+int BotChatPolicy_ReplyRouteReady();
+int BotChatPolicy_ReplySubmitted();
+int BotChatPolicy_ReplyRateLimited();
+int BotChatPolicy_ReplyFailures();
+int BotChatPolicy_LastReplyClient();
+int BotChatPolicy_LastReplyPersonality();
+int BotChatPolicy_LastReplyPhrase();
+int BotChatPolicy_LastReplyEvent();
+void BotChatPolicy_PrintStatus(int expectedBots, int expectedProfileChat,
+                               int expectedAllowChat,
+                               int expectedDispatchEnabled);
 void BotIntermission_PrintStatus(int expectedBots, int expectedHumans,
                                  int expectedPlaying,
                                  int expectedIntermission,

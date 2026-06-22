@@ -850,6 +850,53 @@ namespace
 		BotScoreboardApplyStatus lastApply{};
 	};
 
+	struct BotChatPolicyStatus
+	{
+		int bots = 0;
+		int humans = 0;
+		int playing = 0;
+		int botPlaying = 0;
+		int profileChat = 0;
+		int allowChat = 0;
+		int teamOnly = 0;
+		int consumerReady = 0;
+		int dispatchEnabled = 0;
+		int dispatchAttempts = 0;
+		int dispatchSubmitted = 0;
+		int dispatchFailures = 0;
+		int dispatchRateLimited = 0;
+		int rateLimitMs = 0;
+		int lastDispatchTimeMs = -1;
+		int lastDispatchClient = -1;
+		int lastDispatchTeam = 0;
+		int initialSelections = 0;
+		int initialKnownPersonalities = 0;
+		int initialUnknownPersonalities = 0;
+		int initialQuiet = 0;
+		int initialDirect = 0;
+		int initialTaunting = 0;
+		int initialHelpful = 0;
+		int initialSteady = 0;
+		int lastInitialClient = -1;
+		int lastInitialPersonality = 0;
+		int lastInitialPhrase = 0;
+		int replyEnabled = 0;
+		int replyEvents = 0;
+		int replySelections = 0;
+		int replyKnownPersonalities = 0;
+		int replyUnknownPersonalities = 0;
+		int replyTeamReady = 0;
+		int replyRouteReady = 0;
+		int replySubmitted = 0;
+		int replyRateLimited = 0;
+		int replyFailures = 0;
+		int lastReplyClient = -1;
+		int lastReplyPersonality = 0;
+		int lastReplyPhrase = 0;
+		int lastReplyEvent = 0;
+		int blockedUntilConsumer = 0;
+	};
+
 	static BotVoteLaunchStatus botVoteLastLaunch{};
 	static BotAdminAuditAttemptStatus botAdminAuditLastAttempt{};
 	static BotTournamentSetupStatus botTournamentLastSetup{};
@@ -1102,6 +1149,81 @@ namespace
 			(status.second.client < 0 || status.top.score >= status.second.score)) ? 1 : 0;
 		status.rankOrdered = (status.top.client >= 0 && status.top.rank == 0 &&
 			(status.second.client < 0 || status.second.rank == 1)) ? 1 : 0;
+
+		return status;
+	}
+
+	static BotChatPolicyStatus CountBotChatPolicyStatus()
+	{
+		BotChatPolicyStatus status{};
+
+		status.allowChat = sg_bot_allow_chat && sg_bot_allow_chat->integer > 0 ? 1 : 0;
+		status.teamOnly = sg_bot_chat_team_only && sg_bot_chat_team_only->integer > 0 ? 1 : 0;
+		status.consumerReady = BotChatPolicy_ConsumerReady();
+		status.dispatchEnabled = status.allowChat && status.consumerReady ? 1 : 0;
+		status.dispatchAttempts = BotChatPolicy_DispatchAttempts();
+		status.dispatchSubmitted = BotChatPolicy_DispatchSubmitted();
+		status.dispatchFailures = BotChatPolicy_DispatchFailures();
+		status.dispatchRateLimited = BotChatPolicy_DispatchRateLimited();
+		status.rateLimitMs = BotChatPolicy_RateLimitMilliseconds();
+		status.lastDispatchTimeMs = BotChatPolicy_LastDispatchTimeMilliseconds();
+		status.lastDispatchClient = BotChatPolicy_LastDispatchClient();
+		status.lastDispatchTeam = BotChatPolicy_LastDispatchTeam();
+		status.initialSelections = BotChatPolicy_InitialSelections();
+		status.initialKnownPersonalities = BotChatPolicy_InitialKnownPersonalities();
+		status.initialUnknownPersonalities = BotChatPolicy_InitialUnknownPersonalities();
+		status.initialQuiet = BotChatPolicy_InitialQuiet();
+		status.initialDirect = BotChatPolicy_InitialDirect();
+		status.initialTaunting = BotChatPolicy_InitialTaunting();
+		status.initialHelpful = BotChatPolicy_InitialHelpful();
+		status.initialSteady = BotChatPolicy_InitialSteady();
+		status.lastInitialClient = BotChatPolicy_LastInitialClient();
+		status.lastInitialPersonality = BotChatPolicy_LastInitialPersonality();
+		status.lastInitialPhrase = BotChatPolicy_LastInitialPhrase();
+		status.replyEnabled = BotChatPolicy_ReplyEnabled();
+		status.replyEvents = BotChatPolicy_ReplyEvents();
+		status.replySelections = BotChatPolicy_ReplySelections();
+		status.replyKnownPersonalities = BotChatPolicy_ReplyKnownPersonalities();
+		status.replyUnknownPersonalities = BotChatPolicy_ReplyUnknownPersonalities();
+		status.replyTeamReady = BotChatPolicy_ReplyTeamReady();
+		status.replyRouteReady = BotChatPolicy_ReplyRouteReady();
+		status.replySubmitted = BotChatPolicy_ReplySubmitted();
+		status.replyRateLimited = BotChatPolicy_ReplyRateLimited();
+		status.replyFailures = BotChatPolicy_ReplyFailures();
+		status.lastReplyClient = BotChatPolicy_LastReplyClient();
+		status.lastReplyPersonality = BotChatPolicy_LastReplyPersonality();
+		status.lastReplyPhrase = BotChatPolicy_LastReplyPhrase();
+		status.lastReplyEvent = BotChatPolicy_LastReplyEvent();
+		status.blockedUntilConsumer = status.allowChat && !status.consumerReady ? 1 : 0;
+
+		CalculateRanks();
+
+		for (auto ent : active_clients()) {
+			if (!ent || !ent->client)
+				continue;
+
+			const bool isBot = IsBotClient(ent);
+			gclient_t* client = ent->client;
+
+			if (isBot) {
+				status.bots++;
+				char chatPersonality[MAX_INFO_VALUE] = {};
+				if (gi.Info_ValueForKey(client->pers.userInfo,
+						"bot_chat_personality", chatPersonality,
+						sizeof(chatPersonality)) &&
+					chatPersonality[0])
+					status.profileChat++;
+			}
+			else {
+				status.humans++;
+			}
+
+			if (ClientIsPlaying(client)) {
+				status.playing++;
+				if (isBot)
+					status.botPlaying++;
+			}
+		}
 
 		return status;
 	}
@@ -1843,6 +1965,21 @@ namespace
 			expectedPlaying, expectedSortedBots, expectedLeaderBot,
 			expectedTopScore, expectedSecondScore);
 	}
+
+	static void SVCmd_BotChatPolicyStatus_f()
+	{
+		int expectedBots = -1;
+		int expectedProfileChat = -1;
+		int expectedAllowChat = -1;
+		int expectedDispatchEnabled = -1;
+
+		ParseExpectedInt(2, expectedBots);
+		ParseExpectedInt(3, expectedProfileChat);
+		ParseExpectedInt(4, expectedAllowChat);
+		ParseExpectedInt(5, expectedDispatchEnabled);
+		BotChatPolicy_PrintStatus(expectedBots, expectedProfileChat,
+			expectedAllowChat, expectedDispatchEnabled);
+	}
 } // anonymous namespace
 
 void BotTeamPolicy_PrintStatus(int expectedPlaying, int expectedSpectators,
@@ -1902,6 +2039,71 @@ void BotWarmup_PrintStatus(int expectedBots, int expectedHumans,
 		status.matchStateName, status.warmupState, status.warmupStateName,
 		expectedBots, expectedHumans, expectedPlaying, expectedCanStart,
 		pass ? 1 : 0).data());
+}
+
+void BotChatPolicy_PrintStatus(int expectedBots, int expectedProfileChat,
+	int expectedAllowChat, int expectedDispatchEnabled)
+{
+	const BotChatPolicyStatus status = CountBotChatPolicyStatus();
+	bool pass = true;
+
+	if (expectedBots >= 0 && status.bots != expectedBots)
+		pass = false;
+	if (expectedProfileChat >= 0 && status.profileChat != expectedProfileChat)
+		pass = false;
+	if (expectedAllowChat >= 0 && status.allowChat != expectedAllowChat)
+		pass = false;
+	if (expectedDispatchEnabled >= 0 &&
+		status.dispatchEnabled != expectedDispatchEnabled)
+		pass = false;
+
+	base_import.Com_Print(G_Fmt(
+		"q3a_bot_chat_policy_status bots={} humans={} playing={} "
+		"bot_playing={} profile_chat_metadata={} allow_chat={} "
+		"team_only={} consumer_ready={} dispatch_enabled={} dispatch_attempts={} "
+		"dispatch_submitted={} dispatch_failures={} dispatch_rate_limited={} "
+		"rate_limit_ms={} last_dispatch_time_ms={} "
+		"last_dispatch_client={} last_dispatch_team={} "
+		"initial_chat_selections={} initial_chat_known_personalities={} "
+		"initial_chat_unknown_personalities={} initial_chat_quiet={} "
+		"initial_chat_direct={} initial_chat_taunting={} "
+		"initial_chat_helpful={} initial_chat_steady={} "
+		"last_initial_chat_client={} last_initial_chat_personality={} "
+		"last_initial_chat_phrase={} "
+		"reply_chat_enabled={} reply_chat_events={} "
+		"reply_chat_selections={} reply_chat_known_personalities={} "
+		"reply_chat_unknown_personalities={} reply_chat_team_ready={} "
+		"reply_chat_route_ready={} "
+		"reply_chat_submitted={} reply_chat_rate_limited={} "
+		"reply_chat_failures={} last_reply_chat_client={} "
+		"last_reply_chat_personality={} last_reply_chat_phrase={} "
+		"last_reply_chat_event={} "
+		"blocked_until_consumer={} expected_bots={} "
+		"expected_profile_chat={} expected_allow_chat={} "
+		"expected_dispatch_enabled={} pass={}\n",
+		status.bots, status.humans, status.playing, status.botPlaying,
+		status.profileChat, status.allowChat, status.teamOnly,
+		status.consumerReady, status.dispatchEnabled, status.dispatchAttempts,
+		status.dispatchSubmitted, status.dispatchFailures,
+		status.dispatchRateLimited, status.rateLimitMs,
+		status.lastDispatchTimeMs,
+		status.lastDispatchClient, status.lastDispatchTeam,
+		status.initialSelections, status.initialKnownPersonalities,
+		status.initialUnknownPersonalities, status.initialQuiet,
+		status.initialDirect, status.initialTaunting,
+		status.initialHelpful, status.initialSteady,
+		status.lastInitialClient, status.lastInitialPersonality,
+		status.lastInitialPhrase,
+		status.replyEnabled, status.replyEvents,
+		status.replySelections, status.replyKnownPersonalities,
+		status.replyUnknownPersonalities, status.replyTeamReady,
+		status.replyRouteReady,
+		status.replySubmitted, status.replyRateLimited,
+		status.replyFailures, status.lastReplyClient,
+		status.lastReplyPersonality, status.lastReplyPhrase,
+		status.lastReplyEvent,
+		status.blockedUntilConsumer, expectedBots, expectedProfileChat,
+		expectedAllowChat, expectedDispatchEnabled, pass ? 1 : 0).data());
 }
 
 void BotVote_ResetStatus()
@@ -3835,6 +4037,9 @@ void ServerCommand()
 	}
 	else if (Q_strcasecmp(cmd, "bot_scoreboard_status") == 0) {
 		SVCmd_BotScoreboardStatus_f();
+	}
+	else if (Q_strcasecmp(cmd, "bot_chat_policy_status") == 0) {
+		SVCmd_BotChatPolicyStatus_f();
 	}
 	else {
 		gi.LocClient_Print(nullptr, PRINT_HIGH, "$g_sgame_auto_14d3c73afcac", cmd);

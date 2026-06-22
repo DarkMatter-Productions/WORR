@@ -61,6 +61,7 @@ set sg_bot_skill 3
 set sg_bot_allow_item_timers 1
 set sg_bot_item_timer_fuzz_ms 0
 set sg_bot_allow_rocketjump 0
+set sg_bot_allow_chat 0
 ```
 
 Start with rocket jumping disabled. It is useful for route testing, but real
@@ -80,6 +81,30 @@ keeps timers enabled for normal practice play:
 Timer fuzz is deterministic for the same match facts, so repeated tests stay
 repeatable. It only changes bot decision-making; it does not change the actual
 item respawn rules for players or the server.
+
+`sg_bot_allow_chat` is a default-off chat gate. Current builds preserve profile
+chat metadata and can emit one sanitized policy line per bot spawn when the cvar
+is enabled, with the initial proof line selected from the bot's chat personality
+bucket. Set `sg_bot_chat_team_only 1` alongside it to route that proof through
+team chat. Set `sg_bot_chat_min_interval_ms <ms>` to require a global minimum
+interval between submitted bot proof-chat lines; rate-limited attempts are
+skipped without counting as failures. Current development builds also carry
+smoke-only reply and multi-event reply selectors for validation, but richer
+conversational chat and broader live event-triggered replies are still being
+developed.
+
+## Behavior Experiments
+
+For local testing, this enables the current integrated behavior policy set:
+
+```text
+set sg_bot_behavior_enable 1
+```
+
+This turns on the experimental role-route, role-combat, friendly-fire caution,
+match item-policy, and coop/CTF/FFA helper policies that are otherwise exposed
+through narrower development cvars. Leave it off on public servers until you
+have tested the map, mode, and bot count you plan to run.
 
 For development or diagnosis:
 
@@ -102,6 +127,21 @@ Local staged builds use the same layout under `.install/basew/botfiles/`.
 The packaged copy lives in `basew/pak0.pkz`, and a loose mirror is staged beside
 it so dedicated server operators can inspect or edit profiles without unpacking
 the archive.
+
+Profile role, team-policy, item-policy, and movement-policy hints now feed supported
+match-policy helpers. For example, packaged attacker, defender, and support
+profiles can bias the bot's FFA/TDM/CTF match policy toward attack, defense, or
+midfield/support behavior. Teamplay, objective, and friendly-fire-care profile
+hints can raise team coordination, CTF objective, and friendly-fire caution
+priorities, while item greed, item denial, powerup timing, and retreat-health
+hints can shape pickup priorities when match item/resource policy is active.
+Movement styles such as pressure, anchor, roam, and retreat can also bias
+attack, defense, roam, resource-sharing, and recovery collection priorities.
+Chat personality fields are preserved as profile metadata and now select the
+current once-per-spawn policy chat proof line when `sg_bot_allow_chat` is
+enabled. Proof-only reply selectors also use that personality metadata in
+developer smoke validation, including a multi-event route-ready proof;
+server-facing conversation behavior is still evolving.
 
 After editing botfiles on a running server:
 
@@ -126,11 +166,14 @@ messages when testing a new map.
 
 The current bot stack can spawn, join matches, load profiles, route through AAS,
 seek items, run smoke-proven combat/objective helpers, and expose detailed debug
-status. The remaining work is mostly behavior depth:
+status. Profile role, teamplay, objective, friendly-fire-care, item-policy, and
+movement-style hints already influence supported match-policy helpers, but the
+remaining work is mostly behavior depth:
 
 - aiming and firing are still conservative
 - weapon and inventory command ownership is still being completed
-- team roles are visible in status but not fully autonomous in live CTF/TDM flow
+- team and objective behavior is still experimental; use
+  `sg_bot_behavior_enable 1` when testing the integrated policy set
 - coop behavior is a later phase
 - map coverage depends on generated AAS files
 

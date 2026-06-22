@@ -5,6 +5,8 @@
 #include "botlib_adapter.hpp"
 #include "bot_objectives.hpp"
 
+#include <cstdlib>
+
 namespace {
 constexpr int BOT_OBJECTIVE_ENEMY_FLAG_PRIORITY = 900;
 constexpr int BOT_OBJECTIVE_NEUTRAL_FLAG_PRIORITY = 880;
@@ -45,8 +47,31 @@ constexpr int BOT_OBJECTIVE_RESOURCE_RESERVE_BOOST = 80;
 constexpr int BOT_OBJECTIVE_RESOURCE_DENY_BOOST = 95;
 constexpr int BOT_OBJECTIVE_RESOURCE_OBJECTIVE_BOOST = 180;
 constexpr int BOT_OBJECTIVE_DISTANCE_SENTINEL = 0x3fffffff;
+constexpr int BOT_OBJECTIVE_PROFILE_BIAS_PERMILLE = 1000;
+constexpr int BOT_OBJECTIVE_PROFILE_BIAS_HIGH = 700;
+constexpr int BOT_OBJECTIVE_PROFILE_TEAMPLAY_BONUS_MAX = 35;
+constexpr int BOT_OBJECTIVE_PROFILE_OBJECTIVE_BONUS_MAX = 85;
+constexpr int BOT_OBJECTIVE_PROFILE_FRIENDLY_FIRE_BONUS_MAX = 25;
+constexpr int BOT_OBJECTIVE_PROFILE_MOVEMENT_ATTACK_BONUS = 45;
+constexpr int BOT_OBJECTIVE_PROFILE_MOVEMENT_DEFENSE_BONUS = 45;
+constexpr int BOT_OBJECTIVE_PROFILE_MOVEMENT_ROAM_BONUS = 40;
+constexpr int BOT_OBJECTIVE_PROFILE_MOVEMENT_COLLECT_BONUS = 35;
+constexpr int BOT_OBJECTIVE_PROFILE_ITEM_GREED_BONUS_MAX = 45;
+constexpr int BOT_OBJECTIVE_PROFILE_ITEM_DENIAL_BONUS_MAX = 75;
+constexpr int BOT_OBJECTIVE_PROFILE_POWERUP_TIMING_BONUS_MAX = 65;
+constexpr int BOT_OBJECTIVE_PROFILE_RETREAT_HEALTH_BONUS_MAX = 95;
+constexpr int BOT_OBJECTIVE_PROFILE_RETREAT_HEALTH_MAX = 200;
 
 BotObjectiveStatus botObjectiveStatus;
+
+void BotObjectives_RecordLastPositive(int *field, int value) {
+	if (field == nullptr) {
+		return;
+	}
+	if (value > 0 || *field == 0) {
+		*field = value;
+	}
+}
 
 struct BotObjectiveRoleLaneCandidate {
 	BotObjectiveRole role = BotObjectiveRole::None;
@@ -86,6 +111,11 @@ static_assert(static_cast<int>(BotObjectiveItemRole::SelfStack) == 1);
 static_assert(static_cast<int>(BotObjectiveItemRole::Objective) == 6);
 static_assert(static_cast<int>(BotObjectiveCoopIntent::FollowLeader) == 1);
 static_assert(static_cast<int>(BotObjectiveCoopIntent::SupportCombat) == 5);
+static_assert(static_cast<int>(BotObjectiveMovementStyle::None) == 0);
+static_assert(static_cast<int>(BotObjectiveMovementStyle::Attack) == 1);
+static_assert(static_cast<int>(BotObjectiveMovementStyle::Defense) == 2);
+static_assert(static_cast<int>(BotObjectiveMovementStyle::Roam) == 3);
+static_assert(static_cast<int>(BotObjectiveMovementStyle::Evasive) == 4);
 static_assert(static_cast<int>(BotObjectiveResourceIntent::SelfPickup) == 1);
 static_assert(static_cast<int>(BotObjectiveResourceIntent::Objective) == 5);
 
@@ -355,6 +385,211 @@ bool BotObjectives_MatchRoleCompatible(BotObjectiveMatchMode mode, BotObjectiveR
 	}
 
 	return false;
+}
+
+BotObjectiveRole BotObjectives_ProfileRoleFromString(const char *role) {
+	if (role == nullptr || role[0] == '\0') {
+		return BotObjectiveRole::None;
+	}
+
+	if (Q_strcasecmp(role, "attacker") == 0 ||
+		Q_strcasecmp(role, "attack") == 0 ||
+		Q_strcasecmp(role, "offense") == 0 ||
+		Q_strcasecmp(role, "offence") == 0 ||
+		Q_strcasecmp(role, "duelist") == 0) {
+		return BotObjectiveRole::Attacker;
+	}
+
+	if (Q_strcasecmp(role, "defender") == 0 ||
+		Q_strcasecmp(role, "defense") == 0 ||
+		Q_strcasecmp(role, "defence") == 0 ||
+		Q_strcasecmp(role, "anchor") == 0) {
+		return BotObjectiveRole::Defender;
+	}
+
+	if (Q_strcasecmp(role, "support") == 0 ||
+		Q_strcasecmp(role, "relay") == 0) {
+		return BotObjectiveRole::Support;
+	}
+
+	if (Q_strcasecmp(role, "midfielder") == 0 ||
+		Q_strcasecmp(role, "midfield") == 0 ||
+		Q_strcasecmp(role, "roamer") == 0) {
+		return BotObjectiveRole::Midfielder;
+	}
+
+	if (Q_strcasecmp(role, "returner") == 0 ||
+		Q_strcasecmp(role, "return") == 0) {
+		return BotObjectiveRole::Returner;
+	}
+
+	return BotObjectiveRole::None;
+}
+
+BotObjectiveRole BotObjectives_ProfileRoleForBot(const gentity_t *bot) {
+	if (bot == nullptr || bot->client == nullptr) {
+		return BotObjectiveRole::None;
+	}
+
+	char role[MAX_INFO_VALUE] = {};
+	if (!gi.Info_ValueForKey(bot->client->pers.userInfo, "bot_role", role, sizeof(role))) {
+		return BotObjectiveRole::None;
+	}
+
+	return BotObjectives_ProfileRoleFromString(role);
+}
+
+BotObjectiveMovementStyle BotObjectives_ProfileMovementStyleFromString(const char *style) {
+	if (style == nullptr || style[0] == '\0') {
+		return BotObjectiveMovementStyle::None;
+	}
+
+	if (Q_strcasecmp(style, "strafe") == 0 ||
+		Q_strcasecmp(style, "pressure") == 0 ||
+		Q_strcasecmp(style, "rush") == 0 ||
+		Q_strcasecmp(style, "circle_strafe") == 0 ||
+		Q_strcasecmp(style, "circlestrafe") == 0 ||
+		Q_strcasecmp(style, "circle strafe") == 0) {
+		return BotObjectiveMovementStyle::Attack;
+	}
+
+	if (Q_strcasecmp(style, "anchor") == 0 ||
+		Q_strcasecmp(style, "camp") == 0 ||
+		Q_strcasecmp(style, "defense") == 0 ||
+		Q_strcasecmp(style, "defence") == 0) {
+		return BotObjectiveMovementStyle::Defense;
+	}
+
+	if (Q_strcasecmp(style, "patrol") == 0 ||
+		Q_strcasecmp(style, "roam") == 0 ||
+		Q_strcasecmp(style, "flank") == 0 ||
+		Q_strcasecmp(style, "midfield") == 0) {
+		return BotObjectiveMovementStyle::Roam;
+	}
+
+	if (Q_strcasecmp(style, "kite") == 0 ||
+		Q_strcasecmp(style, "retreat") == 0 ||
+		Q_strcasecmp(style, "evasive") == 0) {
+		return BotObjectiveMovementStyle::Evasive;
+	}
+
+	return BotObjectiveMovementStyle::None;
+}
+
+BotObjectiveMovementStyle BotObjectives_ProfileMovementStyleForBot(const gentity_t *bot) {
+	if (bot == nullptr || bot->client == nullptr) {
+		return BotObjectiveMovementStyle::None;
+	}
+
+	char style[MAX_INFO_VALUE] = {};
+	if (!gi.Info_ValueForKey(bot->client->pers.userInfo, "bot_movement_style", style, sizeof(style))) {
+		return BotObjectiveMovementStyle::None;
+	}
+
+	return BotObjectives_ProfileMovementStyleFromString(style);
+}
+
+int BotObjectives_ProfileBiasPermilleFromString(const char *value) {
+	if (value == nullptr || value[0] == '\0') {
+		return -1;
+	}
+
+	float bias = std::strtof(value, nullptr);
+	if (bias < 0.0f) {
+		bias = 0.0f;
+	} else if (bias > 1.0f) {
+		bias = 1.0f;
+	}
+
+	return static_cast<int>((bias * BOT_OBJECTIVE_PROFILE_BIAS_PERMILLE) + 0.5f);
+}
+
+int BotObjectives_ProfileBiasPermilleForBot(const gentity_t *bot, const char *key) {
+	if (bot == nullptr || bot->client == nullptr || key == nullptr || key[0] == '\0') {
+		return -1;
+	}
+
+	char value[MAX_INFO_VALUE] = {};
+	if (!gi.Info_ValueForKey(bot->client->pers.userInfo, key, value, sizeof(value))) {
+		return -1;
+	}
+
+	return BotObjectives_ProfileBiasPermilleFromString(value);
+}
+
+int BotObjectives_ProfileIntegerForBot(const gentity_t *bot, const char *key, int minValue, int maxValue) {
+	if (bot == nullptr || bot->client == nullptr || key == nullptr || key[0] == '\0') {
+		return -1;
+	}
+
+	char value[MAX_INFO_VALUE] = {};
+	if (!gi.Info_ValueForKey(bot->client->pers.userInfo, key, value, sizeof(value))) {
+		return -1;
+	}
+
+	char *end = nullptr;
+	const long parsed = std::strtol(value, &end, 10);
+	if (end == value) {
+		return -1;
+	}
+
+	return std::clamp(static_cast<int>(parsed), minValue, maxValue);
+}
+
+int BotObjectives_ProfileBiasBonus(int biasPermille, int maxBonus) {
+	if (biasPermille < 0 || maxBonus <= 0) {
+		return 0;
+	}
+
+	return (biasPermille * maxBonus + (BOT_OBJECTIVE_PROFILE_BIAS_PERMILLE / 2)) /
+		BOT_OBJECTIVE_PROFILE_BIAS_PERMILLE;
+}
+
+bool BotObjectives_ProfileBiasHigh(int biasPermille) {
+	return biasPermille >= BOT_OBJECTIVE_PROFILE_BIAS_HIGH;
+}
+
+int BotObjectives_ProfileMovementAttackBonus(BotObjectiveMovementStyle style) {
+	return style == BotObjectiveMovementStyle::Attack
+		? BOT_OBJECTIVE_PROFILE_MOVEMENT_ATTACK_BONUS
+		: 0;
+}
+
+int BotObjectives_ProfileMovementDefenseBonus(BotObjectiveMovementStyle style) {
+	return style == BotObjectiveMovementStyle::Defense
+		? BOT_OBJECTIVE_PROFILE_MOVEMENT_DEFENSE_BONUS
+		: 0;
+}
+
+int BotObjectives_ProfileMovementRoamBonus(BotObjectiveMovementStyle style) {
+	if (style == BotObjectiveMovementStyle::Roam) {
+		return BOT_OBJECTIVE_PROFILE_MOVEMENT_ROAM_BONUS;
+	}
+	return style == BotObjectiveMovementStyle::Evasive
+		? BOT_OBJECTIVE_PROFILE_MOVEMENT_ROAM_BONUS / 2
+		: 0;
+}
+
+int BotObjectives_ProfileMovementCollectBonus(BotObjectiveMovementStyle style) {
+	if (style == BotObjectiveMovementStyle::Evasive) {
+		return BOT_OBJECTIVE_PROFILE_MOVEMENT_COLLECT_BONUS;
+	}
+	return style == BotObjectiveMovementStyle::Roam
+		? BOT_OBJECTIVE_PROFILE_MOVEMENT_COLLECT_BONUS / 2
+		: 0;
+}
+
+int BotObjectives_ProfileMovementRoleBonus(BotObjectiveMovementStyle style, BotObjectiveRole role) {
+	if (role == BotObjectiveRole::Attacker) {
+		return BotObjectives_ProfileMovementAttackBonus(style);
+	}
+	if (role == BotObjectiveRole::Defender) {
+		return BotObjectives_ProfileMovementDefenseBonus(style);
+	}
+	if (BotObjectives_IsMidfieldPolicyRole(role)) {
+		return BotObjectives_ProfileMovementRoamBonus(style);
+	}
+	return 0;
 }
 
 const char *BotObjectives_MatchPolicyReason(BotObjectiveMatchMode mode, BotObjectiveRole role) {
@@ -785,6 +1020,8 @@ void BotObjectives_RecordRolePolicySelection(const BotObjectiveRolePolicy &polic
 
 void BotObjectives_RecordMatchPolicySelection(const BotObjectiveMatchPolicy &policy) {
 	botObjectiveStatus.lastMatchMode = static_cast<int>(policy.mode);
+	botObjectiveStatus.lastMatchRequestedRole = static_cast<int>(policy.requestedRole);
+	botObjectiveStatus.lastMatchProfileRole = static_cast<int>(policy.profileRole);
 	botObjectiveStatus.lastMatchRole = static_cast<int>(policy.role);
 	botObjectiveStatus.lastMatchLane = static_cast<int>(policy.lane);
 	botObjectiveStatus.lastMatchPriority = policy.priority;
@@ -796,8 +1033,136 @@ void BotObjectives_RecordMatchPolicySelection(const BotObjectiveMatchPolicy &pol
 	botObjectiveStatus.lastMatchDefendPriority = policy.defendPriority;
 	botObjectiveStatus.lastMatchMidfieldPriority = policy.midfieldPriority;
 	botObjectiveStatus.lastFriendlyFireScalePercent = policy.friendlyFireScalePercent;
+	botObjectiveStatus.lastMatchProfileTeamplayBias = policy.profileTeamplayBiasPermille;
+	botObjectiveStatus.lastMatchProfileObjectiveBias = policy.profileObjectiveBiasPermille;
+	botObjectiveStatus.lastMatchProfileFriendlyFireCare = policy.profileFriendlyFireCarePermille;
+	botObjectiveStatus.lastMatchProfileMovementStyle =
+		static_cast<int>(policy.profileMovementStyle);
+	botObjectiveStatus.lastMatchProfileItemGreed = policy.profileItemGreedPermille;
+	botObjectiveStatus.lastMatchProfileItemDenial = policy.profileItemDenialPermille;
+	botObjectiveStatus.lastMatchProfilePowerupTiming = policy.profilePowerupTimingPermille;
+	botObjectiveStatus.lastMatchProfileRetreatHealth = policy.profileRetreatHealth;
+	BotObjectives_RecordLastPositive(
+		&botObjectiveStatus.lastMatchProfileTeamplayBonus,
+		policy.profileTeamplayPriorityBonus);
+	BotObjectives_RecordLastPositive(
+		&botObjectiveStatus.lastMatchProfileObjectiveBonus,
+		policy.profileObjectivePriorityBonus);
+	BotObjectives_RecordLastPositive(
+		&botObjectiveStatus.lastMatchProfileFriendlyFireCareBonus,
+		policy.profileFriendlyFireCarePriorityBonus);
+	BotObjectives_RecordLastPositive(
+		&botObjectiveStatus.lastMatchProfileMovementBonus,
+		policy.profileMovementPriorityBonus);
+	BotObjectives_RecordLastPositive(
+		&botObjectiveStatus.lastMatchProfileMovementAttackBonus,
+		policy.profileMovementAttackPriorityBonus);
+	BotObjectives_RecordLastPositive(
+		&botObjectiveStatus.lastMatchProfileMovementDefenseBonus,
+		policy.profileMovementDefensePriorityBonus);
+	BotObjectives_RecordLastPositive(
+		&botObjectiveStatus.lastMatchProfileMovementRoamBonus,
+		policy.profileMovementRoamPriorityBonus);
+	BotObjectives_RecordLastPositive(
+		&botObjectiveStatus.lastMatchProfileMovementCollectBonus,
+		policy.profileMovementCollectPriorityBonus);
+	BotObjectives_RecordLastPositive(
+		&botObjectiveStatus.lastMatchProfileItemGreedBonus,
+		policy.profileItemGreedPriorityBonus);
+	BotObjectives_RecordLastPositive(
+		&botObjectiveStatus.lastMatchProfileItemDenialBonus,
+		policy.profileItemDenialPriorityBonus);
+	BotObjectives_RecordLastPositive(
+		&botObjectiveStatus.lastMatchProfilePowerupTimingBonus,
+		policy.profilePowerupTimingPriorityBonus);
+	BotObjectives_RecordLastPositive(
+		&botObjectiveStatus.lastMatchProfileRetreatHealthBonus,
+		policy.profileRetreatHealthPriorityBonus);
 	botObjectiveStatus.lastMatchReason = policy.reason;
 	botObjectiveStatus.lastMatchLaneReason = policy.laneReason;
+
+	if (policy.hasRequestedRole) {
+		botObjectiveStatus.matchPolicyRequested++;
+	}
+	if (policy.requestedRoleHonored) {
+		botObjectiveStatus.matchPolicyRequestedHonored++;
+	}
+	if (policy.fallbackRole) {
+		botObjectiveStatus.matchPolicyFallbacks++;
+	}
+	if (policy.hasProfileRole) {
+		botObjectiveStatus.matchPolicyProfileRole++;
+	}
+	if (policy.profileRoleHonored) {
+		botObjectiveStatus.matchPolicyProfileRoleHonored++;
+	}
+	if (policy.hasProfileRole && policy.fallbackRole) {
+		botObjectiveStatus.matchPolicyProfileRoleFallbacks++;
+	}
+	if (policy.hasProfileTeamplayBias) {
+		botObjectiveStatus.matchPolicyProfileTeamplayBias++;
+	}
+	if (policy.hasProfileObjectiveBias) {
+		botObjectiveStatus.matchPolicyProfileObjectiveBias++;
+	}
+	if (policy.hasProfileFriendlyFireCare) {
+		botObjectiveStatus.matchPolicyProfileFriendlyFireCare++;
+	}
+	if (policy.hasProfileMovementStyle) {
+		botObjectiveStatus.matchPolicyProfileMovementStyle++;
+	}
+	switch (policy.profileMovementStyle) {
+	case BotObjectiveMovementStyle::Attack:
+		botObjectiveStatus.matchPolicyProfileMovementAttack++;
+		break;
+	case BotObjectiveMovementStyle::Defense:
+		botObjectiveStatus.matchPolicyProfileMovementDefense++;
+		break;
+	case BotObjectiveMovementStyle::Roam:
+		botObjectiveStatus.matchPolicyProfileMovementRoam++;
+		break;
+	case BotObjectiveMovementStyle::Evasive:
+		botObjectiveStatus.matchPolicyProfileMovementEvasive++;
+		break;
+	default:
+		break;
+	}
+	if (policy.hasProfileItemGreed) {
+		botObjectiveStatus.matchPolicyProfileItemGreed++;
+	}
+	if (policy.hasProfileItemDenial) {
+		botObjectiveStatus.matchPolicyProfileItemDenial++;
+	}
+	if (policy.hasProfilePowerupTiming) {
+		botObjectiveStatus.matchPolicyProfilePowerupTiming++;
+	}
+	if (policy.hasProfileRetreatHealth) {
+		botObjectiveStatus.matchPolicyProfileRetreatHealth++;
+	}
+	if (policy.profileTeamplayBiasApplied) {
+		botObjectiveStatus.matchPolicyProfileTeamplayBiasApplied++;
+	}
+	if (policy.profileObjectiveBiasApplied) {
+		botObjectiveStatus.matchPolicyProfileObjectiveBiasApplied++;
+	}
+	if (policy.profileFriendlyFireCareApplied) {
+		botObjectiveStatus.matchPolicyProfileFriendlyFireCareApplied++;
+	}
+	if (policy.profileMovementStyleApplied) {
+		botObjectiveStatus.matchPolicyProfileMovementStyleApplied++;
+	}
+	if (policy.profileItemGreedApplied) {
+		botObjectiveStatus.matchPolicyProfileItemGreedApplied++;
+	}
+	if (policy.profileItemDenialApplied) {
+		botObjectiveStatus.matchPolicyProfileItemDenialApplied++;
+	}
+	if (policy.profilePowerupTimingApplied) {
+		botObjectiveStatus.matchPolicyProfilePowerupTimingApplied++;
+	}
+	if (policy.profileRetreatHealthApplied) {
+		botObjectiveStatus.matchPolicyProfileRetreatHealthApplied++;
+	}
 
 	if (!policy.valid) {
 		botObjectiveStatus.matchPolicyNoSelection++;
@@ -849,6 +1214,11 @@ void BotObjectives_RecordItemRolePolicySelection(const BotObjectiveItemRolePolic
 	botObjectiveStatus.lastItemCategory = static_cast<int>(policy.category);
 	botObjectiveStatus.lastItemRole = static_cast<int>(policy.itemRole);
 	botObjectiveStatus.lastItemRolePriority = policy.priority;
+	if (policy.profileItemPolicyBonus > 0 ||
+		botObjectiveStatus.lastItemRoleProfileItemBonus == 0) {
+		botObjectiveStatus.lastItemRoleProfileItemBonus =
+			policy.profileItemPolicyBonus;
+	}
 	botObjectiveStatus.lastItemRoleReason = policy.reason;
 
 	if (!policy.valid) {
@@ -857,6 +1227,9 @@ void BotObjectives_RecordItemRolePolicySelection(const BotObjectiveItemRolePolic
 	}
 
 	botObjectiveStatus.itemRolePolicySelections++;
+	if (policy.profileItemPolicyBonus > 0) {
+		botObjectiveStatus.itemRolePolicyProfileItemBonuses++;
+	}
 	switch (policy.itemRole) {
 	case BotObjectiveItemRole::SelfStack:
 		botObjectiveStatus.itemRoleSelfStackSelections++;
@@ -927,6 +1300,7 @@ void BotObjectives_RecordResourcePolicySelection(const BotObjectiveResourcePolic
 	botObjectiveStatus.lastResourceShouldShare = policy.shouldShare ? 1 : 0;
 	botObjectiveStatus.lastResourceShouldReserve = policy.shouldReserve ? 1 : 0;
 	botObjectiveStatus.lastResourceDenyEnemy = policy.denyEnemyPickup ? 1 : 0;
+	botObjectiveStatus.lastResourceProfileItemBonus = policy.profileItemPolicyBonus;
 	botObjectiveStatus.lastResourceReason = policy.reason;
 
 	if (!policy.valid) {
@@ -935,6 +1309,9 @@ void BotObjectives_RecordResourcePolicySelection(const BotObjectiveResourcePolic
 	}
 
 	botObjectiveStatus.resourcePolicySelections++;
+	if (policy.profileItemPolicyBonus > 0) {
+		botObjectiveStatus.resourcePolicyProfileItemBonuses++;
+	}
 	switch (policy.intent) {
 	case BotObjectiveResourceIntent::SelfPickup:
 		botObjectiveStatus.resourcePolicySelfPickupSelections++;
@@ -1527,6 +1904,39 @@ BotObjectiveMatchContext BotObjectives_BuildMatchContext(const gentity_t *bot, B
 	context.alive = BotObjectives_IsAliveBot(bot);
 	context.clientIndex = BotObjectives_ClientIndexForEntity(bot);
 	context.team = BotObjectives_BotTeam(bot);
+	context.profileRole = BotObjectives_ProfileRoleForBot(bot);
+	context.profileMovementStyle = BotObjectives_ProfileMovementStyleForBot(bot);
+	context.profileTeamplayBiasPermille =
+		BotObjectives_ProfileBiasPermilleForBot(bot, "bot_teamplay_bias");
+	context.profileObjectiveBiasPermille =
+		BotObjectives_ProfileBiasPermilleForBot(bot, "bot_objective_bias");
+	context.profileFriendlyFireCarePermille =
+		BotObjectives_ProfileBiasPermilleForBot(bot, "bot_friendly_fire_care");
+	context.profileItemGreedPermille =
+		BotObjectives_ProfileBiasPermilleForBot(bot, "bot_item_greed");
+	context.profileItemDenialPermille =
+		BotObjectives_ProfileBiasPermilleForBot(bot, "bot_item_denial");
+	context.profilePowerupTimingPermille =
+		BotObjectives_ProfileBiasPermilleForBot(bot, "bot_powerup_timing");
+	context.profileRetreatHealth =
+		BotObjectives_ProfileIntegerForBot(
+			bot,
+			"bot_retreat_health",
+			0,
+			BOT_OBJECTIVE_PROFILE_RETREAT_HEALTH_MAX);
+	context.hasProfileTeamplayBias = context.profileTeamplayBiasPermille >= 0;
+	context.hasProfileObjectiveBias = context.profileObjectiveBiasPermille >= 0;
+	context.hasProfileFriendlyFireCare = context.profileFriendlyFireCarePermille >= 0;
+	context.hasProfileMovementStyle =
+		context.profileMovementStyle != BotObjectiveMovementStyle::None;
+	context.hasProfileItemGreed = context.profileItemGreedPermille >= 0;
+	context.hasProfileItemDenial = context.profileItemDenialPermille >= 0;
+	context.hasProfilePowerupTiming = context.profilePowerupTimingPermille >= 0;
+	context.hasProfileRetreatHealth = context.profileRetreatHealth >= 0;
+	context.health = bot->health;
+	if (context.requestedRole == BotObjectiveRole::None) {
+		context.requestedRole = context.profileRole;
+	}
 	BotObjectives_CountMatchPlayers(
 		context.clientIndex,
 		context.team,
@@ -1550,12 +1960,94 @@ BotObjectiveMatchPolicy BotObjectives_EvaluateMatchPolicy(const BotObjectiveMatc
 	policy.clientIndex = context.clientIndex;
 	policy.team = context.team;
 	policy.hasRequestedRole = context.requestedRole != BotObjectiveRole::None;
+	policy.hasProfileRole = context.profileRole != BotObjectiveRole::None;
+	policy.hasProfileTeamplayBias = context.hasProfileTeamplayBias;
+	policy.hasProfileObjectiveBias = context.hasProfileObjectiveBias;
+	policy.hasProfileFriendlyFireCare = context.hasProfileFriendlyFireCare;
+	policy.hasProfileMovementStyle = context.hasProfileMovementStyle;
+	policy.hasProfileItemGreed = context.hasProfileItemGreed;
+	policy.hasProfileItemDenial = context.hasProfileItemDenial;
+	policy.hasProfilePowerupTiming = context.hasProfilePowerupTiming;
+	policy.hasProfileRetreatHealth = context.hasProfileRetreatHealth;
+	policy.requestedRole = context.requestedRole;
+	policy.profileRole = context.profileRole;
+	policy.profileMovementStyle = context.profileMovementStyle;
 	policy.friendlyFireScalePercent = context.friendlyFireScalePercent;
-	policy.friendlyFireAvoidance = context.teamMode && context.friendlyFireDamageEnabled;
+	policy.profileTeamplayBiasPermille = context.profileTeamplayBiasPermille;
+	policy.profileObjectiveBiasPermille = context.profileObjectiveBiasPermille;
+	policy.profileFriendlyFireCarePermille = context.profileFriendlyFireCarePermille;
+	policy.profileItemGreedPermille = context.profileItemGreedPermille;
+	policy.profileItemDenialPermille = context.profileItemDenialPermille;
+	policy.profilePowerupTimingPermille = context.profilePowerupTimingPermille;
+	policy.profileRetreatHealth = context.profileRetreatHealth;
+	policy.profileTeamplayPriorityBonus = context.teamMode
+		? BotObjectives_ProfileBiasBonus(
+			context.profileTeamplayBiasPermille,
+			BOT_OBJECTIVE_PROFILE_TEAMPLAY_BONUS_MAX)
+		: 0;
+	policy.profileObjectivePriorityBonus = context.ctfMode
+		? BotObjectives_ProfileBiasBonus(
+			context.profileObjectiveBiasPermille,
+			BOT_OBJECTIVE_PROFILE_OBJECTIVE_BONUS_MAX)
+		: 0;
+	policy.profileFriendlyFireCarePriorityBonus = context.teamMode
+		? BotObjectives_ProfileBiasBonus(
+			context.profileFriendlyFireCarePermille,
+			BOT_OBJECTIVE_PROFILE_FRIENDLY_FIRE_BONUS_MAX)
+		: 0;
+	policy.profileMovementAttackPriorityBonus =
+		BotObjectives_ProfileMovementAttackBonus(context.profileMovementStyle);
+	policy.profileMovementDefensePriorityBonus =
+		BotObjectives_ProfileMovementDefenseBonus(context.profileMovementStyle);
+	policy.profileMovementRoamPriorityBonus =
+		BotObjectives_ProfileMovementRoamBonus(context.profileMovementStyle);
+	policy.profileMovementCollectPriorityBonus =
+		BotObjectives_ProfileMovementCollectBonus(context.profileMovementStyle);
+	policy.profileItemGreedPriorityBonus =
+		BotObjectives_ProfileBiasBonus(
+			context.profileItemGreedPermille,
+			BOT_OBJECTIVE_PROFILE_ITEM_GREED_BONUS_MAX);
+	policy.profileItemDenialPriorityBonus = context.teamMode
+		? BotObjectives_ProfileBiasBonus(
+			context.profileItemDenialPermille,
+			BOT_OBJECTIVE_PROFILE_ITEM_DENIAL_BONUS_MAX)
+		: 0;
+	policy.profilePowerupTimingPriorityBonus =
+		BotObjectives_ProfileBiasBonus(
+			context.profilePowerupTimingPermille,
+			BOT_OBJECTIVE_PROFILE_POWERUP_TIMING_BONUS_MAX);
+	policy.profileRetreatHealthPriorityBonus =
+		(context.hasProfileRetreatHealth &&
+		 context.health > 0 &&
+		 context.health <= context.profileRetreatHealth)
+			? BOT_OBJECTIVE_PROFILE_RETREAT_HEALTH_BONUS_MAX
+			: 0;
+	policy.profileTeamplayBiasApplied = policy.profileTeamplayPriorityBonus > 0;
+	policy.profileObjectiveBiasApplied = policy.profileObjectivePriorityBonus > 0;
+	policy.profileFriendlyFireCareApplied =
+		policy.profileFriendlyFireCarePriorityBonus > 0 ||
+		(context.teamMode &&
+			BotObjectives_ProfileBiasHigh(context.profileFriendlyFireCarePermille));
+	policy.profileMovementStyleApplied =
+		policy.hasProfileMovementStyle &&
+		(policy.profileMovementAttackPriorityBonus > 0 ||
+		 policy.profileMovementDefensePriorityBonus > 0 ||
+		 policy.profileMovementRoamPriorityBonus > 0 ||
+		 policy.profileMovementCollectPriorityBonus > 0);
+	policy.profileItemGreedApplied = policy.profileItemGreedPriorityBonus > 0;
+	policy.profileItemDenialApplied = policy.profileItemDenialPriorityBonus > 0;
+	policy.profilePowerupTimingApplied = policy.profilePowerupTimingPriorityBonus > 0;
+	policy.profileRetreatHealthApplied = policy.profileRetreatHealthPriorityBonus > 0;
+	policy.friendlyFireAvoidance = context.teamMode &&
+		(context.friendlyFireDamageEnabled ||
+			BotObjectives_ProfileBiasHigh(context.profileFriendlyFireCarePermille));
 	policy.requiresTeamTargetFilter = context.teamMode;
 	policy.attackPriority = BotObjectives_MatchRolePriority(context.mode, BotObjectiveRole::Attacker);
 	policy.defendPriority = BotObjectives_MatchRolePriority(context.mode, BotObjectiveRole::Defender);
 	policy.midfieldPriority = BotObjectives_MatchRolePriority(context.mode, BotObjectiveRole::Midfielder);
+	policy.attackPriority += policy.profileMovementAttackPriorityBonus;
+	policy.defendPriority += policy.profileMovementDefensePriorityBonus;
+	policy.midfieldPriority += policy.profileMovementRoamPriorityBonus;
 
 	if (!context.valid ||
 		!context.alive ||
@@ -1571,12 +2063,20 @@ BotObjectiveMatchPolicy BotObjectives_EvaluateMatchPolicy(const BotObjectiveMatc
 		if (BotObjectives_MatchRoleCompatible(context.mode, context.requestedRole)) {
 			selectedRole = context.requestedRole;
 			policy.requestedRoleHonored = true;
+			policy.profileRoleHonored =
+				policy.hasProfileRole && context.profileRole == context.requestedRole;
 		} else {
 			requestedNeedsFallback = true;
 		}
 	}
 
-	const int priority = BotObjectives_MatchRolePriority(context.mode, selectedRole);
+	policy.profileMovementPriorityBonus =
+		BotObjectives_ProfileMovementRoleBonus(context.profileMovementStyle, selectedRole);
+	const int priority = BotObjectives_MatchRolePriority(context.mode, selectedRole) +
+		policy.profileTeamplayPriorityBonus +
+		policy.profileObjectivePriorityBonus +
+		policy.profileFriendlyFireCarePriorityBonus +
+		policy.profileMovementPriorityBonus;
 	const BotObjectiveLane lane = BotObjectives_DefaultLaneForMatchRole(context.mode, selectedRole);
 	if (priority <= 0 || lane == BotObjectiveLane::None) {
 		BotObjectives_RecordMatchPolicySelection(policy);
@@ -1594,18 +2094,32 @@ BotObjectiveMatchPolicy BotObjectives_EvaluateMatchPolicy(const BotObjectiveMatc
 	policy.wantsEngage = true;
 	policy.wantsCollect = true;
 	policy.wantsRoam = context.mode == BotObjectiveMatchMode::FreeForAll ||
-		BotObjectives_IsMidfieldPolicyRole(selectedRole);
+		BotObjectives_IsMidfieldPolicyRole(selectedRole) ||
+		context.profileMovementStyle == BotObjectiveMovementStyle::Roam ||
+		context.profileMovementStyle == BotObjectiveMovementStyle::Evasive;
 	policy.wantsObjective = context.mode == BotObjectiveMatchMode::CaptureTheFlag;
 	policy.avoidSpawnCamping = context.mode == BotObjectiveMatchMode::FreeForAll;
 	policy.preferMajorItems = selectedRole == BotObjectiveRole::Attacker ||
-		BotObjectives_IsMidfieldPolicyRole(selectedRole);
+		BotObjectives_IsMidfieldPolicyRole(selectedRole) ||
+		context.profileMovementStyle == BotObjectiveMovementStyle::Attack ||
+		BotObjectives_ProfileBiasHigh(context.profilePowerupTimingPermille);
 	policy.shareTeamResources = context.teamMode &&
 		(selectedRole == BotObjectiveRole::Defender ||
-			BotObjectives_IsMidfieldPolicyRole(selectedRole));
+			BotObjectives_IsMidfieldPolicyRole(selectedRole) ||
+			context.profileMovementStyle == BotObjectiveMovementStyle::Defense ||
+			context.profileMovementStyle == BotObjectiveMovementStyle::Roam ||
+			BotObjectives_ProfileBiasHigh(context.profileTeamplayBiasPermille));
 	policy.engagePriority = priority;
 	policy.collectPriority = priority - 80;
+	policy.collectPriority += policy.profileItemGreedPriorityBonus +
+		(policy.profilePowerupTimingPriorityBonus / 2) +
+		policy.profileRetreatHealthPriorityBonus +
+		policy.profileMovementCollectPriorityBonus;
 	policy.roamPriority = policy.wantsRoam ? priority - 120 : priority - 220;
-	policy.objectivePriority = policy.wantsObjective ? priority + 80 : 0;
+	policy.roamPriority += policy.profileMovementRoamPriorityBonus;
+	policy.objectivePriority = policy.wantsObjective
+		? priority + 80 + policy.profileObjectivePriorityBonus
+		: 0;
 
 	BotObjectives_RecordMatchPolicySelection(policy);
 	return policy;
@@ -1743,6 +2257,14 @@ BotObjectiveResourceContext BotObjectives_BuildResourceContext(
 		matchPolicy.preferMajorItems ||
 		coopPolicy.mayLead ||
 		coopPolicy.reserveResources;
+	context.profileItemGreedPriorityBonus =
+		matchPolicy.profileItemGreedPriorityBonus;
+	context.profileItemDenialPriorityBonus =
+		matchPolicy.profileItemDenialPriorityBonus;
+	context.profilePowerupTimingPriorityBonus =
+		matchPolicy.profilePowerupTimingPriorityBonus;
+	context.profileRetreatHealthPriorityBonus =
+		matchPolicy.profileRetreatHealthPriorityBonus;
 	context.mode = context.coopMode ? BotObjectiveMatchMode::Cooperative : matchPolicy.mode;
 	context.role = coopPolicy.valid ? coopPolicy.role : matchPolicy.role;
 	context.lane = coopPolicy.valid ? coopPolicy.lane : matchPolicy.lane;
@@ -1845,6 +2367,24 @@ BotObjectiveResourcePolicy BotObjectives_EvaluateResourcePolicy(
 	default:
 		policy.valid = false;
 		break;
+	}
+
+	if (policy.valid) {
+		if (policy.intent == BotObjectiveResourceIntent::SelfPickup) {
+			policy.profileItemPolicyBonus += context.profileItemGreedPriorityBonus;
+		}
+		if (policy.intent == BotObjectiveResourceIntent::DenyEnemy) {
+			policy.profileItemPolicyBonus += context.profileItemDenialPriorityBonus;
+		}
+		if (context.category == BotObjectiveItemCategory::Powerup ||
+			context.category == BotObjectiveItemCategory::Tech) {
+			policy.profileItemPolicyBonus += context.profilePowerupTimingPriorityBonus;
+		}
+		if (context.category == BotObjectiveItemCategory::Health ||
+			context.category == BotObjectiveItemCategory::Armor) {
+			policy.profileItemPolicyBonus += context.profileRetreatHealthPriorityBonus;
+		}
+		policy.priority += policy.profileItemPolicyBonus;
 	}
 
 	BotObjectives_RecordResourcePolicySelection(policy);
@@ -1956,6 +2496,29 @@ BotObjectiveItemRolePolicy BotObjectives_EvaluateItemRolePolicy(
 	default:
 		policy.valid = false;
 		break;
+	}
+
+	if (policy.valid) {
+		const bool selfOriented =
+			!policy.shareWithTeam &&
+			!policy.reserveForRole &&
+			!policy.denyEnemyPickup &&
+			policy.itemRole != BotObjectiveItemRole::Objective;
+		if (selfOriented) {
+			policy.profileItemPolicyBonus += matchPolicy.profileItemGreedPriorityBonus;
+		}
+		if (policy.denyEnemyPickup) {
+			policy.profileItemPolicyBonus += matchPolicy.profileItemDenialPriorityBonus;
+		}
+		if (category == BotObjectiveItemCategory::Powerup ||
+			category == BotObjectiveItemCategory::Tech) {
+			policy.profileItemPolicyBonus += matchPolicy.profilePowerupTimingPriorityBonus;
+		}
+		if (category == BotObjectiveItemCategory::Health ||
+			category == BotObjectiveItemCategory::Armor) {
+			policy.profileItemPolicyBonus += matchPolicy.profileRetreatHealthPriorityBonus;
+		}
+		policy.priority += policy.profileItemPolicyBonus;
 	}
 
 	BotObjectives_RecordItemRolePolicySelection(policy);
@@ -2822,6 +3385,21 @@ const char *BotObjectives_MatchModeName(BotObjectiveMatchMode mode) {
 		return "capture_the_flag";
 	case BotObjectiveMatchMode::Cooperative:
 		return "cooperative";
+	default:
+		return "none";
+	}
+}
+
+const char *BotObjectives_MovementStyleName(BotObjectiveMovementStyle style) {
+	switch (style) {
+	case BotObjectiveMovementStyle::Attack:
+		return "attack";
+	case BotObjectiveMovementStyle::Defense:
+		return "defense";
+	case BotObjectiveMovementStyle::Roam:
+		return "roam";
+	case BotObjectiveMovementStyle::Evasive:
+		return "evasive";
 	default:
 		return "none";
 	}

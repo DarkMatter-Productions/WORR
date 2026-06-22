@@ -96,10 +96,15 @@ struct BotWeaponSelectionResult {
 	bool armorPressureEstimateBonus = false;
 	bool underpoweredEstimatePenalty = false;
 	bool hasKnownWeapon = false;
+	bool currentWeaponUsable = false;
+	bool preferredWeaponUsable = false;
+	bool currentWeaponSafe = true;
 	bool shouldSwitch = false;
 	bool preferredWeaponSafe = true;
 	const BotWeaponMetadata *metadata = nullptr;
 	const char *reason = "none";
+	const char *currentWeaponReason = "none";
+	const char *preferredWeaponReason = "none";
 	const char *estimateReason = "none";
 };
 

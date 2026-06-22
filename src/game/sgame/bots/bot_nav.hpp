@@ -199,6 +199,7 @@ struct BotNavRouteStatus {
 	int lastFfaItemRoleItemRole = 0;
 	int lastFfaItemRolePriority = 0;
 	int lastFfaItemRoleScoreBoost = 0;
+	int lastFfaItemRoleProfileItemBonus = 0;
 	int lastFfaItemRoleEntity = -1;
 	int lastFfaItemRoleItem = 0;
 	int lastFfaItemRoleScore = 0;
@@ -210,6 +211,7 @@ struct BotNavRouteStatus {
 	int lastCtfItemRoleItemRole = 0;
 	int lastCtfItemRolePriority = 0;
 	int lastCtfItemRoleScoreBoost = 0;
+	int lastCtfItemRoleProfileItemBonus = 0;
 	int lastCtfItemRoleEntity = -1;
 	int lastCtfItemRoleItem = 0;
 	int lastCtfItemRoleScore = 0;
@@ -221,6 +223,7 @@ struct BotNavRouteStatus {
 	int lastTeamItemRoleItemRole = 0;
 	int lastTeamItemRolePriority = 0;
 	int lastTeamItemRoleScoreBoost = 0;
+	int lastTeamItemRoleProfileItemBonus = 0;
 	int lastTeamItemRoleEntity = -1;
 	int lastTeamItemRoleItem = 0;
 	int lastTeamItemRoleScore = 0;
@@ -232,6 +235,7 @@ struct BotNavRouteStatus {
 	int lastTeamResourceDenialIntent = 0;
 	int lastTeamResourceDenialPriority = 0;
 	int lastTeamResourceDenialScoreBoost = 0;
+	int lastTeamResourceDenialProfileItemBonus = 0;
 	int lastTeamResourceDenialEntity = -1;
 	int lastTeamResourceDenialItem = 0;
 	int lastTeamResourceDenialScore = 0;

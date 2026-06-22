@@ -55,6 +55,7 @@ enum class BotItemFocus {
 	None,
 	Health,
 	Armor,
+	Ammo,
 };
 
 // Caller supplies candidate facts from the current item/nav owner. This module
@@ -214,8 +215,11 @@ struct BotItemStatus {
 	int highValueBoosts = 0;
 	int focusHealthBoosts = 0;
 	int focusArmorBoosts = 0;
+	int focusAmmoBoosts = 0;
 	int itemHealthGoalAssignments = 0;
 	int itemArmorGoalAssignments = 0;
+	int itemAmmoGoalAssignments = 0;
+	int itemWeaponGoalAssignments = 0;
 	int itemHealthPickups = 0;
 	int itemArmorPickups = 0;
 	int healthArmorProofSetups = 0;
