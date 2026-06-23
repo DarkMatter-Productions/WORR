@@ -158,6 +158,7 @@ cvar_t *sg_bot_chat_team_only;
 cvar_t *sg_bot_chat_min_interval_ms;
 cvar_t *sg_bot_chat_reply_policy_smoke;
 cvar_t *sg_bot_chat_event_policy_smoke;
+cvar_t *sg_bot_chat_live_events;
 cvar_t *sg_bot_lifecycle_smoke;
 cvar_t *flood_msgs;
 cvar_t *flood_persecond;

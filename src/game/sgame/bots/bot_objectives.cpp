@@ -105,6 +105,7 @@ static_assert(static_cast<int>(BotObjectiveMatchMode::FreeForAll) == 1);
 static_assert(static_cast<int>(BotObjectiveMatchMode::TeamDeathmatch) == 2);
 static_assert(static_cast<int>(BotObjectiveMatchMode::CaptureTheFlag) == 3);
 static_assert(static_cast<int>(BotObjectiveMatchMode::Cooperative) == 4);
+static_assert(static_cast<int>(BotObjectiveMatchMode::Duel) == 5);
 static_assert(static_cast<int>(BotObjectiveItemCategory::Health) == 1);
 static_assert(static_cast<int>(BotObjectiveItemCategory::CtfObjective) == 7);
 static_assert(static_cast<int>(BotObjectiveItemRole::SelfStack) == 1);
@@ -353,7 +354,8 @@ void BotObjectives_CountMatchPlayers(
 }
 
 BotObjectiveRole BotObjectives_DeterministicShapeRole(const BotObjectiveMatchContext &context) {
-	if (context.mode == BotObjectiveMatchMode::FreeForAll) {
+	if (context.mode == BotObjectiveMatchMode::FreeForAll ||
+		context.mode == BotObjectiveMatchMode::Duel) {
 		return BotObjectiveRole::Attacker;
 	}
 
@@ -374,7 +376,8 @@ bool BotObjectives_MatchRoleCompatible(BotObjectiveMatchMode mode, BotObjectiveR
 		return false;
 	}
 
-	if (mode == BotObjectiveMatchMode::FreeForAll) {
+	if (mode == BotObjectiveMatchMode::FreeForAll ||
+		mode == BotObjectiveMatchMode::Duel) {
 		return role == BotObjectiveRole::Attacker || role == BotObjectiveRole::Midfielder;
 	}
 
@@ -598,6 +601,10 @@ const char *BotObjectives_MatchPolicyReason(BotObjectiveMatchMode mode, BotObjec
 		return role == BotObjectiveRole::Midfielder
 			? "ffa_midfield_roam_collect_engage"
 			: "ffa_score_roam_collect_engage";
+	case BotObjectiveMatchMode::Duel:
+		return role == BotObjectiveRole::Midfielder
+			? "duel_midfield_item_denial"
+			: "duel_item_control_engage";
 	case BotObjectiveMatchMode::TeamDeathmatch:
 		if (role == BotObjectiveRole::Attacker) {
 			return "tdm_attack_score_pressure";
@@ -623,6 +630,8 @@ int BotObjectives_MatchBasePriority(BotObjectiveMatchMode mode) {
 	switch (mode) {
 	case BotObjectiveMatchMode::FreeForAll:
 		return BOT_OBJECTIVE_FFA_SCORE_PRIORITY;
+	case BotObjectiveMatchMode::Duel:
+		return BOT_OBJECTIVE_FFA_SCORE_PRIORITY + BOT_OBJECTIVE_MIDFIELD_POLICY_BONUS;
 	case BotObjectiveMatchMode::TeamDeathmatch:
 		return BOT_OBJECTIVE_TDM_SCORE_PRIORITY;
 	case BotObjectiveMatchMode::CaptureTheFlag:
@@ -1190,6 +1199,9 @@ void BotObjectives_RecordMatchPolicySelection(const BotObjectiveMatchPolicy &pol
 	case BotObjectiveMatchMode::Cooperative:
 		botObjectiveStatus.matchPolicyCoopSelections++;
 		break;
+	case BotObjectiveMatchMode::Duel:
+		botObjectiveStatus.matchPolicyDuelSelections++;
+		break;
 	default:
 		break;
 	}
@@ -1578,6 +1590,8 @@ BotObjectiveMatchMode BotObjectives_MatchModeForGameType(int gametype) {
 	switch (gametype) {
 	case static_cast<int>(GameType::FreeForAll):
 		return BotObjectiveMatchMode::FreeForAll;
+	case static_cast<int>(GameType::Duel):
+		return BotObjectiveMatchMode::Duel;
 	case static_cast<int>(GameType::TeamDeathmatch):
 		return BotObjectiveMatchMode::TeamDeathmatch;
 	case static_cast<int>(GameType::CaptureTheFlag):
@@ -1599,7 +1613,8 @@ BotObjectiveRole BotObjectives_DefaultMatchRole(const BotObjectiveMatchContext &
 }
 
 BotObjectiveLane BotObjectives_DefaultLaneForMatchRole(BotObjectiveMatchMode mode, BotObjectiveRole role) {
-	if (mode == BotObjectiveMatchMode::FreeForAll) {
+	if (mode == BotObjectiveMatchMode::FreeForAll ||
+		mode == BotObjectiveMatchMode::Duel) {
 		return role == BotObjectiveRole::None ? BotObjectiveLane::None : BotObjectiveLane::Midfield;
 	}
 
@@ -1622,7 +1637,8 @@ int BotObjectives_MatchRolePriority(BotObjectiveMatchMode mode, BotObjectiveRole
 		return 0;
 	}
 
-	if (mode == BotObjectiveMatchMode::FreeForAll) {
+	if (mode == BotObjectiveMatchMode::FreeForAll ||
+		mode == BotObjectiveMatchMode::Duel) {
 		return role == BotObjectiveRole::Attacker
 			? basePriority + BOT_OBJECTIVE_ATTACK_ROLE_BONUS
 			: basePriority;
@@ -2094,12 +2110,15 @@ BotObjectiveMatchPolicy BotObjectives_EvaluateMatchPolicy(const BotObjectiveMatc
 	policy.wantsEngage = true;
 	policy.wantsCollect = true;
 	policy.wantsRoam = context.mode == BotObjectiveMatchMode::FreeForAll ||
+		context.mode == BotObjectiveMatchMode::Duel ||
 		BotObjectives_IsMidfieldPolicyRole(selectedRole) ||
 		context.profileMovementStyle == BotObjectiveMovementStyle::Roam ||
 		context.profileMovementStyle == BotObjectiveMovementStyle::Evasive;
 	policy.wantsObjective = context.mode == BotObjectiveMatchMode::CaptureTheFlag;
-	policy.avoidSpawnCamping = context.mode == BotObjectiveMatchMode::FreeForAll;
-	policy.preferMajorItems = selectedRole == BotObjectiveRole::Attacker ||
+	policy.avoidSpawnCamping = context.mode == BotObjectiveMatchMode::FreeForAll ||
+		context.mode == BotObjectiveMatchMode::Duel;
+	policy.preferMajorItems = context.mode == BotObjectiveMatchMode::Duel ||
+		selectedRole == BotObjectiveRole::Attacker ||
 		BotObjectives_IsMidfieldPolicyRole(selectedRole) ||
 		context.profileMovementStyle == BotObjectiveMovementStyle::Attack ||
 		BotObjectives_ProfileBiasHigh(context.profilePowerupTimingPermille);
@@ -2449,26 +2468,38 @@ BotObjectiveItemRolePolicy BotObjectives_EvaluateItemRolePolicy(
 		break;
 	case BotObjectiveItemCategory::Powerup:
 	case BotObjectiveItemCategory::Tech:
-		policy.itemRole = BotObjectiveItemRole::PowerupControl;
-		policy.denyEnemyPickup = matchPolicy.requiresTeamTargetFilter;
+		policy.itemRole = matchPolicy.mode == BotObjectiveMatchMode::Duel
+			? BotObjectiveItemRole::DenyEnemy
+			: BotObjectiveItemRole::PowerupControl;
+		policy.denyEnemyPickup =
+			matchPolicy.mode == BotObjectiveMatchMode::Duel ||
+			matchPolicy.requiresTeamTargetFilter;
 		policy.reserveForRole = matchPolicy.preferMajorItems;
 		policy.priority += BOT_OBJECTIVE_ITEM_ROLE_POWERUP_BOOST;
-		policy.reason = matchPolicy.preferMajorItems
-			? "major_item_control"
-			: "team_powerup_control";
+		policy.reason = matchPolicy.mode == BotObjectiveMatchMode::Duel
+			? "duel_powerup_denial"
+			: (matchPolicy.preferMajorItems
+				? "major_item_control"
+				: "team_powerup_control");
 		break;
 	case BotObjectiveItemCategory::Weapon:
 	case BotObjectiveItemCategory::Ammo:
-		policy.itemRole = matchPolicy.role == BotObjectiveRole::Defender
+		policy.itemRole = matchPolicy.mode == BotObjectiveMatchMode::Duel
+			? BotObjectiveItemRole::DenyEnemy
+			: matchPolicy.role == BotObjectiveRole::Defender
 			? BotObjectiveItemRole::TeamResource
 			: BotObjectiveItemRole::WeaponControl;
-		policy.denyEnemyPickup = matchPolicy.requiresTeamTargetFilter &&
-			policy.itemRole == BotObjectiveItemRole::WeaponControl;
+		policy.denyEnemyPickup =
+			matchPolicy.mode == BotObjectiveMatchMode::Duel ||
+			(matchPolicy.requiresTeamTargetFilter &&
+			 policy.itemRole == BotObjectiveItemRole::WeaponControl);
 		policy.shareWithTeam = policy.itemRole == BotObjectiveItemRole::TeamResource;
 		policy.priority += BOT_OBJECTIVE_ITEM_ROLE_WEAPON_BOOST;
-		policy.reason = policy.shareWithTeam
-			? "defense_weapon_resource"
-			: "weapon_control";
+		policy.reason = matchPolicy.mode == BotObjectiveMatchMode::Duel
+			? "duel_weapon_denial"
+			: (policy.shareWithTeam
+				? "defense_weapon_resource"
+				: "weapon_control");
 		break;
 	case BotObjectiveItemCategory::Health:
 	case BotObjectiveItemCategory::Armor:
@@ -3199,6 +3230,61 @@ void BotObjectives_RecordFlagCapture(int clientIndex, int team, int item) {
 		0);
 }
 
+void BotObjectives_RecordFlagDrop(int clientIndex, int team, int item) {
+	if (clientIndex < 0 || item <= 0) {
+		botObjectiveStatus.invalidEventHooks++;
+		return;
+	}
+
+	const BotObjectiveType type = BotObjectives_FlagObjectiveTypeForTeam(team, item);
+	if (type != BotObjectiveType::EnemyFlagPickup &&
+		type != BotObjectiveType::NeutralFlagPickup) {
+		botObjectiveStatus.invalidEventHooks++;
+		return;
+	}
+
+	botObjectiveStatus.flagDrops++;
+	BotObjectives_RecordLastEvent(
+		type,
+		BotObjectives_DefaultRoleForType(type),
+		clientIndex,
+		team,
+		BotObjectives_FlagOwnerTeamForItem(item),
+		item,
+		-1,
+		BotObjectiveTargetSource::FlagCarrier,
+		0,
+		0,
+		0);
+}
+
+void BotObjectives_RecordFlagReturn(int clientIndex, int team, int item) {
+	if (clientIndex < 0 || item <= 0) {
+		botObjectiveStatus.invalidEventHooks++;
+		return;
+	}
+
+	const BotObjectiveType type = BotObjectives_FlagObjectiveTypeForTeam(team, item);
+	if (type != BotObjectiveType::OwnFlagReturn) {
+		botObjectiveStatus.invalidEventHooks++;
+		return;
+	}
+
+	botObjectiveStatus.flagReturns++;
+	BotObjectives_RecordLastEvent(
+		type,
+		BotObjectives_DefaultRoleForType(type),
+		clientIndex,
+		team,
+		BotObjectives_FlagOwnerTeamForItem(item),
+		item,
+		-1,
+		BotObjectiveTargetSource::DroppedFlagEntity,
+		0,
+		0,
+		0);
+}
+
 void BotObjectives_RecordFlagPickup(const gentity_t *player, const gentity_t *flag) {
 	if (player == nullptr || player->client == nullptr || flag == nullptr || flag->item == nullptr) {
 		botObjectiveStatus.invalidEventHooks++;
@@ -3235,6 +3321,55 @@ void BotObjectives_RecordFlagCapture(const gentity_t *player, int item) {
 		BotObjectives_ClientIndexForEntity(player),
 		static_cast<int>(player->client->sess.team),
 		item);
+}
+
+void BotObjectives_RecordFlagDrop(const gentity_t *player, int item) {
+	if (player == nullptr || player->client == nullptr) {
+		botObjectiveStatus.invalidEventHooks++;
+		return;
+	}
+
+	if (!BotObjectives_IsFlagItem(item)) {
+		botObjectiveStatus.invalidEventHooks++;
+		return;
+	}
+
+	BotObjectives_RecordFlagDrop(
+		BotObjectives_ClientIndexForEntity(player),
+		static_cast<int>(player->client->sess.team),
+		item);
+	botObjectiveStatus.lastEntity = BotObjectives_EntityNumber(player);
+	botObjectiveStatus.lastSpawnCount = player->spawn_count;
+	botObjectiveStatus.lastOriginX = static_cast<int>(player->s.origin.x);
+	botObjectiveStatus.lastOriginY = static_cast<int>(player->s.origin.y);
+	botObjectiveStatus.lastOriginZ = static_cast<int>(player->s.origin.z);
+}
+
+void BotObjectives_RecordFlagReturn(const gentity_t *player, const gentity_t *flag) {
+	if (player == nullptr || player->client == nullptr || flag == nullptr || flag->item == nullptr) {
+		botObjectiveStatus.invalidEventHooks++;
+		return;
+	}
+
+	const int item = flag->item->id;
+	if (!BotObjectives_IsFlagItem(item)) {
+		botObjectiveStatus.invalidEventHooks++;
+		return;
+	}
+
+	BotObjectives_RecordFlagReturn(
+		BotObjectives_ClientIndexForEntity(player),
+		static_cast<int>(player->client->sess.team),
+		item);
+	botObjectiveStatus.lastEntity = BotObjectives_EntityNumber(flag);
+	botObjectiveStatus.lastSpawnCount = flag->spawn_count;
+	botObjectiveStatus.lastTargetSource = static_cast<int>(
+		BotObjectives_IsDroppedFlagEntity(flag)
+			? BotObjectiveTargetSource::DroppedFlagEntity
+			: BotObjectiveTargetSource::WorldFlagEntity);
+	botObjectiveStatus.lastOriginX = static_cast<int>(flag->s.origin.x);
+	botObjectiveStatus.lastOriginY = static_cast<int>(flag->s.origin.y);
+	botObjectiveStatus.lastOriginZ = static_cast<int>(flag->s.origin.z);
 }
 
 const BotObjectiveStatus &BotObjectives_GetStatus() {
@@ -3379,6 +3514,8 @@ const char *BotObjectives_MatchModeName(BotObjectiveMatchMode mode) {
 	switch (mode) {
 	case BotObjectiveMatchMode::FreeForAll:
 		return "free_for_all";
+	case BotObjectiveMatchMode::Duel:
+		return "duel";
 	case BotObjectiveMatchMode::TeamDeathmatch:
 		return "team_deathmatch";
 	case BotObjectiveMatchMode::CaptureTheFlag:

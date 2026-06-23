@@ -1255,6 +1255,7 @@ bool CTF_PickupFlag(gentity_t* ent, gentity_t* other) {
 		other->client->pers.match.ctfFlagReturns++;
 		gi.sound(ent, CHAN_RELIABLE | CHAN_NO_PHS_ADD | CHAN_AUX, gi.soundIndex("ctf/flagret.wav"), 1, ATTN_NONE, 0);
 		BotObjectives_RecordFlagPickup(other, ent);
+		BotObjectives_RecordFlagReturn(other, ent);
 		SetFlagStatus(flagTeam, FlagStatus::AtBase);
 		CTF_ResetTeamFlag(flagTeam);
 		return false;
@@ -1365,6 +1366,7 @@ void CTF_DeadDropFlag(gentity_t* self) {
 
 	gentity_t* dropped = nullptr;
 	Team droppedTeam = Team::None;
+	item_id_t droppedItem = IT_NULL;
 
 	if (self->client->pers.inventory[IT_FLAG_RED]) {
 		dropped = Drop_Item(self, GetItemByIndex(IT_FLAG_RED));
@@ -1373,6 +1375,7 @@ void CTF_DeadDropFlag(gentity_t* self) {
 			G_ColorResetAfter(self->client->sess.netName).c_str(),
 			Teams_TeamName(Team::Red));
 		droppedTeam = Team::Red;
+		droppedItem = IT_FLAG_RED;
 	}
 	else if (self->client->pers.inventory[IT_FLAG_BLUE]) {
 		dropped = Drop_Item(self, GetItemByIndex(IT_FLAG_BLUE));
@@ -1381,6 +1384,7 @@ void CTF_DeadDropFlag(gentity_t* self) {
 			G_ColorResetAfter(self->client->sess.netName).c_str(),
 			Teams_TeamName(Team::Blue));
 		droppedTeam = Team::Blue;
+		droppedItem = IT_FLAG_BLUE;
 	}
 	else if (self->client->pers.inventory[IT_FLAG_NEUTRAL]) {
 		dropped = Drop_Item(self, GetItemByIndex(IT_FLAG_NEUTRAL));
@@ -1389,6 +1393,7 @@ void CTF_DeadDropFlag(gentity_t* self) {
 			G_ColorResetAfter(self->client->sess.netName).c_str(),
 			Teams_TeamName(Team::Free));
 		droppedTeam = Team::Free;
+		droppedItem = IT_FLAG_NEUTRAL;
 	}
 
 	if (droppedTeam != Team::None) {
@@ -1406,6 +1411,8 @@ void CTF_DeadDropFlag(gentity_t* self) {
 	if (!dropped) {
 		return;
 	}
+
+	BotObjectives_RecordFlagDrop(self, droppedItem);
 
 	dropped->think = CTF_DropFlagThink;
 	dropped->nextThink = level.time + CTF::AUTO_FLAG_RETURN_TIMEOUT;

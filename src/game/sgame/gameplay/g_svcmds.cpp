@@ -877,9 +877,12 @@ namespace
 		int initialTaunting = 0;
 		int initialHelpful = 0;
 		int initialSteady = 0;
+		int initialPhraseVariants = 0;
+		int initialUniquePhraseVariants = 0;
 		int lastInitialClient = -1;
 		int lastInitialPersonality = 0;
 		int lastInitialPhrase = 0;
+		int lastInitialPhraseVariant = -1;
 		int replyEnabled = 0;
 		int replyEvents = 0;
 		int replySelections = 0;
@@ -887,13 +890,42 @@ namespace
 		int replyUnknownPersonalities = 0;
 		int replyTeamReady = 0;
 		int replyRouteReady = 0;
+		int replyItemTaken = 0;
+		int replyObjectiveChanged = 0;
+		int replyEnemySighted = 0;
+		int replyLowHealth = 0;
 		int replySubmitted = 0;
 		int replyRateLimited = 0;
+		int replyDuplicateSuppressed = 0;
 		int replyFailures = 0;
+		int replyPhraseVariants = 0;
+		int replyUniquePhraseVariants = 0;
 		int lastReplyClient = -1;
 		int lastReplyPersonality = 0;
 		int lastReplyPhrase = 0;
+		int lastReplyPhraseVariant = -1;
 		int lastReplyEvent = 0;
+		int liveEnabled = 0;
+		int liveEvents = 0;
+		int liveSpawn = 0;
+		int liveRouteReady = 0;
+		int liveItemTaken = 0;
+		int liveObjectiveChanged = 0;
+		int liveEnemySighted = 0;
+		int liveLowHealth = 0;
+		int liveSubmitted = 0;
+		int liveRateLimited = 0;
+		int liveDuplicateSuppressed = 0;
+		int liveFailures = 0;
+		int liveEventTaxonomy = 0;
+		int duplicateWindowMs = 0;
+		int lastDuplicateClient = -1;
+		int lastDuplicateEvent = 0;
+		const char* lastDuplicateEventName = "none";
+		int lastDuplicatePhrase = 0;
+		int lastDuplicateElapsedMs = -1;
+		int lastLiveEvent = 0;
+		const char* lastLiveEventName = "none";
 		int blockedUntilConsumer = 0;
 	};
 
@@ -1177,9 +1209,12 @@ namespace
 		status.initialTaunting = BotChatPolicy_InitialTaunting();
 		status.initialHelpful = BotChatPolicy_InitialHelpful();
 		status.initialSteady = BotChatPolicy_InitialSteady();
+		status.initialPhraseVariants = BotChatPolicy_InitialPhraseVariants();
+		status.initialUniquePhraseVariants = BotChatPolicy_InitialUniquePhraseVariants();
 		status.lastInitialClient = BotChatPolicy_LastInitialClient();
 		status.lastInitialPersonality = BotChatPolicy_LastInitialPersonality();
 		status.lastInitialPhrase = BotChatPolicy_LastInitialPhrase();
+		status.lastInitialPhraseVariant = BotChatPolicy_LastInitialPhraseVariant();
 		status.replyEnabled = BotChatPolicy_ReplyEnabled();
 		status.replyEvents = BotChatPolicy_ReplyEvents();
 		status.replySelections = BotChatPolicy_ReplySelections();
@@ -1187,13 +1222,43 @@ namespace
 		status.replyUnknownPersonalities = BotChatPolicy_ReplyUnknownPersonalities();
 		status.replyTeamReady = BotChatPolicy_ReplyTeamReady();
 		status.replyRouteReady = BotChatPolicy_ReplyRouteReady();
+		status.replyItemTaken = BotChatPolicy_ReplyItemTaken();
+		status.replyObjectiveChanged = BotChatPolicy_ReplyObjectiveChanged();
+		status.replyEnemySighted = BotChatPolicy_ReplyEnemySighted();
+		status.replyLowHealth = BotChatPolicy_ReplyLowHealth();
 		status.replySubmitted = BotChatPolicy_ReplySubmitted();
 		status.replyRateLimited = BotChatPolicy_ReplyRateLimited();
+		status.replyDuplicateSuppressed = BotChatPolicy_ReplyDuplicateSuppressed();
 		status.replyFailures = BotChatPolicy_ReplyFailures();
+		status.replyPhraseVariants = BotChatPolicy_ReplyPhraseVariants();
+		status.replyUniquePhraseVariants = BotChatPolicy_ReplyUniquePhraseVariants();
 		status.lastReplyClient = BotChatPolicy_LastReplyClient();
 		status.lastReplyPersonality = BotChatPolicy_LastReplyPersonality();
 		status.lastReplyPhrase = BotChatPolicy_LastReplyPhrase();
+		status.lastReplyPhraseVariant = BotChatPolicy_LastReplyPhraseVariant();
 		status.lastReplyEvent = BotChatPolicy_LastReplyEvent();
+		status.liveEnabled = BotChatPolicy_LiveEnabled();
+		status.liveEvents = BotChatPolicy_LiveEvents();
+		status.liveSpawn = BotChatPolicy_LiveSpawn();
+		status.liveRouteReady = BotChatPolicy_LiveRouteReady();
+		status.liveItemTaken = BotChatPolicy_LiveItemTaken();
+		status.liveObjectiveChanged = BotChatPolicy_LiveObjectiveChanged();
+		status.liveEnemySighted = BotChatPolicy_LiveEnemySighted();
+		status.liveLowHealth = BotChatPolicy_LiveLowHealth();
+		status.liveSubmitted = BotChatPolicy_LiveSubmitted();
+		status.liveRateLimited = BotChatPolicy_LiveRateLimited();
+		status.liveDuplicateSuppressed = BotChatPolicy_LiveDuplicateSuppressed();
+		status.liveFailures = BotChatPolicy_LiveFailures();
+		status.liveEventTaxonomy = BotChatPolicy_LiveEventTaxonomy();
+		status.duplicateWindowMs = BotChatPolicy_DuplicateWindowMilliseconds();
+		status.lastDuplicateClient = BotChatPolicy_LastDuplicateClient();
+		status.lastDuplicateEvent = BotChatPolicy_LastDuplicateEvent();
+		status.lastDuplicateEventName = BotChatPolicy_LastDuplicateEventName();
+		status.lastDuplicatePhrase = BotChatPolicy_LastDuplicatePhrase();
+		status.lastDuplicateElapsedMs =
+			BotChatPolicy_LastDuplicateElapsedMilliseconds();
+		status.lastLiveEvent = BotChatPolicy_LastLiveEvent();
+		status.lastLiveEventName = BotChatPolicy_LastLiveEventName();
 		status.blockedUntilConsumer = status.allowChat && !status.consumerReady ? 1 : 0;
 
 		CalculateRanks();
@@ -2068,16 +2133,38 @@ void BotChatPolicy_PrintStatus(int expectedBots, int expectedProfileChat,
 		"initial_chat_unknown_personalities={} initial_chat_quiet={} "
 		"initial_chat_direct={} initial_chat_taunting={} "
 		"initial_chat_helpful={} initial_chat_steady={} "
+		"initial_chat_phrase_variants={} "
+		"initial_chat_unique_variants={} "
 		"last_initial_chat_client={} last_initial_chat_personality={} "
-		"last_initial_chat_phrase={} "
+		"last_initial_chat_phrase={} last_initial_chat_variant={} "
 		"reply_chat_enabled={} reply_chat_events={} "
 		"reply_chat_selections={} reply_chat_known_personalities={} "
 		"reply_chat_unknown_personalities={} reply_chat_team_ready={} "
 		"reply_chat_route_ready={} "
+		"reply_chat_item_taken={} "
+		"reply_chat_objective_changed={} "
+		"reply_chat_enemy_sighted={} "
+		"reply_chat_low_health={} "
 		"reply_chat_submitted={} reply_chat_rate_limited={} "
-		"reply_chat_failures={} last_reply_chat_client={} "
+		"reply_chat_duplicate_suppressed={} reply_chat_failures={} "
+		"reply_chat_phrase_variants={} reply_chat_unique_variants={} "
+		"last_reply_chat_client={} "
 		"last_reply_chat_personality={} last_reply_chat_phrase={} "
-		"last_reply_chat_event={} "
+		"last_reply_chat_variant={} last_reply_chat_event={} "
+		"live_chat_enabled={} live_chat_events={} "
+		"live_chat_spawn={} live_chat_route_ready={} "
+		"live_chat_item_taken={} "
+		"live_chat_objective_changed={} "
+		"live_chat_enemy_sighted={} "
+		"live_chat_low_health={} "
+		"live_chat_submitted={} "
+		"live_chat_rate_limited={} live_chat_duplicate_suppressed={} "
+		"live_chat_failures={} "
+		"live_chat_event_taxonomy={} chat_duplicate_window_ms={} "
+		"last_duplicate_chat_client={} last_duplicate_chat_event={} "
+		"last_duplicate_chat_event_name={} last_duplicate_chat_phrase={} "
+		"last_duplicate_chat_elapsed_ms={} last_live_chat_event={} "
+		"last_live_chat_event_name={} "
 		"blocked_until_consumer={} expected_bots={} "
 		"expected_profile_chat={} expected_allow_chat={} "
 		"expected_dispatch_enabled={} pass={}\n",
@@ -2092,16 +2179,33 @@ void BotChatPolicy_PrintStatus(int expectedBots, int expectedProfileChat,
 		status.initialUnknownPersonalities, status.initialQuiet,
 		status.initialDirect, status.initialTaunting,
 		status.initialHelpful, status.initialSteady,
+		status.initialPhraseVariants, status.initialUniquePhraseVariants,
 		status.lastInitialClient, status.lastInitialPersonality,
-		status.lastInitialPhrase,
+		status.lastInitialPhrase, status.lastInitialPhraseVariant,
 		status.replyEnabled, status.replyEvents,
 		status.replySelections, status.replyKnownPersonalities,
 		status.replyUnknownPersonalities, status.replyTeamReady,
-		status.replyRouteReady,
+		status.replyRouteReady, status.replyItemTaken,
+		status.replyObjectiveChanged, status.replyEnemySighted,
+		status.replyLowHealth,
 		status.replySubmitted, status.replyRateLimited,
-		status.replyFailures, status.lastReplyClient,
+		status.replyDuplicateSuppressed, status.replyFailures,
+		status.replyPhraseVariants,
+		status.replyUniquePhraseVariants, status.lastReplyClient,
 		status.lastReplyPersonality, status.lastReplyPhrase,
-		status.lastReplyEvent,
+		status.lastReplyPhraseVariant, status.lastReplyEvent,
+		status.liveEnabled, status.liveEvents, status.liveSpawn,
+		status.liveRouteReady, status.liveItemTaken,
+		status.liveObjectiveChanged, status.liveEnemySighted,
+		status.liveLowHealth,
+		status.liveSubmitted,
+		status.liveRateLimited, status.liveDuplicateSuppressed,
+		status.liveFailures,
+		status.liveEventTaxonomy, status.duplicateWindowMs,
+		status.lastDuplicateClient, status.lastDuplicateEvent,
+		status.lastDuplicateEventName, status.lastDuplicatePhrase,
+		status.lastDuplicateElapsedMs, status.lastLiveEvent,
+		status.lastLiveEventName,
 		status.blockedUntilConsumer, expectedBots, expectedProfileChat,
 		expectedAllowChat, expectedDispatchEnabled, pass ? 1 : 0).data());
 }

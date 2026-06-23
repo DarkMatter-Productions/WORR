@@ -343,6 +343,7 @@ struct BotNavBlackboardSnapshot {
 
 void BotNav_ResetAll();
 void BotNav_ResetClient(int clientIndex);
+bool BotNav_ProbePickupGoal(const gentity_t *bot);
 bool BotNav_GetRouteSteer(const gentity_t *bot, const BotNavRouteRequest *request, BotLibAdapterRouteSteer *route);
 bool BotNav_RequestInteractionRetry(
 	const gentity_t *bot,

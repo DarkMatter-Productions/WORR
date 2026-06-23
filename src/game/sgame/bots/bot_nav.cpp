@@ -255,12 +255,21 @@ bool BotNavBehaviorPolicyEnabled() {
 	return behaviorEnable != nullptr && behaviorEnable->integer > 0;
 }
 
+bool BotNavCoopShareLoopEnabled() {
+	static cvar_t *shareLoop = nullptr;
+	if (shareLoop == nullptr && gi.cvar != nullptr) {
+		shareLoop = gi.cvar("sg_bot_coop_share_loop", "0", CVAR_NOFLAGS);
+	}
+	return shareLoop != nullptr && shareLoop->integer > 0;
+}
+
 bool BotNavCoopResourceShareEnabled() {
 	static cvar_t *resourceShare = nullptr;
 	if (resourceShare == nullptr && gi.cvar != nullptr) {
 		resourceShare = gi.cvar("sg_bot_coop_resource_share", "0", CVAR_NOFLAGS);
 	}
 	return BotNavBehaviorPolicyEnabled() ||
+		BotNavCoopShareLoopEnabled() ||
 		(resourceShare != nullptr && resourceShare->integer > 0);
 }
 
@@ -273,12 +282,21 @@ bool BotNavMatchItemPolicyEnabled() {
 		(matchItemPolicy != nullptr && matchItemPolicy->integer > 0);
 }
 
+bool BotNavDuelLivePacingEnabled() {
+	static cvar_t *duelLivePacing = nullptr;
+	if (duelLivePacing == nullptr && gi.cvar != nullptr) {
+		duelLivePacing = gi.cvar("sg_bot_duel_live_pacing", "0", CVAR_NOFLAGS);
+	}
+	return duelLivePacing != nullptr && duelLivePacing->integer > 0;
+}
+
 bool BotNavFfaItemRolesEnabled() {
 	static cvar_t *ffaItemRoles = nullptr;
 	if (ffaItemRoles == nullptr && gi.cvar != nullptr) {
 		ffaItemRoles = gi.cvar("sg_bot_ffa_item_roles", "0", CVAR_NOFLAGS);
 	}
 	return (ffaItemRoles != nullptr && ffaItemRoles->integer > 0) ||
+		BotNavDuelLivePacingEnabled() ||
 		BotNavMatchItemPolicyEnabled();
 }
 
@@ -1611,7 +1629,8 @@ bool BotNavFindPickupGoal(const gentity_t *bot, int clientIndex, uint32_t frame,
 	}
 	BotNavItemRoleScope itemRoleScope = BotNavItemRoleScope::None;
 	if (ffaItemRoles &&
-		matchPolicy.mode == BotObjectiveMatchMode::FreeForAll) {
+		(matchPolicy.mode == BotObjectiveMatchMode::FreeForAll ||
+		 matchPolicy.mode == BotObjectiveMatchMode::Duel)) {
 		itemRoleScope = BotNavItemRoleScope::FreeForAll;
 	} else if (ctfItemRoles &&
 		matchPolicy.mode == BotObjectiveMatchMode::CaptureTheFlag) {
@@ -2584,6 +2603,20 @@ void BotNav_ResetClient(int clientIndex) {
 
 	botNavRouteSlots[clientIndex] = {};
 	BotNavUpdateActiveReservations();
+}
+
+bool BotNav_ProbePickupGoal(const gentity_t *bot) {
+	const int clientIndex = BotNavClientIndex(bot);
+	if (clientIndex < 0) {
+		return false;
+	}
+
+	BotNavItemGoalCandidate selectedItemGoal{};
+	return BotNavFindPickupGoal(
+		bot,
+		clientIndex,
+		gi.ServerFrame(),
+		&selectedItemGoal);
 }
 
 bool BotNav_GetRouteSteer(const gentity_t *bot, const BotNavRouteRequest *request, BotLibAdapterRouteSteer *route) {

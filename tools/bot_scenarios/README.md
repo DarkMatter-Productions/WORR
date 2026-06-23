@@ -84,6 +84,8 @@ Implemented:
 - `coop_anti_blocking`: mode `29` with `deathmatch 0`, `coop 1`, and `sg_bot_coop_anti_blocking 1`, verifies close-to-leader coop policy can own a short anti-blocking movement command.
 - `coop_target_share`: mode `30` with `deathmatch 0`, `coop 1`, and `sg_bot_coop_target_share 1`, verifies a coop bot can adopt a teammate's hostile non-client target from the blackboard.
 - `coop_door_elevator`: mode `31` with `deathmatch 0`, `coop 1`, and `sg_bot_coop_door_elevator 1`, verifies one coop bot can own a route-detected mover/elevator wait/use interaction while a teammate holds.
+- `coop_live_loop`: mode `77` with `deathmatch 0`, `coop 1`, and `sg_bot_coop_live_loop 1`, verifies leader routing, progress waiting, anti-blocking, route-interaction retry, and door/elevator source-hold cooperation in one two-bot coop run.
+- `coop_share_loop`: mode `78` with `deathmatch 0`, `coop 1`, and `sg_bot_coop_share_loop 1`, verifies coop target sharing and reserve-for-teammate resource sharing compose in one two-bot coop run.
 - `team_role_route`: mode `32` with `deathmatch 1`, `g_gametype 3`, and `sg_bot_team_role_route 1`, verifies TDM match role/lane policy can own timed route-goal commands.
 - `team_item_roles`: mode `33` with `deathmatch 1`, `g_gametype 3`, and `sg_bot_team_item_roles 1`, verifies TDM match item-role policy can shape live pickup-goal scoring.
 - `team_resource_denial`: mode `50` with `deathmatch 1`, `g_gametype 3`, and `sg_bot_team_resource_denial 1`, verifies TDM resource policy can boost deny-enemy pickup-goal scoring for contested weapons, powerups, tech, and utility items.
@@ -98,6 +100,10 @@ Implemented:
 - `survival_health_route`: mode `69` with `deathmatch 1`, `g_gametype 1`, and `survival_route=1`, verifies low-health/no-armor survival pressure naturally selects a routeable health pickup without item focus and records health candidate, seek, utility-kind, and health goal-assignment telemetry.
 - `survival_armor_route`: mode `70` with `deathmatch 1`, `g_gametype 1`, and `survival_route=armor`, verifies full-health/no-armor survival pressure naturally selects a routeable armor pickup without item focus and records armor candidate, seek, utility-kind, and armor goal-assignment telemetry.
 - `combat_survival_regression`: mode `71` with `deathmatch 1`, `g_gametype 1`, and `survival_route=combat_health`, verifies visible enemy combat pressure and low-health survival item pressure coexist in one run, including blackboard/action target facts, withheld-fire evidence, health candidate/seek telemetry, health goal assignment, and item/recovery arbitration ownership.
+- `combat_survival_regression_q2dm2`: mode `71` on `q2dm2` with `deathmatch 1`, `g_gametype 1`, and `survival_route=combat_health`, verifies the compact combat/survival regression on a second reference DM map with route-clean health pressure, withheld-fire evidence, and item/recovery arbitration ownership.
+- `threat_retreat_avoidance`: mode `72` with `deathmatch 1`, `g_gametype 1`, and `threat_retreat=1`, verifies a low-health bot can break contact through a short timed route-goal, suppress attack during the retreat window, and re-engage afterward without enabling the older smoke combat cvar.
+- `combat_survival_regression_q2dm8`: mode `71` on `q2dm8` with `deathmatch 1`, `g_gametype 1`, and `survival_route=combat_health`, repeats the compact combat/survival item-routing regression on a third staged DM reference map.
+- `threat_retreat_avoidance_q2dm8`: mode `72` on `q2dm8` with `deathmatch 1`, `g_gametype 1`, and `threat_retreat=1`, repeats the low-health threat-retreat, attack-suppression, and re-engagement proof on a third staged DM reference map.
 - `profile_role_policy`: mode `53` with `deathmatch 1` and `g_gametype 3`, verifies staged profile roles feed TDM match-policy requested-role selection.
 - `profile_team_policy`: mode `54` with `deathmatch 1` and `g_gametype 5`, verifies staged profile teamplay, objective, and friendly-fire-care hints feed CTF match-policy bonuses.
 - `profile_item_policy`: mode `55` with `deathmatch 1`, `g_gametype 3`, `sg_bot_match_item_policy 1`, and `sg_bot_profile_item_policy_smoke 1`, verifies staged profile item-greed, item-denial, powerup-timing, and retreat-health hints feed TDM match item/resource policy bonuses.
@@ -108,21 +114,33 @@ Implemented:
 - `bot_chat_initial_policy`: mode `60` with `deathmatch 1`, `g_gametype 3`, and `sg_bot_allow_chat 1`, verifies profile chat personalities select deterministic initial utterance buckets before live dispatch.
 - `bot_chat_reply_policy`: mode `61` with `deathmatch 1`, `g_gametype 3`, `sg_bot_allow_chat 1`, and `sg_bot_chat_reply_policy_smoke 1`, verifies profile chat personalities select deterministic reply utterances for the first team-ready proof event.
 - `bot_chat_event_policy`: mode `62` with `deathmatch 1`, `g_gametype 3`, `sg_bot_allow_chat 1`, and `sg_bot_chat_event_policy_smoke 1`, verifies profile chat personalities select deterministic reply utterances for team-ready and route-ready proof events.
+- `bot_chat_live_events`: mode `79` with `deathmatch 1`, `g_gametype 3`, `sg_bot_allow_chat 1`, and `sg_bot_chat_live_events 1`, verifies live spawn and route-ready events feed the safe chat reply pipeline without the smoke-only event gate.
+- `bot_chat_live_event_cooldown`: mode `80` with `deathmatch 1`, `g_gametype 3`, `sg_bot_allow_chat 1`, `sg_bot_chat_live_events 1`, and `sg_bot_chat_min_interval_ms 60000`, verifies live chat events are still selected while the global cooldown submits only the first utterance and rate-limits the rest without failures.
+- `bot_chat_live_enemy_sighted`: mode `81` with `deathmatch 1`, `g_gametype 3`, `sg_bot_allow_chat 1`, and `sg_bot_chat_live_events 1`, verifies a blackboard-visible enemy produces a gameplay-derived `enemy_sighted` live chat event without the smoke-only event gate.
+- `bot_chat_phrase_library`: mode `82` with `deathmatch 1`, `g_gametype 3`, `sg_bot_allow_chat 1`, and `sg_bot_chat_live_events 1`, verifies the expanded four-variant initial and reply phrase libraries are exercised by staged profile bots.
+- `bot_chat_duplicate_suppression`: mode `83` with `deathmatch 1`, `g_gametype 3`, `sg_bot_allow_chat 1`, `sg_bot_chat_event_policy_smoke 1`, and `sg_bot_chat_live_events 1`, verifies duplicate same-bot route-ready chat is suppressed before public dispatch.
+- `bot_chat_live_low_health`: mode `84` with `deathmatch 1`, `g_gametype 1`, `sg_bot_allow_chat 1`, and `sg_bot_chat_live_events 1`, verifies survival-health item pressure produces a gameplay-derived `low_health` live chat event without the smoke-only event gate.
+- `bot_chat_live_item_taken`: mode `85` with `deathmatch 1`, `g_gametype 1`, `sg_bot_allow_chat 1`, and `sg_bot_chat_live_events 1`, verifies health/armor pickup observations produce a gameplay-derived `item_taken` live chat event without the smoke-only event gate.
+- `bot_chat_live_objective_changed`: mode `86` with `deathmatch 1`, `g_gametype 5`, `sg_bot_allow_chat 1`, `sg_bot_chat_live_events 1`, `sg_bot_ctf_objective_route 1`, and `sg_bot_ctf_objective_transitions 1`, verifies real CTF pickup/drop/return hooks produce a gameplay-derived `objective_changed` live chat event without the smoke-only event gate.
 - `team_fire_avoidance`: mode `34` with `deathmatch 1`, `g_gametype 3`, and `sg_bot_team_fire_avoidance 1`, verifies TDM friendly-fire policy can suppress live attack input before `BUTTON_ATTACK` is applied.
 - `ctf_role_route`: mode `35` with `deathmatch 1`, `g_gametype 5`, and `sg_bot_ctf_role_route 1`, verifies CTF match role/lane policy can own timed route-goal commands.
 - `ctf_role_combat`: mode `36` with `deathmatch 1`, `g_gametype 5`, and `sg_bot_ctf_role_combat 1`, verifies CTF match role/lane policy can own live attack input from visible, shootable enemy facts.
 - `ctf_dropped_flag_route`: mode `37` with `deathmatch 1`, `g_gametype 5`, and `sg_bot_ctf_dropped_flag_route 1`, verifies CTF dropped enemy flag response policy can own route commands to a dropped-flag objective.
 - `ctf_carrier_support_route`: mode `38` with `deathmatch 1`, `g_gametype 5`, and `sg_bot_ctf_carrier_support_route 1`, verifies CTF same-team flag-carrier support policy can own route commands to the carrier-support objective.
 - `ctf_base_return_route`: mode `39` with `deathmatch 1`, `g_gametype 5`, and `sg_bot_ctf_base_return_route 1`, verifies CTF own-flag return policy can own route commands to an enemy own-flag carrier through the own-base-return lane.
-- `ctf_objective_route`: mode `40` with `deathmatch 1`, `g_gametype 5`, and `sg_bot_ctf_objective_route 1`, verifies the combined CTF objective route policy sees base-return, carrier-support, and dropped-flag candidates while recording higher-priority route selections and lower-priority deferrals.
+- `ctf_objective_route`: mode `40` with `deathmatch 1`, `g_gametype 5`, and `sg_bot_ctf_objective_route 1`, verifies the combined CTF objective route policy selects base-return, carrier-support, and dropped-flag objectives in one live objective loop while recording objective-owner arbitration and lower-priority deferrals.
+- `ctf_objective_transitions`: mode `76` with `deathmatch 1`, `g_gametype 5`, `sg_bot_ctf_objective_route 1`, and `sg_bot_ctf_objective_transitions 1`, verifies actual CTF pickup, death-drop, and dropped-flag return hooks feed objective counters before the combined CTF objective route owner commands the flag loop.
 - `ctf_objective_route_precedence`: mode `41` with `deathmatch 1`, `g_gametype 5`, `sg_bot_ctf_role_route 1`, and `sg_bot_ctf_objective_route 1`, verifies the generic CTF role-route owner records objective-route deferrals while the objective route policy still commands the selected flag route.
 - `ffa_roam_route`: mode `42` with `deathmatch 1`, `g_gametype 1`, and `sg_bot_ffa_roam_route 1`, verifies FFA roam/collect/engage policy can own timed route-goal commands.
 - `team_role_combat`: mode `43` with `deathmatch 1`, `g_gametype 3`, and `sg_bot_team_role_combat 1`, verifies TDM match role/lane policy can own live attack input from visible, shootable enemy facts.
 - `team_role_combat_avoidance`: mode `44` with `deathmatch 1`, `g_gametype 3`, `sg_bot_team_role_combat 1`, and `sg_bot_team_fire_avoidance 1`, verifies TDM role-combat attack ownership can feed the friendly-fire avoidance veto path.
+- `tdm_role_spawn_stability`: mode `73` with `deathmatch 1`, `g_gametype 3`, `sv_bot_frame_command_smoke_map_repeat_cycles 2`, and `sv_bot_frame_command_smoke_map_repeat_restart 1`, verifies TDM role-route and role-combat owners stay active across a forced same-map restart and final cleanup.
 - `ffa_spawn_camp_avoidance`: mode `45` with `deathmatch 1`, `g_gametype 1`, `sg_bot_ffa_roam_route 1`, and `sg_bot_ffa_spawn_camp_avoidance 1`, verifies FFA anti-camp policy can source timed route-goal commands away from a nearby live opponent.
 - `ffa_item_roles`: mode `46` with `deathmatch 1`, `g_gametype 1`, and `sg_bot_ffa_item_roles 1`, verifies FFA match item-role policy can shape live pickup-goal scoring.
 - `ffa_role_combat`: mode `48` with `deathmatch 1`, `g_gametype 1`, and `sg_bot_ffa_role_combat 1`, verifies FFA match role/lane policy can own live attack input from visible, shootable enemy facts.
 - `ffa_spawn_camp_combat_avoidance`: mode `49` with `deathmatch 1`, `g_gametype 1`, `sg_bot_ffa_role_combat 1`, `sg_bot_ffa_spawn_camp_avoidance 1`, and `sg_bot_ffa_spawn_camp_combat_avoidance 1`, verifies FFA anti-camp policy can veto a role-combat attack when the selected target is the nearby spawn-camp source.
+- `ffa_live_pacing`: mode `74` with `deathmatch 1`, `g_gametype 1`, `sg_bot_ffa_roam_route 1`, `sg_bot_ffa_spawn_camp_avoidance 1`, `sg_bot_ffa_item_roles 1`, `sg_bot_ffa_role_combat 1`, and `sg_bot_ffa_spawn_camp_combat_avoidance 1`, verifies FFA route ownership, item-role scoring, role combat, and spawn-camp route/combat pressure cooperate in one four-bot FFA run.
+- `duel_live_pacing`: mode `75` with `deathmatch 1`, `g_gametype 2`, and `sg_bot_duel_live_pacing 1`, verifies Duel route ownership, deny-enemy item-role scoring, role combat, and spawn-pressure route/combat evidence cooperate in one two-bot Duel run.
 - `ctf_item_roles`: mode `47` with `deathmatch 1`, `g_gametype 5`, and `sg_bot_ctf_item_roles 1`, verifies CTF match item-role policy can shape live pickup-goal scoring.
 - `coop_progress_wait`: mode `3` with `deathmatch 0`, `coop 1`, and `sg_bot_coop_progress_wait 1`, verifies WaitForLeader coop policy consumption reaches command ownership.
 - `coop_interaction_retry`: mode `12` with `deathmatch 0`, `coop 1`, and `sg_bot_coop_interaction_retry 1`, verifies detected route interactions can own wait/use command retry windows.
@@ -133,7 +151,7 @@ Manual long-running:
 
 Pending placeholders:
 
-- None in the default catalog after the 2026-06-22 aim/fire policy promotion round.
+- None in the default catalog after the 2026-06-22 FFA live-pacing round.
 
 Pending rows are reported but do not fail the suite unless `--fail-on-pending` is passed. With the current catalog, `--scenario pending` is a no-launch empty report unless new future rows are added.
 
@@ -216,7 +234,7 @@ Analyze an existing JSON report, usually `.tmp\bot_scenarios\latest_report.json`
 python tools\bot_scenarios\run_bot_scenarios.py --scenario pending --pending-gap-report .tmp\bot_scenarios\latest_report.json --format text --json-out .tmp\bot_scenarios\pending_gap_report.json
 ```
 
-This command does not launch the game. It compares pending placeholders against the report fixture and prints whether each scenario is ready for harness promotion or blocked by missing scenario rows, wrong smoke modes, pending fixture rows, absent status/marker metrics, absent policy-consumer evidence, or failed promotion metric checks. After modes `20` through `66`, `trace_checked_corner_cutting`, `coop_match_readiness`, `coop_leader_route`, `coop_progress_wait`, and `coop_interaction_retry` were promoted, the default pending set is empty.
+This command does not launch the game. It compares pending placeholders against the report fixture and prints whether each scenario is ready for harness promotion or blocked by missing scenario rows, wrong smoke modes, pending fixture rows, absent status/marker metrics, absent policy-consumer evidence, or failed promotion metric checks. After modes `20` through `75`, `trace_checked_corner_cutting`, `coop_match_readiness`, `coop_leader_route`, `coop_progress_wait`, and `coop_interaction_retry` were promoted, the default pending set is empty.
 
 Raw reserved-mode logs can be included when reserved modes have been run outside the normal scenario catalog:
 
@@ -273,6 +291,14 @@ The promoted source-backed smoke mode numbers are fixed for compatibility with s
 - `bot_chat_initial_policy`: mode `60`
 - `bot_chat_reply_policy`: mode `61`
 - `bot_chat_event_policy`: mode `62`
+- `bot_chat_live_events`: mode `79`
+- `bot_chat_live_event_cooldown`: mode `80`
+- `bot_chat_live_enemy_sighted`: mode `81`
+- `bot_chat_phrase_library`: mode `82`
+- `bot_chat_duplicate_suppression`: mode `83`
+- `bot_chat_live_low_health`: mode `84`
+- `bot_chat_live_item_taken`: mode `85`
+- `bot_chat_live_objective_changed`: mode `86`
 - `behavior_arbitration`: mode `63`
 - `target_memory_decay`: mode `64`
 - `weapon_scoring_arsenal`: mode `65`
@@ -282,6 +308,15 @@ The promoted source-backed smoke mode numbers are fixed for compatibility with s
 - `survival_health_route`: mode `69`
 - `survival_armor_route`: mode `70`
 - `combat_survival_regression`: mode `71`
+- `combat_survival_regression_q2dm2`: mode `71` on `q2dm2`
+- `threat_retreat_avoidance`: mode `72`
+- `combat_survival_regression_q2dm8`: mode `71` on `q2dm8`
+- `threat_retreat_avoidance_q2dm8`: mode `72` on `q2dm8`
+- `ffa_live_pacing`: mode `74`
+- `duel_live_pacing`: mode `75`
+- `ctf_objective_transitions`: mode `76`
+- `coop_live_loop`: mode `77`
+- `coop_share_loop`: mode `78`
 
 Additional promoted rows reuse existing smoke coverage:
 

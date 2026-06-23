@@ -12,6 +12,13 @@ Related tasks: `FR-04-T01`, `FR-04-T02`, `FR-04-T10`, `FR-04-T11`, `FR-04-T12`, 
 
 Track source provenance, credits, licenses, and local modification notes for the Quake III Arena BotLib and Quake II AAS generator work. This ledger must be updated in the same change set as any imported, adapted, or substantially referenced upstream file.
 
+## Recent Native Validation Updates
+
+- 2026-06-23: The bot chat live item-taken slice is WORR-native work with no new upstream imports claimed. Mode `85` `bot_chat_live_item_taken` validates health/armor pickup observation `item_taken` live chat telemetry through `q3a_bot_chat_policy_status`, with focused evidence at `.tmp\bot_scenarios\20260623T051126Z`. The latest full `implemented` suite passed 93/93 rows from `.tmp\bot_scenarios\20260623T051133Z`.
+- 2026-06-23: The bot chat live low-health slice is WORR-native work with no new upstream imports claimed. Mode `84` `bot_chat_live_low_health` validates survival-state `low_health` live chat telemetry through `q3a_bot_chat_policy_status`, with focused evidence at `.tmp\bot_scenarios\20260623T025752Z`. The latest full `implemented` suite passed 92/92 rows from `.tmp\bot_scenarios\20260623T025801Z`.
+- 2026-06-23: The bot chat duplicate-suppression slice is WORR-native work with no new upstream imports claimed. Mode `83` `bot_chat_duplicate_suppression` validates the per-bot 5000 ms reply duplicate window, duplicate suppression telemetry, and repeated route-ready reply/live event suppression through `q3a_bot_chat_policy_status`, with focused evidence at `.tmp\bot_scenarios\20260623T023211Z`. The then-current full `implemented` suite passed 91/91 rows from `.tmp\bot_scenarios\20260623T023230Z`.
+- 2026-06-23: The bot chat phrase-library expansion is WORR-native work with no new upstream imports claimed. Mode `82` `bot_chat_phrase_library` validates four initial and four reply phrase variants through `q3a_bot_chat_policy_status` telemetry, with focused evidence at `.tmp\bot_scenarios\20260623T020850Z`. The then-current full `implemented` suite passed 90/90 rows from `.tmp\bot_scenarios\20260623T021355Z`.
+
 ## Initial Credit Sources
 
 | Source | Role in Project | URL / Local Path | License / Notice | Credit Requirement |
@@ -3590,11 +3597,41 @@ Tasks: `FR-04-T03`, `FR-04-T15`, `DV-03-T05`
   `.tmp\bot_scenarios\20260622T171732Z` and exposed older status-surface
   contract drift. That failed aggregate is now superseded by the smoke
   contract reconciliation round recorded below.
-- The implemented catalog now reports 77 rows total: 76 automated short-run
-  rows plus one manual high-bot degradation row; raw plan checklist rows remain
-  `809/809` checked.
+- At that point, the implemented catalog reported 77 rows total: 76 automated
+  short-run rows plus one manual high-bot degradation row; raw plan checklist
+  rows remained `809/809` checked.
 - Implementation log:
   `docs-dev/q3a-botlib-combat-survival-regression-2026-06-22.md`.
+
+## Combat Survival Second-Map Regression Proof Credit Update (2026-06-22)
+
+Tasks: `FR-04-T03`, `FR-04-T15`, `DV-03-T05`
+
+- No new Q3A, BSPC, idTech3, Quake3e, baseq3a, Gladiator, or q2proto source
+  files were imported or modified for this round.
+- WORR-native `tools/bot_scenarios/run_bot_scenarios.py` now supports
+  per-scenario map overrides and reports `map_name` in catalog/run output. The
+  new `combat_survival_regression_q2dm2` row pins `q2dm2` while reusing smoke
+  mode `71`.
+- WORR-native `src/server/main.c` adds the current map name to the
+  `q3a_bot_frame_command_smoke_scenario=begin` marker, giving map-specific
+  scenario rows a direct `map=q2dm2` proof gate.
+- WORR-native `tools/bot_scenarios/test_run_bot_scenarios.py` and
+  `tools/bot_scenarios/README.md` add the q2dm2 scenario row, map override
+  coverage, marker gates, synthetic log coverage, and catalog documentation.
+- Focused q2dm2 validation passed from
+  `.tmp\bot_scenarios\combat_survival_regression_q2dm2\20260622T194547Z` with
+  `map_name=q2dm2`, begin-marker `map=q2dm2`, `frames=121`, `commands=121`,
+  `route_failures=0`, `item_goal_assignments=5`, visible/shootable enemy facts,
+  withheld-fire evidence, and item/recovery arbitration ownership.
+- The full automated `implemented` catalog passed 77 rows, 0 failed, 0 timeout,
+  0 error, and 0 pending from
+  `.tmp\bot_scenarios\implemented_after_q2dm2_regression\20260622T194653Z`.
+- At that point, the implemented catalog reported 78 rows total: 77 automated
+  short-run rows plus one manual high-bot degradation row; raw plan checklist
+  rows remained `809/809` checked.
+- Implementation log:
+  `docs-dev/q3a-botlib-combat-survival-second-map-regression-2026-06-22.md`.
 
 ## Native Runtime Update: Smoke Contract Reconciliation
 
@@ -3630,9 +3667,439 @@ Tasks: `FR-04-T03`, `FR-04-T04`, `FR-04-T15`, `DV-03-T05`, `DV-07-T06`
 - Implementation log:
   `docs-dev/q3a-botlib-smoke-contract-reconciliation-2026-06-22.md`.
 
+## Native Behavior Update: Threat Retreat Avoidance
+
+Date: 2026-06-22
+
+Tasks: `FR-04-T03`, `FR-04-T15`, `DV-03-T05`
+
+- WORR-native `src/game/sgame/bots/bot_brain.cpp` adds the default-off
+  `sg_bot_threat_retreat` behavior, timed route-goal kind `ThreatRetreat`,
+  low-health threat source selection, attack suppression during the retreat
+  window, post-retreat re-engagement telemetry, and compact status counters for
+  threat-retreat requests, sources, activations, route requests, suppressions,
+  and re-engagements.
+- WORR-native `src/server/main.c` reserves smoke mode `72`, stages the
+  two-bot FFA low-health proof, emits begin-marker `threat_retreat=1`
+  evidence, and intentionally avoids the older
+  `sg_bot_frame_command_smoke_combat=engage_enemy` target setup.
+- WORR-native `tools/bot_scenarios/run_bot_scenarios.py`,
+  `tools/bot_scenarios/test_run_bot_scenarios.py`, and
+  `tools/bot_scenarios/README.md` add the `threat_retreat_avoidance` scenario,
+  optional status-field discovery, parser coverage for supplemental status
+  rows, route-owner harness cleanup, and catalog documentation.
+- No Q3A, BSPC, Quake3e, baseq3a, Gladiator, or `q2proto/` source files were
+  imported or modified for this round.
+- Validation: `python -m unittest tools.bot_scenarios.test_run_bot_scenarios`
+  passed 47 tests; `meson compile -C builddir-win` passed; `.install/` was
+  refreshed with current Windows binaries and `basew` game DLLs; focused
+  `threat_retreat_avoidance` validation passed from
+  `.tmp\bot_scenarios\20260622T202608Z`; focused neighboring route-owner
+  validation passed from `.tmp\bot_scenarios\20260622T203111Z`; and the full
+  `implemented` catalog passed 78 rows with 0 failures from
+  `.tmp\bot_scenarios\20260622T203125Z`.
+- Implementation log:
+  `docs-dev/q3a-botlib-threat-retreat-avoidance-2026-06-22.md`.
+
+## Native Validation Update: Q2DM8 Combat Map Regression
+
+Date: 2026-06-22
+
+Tasks: `FR-04-T03`, `FR-04-T11`, `FR-04-T15`, `DV-03-T05`
+
+- WORR-native `tools/bot_scenarios/run_bot_scenarios.py` now promotes
+  `combat_survival_regression_q2dm8` and `threat_retreat_avoidance_q2dm8`.
+  Both rows use the existing per-scenario map override path and hard-gate the
+  server begin marker with `map=q2dm8`.
+- The q2dm8 combat/survival row reuses mode `71` to prove route-clean command
+  output, visible/shootable enemy telemetry, low-health health-item goal
+  assignment, item arbitration ownership, and recovery ownership on the
+  reference `q2dm8` deathmatch layout.
+- The q2dm8 threat-retreat row reuses mode `72` to prove low-health live threat
+  sourcing, retreat route requests, attack suppression, and combat ownership on
+  the same reference map.
+- WORR-native `tools/bot_scenarios/test_run_bot_scenarios.py` and
+  `tools/bot_scenarios/README.md` add catalog, marker, synthetic parser, and
+  documentation coverage for the two q2dm8 rows.
+- No Q3A, BSPC, Quake3e, baseq3a, Gladiator, or `q2proto/` source files were
+  imported or modified for this round.
+- Validation: `python -m unittest tools.bot_scenarios.test_run_bot_scenarios`
+  passed 47 tests; focused q2dm8 validation passed 2 rows with 0 failures from
+  `.tmp\bot_scenarios\20260622T204956Z`; and the full `implemented` catalog
+  passed 80 rows with 0 failures from
+  `.tmp\bot_scenarios\20260622T205123Z`.
+- Implementation log:
+  `docs-dev/q3a-botlib-q2dm8-combat-map-regression-2026-06-22.md`.
+
+## Native Validation Update: CTF Objective Live Loop
+
+Date: 2026-06-22
+
+Tasks: `FR-04-T04`, `FR-04-T15`, `DV-03-T05`
+
+- WORR-native `tools/bot_scenarios/run_bot_scenarios.py` now hardens the
+  existing `ctf_objective_route` scenario without adding a new smoke mode or
+  catalog row. Mode `40` requires base-return, carrier-support, and
+  dropped-flag objective selections in one CTF run.
+- WORR-native marker gates also require objective arbitration evidence through
+  `behavior_arbitration_objective_candidates` and
+  `behavior_arbitration_objective_owners`.
+- WORR-native `tools/bot_scenarios/test_run_bot_scenarios.py` and
+  `tools/bot_scenarios/README.md` add parser/catalog coverage and scenario
+  documentation for the stricter live-loop contract.
+- No Q3A, BSPC, Quake3e, baseq3a, Gladiator, or `q2proto/` source files were
+  imported or modified for this round.
+- Validation: `python -m unittest tools.bot_scenarios.test_run_bot_scenarios`
+  passed 47 tests; focused `ctf_objective_route` validation passed from
+  `.tmp\bot_scenarios\20260622T210329Z`; and the full `implemented` catalog
+  passed 80 rows with 0 failures from `.tmp\bot_scenarios\20260622T210348Z`.
+- Implementation log:
+  `docs-dev/q3a-botlib-ctf-objective-live-loop-2026-06-22.md`.
+
+## Native Validation Update: TDM Role Spawn Stability
+
+Date: 2026-06-22
+
+Tasks: `FR-04-T04`, `FR-04-T15`, `DV-03-T05`, `DV-07-T06`
+
+- WORR-native `src/server/main.c` reserves smoke mode `73`, marks it as a
+  map-repeat/restart scenario, and routes it through the existing TDM
+  role-route and role-combat proof helpers. The begin marker emits
+  `tdm_role_spawn_stability=1` so the integrated run is attributable in logs.
+- WORR-native `tools/bot_scenarios/run_bot_scenarios.py` promotes
+  `tdm_role_spawn_stability` with forced same-map restart cvars, route/combat
+  owner gates, post-reload cycle gates, TDM readiness gates, action attack
+  gates, and final cleanup gates.
+- WORR-native `tools/bot_scenarios/test_run_bot_scenarios.py` and
+  `tools/bot_scenarios/README.md` add parser, catalog, marker-contract,
+  command-construction, and documentation coverage for the new row.
+- No Q3A, BSPC, Quake3e, baseq3a, Gladiator, or `q2proto/` source files were
+  imported or modified for this round.
+- Validation: `python -m unittest tools.bot_scenarios.test_run_bot_scenarios`
+  passed 48 tests; `meson compile -C builddir-win worr_ded_x86_64` passed;
+  `meson compile -C builddir-win worr_ded_engine_x86_64` passed; `.install/`
+  was refreshed with current Windows binaries and `basew` game data; focused
+  `tdm_role_spawn_stability` validation passed from
+  `.tmp\bot_scenarios\20260622T212431Z`; and the full `implemented` catalog
+  passed 81 rows with 0 failures from `.tmp\bot_scenarios\20260622T212440Z`.
+- Implementation log:
+  `docs-dev/q3a-botlib-tdm-role-spawn-stability-2026-06-22.md`.
+
+## Native Validation Update: FFA Live Pacing
+
+Date: 2026-06-22
+
+Tasks: `FR-04-T04`, `FR-04-T06`, `FR-04-T15`, `DV-03-T05`, `DV-07-T06`
+
+- WORR-native `src/server/main.c` reserves smoke mode `74`, routes it through
+  the existing FFA roam-route, spawn-camp route-source, item-role, role-combat,
+  and spawn-camp combat-veto helper predicates, and emits
+  `ffa_live_pacing=1` in the begin marker.
+- WORR-native `src/game/sgame/bots/bot_brain.cpp` recognizes the combined FFA
+  live-pacing cvar set as its own proof mode, preserving the route/combat owner
+  setup while requesting validation-only pickup scoring telemetry.
+- WORR-native `src/game/sgame/bots/bot_nav.*` adds `BotNav_ProbePickupGoal()`,
+  which reuses normal pickup-goal scoring to populate `ffa_item_role_*` nav
+  policy telemetry without replacing the active timed-route owner.
+- WORR-native `tools/bot_scenarios/run_bot_scenarios.py`,
+  `tools/bot_scenarios/test_run_bot_scenarios.py`, and
+  `tools/bot_scenarios/README.md` add catalog, marker, command-construction,
+  synthetic parser, and documentation coverage for the new row.
+- No Q3A, BSPC, Quake3e, baseq3a, Gladiator, or `q2proto/` source files were
+  imported or modified for this round.
+- Validation: `python -m unittest tools.bot_scenarios.test_run_bot_scenarios`
+  passed 49 tests; `meson compile -C builddir-win sgame_x86_64 copy_sgame_dll
+  worr_ded_engine_x86_64 worr_ded_x86_64` passed; `.install/` was refreshed
+  with current Windows binaries and `basew` game data; focused
+  `ffa_live_pacing` validation passed from
+  `.tmp\bot_scenarios\20260622T214927Z`; and the full `implemented` catalog
+  passed 82 rows with 0 failures from `.tmp\bot_scenarios\20260622T215343Z`.
+- Implementation log:
+  `docs-dev/q3a-botlib-ffa-live-pacing-2026-06-22.md`.
+
+## Native Validation Update: Duel Live Pacing
+
+Date: 2026-06-22
+
+Tasks: `FR-04-T04`, `FR-04-T06`, `FR-04-T15`, `DV-03-T05`, `DV-07-T06`
+
+- WORR-native `src/game/sgame/bots/bot_objectives.*` adds
+  `BotObjectiveMatchMode::Duel` with stable value `5`, maps
+  `GameType::Duel` into that mode, records
+  `team_objective_match_policy_duel`, and assigns Duel weapons, ammo,
+  powerups, and techs to deny-enemy item policy.
+- WORR-native `src/game/sgame/bots/bot_brain.cpp` adds the default-off
+  `sg_bot_duel_live_pacing` gate, reserves smoke mode `75`, reuses the
+  FFA-style route, role-combat, spawn-pressure, and validation-only pickup
+  scoring paths only for Duel policy when the cvar is enabled, and emits
+  compact status with Duel mode/name evidence.
+- WORR-native `src/game/sgame/bots/bot_nav.cpp` allows the existing item-role
+  scoring bridge to evaluate Duel match policy under the Duel live-pacing gate.
+- WORR-native `src/server/main.c` stages mode `75` as a two-bot Duel run with
+  `g_gametype 2`, resets `sg_bot_duel_live_pacing`, and prints
+  `duel_live_pacing=1` while the FFA proof cvars remain disabled.
+- WORR-native `tools/bot_scenarios/run_bot_scenarios.py`,
+  `tools/bot_scenarios/test_run_bot_scenarios.py`, and
+  `tools/bot_scenarios/README.md` add catalog, marker, command-construction,
+  synthetic parser, and documentation coverage for the new row.
+- No Q3A, BSPC, Quake3e, baseq3a, Gladiator, or `q2proto/` source files were
+  imported or modified for this round.
+- Validation: `python -m unittest tools.bot_scenarios.test_run_bot_scenarios`
+  passed 50 tests; `meson compile -C builddir-win sgame_x86_64
+  worr_ded_engine_x86_64 worr_ded_x86_64 copy_sgame_dll` passed; `.install/`
+  was refreshed with current Windows binaries, packaged `basew` game data, and
+  q2aas AAS archive members; focused `duel_live_pacing` validation passed from
+  `.tmp\bot_scenarios\20260622T222142Z`; q2dm8 combat/survival marker-contract
+  recheck passed from `.tmp\bot_scenarios\20260622T222450Z`; and the full
+  `implemented` catalog passed 83 rows with 0 failures from
+  `.tmp\bot_scenarios\20260622T222457Z`.
+- Implementation log:
+  `docs-dev/q3a-botlib-duel-live-pacing-2026-06-22.md`.
+
+## Native Validation Update: CTF Objective Transitions
+
+Date: 2026-06-22
+
+Tasks: `FR-04-T04`, `FR-04-T15`, `DV-03-T05`, `DV-07-T06`
+
+- WORR-native `src/game/sgame/bots/bot_objectives.*` now records objective
+  `flagDrops` and `flagReturns` counters alongside the existing pickup and
+  capture counters.
+- WORR-native `src/game/sgame/gameplay/g_capture.cpp` feeds those counters from
+  `CTF_DeadDropFlag` and the same-team dropped-flag return branch. The generic
+  item-touch path is still not used to infer flag events.
+- WORR-native `src/game/sgame/bots/bot_brain.cpp` adds the default-off
+  `sg_bot_ctf_objective_transitions` proof path and stages pickup,
+  death-drop, and dropped-flag return through CTF gameplay entry points before
+  the combined CTF objective route policy owns the live flag loop.
+- WORR-native `src/server/main.c` reserves smoke mode `76`, emits
+  `ctf_objective_transitions=1`, stages the four-bot CTF setup, and resets the
+  new proof cvar after the scenario.
+- WORR-native `tools/bot_scenarios/run_bot_scenarios.py`,
+  `tools/bot_scenarios/test_run_bot_scenarios.py`, and
+  `tools/bot_scenarios/README.md` add catalog, marker, synthetic raw-mode,
+  command-construction, and documentation coverage for the new row.
+- No Q3A, BSPC, Quake3e, baseq3a, Gladiator, or `q2proto/` source files were
+  imported or modified for this round.
+- Validation: `python -m unittest tools.bot_scenarios.test_run_bot_scenarios`
+  passed 51 tests; `meson compile -C builddir-win sgame_x86_64
+  worr_ded_engine_x86_64 worr_ded_x86_64 copy_sgame_dll` passed; `.install/`
+  was refreshed with current Windows binaries, packaged `basew` game data, and
+  all eight staged q2aas AAS archive members; focused
+  `ctf_objective_transitions` validation passed from
+  `.tmp\bot_scenarios\20260622T230509Z`; and the full `implemented` catalog
+  passed 84 rows with 0 failures from `.tmp\bot_scenarios\20260622T230519Z`.
+- Implementation log:
+  `docs-dev/q3a-botlib-ctf-objective-transitions-2026-06-22.md`.
+
+## Native Validation Update: Coop Live Loop
+
+Date: 2026-06-23
+
+Tasks: `FR-04-T04`, `FR-04-T05`, `FR-04-T15`, `DV-03-T05`, `DV-07-T06`
+
+- WORR-native `src/game/sgame/bots/bot_brain.cpp` adds the default-off
+  `sg_bot_coop_live_loop` aggregate proof gate, per-bot progress-wait
+  activation, leader-route composition with door/elevator ownership, preserved
+  wait telemetry during hold-command preemption, and live-loop-specific
+  anti-blocking distance tuning.
+- WORR-native `src/server/main.c` reserves smoke mode `77`, stages a two-bot
+  coop run, emits `coop_live_loop=1`, resets the new proof cvar, and supports
+  the elevator travel goal needed by the aggregate row.
+- WORR-native `tools/bot_scenarios/run_bot_scenarios.py`,
+  `tools/bot_scenarios/test_run_bot_scenarios.py`, and
+  `tools/bot_scenarios/README.md` add catalog, marker, synthetic raw-mode,
+  command-construction, and documentation coverage for the new row.
+- No Q3A, BSPC, Quake3e, baseq3a, Gladiator, or `q2proto/` source files were
+  imported or modified for this round.
+- Validation: `python -m unittest tools.bot_scenarios.test_run_bot_scenarios`
+  passed 52 tests; `meson compile -C builddir-win sgame_x86_64
+  worr_ded_engine_x86_64 worr_ded_x86_64 copy_sgame_dll` passed; `.install/`
+  was refreshed with current Windows binaries, packaged `basew` game data, and
+  all eight staged q2aas AAS archive members; focused `coop_live_loop`
+  validation passed from `.tmp\bot_scenarios\20260622T234315Z`; and the later
+  full `implemented` catalog passed 86 rows with 0 failures from
+  `.tmp\bot_scenarios\20260623T001205Z`.
+- Implementation log:
+  `docs-dev/q3a-botlib-coop-live-loop-2026-06-23.md`.
+
+## Native Validation Update: Coop Share Loop
+
+Date: 2026-06-23
+
+Tasks: `FR-04-T04`, `FR-04-T05`, `FR-04-T15`, `DV-03-T05`, `DV-07-T06`
+
+- WORR-native `src/game/sgame/bots/bot_brain.cpp` adds the default-off
+  `sg_bot_coop_share_loop` aggregate proof gate, maps it to reserved smoke mode
+  `78`, activates the existing coop target-sharing and resource-sharing
+  bridges, and preserves the target-share smoke target for the aggregate row.
+- WORR-native `src/game/sgame/bots/bot_nav.cpp` lets the same aggregate gate
+  activate coop reserve-for-teammate pickup-goal scoring.
+- WORR-native `src/server/main.c` reserves smoke mode `78`, stages a two-bot
+  coop run, emits `coop_share_loop=1`, resets the new proof cvar, and keeps the
+  individual target/resource proof cvars available for narrow regression rows.
+- WORR-native `tools/bot_scenarios/run_bot_scenarios.py`,
+  `tools/bot_scenarios/test_run_bot_scenarios.py`, and
+  `tools/bot_scenarios/README.md` add catalog, marker, synthetic raw-mode,
+  command-construction, reserved-mode diagnostic, and documentation coverage
+  for the new row.
+- No Q3A, BSPC, Quake3e, baseq3a, Gladiator, or `q2proto/` source files were
+  imported or modified for this round.
+- Validation: `python -m unittest tools.bot_scenarios.test_run_bot_scenarios`
+  passed 53 tests; `meson compile -C builddir-win sgame_x86_64
+  worr_ded_engine_x86_64 worr_ded_x86_64 copy_sgame_dll` passed; `.install/`
+  was refreshed with current Windows binaries, packaged `basew` game data, and
+  all eight staged q2aas AAS archive members; focused `coop_share_loop`
+  validation passed from `.tmp\bot_scenarios\20260623T001149Z`; and the full
+  `implemented` catalog passed 86 rows with 0 failures from
+  `.tmp\bot_scenarios\20260623T001205Z`.
+- Implementation log:
+  `docs-dev/q3a-botlib-coop-share-loop-2026-06-23.md`.
+
+## Native Validation Update: Bot Chat Live Events
+
+Date: 2026-06-23
+
+Tasks: `FR-04-T07`, `FR-04-T13`, `FR-04-T15`, `DV-03-T05`, `DV-07-T06`
+
+- WORR-native `src/game/sgame/bots/bot_brain.cpp` adds the default-off
+  `sg_bot_chat_live_events` live chat event gate, tracks live chat event
+  counters separately from smoke reply-policy counters, exposes an eleven-entry
+  event taxonomy, records live spawn events, and submits live `route_ready`
+  replies after route-command ownership succeeds.
+- WORR-native `src/game/sgame/gameplay/g_svcmds.cpp`,
+  `src/game/sgame/gameplay/g_main.cpp`, `src/game/sgame/g_local.hpp`, and
+  `src/game/sgame/bots/bot_runtime.cpp` expose/register the new cvar and print
+  live event status fields in `q3a_bot_chat_policy_status`.
+- WORR-native `src/server/main.c` reserves smoke mode `79`, stages a four-bot
+  TDM run with `sg_bot_allow_chat 1` and `sg_bot_chat_live_events 1`, prints
+  the live-events begin marker, and resets the cvar during smoke cleanup.
+- WORR-native `tools/bot_scenarios/run_bot_scenarios.py`,
+  `tools/bot_scenarios/test_run_bot_scenarios.py`, and
+  `tools/bot_scenarios/README.md` add catalog, marker, synthetic raw-mode,
+  command-construction, string-metric, and documentation coverage for the new
+  row.
+- No Q3A, BSPC, Quake3e, baseq3a, Gladiator, or `q2proto/` source files were
+  imported or modified for this round.
+- Validation: `python -m unittest tools.bot_scenarios.test_run_bot_scenarios`
+  passed 53 tests; `meson compile -C builddir-win sgame_x86_64
+  worr_ded_engine_x86_64 worr_ded_x86_64 copy_sgame_dll` passed; `.install/`
+  was refreshed with current Windows binaries, packaged `basew` game data, and
+  all eight staged q2aas AAS archive members; focused `bot_chat_live_events`
+  validation passed from `.tmp\bot_scenarios\20260623T010520Z`; and the full
+  `implemented` catalog passed 88 rows with 0 failures from
+  `.tmp\bot_scenarios\20260623T010536Z`.
+- Implementation log:
+  `docs-dev/q3a-botlib-bot-chat-live-events-2026-06-23.md`.
+
+## Native Validation Update: Bot Chat Live Event Cooldown
+
+Date: 2026-06-23
+
+Tasks: `FR-04-T07`, `FR-04-T13`, `FR-04-T15`, `DV-03-T05`, `DV-07-T06`
+
+- WORR-native `src/game/sgame/bots/bot_brain.cpp` now records live spawn-event
+  selections through the same reply-policy status path as route-ready live
+  events, preserving submitted, rate-limited, and failure accounting for
+  dispatch outcomes.
+- WORR-native `src/game/sgame/gameplay/g_svcmds.cpp` and
+  `src/game/sgame/g_local.hpp` expose `live_chat_spawn` in
+  `q3a_bot_chat_policy_status` so live spawn and route-ready breadth can be
+  audited independently.
+- WORR-native `src/server/main.c` reserves smoke mode `80`, stages the live
+  chat cooldown run with `sg_bot_chat_live_events 1` and
+  `sg_bot_chat_min_interval_ms 60000`, and prints the cooldown begin-marker
+  field.
+- WORR-native `tools/bot_scenarios/run_bot_scenarios.py`,
+  `tools/bot_scenarios/test_run_bot_scenarios.py`, and
+  `tools/bot_scenarios/README.md` add catalog, marker, parser-fixture,
+  command-construction, and documentation coverage for the cooldown row.
+- No Q3A, BSPC, Quake3e, baseq3a, Gladiator, or `q2proto/` source files were
+  imported or modified for this round.
+- Validation: `python -m unittest tools.bot_scenarios.test_run_bot_scenarios`
+  passed 53 tests; `meson compile -C builddir-win sgame_x86_64
+  worr_ded_engine_x86_64 worr_ded_x86_64 copy_sgame_dll` passed; `.install/`
+  was refreshed with current Windows binaries, packaged `basew` game data, and
+  all eight staged q2aas AAS archive members; focused `bot_chat_live_events`
+  validation passed from `.tmp\bot_scenarios\20260623T010520Z`; focused
+  `bot_chat_live_event_cooldown` validation passed from
+  `.tmp\bot_scenarios\20260623T010530Z`; and the full `implemented` catalog
+  passed 88 rows with 0 failures from `.tmp\bot_scenarios\20260623T010536Z`.
+- Implementation log:
+  `docs-dev/q3a-botlib-bot-chat-live-event-cooldown-2026-06-23.md`.
+
+## Native Validation Update: Bot Chat Live Enemy Sighted
+
+Date: 2026-06-23
+
+Tasks: `FR-04-T07`, `FR-04-T13`, `FR-04-T15`, `DV-03-T05`, `DV-07-T06`
+
+- WORR-native `src/game/sgame/bots/bot_brain.cpp` now records event id `6`
+  as live `enemy_sighted` chat when `sg_bot_chat_live_events` is enabled and
+  the bot blackboard has a valid current visible enemy. Personality-specific
+  reply phrases and per-spawn duplicate suppression are local game behavior.
+- WORR-native `src/game/sgame/gameplay/g_svcmds.cpp` and
+  `src/game/sgame/g_local.hpp` expose `reply_chat_enemy_sighted` and
+  `live_chat_enemy_sighted` in `q3a_bot_chat_policy_status`.
+- WORR-native `src/server/main.c` reserves smoke mode `81`, marks it as an
+  engage-enemy live chat proof, prints the `bot_chat_live_enemy_sighted`
+  begin-marker field, and runs a two-bot TDM profile proof for stable combat
+  contact.
+- WORR-native `tools/bot_scenarios/run_bot_scenarios.py`,
+  `tools/bot_scenarios/test_run_bot_scenarios.py`, and
+  `tools/bot_scenarios/README.md` add catalog, marker, parser-fixture,
+  command-construction, and documentation coverage for the new row.
+- No new upstream Q3A, Gladiator, BSPC, idTech3, Quake3e, baseq3a, or
+  `q2proto/` source files were imported or modified for this round.
+- Validation: `python -m unittest tools.bot_scenarios.test_run_bot_scenarios`
+  passed 53 tests; `meson compile -C builddir-win sgame_x86_64
+  worr_ded_engine_x86_64 worr_ded_x86_64 copy_sgame_dll` passed; `.install/`
+  was refreshed with current Windows binaries, packaged `basew` game data, and
+  all eight staged q2aas AAS archive members; focused
+  `bot_chat_live_enemy_sighted` validation passed from
+  `.tmp\bot_scenarios\20260623T013832Z`; and the full `implemented` catalog
+  passed 89 rows with 0 failures from `.tmp\bot_scenarios\20260623T013843Z`.
+- Implementation log:
+  `docs-dev/q3a-botlib-bot-chat-live-enemy-sighted-2026-06-23.md`.
+
+## Native Validation Update: Bot Chat Live Low Health
+
+Date: 2026-06-23
+
+Tasks: `FR-04-T07`, `FR-04-T13`, `FR-04-T15`, `DV-03-T05`, `DV-07-T06`
+
+- WORR-native `src/game/sgame/bots/bot_brain.cpp` now records event id `9`
+  as live `low_health` chat when `sg_bot_chat_live_events` is enabled and the
+  bot's live health is at or below the chat low-health threshold. The event
+  uses personality-specific reply phrases plus the existing safe dispatch,
+  cooldown, duplicate, and bot-client broadcast protections.
+- WORR-native `src/game/sgame/gameplay/g_svcmds.cpp` and
+  `src/game/sgame/g_local.hpp` expose `reply_chat_low_health` and
+  `live_chat_low_health` in `q3a_bot_chat_policy_status`.
+- WORR-native `src/server/main.c` reserves smoke mode `84`, reuses the
+  survival-health route staging so the chat event is sourced from a real
+  low-health gameplay state, prints `bot_chat_live_low_health=1`, and runs a
+  one-bot FFA proof with `sg_bot_chat_live_events 1`.
+- WORR-native `tools/bot_scenarios/run_bot_scenarios.py`,
+  `tools/bot_scenarios/test_run_bot_scenarios.py`, and
+  `tools/bot_scenarios/README.md` add catalog, marker, parser-fixture,
+  command-construction, and documentation coverage for the new row.
+- No new upstream Q3A, Gladiator, BSPC, idTech3, Quake3e, baseq3a, or
+  `q2proto/` source files were imported or modified for this round.
+- Validation: `python -m unittest tools.bot_scenarios.test_run_bot_scenarios`
+  passed 53 tests; `meson compile -C builddir-win sgame_x86_64
+  worr_ded_engine_x86_64 worr_ded_x86_64 copy_sgame_dll` passed; `.install/`
+  was refreshed with current Windows binaries, packaged `basew` game data, and
+  all eight staged q2aas AAS archive members; focused
+  `bot_chat_live_low_health` validation passed from
+  `.tmp\bot_scenarios\20260623T025752Z`; and the full `implemented` catalog
+  passed 92 rows with 0 failures from `.tmp\bot_scenarios\20260623T025801Z`.
+- Implementation log:
+  `docs-dev/q3a-botlib-bot-chat-live-low-health-2026-06-23.md`.
+
 ## Candidate Source Inventory
 
-These files were audited as likely first candidates or reference points. BSPC candidates now land through the `tools/q2aas/` snapshot; the first Q3A utility, AAS file-loader, AAS sampling, AAS reachability, AAS clustering, AAS route-query, AAS alternative-routing, AAS optimization, AAS start-frame, AAS entity-cache, AAS movement, and AAS debug helper subsets are imported and recorded above, while the WORR-owned entity-sync, entity-trace, BSP leaf-link/box-query, debug draw, route-overlay, debug-polygon, debug-area, cluster, alternative-route, memory allocator, filesystem, route-cache miss policy, lifecycle telemetry, bot frame command dispatch, route-steered frame command, nav route-cache, nav debug-overlay, nav reachability-debug, nav polyline-debug, nav debug-client-filter, nav persistent-goal, nav item-goal, nav item-reservation, nav look-ahead steering, nav velocity-aware steering, nav route-target stabilization, trace-checked corner cutting, nav stuck-repath, nav stuck recovery command, nav goal-blacklist cooldown, nav failed-goal reason, nav movement-state commands, bot brain command ownership, target-memory retention and decay telemetry, weapon scoring arsenal telemetry, aim/fire policy depth telemetry, ammo pressure pickup telemetry, survival inventory-use telemetry, survival health-route telemetry, survival armor-route telemetry, combat/survival regression telemetry, nuke retreat route ownership, timed route-goal ownership, teleporter escape route ownership, team role route ownership, team item-role route selection, FFA item-role route selection, CTF item-role route selection, team fire-avoidance command suppression, team role-combat command ownership, FFA roam-route ownership, FFA role-combat command ownership, FFA spawn-camp-combat-avoidance command veto, team resource-denial pickup scoring, match item-policy umbrella scoring, behavior policy umbrella cvar/status/scenario gating, profile role-policy status/scenario gating, profile team-policy status/scenario gating, profile item-policy status/scenario gating, profile movement-policy status/scenario gating, bot chat-policy live-dispatch, team-policy, rate-policy, initial-policy, reply-policy, event-policy, behavior-arbitration owner/cvar status/scenario gating, and target-memory blackboard status/scenario gating, CTF role-route ownership, CTF role-combat command ownership, CTF dropped-flag route ownership, CTF carrier-support route ownership, CTF base-return route ownership, CTF objective route-policy ownership, CTF objective route precedence ownership, coop leader route ownership and validation gating, coop lead-advance route ownership, coop progress-wait command ownership, coop interaction-retry command ownership, coop resource-share route selection, coop anti-blocking command ownership, coop target-sharing blackboard adoption, coop door/elevator source-hold command ownership, bot warmup readiness status and smoke validation, bot vote-exclusion status and smoke validation, bot admin-audit status/attempt smoke validation, bot tournament status/veto/replay smoke validation, match logging schema status and smoke validation, match logging catalog/index status and smoke validation, bot MyMap status/queue/consume smoke validation, bot queued-nextmap transition status and smoke validation, bot map-vote status/finalize smoke validation, bot scoreboard classification status and smoke validation, bot intermission cleanup status and smoke validation, nav position-goal, nav natural travel-goal including barrier-jump direct reach validation, nav rocket-jump route policy, nav four-bot frame-command smoke, nav eight-bot frame-command smoke, nav soak frame-command smoke, nav map-change repeat/restart smoke, map-restart cleanup scenario promotion, warmup bot-start readiness scenario promotion, vote bot-exclusion scenario promotion, admin bot privilege audit scenario promotion, tournament bot veto-exclusion scenario promotion, tournament replay reset scenario promotion, match logging schema scenario promotion, match logging catalog/index scenario proof, MyMap queue scenario promotion, queued nextmap transition scenario promotion, map-vote bot-exclusion transition scenario promotion, scoreboard bot-classification scenario promotion, intermission bot-cleanup scenario promotion, nav natural movement support diagnostics, behavior action dispatcher and telemetry boundary, weapon/inventory command-request API and exact dispatch, aim/fairness and live-aim/projectile-leading helper APIs, live combat policy consumption, live item timing consumers, item timer fairness helper policy, special-item utility buckets, static BSP trace CPU counters, entity-clip CPU counters, AAS memory source counters, source-counter completeness diagnostics, FFA/TDM/CTF objective-side helper policy, team-role policy and lane/depth helpers, coop/resource policy helpers, status harness/status surface expansion, bot validation tooling, scenario coverage expansion and marker hardening including the 77-row implemented catalog total, profile behavior validation, botfile behavior-depth metadata, botfile parity polish, public bot/user documentation, competitive server tools operator documentation, high-bot degradation policy and soak budget, q2aas reference-map coverage and available-reference validation reporting, q2aas required-feature gap diagnostics, q2aas binary/license notice policy, release packaging hardening, Q3-style WORR botfile layout correction, and legacy Q2R bot surface removal work is recorded as native adapter, tooling, asset, documentation, status, or replacement work. The remaining Q3A runtime and behavior files remain reference-only until matched to a pinned source.
+These files were audited as likely first candidates or reference points. BSPC candidates now land through the `tools/q2aas/` snapshot; the first Q3A utility, AAS file-loader, AAS sampling, AAS reachability, AAS clustering, AAS route-query, AAS alternative-routing, AAS optimization, AAS start-frame, AAS entity-cache, AAS movement, and AAS debug helper subsets are imported and recorded above, while the WORR-owned entity-sync, entity-trace, BSP leaf-link/box-query, debug draw, route-overlay, debug-polygon, debug-area, cluster, alternative-route, memory allocator, filesystem, route-cache miss policy, lifecycle telemetry, bot frame command dispatch, route-steered frame command, nav route-cache, nav debug-overlay, nav reachability-debug, nav polyline-debug, nav debug-client-filter, nav persistent-goal, nav item-goal, nav item-reservation, nav look-ahead steering, nav velocity-aware steering, nav route-target stabilization, trace-checked corner cutting, nav stuck-repath, nav stuck recovery command, nav goal-blacklist cooldown, nav failed-goal reason, nav movement-state commands, bot brain command ownership, target-memory retention and decay telemetry, weapon scoring arsenal telemetry, aim/fire policy depth telemetry, ammo pressure pickup telemetry, survival inventory-use telemetry, survival health-route telemetry, survival armor-route telemetry, combat/survival regression telemetry, q2dm2 second-map combat/survival regression telemetry, q2dm8 combat/retreat map-regression telemetry, CTF objective live-loop telemetry, CTF objective transition telemetry, TDM role spawn-stability telemetry, FFA live-pacing telemetry, Duel live-pacing telemetry, coop live-loop combined validation, coop share-loop target/resource validation, bot chat live-event taxonomy, cooldown, enemy-sighted, duplicate-suppression, and low-health validation, nuke retreat route ownership, timed route-goal ownership, teleporter escape route ownership, team role route ownership, team item-role route selection, FFA item-role route selection, CTF item-role route selection, team fire-avoidance command suppression, team role-combat command ownership, FFA roam-route ownership, FFA role-combat command ownership, FFA spawn-camp-combat-avoidance command veto, Duel deny-enemy item scoring, Duel route/combat pacing status reuse, team resource-denial pickup scoring, match item-policy umbrella scoring, behavior policy umbrella cvar/status/scenario gating, profile role-policy status/scenario gating, profile team-policy status/scenario gating, profile item-policy status/scenario gating, profile movement-policy status/scenario gating, bot chat-policy live-dispatch, team-policy, rate-policy, initial-policy, reply-policy, event-policy, live-events policy, behavior-arbitration owner/cvar status/scenario gating, and target-memory blackboard status/scenario gating, CTF role-route ownership, CTF role-combat command ownership, CTF dropped-flag route ownership, CTF carrier-support route ownership, CTF base-return route ownership, CTF objective route-policy ownership, CTF objective route precedence ownership, CTF objective pickup/drop/return transition ownership, coop leader route ownership and validation gating, coop lead-advance route ownership, coop progress-wait command ownership, coop interaction-retry command ownership, coop resource-share route selection, coop anti-blocking command ownership, coop target-sharing blackboard adoption, coop door/elevator source-hold command ownership, bot warmup readiness status and smoke validation, bot vote-exclusion status and smoke validation, bot admin-audit status/attempt smoke validation, bot tournament status/veto/replay smoke validation, match logging schema status and smoke validation, match logging catalog/index status and smoke validation, bot MyMap status/queue/consume smoke validation, bot queued-nextmap transition status and smoke validation, bot map-vote status/finalize smoke validation, bot scoreboard classification status and smoke validation, bot intermission cleanup status and smoke validation, nav position-goal, nav natural travel-goal including barrier-jump direct reach validation, nav rocket-jump route policy, nav four-bot frame-command smoke, nav eight-bot frame-command smoke, nav soak frame-command smoke, nav map-change repeat/restart smoke, map-restart cleanup scenario promotion, warmup bot-start readiness scenario promotion, vote bot-exclusion scenario promotion, admin bot privilege audit scenario promotion, tournament bot veto-exclusion scenario promotion, tournament replay reset scenario promotion, match logging schema scenario promotion, match logging catalog/index scenario proof, MyMap queue scenario promotion, queued nextmap transition scenario promotion, map-vote bot-exclusion transition scenario promotion, scoreboard bot-classification scenario promotion, intermission bot-cleanup scenario promotion, nav natural movement support diagnostics, behavior action dispatcher and telemetry boundary, weapon/inventory command-request API and exact dispatch, aim/fairness and live-aim/projectile-leading helper APIs, live combat policy consumption, live item timing consumers, item timer fairness helper policy, special-item utility buckets, static BSP trace CPU counters, entity-clip CPU counters, AAS memory source counters, source-counter completeness diagnostics, FFA/TDM/CTF/Duel objective-side helper policy, team-role policy and lane/depth helpers, coop/resource policy helpers, status harness/status surface expansion, bot validation tooling, scenario coverage expansion and marker hardening including the 92-row implemented catalog total, profile behavior validation, botfile behavior-depth metadata, botfile parity polish, public bot/user documentation, competitive server tools operator documentation, high-bot degradation policy and soak budget, q2aas reference-map coverage and available-reference validation reporting, q2aas required-feature gap diagnostics, q2aas binary/license notice policy, release packaging hardening, Q3-style WORR botfile layout correction, and legacy Q2R bot surface removal work is recorded as native adapter, tooling, asset, documentation, status, or replacement work. The remaining Q3A runtime and behavior files remain reference-only until matched to a pinned source.
 
 | Candidate | Upstream / Local Ref | Current Use Decision | Required Before Import |
 |---|---|---|---|

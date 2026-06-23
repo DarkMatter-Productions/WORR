@@ -47,6 +47,7 @@ enum class BotObjectiveMatchMode {
 	TeamDeathmatch = 2,
 	CaptureTheFlag = 3,
 	Cooperative = 4,
+	Duel = 5,
 };
 
 enum class BotObjectiveItemCategory {
@@ -451,6 +452,8 @@ struct BotObjectiveStatus {
 	int reaches = 0;
 	int flagPickups = 0;
 	int flagCaptures = 0;
+	int flagDrops = 0;
+	int flagReturns = 0;
 	int enemyFlagPickups = 0;
 	int ownFlagReturns = 0;
 	int neutralFlagPickups = 0;
@@ -516,6 +519,7 @@ struct BotObjectiveStatus {
 	int matchPolicyTdmSelections = 0;
 	int matchPolicyCtfSelections = 0;
 	int matchPolicyCoopSelections = 0;
+	int matchPolicyDuelSelections = 0;
 	int matchPolicyAttackSelections = 0;
 	int matchPolicyDefendSelections = 0;
 	int matchPolicyMidfieldSelections = 0;
@@ -710,8 +714,12 @@ void BotObjectives_RecordRouteCommand(const BotObjectiveRouteGoal &goal, const B
 void BotObjectives_RecordReach(const BotObjectiveRouteGoal &goal, const BotObjectiveAssignment &assignment);
 void BotObjectives_RecordFlagPickup(int clientIndex, int team, int item);
 void BotObjectives_RecordFlagCapture(int clientIndex, int team, int item);
+void BotObjectives_RecordFlagDrop(int clientIndex, int team, int item);
+void BotObjectives_RecordFlagReturn(int clientIndex, int team, int item);
 void BotObjectives_RecordFlagPickup(const gentity_t *player, const gentity_t *flag);
 void BotObjectives_RecordFlagCapture(const gentity_t *player, int item);
+void BotObjectives_RecordFlagDrop(const gentity_t *player, int item);
+void BotObjectives_RecordFlagReturn(const gentity_t *player, const gentity_t *flag);
 const BotObjectiveStatus &BotObjectives_GetStatus();
 BotObjectiveType BotObjectives_FlagObjectiveTypeForTeam(int botTeam, int flagItem);
 int BotObjectives_FlagOwnerTeamForItem(int flagItem);

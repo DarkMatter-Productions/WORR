@@ -1228,6 +1228,7 @@ void Bot_RuntimeRegisterCvars() {
 	sg_bot_chat_min_interval_ms = gi.cvar("sg_bot_chat_min_interval_ms", "0", CVAR_NOFLAGS);
 	sg_bot_chat_reply_policy_smoke = gi.cvar("sg_bot_chat_reply_policy_smoke", "0", CVAR_NOFLAGS);
 	sg_bot_chat_event_policy_smoke = gi.cvar("sg_bot_chat_event_policy_smoke", "0", CVAR_NOFLAGS);
+	sg_bot_chat_live_events = gi.cvar("sg_bot_chat_live_events", "0", CVAR_NOFLAGS);
 	sg_bot_lifecycle_smoke = gi.cvar("sg_bot_lifecycle_smoke", "0", CVAR_NOFLAGS);
 
 	BotLibAdapter_SetPrintCallback(BotRuntimeQ3APrint);

@@ -28,6 +28,8 @@ namespace {
 constexpr size_t BotBrain_MaxStatusPrintLineLength = 3500;
 
 bool Bot_CommandSmokeAimFairness();
+bool Bot_CommandCtfObjectiveRouteSmokeReady();
+void Bot_CommandPrepareTeamObjectiveSmokeTeams();
 
 BotCombatAimPolicyFailure BotBrain_AimPolicyFailureForStatus(
 	const BotCombatStatus &combatStatus) {
@@ -1308,6 +1310,14 @@ void BotBrain_PrintCompactObjectiveStatus(const BotObjectiveStatus &objectiveSta
 		objectiveStatus.flagCaptures);
 	BotBrain_AppendCompactStatusField(
 		line,
+		"team_objective_flag_drops",
+		objectiveStatus.flagDrops);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_flag_returns",
+		objectiveStatus.flagReturns);
+	BotBrain_AppendCompactStatusField(
+		line,
 		"team_objective_role_policy_evaluations",
 		objectiveStatus.rolePolicyEvaluations);
 	BotBrain_AppendCompactStatusField(
@@ -1447,6 +1457,10 @@ void BotBrain_PrintCompactObjectiveStatus(const BotObjectiveStatus &objectiveSta
 		line,
 		"team_objective_match_policy_ffa",
 		objectiveStatus.matchPolicyFfaSelections);
+	BotBrain_AppendCompactStatusField(
+		line,
+		"team_objective_match_policy_duel",
+		objectiveStatus.matchPolicyDuelSelections);
 	BotBrain_AppendCompactStatusField(
 		line,
 		"team_objective_match_policy_tdm",
@@ -2147,6 +2161,29 @@ struct BotFrameCommandStatus {
 	int teleporterEscapeFallbackSources = 0;
 	int teleporterEscapeDamageSources = 0;
 	int teleporterEscapeInvalidSkips = 0;
+	int threatRetreatRequests = 0;
+	int threatRetreatEnemySources = 0;
+	int threatRetreatDamageSources = 0;
+	int threatRetreatFallbackSources = 0;
+	int threatRetreatActivations = 0;
+	int threatRetreatRefreshes = 0;
+	int threatRetreatRouteRequests = 0;
+	int threatRetreatRouteDeferrals = 0;
+	int threatRetreatExpirations = 0;
+	int threatRetreatInvalidSkips = 0;
+	int threatRetreatAttackSuppressions = 0;
+	int threatRetreatReengages = 0;
+	int lastThreatRetreatClient = -1;
+	int lastThreatRetreatSourceClient = -1;
+	int lastThreatRetreatSourceEntity = -1;
+	int lastThreatRetreatSourceDistanceSquared = 0;
+	int lastThreatRetreatRemainingMilliseconds = 0;
+	int lastThreatRetreatGoalDistanceSquared = 0;
+	int lastThreatRetreatHealth = 0;
+	int lastThreatRetreatArmor = 0;
+	int lastThreatRetreatLowHealth = 0;
+	int lastThreatRetreatActive = 0;
+	const char *lastThreatRetreatReason = "none";
 	int ffaRoamRouteRequests = 0;
 	int ffaRoamRoutePolicySelections = 0;
 	int ffaRoamRouteActivations = 0;
@@ -2520,6 +2557,7 @@ enum class BotTimedRouteGoalKind {
 	TeamRole = 5,
 	CtfRole = 6,
 	FfaRoam = 7,
+	ThreatRetreat = 8,
 };
 
 struct BotTimedRouteGoalState {
@@ -2547,6 +2585,9 @@ struct BotBrainBlackboardSlot {
 	int aimBurstCooldownUntilMilliseconds = 0;
 	int aimLastAttackTimeMilliseconds = 0;
 	BotTimedRouteGoalState timedRouteGoal{};
+	int threatRetreatCooldownUntilMilliseconds = 0;
+	int threatRetreatLastActivationMilliseconds = 0;
+	bool threatRetreatReengageRecorded = false;
 	int lastScanFrame = -1;
 	int lastHeardEventKeyMilliseconds = 0;
 	int lastDamageEventKeyMilliseconds = 0;
@@ -2651,6 +2692,7 @@ struct BotCommandSmokeProofSlot {
 	bool ammoPressurePrepared = false;
 	bool survivalInventoryPrepared = false;
 	bool survivalRoutePrepared = false;
+	bool threatRetreatPrepared = false;
 	bool healthArmorPrepared = false;
 	bool healthArmorProofRecorded = false;
 	bool armorProofRecorded = false;
@@ -2672,6 +2714,7 @@ struct BotCommandSmokeProofSlot {
 	bool ctfCarrierSupportRoutePrepared = false;
 	bool ctfBaseReturnRoutePrepared = false;
 	bool ctfObjectiveRoutePrepared = false;
+	bool ctfObjectiveTransitionsPrepared = false;
 	bool targetMemorySeeded = false;
 };
 
@@ -2721,9 +2764,11 @@ struct BotChatInitialPolicyStatus {
 	int taunting = 0;
 	int helpful = 0;
 	int steady = 0;
+	unsigned int variantMask = 0;
 	int lastClient = -1;
 	int lastPersonality = 0;
 	int lastPhrase = 0;
+	int lastVariant = -1;
 };
 
 struct BotChatReplyPolicyStatus {
@@ -2734,13 +2779,37 @@ struct BotChatReplyPolicyStatus {
 	int unknownPersonalities = 0;
 	int teamReady = 0;
 	int routeReady = 0;
+	int itemTaken = 0;
+	int objectiveChanged = 0;
+	int enemySighted = 0;
+	int lowHealth = 0;
 	int submitted = 0;
 	int rateLimited = 0;
+	int duplicateSuppressed = 0;
 	int failures = 0;
+	unsigned int variantMask = 0;
 	int lastClient = -1;
 	int lastPersonality = 0;
 	int lastPhrase = 0;
+	int lastVariant = -1;
 	int lastEvent = 0;
+	int liveEnabled = 0;
+	int liveEvents = 0;
+	int liveSpawn = 0;
+	int liveRouteReady = 0;
+	int liveItemTaken = 0;
+	int liveObjectiveChanged = 0;
+	int liveEnemySighted = 0;
+	int liveLowHealth = 0;
+	int liveSubmitted = 0;
+	int liveRateLimited = 0;
+	int liveDuplicateSuppressed = 0;
+	int liveFailures = 0;
+	int lastLiveEvent = 0;
+	int lastDuplicateClient = -1;
+	int lastDuplicateEvent = 0;
+	int lastDuplicatePhrase = 0;
+	int lastDuplicateElapsedMilliseconds = -1;
 };
 
 BotFrameCommandStatus botFrameCommandStatus;
@@ -2758,6 +2827,46 @@ std::array<int, MAX_CLIENTS> botChatPolicyReplySpawnCounts = [] {
 	return values;
 }();
 std::array<int, MAX_CLIENTS> botChatPolicyRouteReplySpawnCounts = [] {
+	std::array<int, MAX_CLIENTS> values{};
+	values.fill(-1);
+	return values;
+}();
+std::array<int, MAX_CLIENTS> botChatPolicyLiveRouteReplySpawnCounts = [] {
+	std::array<int, MAX_CLIENTS> values{};
+	values.fill(-1);
+	return values;
+}();
+std::array<int, MAX_CLIENTS> botChatPolicyLiveItemTakenSpawnCounts = [] {
+	std::array<int, MAX_CLIENTS> values{};
+	values.fill(-1);
+	return values;
+}();
+std::array<int, MAX_CLIENTS> botChatPolicyLiveObjectiveChangedSpawnCounts = [] {
+	std::array<int, MAX_CLIENTS> values{};
+	values.fill(-1);
+	return values;
+}();
+std::array<int, MAX_CLIENTS> botChatPolicyLiveEnemySightedSpawnCounts = [] {
+	std::array<int, MAX_CLIENTS> values{};
+	values.fill(-1);
+	return values;
+}();
+std::array<int, MAX_CLIENTS> botChatPolicyLiveLowHealthSpawnCounts = [] {
+	std::array<int, MAX_CLIENTS> values{};
+	values.fill(-1);
+	return values;
+}();
+std::array<int, MAX_CLIENTS> botChatPolicyLastReplyEvents = [] {
+	std::array<int, MAX_CLIENTS> values{};
+	values.fill(-1);
+	return values;
+}();
+std::array<int, MAX_CLIENTS> botChatPolicyLastReplyPhrases = [] {
+	std::array<int, MAX_CLIENTS> values{};
+	values.fill(-1);
+	return values;
+}();
+std::array<int, MAX_CLIENTS> botChatPolicyLastReplyTimes = [] {
 	std::array<int, MAX_CLIENTS> values{};
 	values.fill(-1);
 	return values;
@@ -2825,6 +2934,7 @@ constexpr float BOT_COMMAND_FFA_SPAWN_CAMP_AVOIDANCE_DISTANCE = 384.0f;
 constexpr float BOT_COMMAND_FFA_SPAWN_CAMP_AVOIDANCE_DISTANCE_SQUARED =
 	BOT_COMMAND_FFA_SPAWN_CAMP_AVOIDANCE_DISTANCE *
 	BOT_COMMAND_FFA_SPAWN_CAMP_AVOIDANCE_DISTANCE;
+constexpr float BOT_COMMAND_THREAT_RETREAT_DISTANCE = 768.0f;
 constexpr float BOT_COMMAND_TEAM_ROLE_ROUTE_DISTANCE = 896.0f;
 constexpr float BOT_COMMAND_COOP_ANTI_BLOCK_DISTANCE = 192.0f;
 constexpr float BOT_COMMAND_COOP_ANTI_BLOCK_DISTANCE_SQUARED =
@@ -2844,6 +2954,9 @@ constexpr int BOT_COMMAND_CTF_ROLE_COMBAT_PRIORITY_BONUS = 40;
 constexpr int BOT_COMMAND_NUKE_RETREAT_MILLISECONDS = 6000;
 constexpr int BOT_COMMAND_TELEPORTER_ESCAPE_MILLISECONDS = 3500;
 constexpr int BOT_COMMAND_TELEPORTER_DAMAGE_SOURCE_MILLISECONDS = 5000;
+constexpr int BOT_COMMAND_THREAT_RETREAT_MILLISECONDS = 700;
+constexpr int BOT_COMMAND_THREAT_RETREAT_COOLDOWN_MILLISECONDS = 2200;
+constexpr int BOT_COMMAND_THREAT_RETREAT_LOW_HEALTH = 35;
 constexpr int BOT_COMMAND_COOP_LEADER_ROUTE_MILLISECONDS = 2500;
 constexpr int BOT_COMMAND_COOP_LEAD_ADVANCE_MILLISECONDS = 2500;
 constexpr int BOT_COMMAND_FFA_ROAM_ROUTE_MILLISECONDS = 2500;
@@ -3048,13 +3161,34 @@ bool Bot_CommandBehaviorPolicyEnabled() {
 	return behaviorEnable != nullptr && behaviorEnable->integer > 0;
 }
 
-bool Bot_CommandCoopProgressWaitRequested() {
+bool Bot_CommandCoopLiveLoopEnabled() {
+	static cvar_t *liveLoop = nullptr;
+	if (liveLoop == nullptr && gi.cvar != nullptr) {
+		liveLoop = gi.cvar("sg_bot_coop_live_loop", "0", CVAR_NOFLAGS);
+	}
+	return liveLoop != nullptr && liveLoop->integer > 0;
+}
+
+bool Bot_CommandCoopShareLoopEnabled() {
+	static cvar_t *shareLoop = nullptr;
+	if (shareLoop == nullptr && gi.cvar != nullptr) {
+		shareLoop = gi.cvar("sg_bot_coop_share_loop", "0", CVAR_NOFLAGS);
+	}
+	return shareLoop != nullptr && shareLoop->integer > 0;
+}
+
+bool Bot_CommandCoopProgressWaitCvarEnabled() {
 	static cvar_t *progressWait = nullptr;
 	if (progressWait == nullptr && gi.cvar != nullptr) {
 		progressWait = gi.cvar("sg_bot_coop_progress_wait", "0", CVAR_NOFLAGS);
 	}
+	return progressWait != nullptr && progressWait->integer > 0;
+}
+
+bool Bot_CommandCoopProgressWaitRequested() {
 	return Bot_CommandBehaviorPolicyEnabled() ||
-		(progressWait != nullptr && progressWait->integer > 0);
+		Bot_CommandCoopLiveLoopEnabled() ||
+		Bot_CommandCoopProgressWaitCvarEnabled();
 }
 
 bool Bot_CommandCoopLeadAdvanceRequested() {
@@ -3072,6 +3206,7 @@ bool Bot_CommandCoopResourceShareRequested() {
 		resourceShare = gi.cvar("sg_bot_coop_resource_share", "0", CVAR_NOFLAGS);
 	}
 	return Bot_CommandBehaviorPolicyEnabled() ||
+		Bot_CommandCoopShareLoopEnabled() ||
 		(resourceShare != nullptr && resourceShare->integer > 0);
 }
 
@@ -3081,6 +3216,7 @@ bool Bot_CommandCoopTargetShareEnabled() {
 		targetShare = gi.cvar("sg_bot_coop_target_share", "0", CVAR_NOFLAGS);
 	}
 	return Bot_CommandBehaviorPolicyEnabled() ||
+		Bot_CommandCoopShareLoopEnabled() ||
 		(targetShare != nullptr && targetShare->integer > 0);
 }
 
@@ -3090,6 +3226,7 @@ bool Bot_CommandCoopAntiBlockingEnabled() {
 		antiBlocking = gi.cvar("sg_bot_coop_anti_blocking", "0", CVAR_NOFLAGS);
 	}
 	return Bot_CommandBehaviorPolicyEnabled() ||
+		Bot_CommandCoopLiveLoopEnabled() ||
 		(antiBlocking != nullptr && antiBlocking->integer > 0);
 }
 
@@ -3099,6 +3236,7 @@ bool Bot_CommandCoopInteractionRetryEnabled() {
 		interactionRetry = gi.cvar("sg_bot_coop_interaction_retry", "0", CVAR_NOFLAGS);
 	}
 	return Bot_CommandBehaviorPolicyEnabled() ||
+		Bot_CommandCoopLiveLoopEnabled() ||
 		(interactionRetry != nullptr && interactionRetry->integer > 0);
 }
 
@@ -3108,6 +3246,7 @@ bool Bot_CommandCoopDoorElevatorEnabled() {
 		doorElevator = gi.cvar("sg_bot_coop_door_elevator", "0", CVAR_NOFLAGS);
 	}
 	return Bot_CommandBehaviorPolicyEnabled() ||
+		Bot_CommandCoopLiveLoopEnabled() ||
 		(doorElevator != nullptr && doorElevator->integer > 0);
 }
 
@@ -3120,12 +3259,21 @@ bool Bot_CommandTeamRoleRouteEnabled() {
 		(teamRoleRoute != nullptr && teamRoleRoute->integer > 0);
 }
 
+bool Bot_CommandDuelLivePacingEnabled() {
+	static cvar_t *duelLivePacing = nullptr;
+	if (duelLivePacing == nullptr && gi.cvar != nullptr) {
+		duelLivePacing = gi.cvar("sg_bot_duel_live_pacing", "0", CVAR_NOFLAGS);
+	}
+	return duelLivePacing != nullptr && duelLivePacing->integer > 0;
+}
+
 bool Bot_CommandFfaRoamRouteEnabled() {
 	static cvar_t *ffaRoamRoute = nullptr;
 	if (ffaRoamRoute == nullptr && gi.cvar != nullptr) {
 		ffaRoamRoute = gi.cvar("sg_bot_ffa_roam_route", "0", CVAR_NOFLAGS);
 	}
 	return Bot_CommandBehaviorPolicyEnabled() ||
+		Bot_CommandDuelLivePacingEnabled() ||
 		(ffaRoamRoute != nullptr && ffaRoamRoute->integer > 0);
 }
 
@@ -3136,6 +3284,7 @@ bool Bot_CommandFfaSpawnCampAvoidanceEnabled() {
 			gi.cvar("sg_bot_ffa_spawn_camp_avoidance", "0", CVAR_NOFLAGS);
 	}
 	return Bot_CommandBehaviorPolicyEnabled() ||
+		Bot_CommandDuelLivePacingEnabled() ||
 		(spawnCampAvoidance != nullptr && spawnCampAvoidance->integer > 0);
 }
 
@@ -3146,7 +3295,25 @@ bool Bot_CommandFfaSpawnCampCombatAvoidanceEnabled() {
 			gi.cvar("sg_bot_ffa_spawn_camp_combat_avoidance", "0", CVAR_NOFLAGS);
 	}
 	return Bot_CommandBehaviorPolicyEnabled() ||
+		Bot_CommandDuelLivePacingEnabled() ||
 		(combatAvoidance != nullptr && combatAvoidance->integer > 0);
+}
+
+bool Bot_CommandFfaItemRolesEnabled() {
+	static cvar_t *ffaItemRoles = nullptr;
+	if (ffaItemRoles == nullptr && gi.cvar != nullptr) {
+		ffaItemRoles = gi.cvar("sg_bot_ffa_item_roles", "0", CVAR_NOFLAGS);
+	}
+	return Bot_CommandDuelLivePacingEnabled() ||
+		(ffaItemRoles != nullptr && ffaItemRoles->integer > 0);
+}
+
+bool Bot_CommandThreatRetreatEnabled() {
+	static cvar_t *threatRetreat = nullptr;
+	if (threatRetreat == nullptr && gi.cvar != nullptr) {
+		threatRetreat = gi.cvar("sg_bot_threat_retreat", "0", CVAR_NOFLAGS);
+	}
+	return threatRetreat != nullptr && threatRetreat->integer > 0;
 }
 
 bool Bot_CommandFfaRoleCombatEnabled() {
@@ -3155,7 +3322,23 @@ bool Bot_CommandFfaRoleCombatEnabled() {
 		ffaRoleCombat = gi.cvar("sg_bot_ffa_role_combat", "0", CVAR_NOFLAGS);
 	}
 	return Bot_CommandBehaviorPolicyEnabled() ||
+		Bot_CommandDuelLivePacingEnabled() ||
 		(ffaRoleCombat != nullptr && ffaRoleCombat->integer > 0);
+}
+
+bool Bot_CommandFfaLivePacingProofEnabled() {
+	return Bot_CommandFfaRoamRouteEnabled() &&
+		Bot_CommandFfaSpawnCampAvoidanceEnabled() &&
+		Bot_CommandFfaSpawnCampCombatAvoidanceEnabled() &&
+		Bot_CommandFfaItemRolesEnabled() &&
+		Bot_CommandFfaRoleCombatEnabled();
+}
+
+bool Bot_CommandFfaStylePacingPolicyEnabled(
+	const BotObjectiveMatchPolicy &policy) {
+	return policy.mode == BotObjectiveMatchMode::FreeForAll ||
+		(policy.mode == BotObjectiveMatchMode::Duel &&
+		 Bot_CommandDuelLivePacingEnabled());
 }
 
 bool Bot_CommandTeamRoleCombatEnabled() {
@@ -3244,6 +3427,16 @@ bool Bot_CommandCtfBaseReturnRouteEnabled() {
 		(ctfBaseReturnRoute != nullptr && ctfBaseReturnRoute->integer > 0);
 }
 
+bool Bot_CommandCtfObjectiveTransitionsEnabled() {
+	static cvar_t *ctfObjectiveTransitions = nullptr;
+	if (ctfObjectiveTransitions == nullptr && gi.cvar != nullptr) {
+		ctfObjectiveTransitions =
+			gi.cvar("sg_bot_ctf_objective_transitions", "0", CVAR_NOFLAGS);
+	}
+	return ctfObjectiveTransitions != nullptr &&
+		ctfObjectiveTransitions->integer > 0;
+}
+
 bool Bot_CommandCtfObjectiveRouteEnabled() {
 	static cvar_t *ctfObjectiveRoute = nullptr;
 	if (ctfObjectiveRoute == nullptr && gi.cvar != nullptr) {
@@ -3251,6 +3444,7 @@ bool Bot_CommandCtfObjectiveRouteEnabled() {
 			gi.cvar("sg_bot_ctf_objective_route", "0", CVAR_NOFLAGS);
 	}
 	return Bot_CommandBehaviorPolicyEnabled() ||
+		Bot_CommandCtfObjectiveTransitionsEnabled() ||
 		(ctfObjectiveRoute != nullptr && ctfObjectiveRoute->integer > 0);
 }
 
@@ -3443,6 +3637,9 @@ bool Bot_CommandTargetMemorySmokeEnabled() {
 }
 
 int Bot_CommandSmokeScenarioMode() {
+	if (Bot_CommandThreatRetreatEnabled()) {
+		return 72;
+	}
 	if (Bot_CommandSmokeCombatSurvivalRoute()) {
 		return 71;
 	}
@@ -3476,6 +3673,12 @@ int Bot_CommandSmokeScenarioMode() {
 	if (Bot_CommandProfileMovementPolicySmoke()) {
 		return 56;
 	}
+	if (Bot_CommandDuelLivePacingEnabled()) {
+		return 75;
+	}
+	if (Bot_CommandFfaLivePacingProofEnabled()) {
+		return 74;
+	}
 	if (Bot_CommandFfaSpawnCampCombatAvoidanceEnabled()) {
 		return 49;
 	}
@@ -3487,6 +3690,9 @@ int Bot_CommandSmokeScenarioMode() {
 	}
 	if (Bot_CommandFfaRoamRouteEnabled()) {
 		return 42;
+	}
+	if (Bot_CommandCtfObjectiveTransitionsEnabled()) {
+		return 76;
 	}
 	if (Bot_CommandCtfObjectiveRouteEnabled()) {
 		return 40;
@@ -3517,6 +3723,12 @@ int Bot_CommandSmokeScenarioMode() {
 	}
 	if (Bot_CommandTeamRoleRouteEnabled()) {
 		return 32;
+	}
+	if (Bot_CommandCoopShareLoopEnabled()) {
+		return 78;
+	}
+	if (Bot_CommandCoopLiveLoopEnabled()) {
+		return 77;
 	}
 	if (Bot_CommandCoopDoorElevatorEnabled()) {
 		return 31;
@@ -3558,6 +3770,10 @@ int Bot_CommandSmokeScenarioMode() {
 }
 
 bool Bot_CommandSmokeForcesImmediateCombatFire() {
+	if (Bot_CommandThreatRetreatEnabled()) {
+		return true;
+	}
+
 	if (!Bot_CommandSmokeEngageEnemy()) {
 		return false;
 	}
@@ -3590,6 +3806,19 @@ int Bot_PerceptionClientIndex(const gentity_t *ent) {
 	return clientIndex;
 }
 
+bool Bot_CommandCoopProgressWaitRequestedFor(const gentity_t *bot) {
+	if (Bot_CommandBehaviorPolicyEnabled() ||
+		Bot_CommandCoopProgressWaitCvarEnabled()) {
+		return true;
+	}
+	if (!Bot_CommandCoopLiveLoopEnabled()) {
+		return false;
+	}
+
+	const int clientIndex = Bot_PerceptionClientIndex(bot);
+	return clientIndex >= 0 && (clientIndex % 2) == 1;
+}
+
 int BotChatPolicy_InitialPersonalityId(const char *personality) {
 	if (!personality || !personality[0]) {
 		return 0;
@@ -3612,26 +3841,152 @@ int BotChatPolicy_InitialPersonalityId(const char *personality) {
 	return 0;
 }
 
+constexpr int BOT_CHAT_POLICY_INITIAL_PHRASE_VARIANTS = 4;
+constexpr int BOT_CHAT_POLICY_REPLY_PHRASE_VARIANTS = 4;
+constexpr int BOT_CHAT_POLICY_DUPLICATE_WINDOW_MS = 5000;
+constexpr int BOT_CHAT_POLICY_LOW_HEALTH_PERCENT = 45;
+
+int BotChatPolicy_PhraseVariant(int phrase, int variants) {
+	if (variants <= 0) {
+		return 0;
+	}
+
+	int variant = phrase % variants;
+	if (variant < 0) {
+		variant += variants;
+	}
+	return variant;
+}
+
+int BotChatPolicy_PhraseIdVariant(int phrase, int variants) {
+	int variant = phrase % 10;
+	if (variant < 0) {
+		variant += 10;
+	}
+	return BotChatPolicy_PhraseVariant(variant, variants);
+}
+
+int BotChatPolicy_CountBits(unsigned int mask) {
+	int count = 0;
+	while (mask != 0) {
+		count += static_cast<int>(mask & 1U);
+		mask >>= 1U;
+	}
+	return count;
+}
+
+int BotChatPolicy_CurrentTimeMilliseconds() {
+	return static_cast<int>(level.time.milliseconds());
+}
+
+void BotChatPolicy_RecordRecentReplyEvent(int clientIndex, int event, int phrase) {
+	if (clientIndex < 0 ||
+		clientIndex >= static_cast<int>(botChatPolicyLastReplyEvents.size())) {
+		return;
+	}
+
+	botChatPolicyLastReplyEvents[clientIndex] = event;
+	botChatPolicyLastReplyPhrases[clientIndex] = phrase;
+	botChatPolicyLastReplyTimes[clientIndex] =
+		BotChatPolicy_CurrentTimeMilliseconds();
+}
+
+bool BotChatPolicy_SuppressDuplicateReplyEvent(
+	int clientIndex, int event, int phrase, bool liveEvent) {
+	if (clientIndex < 0 ||
+		clientIndex >= static_cast<int>(botChatPolicyLastReplyEvents.size())) {
+		return false;
+	}
+
+	const int lastTime = botChatPolicyLastReplyTimes[clientIndex];
+	const int now = BotChatPolicy_CurrentTimeMilliseconds();
+	const int elapsed = lastTime >= 0 ? now - lastTime : -1;
+	if (botChatPolicyLastReplyEvents[clientIndex] != event ||
+		lastTime < 0 ||
+		elapsed < 0 ||
+		elapsed >= BOT_CHAT_POLICY_DUPLICATE_WINDOW_MS) {
+		return false;
+	}
+
+	botChatReplyPolicyStatus.duplicateSuppressed++;
+	if (liveEvent) {
+		botChatReplyPolicyStatus.liveDuplicateSuppressed++;
+	}
+	botChatReplyPolicyStatus.lastDuplicateClient = clientIndex;
+	botChatReplyPolicyStatus.lastDuplicateEvent = event;
+	botChatReplyPolicyStatus.lastDuplicatePhrase = phrase;
+	botChatReplyPolicyStatus.lastDuplicateElapsedMilliseconds = elapsed;
+	return true;
+}
+
 int BotChatPolicy_InitialPhraseId(int personality, int clientIndex) {
-	const int phraseSeed = clientIndex >= 0 ? clientIndex : 0;
-	return personality > 0 ? personality * 10 + (phraseSeed % 2) : phraseSeed % 2;
+	const int phraseSeed =
+		botChatInitialPolicyStatus.selections >= 0 ?
+			botChatInitialPolicyStatus.selections :
+			(clientIndex >= 0 ? clientIndex : 0);
+	const int variant =
+		BotChatPolicy_PhraseVariant(phraseSeed, BOT_CHAT_POLICY_INITIAL_PHRASE_VARIANTS);
+	return personality > 0 ? personality * 10 + variant : variant;
 }
 
 const char *BotChatPolicy_InitialPhrase(int personality, int phrase) {
-	const bool alternate = (phrase % 2) != 0;
+	const int variant =
+		BotChatPolicy_PhraseIdVariant(phrase, BOT_CHAT_POLICY_INITIAL_PHRASE_VARIANTS);
 	switch (personality) {
-	case 1:
-		return alternate ? "holding quietly" : "watching the route";
-	case 2:
-		return alternate ? "pushing now" : "ready to engage";
-	case 3:
-		return alternate ? "come and get it" : "frag lane is open";
-	case 4:
-		return alternate ? "covering the team" : "ready to support";
-	case 5:
-		return alternate ? "holding formation" : "steady and ready";
-	default:
-		return alternate ? "ready for action" : "standing by";
+	case 1: {
+		static constexpr const char *phrases[] = {
+			"watching the route",
+			"holding quietly",
+			"eyes open",
+			"moving silent",
+		};
+		return phrases[variant];
+	}
+	case 2: {
+		static constexpr const char *phrases[] = {
+			"ready to engage",
+			"pushing now",
+			"taking point",
+			"moving with purpose",
+		};
+		return phrases[variant];
+	}
+	case 3: {
+		static constexpr const char *phrases[] = {
+			"frag lane is open",
+			"come and get it",
+			"bring the noise",
+			"who wants some",
+		};
+		return phrases[variant];
+	}
+	case 4: {
+		static constexpr const char *phrases[] = {
+			"ready to support",
+			"covering the team",
+			"watching your flank",
+			"support on the way",
+		};
+		return phrases[variant];
+	}
+	case 5: {
+		static constexpr const char *phrases[] = {
+			"steady and ready",
+			"holding formation",
+			"route discipline set",
+			"calm and ready",
+		};
+		return phrases[variant];
+	}
+	default: {
+		static constexpr const char *phrases[] = {
+			"standing by",
+			"ready for action",
+			"on task",
+			"ready",
+		};
+		return phrases[variant];
+	}
 	}
 }
 
@@ -3645,6 +4000,11 @@ bool BotChatPolicy_EventSmokeEnabled() {
 		sg_bot_chat_event_policy_smoke->integer > 0;
 }
 
+bool BotChatPolicy_LiveEventsEnabled() {
+	return sg_bot_chat_live_events &&
+		sg_bot_chat_live_events->integer > 0;
+}
+
 int Bot_CommandBehaviorLivePolicyCvarCount() {
 	return (Bot_CommandBehaviorPolicyEnabled() ? 1 : 0) +
 		(Bot_CommandTeamRoleRouteEnabled() ? 1 : 0) +
@@ -3653,7 +4013,9 @@ int Bot_CommandBehaviorLivePolicyCvarCount() {
 		(Bot_CommandMatchItemPolicyEnabled() ? 1 : 0) +
 		(Bot_CommandCoopProgressWaitRequested() ? 1 : 0) +
 		(Bot_CommandCtfObjectiveRouteEnabled() ? 1 : 0) +
-		(Bot_CommandFfaRoamRouteEnabled() ? 1 : 0);
+		(Bot_CommandFfaRoamRouteEnabled() ? 1 : 0) +
+		(Bot_CommandThreatRetreatEnabled() ? 1 : 0) +
+		(BotChatPolicy_LiveEventsEnabled() ? 1 : 0);
 }
 
 int Bot_CommandBehaviorSmokePolicyCvarCount() {
@@ -3851,52 +4213,433 @@ int BotChatPolicy_RouteReadyEventId() {
 	return 2;
 }
 
+int BotChatPolicy_SpawnEventId() {
+	return 3;
+}
+
+int BotChatPolicy_ItemTakenEventId() {
+	return 4;
+}
+
+int BotChatPolicy_ObjectiveChangedEventId() {
+	return 7;
+}
+
+int BotChatPolicy_EnemySightedEventId() {
+	return 6;
+}
+
+int BotChatPolicy_LowHealthEventId() {
+	return 9;
+}
+
+constexpr int BOT_CHAT_POLICY_LIVE_EVENT_TAXONOMY = 11;
+
+const char *BotChatPolicy_EventName(int event) {
+	switch (event) {
+	case 1:
+		return "team_ready";
+	case 2:
+		return "route_ready";
+	case 3:
+		return "spawn";
+	case 4:
+		return "item_taken";
+	case 5:
+		return "item_denied";
+	case 6:
+		return "enemy_sighted";
+	case 7:
+		return "objective_changed";
+	case 8:
+		return "flag_state";
+	case 9:
+		return "low_health";
+	case 10:
+		return "blocked";
+	case 11:
+		return "victory_defeat";
+	default:
+		return "none";
+	}
+}
+
 int BotChatPolicy_ReplyPhraseId(int personality, int event, int clientIndex) {
-	const int phraseSeed = clientIndex >= 0 ? clientIndex : 0;
+	const int phraseSeed =
+		botChatReplyPolicyStatus.selections >= 0 ?
+			botChatReplyPolicyStatus.selections :
+			(clientIndex >= 0 ? clientIndex : 0);
 	const int personalityBucket = personality > 0 ? personality : 0;
-	return 1000 + event * 100 + personalityBucket * 10 + (phraseSeed % 2);
+	const int variant =
+		BotChatPolicy_PhraseVariant(phraseSeed, BOT_CHAT_POLICY_REPLY_PHRASE_VARIANTS);
+	return 1000 + event * 100 + personalityBucket * 10 + variant;
 }
 
 const char *BotChatPolicy_ReplyPhrase(int personality, int event, int phrase) {
-	const bool alternate = (phrase % 2) != 0;
+	const int variant =
+		BotChatPolicy_PhraseIdVariant(phrase, BOT_CHAT_POLICY_REPLY_PHRASE_VARIANTS);
 	if (event == BotChatPolicy_RouteReadyEventId()) {
 		switch (personality) {
-		case 1:
-			return alternate ? "route set, staying low" : "route set, watching";
-		case 2:
-			return alternate ? "route set, pushing" : "route set, moving";
-		case 3:
-			return alternate ? "route set, make noise" : "route set, fragging";
-		case 4:
-			return alternate ? "route set, covering" : "route set, supporting";
-		case 5:
-			return alternate ? "route set, steady" : "route set, holding";
-		default:
-			return alternate ? "route acknowledged" : "route ready";
+		case 1: {
+			static constexpr const char *phrases[] = {
+				"route set, watching",
+				"route set, staying low",
+				"path set, quiet",
+				"moving, low profile",
+			};
+			return phrases[variant];
+		}
+		case 2: {
+			static constexpr const char *phrases[] = {
+				"route set, moving",
+				"route set, pushing",
+				"route set, taking point",
+				"path ready, go",
+			};
+			return phrases[variant];
+		}
+		case 3: {
+			static constexpr const char *phrases[] = {
+				"route set, fragging",
+				"route set, make noise",
+				"route set, time to hurt",
+				"path set, they can run",
+			};
+			return phrases[variant];
+		}
+		case 4: {
+			static constexpr const char *phrases[] = {
+				"route set, supporting",
+				"route set, covering",
+				"route set, with you",
+				"path ready, covering flank",
+			};
+			return phrases[variant];
+		}
+		case 5: {
+			static constexpr const char *phrases[] = {
+				"route set, holding",
+				"route set, steady",
+				"path stable, moving",
+				"route clear, steady",
+			};
+			return phrases[variant];
+		}
+		default: {
+			static constexpr const char *phrases[] = {
+				"route ready",
+				"route acknowledged",
+				"path ready",
+				"moving on route",
+			};
+			return phrases[variant];
+		}
+		}
+	}
+
+	if (event == BotChatPolicy_ItemTakenEventId()) {
+		switch (personality) {
+		case 1: {
+			static constexpr const char *phrases[] = {
+				"pickup secured, quiet",
+				"item taken, staying low",
+				"got the pickup, watching",
+				"secured item, quiet",
+			};
+			return phrases[variant];
+		}
+		case 2: {
+			static constexpr const char *phrases[] = {
+				"item taken, pushing",
+				"pickup secured, moving",
+				"got it, taking point",
+				"item secured, go",
+			};
+			return phrases[variant];
+		}
+		case 3: {
+			static constexpr const char *phrases[] = {
+				"pickup taken, keep pressure",
+				"item secured, bring noise",
+				"got it, time to hurt",
+				"pickup mine, fragging",
+			};
+			return phrases[variant];
+		}
+		case 4: {
+			static constexpr const char *phrases[] = {
+				"item taken, covering",
+				"pickup secured, support ready",
+				"got it, with you",
+				"item secured, covering flank",
+			};
+			return phrases[variant];
+		}
+		case 5: {
+			static constexpr const char *phrases[] = {
+				"item taken, steady",
+				"pickup secured, holding",
+				"got it, steady",
+				"item secured, controlled",
+			};
+			return phrases[variant];
+		}
+		default: {
+			static constexpr const char *phrases[] = {
+				"item taken",
+				"pickup secured",
+				"got the pickup",
+				"item secured",
+			};
+			return phrases[variant];
+		}
+		}
+	}
+
+	if (event == BotChatPolicy_ObjectiveChangedEventId()) {
+		switch (personality) {
+		case 1: {
+			static constexpr const char *phrases[] = {
+				"objective changed, watching",
+				"flag state changed, quiet",
+				"objective moved, staying low",
+				"flag update, eyes open",
+			};
+			return phrases[variant];
+		}
+		case 2: {
+			static constexpr const char *phrases[] = {
+				"objective changed, moving",
+				"flag state changed, pushing",
+				"objective updated, taking point",
+				"flag update, go",
+			};
+			return phrases[variant];
+		}
+		case 3: {
+			static constexpr const char *phrases[] = {
+				"objective changed, keep pressure",
+				"flag state changed, hit them",
+				"objective moved, make noise",
+				"flag update, fragging",
+			};
+			return phrases[variant];
+		}
+		case 4: {
+			static constexpr const char *phrases[] = {
+				"objective changed, covering",
+				"flag state changed, supporting",
+				"objective moved, with you",
+				"flag update, covering flank",
+			};
+			return phrases[variant];
+		}
+		case 5: {
+			static constexpr const char *phrases[] = {
+				"objective changed, steady",
+				"flag state changed, holding",
+				"objective moved, controlled",
+				"flag update, stay organized",
+			};
+			return phrases[variant];
+		}
+		default: {
+			static constexpr const char *phrases[] = {
+				"objective changed",
+				"flag state changed",
+				"objective updated",
+				"flag update",
+			};
+			return phrases[variant];
+		}
+		}
+	}
+
+	if (event == BotChatPolicy_EnemySightedEventId()) {
+		switch (personality) {
+		case 1: {
+			static constexpr const char *phrases[] = {
+				"contact, watching",
+				"contact, staying quiet",
+				"target seen, quiet",
+				"eyes on enemy",
+			};
+			return phrases[variant];
+		}
+		case 2: {
+			static constexpr const char *phrases[] = {
+				"enemy sighted, engaging",
+				"enemy ahead, pushing",
+				"contact front, taking it",
+				"enemy marked, moving in",
+			};
+			return phrases[variant];
+		}
+		case 3: {
+			static constexpr const char *phrases[] = {
+				"enemy spotted, fragging",
+				"fresh target, make noise",
+				"target found, light them up",
+				"contact, make it loud",
+			};
+			return phrases[variant];
+		}
+		case 4: {
+			static constexpr const char *phrases[] = {
+				"contact, supporting",
+				"enemy spotted, covering",
+				"enemy marked, with you",
+				"contact seen, covering flank",
+			};
+			return phrases[variant];
+		}
+		case 5: {
+			static constexpr const char *phrases[] = {
+				"contact, holding",
+				"enemy sighted, steady",
+				"enemy marked, steady",
+				"contact set, hold shape",
+			};
+			return phrases[variant];
+		}
+		default: {
+			static constexpr const char *phrases[] = {
+				"contact",
+				"enemy spotted",
+				"enemy seen",
+				"target marked",
+			};
+			return phrases[variant];
+		}
+		}
+	}
+
+	if (event == BotChatPolicy_LowHealthEventId()) {
+		switch (personality) {
+		case 1: {
+			static constexpr const char *phrases[] = {
+				"hurt, staying low",
+				"low health, quiet",
+				"need cover, low",
+				"hurt, watching",
+			};
+			return phrases[variant];
+		}
+		case 2: {
+			static constexpr const char *phrases[] = {
+				"low health, repositioning",
+				"hurt, moving to health",
+				"need health, pushing out",
+				"low health, falling back",
+			};
+			return phrases[variant];
+		}
+		case 3: {
+			static constexpr const char *phrases[] = {
+				"low health, still dangerous",
+				"hurt, not done",
+				"need health, keep pressure",
+				"low, make it count",
+			};
+			return phrases[variant];
+		}
+		case 4: {
+			static constexpr const char *phrases[] = {
+				"low health, need cover",
+				"hurt, covering carefully",
+				"need health, support me",
+				"low health, regrouping",
+			};
+			return phrases[variant];
+		}
+		case 5: {
+			static constexpr const char *phrases[] = {
+				"low health, steady",
+				"hurt, holding shape",
+				"need health, staying calm",
+				"low health, controlled",
+			};
+			return phrases[variant];
+		}
+		default: {
+			static constexpr const char *phrases[] = {
+				"low health",
+				"need health",
+				"hurt",
+				"falling back",
+			};
+			return phrases[variant];
+		}
 		}
 	}
 
 	switch (personality) {
-	case 1:
-		return alternate ? "copy, staying quiet" : "copy, watching";
-	case 2:
-		return alternate ? "copy, pushing" : "copy, engaging";
-	case 3:
-		return alternate ? "heard, make them pay" : "heard, fragging";
-	case 4:
-		return alternate ? "copy, covering" : "copy, supporting";
-	case 5:
-		return alternate ? "copy, steady" : "copy, holding";
-	default:
-		return alternate ? "copy that" : "acknowledged";
+	case 1: {
+		static constexpr const char *phrases[] = {
+			"copy, watching",
+			"copy, staying quiet",
+			"copy, eyes open",
+			"copy, moving quiet",
+		};
+		return phrases[variant];
+	}
+	case 2: {
+		static constexpr const char *phrases[] = {
+			"copy, engaging",
+			"copy, pushing",
+			"copy, taking point",
+			"copy, moving",
+		};
+		return phrases[variant];
+	}
+	case 3: {
+		static constexpr const char *phrases[] = {
+			"heard, fragging",
+			"heard, make them pay",
+			"heard, bringing noise",
+			"heard, making space",
+		};
+		return phrases[variant];
+	}
+	case 4: {
+		static constexpr const char *phrases[] = {
+			"copy, supporting",
+			"copy, covering",
+			"copy, watching flank",
+			"copy, with you",
+		};
+		return phrases[variant];
+	}
+	case 5: {
+		static constexpr const char *phrases[] = {
+			"copy, holding",
+			"copy, steady",
+			"copy, maintaining line",
+			"copy, calm",
+		};
+		return phrases[variant];
+	}
+	default: {
+		static constexpr const char *phrases[] = {
+			"acknowledged",
+			"copy that",
+			"understood",
+			"on it",
+		};
+		return phrases[variant];
+	}
 	}
 }
 
 void BotChatPolicy_RecordInitialSelection(int clientIndex, int personality, int phrase) {
+	const int variant =
+		BotChatPolicy_PhraseIdVariant(phrase, BOT_CHAT_POLICY_INITIAL_PHRASE_VARIANTS);
 	botChatInitialPolicyStatus.selections++;
 	botChatInitialPolicyStatus.lastClient = clientIndex;
 	botChatInitialPolicyStatus.lastPersonality = personality;
 	botChatInitialPolicyStatus.lastPhrase = phrase;
+	botChatInitialPolicyStatus.lastVariant = variant;
+	botChatInitialPolicyStatus.variantMask |= 1U << variant;
 
 	switch (personality) {
 	case 1:
@@ -3925,14 +4668,42 @@ void BotChatPolicy_RecordInitialSelection(int clientIndex, int personality, int 
 	}
 }
 
+void BotChatPolicy_RecordLiveEventSelection(int event) {
+	botChatReplyPolicyStatus.liveEnabled = 1;
+	botChatReplyPolicyStatus.liveEvents++;
+	botChatReplyPolicyStatus.lastLiveEvent = event;
+	if (event == BotChatPolicy_SpawnEventId()) {
+		botChatReplyPolicyStatus.liveSpawn++;
+	}
+	else if (event == BotChatPolicy_RouteReadyEventId()) {
+		botChatReplyPolicyStatus.liveRouteReady++;
+	}
+	else if (event == BotChatPolicy_ItemTakenEventId()) {
+		botChatReplyPolicyStatus.liveItemTaken++;
+	}
+	else if (event == BotChatPolicy_ObjectiveChangedEventId()) {
+		botChatReplyPolicyStatus.liveObjectiveChanged++;
+	}
+	else if (event == BotChatPolicy_EnemySightedEventId()) {
+		botChatReplyPolicyStatus.liveEnemySighted++;
+	}
+	else if (event == BotChatPolicy_LowHealthEventId()) {
+		botChatReplyPolicyStatus.liveLowHealth++;
+	}
+}
+
 void BotChatPolicy_RecordReplySelection(
-	int clientIndex, int personality, int event, int phrase) {
+	int clientIndex, int personality, int event, int phrase, bool liveEvent) {
+	const int variant =
+		BotChatPolicy_PhraseIdVariant(phrase, BOT_CHAT_POLICY_REPLY_PHRASE_VARIANTS);
 	botChatReplyPolicyStatus.enabled = 1;
 	botChatReplyPolicyStatus.events++;
 	botChatReplyPolicyStatus.selections++;
 	botChatReplyPolicyStatus.lastClient = clientIndex;
 	botChatReplyPolicyStatus.lastPersonality = personality;
 	botChatReplyPolicyStatus.lastPhrase = phrase;
+	botChatReplyPolicyStatus.lastVariant = variant;
+	botChatReplyPolicyStatus.variantMask |= 1U << variant;
 	botChatReplyPolicyStatus.lastEvent = event;
 
 	if (event == 1) {
@@ -3940,6 +4711,22 @@ void BotChatPolicy_RecordReplySelection(
 	}
 	else if (event == BotChatPolicy_RouteReadyEventId()) {
 		botChatReplyPolicyStatus.routeReady++;
+	}
+	else if (event == BotChatPolicy_ItemTakenEventId()) {
+		botChatReplyPolicyStatus.itemTaken++;
+	}
+	else if (event == BotChatPolicy_ObjectiveChangedEventId()) {
+		botChatReplyPolicyStatus.objectiveChanged++;
+	}
+	else if (event == BotChatPolicy_EnemySightedEventId()) {
+		botChatReplyPolicyStatus.enemySighted++;
+	}
+	else if (event == BotChatPolicy_LowHealthEventId()) {
+		botChatReplyPolicyStatus.lowHealth++;
+	}
+
+	if (liveEvent) {
+		BotChatPolicy_RecordLiveEventSelection(event);
 	}
 
 	switch (personality) {
@@ -3984,12 +4771,31 @@ bool Bot_CommandMaybeDispatchChatPolicy(gentity_t *bot) {
 	const int personality = BotChatPolicy_InitialPersonalityId(chatPersonality);
 	const int phrase = BotChatPolicy_InitialPhraseId(personality, clientIndex);
 	BotChatPolicy_RecordInitialSelection(clientIndex, personality, phrase);
+	const bool liveEvent = BotChatPolicy_LiveEventsEnabled();
+	if (liveEvent) {
+		BotChatPolicy_RecordLiveEventSelection(BotChatPolicy_SpawnEventId());
+	}
 
 	std::string message = BotChatPolicy_InitialPhrase(personality, phrase);
 	const bool teamOnly =
 		sg_bot_chat_team_only && sg_bot_chat_team_only->integer > 0;
 	const int rateLimitedBefore = BotChatPolicy_DispatchRateLimited();
+	const int failuresBefore = BotChatPolicy_DispatchFailures();
 	const bool dispatched = BotChatPolicy_Dispatch(bot, message.c_str(), teamOnly);
+	if (liveEvent) {
+		if (dispatched) {
+			botChatReplyPolicyStatus.liveSubmitted++;
+		}
+		else if (BotChatPolicy_DispatchRateLimited() > rateLimitedBefore) {
+			botChatReplyPolicyStatus.liveRateLimited++;
+		}
+		else if (BotChatPolicy_DispatchFailures() > failuresBefore) {
+			botChatReplyPolicyStatus.liveFailures++;
+		}
+		else {
+			botChatReplyPolicyStatus.liveFailures++;
+		}
+	}
 	if (!dispatched && BotChatPolicy_DispatchRateLimited() == rateLimitedBefore) {
 		return false;
 	}
@@ -4001,7 +4807,8 @@ bool Bot_CommandMaybeDispatchChatPolicy(gentity_t *bot) {
 bool Bot_CommandMaybeDispatchChatReplyEvent(
 	gentity_t *bot,
 	int event,
-	std::array<int, MAX_CLIENTS> &spawnCounts) {
+	std::array<int, MAX_CLIENTS> &spawnCounts,
+	bool liveEvent) {
 	if (!sg_bot_allow_chat || sg_bot_allow_chat->integer <= 0) {
 		return false;
 	}
@@ -4034,7 +4841,18 @@ bool Bot_CommandMaybeDispatchChatReplyEvent(
 
 	const int personality = BotChatPolicy_InitialPersonalityId(chatPersonality);
 	const int phrase = BotChatPolicy_ReplyPhraseId(personality, event, clientIndex);
-	BotChatPolicy_RecordReplySelection(clientIndex, personality, event, phrase);
+	if (BotChatPolicy_SuppressDuplicateReplyEvent(
+			clientIndex, event, phrase, liveEvent)) {
+		spawnCounts[clientIndex] = bot->spawn_count;
+		return false;
+	}
+
+	BotChatPolicy_RecordReplySelection(
+		clientIndex,
+		personality,
+		event,
+		phrase,
+		liveEvent);
 
 	std::string message = BotChatPolicy_ReplyPhrase(personality, event, phrase);
 	const bool teamOnly =
@@ -4043,16 +4861,29 @@ bool Bot_CommandMaybeDispatchChatReplyEvent(
 	const int failuresBefore = BotChatPolicy_DispatchFailures();
 	const bool dispatched = BotChatPolicy_Dispatch(bot, message.c_str(), teamOnly);
 	if (dispatched) {
+		BotChatPolicy_RecordRecentReplyEvent(clientIndex, event, phrase);
 		botChatReplyPolicyStatus.submitted++;
+		if (liveEvent) {
+			botChatReplyPolicyStatus.liveSubmitted++;
+		}
 	}
 	else if (BotChatPolicy_DispatchRateLimited() > rateLimitedBefore) {
 		botChatReplyPolicyStatus.rateLimited++;
+		if (liveEvent) {
+			botChatReplyPolicyStatus.liveRateLimited++;
+		}
 	}
 	else if (BotChatPolicy_DispatchFailures() > failuresBefore) {
 		botChatReplyPolicyStatus.failures++;
+		if (liveEvent) {
+			botChatReplyPolicyStatus.liveFailures++;
+		}
 	}
 	else {
 		botChatReplyPolicyStatus.failures++;
+		if (liveEvent) {
+			botChatReplyPolicyStatus.liveFailures++;
+		}
 	}
 
 	if (!dispatched && BotChatPolicy_DispatchRateLimited() == rateLimitedBefore) {
@@ -4074,16 +4905,115 @@ bool Bot_CommandMaybeDispatchChatReplyPolicy(gentity_t *bot) {
 	dispatched = Bot_CommandMaybeDispatchChatReplyEvent(
 		bot,
 		BotChatPolicy_ReplyEventId(),
-		botChatPolicyReplySpawnCounts) || dispatched;
+		botChatPolicyReplySpawnCounts,
+		false) || dispatched;
 
 	if (eventSmoke) {
 		dispatched = Bot_CommandMaybeDispatchChatReplyEvent(
 			bot,
 			BotChatPolicy_RouteReadyEventId(),
-			botChatPolicyRouteReplySpawnCounts) || dispatched;
+			botChatPolicyRouteReplySpawnCounts,
+			false) || dispatched;
 	}
 
 	return dispatched;
+}
+
+bool Bot_CommandMaybeDispatchLiveRouteReadyChat(gentity_t *bot) {
+	if (!BotChatPolicy_LiveEventsEnabled()) {
+		return false;
+	}
+	return Bot_CommandMaybeDispatchChatReplyEvent(
+		bot,
+		BotChatPolicy_RouteReadyEventId(),
+		botChatPolicyLiveRouteReplySpawnCounts,
+		true);
+}
+
+bool Bot_CommandMaybeDispatchLiveEnemySightedChat(gentity_t *bot) {
+	if (!BotChatPolicy_LiveEventsEnabled()) {
+		return false;
+	}
+
+	const int clientIndex = Bot_PerceptionClientIndex(bot);
+	if (clientIndex < 0 ||
+		clientIndex >= static_cast<int>(botBrainBlackboardSlots.size())) {
+		return false;
+	}
+
+	const BotBrainBlackboardSnapshot &snapshot =
+		botBrainBlackboardSlots[clientIndex].snapshot;
+	if (!snapshot.valid ||
+		snapshot.currentEnemyEntity < 0 ||
+		!snapshot.currentEnemyVisible) {
+		return false;
+	}
+
+	return Bot_CommandMaybeDispatchChatReplyEvent(
+		bot,
+		BotChatPolicy_EnemySightedEventId(),
+		botChatPolicyLiveEnemySightedSpawnCounts,
+		true);
+}
+
+bool Bot_CommandMaybeDispatchLiveItemTakenChat(gentity_t *bot) {
+	if (!BotChatPolicy_LiveEventsEnabled()) {
+		return false;
+	}
+
+	const BotItemStatus &itemStatus = BotItems_GetStatus();
+	if (itemStatus.itemHealthPickups <= 0 && itemStatus.itemArmorPickups <= 0) {
+		return false;
+	}
+
+	return Bot_CommandMaybeDispatchChatReplyEvent(
+		bot,
+		BotChatPolicy_ItemTakenEventId(),
+		botChatPolicyLiveItemTakenSpawnCounts,
+		true);
+}
+
+bool Bot_CommandMaybeDispatchLiveObjectiveChangedChat(gentity_t *bot) {
+	if (!BotChatPolicy_LiveEventsEnabled()) {
+		return false;
+	}
+
+	const BotObjectiveStatus &objectiveStatus = BotObjectives_GetStatus();
+	if (objectiveStatus.flagPickups <= 0 &&
+		objectiveStatus.flagCaptures <= 0 &&
+		objectiveStatus.flagDrops <= 0 &&
+		objectiveStatus.flagReturns <= 0) {
+		return false;
+	}
+
+	return Bot_CommandMaybeDispatchChatReplyEvent(
+		bot,
+		BotChatPolicy_ObjectiveChangedEventId(),
+		botChatPolicyLiveObjectiveChangedSpawnCounts,
+		true);
+}
+
+bool BotChatPolicy_BotIsLowHealth(const gentity_t *bot) {
+	if (bot == nullptr || bot->client == nullptr || bot->health <= 0) {
+		return false;
+	}
+
+	const int maxHealth = std::max(bot->maxHealth, bot->client->pers.maxHealth);
+	return maxHealth > 0 &&
+		bot->health * 100 <= maxHealth * BOT_CHAT_POLICY_LOW_HEALTH_PERCENT;
+}
+
+bool Bot_CommandMaybeDispatchLiveLowHealthChat(gentity_t *bot) {
+	if (!BotChatPolicy_LiveEventsEnabled() ||
+		!BotChatPolicy_BotIsLowHealth(bot)) {
+		return false;
+	}
+
+	return Bot_CommandMaybeDispatchChatReplyEvent(
+		bot,
+		BotChatPolicy_LowHealthEventId(),
+		botChatPolicyLiveLowHealthSpawnCounts,
+		true);
 }
 
 int Bot_PerceptionEntityNumber(const gentity_t *ent) {
@@ -5610,6 +6540,153 @@ bool Bot_CommandEnsureCtfDroppedFlagSmokeTargets(gentity_t *bot) {
 	return prepared;
 }
 
+gentity_t *Bot_CommandFindSmokeTeamPlayer(Team team, gentity_t *exclude) {
+	for (gentity_t *candidate : active_players()) {
+		if (candidate == nullptr ||
+			candidate == exclude ||
+			candidate->client == nullptr ||
+			!Bot_PerceptionEntityAlive(candidate) ||
+			(candidate->flags & FL_NOTARGET) ||
+			candidate->client->sess.team != team) {
+			continue;
+		}
+		return candidate;
+	}
+	return nullptr;
+}
+
+gentity_t *Bot_CommandFindDroppedCtfFlagSmokeEntity(int itemId) {
+	if (!Bot_CommandItemIdValid(itemId)) {
+		return nullptr;
+	}
+
+	for (int entityNumber = static_cast<int>(game.maxClients) + 1;
+		 entityNumber < static_cast<int>(globals.numEntities);
+		 ++entityNumber) {
+		gentity_t *candidate = &g_entities[entityNumber];
+		if (candidate == nullptr ||
+			!candidate->inUse ||
+			candidate->item == nullptr ||
+			candidate->item->id != itemId ||
+			(!candidate->spawnFlags.has(SPAWNFLAG_ITEM_DROPPED) &&
+			 !candidate->spawnFlags.has(SPAWNFLAG_ITEM_DROPPED_PLAYER))) {
+			continue;
+		}
+		return candidate;
+	}
+	return nullptr;
+}
+
+void Bot_CommandClearCtfSmokeFlagInventories() {
+	for (gentity_t *player : active_players()) {
+		if (player == nullptr || player->client == nullptr) {
+			continue;
+		}
+
+		player->client->pers.inventory[IT_FLAG_RED] = 0;
+		player->client->pers.inventory[IT_FLAG_BLUE] = 0;
+		player->client->pers.inventory[IT_FLAG_NEUTRAL] = 0;
+		player->client->resp.ctf_flagsince = 0_ms;
+		player->client->pers.teamState.flag_pickup_time = 0_ms;
+	}
+}
+
+void Bot_CommandTouchSmokeItem(gentity_t *item, gentity_t *player) {
+	if (item == nullptr || item->item == nullptr || player == nullptr ||
+		player->client == nullptr) {
+		return;
+	}
+
+	const int itemId = item->item->id;
+	if (itemId == IT_FLAG_RED || itemId == IT_FLAG_BLUE ||
+		itemId == IT_FLAG_NEUTRAL) {
+		(void)CTF_PickupFlag(item, player);
+		return;
+	}
+
+	trace_t trace{};
+	Touch_Item(item, player, trace, false);
+}
+
+bool Bot_CommandPrepareCtfObjectiveTransitionEvents(
+	gentity_t *bot,
+	BotCommandSmokeProofSlot &slot) {
+	if (slot.ctfObjectiveTransitionsPrepared) {
+		return true;
+	}
+	if (bot == nullptr || bot->client == nullptr) {
+		return false;
+	}
+	if (!Bot_CommandCtfObjectiveRouteSmokeReady()) {
+		return false;
+	}
+	if (Bot_PerceptionClientIndex(bot) != 0) {
+		return false;
+	}
+
+	if (!slot.objectiveTeamPrepared) {
+		Bot_CommandPrepareTeamObjectiveSmokeTeams();
+		slot.objectiveTeamPrepared = true;
+	}
+
+	gentity_t *carrier = bot;
+	const Team carrierTeam = carrier->client->sess.team;
+	if (carrierTeam != Team::Red && carrierTeam != Team::Blue) {
+		return false;
+	}
+
+	const int enemyFlagItem = BotObjectives_EnemyFlagItemForTeam(
+		static_cast<int>(carrierTeam));
+	const Team enemyTeam = carrierTeam == Team::Red ? Team::Blue : Team::Red;
+	gentity_t *returner = Bot_CommandFindSmokeTeamPlayer(enemyTeam, carrier);
+	if (!Bot_CommandItemIdValid(enemyFlagItem) ||
+		returner == nullptr ||
+		returner->client == nullptr) {
+		return false;
+	}
+
+	Bot_CommandClearCtfSmokeFlagInventories();
+	Bot_CommandFreeCtfDroppedFlagSmokeTargets();
+	CTF_ResetFlags();
+	if (!Bot_CommandEnsureCtfDroppedFlagSmokeTargets(bot)) {
+		return false;
+	}
+
+	gentity_t *enemyFlag = Bot_CommandCtfDroppedFlagSmokeEntity(enemyFlagItem);
+	if (enemyFlag == nullptr) {
+		return false;
+	}
+
+	const int pickupsBefore = BotObjectives_GetStatus().flagPickups;
+	Bot_CommandTouchSmokeItem(enemyFlag, carrier);
+	if (BotObjectives_GetStatus().flagPickups <= pickupsBefore ||
+		carrier->client->pers.inventory[enemyFlagItem] <= 0) {
+		return false;
+	}
+	Bot_CommandFreeCtfDroppedFlagSmokeTargets();
+
+	const int dropsBefore = BotObjectives_GetStatus().flagDrops;
+	CTF_DeadDropFlag(carrier);
+	if (BotObjectives_GetStatus().flagDrops <= dropsBefore) {
+		return false;
+	}
+
+	gentity_t *droppedFlag = Bot_CommandFindDroppedCtfFlagSmokeEntity(enemyFlagItem);
+	if (droppedFlag == nullptr) {
+		return false;
+	}
+
+	const int returnsBefore = BotObjectives_GetStatus().flagReturns;
+	Bot_CommandTouchSmokeItem(droppedFlag, returner);
+	if (BotObjectives_GetStatus().flagReturns <= returnsBefore) {
+		return false;
+	}
+
+	slot.ctfObjectiveTransitionsPrepared = true;
+	Bot_CommandFreeCtfDroppedFlagSmokeTargets();
+	return true;
+}
+
 int Bot_CommandCurrentWeaponItem(const gentity_t *bot) {
 	if (bot == nullptr || bot->client == nullptr || bot->client->pers.weapon == nullptr) {
 		return IT_NULL;
@@ -5726,10 +6803,10 @@ BotCommandSmokeProofSlot *Bot_CommandSmokeProofSlotFor(gentity_t *bot) {
 	}
 
 	const int mode = Bot_CommandSmokeScenarioMode();
-	if (mode != 30) {
+	if (mode != 30 && mode != 78) {
 		Bot_CommandFreeCoopTargetShareSmokeTarget();
 	}
-	if (mode != 37 && mode != 40) {
+	if (mode != 37 && mode != 40 && mode != 76) {
 		Bot_CommandFreeCtfDroppedFlagSmokeTargets();
 	}
 	if (mode != 67) {
@@ -5996,7 +7073,8 @@ bool Bot_CommandCtfBaseReturnSmokeReady() {
 }
 
 bool Bot_CommandCtfObjectiveRouteSmokeReady() {
-	if (Bot_CommandSmokeScenarioMode() != 40) {
+	const int mode = Bot_CommandSmokeScenarioMode();
+	if (mode != 40 && mode != 76) {
 		return true;
 	}
 
@@ -6380,7 +7458,9 @@ void Bot_CommandPrepareCombatSmoke(gentity_t *bot, BotCommandSmokeProofSlot &slo
 	}
 
 	Bot_CommandGrantWeapon(bot, IT_WEAPON_MACHINEGUN, IT_AMMO_BULLETS, 200);
-	if (Bot_CommandCurrentWeaponItem(bot) <= IT_NULL || slot.mode == 20) {
+	if (Bot_CommandCurrentWeaponItem(bot) <= IT_NULL ||
+		slot.mode == 20 ||
+		slot.mode == 72) {
 		Bot_CommandSetCurrentWeapon(bot, IT_WEAPON_MACHINEGUN);
 	}
 	slot.combatPrepared = true;
@@ -6594,6 +7674,38 @@ void Bot_CommandPrepareSurvivalRouteSmoke(
 		slot.survivalRoutePrepared =
 			Bot_CommandEnsureSurvivalRouteSmokeTarget(bot, routeItem);
 		if (slot.survivalRoutePrepared) {
+			BotNav_ResetClient(clientIndex);
+		}
+	}
+}
+
+void Bot_CommandPrepareThreatRetreatSmoke(
+	gentity_t *bot,
+	BotCommandSmokeProofSlot &slot) {
+	if (bot == nullptr || bot->client == nullptr) {
+		return;
+	}
+
+	const int clientIndex = Bot_PerceptionClientIndex(bot);
+	if (clientIndex != 0) {
+		return;
+	}
+
+	Bot_CommandPrepareCombatSmoke(bot, slot);
+
+	gclient_t *client = bot->client;
+	Bot_CommandClearArmor(client);
+	bot->flags &= ~(FL_POWER_ARMOR | FL_WANTS_POWER_ARMOR);
+	bot->maxHealth = std::max(bot->maxHealth, 100);
+	client->pers.maxHealth = std::max(client->pers.maxHealth, 100);
+	bot->health = std::min(BOT_COMMAND_THREAT_RETREAT_LOW_HEALTH, bot->maxHealth);
+	client->pers.health = bot->health;
+	client->pers.healthBonus = 0;
+
+	if (!slot.threatRetreatPrepared) {
+		gentity_t *peer = Bot_CommandFindSmokePeer(bot);
+		slot.threatRetreatPrepared = Bot_CommandTryPlaceSmokePeer(bot, peer);
+		if (slot.threatRetreatPrepared) {
 			BotNav_ResetClient(clientIndex);
 		}
 	}
@@ -6962,6 +8074,16 @@ void Bot_CommandPrepareCtfObjectiveRouteSmoke(
 		slot.ctfBaseReturnRoutePrepared;
 }
 
+void Bot_CommandPrepareCtfObjectiveTransitionsSmoke(
+	gentity_t *bot,
+	BotCommandSmokeProofSlot &slot) {
+	if (!Bot_CommandPrepareCtfObjectiveTransitionEvents(bot, slot)) {
+		return;
+	}
+
+	Bot_CommandPrepareCtfObjectiveRouteSmoke(bot, slot);
+}
+
 void Bot_CommandPrepareSmokeProof(gentity_t *bot, BotCommandSmokeProofSlot *slot) {
 	if (bot == nullptr || slot == nullptr) {
 		return;
@@ -6993,6 +8115,15 @@ void Bot_CommandPrepareSmokeProof(gentity_t *bot, BotCommandSmokeProofSlot *slot
 	case 22:
 		Bot_CommandRecordHealthArmorProof(bot, *slot);
 		break;
+	case 85:
+		Bot_CommandRecordHealthArmorProof(bot, *slot);
+		if (bot->client != nullptr) {
+			const int restoredHealth =
+				std::max(1, std::max(bot->maxHealth, bot->client->pers.maxHealth));
+			bot->health = restoredHealth;
+			bot->client->pers.health = restoredHealth;
+		}
+		break;
 	case 23:
 		if (!slot->objectiveTeamPrepared) {
 			Bot_CommandPrepareTeamObjectiveSmokeTeams();
@@ -7000,6 +8131,9 @@ void Bot_CommandPrepareSmokeProof(gentity_t *bot, BotCommandSmokeProofSlot *slot
 		}
 		break;
 	case 30:
+		Bot_CommandPrepareCoopTargetShareSmoke(bot, *slot);
+		break;
+	case 78:
 		Bot_CommandPrepareCoopTargetShareSmoke(bot, *slot);
 		break;
 	case 34:
@@ -7047,6 +8181,9 @@ void Bot_CommandPrepareSmokeProof(gentity_t *bot, BotCommandSmokeProofSlot *slot
 				Bot_CommandFindSmokePeer(bot));
 		}
 		break;
+	case 72:
+		Bot_CommandPrepareThreatRetreatSmoke(bot, *slot);
+		break;
 	case 45:
 		Bot_CommandPrepareFfaSpawnCampAvoidanceSmoke(bot, *slot);
 		break;
@@ -7054,6 +8191,14 @@ void Bot_CommandPrepareSmokeProof(gentity_t *bot, BotCommandSmokeProofSlot *slot
 		Bot_CommandPrepareFfaRoleCombatSmoke(bot, *slot);
 		break;
 	case 49:
+		Bot_CommandPrepareFfaRoleCombatSmoke(bot, *slot);
+		Bot_CommandPrepareFfaSpawnCampAvoidanceSmoke(bot, *slot);
+		break;
+	case 74:
+		Bot_CommandPrepareFfaRoleCombatSmoke(bot, *slot);
+		Bot_CommandPrepareFfaSpawnCampAvoidanceSmoke(bot, *slot);
+		break;
+	case 75:
 		Bot_CommandPrepareFfaRoleCombatSmoke(bot, *slot);
 		Bot_CommandPrepareFfaSpawnCampAvoidanceSmoke(bot, *slot);
 		break;
@@ -7078,6 +8223,9 @@ void Bot_CommandPrepareSmokeProof(gentity_t *bot, BotCommandSmokeProofSlot *slot
 		break;
 	case 40:
 		Bot_CommandPrepareCtfObjectiveRouteSmoke(bot, *slot);
+		break;
+	case 76:
+		Bot_CommandPrepareCtfObjectiveTransitionsSmoke(bot, *slot);
 		break;
 	default:
 		break;
@@ -7679,7 +8827,8 @@ bool Bot_CommandBuildCtfObjectiveRoute(
 	BotCommandSmokeProofSlot *slot = Bot_CommandSmokeProofSlotFor(bot);
 	(void)Bot_BlackboardEnsureSlot(bot, &clientIndex);
 
-	if (Bot_CommandSmokeScenarioMode() == 40 && slot != nullptr) {
+	const int smokeMode = Bot_CommandSmokeScenarioMode();
+	if ((smokeMode == 40 || smokeMode == 76) && slot != nullptr) {
 		Bot_CommandPrepareCtfObjectiveRouteSmoke(bot, *slot);
 	}
 
@@ -7878,9 +9027,41 @@ const char *Bot_CommandTimedRouteGoalKindName(BotTimedRouteGoalKind kind) {
 		return "ctf_role";
 	case BotTimedRouteGoalKind::FfaRoam:
 		return "ffa_roam";
+	case BotTimedRouteGoalKind::ThreatRetreat:
+		return "threat_retreat";
 	default:
 		return "none";
 	}
+}
+
+void Bot_CommandRecordThreatRetreatLast(
+	int clientIndex,
+	const gentity_t *source,
+	float sourceDistanceSquared,
+	int remainingMilliseconds,
+	float goalDistanceSquared,
+	int health,
+	int armor,
+	bool lowHealth,
+	bool active,
+	const char *reason) {
+	botFrameCommandStatus.lastThreatRetreatClient = clientIndex;
+	botFrameCommandStatus.lastThreatRetreatSourceClient =
+		Bot_PerceptionEntityClientIndex(source);
+	botFrameCommandStatus.lastThreatRetreatSourceEntity =
+		Bot_PerceptionEntityNumber(source);
+	botFrameCommandStatus.lastThreatRetreatSourceDistanceSquared =
+		Bot_PerceptionClampDistanceSquared(sourceDistanceSquared);
+	botFrameCommandStatus.lastThreatRetreatRemainingMilliseconds =
+		std::max(remainingMilliseconds, 0);
+	botFrameCommandStatus.lastThreatRetreatGoalDistanceSquared =
+		Bot_PerceptionClampDistanceSquared(goalDistanceSquared);
+	botFrameCommandStatus.lastThreatRetreatHealth = health;
+	botFrameCommandStatus.lastThreatRetreatArmor = armor;
+	botFrameCommandStatus.lastThreatRetreatLowHealth = lowHealth ? 1 : 0;
+	botFrameCommandStatus.lastThreatRetreatActive = active ? 1 : 0;
+	botFrameCommandStatus.lastThreatRetreatReason =
+		reason != nullptr ? reason : "none";
 }
 
 void Bot_CommandRecordFfaRoamRouteLast(
@@ -8186,6 +9367,18 @@ void Bot_CommandRecordTimedRouteGoalOwnerLast(
 			remainingMilliseconds,
 			distanceSquared,
 			state);
+	} else if (kind == BotTimedRouteGoalKind::ThreatRetreat) {
+		Bot_CommandRecordThreatRetreatLast(
+			clientIndex,
+			nullptr,
+			distanceSquared,
+			remainingMilliseconds,
+			(goal - source).lengthSquared(),
+			botFrameCommandStatus.lastThreatRetreatHealth,
+			botFrameCommandStatus.lastThreatRetreatArmor,
+			botFrameCommandStatus.lastThreatRetreatLowHealth != 0,
+			remainingMilliseconds > 0,
+			"owner");
 	}
 }
 
@@ -8211,6 +9404,8 @@ void Bot_CommandRecordTimedRouteGoalRouteRequest(BotTimedRouteGoalKind kind) {
 		if (Bot_CommandFfaSpawnCampAvoidanceEnabled()) {
 			botFrameCommandStatus.ffaSpawnCampAvoidanceRouteRequests++;
 		}
+	} else if (kind == BotTimedRouteGoalKind::ThreatRetreat) {
+		botFrameCommandStatus.threatRetreatRouteRequests++;
 	}
 }
 
@@ -8226,6 +9421,8 @@ void Bot_CommandRecordTimedRouteGoalDeferral(BotTimedRouteGoalKind kind) {
 		botFrameCommandStatus.ctfRoleRouteRouteDeferrals++;
 	} else if (kind == BotTimedRouteGoalKind::FfaRoam) {
 		botFrameCommandStatus.ffaRoamRouteRouteDeferrals++;
+	} else if (kind == BotTimedRouteGoalKind::ThreatRetreat) {
+		botFrameCommandStatus.threatRetreatRouteDeferrals++;
 	}
 }
 
@@ -8241,6 +9438,8 @@ void Bot_CommandRecordTimedRouteGoalExpiration(BotTimedRouteGoalKind kind) {
 		botFrameCommandStatus.ctfRoleRouteExpirations++;
 	} else if (kind == BotTimedRouteGoalKind::FfaRoam) {
 		botFrameCommandStatus.ffaRoamRouteExpirations++;
+	} else if (kind == BotTimedRouteGoalKind::ThreatRetreat) {
+		botFrameCommandStatus.threatRetreatExpirations++;
 	}
 }
 
@@ -8260,6 +9459,8 @@ void Bot_CommandRecordTimedRouteGoalInvalid(BotTimedRouteGoalKind kind) {
 		botFrameCommandStatus.ctfRoleRouteInvalidSkips++;
 	} else if (kind == BotTimedRouteGoalKind::FfaRoam) {
 		botFrameCommandStatus.ffaRoamRouteInvalidSkips++;
+	} else if (kind == BotTimedRouteGoalKind::ThreatRetreat) {
+		botFrameCommandStatus.threatRetreatInvalidSkips++;
 	}
 }
 
@@ -8456,6 +9657,181 @@ void Bot_CommandActivateTeleporterEscapeRoute(
 	}
 
 	botFrameCommandStatus.teleporterEscapeRouteActivations++;
+}
+
+bool Bot_CommandThreatRetreatActive(gentity_t *bot) {
+	int clientIndex = -1;
+	BotBrainBlackboardSlot *slot = Bot_BlackboardEnsureSlot(bot, &clientIndex);
+	if (slot == nullptr) {
+		return false;
+	}
+
+	const int nowMilliseconds = Bot_CommandCurrentTimeMilliseconds();
+	return slot->timedRouteGoal.kind == BotTimedRouteGoalKind::ThreatRetreat &&
+		slot->timedRouteGoal.untilMilliseconds > nowMilliseconds;
+}
+
+bool Bot_CommandThreatRetreatSource(
+	gentity_t *bot,
+	const BotActionDecision &actionDecision,
+	const Vector3 &fallbackDirection,
+	Vector3 *source,
+	gentity_t **sourceEntity,
+	float *sourceDistanceSquared,
+	const char **reason) {
+	if (source == nullptr ||
+		sourceEntity == nullptr ||
+		sourceDistanceSquared == nullptr ||
+		reason == nullptr) {
+		return false;
+	}
+
+	*sourceEntity = nullptr;
+	*sourceDistanceSquared = 0.0f;
+	*reason = "none";
+
+	if (gentity_t *enemy = Bot_CommandTimedRouteEnemySource(bot)) {
+		*source = enemy->s.origin;
+		*sourceEntity = enemy;
+		const Vector3 delta = bot->s.origin - enemy->s.origin;
+		*sourceDistanceSquared = delta.lengthSquared();
+		*reason = "enemy";
+		botFrameCommandStatus.threatRetreatEnemySources++;
+		return true;
+	}
+
+	if (Bot_CommandRecentDamageSource(bot, source)) {
+		const Vector3 delta = bot->s.origin - *source;
+		*sourceDistanceSquared = delta.lengthSquared();
+		*reason = "damage";
+		botFrameCommandStatus.threatRetreatDamageSources++;
+		return true;
+	}
+
+	if (actionDecision.intent != BotActionIntent::Attack && !actionDecision.pressAttack) {
+		return false;
+	}
+
+	*source = bot->s.origin - (fallbackDirection * BOT_COMMAND_THREAT_RETREAT_DISTANCE);
+	*sourceDistanceSquared =
+		BOT_COMMAND_THREAT_RETREAT_DISTANCE * BOT_COMMAND_THREAT_RETREAT_DISTANCE;
+	*reason = "fallback";
+	botFrameCommandStatus.threatRetreatFallbackSources++;
+	return true;
+}
+
+void Bot_CommandActivateThreatRetreat(
+	gentity_t *bot,
+	const BotActionDecision &actionDecision) {
+	if (!Bot_CommandThreatRetreatEnabled() ||
+		bot == nullptr ||
+		bot->client == nullptr) {
+		return;
+	}
+
+	botFrameCommandStatus.threatRetreatRequests++;
+
+	int clientIndex = -1;
+	BotBrainBlackboardSlot *slot = Bot_BlackboardEnsureSlot(bot, &clientIndex);
+	if (slot == nullptr || clientIndex < 0) {
+		botFrameCommandStatus.threatRetreatInvalidSkips++;
+		return;
+	}
+
+	const int nowMilliseconds = Bot_CommandCurrentTimeMilliseconds();
+	const int health = std::max(bot->health, 0);
+	const int armor = Bot_PerceptionArmorValue(bot);
+	const bool lowHealth = health <= BOT_COMMAND_THREAT_RETREAT_LOW_HEALTH;
+	if (!lowHealth) {
+		return;
+	}
+
+	if (slot->timedRouteGoal.kind == BotTimedRouteGoalKind::ThreatRetreat &&
+		slot->timedRouteGoal.untilMilliseconds > nowMilliseconds) {
+		Bot_CommandRecordThreatRetreatLast(
+			clientIndex,
+			nullptr,
+			(bot->s.origin - slot->timedRouteGoal.source).lengthSquared(),
+			slot->timedRouteGoal.untilMilliseconds - nowMilliseconds,
+			(bot->s.origin - slot->timedRouteGoal.goal).lengthSquared(),
+			health,
+			armor,
+			true,
+			true,
+			"active");
+		return;
+	}
+
+	if (slot->threatRetreatCooldownUntilMilliseconds > nowMilliseconds) {
+		Bot_CommandRecordThreatRetreatLast(
+			clientIndex,
+			nullptr,
+			0.0f,
+			0,
+			0.0f,
+			health,
+			armor,
+			true,
+			false,
+			"cooldown");
+		return;
+	}
+
+	const Vector3 fallbackDirection = Bot_CommandTimedRouteFallbackDirection(bot);
+	Vector3 source = vec3_origin;
+	gentity_t *sourceEntity = nullptr;
+	float sourceDistanceSquared = 0.0f;
+	const char *reason = "none";
+	if (!Bot_CommandThreatRetreatSource(
+			bot,
+			actionDecision,
+			fallbackDirection,
+			&source,
+			&sourceEntity,
+			&sourceDistanceSquared,
+			&reason)) {
+		Bot_CommandRecordThreatRetreatLast(
+			clientIndex,
+			nullptr,
+			0.0f,
+			0,
+			0.0f,
+			health,
+			armor,
+			true,
+			false,
+			"no_threat");
+		return;
+	}
+
+	if (!Bot_CommandActivateTimedRouteGoal(
+			bot,
+			BotTimedRouteGoalKind::ThreatRetreat,
+			source,
+			fallbackDirection,
+			BOT_COMMAND_THREAT_RETREAT_MILLISECONDS,
+			BOT_COMMAND_THREAT_RETREAT_DISTANCE,
+			BOT_COMMAND_TIMED_ROUTE_MIN_DIRECTION_SQUARED)) {
+		botFrameCommandStatus.threatRetreatInvalidSkips++;
+		return;
+	}
+
+	slot->threatRetreatCooldownUntilMilliseconds =
+		nowMilliseconds + BOT_COMMAND_THREAT_RETREAT_COOLDOWN_MILLISECONDS;
+	slot->threatRetreatLastActivationMilliseconds = nowMilliseconds;
+	slot->threatRetreatReengageRecorded = false;
+	botFrameCommandStatus.threatRetreatActivations++;
+	Bot_CommandRecordThreatRetreatLast(
+		clientIndex,
+		sourceEntity,
+		sourceDistanceSquared,
+		BOT_COMMAND_THREAT_RETREAT_MILLISECONDS,
+		BOT_COMMAND_THREAT_RETREAT_DISTANCE * BOT_COMMAND_THREAT_RETREAT_DISTANCE,
+		health,
+		armor,
+		true,
+		true,
+		reason);
 }
 
 bool Bot_CommandCoopLeaderIntentUsesRoute(BotObjectiveCoopIntent intent) {
@@ -8736,7 +10112,7 @@ void Bot_CommandActivateFfaRoamRoute(
 		bot->client == nullptr ||
 		!policy.valid ||
 		!policy.participatesInScoring ||
-		policy.mode != BotObjectiveMatchMode::FreeForAll ||
+		!Bot_CommandFfaStylePacingPolicyEnabled(policy) ||
 		policy.role == BotObjectiveRole::None ||
 		policy.lane == BotObjectiveLane::None ||
 		!policy.wantsRoam ||
@@ -9409,10 +10785,12 @@ BotFrameObjectivePolicyResult Bot_CommandEvaluateFrameObjectivePolicies(
 	const BotObjectiveMatchPolicy matchPolicy =
 		BotObjectives_EvaluateMatchPolicy(matchContext);
 	result.matchPolicy = matchPolicy;
+	Bot_CommandActivateThreatRetreat(bot, actionDecision);
 	Bot_CommandActivateFfaRoamRoute(bot, matchPolicy);
 	Bot_CommandActivateTeamRoleRoute(bot, matchPolicy);
 	Bot_CommandActivateCtfRoleRoute(bot, matchPolicy);
-	const bool coopProgressWaitRequested = Bot_CommandCoopProgressWaitRequested();
+	const bool coopProgressWaitRequested =
+		Bot_CommandCoopProgressWaitRequestedFor(bot);
 	result.coopProgressWaitRequested = coopProgressWaitRequested;
 	if (coopProgressWaitRequested) {
 		botFrameCommandStatus.coopProgressWaitRequests++;
@@ -9434,7 +10812,8 @@ BotFrameObjectivePolicyResult Bot_CommandEvaluateFrameObjectivePolicies(
 		botFrameCommandStatus.coopProgressWaitPolicyWaits++;
 	}
 	if (!Bot_CommandCoopResourceShareRequested() &&
-		!Bot_CommandCoopDoorElevatorEnabled()) {
+		(!Bot_CommandCoopDoorElevatorEnabled() ||
+		 Bot_CommandCoopLiveLoopEnabled())) {
 		Bot_CommandActivateCoopLeaderRoute(bot, coopPolicy);
 		Bot_CommandActivateCoopLeadAdvance(bot, coopPolicy, coopLeadAdvanceRequested);
 	}
@@ -9480,7 +10859,8 @@ bool Bot_CommandFindCtfRoleCombatFacts(gentity_t *bot, BotCombatEnemyFacts *fact
 	const int smokeMode = Bot_CommandSmokeScenarioMode();
 	if (smokeMode == 36 || smokeMode == 43 || smokeMode == 44 ||
 		smokeMode == 52 ||
-		smokeMode == 48 || smokeMode == 49) {
+		smokeMode == 48 || smokeMode == 49 || smokeMode == 74 ||
+		smokeMode == 75) {
 		return Bot_CommandFindSmokeEnemyFacts(bot, facts);
 	}
 
@@ -9539,7 +10919,7 @@ BotActionDecision Bot_CommandApplyFfaRoleCombat(
 		bot->client == nullptr ||
 		!policy.valid ||
 		!policy.participatesInScoring ||
-		policy.mode != BotObjectiveMatchMode::FreeForAll ||
+		!Bot_CommandFfaStylePacingPolicyEnabled(policy) ||
 		policy.role == BotObjectiveRole::None ||
 		policy.lane == BotObjectiveLane::None ||
 		!policy.wantsEngage) {
@@ -9793,7 +11173,7 @@ BotActionDecision Bot_CommandApplyFfaSpawnCampCombatAvoidance(
 		bot->client == nullptr ||
 		!policy.valid ||
 		!policy.participatesInScoring ||
-		policy.mode != BotObjectiveMatchMode::FreeForAll ||
+		!Bot_CommandFfaStylePacingPolicyEnabled(policy) ||
 		!policy.avoidSpawnCamping) {
 		botFrameCommandStatus.ffaSpawnCampCombatAvoidanceInvalidSkips++;
 		Bot_CommandRecordFfaSpawnCampCombatAvoidanceLast(
@@ -9929,6 +11309,24 @@ BotActionDecision Bot_CommandApplyTeamFireAvoidance(
 		.clientIndex = decision.clientIndex,
 		.reason = policy.reason,
 	};
+}
+
+BotActionDecision Bot_CommandApplyThreatRetreatAttackSuppression(
+	gentity_t *bot,
+	const BotActionDecision &decision) {
+	if (!Bot_CommandThreatRetreatEnabled() ||
+		!decision.pressAttack ||
+		!Bot_CommandThreatRetreatActive(bot)) {
+		return decision;
+	}
+
+	BotActionDecision suppressed = decision;
+	suppressed.intent = BotActionIntent::None;
+	suppressed.priority = 0;
+	suppressed.pressAttack = false;
+	suppressed.reason = "threat_retreat";
+	botFrameCommandStatus.threatRetreatAttackSuppressions++;
+	return suppressed;
 }
 
 bool Bot_CommandRouteTargetIsBelow(const gentity_t *bot, const BotLibAdapterRouteSteer &route) {
@@ -10462,12 +11860,17 @@ void Bot_CommandRecordCoopAntiBlockLast(
 }
 
 bool Bot_CommandCoopAntiBlockPolicyClose(const BotObjectiveCoopPolicy &policy) {
+	const float antiBlockDistanceSquared =
+		Bot_CommandCoopLiveLoopEnabled()
+			? 320.0f * 320.0f
+			: BOT_COMMAND_COOP_ANTI_BLOCK_DISTANCE_SQUARED;
+
 	return policy.valid &&
 		policy.coopMode &&
 		policy.hasLeader &&
 		policy.leaderDistanceSquared >= 0 &&
 		policy.leaderDistanceSquared <=
-			static_cast<int>(BOT_COMMAND_COOP_ANTI_BLOCK_DISTANCE_SQUARED);
+			static_cast<int>(antiBlockDistanceSquared);
 }
 
 bool Bot_CommandApplyCoopAntiBlocking(
@@ -10907,6 +12310,49 @@ void Bot_CommandRecordAimPolicyAttack(
 	}
 }
 
+void Bot_CommandRecordThreatRetreatReengage(
+	gentity_t *bot,
+	const BotActionApplyResult &actionApply) {
+	if (!Bot_CommandThreatRetreatEnabled() ||
+		!actionApply.attackButtonApplied ||
+		bot == nullptr ||
+		bot->client == nullptr) {
+		return;
+	}
+
+	int clientIndex = -1;
+	BotBrainBlackboardSlot *slot = Bot_BlackboardEnsureSlot(bot, &clientIndex);
+	if (slot == nullptr ||
+		clientIndex < 0 ||
+		slot->threatRetreatLastActivationMilliseconds <= 0 ||
+		slot->threatRetreatReengageRecorded) {
+		return;
+	}
+
+	const int nowMilliseconds = Bot_CommandCurrentTimeMilliseconds();
+	if (Bot_CommandThreatRetreatActive(bot) ||
+		Bot_CommandElapsedMilliseconds(
+			nowMilliseconds,
+			slot->threatRetreatLastActivationMilliseconds) <
+			BOT_COMMAND_THREAT_RETREAT_MILLISECONDS) {
+		return;
+	}
+
+	slot->threatRetreatReengageRecorded = true;
+	botFrameCommandStatus.threatRetreatReengages++;
+	Bot_CommandRecordThreatRetreatLast(
+		clientIndex,
+		nullptr,
+		0.0f,
+		0,
+		0.0f,
+		std::max(bot->health, 0),
+		Bot_PerceptionArmorValue(bot),
+		bot->health <= BOT_COMMAND_THREAT_RETREAT_LOW_HEALTH,
+		false,
+		"reengage");
+}
+
 void BotBrain_PrintFfaRoamRouteStatus() {
 	BotBrain_PrintStatusFmt(
 		"q3a_bot_frame_command_status "
@@ -11266,10 +12712,22 @@ void BotBrain_ResetChatPolicyState() {
 	botChatPolicyDispatchSpawnCounts.fill(-1);
 	botChatPolicyReplySpawnCounts.fill(-1);
 	botChatPolicyRouteReplySpawnCounts.fill(-1);
+	botChatPolicyLiveRouteReplySpawnCounts.fill(-1);
+	botChatPolicyLiveItemTakenSpawnCounts.fill(-1);
+	botChatPolicyLiveObjectiveChangedSpawnCounts.fill(-1);
+	botChatPolicyLiveEnemySightedSpawnCounts.fill(-1);
+	botChatPolicyLiveLowHealthSpawnCounts.fill(-1);
+	botChatPolicyLastReplyEvents.fill(-1);
+	botChatPolicyLastReplyPhrases.fill(-1);
+	botChatPolicyLastReplyTimes.fill(-1);
 	botChatInitialPolicyStatus = {};
 	botChatInitialPolicyStatus.lastClient = -1;
+	botChatInitialPolicyStatus.lastVariant = -1;
 	botChatReplyPolicyStatus = {};
 	botChatReplyPolicyStatus.lastClient = -1;
+	botChatReplyPolicyStatus.lastVariant = -1;
+	botChatReplyPolicyStatus.lastDuplicateClient = -1;
+	botChatReplyPolicyStatus.lastDuplicateElapsedMilliseconds = -1;
 }
 
 int BotChatPolicy_InitialSelections() {
@@ -11316,6 +12774,18 @@ int BotChatPolicy_LastInitialPhrase() {
 	return botChatInitialPolicyStatus.lastPhrase;
 }
 
+int BotChatPolicy_InitialPhraseVariants() {
+	return BOT_CHAT_POLICY_INITIAL_PHRASE_VARIANTS;
+}
+
+int BotChatPolicy_InitialUniquePhraseVariants() {
+	return BotChatPolicy_CountBits(botChatInitialPolicyStatus.variantMask);
+}
+
+int BotChatPolicy_LastInitialPhraseVariant() {
+	return botChatInitialPolicyStatus.lastVariant;
+}
+
 int BotChatPolicy_ReplyEnabled() {
 	return (BotChatPolicy_ReplySmokeEnabled() || BotChatPolicy_EventSmokeEnabled()) ?
 		1 : botChatReplyPolicyStatus.enabled;
@@ -11345,12 +12815,32 @@ int BotChatPolicy_ReplyRouteReady() {
 	return botChatReplyPolicyStatus.routeReady;
 }
 
+int BotChatPolicy_ReplyItemTaken() {
+	return botChatReplyPolicyStatus.itemTaken;
+}
+
+int BotChatPolicy_ReplyObjectiveChanged() {
+	return botChatReplyPolicyStatus.objectiveChanged;
+}
+
+int BotChatPolicy_ReplyEnemySighted() {
+	return botChatReplyPolicyStatus.enemySighted;
+}
+
+int BotChatPolicy_ReplyLowHealth() {
+	return botChatReplyPolicyStatus.lowHealth;
+}
+
 int BotChatPolicy_ReplySubmitted() {
 	return botChatReplyPolicyStatus.submitted;
 }
 
 int BotChatPolicy_ReplyRateLimited() {
 	return botChatReplyPolicyStatus.rateLimited;
+}
+
+int BotChatPolicy_ReplyDuplicateSuppressed() {
+	return botChatReplyPolicyStatus.duplicateSuppressed;
 }
 
 int BotChatPolicy_ReplyFailures() {
@@ -11369,8 +12859,104 @@ int BotChatPolicy_LastReplyPhrase() {
 	return botChatReplyPolicyStatus.lastPhrase;
 }
 
+int BotChatPolicy_ReplyPhraseVariants() {
+	return BOT_CHAT_POLICY_REPLY_PHRASE_VARIANTS;
+}
+
+int BotChatPolicy_ReplyUniquePhraseVariants() {
+	return BotChatPolicy_CountBits(botChatReplyPolicyStatus.variantMask);
+}
+
+int BotChatPolicy_LastReplyPhraseVariant() {
+	return botChatReplyPolicyStatus.lastVariant;
+}
+
 int BotChatPolicy_LastReplyEvent() {
 	return botChatReplyPolicyStatus.lastEvent;
+}
+
+int BotChatPolicy_LiveEnabled() {
+	return BotChatPolicy_LiveEventsEnabled() ? 1 : botChatReplyPolicyStatus.liveEnabled;
+}
+
+int BotChatPolicy_LiveEvents() {
+	return botChatReplyPolicyStatus.liveEvents;
+}
+
+int BotChatPolicy_LiveSpawn() {
+	return botChatReplyPolicyStatus.liveSpawn;
+}
+
+int BotChatPolicy_LiveRouteReady() {
+	return botChatReplyPolicyStatus.liveRouteReady;
+}
+
+int BotChatPolicy_LiveItemTaken() {
+	return botChatReplyPolicyStatus.liveItemTaken;
+}
+
+int BotChatPolicy_LiveObjectiveChanged() {
+	return botChatReplyPolicyStatus.liveObjectiveChanged;
+}
+
+int BotChatPolicy_LiveEnemySighted() {
+	return botChatReplyPolicyStatus.liveEnemySighted;
+}
+
+int BotChatPolicy_LiveLowHealth() {
+	return botChatReplyPolicyStatus.liveLowHealth;
+}
+
+int BotChatPolicy_LiveSubmitted() {
+	return botChatReplyPolicyStatus.liveSubmitted;
+}
+
+int BotChatPolicy_LiveRateLimited() {
+	return botChatReplyPolicyStatus.liveRateLimited;
+}
+
+int BotChatPolicy_LiveDuplicateSuppressed() {
+	return botChatReplyPolicyStatus.liveDuplicateSuppressed;
+}
+
+int BotChatPolicy_LiveFailures() {
+	return botChatReplyPolicyStatus.liveFailures;
+}
+
+int BotChatPolicy_LiveEventTaxonomy() {
+	return BOT_CHAT_POLICY_LIVE_EVENT_TAXONOMY;
+}
+
+int BotChatPolicy_DuplicateWindowMilliseconds() {
+	return BOT_CHAT_POLICY_DUPLICATE_WINDOW_MS;
+}
+
+int BotChatPolicy_LastDuplicateClient() {
+	return botChatReplyPolicyStatus.lastDuplicateClient;
+}
+
+int BotChatPolicy_LastDuplicateEvent() {
+	return botChatReplyPolicyStatus.lastDuplicateEvent;
+}
+
+const char *BotChatPolicy_LastDuplicateEventName() {
+	return BotChatPolicy_EventName(botChatReplyPolicyStatus.lastDuplicateEvent);
+}
+
+int BotChatPolicy_LastDuplicatePhrase() {
+	return botChatReplyPolicyStatus.lastDuplicatePhrase;
+}
+
+int BotChatPolicy_LastDuplicateElapsedMilliseconds() {
+	return botChatReplyPolicyStatus.lastDuplicateElapsedMilliseconds;
+}
+
+int BotChatPolicy_LastLiveEvent() {
+	return botChatReplyPolicyStatus.lastLiveEvent;
+}
+
+const char *BotChatPolicy_LastLiveEventName() {
+	return BotChatPolicy_EventName(botChatReplyPolicyStatus.lastLiveEvent);
 }
 
 void BotBrain_BeginFrame( gentity_t * bot ) {
@@ -11439,6 +13025,10 @@ bool BotBrain_BuildFrameCommand( gentity_t * bot, usercmd_t * cmd ) {
 	const BotActionDecision actionDecision = Bot_CommandSampleActionDecision(bot);
 	const BotFrameObjectivePolicyResult objectivePolicies =
 		Bot_CommandEvaluateFrameObjectivePolicies(bot, actionDecision);
+	if (Bot_CommandFfaLivePacingProofEnabled() ||
+		Bot_CommandDuelLivePacingEnabled()) {
+		(void)BotNav_ProbePickupGoal(bot);
+	}
 	const BotActionDecision ffaRoleCombatDecision =
 		Bot_CommandApplyFfaRoleCombat(
 			bot,
@@ -11459,8 +13049,10 @@ bool BotBrain_BuildFrameCommand( gentity_t * bot, usercmd_t * cmd ) {
 			bot,
 			objectivePolicies.matchPolicy,
 			teamRoleCombatDecision);
-	const BotActionDecision commandDecision =
+	const BotActionDecision teamFireDecision =
 		Bot_CommandApplyTeamFireAvoidance(bot, ctfRoleCombatDecision);
+	const BotActionDecision commandDecision =
+		Bot_CommandApplyThreatRetreatAttackSuppression(bot, teamFireDecision);
 	const int currentWeaponItem = Bot_CommandCurrentWeaponItem(bot);
 	const BotNavRouteStatus &behaviorArbitrationRouteStatusBefore =
 		BotNav_GetRouteStatus();
@@ -11538,14 +13130,20 @@ bool BotBrain_BuildFrameCommand( gentity_t * bot, usercmd_t * cmd ) {
 	*cmd = {};
 	cmd->msec = Bot_CommandMsec();
 	cmd->serverFrame = gi.ServerFrame();
-	if (Bot_CommandApplyCoopDoorElevatorHold(
+	const bool coopDoorElevatorHeld =
+		Bot_CommandApplyCoopDoorElevatorHold(
 			bot,
 			objectivePolicies.coopPolicy,
 			cmd) ||
 		Bot_CommandApplyCoopDoorElevatorSupportIdle(
 			bot,
 			objectivePolicies.coopPolicy,
-			cmd)) {
+			cmd);
+	if (coopDoorElevatorHeld) {
+		(void)Bot_CommandApplyCoopProgressWait(
+			bot,
+			objectivePolicies.coopPolicy,
+			cmd);
 		BotBehaviorArbitrationCandidates arbitration{};
 		arbitration.interaction = true;
 		Bot_CommandRecordBehaviorArbitration(bot, arbitration);
@@ -11646,6 +13244,7 @@ bool BotBrain_BuildFrameCommand( gentity_t * bot, usercmd_t * cmd ) {
 	const BotActionApplyResult actionApply =
 		BotActions_ApplyDecisionDetailed(commandDecision, cmd);
 	Bot_CommandRecordAimPolicyAttack(bot, actionApply);
+	Bot_CommandRecordThreatRetreatReengage(bot, actionApply);
 	if (actionApply.weaponSwitchPending || actionApply.inventoryUsePending) {
 		(void)Bot_CommandDispatchPendingActionRequest(
 			bot,
@@ -11697,8 +13296,13 @@ bool BotBrain_BuildFrameCommand( gentity_t * bot, usercmd_t * cmd ) {
 			behaviorArbitrationCoopInteractionRetryCommandsBefore;
 	arbitration.recovery =
 		botFrameCommandStatus.recoveryCommandUses >
-			behaviorArbitrationRecoveryCommandUsesBefore;
+		behaviorArbitrationRecoveryCommandUsesBefore;
 	Bot_CommandRecordBehaviorArbitration(bot, arbitration);
+	(void)Bot_CommandMaybeDispatchLiveRouteReadyChat(bot);
+	(void)Bot_CommandMaybeDispatchLiveEnemySightedChat(bot);
+	(void)Bot_CommandMaybeDispatchLiveLowHealthChat(bot);
+	(void)Bot_CommandMaybeDispatchLiveItemTakenChat(bot);
+	(void)Bot_CommandMaybeDispatchLiveObjectiveChangedChat(bot);
 
 	botFrameCommandStatus.commands++;
 	botFrameCommandStatus.routeCommands++;
@@ -11787,6 +13391,7 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  "coop_progress_wait={} "
 			  "ctf_objective_route={} "
 			  "ffa_roam_route={} "
+			  "threat_retreat={} "
 			  "behavior_arbitration_evaluations={} "
 			  "behavior_arbitration_route_candidates={} "
 			  "behavior_arbitration_item_candidates={} "
@@ -11822,6 +13427,7 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  Bot_CommandCoopProgressWaitRequested() ? 1 : 0,
 			  Bot_CommandCtfObjectiveRouteEnabled() ? 1 : 0,
 			  Bot_CommandFfaRoamRouteEnabled() ? 1 : 0,
+			  Bot_CommandThreatRetreatEnabled() ? 1 : 0,
 			  botFrameCommandStatus.behaviorArbitrationEvaluations,
 			  botFrameCommandStatus.behaviorArbitrationRouteCandidates,
 			  botFrameCommandStatus.behaviorArbitrationItemCandidates,
@@ -12514,6 +14120,58 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  botFrameCommandStatus.lastFfaSpawnCampCombatAvoidancePolicyAvoid,
 			  botFrameCommandStatus.lastFfaSpawnCampCombatAvoidanceBlocked,
 			  botFrameCommandStatus.lastFfaSpawnCampCombatAvoidanceReason);
+
+	BotBrain_PrintStatusFmt(
+		"q3a_bot_frame_command_status pass={} frames={} commands={} "
+			  "threat_retreat_requests={} "
+			  "threat_retreat_enemy_sources={} "
+			  "threat_retreat_damage_sources={} "
+			  "threat_retreat_fallback_sources={} "
+			  "threat_retreat_activations={} "
+			  "threat_retreat_refreshes={} "
+			  "threat_retreat_route_requests={} "
+			  "threat_retreat_route_deferrals={} "
+			  "threat_retreat_expirations={} "
+			  "threat_retreat_invalid_skips={} "
+			  "threat_retreat_attack_suppressions={} "
+			  "threat_retreat_reengages={} "
+			  "last_threat_retreat_client={} "
+			  "last_threat_retreat_source_client={} "
+			  "last_threat_retreat_source_entity={} "
+			  "last_threat_retreat_source_distance_sq={} "
+			  "last_threat_retreat_remaining_ms={} "
+			  "last_threat_retreat_goal_distance_sq={} "
+			  "last_threat_retreat_health={} "
+			  "last_threat_retreat_armor={} "
+			  "last_threat_retreat_low_health={} "
+			  "last_threat_retreat_active={} "
+			  "last_threat_retreat_reason={}\n",
+			  pass,
+			  botFrameCommandStatus.frames,
+			  botFrameCommandStatus.commands,
+			  botFrameCommandStatus.threatRetreatRequests,
+			  botFrameCommandStatus.threatRetreatEnemySources,
+			  botFrameCommandStatus.threatRetreatDamageSources,
+			  botFrameCommandStatus.threatRetreatFallbackSources,
+			  botFrameCommandStatus.threatRetreatActivations,
+			  botFrameCommandStatus.threatRetreatRefreshes,
+			  botFrameCommandStatus.threatRetreatRouteRequests,
+			  botFrameCommandStatus.threatRetreatRouteDeferrals,
+			  botFrameCommandStatus.threatRetreatExpirations,
+			  botFrameCommandStatus.threatRetreatInvalidSkips,
+			  botFrameCommandStatus.threatRetreatAttackSuppressions,
+			  botFrameCommandStatus.threatRetreatReengages,
+			  botFrameCommandStatus.lastThreatRetreatClient,
+			  botFrameCommandStatus.lastThreatRetreatSourceClient,
+			  botFrameCommandStatus.lastThreatRetreatSourceEntity,
+			  botFrameCommandStatus.lastThreatRetreatSourceDistanceSquared,
+			  botFrameCommandStatus.lastThreatRetreatRemainingMilliseconds,
+			  botFrameCommandStatus.lastThreatRetreatGoalDistanceSquared,
+			  botFrameCommandStatus.lastThreatRetreatHealth,
+			  botFrameCommandStatus.lastThreatRetreatArmor,
+			  botFrameCommandStatus.lastThreatRetreatLowHealth,
+			  botFrameCommandStatus.lastThreatRetreatActive,
+			  botFrameCommandStatus.lastThreatRetreatReason);
 
 	BotBrain_PrintStatusFmt(
 		"q3a_bot_route_schedule_status pass={} "
@@ -13600,6 +15258,8 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  "team_objective_reaches={} "
 			  "team_objective_flag_pickups={} "
 			  "team_objective_flag_captures={} "
+			  "team_objective_flag_drops={} "
+			  "team_objective_flag_returns={} "
 			  "team_objective_role_attackers={} "
 			  "team_objective_role_defenders={} "
 			  "team_objective_role_returners={} "
@@ -13666,6 +15326,8 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  objectiveStatus.reaches,
 			  objectiveStatus.flagPickups,
 			  objectiveStatus.flagCaptures,
+			  objectiveStatus.flagDrops,
+			  objectiveStatus.flagReturns,
 			  objectiveStatus.roleAttacker,
 			  objectiveStatus.roleDefender,
 			  objectiveStatus.roleReturner,
