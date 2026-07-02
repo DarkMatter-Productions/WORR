@@ -122,8 +122,7 @@ match-size limits still apply, so extra bots may be placed as spectators instead
 of active players.
 
 If your package includes the first WORR profile seed set, practical gameplay
-profiles include `vanguard`, `bulwark`, `relay`, and `vector`. The `smoke`
-profile is mostly for validation and smoke tests.
+profiles include `vanguard`, `vector`, `bulwark`, `relay`, and `smoke`.
 
 ## Minimum Player Bots
 
@@ -141,8 +140,7 @@ set bot_min_players 4
 
 If `bot_profile` names a loaded profile, auto-filled bots use that profile.
 If it is empty or does not match a loaded profile, WORR rotates through the
-loaded first-party profiles and prefers gameplay profiles such as `vanguard`,
-`vector`, `bulwark`, and `relay` over the validation-only `smoke` profile.
+loaded first-party profiles exposed by `botfiles/bots.txt`.
 
 To stop auto-fill without kicking manually added bots, lower the target:
 
@@ -198,13 +196,11 @@ anything with spaces.
   `quiet`. Packaged profiles should use one of the known labels such as
   `quiet`, `direct`, `taunting`, `helpful`, or `steady`, or expect a validator
   warning until the new label is registered. The `bot_allow_chat` cvar is
-  default-off; when enabled, it allows the current conservative bot chat
-  dispatch proof and selects the initial proof line from the bot's chat
-  personality bucket. `bot_chat_team_only` can route that proof through team
-  chat, and `bot_chat_min_interval_ms <ms>` can require a global minimum
-  interval between submitted proof-chat lines. Smoke-only reply and multi-event
-  reply selectors also use this personality metadata for validation while the
-  richer chat system is still being built.
+  default-off; when enabled with `bot_chat_live_events`, the bot can select
+  short, safe live-event phrases from its chat personality bucket.
+  `bot_chat_team_only` can route supported callouts through team chat, and
+  `bot_chat_min_interval_ms <ms>` can require a global minimum interval between
+  submitted bot chat lines.
 - `WORR_CHAT_PERSONALITY`: Q3-style extension for WORR chat style.
 - `role` or `team_role`: team behavior hint, such as `attacker`, `defender`, or
   `support`. Known aliases include `attack`, `offense`, `defense`, `duelist`,
@@ -255,16 +251,12 @@ supported match-policy helpers. The item-policy hints are used when match
 item/resource policy is active: greed favors self pickups, denial favors
 deny-enemy pickups in team modes, powerup timing favors major items, and retreat
 health raises survival-item priority once the bot is at or below that health
-threshold. Treat chat fields as safe profile metadata and tuning hints whose
-exact behavior can change as the BotLib work continues. `bot_allow_chat`
-currently gates a narrow once-per-spawn live dispatch proof whose initial line
-comes from the profile chat personality, and `bot_chat_team_only` can limit
-that proof to team chat. `bot_chat_min_interval_ms <ms>` sets a global
-minimum interval between submitted proof-chat lines, with rate-limited attempts
-skipped rather than counted as failures. Current development builds also use
-chat personality for smoke-only reply and multi-event route-ready proofs;
-richer conversation and broader live event-triggered reply behavior remains
-future work.
+threshold. Treat chat fields as safe profile metadata and tuning hints for the
+supported conservative chat system. `bot_allow_chat` gates output,
+`bot_chat_live_events` enables gameplay-triggered callouts, `bot_chat_team_only`
+can limit supported callouts to team chat, and `bot_chat_min_interval_ms <ms>`
+sets a global cooldown. See [Bot Chat](bot-chat.md) for the supported event
+families.
 
 The profile validator checks behavior metadata before packaging:
 

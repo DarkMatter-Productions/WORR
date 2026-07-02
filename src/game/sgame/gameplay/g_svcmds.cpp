@@ -898,6 +898,11 @@ namespace
 		int replyLowHealth = 0;
 		int replyBlocked = 0;
 		int replyMatchResult = 0;
+		int replyMatchResultUnknown = 0;
+		int replyMatchResultWin = 0;
+		int replyMatchResultLoss = 0;
+		int replyMatchResultTie = 0;
+		int replyMatchResultAbort = 0;
 		int replySubmitted = 0;
 		int replyRateLimited = 0;
 		int replyDuplicateSuppressed = 0;
@@ -909,6 +914,8 @@ namespace
 		int lastReplyPhrase = 0;
 		int lastReplyPhraseVariant = -1;
 		int lastReplyEvent = 0;
+		int lastMatchResultOutcome = 0;
+		const char *lastMatchResultOutcomeName = "unknown";
 		int liveEnabled = 0;
 		int liveEvents = 0;
 		int liveSpawn = 0;
@@ -1238,6 +1245,11 @@ namespace
 		status.replyLowHealth = BotChatPolicy_ReplyLowHealth();
 		status.replyBlocked = BotChatPolicy_ReplyBlocked();
 		status.replyMatchResult = BotChatPolicy_ReplyMatchResult();
+		status.replyMatchResultUnknown = BotChatPolicy_ReplyMatchResultUnknown();
+		status.replyMatchResultWin = BotChatPolicy_ReplyMatchResultWin();
+		status.replyMatchResultLoss = BotChatPolicy_ReplyMatchResultLoss();
+		status.replyMatchResultTie = BotChatPolicy_ReplyMatchResultTie();
+		status.replyMatchResultAbort = BotChatPolicy_ReplyMatchResultAbort();
 		status.replySubmitted = BotChatPolicy_ReplySubmitted();
 		status.replyRateLimited = BotChatPolicy_ReplyRateLimited();
 		status.replyDuplicateSuppressed = BotChatPolicy_ReplyDuplicateSuppressed();
@@ -1249,6 +1261,8 @@ namespace
 		status.lastReplyPhrase = BotChatPolicy_LastReplyPhrase();
 		status.lastReplyPhraseVariant = BotChatPolicy_LastReplyPhraseVariant();
 		status.lastReplyEvent = BotChatPolicy_LastReplyEvent();
+		status.lastMatchResultOutcome = BotChatPolicy_LastMatchResultOutcome();
+		status.lastMatchResultOutcomeName = BotChatPolicy_LastMatchResultOutcomeName();
 		status.liveEnabled = BotChatPolicy_LiveEnabled();
 		status.liveEvents = BotChatPolicy_LiveEvents();
 		status.liveSpawn = BotChatPolicy_LiveSpawn();
@@ -2165,12 +2179,18 @@ void BotChatPolicy_PrintStatus(int expectedBots, int expectedProfileChat,
 		"reply_chat_low_health={} "
 		"reply_chat_blocked={} "
 		"reply_chat_match_result={} "
+		"reply_chat_match_result_unknown={} "
+		"reply_chat_match_result_win={} "
+		"reply_chat_match_result_loss={} "
+		"reply_chat_match_result_tie={} "
+		"reply_chat_match_result_abort={} "
 		"reply_chat_submitted={} reply_chat_rate_limited={} "
 		"reply_chat_duplicate_suppressed={} reply_chat_failures={} "
 		"reply_chat_phrase_variants={} reply_chat_unique_variants={} "
 		"last_reply_chat_client={} "
 		"last_reply_chat_personality={} last_reply_chat_phrase={} "
 		"last_reply_chat_variant={} last_reply_chat_event={} "
+		"last_match_result_outcome={} last_match_result_outcome_name={} "
 		"live_chat_enabled={} live_chat_events={} "
 		"live_chat_spawn={} live_chat_route_ready={} "
 		"live_chat_item_taken={} "
@@ -2216,12 +2236,16 @@ void BotChatPolicy_PrintStatus(int expectedBots, int expectedProfileChat,
 		status.replyLowHealth,
 		status.replyBlocked,
 		status.replyMatchResult,
+		status.replyMatchResultUnknown, status.replyMatchResultWin,
+		status.replyMatchResultLoss, status.replyMatchResultTie,
+		status.replyMatchResultAbort,
 		status.replySubmitted, status.replyRateLimited,
 		status.replyDuplicateSuppressed, status.replyFailures,
 		status.replyPhraseVariants,
 		status.replyUniquePhraseVariants, status.lastReplyClient,
 		status.lastReplyPersonality, status.lastReplyPhrase,
 		status.lastReplyPhraseVariant, status.lastReplyEvent,
+		status.lastMatchResultOutcome, status.lastMatchResultOutcomeName,
 		status.liveEnabled, status.liveEvents, status.liveSpawn,
 		status.liveRouteReady, status.liveItemTaken,
 		status.liveItemDenied,

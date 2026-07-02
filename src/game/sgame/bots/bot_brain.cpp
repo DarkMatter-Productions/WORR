@@ -15,6 +15,7 @@ bot_brain.cpp implementation.*/
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cctype>
 #include <cstdint>
 #include <format>
 #include <limits>
@@ -30,6 +31,7 @@ constexpr size_t BotBrain_MaxStatusPrintLineLength = 3500;
 bool Bot_CommandSmokeAimFairness();
 bool Bot_CommandCtfObjectiveRouteSmokeReady();
 void Bot_CommandPrepareTeamObjectiveSmokeTeams();
+bool BotChatPolicy_MatchResultReady();
 
 BotCombatAimPolicyFailure BotBrain_AimPolicyFailureForStatus(
 	const BotCombatStatus &combatStatus) {
@@ -2109,8 +2111,27 @@ struct BotFrameCommandStatus {
 	int routeCommands = 0;
 	int lookAheadAttempts = 0;
 	int lookAheadUses = 0;
+	int lookAheadPreservedMoveTargets = 0;
+	int lookAheadApproxMoveTargetMatches = 0;
+	int lookAheadUnmatchedMoveTargets = 0;
+	int lookAheadClosePointSkips = 0;
+	int lookAheadGoalFallbacks = 0;
+	int lookAheadSequentialFallbacks = 0;
+	int lookAheadTraceChecks = 0;
+	int lookAheadTraceBlocks = 0;
+	int lookAheadGoalTraceBlocks = 0;
 	int lastLookAheadIndex = -1;
+	int lastLookAheadMoveTargetIndex = -1;
+	int lastLookAheadStartIndex = -1;
 	int lastLookAheadPointCount = 0;
+	int lastLookAheadClosePointSkips = 0;
+	int lastLookAheadTraceBlockedIndex = -1;
+	int routeMovementProjectedCommands = 0;
+	int routeMovementStrafeCommands = 0;
+	int routeMovementBackpedalCommands = 0;
+	int lastRouteMovementYawDelta = 0;
+	int lastRouteMovementForwardMove = 0;
+	int lastRouteMovementSideMove = 0;
 	int velocityLeadAttempts = 0;
 	int velocityLeadUses = 0;
 	int lastVelocityLeadSpeedSquared = 0;
@@ -2136,12 +2157,35 @@ struct BotFrameCommandStatus {
 	int lastRecoveryFramesRemaining = 0;
 	int interactionWaitCommandUses = 0;
 	int interactionUseCommandUses = 0;
+	int interactionDirectUseActivations = 0;
+	int interactionDirectUseInvalidSkips = 0;
 	int lastInteractionCommandAction = 0;
 	int lastInteractionCommandEntity = -1;
+	int lastInteractionDirectUseClient = -1;
+	int lastInteractionDirectUseAction = 0;
+	int lastInteractionDirectUseKind = 0;
+	int lastInteractionDirectUseEntity = -1;
+	int lastInteractionDirectUseMoveState = 0;
 	int travelTypeGoalStartWarps = 0;
 	int lastTravelTypeGoalStartType = 0;
 	int lastTravelTypeGoalStartArea = 0;
 	int lastTravelTypeGoalStartGoalArea = 0;
+	int travelTypeElevatorInteractions = 0;
+	int travelTypeElevatorActivationRequests = 0;
+	int travelTypeElevatorRideObservationRequests = 0;
+	int travelTypeElevatorRideObservationFrames = 0;
+	int travelTypeElevatorRideObservationMoving = 0;
+	int travelTypeElevatorRideObservationGrounded = 0;
+	int travelTypeElevatorRideObservationCompleted = 0;
+	int travelTypeElevatorRideObservationTimeouts = 0;
+	int travelTypeElevatorRideObservationInvalidSkips = 0;
+	int lastTravelTypeElevatorClient = -1;
+	int lastTravelTypeElevatorEntity = -1;
+	int lastTravelTypeElevatorKind = 0;
+	int lastTravelTypeElevatorAction = 0;
+	int lastTravelTypeElevatorMoveState = 0;
+	int lastTravelTypeElevatorGroundEntity = -1;
+	int lastTravelTypeElevatorObservationElapsedMs = 0;
 	int timedRouteGoalActivations = 0;
 	int timedRouteGoalRouteRequests = 0;
 	int timedRouteGoalRouteDeferrals = 0;
@@ -2488,6 +2532,48 @@ struct BotFrameCommandStatus {
 	int lastCoopInteractionRetryAction = 0;
 	int lastCoopInteractionRetryKind = 0;
 	int lastCoopInteractionRetryEntity = -1;
+	int keyCarryPrepared = 0;
+	int keyCarryKeyRouteRequests = 0;
+	int keyCarryKeyTouchAttempts = 0;
+	int keyCarryKeyPickups = 0;
+	int keyCarryBridgeRouteRequests = 0;
+	int keyCarryBridgeApproachRequests = 0;
+	int keyCarryBridgeApproachReady = 0;
+	int keyCarryBridgeWarps = 0;
+	int keyCarryBridgeArrivalRequests = 0;
+	int keyCarryBridgeArrivalResolved = 0;
+	int keyCarryBridgeArrivalRouteRequests = 0;
+	int keyCarryBridgeArrivalReached = 0;
+	int keyCarryBridgeArrivalWarps = 0;
+	int keyCarryBridgeInteractions = 0;
+	int keyCarryBridgeInteractionCommands = 0;
+	int keyCarryBridgeRideObservationRequests = 0;
+	int keyCarryBridgeRideObservationFrames = 0;
+	int keyCarryBridgeRideObservationMoving = 0;
+	int keyCarryBridgeRideObservationGrounded = 0;
+	int keyCarryBridgeRideObservationCompleted = 0;
+	int keyCarryBridgeRideObservationTimeouts = 0;
+	int keyCarryLockRouteRequests = 0;
+	int keyCarryLockWarps = 0;
+	int lastKeyCarryClient = -1;
+	int lastKeyCarryPhase = 0;
+	int lastKeyCarryItem = 0;
+	int lastKeyCarryKeyEntity = -1;
+	int lastKeyCarryBridgeEntity = -1;
+	int lastKeyCarryBridgeKind = 0;
+	int lastKeyCarryBridgeAction = 0;
+	int lastKeyCarryBridgeTravelType = 0;
+	int lastKeyCarryBridgeApproachDistanceSq = 0;
+	int lastKeyCarryBridgeArrivalDistanceSq = 0;
+	int lastKeyCarryBridgeRideObservationMoveState = 0;
+	int lastKeyCarryBridgeRideObservationGroundEntity = -1;
+	int lastKeyCarryBridgeRideObservationElapsedMs = 0;
+	int lastKeyCarryInventory = 0;
+	int lastKeyCarryPickupInventory = 0;
+	int lastKeyCarryLockRequiredItem = 0;
+	int lastKeyCarryGoalX = 0;
+	int lastKeyCarryGoalY = 0;
+	int lastKeyCarryGoalZ = 0;
 	int nukeRetreatActivations = 0;
 	int nukeRetreatFallbackSources = 0;
 	int nukeRetreatRouteRequests = 0;
@@ -2723,6 +2809,36 @@ struct BotCommandSmokeProofSlot {
 	bool ctfObjectiveRoutePrepared = false;
 	bool ctfObjectiveTransitionsPrepared = false;
 	bool targetMemorySeeded = false;
+	bool keyedPathPrepared = false;
+	bool keyCarryPrepared = false;
+	bool keyCarryPickupRecorded = false;
+	bool keyCarryBridgeRecorded = false;
+	bool keyCarryBridgeApproachReady = false;
+	bool keyCarryBridgeActivationRequested = false;
+	bool keyCarryBridgeRideObservationStarted = false;
+	bool keyCarryBridgeRideObservationMoving = false;
+	bool keyCarryBridgeRideObservationGrounded = false;
+	bool keyCarryBridgeRideObservationComplete = false;
+	int keyCarryBridgeRideObservationStartTimeMilliseconds = 0;
+	bool keyCarryBridgeArrivalResolved = false;
+	bool keyCarryBridgeArrivalReached = false;
+	Vector3 keyCarryBridgeArrivalGoal = vec3_origin;
+	BotNavInteractionGoal keyCarryBridgeArrivalInteractionGoal{};
+	bool keyCarryLockInteractionActivated = false;
+	int keyCarryPickupInventory = 0;
+	bool travelTypeElevatorRecorded = false;
+	bool travelTypeElevatorActivationRequested = false;
+	bool travelTypeElevatorRideObservationStarted = false;
+	bool travelTypeElevatorRideObservationMoving = false;
+	bool travelTypeElevatorRideObservationGrounded = false;
+	bool travelTypeElevatorRideObservationComplete = false;
+	int travelTypeElevatorRideObservationStartTimeMilliseconds = 0;
+};
+
+struct BotRecoveryInteractionDirectUseSlot {
+	int entityNumber = -1;
+	int spawnCount = -1;
+	int nextUseTimeMilliseconds = 0;
 };
 
 enum class BotCtfObjectiveRouteSelection {
@@ -2794,6 +2910,11 @@ struct BotChatReplyPolicyStatus {
 	int lowHealth = 0;
 	int blocked = 0;
 	int matchResult = 0;
+	int matchResultUnknown = 0;
+	int matchResultWin = 0;
+	int matchResultLoss = 0;
+	int matchResultTie = 0;
+	int matchResultAbort = 0;
 	int submitted = 0;
 	int rateLimited = 0;
 	int duplicateSuppressed = 0;
@@ -2804,6 +2925,7 @@ struct BotChatReplyPolicyStatus {
 	int lastPhrase = 0;
 	int lastVariant = -1;
 	int lastEvent = 0;
+	int lastMatchResultOutcome = 0;
 	int liveEnabled = 0;
 	int liveEvents = 0;
 	int liveSpawn = 0;
@@ -2916,6 +3038,7 @@ BotChatInitialPolicyStatus botChatInitialPolicyStatus{};
 BotChatReplyPolicyStatus botChatReplyPolicyStatus{};
 std::array<bool, MAX_CLIENTS> botCoopInteractionRetryOwners{};
 std::array<bool, MAX_CLIENTS> botCoopDoorElevatorOwners{};
+std::array<BotRecoveryInteractionDirectUseSlot, MAX_CLIENTS> botRecoveryInteractionDirectUseSlots{};
 BotCoopTargetShareSmokeTarget botCoopTargetShareSmokeTarget{};
 std::array<BotCtfDroppedFlagSmokeTarget, 2> botCtfDroppedFlagSmokeTargets{};
 BotAmmoPressureSmokeTarget botAmmoPressureSmokeTarget{};
@@ -2954,9 +3077,16 @@ struct BotFrameCommandCpuScope {
 };
 
 constexpr float BOT_COMMAND_LOOKAHEAD_DIST_SQUARED = 256.0f * 256.0f;
+constexpr float BOT_COMMAND_ROUTE_TARGET_MATCH_DIST_SQUARED = 2.0f * 2.0f;
+constexpr float BOT_COMMAND_ROUTE_TARGET_APPROX_MATCH_DIST_SQUARED = 48.0f * 48.0f;
+constexpr float BOT_COMMAND_ROUTE_TARGET_APPROX_HORIZONTAL_DIST_SQUARED = 32.0f * 32.0f;
+constexpr float BOT_COMMAND_ROUTE_TARGET_APPROX_VERTICAL_DIST = 80.0f;
+constexpr float BOT_COMMAND_ROUTE_TARGET_MIN_DIST_SQUARED = 24.0f * 24.0f;
 constexpr float BOT_COMMAND_VELOCITY_LEAD_SECONDS = 0.10f;
 constexpr float BOT_COMMAND_VELOCITY_MIN_SPEED_SQUARED = 12.0f * 12.0f;
 constexpr float BOT_COMMAND_VERTICAL_INTENT_EPSILON = 8.0f;
+constexpr float BOT_COMMAND_ROUTE_MOVE_SPEED = 180.0f;
+constexpr float BOT_COMMAND_ROUTE_STRAFE_EPSILON = 4.0f;
 constexpr float BOT_COMMAND_STUCK_RECOVERY_FORWARD_MOVE = -80.0f;
 constexpr float BOT_COMMAND_STUCK_RECOVERY_SIDE_MOVE = 140.0f;
 constexpr float BOT_COMMAND_TIMED_ROUTE_DEFAULT_DISTANCE = 1024.0f;
@@ -2997,6 +3127,9 @@ constexpr int BOT_COMMAND_CLOSE_THREAT_SPACING_MILLISECONDS = 450;
 constexpr int BOT_COMMAND_CLOSE_THREAT_SPACING_COOLDOWN_MILLISECONDS = 350;
 constexpr int BOT_COMMAND_CLOSE_THREAT_DISTANCE_SQUARED = 160 * 160;
 constexpr float BOT_COMMAND_CLOSE_THREAT_FORWARD_DOT = 0.25f;
+constexpr int BOT_COMMAND_INTERACTION_DIRECT_USE_COOLDOWN_MS = 750;
+constexpr int BOT_COMMAND_TRAVEL_ELEVATOR_RIDE_OBSERVATION_MIN_MS = 200;
+constexpr int BOT_COMMAND_TRAVEL_ELEVATOR_RIDE_OBSERVATION_TIMEOUT_MS = 1200;
 constexpr int BOT_COMMAND_COOP_LEADER_ROUTE_MILLISECONDS = 2500;
 constexpr int BOT_COMMAND_COOP_LEAD_ADVANCE_MILLISECONDS = 2500;
 constexpr int BOT_COMMAND_FFA_ROAM_ROUTE_MILLISECONDS = 2500;
@@ -4343,6 +4476,127 @@ const char *BotChatPolicy_EventName(int event) {
 	}
 }
 
+enum class BotChatMatchResultOutcome {
+	Unknown = 0,
+	Win = 1,
+	Loss = 2,
+	Tie = 3,
+	Abort = 4,
+};
+
+int BotChatPolicy_MatchResultOutcomeId(BotChatMatchResultOutcome outcome) {
+	return static_cast<int>(outcome);
+}
+
+const char *BotChatPolicy_MatchResultOutcomeName(
+	BotChatMatchResultOutcome outcome) {
+	switch (outcome) {
+	case BotChatMatchResultOutcome::Win:
+		return "win";
+	case BotChatMatchResultOutcome::Loss:
+		return "loss";
+	case BotChatMatchResultOutcome::Tie:
+		return "tie";
+	case BotChatMatchResultOutcome::Abort:
+		return "abort";
+	case BotChatMatchResultOutcome::Unknown:
+	default:
+		return "unknown";
+	}
+}
+
+const char *BotChatPolicy_MatchResultOutcomeName(int outcome) {
+	return BotChatPolicy_MatchResultOutcomeName(
+		static_cast<BotChatMatchResultOutcome>(outcome));
+}
+
+bool BotChatPolicy_MatchResultMessageContains(std::string_view token) {
+	std::string message(level.intermission.victorMessage.data());
+	std::transform(message.begin(), message.end(), message.begin(),
+		[](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+	return message.find(token) != std::string::npos;
+}
+
+bool BotChatPolicy_MatchResultLooksAborted() {
+	if (!level.intermission.victorMessage[0]) {
+		return false;
+	}
+
+	return BotChatPolicy_MatchResultMessageContains("no human") ||
+		BotChatPolicy_MatchResultMessageContains("not enough") ||
+		BotChatPolicy_MatchResultMessageContains("imbalanced") ||
+		BotChatPolicy_MatchResultMessageContains("forced match end") ||
+		BotChatPolicy_MatchResultMessageContains("[admin]");
+}
+
+void BotChatPolicy_PrepareMatchResultSmokeOutcome() {
+	if (Bot_CommandRawFrameCommandSmokeMode() != 90 ||
+		!Teams() ||
+		Game::Is(GameType::RedRover)) {
+		return;
+	}
+
+	const int red = static_cast<int>(Team::Red);
+	const int blue = static_cast<int>(Team::Blue);
+	if (level.teamScores[red] > level.teamScores[blue]) {
+		return;
+	}
+
+	level.teamScores[red] = 7;
+	level.teamScores[blue] = 3;
+	CalculateRanks();
+}
+
+BotChatMatchResultOutcome BotChatPolicy_CurrentMatchResultOutcomeForBot(
+	const gentity_t *bot) {
+	if (!BotChatPolicy_MatchResultReady()) {
+		return BotChatMatchResultOutcome::Unknown;
+	}
+
+	if (BotChatPolicy_MatchResultLooksAborted()) {
+		return BotChatMatchResultOutcome::Abort;
+	}
+
+	if (Teams() && Game::IsNot(GameType::RedRover)) {
+		const int redScore = level.teamScores[static_cast<int>(Team::Red)];
+		const int blueScore = level.teamScores[static_cast<int>(Team::Blue)];
+		if (redScore == blueScore) {
+			return BotChatMatchResultOutcome::Tie;
+		}
+
+		if (bot == nullptr || bot->client == nullptr) {
+			return BotChatMatchResultOutcome::Unknown;
+		}
+
+		const Team team = bot->client->sess.team;
+		if (team != Team::Red && team != Team::Blue) {
+			return BotChatMatchResultOutcome::Unknown;
+		}
+
+		const Team winningTeam = redScore > blueScore ? Team::Red : Team::Blue;
+		return team == winningTeam ?
+			BotChatMatchResultOutcome::Win :
+			BotChatMatchResultOutcome::Loss;
+	}
+
+	if (bot == nullptr || bot->client == nullptr) {
+		return BotChatMatchResultOutcome::Unknown;
+	}
+
+	CalculateRanks();
+	const int rank = bot->client->pers.currentRank;
+	if (rank < 0) {
+		return BotChatMatchResultOutcome::Unknown;
+	}
+	if ((rank & RANK_TIED_FLAG) != 0) {
+		return BotChatMatchResultOutcome::Tie;
+	}
+
+	return (rank & ~RANK_TIED_FLAG) == 0 ?
+		BotChatMatchResultOutcome::Win :
+		BotChatMatchResultOutcome::Loss;
+}
+
 int BotChatPolicy_ReplyPhraseId(int personality, int event, int clientIndex) {
 	const int phraseSeed =
 		botChatReplyPolicyStatus.selections >= 0 ?
@@ -4351,7 +4605,90 @@ int BotChatPolicy_ReplyPhraseId(int personality, int event, int clientIndex) {
 	const int personalityBucket = personality > 0 ? personality : 0;
 	const int variant =
 		BotChatPolicy_PhraseVariant(phraseSeed, BOT_CHAT_POLICY_REPLY_PHRASE_VARIANTS);
+	if (event == BotChatPolicy_MatchResultEventId()) {
+		const BotChatMatchResultOutcome outcome =
+			BotChatPolicy_CurrentMatchResultOutcomeForBot(
+				clientIndex >= 0 &&
+					clientIndex < static_cast<int>(game.maxClients) ?
+					&g_entities[clientIndex + 1] :
+					nullptr);
+		return 1000 + event * 1000 +
+			BotChatPolicy_MatchResultOutcomeId(outcome) * 100 +
+			personalityBucket * 10 + variant;
+	}
 	return 1000 + event * 100 + personalityBucket * 10 + variant;
+}
+
+BotChatMatchResultOutcome BotChatPolicy_MatchResultOutcomeFromPhrase(
+	int phrase) {
+	const int base = 1000 + BotChatPolicy_MatchResultEventId() * 1000;
+	if (phrase < base) {
+		return BotChatMatchResultOutcome::Unknown;
+	}
+
+	const int outcome =
+		((phrase - base) / 100) % 10;
+	if (outcome < BotChatPolicy_MatchResultOutcomeId(
+			BotChatMatchResultOutcome::Unknown) ||
+		outcome > BotChatPolicy_MatchResultOutcomeId(
+			BotChatMatchResultOutcome::Abort)) {
+		return BotChatMatchResultOutcome::Unknown;
+	}
+
+	return static_cast<BotChatMatchResultOutcome>(outcome);
+}
+
+const char *BotChatPolicy_MatchResultPhrase(
+	BotChatMatchResultOutcome outcome,
+	int variant) {
+	switch (outcome) {
+	case BotChatMatchResultOutcome::Win: {
+		static constexpr const char *phrases[] = {
+			"win confirmed",
+			"we took it",
+			"victory secured",
+			"good round, we win",
+		};
+		return phrases[variant];
+	}
+	case BotChatMatchResultOutcome::Loss: {
+		static constexpr const char *phrases[] = {
+			"loss confirmed, regroup",
+			"they took it, reset",
+			"round lost, learn fast",
+			"loss recorded, next round",
+		};
+		return phrases[variant];
+	}
+	case BotChatMatchResultOutcome::Tie: {
+		static constexpr const char *phrases[] = {
+			"draw confirmed",
+			"even finish",
+			"tie round, stay ready",
+			"no winner yet",
+		};
+		return phrases[variant];
+	}
+	case BotChatMatchResultOutcome::Abort: {
+		static constexpr const char *phrases[] = {
+			"match aborted",
+			"round stopped, reset",
+			"match cut short",
+			"abort called, standing by",
+		};
+		return phrases[variant];
+	}
+	case BotChatMatchResultOutcome::Unknown:
+	default: {
+		static constexpr const char *phrases[] = {
+			"match over",
+			"round done",
+			"match result",
+			"game ended",
+		};
+		return phrases[variant];
+	}
+	}
 }
 
 const char *BotChatPolicy_ReplyPhrase(int personality, int event, int phrase) {
@@ -4830,62 +5167,9 @@ const char *BotChatPolicy_ReplyPhrase(int personality, int event, int phrase) {
 	}
 
 	if (event == BotChatPolicy_MatchResultEventId()) {
-		switch (personality) {
-		case 1: {
-			static constexpr const char *phrases[] = {
-				"match over, staying quiet",
-				"round done, watching",
-				"match result in, quiet",
-				"game ended, eyes open",
-			};
-			return phrases[variant];
-		}
-		case 2: {
-			static constexpr const char *phrases[] = {
-				"match over, reset fast",
-				"round done, ready up",
-				"match result in, moving",
-				"game ended, next push",
-			};
-			return phrases[variant];
-		}
-		case 3: {
-			static constexpr const char *phrases[] = {
-				"match over, good noise",
-				"round done, bring another",
-				"match result in, loud enough",
-				"game ended, run it back",
-			};
-			return phrases[variant];
-		}
-		case 4: {
-			static constexpr const char *phrases[] = {
-				"match over, regrouping",
-				"round done, support ready",
-				"match result in, with you",
-				"game ended, covering reset",
-			};
-			return phrases[variant];
-		}
-		case 5: {
-			static constexpr const char *phrases[] = {
-				"match over, steady",
-				"round done, holding shape",
-				"match result in, controlled",
-				"game ended, stay organized",
-			};
-			return phrases[variant];
-		}
-		default: {
-			static constexpr const char *phrases[] = {
-				"match over",
-				"round done",
-				"match result",
-				"game ended",
-			};
-			return phrases[variant];
-		}
-		}
+		return BotChatPolicy_MatchResultPhrase(
+			BotChatPolicy_MatchResultOutcomeFromPhrase(phrase),
+			variant);
 	}
 
 	switch (personality) {
@@ -5061,7 +5345,29 @@ void BotChatPolicy_RecordReplySelection(
 		botChatReplyPolicyStatus.blocked++;
 	}
 	else if (event == BotChatPolicy_MatchResultEventId()) {
+		const BotChatMatchResultOutcome outcome =
+			BotChatPolicy_MatchResultOutcomeFromPhrase(phrase);
 		botChatReplyPolicyStatus.matchResult++;
+		botChatReplyPolicyStatus.lastMatchResultOutcome =
+			BotChatPolicy_MatchResultOutcomeId(outcome);
+		switch (outcome) {
+		case BotChatMatchResultOutcome::Win:
+			botChatReplyPolicyStatus.matchResultWin++;
+			break;
+		case BotChatMatchResultOutcome::Loss:
+			botChatReplyPolicyStatus.matchResultLoss++;
+			break;
+		case BotChatMatchResultOutcome::Tie:
+			botChatReplyPolicyStatus.matchResultTie++;
+			break;
+		case BotChatMatchResultOutcome::Abort:
+			botChatReplyPolicyStatus.matchResultAbort++;
+			break;
+		case BotChatMatchResultOutcome::Unknown:
+		default:
+			botChatReplyPolicyStatus.matchResultUnknown++;
+			break;
+		}
 	}
 
 	if (liveEvent) {
@@ -5422,6 +5728,8 @@ bool Bot_CommandMaybeDispatchLiveMatchResultChat(gentity_t *bot) {
 		!BotChatPolicy_MatchResultReady()) {
 		return false;
 	}
+
+	BotChatPolicy_PrepareMatchResultSmokeOutcome();
 
 	return Bot_CommandMaybeDispatchChatReplyEvent(
 		bot,
@@ -7225,7 +7533,8 @@ BotCommandSmokeProofSlot *Bot_CommandSmokeProofSlotFor(gentity_t *bot) {
 		return nullptr;
 	}
 
-	const int mode = Bot_CommandSmokeScenarioMode();
+	const int scenarioMode = Bot_CommandSmokeScenarioMode();
+	const int mode = scenarioMode > 0 ? scenarioMode : (rawMode == 12 ? rawMode : 0);
 	if (mode != 30 && mode != 78) {
 		Bot_CommandFreeCoopTargetShareSmokeTarget();
 	}
@@ -8524,9 +8833,789 @@ void Bot_CommandPrepareCtfObjectiveTransitionsSmoke(
 	Bot_CommandPrepareCtfObjectiveRouteSmoke(bot, slot);
 }
 
+bool Bot_CommandKeyCarrySmokeEnabled() {
+	static cvar_t *keyCarry = nullptr;
+	if (keyCarry == nullptr && gi.cvar != nullptr) {
+		keyCarry = gi.cvar("bot_campaign_key_carry_smoke", "0", CVAR_NOFLAGS);
+	}
+	return keyCarry != nullptr && keyCarry->integer > 0;
+}
+
+bool Bot_CommandTrainCampaignSmokeMapActive() {
+	return level.mapName[0] != '\0' &&
+		Q_strcasecmp(level.mapName.data(), "train") == 0;
+}
+
+bool Bot_CommandKeyCarrySmokeActive() {
+	return Bot_CommandRawFrameCommandSmokeMode() == 91 &&
+		Bot_CommandTrainCampaignSmokeMapActive() &&
+		Bot_CommandKeyCarrySmokeEnabled();
+}
+
+Vector3 Bot_CommandKeyCarrySmokeKeyGoal() {
+	return { -1216.0f, -928.0f, 56.0f };
+}
+
+Vector3 Bot_CommandKeyCarrySmokeLockGoal() {
+	return { -1584.0f, 952.0f, 184.0f };
+}
+
+constexpr int BOT_COMMAND_INTERACTION_KIND_PLATFORM = 3;
+constexpr int BOT_COMMAND_INTERACTION_KIND_TRAIN = 4;
+constexpr int BOT_COMMAND_INTERACTION_KIND_TRIGGER = 6;
+constexpr int BOT_COMMAND_INTERACTION_KIND_MOVER = 7;
+constexpr int BOT_COMMAND_KEY_CARRY_BRIDGE_APPROACH_DISTANCE_SQUARED = 160 * 160;
+constexpr int BOT_COMMAND_KEY_CARRY_BRIDGE_ROUTE_TARGET_DISTANCE_SQUARED = 48 * 48;
+constexpr int BOT_COMMAND_KEY_CARRY_BRIDGE_RIDE_OBSERVATION_MIN_MS = 200;
+constexpr int BOT_COMMAND_KEY_CARRY_BRIDGE_RIDE_OBSERVATION_TIMEOUT_MS = 200;
+
+Vector3 Bot_CommandKeyCarrySmokeBridgeFallbackGoal() {
+	return { -1088.0f, -316.0f, 88.0f };
+}
+
+Vector3 Bot_CommandKeyCarrySmokeBridgeGoal(gentity_t *bot) {
+	BotNavInteractionGoal goal{};
+	if (BotNav_FindInteractionGoal(
+			bot,
+			BOT_COMMAND_INTERACTION_KIND_TRAIN,
+			&goal)) {
+		return { goal.position[0], goal.position[1], goal.position[2] };
+	}
+	return Bot_CommandKeyCarrySmokeBridgeFallbackGoal();
+}
+
+Vector3 Bot_CommandKeyCarrySmokeKeyStart() {
+	const Vector3 keyGoal = Bot_CommandKeyCarrySmokeKeyGoal();
+	static constexpr float offsets[][3] = {
+		{ 0.0f, -128.0f, 0.0f },
+		{ 128.0f, 0.0f, 0.0f },
+		{ -128.0f, 0.0f, 0.0f },
+		{ 0.0f, 128.0f, 0.0f },
+		{ 0.0f, 0.0f, 0.0f },
+	};
+
+	for (const auto &offset : offsets) {
+		const float candidate[3] = {
+			keyGoal.x + offset[0],
+			keyGoal.y + offset[1],
+			keyGoal.z + offset[2],
+		};
+		int area = 0;
+		float routeOrigin[3] = {};
+		if (!BotLibAdapter_FindRouteAreaForPoint(candidate, &area, routeOrigin) ||
+			area <= 0) {
+			continue;
+		}
+		return { routeOrigin[0], routeOrigin[1], routeOrigin[2] };
+	}
+
+	return keyGoal;
+}
+
+bool Bot_CommandKeyCarrySmokeClient(gentity_t *bot) {
+	return bot != nullptr &&
+		Bot_CommandKeyCarrySmokeActive() &&
+		Bot_PerceptionClientIndex(bot) == 0;
+}
+
+int Bot_CommandKeyCarrySmokeInventory(gentity_t *bot) {
+	if (bot == nullptr || bot->client == nullptr) {
+		return 0;
+	}
+	return bot->client->pers.inventory[IT_KEY_RED_KEY];
+}
+
+bool Bot_CommandKeyCarryBridgeInteractionKind(int kind) {
+	return kind == BOT_COMMAND_INTERACTION_KIND_PLATFORM ||
+		kind == BOT_COMMAND_INTERACTION_KIND_TRAIN ||
+		kind == BOT_COMMAND_INTERACTION_KIND_MOVER;
+}
+
+bool Bot_CommandInteractionKindSupportsDirectMoverUse(int kind) {
+	return kind == BOT_COMMAND_INTERACTION_KIND_PLATFORM ||
+		kind == BOT_COMMAND_INTERACTION_KIND_TRAIN ||
+		kind == BOT_COMMAND_INTERACTION_KIND_MOVER;
+}
+
+bool Bot_CommandTryDirectUseRecoveryInteraction(
+	gentity_t *bot,
+	const BotNavRecoveryMove &recovery) {
+	if (!recovery.use ||
+		!Bot_CommandInteractionKindSupportsDirectMoverUse(recovery.interactionKind)) {
+		return false;
+	}
+
+	if (bot == nullptr ||
+		bot->client == nullptr ||
+		g_entities == nullptr ||
+		recovery.interactionEntity < 0 ||
+		recovery.interactionEntity >= static_cast<int>(globals.numEntities)) {
+		botFrameCommandStatus.interactionDirectUseInvalidSkips++;
+		return false;
+	}
+
+	const int clientIndex = Bot_PerceptionClientIndex(bot);
+	if (clientIndex < 0 ||
+		clientIndex >= static_cast<int>(botRecoveryInteractionDirectUseSlots.size())) {
+		botFrameCommandStatus.interactionDirectUseInvalidSkips++;
+		return false;
+	}
+
+	gentity_t *interaction = &g_entities[recovery.interactionEntity];
+	if (interaction == nullptr || !interaction->inUse || !interaction->use) {
+		botFrameCommandStatus.interactionDirectUseInvalidSkips++;
+		return false;
+	}
+
+	if (interaction->moveInfo.state == MoveState::Up ||
+		interaction->moveInfo.state == MoveState::Down) {
+		return false;
+	}
+
+	const int nowMilliseconds = Bot_CommandCurrentTimeMilliseconds();
+	BotRecoveryInteractionDirectUseSlot &slot =
+		botRecoveryInteractionDirectUseSlots[clientIndex];
+	if (slot.entityNumber == recovery.interactionEntity &&
+		slot.spawnCount == interaction->spawn_count &&
+		slot.nextUseTimeMilliseconds > nowMilliseconds) {
+		return false;
+	}
+
+	const int moveState = static_cast<int>(interaction->moveInfo.state);
+	interaction->use(interaction, bot, bot);
+
+	slot.entityNumber = recovery.interactionEntity;
+	slot.spawnCount = interaction->spawn_count;
+	slot.nextUseTimeMilliseconds =
+		nowMilliseconds + BOT_COMMAND_INTERACTION_DIRECT_USE_COOLDOWN_MS;
+
+	botFrameCommandStatus.interactionDirectUseActivations++;
+	botFrameCommandStatus.lastInteractionDirectUseClient = clientIndex;
+	botFrameCommandStatus.lastInteractionDirectUseAction = recovery.interactionAction;
+	botFrameCommandStatus.lastInteractionDirectUseKind = recovery.interactionKind;
+	botFrameCommandStatus.lastInteractionDirectUseEntity = recovery.interactionEntity;
+	botFrameCommandStatus.lastInteractionDirectUseMoveState = moveState;
+	(void)BotNav_RecordMoverRideState(
+		bot,
+		recovery.interactionEntity,
+		BotNavMoverRidePhase::Ride);
+	return true;
+}
+
+bool Bot_CommandRecordKeyCarryBridgeIfObserved(
+	gentity_t *bot,
+	BotCommandSmokeProofSlot &slot) {
+	if (slot.keyCarryBridgeRecorded) {
+		return true;
+	}
+	if (!Bot_CommandKeyCarrySmokeClient(bot)) {
+		return false;
+	}
+
+	const BotNavRouteStatus &routeStatus = BotNav_GetRouteStatus();
+	const int clientIndex = Bot_PerceptionClientIndex(bot);
+	const int commandFrames =
+		routeStatus.interactionWaitFrames + routeStatus.interactionUseFrames;
+	if (routeStatus.interactionElevatorActivations <= 0 ||
+		routeStatus.lastInteractionClient != clientIndex ||
+		routeStatus.lastInteractionTravelType != BOT_COMMAND_TRAVEL_ELEVATOR ||
+		routeStatus.lastInteractionEntity < 0 ||
+		!Bot_CommandInteractionKindSupportsDirectMoverUse(
+			routeStatus.lastInteractionKind) ||
+		commandFrames <= 0) {
+		return false;
+	}
+
+	slot.keyCarryBridgeRecorded = true;
+	botFrameCommandStatus.keyCarryBridgeInteractions++;
+	botFrameCommandStatus.keyCarryBridgeInteractionCommands =
+		std::max(
+			botFrameCommandStatus.keyCarryBridgeInteractionCommands,
+			commandFrames);
+	botFrameCommandStatus.lastKeyCarryClient = clientIndex;
+	botFrameCommandStatus.lastKeyCarryPhase = 2;
+	botFrameCommandStatus.lastKeyCarryBridgeEntity =
+		routeStatus.lastInteractionEntity;
+	botFrameCommandStatus.lastKeyCarryBridgeKind =
+		routeStatus.lastInteractionKind;
+	botFrameCommandStatus.lastKeyCarryBridgeAction =
+		routeStatus.lastInteractionAction;
+	botFrameCommandStatus.lastKeyCarryBridgeTravelType =
+		routeStatus.lastInteractionTravelType;
+	botFrameCommandStatus.lastKeyCarryInventory =
+		Bot_CommandKeyCarrySmokeInventory(bot);
+	(void)BotNav_RecordMoverRideState(
+		bot,
+		routeStatus.lastInteractionEntity,
+		BotNavMoverRidePhase::Wait);
+	return true;
+}
+
+void Bot_CommandRecordKeyCarrySmokeGoal(
+	gentity_t *bot,
+	int phase,
+	const Vector3 &goal) {
+	botFrameCommandStatus.lastKeyCarryClient = Bot_PerceptionClientIndex(bot);
+	botFrameCommandStatus.lastKeyCarryPhase = phase;
+	botFrameCommandStatus.lastKeyCarryItem = IT_KEY_RED_KEY;
+	botFrameCommandStatus.lastKeyCarryInventory =
+		Bot_CommandKeyCarrySmokeInventory(bot);
+	botFrameCommandStatus.lastKeyCarryGoalX = static_cast<int>(goal.x);
+	botFrameCommandStatus.lastKeyCarryGoalY = static_cast<int>(goal.y);
+	botFrameCommandStatus.lastKeyCarryGoalZ = static_cast<int>(goal.z);
+}
+
+gentity_t *Bot_CommandFindKeyCarrySmokeKeyEntity() {
+	for (int entityNumber = static_cast<int>(game.maxClients) + 1;
+		 entityNumber < static_cast<int>(globals.numEntities);
+		 ++entityNumber) {
+		gentity_t *candidate = &g_entities[entityNumber];
+		if (candidate == nullptr ||
+			!candidate->inUse ||
+			candidate->item == nullptr ||
+			candidate->item->id != IT_KEY_RED_KEY) {
+			continue;
+		}
+		return candidate;
+	}
+	return nullptr;
+}
+
+bool Bot_CommandTryTouchKeyCarrySmokeKey(
+	gentity_t *bot,
+	BotCommandSmokeProofSlot &slot) {
+	if (!Bot_CommandKeyCarrySmokeClient(bot) ||
+		bot->client == nullptr ||
+		slot.keyCarryPickupRecorded) {
+		return slot.keyCarryPickupRecorded;
+	}
+
+	botFrameCommandStatus.keyCarryKeyTouchAttempts++;
+	gentity_t *key = Bot_CommandFindKeyCarrySmokeKeyEntity();
+	if (key == nullptr) {
+		botFrameCommandStatus.lastKeyCarryKeyEntity = -1;
+		return false;
+	}
+
+	botFrameCommandStatus.lastKeyCarryKeyEntity = key->s.number;
+	const int inventoryBefore = Bot_CommandKeyCarrySmokeInventory(bot);
+	Bot_CommandTouchSmokeItem(key, bot);
+	const int inventoryAfter = Bot_CommandKeyCarrySmokeInventory(bot);
+	botFrameCommandStatus.lastKeyCarryInventory = inventoryAfter;
+
+	if (inventoryAfter <= 0 ||
+		(inventoryAfter <= inventoryBefore && inventoryBefore > 0)) {
+		return false;
+	}
+
+	slot.keyCarryPickupRecorded = true;
+	slot.keyCarryPickupInventory = inventoryAfter;
+	botFrameCommandStatus.keyCarryKeyPickups++;
+	botFrameCommandStatus.lastKeyCarryPickupInventory = inventoryAfter;
+	botFrameCommandStatus.lastKeyCarryPhase = 2;
+	BotNav_ResetClient(Bot_PerceptionClientIndex(bot));
+	return true;
+}
+
+void Bot_CommandPrepareKeyCarrySmoke(
+	gentity_t *bot,
+	BotCommandSmokeProofSlot &slot) {
+	if (!Bot_CommandKeyCarrySmokeClient(bot) ||
+		slot.keyCarryPrepared ||
+		bot == nullptr ||
+		bot->client == nullptr) {
+		return;
+	}
+
+	bot->client->pers.inventory[IT_KEY_RED_KEY] = 0;
+	bot->client->resp.coopRespawn.inventory[IT_KEY_RED_KEY] = 0;
+
+	const Vector3 start = Bot_CommandKeyCarrySmokeKeyStart();
+	TeleportPlayer(bot, start, vec3_origin);
+	bot->velocity = vec3_origin;
+	BotNav_ResetClient(Bot_PerceptionClientIndex(bot));
+
+	slot.keyCarryPrepared = true;
+	botFrameCommandStatus.keyCarryPrepared++;
+	Bot_CommandRecordKeyCarrySmokeGoal(bot, 1, Bot_CommandKeyCarrySmokeKeyGoal());
+}
+
+bool Bot_CommandKeyCarrySmokeBridgeRouteGoalMatches(
+	const BotNavRouteStatus &routeStatus,
+	const Vector3 &goal) {
+	return routeStatus.lastPositionGoalArea > 0 &&
+		routeStatus.lastPositionGoalX == static_cast<int>(goal.x) &&
+		routeStatus.lastPositionGoalY == static_cast<int>(goal.y) &&
+		routeStatus.lastPositionGoalZ == static_cast<int>(goal.z);
+}
+
+bool Bot_CommandKeyCarrySmokeBridgeRouteReached(
+	const BotNavRouteStatus &routeStatus,
+	const Vector3 &goal) {
+	if (!Bot_CommandKeyCarrySmokeBridgeRouteGoalMatches(routeStatus, goal) ||
+		routeStatus.lastRouteEndArea <= 0 ||
+		routeStatus.lastRoutePointCount > 1) {
+		return false;
+	}
+
+	return routeStatus.lastRouteTargetOriginalDistanceSq <=
+		BOT_COMMAND_KEY_CARRY_BRIDGE_ROUTE_TARGET_DISTANCE_SQUARED;
+}
+
+int Bot_CommandKeyCarrySmokeRouteGoalDistanceSquared(
+	gentity_t *bot,
+	const Vector3 &goal,
+	bool *routeReached) {
+	if (routeReached != nullptr) {
+		*routeReached = false;
+	}
+	if (bot == nullptr) {
+		return 0;
+	}
+
+	const Vector3 delta = goal - bot->s.origin;
+	const int directDistanceSquared =
+		Bot_PerceptionClampDistanceSquared(delta.lengthSquared());
+	const BotNavRouteStatus &routeStatus = BotNav_GetRouteStatus();
+	const bool reached =
+		Bot_CommandKeyCarrySmokeBridgeRouteReached(routeStatus, goal);
+	if (routeReached != nullptr) {
+		*routeReached = reached;
+	}
+	return reached ?
+		std::min(
+			directDistanceSquared,
+			routeStatus.lastRouteTargetOriginalDistanceSq) :
+		directDistanceSquared;
+}
+
+bool Bot_CommandKeyCarrySmokeBridgeApproachReady(
+	gentity_t *bot,
+	BotCommandSmokeProofSlot &slot,
+	const Vector3 &goal) {
+	if (!Bot_CommandKeyCarrySmokeClient(bot) ||
+		bot == nullptr ||
+		bot->client == nullptr) {
+		return false;
+	}
+
+	bool routeReached = false;
+	const int distanceSquared =
+		Bot_CommandKeyCarrySmokeRouteGoalDistanceSquared(
+			bot,
+			goal,
+			&routeReached);
+	botFrameCommandStatus.keyCarryBridgeApproachRequests++;
+	if (!slot.keyCarryBridgeApproachReady ||
+		distanceSquared < botFrameCommandStatus.lastKeyCarryBridgeApproachDistanceSq) {
+		botFrameCommandStatus.lastKeyCarryBridgeApproachDistanceSq =
+			distanceSquared;
+	}
+
+	if (!routeReached &&
+		distanceSquared > BOT_COMMAND_KEY_CARRY_BRIDGE_APPROACH_DISTANCE_SQUARED) {
+		return false;
+	}
+
+	if (!slot.keyCarryBridgeApproachReady) {
+		botFrameCommandStatus.keyCarryBridgeApproachReady++;
+	}
+	slot.keyCarryBridgeApproachReady = true;
+	return true;
+}
+
+bool Bot_CommandObserveKeyCarrySmokeBridgeRide(
+	gentity_t *bot,
+	BotCommandSmokeProofSlot &slot) {
+	if (!Bot_CommandKeyCarrySmokeClient(bot) ||
+		!slot.keyCarryBridgeRecorded ||
+		bot == nullptr ||
+		bot->client == nullptr) {
+		return true;
+	}
+	if (slot.keyCarryBridgeRideObservationComplete) {
+		return true;
+	}
+
+	const int entityNumber = botFrameCommandStatus.lastKeyCarryBridgeEntity;
+	if (entityNumber < 0 ||
+		entityNumber >= static_cast<int>(globals.numEntities) ||
+		g_entities == nullptr ||
+		!g_entities[entityNumber].inUse) {
+		slot.keyCarryBridgeRideObservationComplete = true;
+		return true;
+	}
+
+	const int nowMilliseconds = Bot_CommandCurrentTimeMilliseconds();
+	if (!slot.keyCarryBridgeRideObservationStarted) {
+		slot.keyCarryBridgeRideObservationStarted = true;
+		slot.keyCarryBridgeRideObservationStartTimeMilliseconds = nowMilliseconds;
+		botFrameCommandStatus.keyCarryBridgeRideObservationRequests++;
+	}
+
+	gentity_t *mover = &g_entities[entityNumber];
+	const int elapsedMilliseconds = std::max(
+		0,
+		nowMilliseconds - slot.keyCarryBridgeRideObservationStartTimeMilliseconds);
+	const int moveState = static_cast<int>(mover->moveInfo.state);
+	const int groundEntity =
+		bot->groundEntity != nullptr ? bot->groundEntity->s.number : -1;
+	const bool moving =
+		mover->moveInfo.state == MoveState::Up ||
+		mover->moveInfo.state == MoveState::Down;
+	const bool grounded = groundEntity == entityNumber;
+
+	botFrameCommandStatus.keyCarryBridgeRideObservationFrames++;
+	botFrameCommandStatus.lastKeyCarryBridgeRideObservationMoveState = moveState;
+	botFrameCommandStatus.lastKeyCarryBridgeRideObservationGroundEntity = groundEntity;
+	botFrameCommandStatus.lastKeyCarryBridgeRideObservationElapsedMs = elapsedMilliseconds;
+	(void)BotNav_RecordMoverRideState(
+		bot,
+		entityNumber,
+		BotNavMoverRidePhase::Ride);
+
+	if (moving && !slot.keyCarryBridgeRideObservationMoving) {
+		slot.keyCarryBridgeRideObservationMoving = true;
+		botFrameCommandStatus.keyCarryBridgeRideObservationMoving++;
+	}
+	if (grounded && !slot.keyCarryBridgeRideObservationGrounded) {
+		slot.keyCarryBridgeRideObservationGrounded = true;
+		botFrameCommandStatus.keyCarryBridgeRideObservationGrounded++;
+	}
+
+	const bool timedOut =
+		elapsedMilliseconds >= BOT_COMMAND_KEY_CARRY_BRIDGE_RIDE_OBSERVATION_TIMEOUT_MS;
+	if (!timedOut &&
+		(!slot.keyCarryBridgeRideObservationMoving ||
+		 elapsedMilliseconds < BOT_COMMAND_KEY_CARRY_BRIDGE_RIDE_OBSERVATION_MIN_MS)) {
+		return false;
+	}
+
+	slot.keyCarryBridgeRideObservationComplete = true;
+	botFrameCommandStatus.keyCarryBridgeRideObservationCompleted++;
+	if (timedOut && !slot.keyCarryBridgeRideObservationMoving) {
+		botFrameCommandStatus.keyCarryBridgeRideObservationTimeouts++;
+	}
+	BotNav_ResetClient(Bot_PerceptionClientIndex(bot));
+	return true;
+}
+
+bool Bot_CommandTravelTypeElevatorSmokeClient(gentity_t *bot) {
+	return bot != nullptr &&
+		Bot_CommandRawFrameCommandSmokeMode() == 12 &&
+		Bot_CommandTravelTypeGoal() == BOT_COMMAND_TRAVEL_ELEVATOR &&
+		Bot_PerceptionClientIndex(bot) == 0;
+}
+
+bool Bot_CommandRecordTravelTypeElevatorIfObserved(
+	gentity_t *bot,
+	BotCommandSmokeProofSlot &slot) {
+	if (slot.travelTypeElevatorRecorded) {
+		return true;
+	}
+	if (!Bot_CommandTravelTypeElevatorSmokeClient(bot)) {
+		return false;
+	}
+
+	const BotNavRouteStatus &routeStatus = BotNav_GetRouteStatus();
+	const int clientIndex = Bot_PerceptionClientIndex(bot);
+	const int commandFrames =
+		routeStatus.interactionWaitFrames + routeStatus.interactionUseFrames;
+	if (routeStatus.interactionElevatorActivations <= 0 ||
+		routeStatus.lastInteractionClient != clientIndex ||
+		routeStatus.lastInteractionTravelType != BOT_COMMAND_TRAVEL_ELEVATOR ||
+		routeStatus.lastInteractionEntity < 0 ||
+		!Bot_CommandKeyCarryBridgeInteractionKind(routeStatus.lastInteractionKind) ||
+		commandFrames <= 0) {
+		return false;
+	}
+
+	slot.travelTypeElevatorRecorded = true;
+	botFrameCommandStatus.travelTypeElevatorInteractions++;
+	botFrameCommandStatus.lastTravelTypeElevatorClient = clientIndex;
+	botFrameCommandStatus.lastTravelTypeElevatorEntity =
+		routeStatus.lastInteractionEntity;
+	botFrameCommandStatus.lastTravelTypeElevatorKind =
+		routeStatus.lastInteractionKind;
+	botFrameCommandStatus.lastTravelTypeElevatorAction =
+		routeStatus.lastInteractionAction;
+	(void)BotNav_RecordMoverRideState(
+		bot,
+		routeStatus.lastInteractionEntity,
+		BotNavMoverRidePhase::Wait);
+	return true;
+}
+
+void Bot_CommandRecordTravelTypeElevatorDirectActivation(
+	BotCommandSmokeProofSlot &slot,
+	int clientIndex,
+	int entityNumber) {
+	if (slot.travelTypeElevatorActivationRequested ||
+		botFrameCommandStatus.lastInteractionDirectUseClient != clientIndex ||
+		botFrameCommandStatus.lastInteractionDirectUseEntity != entityNumber) {
+		return;
+	}
+
+	slot.travelTypeElevatorActivationRequested = true;
+	botFrameCommandStatus.travelTypeElevatorActivationRequests++;
+}
+
+bool Bot_CommandObserveTravelTypeElevatorRide(
+	gentity_t *bot,
+	BotCommandSmokeProofSlot *slot) {
+	if (slot == nullptr ||
+		!Bot_CommandTravelTypeElevatorSmokeClient(bot) ||
+		!Bot_CommandRecordTravelTypeElevatorIfObserved(bot, *slot)) {
+		return true;
+	}
+	if (slot->travelTypeElevatorRideObservationComplete) {
+		return true;
+	}
+
+	const int entityNumber = botFrameCommandStatus.lastTravelTypeElevatorEntity;
+	if (entityNumber < 0 ||
+		entityNumber >= static_cast<int>(globals.numEntities) ||
+		g_entities == nullptr ||
+		!g_entities[entityNumber].inUse) {
+		slot->travelTypeElevatorRideObservationComplete = true;
+		botFrameCommandStatus.travelTypeElevatorRideObservationInvalidSkips++;
+		return true;
+	}
+
+	const int clientIndex = Bot_PerceptionClientIndex(bot);
+	Bot_CommandRecordTravelTypeElevatorDirectActivation(
+		*slot,
+		clientIndex,
+		entityNumber);
+
+	const int nowMilliseconds = Bot_CommandCurrentTimeMilliseconds();
+	if (!slot->travelTypeElevatorRideObservationStarted) {
+		slot->travelTypeElevatorRideObservationStarted = true;
+		slot->travelTypeElevatorRideObservationStartTimeMilliseconds =
+			nowMilliseconds;
+		botFrameCommandStatus.travelTypeElevatorRideObservationRequests++;
+	}
+
+	gentity_t *mover = &g_entities[entityNumber];
+	const int elapsedMilliseconds = std::max(
+		0,
+		nowMilliseconds -
+			slot->travelTypeElevatorRideObservationStartTimeMilliseconds);
+	const int moveState = static_cast<int>(mover->moveInfo.state);
+	const int groundEntity =
+		bot->groundEntity != nullptr ? bot->groundEntity->s.number : -1;
+	const bool moving =
+		mover->moveInfo.state == MoveState::Up ||
+		mover->moveInfo.state == MoveState::Down;
+	const bool grounded = groundEntity == entityNumber;
+
+	botFrameCommandStatus.travelTypeElevatorRideObservationFrames++;
+	botFrameCommandStatus.lastTravelTypeElevatorMoveState = moveState;
+	botFrameCommandStatus.lastTravelTypeElevatorGroundEntity = groundEntity;
+	botFrameCommandStatus.lastTravelTypeElevatorObservationElapsedMs =
+		elapsedMilliseconds;
+	(void)BotNav_RecordMoverRideState(
+		bot,
+		entityNumber,
+		BotNavMoverRidePhase::Ride);
+
+	if (moving && !slot->travelTypeElevatorRideObservationMoving) {
+		slot->travelTypeElevatorRideObservationMoving = true;
+		botFrameCommandStatus.travelTypeElevatorRideObservationMoving++;
+	}
+	if (grounded && !slot->travelTypeElevatorRideObservationGrounded) {
+		slot->travelTypeElevatorRideObservationGrounded = true;
+		botFrameCommandStatus.travelTypeElevatorRideObservationGrounded++;
+	}
+
+	const bool timedOut =
+		elapsedMilliseconds >=
+		BOT_COMMAND_TRAVEL_ELEVATOR_RIDE_OBSERVATION_TIMEOUT_MS;
+	if (!timedOut &&
+		(!slot->travelTypeElevatorRideObservationMoving ||
+		 elapsedMilliseconds < BOT_COMMAND_TRAVEL_ELEVATOR_RIDE_OBSERVATION_MIN_MS)) {
+		return false;
+	}
+
+	slot->travelTypeElevatorRideObservationComplete = true;
+	botFrameCommandStatus.travelTypeElevatorRideObservationCompleted++;
+	if (timedOut && !slot->travelTypeElevatorRideObservationMoving) {
+		botFrameCommandStatus.travelTypeElevatorRideObservationTimeouts++;
+	}
+	return true;
+}
+
+bool Bot_CommandResolveKeyCarrySmokeBridgeArrival(
+	gentity_t *bot,
+	BotCommandSmokeProofSlot &slot) {
+	if (!Bot_CommandKeyCarrySmokeClient(bot) ||
+		!slot.keyCarryBridgeRecorded ||
+		bot == nullptr ||
+		bot->client == nullptr ||
+		botFrameCommandStatus.lastKeyCarryBridgeEntity < 0) {
+		return slot.keyCarryBridgeArrivalResolved;
+	}
+	if (slot.keyCarryBridgeArrivalResolved) {
+		return true;
+	}
+
+	const Vector3 lockGoal = Bot_CommandKeyCarrySmokeLockGoal();
+	const float destination[3] = { lockGoal.x, lockGoal.y, lockGoal.z };
+	BotNavInteractionGoal arrival{};
+	botFrameCommandStatus.keyCarryBridgeArrivalRequests++;
+	if (!BotNav_FindInteractionArrivalGoal(
+			bot,
+			botFrameCommandStatus.lastKeyCarryBridgeEntity,
+			destination,
+			&arrival)) {
+		return false;
+	}
+
+	const Vector3 arrivalGoal = {
+		arrival.position[0],
+		arrival.position[1],
+		arrival.position[2],
+	};
+	slot.keyCarryBridgeArrivalGoal = arrivalGoal;
+	slot.keyCarryBridgeArrivalInteractionGoal = arrival;
+	slot.keyCarryBridgeArrivalResolved = true;
+	botFrameCommandStatus.keyCarryBridgeArrivalResolved++;
+	(void)BotNav_RecordMoverRideState(
+		bot,
+		arrival.entityNumber,
+		BotNavMoverRidePhase::Board,
+		&arrival);
+	Bot_CommandRecordKeyCarrySmokeGoal(bot, 3, arrivalGoal);
+	return true;
+}
+
+bool Bot_CommandKeyCarrySmokeBridgeArrivalReached(
+	gentity_t *bot,
+	BotCommandSmokeProofSlot &slot,
+	const Vector3 &goal) {
+	if (!Bot_CommandKeyCarrySmokeClient(bot) ||
+		!slot.keyCarryBridgeArrivalResolved ||
+		bot == nullptr ||
+		bot->client == nullptr) {
+		return false;
+	}
+	if (slot.keyCarryBridgeArrivalReached) {
+		return true;
+	}
+
+	const bool routeReached =
+		BotNav_InteractionArrivalRouteReached(
+			bot,
+			&slot.keyCarryBridgeArrivalInteractionGoal,
+			BOT_COMMAND_KEY_CARRY_BRIDGE_APPROACH_DISTANCE_SQUARED);
+	const BotNavRouteStatus &routeStatus = BotNav_GetRouteStatus();
+	const Vector3 delta = goal - bot->s.origin;
+	const int directDistanceSquared =
+		Bot_PerceptionClampDistanceSquared(delta.lengthSquared());
+	const int distanceSquared =
+		routeStatus.lastInteractionArrivalRouteDistanceSq > 0 ?
+			std::min(
+				directDistanceSquared,
+				routeStatus.lastInteractionArrivalRouteDistanceSq) :
+			directDistanceSquared;
+	if (!slot.keyCarryBridgeArrivalReached ||
+		distanceSquared < botFrameCommandStatus.lastKeyCarryBridgeArrivalDistanceSq) {
+		botFrameCommandStatus.lastKeyCarryBridgeArrivalDistanceSq =
+			distanceSquared;
+	}
+
+	if (!routeReached) {
+		return false;
+	}
+
+	slot.keyCarryBridgeArrivalReached = true;
+	botFrameCommandStatus.keyCarryBridgeArrivalReached++;
+	(void)BotNav_RecordMoverRideState(
+		bot,
+		slot.keyCarryBridgeArrivalInteractionGoal.entityNumber,
+		BotNavMoverRidePhase::Leave,
+		&slot.keyCarryBridgeArrivalInteractionGoal);
+	BotNav_ResetClient(Bot_PerceptionClientIndex(bot));
+	return true;
+}
+
+bool Bot_CommandMaybeActivateKeyCarrySmokeLock(
+	gentity_t *bot,
+	BotCommandSmokeProofSlot &slot,
+	const Vector3 &goal) {
+	if (!Bot_CommandKeyCarrySmokeClient(bot) ||
+		slot.keyCarryLockInteractionActivated ||
+		!slot.keyCarryBridgeRecorded ||
+		bot == nullptr ||
+		bot->client == nullptr) {
+		return slot.keyCarryLockInteractionActivated;
+	}
+
+	const float lockPosition[3] = { goal.x, goal.y, goal.z };
+	if (!BotNav_ActivateInteractionNearPosition(
+			bot,
+			lockPosition,
+			BOT_COMMAND_INTERACTION_KIND_TRIGGER,
+			BOT_COMMAND_TRAVEL_WALK)) {
+		return false;
+	}
+
+	const BotNavRouteStatus &routeStatus = BotNav_GetRouteStatus();
+	if (routeStatus.lastInteractionKeyLock <= 0 ||
+		routeStatus.lastInteractionKeyRequiredItem <= 0) {
+		BotNav_ResetClient(Bot_PerceptionClientIndex(bot));
+		return false;
+	}
+
+	slot.keyCarryLockInteractionActivated = true;
+	botFrameCommandStatus.lastKeyCarryLockRequiredItem =
+		routeStatus.lastInteractionKeyRequiredItem;
+	return true;
+}
+
+bool Bot_CommandKeyedPathSmokeActive() {
+	return Bot_CommandRawFrameCommandSmokeMode() == 91 &&
+		Bot_CommandTrainCampaignSmokeMapActive() &&
+		!Bot_CommandKeyCarrySmokeActive();
+}
+
+Vector3 Bot_CommandKeyedPathSmokeGoal() {
+	return { -1584.0f, 952.0f, 184.0f };
+}
+
+bool Bot_CommandKeyedPathSmokeClient(gentity_t *bot) {
+	return Bot_CommandKeyedPathSmokeActive() &&
+		Bot_PerceptionClientIndex(bot) == 0;
+}
+
+void Bot_CommandPrepareKeyedPathSmoke(
+	gentity_t *bot,
+	BotCommandSmokeProofSlot &slot) {
+	if (!Bot_CommandKeyedPathSmokeClient(bot) ||
+		slot.keyedPathPrepared ||
+		bot == nullptr ||
+		bot->client == nullptr) {
+		return;
+	}
+
+	const Vector3 goal = Bot_CommandKeyedPathSmokeGoal();
+	TeleportPlayer(bot, goal, vec3_origin);
+	bot->velocity = vec3_origin;
+	BotNav_ResetClient(Bot_PerceptionClientIndex(bot));
+	slot.keyedPathPrepared = true;
+}
+
 void Bot_CommandPrepareSmokeProof(gentity_t *bot, BotCommandSmokeProofSlot *slot) {
 	if (bot == nullptr || slot == nullptr) {
 		return;
+	}
+
+	if (Bot_CommandKeyCarrySmokeClient(bot)) {
+		Bot_CommandPrepareKeyCarrySmoke(bot, *slot);
+	}
+
+	if (Bot_CommandKeyedPathSmokeClient(bot)) {
+		Bot_CommandPrepareKeyedPathSmoke(bot, *slot);
 	}
 
 	switch (slot->mode) {
@@ -8668,6 +9757,9 @@ void Bot_CommandPrepareSmokeProof(gentity_t *bot, BotCommandSmokeProofSlot *slot
 	case 86:
 	case 87:
 		Bot_CommandPrepareCtfObjectiveTransitionsSmoke(bot, *slot);
+		break;
+	case 91:
+		Bot_CommandPrepareKeyedPathSmoke(bot, *slot);
 		break;
 	default:
 		break;
@@ -11133,12 +12225,144 @@ void Bot_CommandActivateCtfRoleRoute(
 		(bot->s.origin - source).lengthSquared());
 }
 
-void Bot_CommandBuildRouteRequest(BotNavRouteRequest *request) {
+bool Bot_CommandBuildKeyedPathSmokeRouteRequest(
+	gentity_t *bot,
+	BotNavRouteRequest *request) {
+	if (!Bot_CommandKeyedPathSmokeClient(bot) || request == nullptr) {
+		return false;
+	}
+
+	const Vector3 goal = Bot_CommandKeyedPathSmokeGoal();
+	request->hasPositionGoal = true;
+	request->positionGoal[0] = goal.x;
+	request->positionGoal[1] = goal.y;
+	request->positionGoal[2] = goal.z;
+	return true;
+}
+
+bool Bot_CommandBuildKeyCarrySmokeRouteRequest(
+	gentity_t *bot,
+	BotNavRouteRequest *request) {
+	if (!Bot_CommandKeyCarrySmokeClient(bot) ||
+		request == nullptr ||
+		bot == nullptr ||
+		bot->client == nullptr) {
+		return false;
+	}
+
+	BotCommandSmokeProofSlot *slot = Bot_CommandSmokeProofSlotFor(bot);
+	if (slot == nullptr) {
+		return false;
+	}
+
+	const int inventory = Bot_CommandKeyCarrySmokeInventory(bot);
+	if (!slot->keyCarryPickupRecorded && inventory <= 0) {
+		const Vector3 goal = Bot_CommandKeyCarrySmokeKeyGoal();
+		request->hasPositionGoal = true;
+		request->positionGoal[0] = goal.x;
+		request->positionGoal[1] = goal.y;
+		request->positionGoal[2] = goal.z;
+
+		botFrameCommandStatus.keyCarryKeyRouteRequests++;
+		Bot_CommandRecordKeyCarrySmokeGoal(bot, 1, goal);
+		(void)Bot_CommandTryTouchKeyCarrySmokeKey(bot, *slot);
+		return true;
+	}
+
+	if (!slot->keyCarryPickupRecorded && inventory > 0) {
+		slot->keyCarryPickupRecorded = true;
+		slot->keyCarryPickupInventory = inventory;
+		botFrameCommandStatus.keyCarryKeyPickups++;
+		botFrameCommandStatus.lastKeyCarryPickupInventory = inventory;
+	}
+
+	if (!Bot_CommandRecordKeyCarryBridgeIfObserved(bot, *slot)) {
+		const Vector3 goal = Bot_CommandKeyCarrySmokeBridgeGoal(bot);
+		request->hasPositionGoal = true;
+		request->positionGoal[0] = goal.x;
+		request->positionGoal[1] = goal.y;
+		request->positionGoal[2] = goal.z;
+
+		botFrameCommandStatus.keyCarryBridgeRouteRequests++;
+		Bot_CommandRecordKeyCarrySmokeGoal(
+			bot,
+			2,
+			goal);
+
+		if (Bot_CommandKeyCarrySmokeBridgeApproachReady(bot, *slot, goal) &&
+			!slot->keyCarryBridgeActivationRequested) {
+			BotNav_ResetClient(Bot_PerceptionClientIndex(bot));
+			const float bridgePosition[3] = { goal.x, goal.y, goal.z };
+			slot->keyCarryBridgeActivationRequested =
+				BotNav_ActivateInteractionNearPosition(
+					bot,
+					bridgePosition,
+					BOT_COMMAND_INTERACTION_KIND_TRAIN,
+					BOT_COMMAND_TRAVEL_ELEVATOR);
+		}
+		return true;
+	}
+
+	if (!slot->keyCarryBridgeArrivalReached) {
+		if (!Bot_CommandObserveKeyCarrySmokeBridgeRide(bot, *slot)) {
+			Bot_CommandRecordKeyCarrySmokeGoal(
+				bot,
+				2,
+				Bot_CommandKeyCarrySmokeBridgeGoal(bot));
+			return true;
+		}
+
+		if (!Bot_CommandResolveKeyCarrySmokeBridgeArrival(bot, *slot)) {
+			return true;
+		}
+
+		const Vector3 goal = slot->keyCarryBridgeArrivalGoal;
+		if (!BotNav_SetInteractionArrivalRouteRequest(
+				slot->keyCarryBridgeArrivalInteractionGoal,
+				request)) {
+			return true;
+		}
+
+		botFrameCommandStatus.keyCarryBridgeArrivalRouteRequests++;
+		(void)BotNav_RecordMoverRideState(
+			bot,
+			slot->keyCarryBridgeArrivalInteractionGoal.entityNumber,
+			BotNavMoverRidePhase::Ride,
+			&slot->keyCarryBridgeArrivalInteractionGoal);
+		Bot_CommandRecordKeyCarrySmokeGoal(bot, 3, goal);
+		(void)Bot_CommandKeyCarrySmokeBridgeArrivalReached(bot, *slot, goal);
+		return true;
+	}
+
+	const Vector3 goal = Bot_CommandKeyCarrySmokeLockGoal();
+	(void)Bot_CommandMaybeActivateKeyCarrySmokeLock(bot, *slot, goal);
+	request->hasPositionGoal = true;
+	request->positionGoal[0] = goal.x;
+	request->positionGoal[1] = goal.y;
+	request->positionGoal[2] = goal.z;
+
+	botFrameCommandStatus.keyCarryLockRouteRequests++;
+	botFrameCommandStatus.lastKeyCarryLockRequiredItem = IT_KEY_RED_KEY;
+	Bot_CommandRecordKeyCarrySmokeGoal(
+		bot,
+		Bot_CommandKeyCarrySmokeInventory(bot) > 0 ? 3 : 4,
+		goal);
+	return true;
+}
+
+void Bot_CommandBuildRouteRequest(gentity_t *bot, BotNavRouteRequest *request) {
 	if (request == nullptr) {
 		return;
 	}
 
 	*request = {};
+	if (Bot_CommandBuildKeyCarrySmokeRouteRequest(bot, request)) {
+		return;
+	}
+	if (Bot_CommandBuildKeyedPathSmokeRouteRequest(bot, request)) {
+		return;
+	}
+
 	const int travelTypeGoal = Bot_CommandTravelTypeGoal();
 	if (travelTypeGoal > 0) {
 		request->hasTravelTypeGoal = true;
@@ -11210,10 +12434,73 @@ Vector3 Bot_CommandRoutePoint(const BotLibAdapterRouteSteer &route, int pointInd
 	};
 }
 
+Vector3 Bot_CommandRouteGoal(const BotLibAdapterRouteSteer &route) {
+	return {
+		route.goalOrigin[0],
+		route.goalOrigin[1],
+		route.goalOrigin[2]
+	};
+}
+
 float Bot_CommandHorizontalDistanceSquared(const Vector3 &a, const Vector3 &b) {
 	const float dx = a.x - b.x;
 	const float dy = a.y - b.y;
 	return dx * dx + dy * dy;
+}
+
+int Bot_CommandFindRoutePointIndex(
+	const BotLibAdapterRouteSteer &route,
+	int routePointCount,
+	const Vector3 &target,
+	bool *approximateMatch) {
+	int bestApproxIndex = -1;
+	float bestApproxDistanceSquared = std::numeric_limits<float>::max();
+	if (approximateMatch != nullptr) {
+		*approximateMatch = false;
+	}
+
+	for (int pointIndex = 0; pointIndex < routePointCount; ++pointIndex) {
+		const Vector3 point = Bot_CommandRoutePoint(route, pointIndex);
+		const float distanceSquared = (point - target).lengthSquared();
+		if (distanceSquared <= BOT_COMMAND_ROUTE_TARGET_MATCH_DIST_SQUARED) {
+			return pointIndex;
+		}
+
+		const float horizontalDistanceSquared =
+			Bot_CommandHorizontalDistanceSquared(point, target);
+		const float verticalDistance = std::abs(point.z - target.z);
+		if ((distanceSquared <= BOT_COMMAND_ROUTE_TARGET_APPROX_MATCH_DIST_SQUARED ||
+			 (horizontalDistanceSquared <= BOT_COMMAND_ROUTE_TARGET_APPROX_HORIZONTAL_DIST_SQUARED &&
+			  verticalDistance <= BOT_COMMAND_ROUTE_TARGET_APPROX_VERTICAL_DIST)) &&
+			distanceSquared < bestApproxDistanceSquared) {
+			bestApproxIndex = pointIndex;
+			bestApproxDistanceSquared = distanceSquared;
+		}
+	}
+	if (bestApproxIndex >= 0 && approximateMatch != nullptr) {
+		*approximateMatch = true;
+	}
+	return bestApproxIndex;
+}
+
+bool Bot_CommandRouteTargetTraceClear(
+	const gentity_t *bot,
+	const BotLibAdapterRouteSteer &route,
+	const Vector3 &target,
+	int pointIndex,
+	bool goalFallback) {
+	const float targetPoint[3] = { target.x, target.y, target.z };
+	botFrameCommandStatus.lookAheadTraceChecks++;
+	if (BotNav_RouteTargetTraceClear(bot, &route, targetPoint)) {
+		return true;
+	}
+
+	botFrameCommandStatus.lookAheadTraceBlocks++;
+	botFrameCommandStatus.lastLookAheadTraceBlockedIndex = pointIndex;
+	if (goalFallback) {
+		botFrameCommandStatus.lookAheadGoalTraceBlocks++;
+	}
+	return false;
 }
 
 Vector3 Bot_CommandApplyVelocityLead(const gentity_t *bot, const Vector3 &target, const Vector3 &currentDirection) {
@@ -11254,22 +12541,89 @@ Vector3 Bot_CommandSelectRouteTarget(const gentity_t *bot, const BotLibAdapterRo
 		route.moveTarget[1],
 		route.moveTarget[2]
 	};
-	int selectedIndex = -1;
+	bool approximateMoveTargetMatch = false;
+	const int moveTargetIndex =
+		Bot_CommandFindRoutePointIndex(
+			route,
+			routePointCount,
+			target,
+			&approximateMoveTargetMatch);
+	int selectedIndex = moveTargetIndex;
+	int closePointSkips = 0;
+	bool targetConsumed = false;
 
 	botFrameCommandStatus.lastLookAheadPointCount = routePointCount;
 	botFrameCommandStatus.lastLookAheadIndex = -1;
+	botFrameCommandStatus.lastLookAheadMoveTargetIndex = moveTargetIndex;
+	botFrameCommandStatus.lastLookAheadStartIndex = -1;
+	botFrameCommandStatus.lastLookAheadClosePointSkips = 0;
+	botFrameCommandStatus.lastLookAheadTraceBlockedIndex = -1;
 	if (routePointCount <= 0) {
 		return target;
 	}
 
-	target = Bot_CommandRoutePoint(route, 0);
-	selectedIndex = 0;
+	if (moveTargetIndex > 0) {
+		botFrameCommandStatus.lookAheadPreservedMoveTargets++;
+	}
+	if (approximateMoveTargetMatch) {
+		botFrameCommandStatus.lookAheadApproxMoveTargetMatches++;
+	}
 
-	if (routePointCount > 1) {
+	if (selectedIndex < 0) {
+		botFrameCommandStatus.lookAheadUnmatchedMoveTargets++;
+		if (Bot_CommandHorizontalDistanceSquared(bot->s.origin, target) >=
+			BOT_COMMAND_ROUTE_TARGET_MIN_DIST_SQUARED) {
+			botFrameCommandStatus.lastLookAheadIndex = selectedIndex;
+			return target;
+		}
+
+		selectedIndex = 0;
+		target = Bot_CommandRoutePoint(route, selectedIndex);
+	}
+
+	if (Bot_CommandHorizontalDistanceSquared(bot->s.origin, target) <
+		BOT_COMMAND_ROUTE_TARGET_MIN_DIST_SQUARED) {
+		closePointSkips++;
+		targetConsumed = true;
+	}
+
+	const int lookAheadStart = std::clamp(selectedIndex + 1, 0, routePointCount);
+	botFrameCommandStatus.lastLookAheadStartIndex = lookAheadStart;
+	if (lookAheadStart < routePointCount) {
 		botFrameCommandStatus.lookAheadAttempts++;
-		for (int pointIndex = 1; pointIndex < routePointCount; ++pointIndex) {
+		bool sequentialFallbackUsed = false;
+		for (int pointIndex = lookAheadStart; pointIndex < routePointCount; ++pointIndex) {
 			const Vector3 point = Bot_CommandRoutePoint(route, pointIndex);
-			if (Bot_CommandHorizontalDistanceSquared(bot->s.origin, point) > BOT_COMMAND_LOOKAHEAD_DIST_SQUARED) {
+			const float distanceSquared =
+				Bot_CommandHorizontalDistanceSquared(bot->s.origin, point);
+			if (distanceSquared < BOT_COMMAND_ROUTE_TARGET_MIN_DIST_SQUARED) {
+				closePointSkips++;
+				continue;
+			}
+			if (distanceSquared > BOT_COMMAND_LOOKAHEAD_DIST_SQUARED) {
+				break;
+			}
+			if (targetConsumed && !sequentialFallbackUsed) {
+				target = point;
+				selectedIndex = pointIndex;
+				sequentialFallbackUsed = true;
+				botFrameCommandStatus.lookAheadSequentialFallbacks++;
+				if (!Bot_CommandRouteTargetTraceClear(
+						bot,
+						route,
+						point,
+						pointIndex,
+						false)) {
+					break;
+				}
+				continue;
+			}
+			if (!Bot_CommandRouteTargetTraceClear(
+					bot,
+					route,
+					point,
+					pointIndex,
+					false)) {
 				break;
 			}
 
@@ -11278,8 +12632,27 @@ Vector3 Bot_CommandSelectRouteTarget(const gentity_t *bot, const BotLibAdapterRo
 		}
 	}
 
+	if (closePointSkips > 0) {
+		botFrameCommandStatus.lookAheadClosePointSkips += closePointSkips;
+		botFrameCommandStatus.lastLookAheadClosePointSkips = closePointSkips;
+	}
+	if (Bot_CommandHorizontalDistanceSquared(bot->s.origin, target) <
+		BOT_COMMAND_ROUTE_TARGET_MIN_DIST_SQUARED) {
+		const Vector3 goal = Bot_CommandRouteGoal(route);
+		if (Bot_CommandHorizontalDistanceSquared(bot->s.origin, goal) >=
+			BOT_COMMAND_ROUTE_TARGET_MIN_DIST_SQUARED &&
+			Bot_CommandRouteTargetTraceClear(
+				bot,
+				route,
+				goal,
+				routePointCount,
+				true)) {
+			target = goal;
+			botFrameCommandStatus.lookAheadGoalFallbacks++;
+		}
+	}
 	botFrameCommandStatus.lastLookAheadIndex = selectedIndex;
-	if (selectedIndex > 0) {
+	if (selectedIndex > moveTargetIndex) {
 		botFrameCommandStatus.lookAheadUses++;
 	}
 	return target;
@@ -11291,11 +12664,7 @@ Vector3 Bot_CommandAnglesToTarget( const gentity_t * bot, const BotLibAdapterRou
 	direction.z = 0.0f;
 
 	if (direction.lengthSquared() < 1.0f) {
-		target = {
-			route.goalOrigin[0],
-			route.goalOrigin[1],
-			route.goalOrigin[2]
-		};
+		target = Bot_CommandRouteGoal(route);
 		direction = target - bot->s.origin;
 		direction.z = 0.0f;
 	}
@@ -11355,6 +12724,44 @@ Vector3 Bot_CommandNormalizeDesiredViewAngles(Vector3 angles) {
 	angles[YAW] = anglemod(angles[YAW]);
 	angles[ROLL] = 0.0f;
 	return angles;
+}
+
+void Bot_CommandApplyRouteMovement(
+	const Vector3 &routeAngles,
+	const Vector3 &viewAngles,
+	usercmd_t *cmd) {
+	if (cmd == nullptr) {
+		return;
+	}
+
+	const float yawDelta =
+		Bot_CommandNormalizeSignedAngle(routeAngles[YAW] - viewAngles[YAW]);
+	const float yawDeltaRadians = DEG2RAD(yawDelta);
+	float forwardMove = std::cos(yawDeltaRadians) * BOT_COMMAND_ROUTE_MOVE_SPEED;
+	float sideMove = -std::sin(yawDeltaRadians) * BOT_COMMAND_ROUTE_MOVE_SPEED;
+
+	if (std::abs(forwardMove) < BOT_COMMAND_ROUTE_STRAFE_EPSILON) {
+		forwardMove = 0.0f;
+	}
+	if (std::abs(sideMove) < BOT_COMMAND_ROUTE_STRAFE_EPSILON) {
+		sideMove = 0.0f;
+	}
+
+	cmd->forwardMove = forwardMove;
+	cmd->sideMove = sideMove;
+	botFrameCommandStatus.routeMovementProjectedCommands++;
+	if (std::abs(sideMove) >= BOT_COMMAND_ROUTE_STRAFE_EPSILON) {
+		botFrameCommandStatus.routeMovementStrafeCommands++;
+	}
+	if (forwardMove < -BOT_COMMAND_ROUTE_STRAFE_EPSILON) {
+		botFrameCommandStatus.routeMovementBackpedalCommands++;
+	}
+	botFrameCommandStatus.lastRouteMovementYawDelta =
+		static_cast<int>(std::round(yawDelta));
+	botFrameCommandStatus.lastRouteMovementForwardMove =
+		static_cast<int>(std::round(forwardMove));
+	botFrameCommandStatus.lastRouteMovementSideMove =
+		static_cast<int>(std::round(sideMove));
 }
 
 Vector3 Bot_CommandAnglesToUserCommand(const gentity_t *bot, Vector3 desiredAngles) {
@@ -12237,10 +13644,10 @@ void Bot_CommandRecordCoopDoorElevatorLast(
 	botFrameCommandStatus.lastCoopDoorElevatorIntent = static_cast<int>(policy.intent);
 }
 
-void Bot_CommandApplyRecoveryMove(const gentity_t *bot, usercmd_t *cmd) {
+void Bot_CommandApplyRecoveryMove(gentity_t *bot, const Vector3 &viewAngles, usercmd_t *cmd) {
 	const int clientIndex = Bot_PerceptionClientIndex(bot);
 	BotNavRecoveryMove recovery{};
-	if (!BotNav_GetRecoveryMove(bot, &recovery)) {
+	if (!BotNav_GetRecoveryMove(bot, viewAngles.data(), &recovery)) {
 		Bot_CommandClearCoopInteractionRetryOwner(clientIndex);
 		Bot_CommandClearCoopDoorElevatorOwner(clientIndex);
 		return;
@@ -12265,6 +13672,9 @@ void Bot_CommandApplyRecoveryMove(const gentity_t *bot, usercmd_t *cmd) {
 		botFrameCommandStatus.interactionWaitCommandUses++;
 		botFrameCommandStatus.lastInteractionCommandAction = recovery.interactionAction;
 		botFrameCommandStatus.lastInteractionCommandEntity = recovery.interactionEntity;
+	} else if (recovery.hasMovement) {
+		cmd->forwardMove = recovery.forwardMove;
+		cmd->sideMove = recovery.sideMove;
 	} else {
 		cmd->forwardMove = BOT_COMMAND_STUCK_RECOVERY_FORWARD_MOVE;
 		cmd->sideMove = BOT_COMMAND_STUCK_RECOVERY_SIDE_MOVE * static_cast<float>(recovery.sideSign);
@@ -12275,6 +13685,7 @@ void Bot_CommandApplyRecoveryMove(const gentity_t *bot, usercmd_t *cmd) {
 		botFrameCommandStatus.interactionUseCommandUses++;
 		botFrameCommandStatus.lastInteractionCommandAction = recovery.interactionAction;
 		botFrameCommandStatus.lastInteractionCommandEntity = recovery.interactionEntity;
+		(void)Bot_CommandTryDirectUseRecoveryInteraction(bot, recovery);
 	}
 
 	if (coopInteractionRetryOwner && (recovery.wait || recovery.use)) {
@@ -12781,7 +14192,8 @@ BotActionDecision Bot_CommandSampleActionDecision(gentity_t *bot) {
 Vector3 Bot_CommandAnglesForDecision(
 	gentity_t *bot,
 	const BotLibAdapterRouteSteer &route,
-	const BotActionDecision &decision) {
+	const BotActionDecision &decision,
+	const Vector3 &routeAngles) {
 	if (decision.pressAttack) {
 		if (Bot_CommandSmokeEngageEnemy() || Bot_CommandSmokeWeaponSwitch()) {
 			BotCombatEnemyFacts facts{};
@@ -12813,7 +14225,8 @@ Vector3 Bot_CommandAnglesForDecision(
 		}
 	}
 
-	return Bot_CommandAnglesToTarget(bot, route);
+	(void)route;
+	return routeAngles;
 }
 
 BotActionCommandDispatchOutcome Bot_CommandDispatchOutcomeForFailure(
@@ -13446,6 +14859,15 @@ void BotBrain_PrintNavInteractionContextStatus(
 			  "interaction_world_hazards={} "
 			  "interaction_world_use_entities={} "
 			  "interaction_world_touch_entities={} "
+			  "interaction_world_target_entities={} "
+			  "interaction_world_progression_targets={} "
+			  "interaction_world_target_links={} "
+			  "interaction_world_named_targets={} "
+			  "interaction_world_key_entities={} "
+			  "interaction_world_key_items={} "
+			  "interaction_world_key_locks={} "
+			  "interaction_world_key_path_entities={} "
+			  "interaction_world_progression_entities={} "
 			  "last_nav_interaction_entity={} "
 			  "last_nav_interaction_spawn_count={} "
 			  "last_nav_interaction_origin_x={} "
@@ -13472,6 +14894,15 @@ void BotBrain_PrintNavInteractionContextStatus(
 			  routeStatus.interactionWorldHazards,
 			  routeStatus.interactionWorldUseEntities,
 			  routeStatus.interactionWorldTouchEntities,
+			  routeStatus.interactionWorldTargetEntities,
+			  routeStatus.interactionWorldProgressionTargets,
+			  routeStatus.interactionWorldTargetLinks,
+			  routeStatus.interactionWorldNamedTargets,
+			  routeStatus.interactionWorldKeyEntities,
+			  routeStatus.interactionWorldKeyItems,
+			  routeStatus.interactionWorldKeyLocks,
+			  routeStatus.interactionWorldKeyPathEntities,
+			  routeStatus.interactionWorldProgressionEntities,
 			  routeStatus.lastInteractionEntity,
 			  routeStatus.lastInteractionSpawnCount,
 			  routeStatus.lastInteractionOriginX,
@@ -13639,6 +15070,26 @@ int BotChatPolicy_ReplyMatchResult() {
 	return botChatReplyPolicyStatus.matchResult;
 }
 
+int BotChatPolicy_ReplyMatchResultUnknown() {
+	return botChatReplyPolicyStatus.matchResultUnknown;
+}
+
+int BotChatPolicy_ReplyMatchResultWin() {
+	return botChatReplyPolicyStatus.matchResultWin;
+}
+
+int BotChatPolicy_ReplyMatchResultLoss() {
+	return botChatReplyPolicyStatus.matchResultLoss;
+}
+
+int BotChatPolicy_ReplyMatchResultTie() {
+	return botChatReplyPolicyStatus.matchResultTie;
+}
+
+int BotChatPolicy_ReplyMatchResultAbort() {
+	return botChatReplyPolicyStatus.matchResultAbort;
+}
+
 int BotChatPolicy_ReplySubmitted() {
 	return botChatReplyPolicyStatus.submitted;
 }
@@ -13681,6 +15132,15 @@ int BotChatPolicy_LastReplyPhraseVariant() {
 
 int BotChatPolicy_LastReplyEvent() {
 	return botChatReplyPolicyStatus.lastEvent;
+}
+
+int BotChatPolicy_LastMatchResultOutcome() {
+	return botChatReplyPolicyStatus.lastMatchResultOutcome;
+}
+
+const char *BotChatPolicy_LastMatchResultOutcomeName() {
+	return BotChatPolicy_MatchResultOutcomeName(
+		botChatReplyPolicyStatus.lastMatchResultOutcome);
 }
 
 int BotChatPolicy_LiveEnabled() {
@@ -13892,6 +15352,10 @@ bool BotBrain_BuildFrameCommand( gentity_t * bot, usercmd_t * cmd ) {
 		botFrameCommandStatus.interactionWaitCommandUses;
 	const int behaviorArbitrationInteractionUseCommandUsesBefore =
 		botFrameCommandStatus.interactionUseCommandUses;
+	const int behaviorArbitrationInteractionDirectUseActivationsBefore =
+		botFrameCommandStatus.interactionDirectUseActivations;
+	const int behaviorArbitrationTravelTypeElevatorRideObservationFramesBefore =
+		botFrameCommandStatus.travelTypeElevatorRideObservationFrames;
 	const int behaviorArbitrationCoopProgressWaitCommandsBefore =
 		botFrameCommandStatus.coopProgressWaitCommands;
 	const int behaviorArbitrationCoopAntiBlockCommandsBefore =
@@ -13917,7 +15381,7 @@ bool BotBrain_BuildFrameCommand( gentity_t * bot, usercmd_t * cmd ) {
 	BotObjectiveRouteGoal ctfCarrierSupportRouteGoal{};
 	BotObjectiveAssignment ctfDroppedFlagRouteAssignment{};
 	BotObjectiveRouteGoal ctfDroppedFlagRouteGoal{};
-	Bot_CommandBuildRouteRequest(&routeRequest);
+	Bot_CommandBuildRouteRequest(bot, &routeRequest);
 	(void)Bot_CommandApplyTimedRouteGoal(bot, &routeRequest);
 	const bool ctfObjectiveRouteRequested =
 		Bot_CommandBuildCtfObjectiveRoute(
@@ -14049,13 +15513,15 @@ bool BotBrain_BuildFrameCommand( gentity_t * bot, usercmd_t * cmd ) {
 		route);
 
 	cmd->msec = Bot_CommandMsec();
-	cmd->angles = Bot_CommandAnglesToUserCommand(
-		bot,
-		Bot_CommandAnglesForDecision(bot, route, commandDecision));
-	cmd->forwardMove = 180.0f;
+	const Vector3 routeMovementAngles = Bot_CommandAnglesToTarget(bot, route);
+	const Vector3 desiredViewAngles =
+		Bot_CommandAnglesForDecision(bot, route, commandDecision, routeMovementAngles);
+	cmd->angles = Bot_CommandAnglesToUserCommand(bot, desiredViewAngles);
+	Bot_CommandApplyRouteMovement(routeMovementAngles, desiredViewAngles, cmd);
 	cmd->serverFrame = gi.ServerFrame();
 	Bot_CommandApplyMovementState(bot, route, cmd);
-	Bot_CommandApplyRecoveryMove(bot, cmd);
+	Bot_CommandApplyRecoveryMove(bot, desiredViewAngles, cmd);
+	(void)Bot_CommandObserveTravelTypeElevatorRide(bot, smokeSlot);
 	(void)Bot_CommandApplyCoopDoorElevatorHold(
 		bot,
 		objectivePolicies.coopPolicy,
@@ -14112,6 +15578,10 @@ bool BotBrain_BuildFrameCommand( gentity_t * bot, usercmd_t * cmd ) {
 			behaviorArbitrationInteractionWaitCommandUsesBefore ||
 		botFrameCommandStatus.interactionUseCommandUses >
 			behaviorArbitrationInteractionUseCommandUsesBefore ||
+		botFrameCommandStatus.interactionDirectUseActivations >
+			behaviorArbitrationInteractionDirectUseActivationsBefore ||
+		botFrameCommandStatus.travelTypeElevatorRideObservationFrames >
+			behaviorArbitrationTravelTypeElevatorRideObservationFramesBefore ||
 		botFrameCommandStatus.coopProgressWaitCommands >
 			behaviorArbitrationCoopProgressWaitCommandsBefore ||
 		botFrameCommandStatus.coopAntiBlockCommands >
@@ -14457,6 +15927,25 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  routeStatus.cornerCutChecks,
 			  routeStatus.cornerCutTraceAttempts,
 			  routeStatus.cornerCutApplications);
+
+	BotBrain_PrintStatusFmt(
+		"q3a_bot_nav_policy_status "
+			  "stuck_recovery_probe_checks={} "
+			  "stuck_recovery_probe_uses={} "
+			  "stuck_recovery_probe_blocks={} "
+			  "stuck_recovery_probe_fallbacks={} "
+			  "last_stuck_recovery_probe_candidate={} "
+			  "last_stuck_recovery_probe_fraction={} "
+			  "last_stuck_recovery_forward_move={} "
+			  "last_stuck_recovery_side_move={}\n",
+			  routeStatus.stuckRecoveryProbeChecks,
+			  routeStatus.stuckRecoveryProbeUses,
+			  routeStatus.stuckRecoveryProbeBlocks,
+			  routeStatus.stuckRecoveryProbeFallbacks,
+			  routeStatus.lastStuckRecoveryProbeCandidate,
+			  routeStatus.lastStuckRecoveryProbeFraction,
+			  routeStatus.lastStuckRecoveryForwardMove,
+			  routeStatus.lastStuckRecoverySideMove);
 
 	BotBrain_PrintActionProofStatus(actionStatus, itemStatus, combatStatus);
 	BotBrain_PrintActionDetailProofStatus(actionStatus, itemStatus, combatStatus);
@@ -15028,6 +16517,16 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  routeStatus.itemGoalDesirabilityStaggerDeferrals);
 
 	BotBrain_PrintStatusFmt(
+		"q3a_bot_nav_policy_status stuck_target_reached_progresses={} "
+			  "stuck_consumed_target_stalls={} "
+			  "last_stuck_target_distance_sq={} "
+			  "last_stuck_consumed_target={}\n",
+			  routeStatus.stuckTargetReachedProgresses,
+			  routeStatus.stuckConsumedTargetStalls,
+			  routeStatus.lastStuckTargetDistanceSq,
+			  routeStatus.lastStuckConsumedTarget);
+
+	BotBrain_PrintStatusFmt(
 		"q3a_bot_frame_command_status pass={} frames={} commands={} "
 			  "route_requests={} route_queries={} route_refreshes={} "
 			  "route_reuses={} route_commands={} route_failures={} "
@@ -15490,6 +16989,50 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 
 	BotBrain_PrintStatusFmt(
 		"q3a_bot_frame_command_status "
+			  "lookahead_preserved_move_targets={} "
+			  "lookahead_approx_move_target_matches={} "
+			  "lookahead_unmatched_move_targets={} "
+			  "lookahead_close_point_skips={} "
+			  "lookahead_goal_fallbacks={} "
+			  "lookahead_sequential_fallbacks={} "
+			  "lookahead_trace_checks={} "
+			  "lookahead_trace_blocks={} "
+			  "lookahead_goal_trace_blocks={} "
+			  "last_lookahead_move_target_index={} "
+			  "last_lookahead_start_index={} "
+			  "last_lookahead_close_point_skips={} "
+			  "last_lookahead_trace_blocked_index={}\n",
+			  botFrameCommandStatus.lookAheadPreservedMoveTargets,
+			  botFrameCommandStatus.lookAheadApproxMoveTargetMatches,
+			  botFrameCommandStatus.lookAheadUnmatchedMoveTargets,
+			  botFrameCommandStatus.lookAheadClosePointSkips,
+			  botFrameCommandStatus.lookAheadGoalFallbacks,
+			  botFrameCommandStatus.lookAheadSequentialFallbacks,
+			  botFrameCommandStatus.lookAheadTraceChecks,
+			  botFrameCommandStatus.lookAheadTraceBlocks,
+			  botFrameCommandStatus.lookAheadGoalTraceBlocks,
+			  botFrameCommandStatus.lastLookAheadMoveTargetIndex,
+			  botFrameCommandStatus.lastLookAheadStartIndex,
+			  botFrameCommandStatus.lastLookAheadClosePointSkips,
+			  botFrameCommandStatus.lastLookAheadTraceBlockedIndex);
+
+	BotBrain_PrintStatusFmt(
+		"q3a_bot_frame_command_status "
+			  "route_movement_projected_commands={} "
+			  "route_movement_strafe_commands={} "
+			  "route_movement_backpedal_commands={} "
+			  "last_route_movement_yaw_delta={} "
+			  "last_route_movement_forward_move={} "
+			  "last_route_movement_side_move={}\n",
+			  botFrameCommandStatus.routeMovementProjectedCommands,
+			  botFrameCommandStatus.routeMovementStrafeCommands,
+			  botFrameCommandStatus.routeMovementBackpedalCommands,
+			  botFrameCommandStatus.lastRouteMovementYawDelta,
+			  botFrameCommandStatus.lastRouteMovementForwardMove,
+			  botFrameCommandStatus.lastRouteMovementSideMove);
+
+	BotBrain_PrintStatusFmt(
+		"q3a_bot_frame_command_status "
 			  "teleporter_entity_goal_requests={} "
 			  "teleporter_entity_goal_candidates={} "
 			  "teleporter_entity_goal_resolved={} "
@@ -15502,7 +17045,79 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  "last_teleporter_entity_goal_y={} "
 			  "last_teleporter_entity_goal_z={} "
 			  "last_teleporter_entity_goal_distance_sq={} "
-			  "last_teleporter_entity_goal_action={}\n",
+			  "last_teleporter_entity_goal_action={} "
+			  "interaction_goal_requests={} "
+			  "interaction_goal_candidates={} "
+			  "interaction_goal_resolved={} "
+			  "interaction_goal_invalid_skips={} "
+			  "interaction_arrival_goal_requests={} "
+			  "interaction_arrival_goal_candidates={} "
+			  "interaction_arrival_goal_resolved={} "
+			  "interaction_arrival_goal_invalid_skips={} "
+			  "interaction_arrival_mover_endpoint_checks={} "
+			  "interaction_arrival_mover_endpoint_candidates={} "
+			  "interaction_arrival_mover_endpoint_selections={} "
+			  "interaction_arrival_route_requests={} "
+			  "interaction_arrival_route_assignments={} "
+			  "interaction_arrival_route_cache_reuses={} "
+			  "interaction_arrival_route_reached={} "
+			  "interaction_arrival_route_invalid_skips={} "
+			  "interaction_mover_ride_checks={} "
+			  "interaction_mover_ride_wait_states={} "
+			  "interaction_mover_ride_board_states={} "
+			  "interaction_mover_ride_ride_states={} "
+			  "interaction_mover_ride_leave_states={} "
+			  "interaction_mover_ride_ground_states={} "
+			  "interaction_mover_ride_moving_states={} "
+			  "interaction_mover_ride_invalid_skips={} "
+			  "last_interaction_goal_entity={} "
+			  "last_interaction_goal_kind={} "
+			  "last_interaction_goal_action={} "
+			  "last_interaction_goal_area={} "
+			  "last_interaction_goal_x={} "
+			  "last_interaction_goal_y={} "
+			  "last_interaction_goal_z={} "
+			  "last_interaction_goal_distance_sq={} "
+			  "last_interaction_goal_destination_distance_sq={} "
+			  "last_interaction_arrival_goal_entity={} "
+			  "last_interaction_arrival_goal_kind={} "
+			  "last_interaction_arrival_goal_action={} "
+			  "last_interaction_arrival_goal_area={} "
+			  "last_interaction_arrival_goal_source={} "
+			  "last_interaction_arrival_goal_x={} "
+			  "last_interaction_arrival_goal_y={} "
+			  "last_interaction_arrival_goal_z={} "
+			  "last_interaction_arrival_goal_distance_sq={} "
+			  "last_interaction_arrival_goal_destination_distance_sq={} "
+			  "last_interaction_arrival_mover_endpoint_entity={} "
+			  "last_interaction_arrival_mover_endpoint_kind={} "
+			  "last_interaction_arrival_mover_endpoint_action={} "
+			  "last_interaction_arrival_mover_endpoint_area={} "
+			  "last_interaction_arrival_mover_endpoint_x={} "
+			  "last_interaction_arrival_mover_endpoint_y={} "
+			  "last_interaction_arrival_mover_endpoint_z={} "
+			  "last_interaction_arrival_mover_endpoint_distance_sq={} "
+			  "last_interaction_arrival_mover_endpoint_destination_distance_sq={} "
+			  "last_interaction_arrival_route_entity={} "
+			  "last_interaction_arrival_route_kind={} "
+			  "last_interaction_arrival_route_action={} "
+			  "last_interaction_arrival_route_area={} "
+			  "last_interaction_arrival_route_x={} "
+			  "last_interaction_arrival_route_y={} "
+			  "last_interaction_arrival_route_z={} "
+			  "last_interaction_arrival_route_distance_sq={} "
+			  "last_interaction_mover_ride_phase={} "
+			  "last_interaction_mover_ride_entity={} "
+			  "last_interaction_mover_ride_kind={} "
+			  "last_interaction_mover_ride_action={} "
+			  "last_interaction_mover_ride_area={} "
+			  "last_interaction_mover_ride_client={} "
+			  "last_interaction_mover_ride_move_state={} "
+			  "last_interaction_mover_ride_ground_entity={} "
+			  "last_interaction_mover_ride_x={} "
+			  "last_interaction_mover_ride_y={} "
+			  "last_interaction_mover_ride_z={} "
+			  "last_interaction_mover_ride_distance_sq={}\n",
 			  routeStatus.teleporterEntityGoalRequests,
 			  routeStatus.teleporterEntityGoalCandidates,
 			  routeStatus.teleporterEntityGoalResolved,
@@ -15515,7 +17130,79 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  routeStatus.lastTeleporterEntityGoalY,
 			  routeStatus.lastTeleporterEntityGoalZ,
 			  routeStatus.lastTeleporterEntityGoalDistanceSq,
-			  routeStatus.lastTeleporterEntityGoalAction);
+			  routeStatus.lastTeleporterEntityGoalAction,
+			  routeStatus.interactionGoalRequests,
+			  routeStatus.interactionGoalCandidates,
+			  routeStatus.interactionGoalResolved,
+			  routeStatus.interactionGoalInvalidSkips,
+			  routeStatus.interactionArrivalGoalRequests,
+			  routeStatus.interactionArrivalGoalCandidates,
+			  routeStatus.interactionArrivalGoalResolved,
+			  routeStatus.interactionArrivalGoalInvalidSkips,
+			  routeStatus.interactionArrivalMoverEndpointChecks,
+			  routeStatus.interactionArrivalMoverEndpointCandidates,
+			  routeStatus.interactionArrivalMoverEndpointSelections,
+			  routeStatus.interactionArrivalRouteRequests,
+			  routeStatus.interactionArrivalRouteAssignments,
+			  routeStatus.interactionArrivalRouteCacheReuses,
+			  routeStatus.interactionArrivalRouteReached,
+			  routeStatus.interactionArrivalRouteInvalidSkips,
+			  routeStatus.interactionMoverRideChecks,
+			  routeStatus.interactionMoverRideWaitStates,
+			  routeStatus.interactionMoverRideBoardStates,
+			  routeStatus.interactionMoverRideRideStates,
+			  routeStatus.interactionMoverRideLeaveStates,
+			  routeStatus.interactionMoverRideGroundStates,
+			  routeStatus.interactionMoverRideMovingStates,
+			  routeStatus.interactionMoverRideInvalidSkips,
+			  routeStatus.lastInteractionGoalEntity,
+			  routeStatus.lastInteractionGoalKind,
+			  routeStatus.lastInteractionGoalAction,
+			  routeStatus.lastInteractionGoalArea,
+			  routeStatus.lastInteractionGoalX,
+			  routeStatus.lastInteractionGoalY,
+			  routeStatus.lastInteractionGoalZ,
+			  routeStatus.lastInteractionGoalDistanceSq,
+			  routeStatus.lastInteractionGoalDestinationDistanceSq,
+			  routeStatus.lastInteractionArrivalGoalEntity,
+			  routeStatus.lastInteractionArrivalGoalKind,
+			  routeStatus.lastInteractionArrivalGoalAction,
+			  routeStatus.lastInteractionArrivalGoalArea,
+			  routeStatus.lastInteractionArrivalGoalSource,
+			  routeStatus.lastInteractionArrivalGoalX,
+			  routeStatus.lastInteractionArrivalGoalY,
+			  routeStatus.lastInteractionArrivalGoalZ,
+			  routeStatus.lastInteractionArrivalGoalDistanceSq,
+			  routeStatus.lastInteractionArrivalGoalDestinationDistanceSq,
+			  routeStatus.lastInteractionArrivalMoverEndpointEntity,
+			  routeStatus.lastInteractionArrivalMoverEndpointKind,
+			  routeStatus.lastInteractionArrivalMoverEndpointAction,
+			  routeStatus.lastInteractionArrivalMoverEndpointArea,
+			  routeStatus.lastInteractionArrivalMoverEndpointX,
+			  routeStatus.lastInteractionArrivalMoverEndpointY,
+			  routeStatus.lastInteractionArrivalMoverEndpointZ,
+			  routeStatus.lastInteractionArrivalMoverEndpointDistanceSq,
+			  routeStatus.lastInteractionArrivalMoverEndpointDestinationDistanceSq,
+			  routeStatus.lastInteractionArrivalRouteEntity,
+			  routeStatus.lastInteractionArrivalRouteKind,
+			  routeStatus.lastInteractionArrivalRouteAction,
+			  routeStatus.lastInteractionArrivalRouteArea,
+			  routeStatus.lastInteractionArrivalRouteX,
+			  routeStatus.lastInteractionArrivalRouteY,
+			  routeStatus.lastInteractionArrivalRouteZ,
+			  routeStatus.lastInteractionArrivalRouteDistanceSq,
+			  routeStatus.lastInteractionMoverRidePhase,
+			  routeStatus.lastInteractionMoverRideEntity,
+			  routeStatus.lastInteractionMoverRideKind,
+			  routeStatus.lastInteractionMoverRideAction,
+			  routeStatus.lastInteractionMoverRideArea,
+			  routeStatus.lastInteractionMoverRideClient,
+			  routeStatus.lastInteractionMoverRideMoveState,
+			  routeStatus.lastInteractionMoverRideGroundEntity,
+			  routeStatus.lastInteractionMoverRideX,
+			  routeStatus.lastInteractionMoverRideY,
+			  routeStatus.lastInteractionMoverRideZ,
+			  routeStatus.lastInteractionMoverRideDistanceSq);
 
 	BotBrain_PrintStatusFmt(
 		"q3a_bot_blackboard_status "
@@ -16719,6 +18406,7 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  "last_nav_interaction_action={} "
 			  "last_nav_interaction_kind={} "
 			  "last_nav_interaction_entity={} "
+			  "last_nav_interaction_client={} "
 			  "last_nav_interaction_distance_sq={} "
 			  "last_nav_interaction_travel_type={} "
 			  "last_nav_interaction_move_state={} "
@@ -16726,10 +18414,225 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 			  routeStatus.lastInteractionAction,
 			  routeStatus.lastInteractionKind,
 			  routeStatus.lastInteractionEntity,
+			  routeStatus.lastInteractionClient,
 			  routeStatus.lastInteractionDistanceSq,
 			  routeStatus.lastInteractionTravelType,
 			  routeStatus.lastInteractionMoveState,
 			  routeStatus.lastInteractionFramesRemaining);
+	BotBrain_PrintStatusFmt(
+		"q3a_bot_nav_policy_status "
+			  "nav_interaction_progression_candidates={} "
+			  "nav_interaction_progression_selections={} "
+			  "nav_interaction_progression_preference_selections={} "
+			  "nav_interaction_progression_target_entity_selections={} "
+			  "nav_interaction_progression_target_selections={} "
+			  "nav_interaction_progression_target_link_selections={} "
+			  "nav_interaction_progression_named_target_selections={} "
+			  "nav_interaction_progression_key_entity_selections={} "
+			  "nav_interaction_progression_key_path_candidates={} "
+			  "nav_interaction_progression_key_path_selections={} "
+			  "nav_interaction_progression_key_path_completions={} "
+			  "nav_interaction_progression_completions={} "
+			  "nav_interaction_progression_post_refreshes={} "
+			  "nav_interaction_progression_post_frames={} "
+			  "nav_interaction_progression_repeat_suppressions={} "
+			  "nav_interaction_progression_carry_completions={} "
+			  "nav_interaction_progression_carry_distinct_completions={} "
+			  "nav_interaction_progression_completed_clients={} "
+			  "nav_interaction_progression_distinct_completed_clients={} "
+			  "last_nav_interaction_progression_score={} "
+			  "last_nav_interaction_progression_preferred={} "
+			  "last_nav_interaction_target_entity={} "
+			  "last_nav_interaction_progression_target={} "
+			  "last_nav_interaction_target_link={} "
+			  "last_nav_interaction_named_target={} "
+			  "last_nav_interaction_key_entity={} "
+			  "last_nav_interaction_key_item={} "
+			  "last_nav_interaction_key_lock={} "
+			  "last_nav_interaction_key_required_item={} "
+			  "last_nav_interaction_progression_completed_entity={} "
+			  "last_nav_interaction_progression_completed_score={} "
+			  "last_nav_interaction_progression_key_path_entity={} "
+			  "last_nav_interaction_progression_key_path_score={} "
+			  "last_nav_interaction_progression_key_path_key_item={} "
+			  "last_nav_interaction_progression_key_path_key_lock={} "
+			  "last_nav_interaction_progression_key_path_required_item={} "
+			  "last_nav_interaction_progression_post_entity={} "
+			  "last_nav_interaction_progression_post_frames_remaining={} "
+			  "last_nav_interaction_progression_suppressed_entity={} "
+			  "last_nav_interaction_progression_suppressed_score={} "
+			  "last_nav_interaction_progression_carry_previous_entity={} "
+			  "last_nav_interaction_progression_carry_entity={} "
+			  "last_nav_interaction_progression_carry_distinct={} "
+			  "last_nav_interaction_progression_carry_count={} "
+			  "last_nav_interaction_progression_carry_distinct_count={}\n",
+			  routeStatus.interactionProgressionCandidates,
+			  routeStatus.interactionProgressionSelections,
+			  routeStatus.interactionProgressionPreferenceSelections,
+			  routeStatus.interactionProgressionTargetEntitySelections,
+			  routeStatus.interactionProgressionTargetSelections,
+			  routeStatus.interactionProgressionTargetLinkSelections,
+			  routeStatus.interactionProgressionNamedTargetSelections,
+			  routeStatus.interactionProgressionKeyEntitySelections,
+			  routeStatus.interactionProgressionKeyPathCandidates,
+			  routeStatus.interactionProgressionKeyPathSelections,
+			  routeStatus.interactionProgressionKeyPathCompletions,
+			  routeStatus.interactionProgressionCompletions,
+			  routeStatus.interactionProgressionPostRefreshes,
+			  routeStatus.interactionProgressionPostFrames,
+			  routeStatus.interactionProgressionRepeatSuppressions,
+			  routeStatus.interactionProgressionCarryCompletions,
+			  routeStatus.interactionProgressionCarryDistinctCompletions,
+			  routeStatus.interactionProgressionCompletedClients,
+			  routeStatus.interactionProgressionDistinctCompletedClients,
+			  routeStatus.lastInteractionProgressionScore,
+			  routeStatus.lastInteractionProgressionPreferred,
+			  routeStatus.lastInteractionTargetEntity,
+			  routeStatus.lastInteractionProgressionTarget,
+			  routeStatus.lastInteractionTargetLink,
+			  routeStatus.lastInteractionNamedTarget,
+			  routeStatus.lastInteractionKeyEntity,
+			  routeStatus.lastInteractionKeyItem,
+			  routeStatus.lastInteractionKeyLock,
+			  routeStatus.lastInteractionKeyRequiredItem,
+			  routeStatus.lastInteractionProgressionCompletedEntity,
+			  routeStatus.lastInteractionProgressionCompletedScore,
+			  routeStatus.lastInteractionProgressionKeyPathEntity,
+			  routeStatus.lastInteractionProgressionKeyPathScore,
+			  routeStatus.lastInteractionProgressionKeyPathKeyItem,
+			  routeStatus.lastInteractionProgressionKeyPathKeyLock,
+			  routeStatus.lastInteractionProgressionKeyPathRequiredItem,
+			  routeStatus.lastInteractionProgressionPostEntity,
+			  routeStatus.lastInteractionProgressionPostFramesRemaining,
+			  routeStatus.lastInteractionProgressionSuppressedEntity,
+			  routeStatus.lastInteractionProgressionSuppressedScore,
+			  routeStatus.lastInteractionProgressionCarryPreviousEntity,
+			  routeStatus.lastInteractionProgressionCarryEntity,
+			  routeStatus.lastInteractionProgressionCarryDistinct,
+			  routeStatus.lastInteractionProgressionCarryCount,
+			  routeStatus.lastInteractionProgressionCarryDistinctCount);
+	BotBrain_PrintStatusFmt(
+		"q3a_bot_nav_policy_status "
+			  "key_carry_active={} "
+			  "key_carry_prepared={} "
+			  "key_carry_key_route_requests={} "
+			  "key_carry_key_touch_attempts={} "
+			  "key_carry_key_pickups={} "
+			  "key_carry_bridge_route_requests={} "
+			  "key_carry_bridge_approach_requests={} "
+			  "key_carry_bridge_approach_ready={} "
+			  "key_carry_bridge_warps={} "
+			  "key_carry_bridge_arrival_requests={} "
+			  "key_carry_bridge_arrival_resolved={} "
+			  "key_carry_bridge_arrival_route_requests={} "
+			  "key_carry_bridge_arrival_reached={} "
+			  "key_carry_bridge_arrival_warps={} "
+			  "key_carry_bridge_interactions={} "
+			  "key_carry_bridge_interaction_commands={} "
+			  "key_carry_bridge_ride_observation_requests={} "
+			  "key_carry_bridge_ride_observation_frames={} "
+			  "key_carry_bridge_ride_observation_moving={} "
+			  "key_carry_bridge_ride_observation_grounded={} "
+			  "key_carry_bridge_ride_observation_completed={} "
+			  "key_carry_bridge_ride_observation_timeouts={} "
+			  "key_carry_lock_route_requests={} "
+			  "key_carry_lock_warps={} "
+			  "last_key_carry_client={} "
+			  "last_key_carry_phase={} "
+			  "last_key_carry_item={} "
+			  "last_key_carry_key_entity={} "
+			  "last_key_carry_bridge_entity={} "
+			  "last_key_carry_bridge_kind={} "
+			  "last_key_carry_bridge_action={} "
+			  "last_key_carry_bridge_travel_type={} "
+			  "last_key_carry_bridge_approach_distance_sq={} "
+			  "last_key_carry_bridge_arrival_distance_sq={} "
+			  "last_key_carry_bridge_ride_observation_move_state={} "
+			  "last_key_carry_bridge_ride_observation_ground_entity={} "
+			  "last_key_carry_bridge_ride_observation_elapsed_ms={} "
+			  "last_key_carry_inventory={} "
+			  "last_key_carry_pickup_inventory={} "
+			  "last_key_carry_lock_required_item={} "
+			  "last_key_carry_goal_x={} "
+			  "last_key_carry_goal_y={} "
+			  "last_key_carry_goal_z={}\n",
+			  Bot_CommandKeyCarrySmokeActive() ? 1 : 0,
+			  botFrameCommandStatus.keyCarryPrepared,
+			  botFrameCommandStatus.keyCarryKeyRouteRequests,
+			  botFrameCommandStatus.keyCarryKeyTouchAttempts,
+			  botFrameCommandStatus.keyCarryKeyPickups,
+			  botFrameCommandStatus.keyCarryBridgeRouteRequests,
+			  botFrameCommandStatus.keyCarryBridgeApproachRequests,
+			  botFrameCommandStatus.keyCarryBridgeApproachReady,
+			  botFrameCommandStatus.keyCarryBridgeWarps,
+			  botFrameCommandStatus.keyCarryBridgeArrivalRequests,
+			  botFrameCommandStatus.keyCarryBridgeArrivalResolved,
+			  botFrameCommandStatus.keyCarryBridgeArrivalRouteRequests,
+			  botFrameCommandStatus.keyCarryBridgeArrivalReached,
+			  botFrameCommandStatus.keyCarryBridgeArrivalWarps,
+			  botFrameCommandStatus.keyCarryBridgeInteractions,
+			  botFrameCommandStatus.keyCarryBridgeInteractionCommands,
+			  botFrameCommandStatus.keyCarryBridgeRideObservationRequests,
+			  botFrameCommandStatus.keyCarryBridgeRideObservationFrames,
+			  botFrameCommandStatus.keyCarryBridgeRideObservationMoving,
+			  botFrameCommandStatus.keyCarryBridgeRideObservationGrounded,
+			  botFrameCommandStatus.keyCarryBridgeRideObservationCompleted,
+			  botFrameCommandStatus.keyCarryBridgeRideObservationTimeouts,
+			  botFrameCommandStatus.keyCarryLockRouteRequests,
+			  botFrameCommandStatus.keyCarryLockWarps,
+			  botFrameCommandStatus.lastKeyCarryClient,
+			  botFrameCommandStatus.lastKeyCarryPhase,
+			  botFrameCommandStatus.lastKeyCarryItem,
+			  botFrameCommandStatus.lastKeyCarryKeyEntity,
+			  botFrameCommandStatus.lastKeyCarryBridgeEntity,
+			  botFrameCommandStatus.lastKeyCarryBridgeKind,
+			  botFrameCommandStatus.lastKeyCarryBridgeAction,
+			  botFrameCommandStatus.lastKeyCarryBridgeTravelType,
+			  botFrameCommandStatus.lastKeyCarryBridgeApproachDistanceSq,
+			  botFrameCommandStatus.lastKeyCarryBridgeArrivalDistanceSq,
+			  botFrameCommandStatus.lastKeyCarryBridgeRideObservationMoveState,
+			  botFrameCommandStatus.lastKeyCarryBridgeRideObservationGroundEntity,
+			  botFrameCommandStatus.lastKeyCarryBridgeRideObservationElapsedMs,
+			  botFrameCommandStatus.lastKeyCarryInventory,
+			  botFrameCommandStatus.lastKeyCarryPickupInventory,
+			  botFrameCommandStatus.lastKeyCarryLockRequiredItem,
+			  botFrameCommandStatus.lastKeyCarryGoalX,
+			  botFrameCommandStatus.lastKeyCarryGoalY,
+			  botFrameCommandStatus.lastKeyCarryGoalZ);
+	BotBrain_PrintStatusFmt(
+		"q3a_bot_frame_command_status "
+			  "travel_type_elevator_interactions={} "
+			  "travel_type_elevator_activation_requests={} "
+			  "travel_type_elevator_ride_observation_requests={} "
+			  "travel_type_elevator_ride_observation_frames={} "
+			  "travel_type_elevator_ride_observation_moving={} "
+			  "travel_type_elevator_ride_observation_grounded={} "
+			  "travel_type_elevator_ride_observation_completed={} "
+			  "travel_type_elevator_ride_observation_timeouts={} "
+			  "travel_type_elevator_ride_observation_invalid_skips={} "
+			  "last_travel_type_elevator_client={} "
+			  "last_travel_type_elevator_entity={} "
+			  "last_travel_type_elevator_kind={} "
+			  "last_travel_type_elevator_action={} "
+			  "last_travel_type_elevator_move_state={} "
+			  "last_travel_type_elevator_ground_entity={} "
+			  "last_travel_type_elevator_observation_elapsed_ms={}\n",
+			  botFrameCommandStatus.travelTypeElevatorInteractions,
+			  botFrameCommandStatus.travelTypeElevatorActivationRequests,
+			  botFrameCommandStatus.travelTypeElevatorRideObservationRequests,
+			  botFrameCommandStatus.travelTypeElevatorRideObservationFrames,
+			  botFrameCommandStatus.travelTypeElevatorRideObservationMoving,
+			  botFrameCommandStatus.travelTypeElevatorRideObservationGrounded,
+			  botFrameCommandStatus.travelTypeElevatorRideObservationCompleted,
+			  botFrameCommandStatus.travelTypeElevatorRideObservationTimeouts,
+			  botFrameCommandStatus.travelTypeElevatorRideObservationInvalidSkips,
+			  botFrameCommandStatus.lastTravelTypeElevatorClient,
+			  botFrameCommandStatus.lastTravelTypeElevatorEntity,
+			  botFrameCommandStatus.lastTravelTypeElevatorKind,
+			  botFrameCommandStatus.lastTravelTypeElevatorAction,
+			  botFrameCommandStatus.lastTravelTypeElevatorMoveState,
+			  botFrameCommandStatus.lastTravelTypeElevatorGroundEntity,
+			  botFrameCommandStatus.lastTravelTypeElevatorObservationElapsedMs);
 	BotBrain_PrintStatusFmt(
 		"q3a_bot_nav_policy_status "
 			  "movement_state_waterjump_commands={} "
@@ -16746,12 +18649,26 @@ void BotBrain_PrintFrameCommandStatus( int expectedMinFrames, int expectedMinCom
 		"q3a_bot_nav_policy_status "
 			  "interaction_wait_command_uses={} "
 			  "interaction_use_command_uses={} "
+			  "interaction_direct_use_activations={} "
+			  "interaction_direct_use_invalid_skips={} "
 			  "last_interaction_command_action={} "
-			  "last_interaction_command_entity={}\n",
+			  "last_interaction_command_entity={} "
+			  "last_interaction_direct_use_client={} "
+			  "last_interaction_direct_use_action={} "
+			  "last_interaction_direct_use_kind={} "
+			  "last_interaction_direct_use_entity={} "
+			  "last_interaction_direct_use_move_state={}\n",
 			  botFrameCommandStatus.interactionWaitCommandUses,
 			  botFrameCommandStatus.interactionUseCommandUses,
+			  botFrameCommandStatus.interactionDirectUseActivations,
+			  botFrameCommandStatus.interactionDirectUseInvalidSkips,
 			  botFrameCommandStatus.lastInteractionCommandAction,
-			  botFrameCommandStatus.lastInteractionCommandEntity);
+			  botFrameCommandStatus.lastInteractionCommandEntity,
+			  botFrameCommandStatus.lastInteractionDirectUseClient,
+			  botFrameCommandStatus.lastInteractionDirectUseAction,
+			  botFrameCommandStatus.lastInteractionDirectUseKind,
+			  botFrameCommandStatus.lastInteractionDirectUseEntity,
+			  botFrameCommandStatus.lastInteractionDirectUseMoveState);
 	BotBrain_PrintStatusFmt(
 		"q3a_bot_nav_policy_status "
 			  "route_corner_cut_candidates={} "

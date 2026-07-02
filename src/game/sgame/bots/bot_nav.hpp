@@ -9,9 +9,20 @@
 
 struct gentity_t;
 
+enum class BotNavMoverRidePhase {
+	None = 0,
+	Wait = 1,
+	Board = 2,
+	Ride = 3,
+	Leave = 4,
+};
+
 struct BotNavRecoveryMove {
 	int sideSign = 0;
 	int framesRemaining = 0;
+	bool hasMovement = false;
+	float forwardMove = 0.0f;
+	float sideMove = 0.0f;
 	bool wait = false;
 	bool use = false;
 	int interactionAction = 0;
@@ -22,8 +33,23 @@ struct BotNavRecoveryMove {
 struct BotNavRouteRequest {
 	bool hasPositionGoal = false;
 	float positionGoal[3] = {};
+	bool hasInteractionArrivalGoal = false;
+	int interactionArrivalEntityNumber = -1;
+	int interactionArrivalKind = 0;
+	int interactionArrivalAction = 0;
 	bool hasTravelTypeGoal = false;
 	int travelTypeGoal = 0;
+};
+
+struct BotNavInteractionGoal {
+	int entityNumber = -1;
+	int kind = 0;
+	int action = 0;
+	int area = 0;
+	int source = 0;
+	int distanceSquared = 0;
+	int destinationDistanceSquared = 0;
+	float position[3] = {};
 };
 
 struct BotNavRouteStatus {
@@ -61,9 +87,15 @@ struct BotNavRouteStatus {
 	int stuckChecks = 0;
 	int stuckStalls = 0;
 	int stuckDetections = 0;
+	int stuckTargetReachedProgresses = 0;
+	int stuckConsumedTargetStalls = 0;
 	int stuckRepathRefreshes = 0;
 	int stuckRecoveryActivations = 0;
 	int stuckRecoveryFrames = 0;
+	int stuckRecoveryProbeChecks = 0;
+	int stuckRecoveryProbeUses = 0;
+	int stuckRecoveryProbeBlocks = 0;
+	int stuckRecoveryProbeFallbacks = 0;
 	int persistentGoalRequests = 0;
 	int persistentGoalAssignments = 0;
 	int persistentGoalCacheReuses = 0;
@@ -123,6 +155,30 @@ struct BotNavRouteStatus {
 	int teleporterEntityGoalAssignments = 0;
 	int teleporterEntityGoalFallbacks = 0;
 	int teleporterEntityGoalInvalidSkips = 0;
+	int interactionGoalRequests = 0;
+	int interactionGoalCandidates = 0;
+	int interactionGoalResolved = 0;
+	int interactionGoalInvalidSkips = 0;
+	int interactionArrivalGoalRequests = 0;
+	int interactionArrivalGoalCandidates = 0;
+	int interactionArrivalGoalResolved = 0;
+	int interactionArrivalGoalInvalidSkips = 0;
+	int interactionArrivalMoverEndpointChecks = 0;
+	int interactionArrivalMoverEndpointCandidates = 0;
+	int interactionArrivalMoverEndpointSelections = 0;
+	int interactionArrivalRouteRequests = 0;
+	int interactionArrivalRouteAssignments = 0;
+	int interactionArrivalRouteCacheReuses = 0;
+	int interactionArrivalRouteReached = 0;
+	int interactionArrivalRouteInvalidSkips = 0;
+	int interactionMoverRideChecks = 0;
+	int interactionMoverRideWaitStates = 0;
+	int interactionMoverRideBoardStates = 0;
+	int interactionMoverRideRideStates = 0;
+	int interactionMoverRideLeaveStates = 0;
+	int interactionMoverRideGroundStates = 0;
+	int interactionMoverRideMovingStates = 0;
+	int interactionMoverRideInvalidSkips = 0;
 	int naturalMovementSupportAasLoaded = 0;
 	int naturalMovementSupportChecks = 0;
 	int naturalMovementSupported = 0;
@@ -160,6 +216,25 @@ struct BotNavRouteStatus {
 	int interactionWaitFrames = 0;
 	int interactionUseFrames = 0;
 	int interactionMisses = 0;
+	int interactionProgressionCandidates = 0;
+	int interactionProgressionSelections = 0;
+	int interactionProgressionPreferenceSelections = 0;
+	int interactionProgressionTargetEntitySelections = 0;
+	int interactionProgressionTargetSelections = 0;
+	int interactionProgressionTargetLinkSelections = 0;
+	int interactionProgressionNamedTargetSelections = 0;
+	int interactionProgressionKeyEntitySelections = 0;
+	int interactionProgressionKeyPathCandidates = 0;
+	int interactionProgressionKeyPathSelections = 0;
+	int interactionProgressionKeyPathCompletions = 0;
+	int interactionProgressionCompletions = 0;
+	int interactionProgressionPostRefreshes = 0;
+	int interactionProgressionPostFrames = 0;
+	int interactionProgressionRepeatSuppressions = 0;
+	int interactionProgressionCarryCompletions = 0;
+	int interactionProgressionCarryDistinctCompletions = 0;
+	int interactionProgressionCompletedClients = 0;
+	int interactionProgressionDistinctCompletedClients = 0;
 	int interactionWorldEntities = 0;
 	int interactionWorldDoors = 0;
 	int interactionWorldButtons = 0;
@@ -172,6 +247,15 @@ struct BotNavRouteStatus {
 	int interactionWorldHazards = 0;
 	int interactionWorldUseEntities = 0;
 	int interactionWorldTouchEntities = 0;
+	int interactionWorldTargetEntities = 0;
+	int interactionWorldProgressionTargets = 0;
+	int interactionWorldTargetLinks = 0;
+	int interactionWorldNamedTargets = 0;
+	int interactionWorldKeyEntities = 0;
+	int interactionWorldKeyItems = 0;
+	int interactionWorldKeyLocks = 0;
+	int interactionWorldKeyPathEntities = 0;
+	int interactionWorldProgressionEntities = 0;
 	int debugOverlayFrames = 0;
 	int debugOverlayRoutes = 0;
 	int debugOverlayGoals = 0;
@@ -263,14 +347,89 @@ struct BotNavRouteStatus {
 	int lastTeleporterEntityGoalZ = 0;
 	int lastTeleporterEntityGoalDistanceSq = 0;
 	int lastTeleporterEntityGoalAction = 0;
+	int lastInteractionGoalEntity = -1;
+	int lastInteractionGoalKind = 0;
+	int lastInteractionGoalAction = 0;
+	int lastInteractionGoalArea = 0;
+	int lastInteractionGoalX = 0;
+	int lastInteractionGoalY = 0;
+	int lastInteractionGoalZ = 0;
+	int lastInteractionGoalDistanceSq = 0;
+	int lastInteractionGoalDestinationDistanceSq = 0;
+	int lastInteractionArrivalGoalEntity = -1;
+	int lastInteractionArrivalGoalKind = 0;
+	int lastInteractionArrivalGoalAction = 0;
+	int lastInteractionArrivalGoalArea = 0;
+	int lastInteractionArrivalGoalSource = 0;
+	int lastInteractionArrivalGoalX = 0;
+	int lastInteractionArrivalGoalY = 0;
+	int lastInteractionArrivalGoalZ = 0;
+	int lastInteractionArrivalGoalDistanceSq = 0;
+	int lastInteractionArrivalGoalDestinationDistanceSq = 0;
+	int lastInteractionArrivalMoverEndpointEntity = -1;
+	int lastInteractionArrivalMoverEndpointKind = 0;
+	int lastInteractionArrivalMoverEndpointAction = 0;
+	int lastInteractionArrivalMoverEndpointArea = 0;
+	int lastInteractionArrivalMoverEndpointX = 0;
+	int lastInteractionArrivalMoverEndpointY = 0;
+	int lastInteractionArrivalMoverEndpointZ = 0;
+	int lastInteractionArrivalMoverEndpointDistanceSq = 0;
+	int lastInteractionArrivalMoverEndpointDestinationDistanceSq = 0;
+	int lastInteractionArrivalRouteEntity = -1;
+	int lastInteractionArrivalRouteKind = 0;
+	int lastInteractionArrivalRouteAction = 0;
+	int lastInteractionArrivalRouteArea = 0;
+	int lastInteractionArrivalRouteX = 0;
+	int lastInteractionArrivalRouteY = 0;
+	int lastInteractionArrivalRouteZ = 0;
+	int lastInteractionArrivalRouteDistanceSq = 0;
+	int lastInteractionMoverRidePhase = 0;
+	int lastInteractionMoverRideEntity = -1;
+	int lastInteractionMoverRideKind = 0;
+	int lastInteractionMoverRideAction = 0;
+	int lastInteractionMoverRideArea = 0;
+	int lastInteractionMoverRideClient = -1;
+	int lastInteractionMoverRideMoveState = 0;
+	int lastInteractionMoverRideGroundEntity = -1;
+	int lastInteractionMoverRideX = 0;
+	int lastInteractionMoverRideY = 0;
+	int lastInteractionMoverRideZ = 0;
+	int lastInteractionMoverRideDistanceSq = 0;
 	int lastInteractionAction = 0;
 	int lastInteractionKind = 0;
 	int lastInteractionEntity = -1;
+	int lastInteractionClient = -1;
 	int lastInteractionSpawnCount = 0;
 	int lastInteractionDistanceSq = 0;
 	int lastInteractionTravelType = 0;
 	int lastInteractionMoveState = 0;
 	int lastInteractionFramesRemaining = 0;
+	int lastInteractionProgressionScore = 0;
+	int lastInteractionProgressionPreferred = 0;
+	int lastInteractionTargetEntity = 0;
+	int lastInteractionProgressionTarget = 0;
+	int lastInteractionTargetLink = 0;
+	int lastInteractionNamedTarget = 0;
+	int lastInteractionKeyEntity = 0;
+	int lastInteractionKeyItem = 0;
+	int lastInteractionKeyLock = 0;
+	int lastInteractionKeyRequiredItem = 0;
+	int lastInteractionProgressionCompletedEntity = -1;
+	int lastInteractionProgressionCompletedScore = 0;
+	int lastInteractionProgressionKeyPathEntity = -1;
+	int lastInteractionProgressionKeyPathScore = 0;
+	int lastInteractionProgressionKeyPathKeyItem = 0;
+	int lastInteractionProgressionKeyPathKeyLock = 0;
+	int lastInteractionProgressionKeyPathRequiredItem = 0;
+	int lastInteractionProgressionPostEntity = -1;
+	int lastInteractionProgressionPostFramesRemaining = 0;
+	int lastInteractionProgressionSuppressedEntity = -1;
+	int lastInteractionProgressionSuppressedScore = 0;
+	int lastInteractionProgressionCarryPreviousEntity = -1;
+	int lastInteractionProgressionCarryEntity = -1;
+	int lastInteractionProgressionCarryDistinct = 0;
+	int lastInteractionProgressionCarryCount = 0;
+	int lastInteractionProgressionCarryDistinctCount = 0;
 	int lastInteractionOriginX = 0;
 	int lastInteractionOriginY = 0;
 	int lastInteractionOriginZ = 0;
@@ -294,10 +453,16 @@ struct BotNavRouteStatus {
 	int lastStuckClient = -1;
 	int lastStuckFrames = 0;
 	int lastStuckDistanceSq = 0;
+	int lastStuckTargetDistanceSq = 0;
 	int lastStuckProgressDelta = 0;
+	int lastStuckConsumedTarget = 0;
 	int lastStuckRecoveryClient = -1;
 	int lastStuckRecoverySide = 0;
 	int lastStuckRecoveryFramesRemaining = 0;
+	int lastStuckRecoveryProbeCandidate = -1;
+	int lastStuckRecoveryProbeFraction = 0;
+	int lastStuckRecoveryForwardMove = 0;
+	int lastStuckRecoverySideMove = 0;
 	int lastCurrentArea = 0;
 	int lastStartArea = 0;
 	int lastGoalArea = 0;
@@ -360,11 +525,45 @@ void BotNav_ResetAll();
 void BotNav_ResetClient(int clientIndex);
 bool BotNav_ProbePickupGoal(const gentity_t *bot);
 bool BotNav_GetRouteSteer(const gentity_t *bot, const BotNavRouteRequest *request, BotLibAdapterRouteSteer *route);
+bool BotNav_RouteTargetTraceClear(
+	const gentity_t *bot,
+	const BotLibAdapterRouteSteer *route,
+	const float target[3]);
+bool BotNav_FindInteractionGoal(const gentity_t *bot, int requiredKind, BotNavInteractionGoal *goal);
+bool BotNav_FindInteractionArrivalGoal(
+	const gentity_t *bot,
+	int interactionEntityNumber,
+	const float destination[3],
+	BotNavInteractionGoal *goal);
+bool BotNav_SetInteractionArrivalRouteRequest(
+	const BotNavInteractionGoal &goal,
+	BotNavRouteRequest *request);
+bool BotNav_BuildInteractionArrivalRouteRequest(
+	const gentity_t *bot,
+	int interactionEntityNumber,
+	const float destination[3],
+	BotNavRouteRequest *request,
+	BotNavInteractionGoal *goal);
+bool BotNav_InteractionArrivalRouteReached(
+	const gentity_t *bot,
+	const BotNavInteractionGoal *goal,
+	int distanceSquaredThreshold);
+bool BotNav_RecordMoverRideState(
+	const gentity_t *bot,
+	int interactionEntityNumber,
+	BotNavMoverRidePhase phase,
+	const BotNavInteractionGoal *goal = nullptr);
 bool BotNav_RequestInteractionRetry(
 	const gentity_t *bot,
 	const BotLibAdapterRouteSteer *route,
 	bool fromStuck);
+bool BotNav_ActivateInteractionNearPosition(
+	const gentity_t *bot,
+	const float position[3],
+	int requiredKind,
+	int forcedTravelType);
 bool BotNav_GetRecoveryMove(const gentity_t *bot, BotNavRecoveryMove *move);
+bool BotNav_GetRecoveryMove(const gentity_t *bot, const float viewAngles[3], BotNavRecoveryMove *move);
 bool BotNav_DrawDebugOverlay(bool drawRoute, bool drawGoal, int debugClientIndex);
 const BotNavRouteStatus &BotNav_GetRouteStatus();
 bool BotNav_GetBlackboardSnapshot(int clientIndex, BotNavBlackboardSnapshot *snapshot);

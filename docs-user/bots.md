@@ -53,6 +53,9 @@ layout, and safe profile examples.
 
 Use [Bot Cvars](bot-cvars.md) for the complete public bot cvar/default table.
 
+Use [Bot Chat](bot-chat.md) for supported bot chat cvars, live event families,
+and profile personality behavior.
+
 Use [Bot Multiplayer Playtest](bot-playtest.md) for a repeatable FFA, Duel,
 TDM, and CTF checklist when validating roaming, close-range combat, retreating,
 and objective behavior.
@@ -88,15 +91,14 @@ repeatable. It only changes bot decision-making; it does not change the actual
 item respawn rules for players or the server.
 
 `bot_allow_chat` is a default-off chat gate. Current builds preserve profile
-chat metadata and can emit one sanitized policy line per bot spawn when the cvar
-is enabled, with the initial proof line selected from the bot's chat personality
-bucket. Set `bot_chat_team_only 1` alongside it to route that proof through
-team chat. Set `bot_chat_min_interval_ms <ms>` to require a global minimum
-interval between submitted bot proof-chat lines; rate-limited attempts are
-skipped without counting as failures. Current development builds also carry
-smoke-only reply and multi-event reply selectors for validation, but richer
-conversational chat and broader live event-triggered replies are still being
-developed.
+chat metadata and can emit short live-event callouts when `bot_allow_chat 1`
+and `bot_chat_live_events 1` are both enabled. Supported events include spawn,
+route-ready, enemy-sighted, low-health, item pickup, item denial, CTF objective
+and flag-state changes, blocked routes, and match results. Set
+`bot_chat_team_only 1` to prefer team chat where applicable. Set
+`bot_chat_min_interval_ms <ms>` to require a global minimum interval between
+submitted bot chat lines; rate-limited attempts are skipped instead of queued.
+See [Bot Chat](bot-chat.md) for the event list and practical defaults.
 
 ## Behavior Experiments
 
@@ -137,10 +139,11 @@ hints can shape pickup priorities when match item/resource policy is active.
 Movement styles such as pressure, anchor, roam, and retreat can also bias
 attack, defense, roam, resource-sharing, and recovery collection priorities.
 Chat personality fields are preserved as profile metadata and now select the
-current once-per-spawn policy chat proof line when `bot_allow_chat` is
-enabled. Proof-only reply selectors also use that personality metadata in
-developer smoke validation, including a multi-event route-ready proof;
-server-facing conversation behavior is still evolving.
+current safe chat phrase bucket when `bot_allow_chat` is enabled. Live event
+chat can use spawn, route, combat, item, objective, blocked-route, low-health,
+and match-result events when `bot_chat_live_events` is also enabled. The chat
+system is intentionally conservative and rate-limited rather than
+conversational.
 
 After editing botfiles on a running server:
 

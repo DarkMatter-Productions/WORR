@@ -32,6 +32,20 @@
             "problemMatcher": []
         },
         {
+            "label": "meson: compile (fast)",
+            "type": "shell",
+            "command": "meson",
+            "args": [
+                "compile",
+                "-C",
+                "builddir-win"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        },
+        {
             "label": "install: refresh (.install)",
             "type": "shell",
             "command": "python",
@@ -53,6 +67,16 @@
             "label": "meson: build",
             "dependsOn": [
                 "meson: compile",
+                "install: refresh (.install)"
+            ],
+            "dependsOrder": "sequence",
+            "problemMatcher": [],
+            "group": "build"
+        },
+        {
+            "label": "meson: build (fast)",
+            "dependsOn": [
+                "meson: compile (fast)",
                 "install: refresh (.install)"
             ],
             "dependsOrder": "sequence",

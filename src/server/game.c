@@ -121,6 +121,10 @@ static void PF_Unicast(edict_t *ent, bool reliable, uint32_t dupe_key)
         goto clear;
     }
 
+    if (client->bot) {
+        goto clear;
+    }
+
     if (!msg_write.cursize) {
         Com_DPrintf("%s with empty data\n", __func__);
         goto clear;
@@ -332,6 +336,10 @@ static void PF_Client_Print(edict_t *ent, int level, const char *msg)
         return;
     }
 
+    if (client->bot) {
+        return;
+    }
+
     q2proto_svc_message_t message = {.type = Q2P_SVC_PRINT, .print = {0}};
     message.print.level = level;
     message.print.string = q2proto_make_string(msg);
@@ -371,6 +379,10 @@ static void PF_Center_Print(edict_t *ent, const char *msg)
     client_t* client = svs.client_pool + n - 1;
     if (client->state <= cs_zombie) {
         Com_DWPrintf("%s to a free/zombie client %d\n", __func__, n - 1);
+        return;
+    }
+
+    if (client->bot) {
         return;
     }
 
@@ -753,6 +765,10 @@ static void PF_LocalSound(edict_t *target, const vec3_t origin,
     client_t *client = svs.client_pool + clientNum;
     if (client->state <= cs_zombie) {
         Com_WPrintf("%s to a free/zombie client %d\n", __func__, clientNum);
+        return;
+    }
+
+    if (client->bot) {
         return;
     }
 

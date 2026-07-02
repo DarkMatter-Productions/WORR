@@ -106,3 +106,52 @@ The triage output groups failures into route, close-threat, weak-retreat,
 min-player, Duel queue, CTF objective, and team-spacing categories. Repeated
 or release-blocking failures are marked as scenario candidates for follow-up
 automation.
+
+## Headless Log Capture
+
+Before the final visual pass, you can collect dedicated-server evidence for
+the required Duel and CTF cases:
+
+```powershell
+python tools\bot_playtest\run_bot_playdepth_headless.py --plan .tmp\bot_playtest\bot_multiplayer_playtest.json
+```
+
+This writes `bot_playdepth_headless_runs.json`, `bot_playdepth_headless_runs.md`,
+stdout/stderr logs, and `bot_multiplayer_playtest_headless_notes.json` under a
+timestamped `.tmp\bot_playtest\headless\` folder. The generated notes include
+the `botlist` roster, expected profile coverage, observed profiles, and repro
+artifacts, but their outcomes remain `pending`. Review the match behavior
+in-game before changing those outcomes to `pass`.
+
+## Duel And CTF Release Evidence
+
+For release-candidate play-depth checks, complete at least these cases in the
+notes file:
+
+- `duel_rotation`
+- `ctf_objectives`
+
+Then build the release attachment:
+
+```powershell
+python tools\bot_playtest\build_bot_playdepth_evidence.py --plan .tmp\bot_playtest\bot_multiplayer_playtest.json --notes .tmp\bot_playtest\bot_multiplayer_playtest_notes_template.json
+```
+
+If you used the headless runner, pass its generated notes file instead after
+reviewing and updating the required outcomes.
+
+This writes `bot_duel_ctf_playdepth_evidence.json` and
+`bot_duel_ctf_playdepth_evidence.md` under `.tmp\bot_playtest`. Use the
+Markdown file as the short release-note attachment. If either required case is
+still pending, blocked, failed, or marked pass while missing required profile
+coverage, the attachment says so directly.
+
+To check whether the multiplayer milestone is ready to close, run:
+
+```powershell
+python tools\bot_playtest\check_m3_multiplayer_gate.py --scenario-report .tmp\bot_scenarios\implemented_hazard_context.json --playdepth-evidence .tmp\bot_playtest\bot_duel_ctf_playdepth_evidence.json
+```
+
+The M3 gate reports `passed` only when the automated FFA, Duel, TDM, and CTF
+scenario baseline is green and the required Duel/CTF play-depth notes are both
+recorded as passing.

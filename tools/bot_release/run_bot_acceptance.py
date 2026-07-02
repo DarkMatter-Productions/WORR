@@ -22,6 +22,9 @@ sys.path.insert(0, str(TOOLS_ROOT / "bot_surface"))
 
 import package_assets  # noqa: E402
 import generate_bot_playtest  # noqa: E402
+import build_bot_playdepth_evidence  # noqa: E402
+import check_m3_multiplayer_gate  # noqa: E402
+import run_bot_playdepth_headless  # noqa: E402
 import analyze_bot_perf  # noqa: E402
 import triage_bot_playtest  # noqa: E402
 import validate_bot_profiles  # noqa: E402
@@ -31,20 +34,44 @@ import audit_bot_surface  # noqa: E402
 REQUIRED_BOT_PROFILES = ("bulwark", "relay", "smoke", "vanguard", "vector")
 REQUIRED_AAS_MAPS = (
     "mm-rage",
+    "worr_crouch_ref",
     "q2dm1",
     "q2dm2",
+    "q2dm7",
     "q2dm8",
     "q2ctf1",
     "base1",
     "base2",
+    "fact2",
     "train",
 )
+REQUIRED_REFERENCE_BSPS = ("worr_crouch_ref",)
 REQUIRED_USER_DOCS = (
     "docs-user/bots.md",
     "docs-user/bot-cvars.md",
     "docs-user/bot-profiles.md",
+    "docs-user/bot-chat.md",
     "docs-user/bot-map-readiness.md",
     "docs-user/bot-playtest.md",
+)
+REQUIRED_CHAT_DOC_CVARS = (
+    "bot_allow_chat",
+    "bot_chat_live_events",
+    "bot_chat_min_interval_ms",
+    "bot_chat_team_only",
+)
+REQUIRED_CHAT_DOC_EVENTS = (
+    "spawn",
+    "team_ready",
+    "route_ready",
+    "item_taken",
+    "item_denied",
+    "enemy_sighted",
+    "objective_changed",
+    "flag_state",
+    "low_health",
+    "blocked",
+    "victory_defeat",
 )
 REQUIRED_PLAYTEST_MODES = ("FFA", "Duel", "TDM", "CTF")
 REQUIRED_PERF_BUDGETS = (
@@ -60,8 +87,22 @@ REQUIRED_SCENARIOS = (
     "duel_live_pacing",
     "ctf_objective_transitions",
     "coop_campaign_interaction_matrix",
-    "movement_hazard_context_gap",
+    "coop_campaign_interaction_matrix_base2",
+    "coop_campaign_interaction_depth_base2",
+    "coop_campaign_progression_chain_base2",
+    "coop_campaign_progression_consumer_base2",
+    "coop_campaign_post_interaction_base2",
+    "coop_campaign_progression_carry_base2",
+    "coop_campaign_keyed_path_train",
+    "coop_campaign_key_carry_train",
+    "movement_crouch_route",
+    "movement_hazard_context",
+    "min_players_profile_coverage",
 )
+REQUIRED_MOVEMENT_AUDIT_CHECKS = {
+    "natural_crouch": "movement_crouch_route",
+    "hazard_context": "movement_hazard_context",
+}
 
 
 @dataclass
@@ -367,22 +408,35 @@ def check_staged_aas(repo_root: pathlib.Path, install_dir: pathlib.Path, base_ga
         if size <= 0:
             failures.append(f"empty staged AAS: {rel(path, repo_root)}")
 
+    reference_bsps: dict[str, int] = {}
+    for map_name in REQUIRED_REFERENCE_BSPS:
+        path = maps_dir / f"{map_name}.bsp"
+        if not path.is_file():
+            failures.append(f"missing staged q2aas reference BSP: {rel(path, repo_root)}")
+            continue
+        size = path.stat().st_size
+        reference_bsps[map_name] = size
+        if size <= 0:
+            failures.append(f"empty staged q2aas reference BSP: {rel(path, repo_root)}")
+
     metrics = {
         "required_maps": len(REQUIRED_AAS_MAPS),
         "present_maps": len(sizes),
+        "required_reference_bsps": len(REQUIRED_REFERENCE_BSPS),
+        "present_reference_bsps": len(reference_bsps),
         "total_aas_bytes": sum(sizes.values()),
     }
     if failures:
         return fail(
             "staged_aas",
-            "required staged AAS files are missing or empty",
+            "required staged AAS/reference map files are missing or empty",
             failures,
             metrics=metrics,
             artifacts={"maps_dir": rel(maps_dir, repo_root)},
         )
     return ok(
         "staged_aas",
-        "required staged AAS files are present",
+        "required staged AAS and q2aas reference maps are present",
         metrics=metrics,
         artifacts={"maps_dir": rel(maps_dir, repo_root)},
     )
@@ -391,25 +445,49 @@ def check_staged_aas(repo_root: pathlib.Path, install_dir: pathlib.Path, base_ga
 def check_user_docs(repo_root: pathlib.Path) -> CheckResult:
     failures: list[str] = []
     metrics: dict[str, Any] = {}
+    texts: dict[str, str] = {}
     for doc in REQUIRED_USER_DOCS:
         path = repo_root / doc
         if not path.is_file():
             failures.append(f"missing user doc: {doc}")
             continue
         text = path.read_text(encoding="utf-8", errors="replace")
+        texts[doc] = text
         metrics[doc] = len(text)
 
-    bots_text = (repo_root / "docs-user" / "bots.md").read_text(
-        encoding="utf-8",
-        errors="replace",
-    ) if (repo_root / "docs-user" / "bots.md").is_file() else ""
+    bots_text = texts.get("docs-user/bots.md", "")
     for token in ("bot_min_players", "addbot", "bot_reload_profiles"):
         if token not in bots_text:
             failures.append(f"docs-user/bots.md should mention {token}")
 
+    chat_text = texts.get("docs-user/bot-chat.md", "")
+    if chat_text:
+        missing_cvars = [
+            token for token in REQUIRED_CHAT_DOC_CVARS if token not in chat_text
+        ]
+        missing_events = [
+            token for token in REQUIRED_CHAT_DOC_EVENTS if token not in chat_text
+        ]
+        metrics["chat_doc_required_cvars"] = len(REQUIRED_CHAT_DOC_CVARS)
+        metrics["chat_doc_required_events"] = len(REQUIRED_CHAT_DOC_EVENTS)
+        metrics["chat_doc_missing_cvars"] = len(missing_cvars)
+        metrics["chat_doc_missing_events"] = len(missing_events)
+        failures.extend(
+            f"docs-user/bot-chat.md should mention {token}"
+            for token in missing_cvars + missing_events
+        )
+
+    for doc in ("docs-user/bots.md", "docs-user/bot-cvars.md", "docs-user/bot-profiles.md"):
+        if texts.get(doc, "") and "bot-chat.md" not in texts[doc]:
+            failures.append(f"{doc} should link to bot-chat.md")
+
     if failures:
         return fail("user_docs", "bot user documentation is incomplete", failures, metrics=metrics)
-    return ok("user_docs", "bot user documentation covers setup, profiles, and map readiness", metrics=metrics)
+    return ok(
+        "user_docs",
+        "bot user documentation covers setup, profiles, chat, and map readiness",
+        metrics=metrics,
+    )
 
 
 def check_playtest_plan(repo_root: pathlib.Path) -> CheckResult:
@@ -505,6 +583,293 @@ def check_playtest_triage(repo_root: pathlib.Path) -> CheckResult:
     )
 
 
+def passing_playdepth_notes(plan: dict[str, Any]) -> dict[str, Any]:
+    notes = triage_bot_playtest.default_notes_from_plan(plan)
+    for case in notes.get("cases", []):
+        case_id = case.get("id")
+        if case_id == "duel_rotation":
+            case["outcome"] = "pass"
+            case["botlist"] = "B|Vanguard\nB|Vector"
+            case["profiles_observed"] = ["vanguard", "vector"]
+            case["notes"] = "Synthetic release-tooling proof: Duel required case can be recorded."
+        elif case_id == "ctf_objectives":
+            case["outcome"] = "pass"
+            case["botlist"] = "B|Vanguard\nB|Vector\nB|Bulwark\nB|Relay\nB|Smoke\nB|Vanguard"
+            case["profiles_observed"] = ["vanguard", "vector", "bulwark", "relay", "smoke"]
+            case["notes"] = "Synthetic release-tooling proof: CTF required case can be recorded."
+    return notes
+
+
+def check_playdepth_evidence_tooling(repo_root: pathlib.Path) -> CheckResult:
+    cases = generate_bot_playtest.default_playtest_cases()
+    generated_at = "2026-06-30T00:00:00Z"
+    plan = generate_bot_playtest.build_payload(
+        cases,
+        repo_root=repo_root,
+        output_dir=repo_root / ".tmp" / "bot_playtest",
+        base_game="basew",
+        generated_at=generated_at,
+    )
+    evidence = build_bot_playdepth_evidence.build_evidence(
+        plan,
+        passing_playdepth_notes(plan),
+        required_cases=build_bot_playdepth_evidence.DEFAULT_REQUIRED_CASES,
+    )
+    markdown = build_bot_playdepth_evidence.render_markdown(evidence)
+    failures: list[str] = []
+    summary = evidence.get("summary", {})
+    if evidence.get("schema") != build_bot_playdepth_evidence.SCHEMA:
+        failures.append("play-depth evidence schema mismatch")
+    if summary.get("status") != "passed":
+        failures.append(f"play-depth evidence proof did not pass: {summary.get('status')}")
+    for case_id in build_bot_playdepth_evidence.DEFAULT_REQUIRED_CASES:
+        if case_id not in evidence.get("required_cases", []):
+            failures.append(f"missing required play-depth case: {case_id}")
+        if case_id not in markdown:
+            failures.append(f"play-depth attachment markdown omits case: {case_id}")
+
+    metrics = {
+        "required_cases": int(summary.get("required_cases", 0) or 0),
+        "passed": int(summary.get("passed", 0) or 0),
+        "botlists_present": int(summary.get("botlists_present", 0) or 0),
+        "promoted_candidates": int(summary.get("promoted_candidates", 0) or 0),
+    }
+    artifacts = {
+        "tool": "tools/bot_playtest/build_bot_playdepth_evidence.py",
+        "json": ".tmp/bot_playtest/bot_duel_ctf_playdepth_evidence.json",
+        "markdown": ".tmp/bot_playtest/bot_duel_ctf_playdepth_evidence.md",
+    }
+    if failures:
+        return fail(
+            "playdepth_evidence_tooling",
+            "Duel/CTF play-depth release attachment tooling is incomplete",
+            failures,
+            metrics=metrics,
+            artifacts=artifacts,
+        )
+    return ok(
+        "playdepth_evidence_tooling",
+        "Duel/CTF play-depth release attachment tooling is ready",
+        metrics=metrics,
+        artifacts=artifacts,
+    )
+
+
+def m3_synthetic_scenario_report() -> dict[str, Any]:
+    return {
+        "scenarios": [
+            {
+                "name": name,
+                "status": "passed",
+                "returncode": 0,
+                "duration_budget_passed": True,
+                "failures": [],
+            }
+            for name in check_m3_multiplayer_gate.REQUIRED_AUTOMATED_SCENARIOS
+        ]
+    }
+
+
+def check_m3_multiplayer_gate_tooling(repo_root: pathlib.Path) -> CheckResult:
+    cases = generate_bot_playtest.default_playtest_cases()
+    plan = generate_bot_playtest.build_payload(
+        cases,
+        repo_root=repo_root,
+        output_dir=repo_root / ".tmp" / "bot_playtest",
+        base_game="basew",
+        generated_at="2026-06-30T00:00:00Z",
+    )
+    gate_report = check_m3_multiplayer_gate.evaluate_gate(
+        m3_synthetic_scenario_report(),
+        build_bot_playdepth_evidence.build_evidence(
+            plan,
+            passing_playdepth_notes(plan),
+            required_cases=build_bot_playdepth_evidence.DEFAULT_REQUIRED_CASES,
+        ),
+    )
+    markdown = check_m3_multiplayer_gate.render_markdown(gate_report)
+    summary = gate_report.get("summary", {})
+    failures: list[str] = []
+    if gate_report.get("schema") != check_m3_multiplayer_gate.SCHEMA:
+        failures.append("M3 gate schema mismatch")
+    if summary.get("status") != "passed":
+        failures.append(f"M3 synthetic gate did not pass: {summary.get('status')}")
+    for name in check_m3_multiplayer_gate.REQUIRED_AUTOMATED_SCENARIOS:
+        if name not in markdown:
+            failures.append(f"M3 gate markdown omits automated scenario: {name}")
+
+    metrics = {
+        "automated_scenarios": int(summary.get("automated_scenarios", 0) or 0),
+        "automated_passed": int(summary.get("automated_passed", 0) or 0),
+        "playdepth_cases": int(summary.get("playdepth_cases", 0) or 0),
+        "playdepth_passed": int(summary.get("playdepth_passed", 0) or 0),
+    }
+    artifacts = {
+        "tool": "tools/bot_playtest/check_m3_multiplayer_gate.py",
+        "json": ".tmp/bot_playtest/bot_m3_multiplayer_gate.json",
+        "markdown": ".tmp/bot_playtest/bot_m3_multiplayer_gate.md",
+    }
+    if failures:
+        return fail(
+            "m3_multiplayer_gate_tooling",
+            "M3 multiplayer milestone gate tooling is incomplete",
+            failures,
+            metrics=metrics,
+            artifacts=artifacts,
+        )
+    return ok(
+        "m3_multiplayer_gate_tooling",
+        "M3 multiplayer milestone gate tooling is ready",
+        metrics=metrics,
+        artifacts=artifacts,
+    )
+
+
+def check_playdepth_headless_tooling(repo_root: pathlib.Path) -> CheckResult:
+    cases = generate_bot_playtest.default_playtest_cases()
+    plan = generate_bot_playtest.build_payload(
+        cases,
+        repo_root=repo_root,
+        output_dir=repo_root / ".tmp" / "bot_playtest",
+        base_game="basew",
+        generated_at="2026-06-30T00:00:00Z",
+    )
+    selected, missing = run_bot_playdepth_headless.selected_cases(
+        plan,
+        run_bot_playdepth_headless.DEFAULT_REQUIRED_CASES,
+    )
+    failures = [f"missing required headless case: {case_id}" for case_id in missing]
+    results: list[dict[str, Any]] = []
+    for index, case in enumerate(selected):
+        command = run_bot_playdepth_headless.build_command(
+            binary=pathlib.Path(".install") / "worr_ded_x86_64.exe",
+            install_dir=pathlib.Path(".install"),
+            base_game="basew",
+            port=28100 + index,
+            case=case,
+            log_name=f"bot_playdepth_{case['id']}_proof",
+            startup_wait=12,
+            run_wait=34,
+        )
+        command_text = " ".join(command)
+        if "+map" not in command or str(case.get("map", "")) not in command:
+            failures.append(f"headless command does not map {case['id']}")
+        if command.count("+botlist") != 2:
+            failures.append(f"headless command must capture botlist twice: {case['id']}")
+        if command[-1] != "+quit":
+            failures.append(f"headless command must terminate server: {case['id']}")
+        if "bot_min_players" not in command_text:
+            failures.append(f"headless command omits bot_min_players: {case['id']}")
+
+        bot_lines = [
+            "Added bot B|Vanguard in slot 0.",
+            "Added bot B|Vector in slot 1.",
+            "  0 spawned   B|Vanguard",
+            "  1 spawned   B|Vector",
+        ]
+        if case.get("id") == "ctf_objectives":
+            bot_lines.extend(
+                [
+                    "Added bot B|Bulwark in slot 2.",
+                    "Added bot B|Relay in slot 3.",
+                    "Added bot B|Smoke in slot 4.",
+                    "  2 spawned   B|Bulwark",
+                    "  3 spawned   B|Relay",
+                    "  4 spawned   B|Smoke",
+                ]
+            )
+        combined = "\n".join(bot_lines)
+        profiles_observed = run_bot_playdepth_headless.extract_profiles(combined)
+        results.append(
+            {
+                "id": case["id"],
+                "title": case.get("title", ""),
+                "mode": case.get("mode", ""),
+                "map": case.get("map", ""),
+                "bot_target": int(case.get("bot_target", 0) or 0),
+                "port": 28100 + index,
+                "log_name": f"bot_playdepth_{case['id']}_proof",
+                "command": command,
+                "stdout_path": f".tmp/bot_playtest/headless/{case['id']}.stdout.txt",
+                "stderr_path": f".tmp/bot_playtest/headless/{case['id']}.stderr.txt",
+                "returncode": 0,
+                "timed_out": False,
+                "duration_seconds": 0.0,
+                "botlist_lines": bot_lines,
+                "bot_names": run_bot_playdepth_headless.extract_bot_names(combined),
+                "profiles_observed": profiles_observed,
+                "profile_coverage": run_bot_playdepth_headless.case_profile_coverage(
+                    case,
+                    profiles_observed,
+                ),
+                "failures": [],
+                "status": "passed",
+            }
+        )
+
+    report = run_bot_playdepth_headless.build_report(
+        plan=plan,
+        results=results,
+        missing_cases=missing,
+        output_dir=repo_root / ".tmp" / "bot_playtest" / "headless",
+    )
+    notes = run_bot_playdepth_headless.build_notes_from_results(
+        plan,
+        results,
+        pathlib.Path(".tmp") / "bot_playtest" / "headless" / "bot_playdepth_headless_runs.json",
+    )
+    markdown = run_bot_playdepth_headless.render_markdown(report)
+    summary = report.get("summary", {})
+    if report.get("schema") != run_bot_playdepth_headless.SCHEMA:
+        failures.append("headless play-depth schema mismatch")
+    if summary.get("status") != "passed":
+        failures.append(f"headless play-depth proof did not pass: {summary.get('status')}")
+    if summary.get("profile_coverage_passed") != summary.get("profile_coverage_cases"):
+        failures.append(
+            "headless play-depth proof did not satisfy expected profile coverage"
+        )
+    if "Headless Play-Depth Runs" not in markdown:
+        failures.append("headless play-depth markdown title missing")
+
+    required_note_outcomes: list[str] = []
+    for case in notes.get("cases", []):
+        if case.get("id") not in run_bot_playdepth_headless.DEFAULT_REQUIRED_CASES:
+            continue
+        required_note_outcomes.append(str(case.get("outcome", "")))
+        if case.get("outcome") != "pending":
+            failures.append(f"clean headless run must leave manual review pending: {case.get('id')}")
+        if not case.get("repro_steps"):
+            failures.append(f"headless note missing repro artifacts: {case.get('id')}")
+
+    metrics = {
+        "cases": int(summary.get("cases", 0) or 0),
+        "passed": int(summary.get("passed", 0) or 0),
+        "botlist_captures": int(summary.get("botlist_captures", 0) or 0),
+        "profile_coverage_passed": int(summary.get("profile_coverage_passed", 0) or 0),
+        "profile_coverage_cases": int(summary.get("profile_coverage_cases", 0) or 0),
+        "pending_review_notes": sum(1 for outcome in required_note_outcomes if outcome == "pending"),
+    }
+    artifacts = {
+        "tool": "tools/bot_playtest/run_bot_playdepth_headless.py",
+        "json": ".tmp/bot_playtest/headless/<stamp>/bot_playdepth_headless_runs.json",
+        "notes": ".tmp/bot_playtest/headless/<stamp>/bot_multiplayer_playtest_headless_notes.json",
+    }
+    if failures:
+        return fail(
+            "playdepth_headless_tooling",
+            "Duel/CTF headless play-depth runner tooling is incomplete",
+            failures,
+            metrics=metrics,
+            artifacts=artifacts,
+        )
+    return ok(
+        "playdepth_headless_tooling",
+        "Duel/CTF headless play-depth runner tooling is ready",
+        metrics=metrics,
+        artifacts=artifacts,
+    )
+
+
 def check_perf_tooling(repo_root: pathlib.Path) -> CheckResult:
     perf_dir = repo_root / "tools" / "bot_perf"
     failures: list[str] = []
@@ -562,6 +927,82 @@ def check_perf_tooling(repo_root: pathlib.Path) -> CheckResult:
     )
 
 
+def scenario_rows_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = payload.get("scenarios", [])
+    if isinstance(rows, list) and rows:
+        return [row for row in rows if isinstance(row, dict)]
+    catalog = payload.get("catalog", [])
+    if isinstance(catalog, list):
+        return [row for row in catalog if isinstance(row, dict)]
+    return []
+
+
+def scenario_names_from_payload(payload: dict[str, Any]) -> set[str]:
+    return {
+        str(row.get("name"))
+        for row in scenario_rows_from_payload(payload)
+        if row.get("name")
+    }
+
+
+def supplemental_scenario_names_from_payload(payload: dict[str, Any]) -> set[str]:
+    names: set[str] = set()
+    for row in scenario_rows_from_payload(payload):
+        name = row.get("name")
+        if not name:
+            continue
+        failures = row.get("failures")
+        if isinstance(failures, list) and failures:
+            continue
+        if "returncode" in row:
+            try:
+                if int(row.get("returncode") or 0) != 0:
+                    continue
+            except (TypeError, ValueError):
+                continue
+        if "duration_budget_passed" in row and not bool(row.get("duration_budget_passed")):
+            continue
+        names.add(str(name))
+    return names
+
+
+def discover_supplemental_scenario_names(
+    repo_root: pathlib.Path,
+    primary_report: pathlib.Path,
+    required_names: set[str],
+) -> tuple[set[str], list[pathlib.Path]]:
+    root = repo_root / ".tmp" / "bot_scenarios"
+    if not root.is_dir() or not required_names:
+        return set(), []
+
+    names: set[str] = set()
+    reports: list[pathlib.Path] = []
+    primary = primary_report.resolve()
+    for path in sorted(root.rglob("*.json")):
+        if not path.is_file():
+            continue
+        try:
+            if path.resolve() == primary:
+                continue
+        except OSError:
+            continue
+        try:
+            payload = load_json(path)
+        except (OSError, json.JSONDecodeError):
+            continue
+        found = supplemental_scenario_names_from_payload(payload)
+        if not found:
+            continue
+        relevant = found & required_names
+        if not relevant:
+            continue
+        names.update(relevant)
+        reports.append(path)
+        if required_names <= names:
+            break
+    return names, reports
+
+
 def scenario_report_score(path: pathlib.Path) -> tuple[int, int, int, float]:
     try:
         payload = load_json(path)
@@ -614,9 +1055,16 @@ def check_scenario_report(
         )
 
     summary = payload.get("summary", {})
-    scenarios = payload.get("scenarios", [])
+    scenarios = scenario_rows_from_payload(payload)
     scenario_names = {row.get("name") for row in scenarios if row.get("name")}
-    missing_required = sorted(set(REQUIRED_SCENARIOS) - scenario_names)
+    required_missing_from_primary = set(REQUIRED_SCENARIOS) - scenario_names
+    supplemental_names, supplemental_reports = discover_supplemental_scenario_names(
+        repo_root,
+        report_path,
+        required_missing_from_primary,
+    )
+    combined_scenario_names = scenario_names | supplemental_names
+    missing_required = sorted(set(REQUIRED_SCENARIOS) - combined_scenario_names)
     total = int(summary.get("total", len(scenarios)) or 0)
     passed = int(summary.get("passed", 0) or 0)
     failed = int(summary.get("failed", 0) or 0)
@@ -649,8 +1097,11 @@ def check_scenario_report(
         "pending": pending,
         "movement_rows": movement_rows,
         "required_scenarios": len(REQUIRED_SCENARIOS),
+        "supplemental_reports": len(supplemental_reports),
     }
     artifacts = {"scenario_report": rel(report_path, repo_root)}
+    if supplemental_reports:
+        artifacts["supplemental_scenario_reports"] = str(len(supplemental_reports))
     if failures:
         return fail(
             "scenario_evidence",
@@ -667,12 +1118,86 @@ def check_scenario_report(
     )
 
 
+def check_movement_reference_audit(repo_root: pathlib.Path, audit_path: pathlib.Path | None) -> CheckResult:
+    if audit_path is None:
+        audit_path = repo_root / ".tmp" / "bot_scenarios" / "movement_reference_gap_audit.json"
+
+    if not audit_path.is_file():
+        return fail(
+            "movement_reference_audit",
+            "movement reference audit is missing",
+            [f"missing movement reference audit: {rel(audit_path, repo_root)}"],
+            artifacts={"movement_reference_audit": rel(audit_path, repo_root)},
+        )
+
+    try:
+        payload = load_json(audit_path)
+    except (OSError, json.JSONDecodeError) as exc:
+        return fail(
+            "movement_reference_audit",
+            "movement reference audit could not be read",
+            [str(exc)],
+            artifacts={"movement_reference_audit": rel(audit_path, repo_root)},
+        )
+
+    summary = payload.get("summary", {})
+    checks = [
+        check for check in payload.get("checks", [])
+        if isinstance(check, dict) and check.get("id")
+    ]
+    by_id = {str(check.get("id")): check for check in checks}
+    failures: list[str] = []
+
+    if payload.get("status") != "accepted":
+        failures.append(f"movement reference audit status is {payload.get('status')!r}; expected 'accepted'")
+    if int(summary.get("blocked", 0) or 0) != 0:
+        failures.append(f"movement reference audit still has blocked checks: {summary.get('blocked')}")
+
+    for check_id, expected_scenario in REQUIRED_MOVEMENT_AUDIT_CHECKS.items():
+        check = by_id.get(check_id)
+        if check is None:
+            failures.append(f"movement reference audit missing check: {check_id}")
+            continue
+        if check.get("status") != "accepted":
+            failures.append(
+                f"movement reference audit check {check_id} is {check.get('status')!r}; expected 'accepted'"
+            )
+        scenario = check.get("scenario", {})
+        if not isinstance(scenario, dict) or scenario.get("name") != expected_scenario:
+            failures.append(
+                f"movement reference audit check {check_id} should use scenario {expected_scenario!r}"
+            )
+
+    metrics = {
+        "checks": int(summary.get("check_count", len(checks)) or 0),
+        "blocked": int(summary.get("blocked", 0) or 0),
+        "accepted": int(summary.get("accepted", 0) or 0),
+        "required_checks": len(REQUIRED_MOVEMENT_AUDIT_CHECKS),
+    }
+    artifacts = {"movement_reference_audit": rel(audit_path, repo_root)}
+    if failures:
+        return fail(
+            "movement_reference_audit",
+            "movement reference audit has unresolved blockers",
+            failures,
+            metrics=metrics,
+            artifacts=artifacts,
+        )
+    return ok(
+        "movement_reference_audit",
+        "movement reference audit accepts promoted crouch and hazard rows",
+        metrics=metrics,
+        artifacts=artifacts,
+    )
+
+
 def run_acceptance(
     repo_root: pathlib.Path,
     *,
     install_dir: pathlib.Path | None = None,
     base_game: str = "basew",
     scenario_report: pathlib.Path | None = None,
+    movement_reference_audit: pathlib.Path | None = None,
     min_implemented_rows: int = 114,
     allow_missing_scenario_report: bool = False,
 ) -> dict[str, Any]:
@@ -680,6 +1205,8 @@ def run_acceptance(
     install_dir = (install_dir or repo_root / ".install").resolve()
     if scenario_report is not None:
         scenario_report = scenario_report.resolve()
+    if movement_reference_audit is not None:
+        movement_reference_audit = movement_reference_audit.resolve()
 
     checks = [
         check_surface(repo_root),
@@ -691,6 +1218,9 @@ def run_acceptance(
         check_user_docs(repo_root),
         check_playtest_plan(repo_root),
         check_playtest_triage(repo_root),
+        check_playdepth_evidence_tooling(repo_root),
+        check_playdepth_headless_tooling(repo_root),
+        check_m3_multiplayer_gate_tooling(repo_root),
         check_perf_tooling(repo_root),
         check_scenario_report(
             repo_root,
@@ -698,6 +1228,7 @@ def run_acceptance(
             min_implemented_rows=min_implemented_rows,
             allow_missing=allow_missing_scenario_report,
         ),
+        check_movement_reference_audit(repo_root, movement_reference_audit),
     ]
     failures = [check for check in checks if check.status == "fail"]
     warnings = [check for check in checks if check.status == "warn" or check.warnings]
@@ -748,6 +1279,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--install-dir", type=pathlib.Path)
     parser.add_argument("--base-game", default="basew")
     parser.add_argument("--scenario-report", type=pathlib.Path)
+    parser.add_argument("--movement-reference-audit", type=pathlib.Path)
     parser.add_argument("--min-implemented-rows", type=int, default=114)
     parser.add_argument(
         "--allow-missing-scenario-report",
@@ -766,6 +1298,7 @@ def main(argv: list[str] | None = None) -> int:
         install_dir=args.install_dir,
         base_game=args.base_game,
         scenario_report=args.scenario_report,
+        movement_reference_audit=args.movement_reference_audit,
         min_implemented_rows=args.min_implemented_rows,
         allow_missing_scenario_report=args.allow_missing_scenario_report,
     )

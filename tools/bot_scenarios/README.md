@@ -141,7 +141,15 @@ Implemented:
 - `bot_chat_live_blocked`: mode `88` with `deathmatch 1`, `g_gametype 1`, `bot_allow_chat 1`, and `bot_chat_live_events 1`, verifies a blocked travel-type route failure produces a gameplay-derived `blocked` live chat event without the smoke-only event gate.
 - `bot_chat_live_item_denied`: mode `89` with `deathmatch 1`, `g_gametype 3`, `bot_allow_chat 1`, `bot_chat_live_events 1`, and `bot_team_resource_denial 1`, verifies deny-enemy resource policy pressure produces a gameplay-derived `item_denied` live chat event without the smoke-only event gate.
 - `bot_chat_live_match_result`: mode `90` with `deathmatch 1`, `g_gametype 3`, `bot_allow_chat 1`, and `bot_chat_live_events 1`, verifies native intermission/match-result state produces a gameplay-derived `victory_defeat` live chat event without the smoke-only event gate.
-- `coop_campaign_interaction_matrix`: mode `91` on `base1` with `deathmatch 0`, `coop 1`, and `bot_coop_live_loop 1`, verifies the coop live-loop interaction owners still drive route-interaction retry, campaign mover source ownership, and teammate hold behavior on a second packaged AAS map.
+- `coop_campaign_interaction_matrix`: mode `91` on `base1` with `deathmatch 0`, `coop 1`, and `bot_coop_live_loop 1`, verifies the coop live-loop interaction owners still drive route-interaction retry, campaign mover source ownership, and teammate hold behavior on a packaged campaign AAS map.
+- `coop_campaign_interaction_matrix_base2`: mode `91` on `base2` with `deathmatch 0`, `coop 1`, and `bot_coop_live_loop 1`, repeats the campaign interaction contract on the second packaged base campaign AAS map so the proof is not special-cased to `base1`.
+- `coop_campaign_interaction_depth_base2`: mode `91` on `base2` with `deathmatch 0`, `coop 1`, and `bot_coop_live_loop 1`, hard-gates deeper campaign context: buttons, triggers, movers, use/touch entities, wait/use frames, coop follow/wait/lead/resource intent, and live pickup timing.
+- `coop_campaign_progression_chain_base2`: mode `91` on `base2` with `deathmatch 0`, `coop 1`, and `bot_coop_live_loop 1`, extends the depth row with target-chain diagnostics for level-flow targets, outbound target links, named target anchors, key-entity counter exposure, and combined progression context.
+- `coop_campaign_progression_consumer_base2`: mode `91` on `base2` with `deathmatch 0`, `coop 1`, and `bot_coop_live_loop 1`, extends the progression-chain row by proving the live route-interaction chooser scores target-chain candidates, selects scored progression interactions, records at least one target-linked progression selection, and records at least one preference selection over pure nearest-distance choice.
+- `coop_campaign_post_interaction_base2`: mode `91` on `base2` with `deathmatch 0`, `coop 1`, and `bot_coop_live_loop 1`, extends the progression-consumer row by proving scored progression interactions complete after wait/use command ownership, force a route refresh, keep a post-interaction window, and suppress an immediate repeat selection.
+- `coop_campaign_progression_carry_base2`: mode `91` on `base2` with `deathmatch 0`, `coop 1`, and `bot_coop_live_loop 1`, extends the post-interaction row by proving one bot carries progression-completion state through multiple scored interactions, including distinct follow-up completed entities.
+- `coop_campaign_keyed_path_train`: mode `91` on `train` with `deathmatch 0`, `coop 1`, `bot_coop_live_loop 1`, and a keyed path position goal, proves runtime key items, `trigger_key` locks, key-path entity context, route-local key-lock selection, and required-key telemetry.
+- `coop_campaign_key_carry_train`: mode `91` on `train` with `deathmatch 0`, `coop 1`, `bot_coop_live_loop 1`, and `bot_campaign_key_carry_smoke 1`, proves red-key pickup, live `func_train` interaction-goal routing, post-mover arrival routing, mover wait/board/ride/leave telemetry, and final `trigger_key` lock carry.
 - `movement_crouch_route`: mode `92` on `worr_crouch_ref`, verifies a real generated `TRAVEL_CROUCH` route emits crouch movement-state commands instead of an expected-blocked route failure.
 - `movement_hazard_context`: mode `96` on `fact2`, verifies runtime interaction context sees accepted hurt/laser hazard entities beside normal mover, trigger, and touch context.
 - `team_fire_avoidance`: mode `34` with `deathmatch 1`, `g_gametype 3`, and `bot_team_fire_avoidance 1`, verifies TDM friendly-fire policy can suppress live attack input before `BUTTON_ATTACK` is applied.
@@ -329,6 +337,11 @@ The promoted source-backed smoke mode numbers are fixed for compatibility with s
 - `bot_chat_live_item_denied`: mode `89`
 - `bot_chat_live_match_result`: mode `90`
 - `coop_campaign_interaction_matrix`: mode `91`
+- `coop_campaign_interaction_matrix_base2`: mode `91` on `base2`
+- `coop_campaign_interaction_depth_base2`: mode `91` on `base2`
+- `coop_campaign_progression_chain_base2`: mode `91` on `base2`
+- `coop_campaign_progression_consumer_base2`: mode `91` on `base2`
+- `coop_campaign_post_interaction_base2`: mode `91` on `base2`
 - `behavior_arbitration`: mode `63`
 - `target_memory_decay`: mode `64`
 - `weapon_scoring_arsenal`: mode `65`

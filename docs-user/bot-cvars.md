@@ -44,7 +44,8 @@ specific character.
 
 ## Chat Cvars
 
-Bot chat is off by default. To test the current conservative chat behavior:
+Bot chat is off by default. To enable the current conservative live-event chat
+behavior:
 
 ```text
 set bot_allow_chat 1
@@ -55,7 +56,10 @@ set bot_chat_team_only 0
 
 `bot_chat_live_events` only matters when `bot_allow_chat` is also enabled. Use a
 nonzero `bot_chat_min_interval_ms` on public servers so event bursts do not
-produce noisy output.
+produce noisy output. Supported event families include `spawn`, `team_ready`,
+`route_ready`, `item_taken`, `item_denied`, `enemy_sighted`,
+`objective_changed`, `flag_state`, `low_health`, `blocked`, and
+`victory_defeat`.
 
 ## Related Commands
 
@@ -67,6 +71,7 @@ botlist
 bot_reload_profiles
 ```
 
-Use [Bot Profiles](bot-profiles.md) for profile fields and installed botfile
-layout, and [Bot Multiplayer Playtest](bot-playtest.md) for release-style FFA,
-Duel, TDM, and CTF checks.
+Use [Bot Chat](bot-chat.md) for supported chat events and setup, [Bot
+Profiles](bot-profiles.md) for profile fields and installed botfile layout, and
+[Bot Multiplayer Playtest](bot-playtest.md) for release-style FFA, Duel, TDM,
+and CTF checks.

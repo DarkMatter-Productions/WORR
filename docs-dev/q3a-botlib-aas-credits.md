@@ -14,6 +14,388 @@ Track source provenance, credits, licenses, and local modification notes for the
 
 ## Recent Native Validation Updates
 
+- 2026-07-02: The stuck recovery obstacle-probe follow-up is WORR-native
+  bot-nav, bot-brain, scenario-harness, roadmap, documentation, build, and
+  release-staging work with no new upstream imports claimed. Local stuck
+  recovery now probes short player-hull escape candidates when a recovery
+  window activates, stores the selected world-space direction, and projects it
+  back into view-relative usercmd movement. The fixed legacy back/strafe
+  command remains only as a no-clear fallback. The new nav-policy fields report
+  probe checks, selected probe moves, blocked probes, fallbacks, last probe
+  candidate/fraction, and last projected recovery movement. Focused
+  `recover_from_stall` evidence passed from
+  `.tmp\bot_scenarios\stuck_recovery_probe_focus2.json`; focused navigation
+  regression evidence passed 4/4 from
+  `.tmp\bot_scenarios\stuck_recovery_probe_nav_focus.json`; the fresh full
+  implemented suite passed 123/123 from
+  `.tmp\bot_scenarios\implemented_stuck_recovery_probe.json`; and release
+  acceptance passed 15/15 with 0 warnings from
+  `.tmp\bot_release\bot_release_acceptance_stuck_recovery_probe.json`.
+  Implementation details are recorded in
+  `docs-dev/q3a-botlib-stuck-recovery-obstacle-probe-2026-07-02.md`.
+- 2026-07-02: The route command trace/sequential look-ahead follow-up is
+  WORR-native bot-nav, bot-brain, scenario-harness, roadmap, documentation,
+  build, and release-staging work with no new upstream imports claimed.
+  Command steering now uses nav-layer hull trace safety before promoting
+  ordinary far look-ahead or final goal fallback targets, while already
+  consumed route nodes advance only to the first ordered non-close future route
+  point and stop further promotion when that trace is blocked. Endpoint trace
+  checks now try small vertical normalizations for AAS floor/contact points.
+  The new frame-command fields report trace checks, trace blocks,
+  goal-trace blocks, sequential fallbacks, and the last blocked look-ahead
+  index. Focused route/navigation evidence passed 12/12 from
+  `.tmp\bot_scenarios\route_sequential_trace_lookahead_focus.json`; focused
+  q2dm2 survival regression evidence passed from
+  `.tmp\bot_scenarios\route_sequential_trace_q2dm2_fix.json`; the fresh full
+  implemented suite passed 123/123 from
+  `.tmp\bot_scenarios\implemented_after_route_sequential_trace_lookahead_fix.json`;
+  and release acceptance passed 15/15 with 0 warnings from
+  `.tmp\bot_release\bot_release_acceptance_route_sequential_trace_lookahead.txt`.
+  Implementation details are recorded in
+  `docs-dev/q3a-botlib-route-command-trace-sequential-lookahead-2026-07-02.md`.
+- 2026-07-02: The consumed route target watchdog follow-up is WORR-native
+  bot-nav, bot-brain, scenario-harness, roadmap, documentation, and
+  release-staging work with no new upstream imports claimed. Route-progress
+  accounting now accepts a fresh local `route.moveTarget` arrival once, treats
+  repeated already-consumed target-radius frames as stagnant unless real goal
+  or target progress occurs, and compares target shifts horizontally to match
+  the watchdog's progress model. The new `q3a_bot_nav_policy_status` fields
+  report `stuck_target_reached_progresses`,
+  `stuck_consumed_target_stalls`, `last_stuck_target_distance_sq`, and
+  `last_stuck_consumed_target`. Focused route/combat/movement evidence passed
+  10/10 from `.tmp\bot_scenarios\route_consumed_target_watchdog_focus.json`;
+  the fresh full implemented suite passed 123/123 from
+  `.tmp\bot_scenarios\implemented_after_consumed_target_watchdog.json`, and
+  release acceptance passed 15/15 with 0 warnings from
+  `.tmp\bot_release\bot_release_acceptance_consumed_target_watchdog.json`.
+  Implementation details are recorded in
+  `docs-dev/q3a-botlib-consumed-route-target-watchdog-2026-07-02.md`.
+- 2026-07-01: The route movement projection follow-up is WORR-native
+  bot-brain, scenario-harness, roadmap, documentation, and release-staging
+  work with no new upstream imports claimed. Route command generation now
+  separates movement from view aim by projecting route yaw into view-relative
+  `forwardMove` and `sideMove`, so bots can keep moving along a route while
+  aiming at a visible combat target. The command layer also accepts bounded
+  approximate `route.moveTarget` matches and records projected route movement,
+  strafe, backpedal, unmatched-target, approximate-match, and goal-fallback
+  telemetry. Focused route/combat/movement evidence passed 10/10 from
+  `.tmp\bot_scenarios\route_spin_projection_focus.json`; the fresh full
+  implemented suite passed 123/123 from
+  `.tmp\bot_scenarios\implemented_after_route_projection_fix.json`, and
+  release acceptance passed 15/15 from
+  `.tmp\bot_release\bot_release_acceptance_route_projection_fix.json`.
+  Implementation details are recorded in
+  `docs-dev/q3a-botlib-route-movement-projection-2026-07-01.md`.
+- 2026-07-01: The route target anti-spin/status-surface follow-up is
+  WORR-native bot-brain, bot-nav, scenario, status-surface, test, and
+  documentation work with no new upstream imports claimed. Route-steered
+  commands now preserve the stabilized `route.moveTarget`, match it back into
+  the active route point list, skip already-consumed close route points, and
+  fall back to the final route goal only when the local route points are
+  exhausted. Stuck-progress accounting now tracks both final-goal and local
+  route-target progress so valid corner, switchback, and mover approaches do
+  not look stagnant. The scenario harness records look-ahead preserved-target
+  and close-point skip counters, and the full sweep restored missing live
+  match-result outcome fields on `q3a_bot_chat_policy_status`. Focused route
+  evidence passed 8/8 from
+  `.tmp\bot_scenarios\route_spin_final_after_status.json`; focused
+  `bot_chat_live_match_result` status evidence passed from
+  `.tmp\bot_scenarios\bot_chat_live_match_result_status_fix.json`; the fresh
+  full implemented suite passed 123/123 from
+  `.tmp\bot_scenarios\implemented_after_route_spin_status_fix.json`, and
+  release acceptance passed 15/15 from
+  `.tmp\bot_release\bot_release_acceptance_route_spin_fix.json`.
+  Implementation details are recorded in
+  `docs-dev/q3a-botlib-route-target-anti-spin-2026-07-01.md`.
+- 2026-07-01: The physical elevator mover activation follow-up is WORR-native
+  bot-brain, scenario, test, and documentation work with no new upstream
+  imports claimed. Recovery moves that already request `use` can now directly
+  activate platform, train, and generic mover interactions with a
+  per-client/entity cooldown. Raw mode `12` now receives a proof slot and a
+  24-frame settle window so `movement_elevator_route` hard-gates direct-use
+  activation and physical mover movement instead of route-only elevator
+  reachability. Focused evidence records direct-use activation,
+  travel-type elevator activation, ride-observation moving/completion, and
+  shared mover moving-state telemetry from
+  `.tmp\bot_scenarios\movement_elevator_physical.json`; the post-cleanup
+  focused rerun passed from
+  `.tmp\bot_scenarios\movement_elevator_physical_final.json`; the five-row
+  mover/co-op regression passed from
+  `.tmp\bot_scenarios\mover_direct_use_regression.json`; the fresh full
+  implemented suite passed 123/123 from
+  `.tmp\bot_scenarios\implemented_after_physical_elevator_mover.json`, and
+  release acceptance passed 15/15 from
+  `.tmp\bot_release\bot_release_acceptance_physical_elevator_mover_final.json`.
+  Implementation details are recorded in
+  `docs-dev/q3a-botlib-physical-elevator-mover-activation-2026-07-01.md`.
+- 2026-07-01: The generic mover lifecycle follow-up is WORR-native bot-nav,
+  scenario, test, and documentation work with no new upstream imports claimed.
+  `bot_nav` now records separate Wait and Board samples for generic WaitUse
+  mover/elevator recovery windows and preserves terminal Leave samples when
+  those interactions complete. The standalone `coop_door_elevator` and
+  umbrella `coop_live_loop` rows now hard-gate generic mover lifecycle
+  evidence with `interaction_mover_ride_invalid_skips=0`; focused evidence
+  records `interaction_mover_ride_checks=217`,
+  `interaction_mover_ride_wait_states=104`,
+  `interaction_mover_ride_board_states=104`,
+  `interaction_mover_ride_leave_states=9`,
+  `last_interaction_mover_ride_phase=4`,
+  `last_interaction_mover_ride_entity=18`, and
+  `last_interaction_mover_ride_kind=3` for both coop rows from
+  `.tmp\bot_scenarios\mover_lifecycle_after_generic_leave.json`. The fresh
+  full implemented suite passed 123/123 from
+  `.tmp\bot_scenarios\implemented_after_generic_mover_lifecycle.json`, and
+  release acceptance passed 15/15 from
+  `.tmp\bot_release\bot_release_acceptance_generic_mover_lifecycle.json`.
+  Implementation details are recorded in
+  `docs-dev/q3a-botlib-generic-mover-lifecycle-2026-07-01.md`.
+- 2026-07-01: The interaction mover ride-observation follow-up is WORR-native
+  bot-nav, bot-brain, scenario, test, and documentation work with no new
+  upstream imports claimed. `bot_brain` now keeps the train key-carry bridge
+  proof in a bounded 200 ms post-activation observation window, records
+  parked-mover sample diagnostics, and then returns to the normal
+  post-arrival/lock route. `bot_nav` preserves terminal leave-phase evidence
+  for the same mover/client so later generic recovery samples cannot overwrite
+  completed lifecycle status. Mode `91` `coop_campaign_key_carry_train`
+  focused evidence records
+  `key_carry_bridge_ride_observation_requests=1`,
+  `key_carry_bridge_ride_observation_frames=9`,
+  `key_carry_bridge_ride_observation_completed=1`,
+  `last_key_carry_bridge_ride_observation_elapsed_ms=200`,
+  `interaction_mover_ride_checks=20`,
+  `last_interaction_mover_ride_phase=4`,
+  `nav_interaction_progression_key_path_candidates=1`,
+  `nav_interaction_progression_key_path_selections=1`,
+  `last_nav_interaction_progression_key_path_required_item=70`, and
+  `key_carry_lock_warps=0` from
+  `.tmp\bot_scenarios\mover_ride_observation_final.json`; the fresh full
+  implemented suite passed 123/123 from
+  `.tmp\bot_scenarios\implemented_after_mover_ride_observation.json`, and
+  release acceptance passed 15/15 from
+  `.tmp\bot_release\bot_release_acceptance_mover_ride_observation.json`.
+  Implementation details are recorded in
+  `docs-dev/q3a-botlib-interaction-mover-ride-observation-2026-07-01.md`.
+- 2026-07-01: The interaction mover ride-state follow-up is WORR-native
+  bot-nav, bot-brain, scenario, test, and documentation work with no new
+  upstream imports claimed. `bot_nav` now records wait, board, ride, and leave
+  lifecycle telemetry for mover-like interactions, including invalid skips,
+  phase counters, mover entity/kind/action/client metadata, move-state and
+  ground-entity diagnostics, and last-position distance data. Mode `91`
+  `coop_campaign_key_carry_train` focused evidence records
+  `interaction_mover_ride_checks=5`,
+  `interaction_mover_ride_wait_states=1`,
+  `interaction_mover_ride_board_states=1`,
+  `interaction_mover_ride_ride_states=2`,
+  `interaction_mover_ride_leave_states=1`, and
+  `last_interaction_mover_ride_phase=4` from
+  `.tmp\bot_scenarios\mover_ride_state.json`; the fresh full implemented
+  suite passed 123/123 from
+  `.tmp\bot_scenarios\implemented_after_mover_ride_state.json`, and release
+  acceptance passed 15/15. Implementation details are recorded in
+  `docs-dev/q3a-botlib-interaction-mover-ride-state-2026-07-01.md`.
+- 2026-07-01: The interaction-arrival mover-endpoint follow-up is WORR-native
+  bot-nav, bot-brain, scenario, test, and documentation work with no new
+  upstream imports claimed. `bot_nav` now inspects mover destination and target
+  link endpoints while resolving the post-interaction arrival side of a route,
+  records endpoint checks/candidates/selections and last-endpoint metadata, and
+  still permits a closer routeable destination-offset point to win when it is
+  the safer final arrival goal. Mode `91` `coop_campaign_key_carry_train`
+  focused evidence records `interaction_arrival_mover_endpoint_checks=3`,
+  `interaction_arrival_mover_endpoint_candidates=3`,
+  `interaction_arrival_mover_endpoint_selections=2`,
+  `last_interaction_arrival_mover_endpoint_entity=60`, and
+  `last_interaction_arrival_mover_endpoint_area=3131` from
+  `.tmp\bot_scenarios\interaction_arrival_mover_endpoint.json`; the fresh full
+  implemented suite passed 123/123 from
+  `.tmp\bot_scenarios\implemented_after_interaction_arrival_mover_endpoint.json`,
+  and release acceptance passed 15/15. Implementation details are recorded in
+  `docs-dev/q3a-botlib-interaction-arrival-mover-endpoint-2026-07-01.md`.
+- 2026-07-01: The interaction-arrival route-state follow-up is WORR-native
+  bot-nav, bot-brain, scenario, and documentation work with no new upstream
+  imports claimed. `BotNavRouteRequest` can now tag a position route as the
+  arrival side of a specific interaction entity, and route status records
+  generic request, assignment, cache-reuse, reached, and last-route telemetry.
+  Mode `91` `coop_campaign_key_carry_train` focused evidence records
+  `interaction_arrival_route_requests=2`,
+  `interaction_arrival_route_assignments=2`,
+  `interaction_arrival_route_reached=1`,
+  `key_carry_bridge_arrival_reached=1`,
+  `key_carry_lock_route_requests=42`, and `route_failures=0` from
+  `.tmp\bot_scenarios\20260701T162117Z`. Implementation details are recorded in
+  `docs-dev/q3a-botlib-interaction-arrival-route-state-2026-07-01.md`.
+- 2026-07-01: The train campaign key-carry bridge-approach follow-up is
+  WORR-native bot-brain, scenario, release-gate, and documentation work with
+  no new upstream imports claimed. Mode `91`
+  `coop_campaign_key_carry_train` now validates natural route progress to the
+  live `func_train` bridge start with `key_carry_bridge_approach_ready=1` and
+  `key_carry_bridge_warps=0`, while preserving the bridge interaction,
+  post-mover arrival projection, and lock-side key-path telemetry. Focused
+  evidence records `key_carry_bridge_route_requests=16`,
+  `key_carry_bridge_approach_requests=16`,
+  `last_key_carry_bridge_approach_distance_sq=98`,
+  `key_carry_bridge_interactions=1`, the then-temporary bridge-arrival warp
+  counter, and `key_carry_lock_warps=0` from
+  `.tmp\bot_scenarios\coop_campaign_key_carry_train.json`. Implementation
+  details are recorded in
+  `docs-dev/q3a-botlib-campaign-key-carry-train-bridge-approach-2026-07-01.md`.
+- 2026-07-01: The train campaign key-carry bridge-arrival-route follow-up is
+  WORR-native bot-brain, scenario, release-gate, and documentation work with
+  no new upstream imports claimed. Mode `91`
+  `coop_campaign_key_carry_train` now routes to the projected post-mover
+  bridge-arrival point instead of teleporting to it, then advances to the lock
+  route. Focused evidence records
+  `key_carry_bridge_arrival_route_requests=2`,
+  `key_carry_bridge_arrival_reached=1`,
+  `last_key_carry_bridge_arrival_distance_sq=112`,
+  `key_carry_bridge_arrival_warps=0`, `key_carry_lock_warps=0`, and
+  `route_failures=0` from
+  `.tmp\bot_scenarios\coop_campaign_key_carry_train.json` and
+  `.tmp\bot_scenarios\20260701T145703Z`; the fresh full implemented suite
+  passed 123/123 from `.tmp\bot_scenarios\implemented_after_bridge_arrival_route.json`
+  and release acceptance passed 15/15. Implementation details are recorded in
+  `docs-dev/q3a-botlib-campaign-key-carry-train-bridge-arrival-route-2026-07-01.md`.
+- 2026-07-01: The train campaign key-carry bridge-arrival follow-up is
+  WORR-native bot-nav, bot-brain, scenario, release-gate, and documentation
+  work with no new upstream imports claimed. Mode `91`
+  `coop_campaign_key_carry_train` now validates routeable post-mover arrival
+  projection from the live `func_train` source to the final lock destination,
+  removes the previous direct lock-side warp from the focused row, and
+  preserves `trigger_key` key-path selection through a one-shot lock
+  activation. Focused evidence records
+  `interaction_arrival_goal_resolved=1`,
+  `last_interaction_arrival_goal_area=1058`,
+  `last_interaction_arrival_goal_destination_distance_sq=18411`,
+  the then-temporary bridge-arrival warp counter, and
+  `key_carry_lock_warps=0` from
+  `.tmp\bot_scenarios\coop_campaign_key_carry_train.json`. Implementation
+  details are recorded in
+  `docs-dev/q3a-botlib-campaign-key-carry-train-bridge-arrival-2026-07-01.md`.
+- 2026-07-01: The train campaign key-carry interaction-goal follow-up is
+  WORR-native bot-nav, bot-brain, scenario, release-gate, and documentation
+  work with no new upstream imports claimed. Mode `91`
+  `coop_campaign_key_carry_train` now validates that the bridge-start proof
+  resolves a live train interaction entity before activating the key-side
+  `func_train`; focused evidence records `interaction_goal_candidates=3`,
+  `interaction_goal_resolved=1`, `last_interaction_goal_entity=60`,
+  `last_interaction_goal_kind=4`, and `last_interaction_goal_area=2338` from
+  `.tmp\bot_scenarios\coop_campaign_key_carry_train.json`. Release acceptance
+  passed against the historical aggregate plus supplemental focused rows, and
+  implementation details are recorded in
+  `docs-dev/q3a-botlib-campaign-key-carry-train-interaction-goal-2026-07-01.md`.
+- 2026-07-01: The train campaign key-carry bridge proof is WORR-native
+  bot-nav, bot-brain, scenario, release-gate, and documentation work with no
+  new upstream imports claimed. Mode `91` `coop_campaign_key_carry_train` now
+  validates red-key pickup, key-side `func_train` bridge activation with
+  elevator/mover travel telemetry, explicit bridge-start and lock-side proof
+  warp accounting, and final `trigger_key` required-key telemetry on packaged
+  campaign map `train`. Focused evidence passed from
+  `.tmp\bot_scenarios\coop_campaign_key_carry_train.json`, release acceptance
+  passed against the historical aggregate plus supplemental focused rows, and
+  implementation details are recorded in
+  `docs-dev/q3a-botlib-campaign-key-carry-train-bridge-2026-07-01.md`.
+- 2026-07-01: The train campaign keyed-path proof is WORR-native
+  route-status, bot-brain, scenario, release-gate, and documentation work with
+  no new upstream imports claimed. Mode `91`
+  `coop_campaign_keyed_path_train` validates runtime key item context,
+  `trigger_key` lock context, key-path progression selection/completion, and
+  required-key telemetry on packaged campaign map `train`. Focused evidence
+  passed from `.tmp\bot_scenarios\coop_campaign_keyed_path_train.json`,
+  release acceptance passed from
+  `.tmp\bot_release\bot_release_acceptance_keyed_path.json`, and
+  implementation details are recorded in
+  `docs-dev/q3a-botlib-campaign-keyed-path-train-2026-07-01.md`.
+- 2026-07-01: The bot chat user-doc readiness pass is WORR-native
+  documentation/release-tooling/test work with no new upstream imports claimed.
+  It adds `docs-user/bot-chat.md`, updates the public bot docs to point at the
+  supported chat setup, and extends release acceptance so the chat guide must
+  mention every public chat cvar and supported live event name. The focused
+  public surface artifact
+  `.tmp\bot_surface\public_bot_surface_chat_docs_audit.json` reports zero
+  violations, and the release acceptance artifact
+  `.tmp\bot_release\bot_release_acceptance_chat_docs.json` passes 15/15 checks.
+  Implementation log:
+  `docs-dev/q3a-botlib-bot-chat-user-doc-readiness-2026-07-01.md`.
+- 2026-07-01: The match-result outcome-chat polish is WORR-native
+  bot-brain/status-surface/scenario/test/documentation work with no new
+  upstream imports claimed. It classifies native match-result chat into
+  win/loss/tie/abort/unknown phrase paths, exposes the outcome counters through
+  `q3a_bot_chat_policy_status`, and hardens mode `90`
+  `bot_chat_live_match_result` on deterministic win/loss evidence. The focused
+  artifact `.tmp\bot_scenarios\bot_chat_match_result_outcome.json` passes with
+  `reply_chat_match_result_win=2`, `reply_chat_match_result_loss=2`, zero
+  unknown/tie/abort classifications, and
+  `last_match_result_outcome_name=loss`. Implementation log:
+  `docs-dev/q3a-botlib-match-result-outcome-chat-2026-07-01.md`.
+- 2026-07-01: The chat smoke queue-determinism pass is WORR-native
+  server/scenario/test/documentation work with no new upstream imports claimed.
+  It makes frame-command smoke staging count queued bot additions before
+  issuing another `SV_BotAdd`, preventing duplicate pending adds from
+  overfilling four-bot chat policy rows, and makes mode `90` validate
+  order-independent win/loss outcome coverage. Focused validation passed 4/4,
+  the full automated implemented suite passed 123/123, and release acceptance
+  passed 15/15. Implementation log:
+  `docs-dev/q3a-botlib-chat-smoke-queue-determinism-2026-07-01.md`.
+- 2026-07-01: The min-player profile coverage scenario gate is WORR-native
+  server/scenario/release tooling, tests, and documentation work with no new
+  upstream imports claimed. It adds a dedicated min-player autofill profile
+  coverage marker, promotes `min_players_profile_coverage` into the scenario
+  catalog, and requires that row in release acceptance. The focused scenario
+  artifact `.tmp\bot_scenarios\min_players_profile_coverage.json` passes with
+  `covered=5` and `pass=1`, and the release artifact
+  `.tmp\bot_release\bot_release_acceptance_min_player_profile_scenario.json`
+  passes 15/15 checks. Implementation log:
+  `docs-dev/q3a-botlib-min-player-profile-coverage-scenario-gate-2026-07-01.md`.
+- 2026-06-30: The min-player first-party profile coverage fix is WORR-native
+  server/tooling/tests/documentation work with no new upstream imports claimed.
+  It removes the public autofill special case that skipped `smoke`, extends the
+  headless Duel/CTF runner and play-depth evidence builder with expected
+  profile coverage checks, and refreshes `.install` from the rebuilt Windows
+  dedicated runtime. The refreshed headless artifact
+  `.tmp\bot_playtest\headless\20260630T200649Z\bot_playdepth_headless_runs.json`
+  shows CTF coverage for `bulwark`, `relay`, `smoke`, `vanguard`, and
+  `vector`. Implementation log:
+  `docs-dev/q3a-botlib-min-player-profile-coverage-2026-06-30.md`.
+- 2026-06-30: The M3 headless play-depth runner is WORR-native
+  playtest/release tooling, tests, and documentation work with no new upstream
+  imports claimed. It adds `tools/bot_playtest/run_bot_playdepth_headless.py`,
+  captures dedicated-server stdout/stderr plus real `botlist` roster rows for
+  `duel_rotation` and `ctf_objectives`, writes pending review notes, and adds a
+  `playdepth_headless_tooling` check to
+  `tools/bot_release/run_bot_acceptance.py`. A short real run passed from
+  `.tmp\bot_playtest\headless\20260630T195219Z`, while evidence rebuilt from
+  those notes correctly remains pending until visual review. The latest
+  acceptance artifact `.tmp\bot_release\bot_release_acceptance_m3_headless.json`
+  passes 15/15 checks. Implementation log:
+  `docs-dev/q3a-botlib-m3-headless-playdepth-runner-2026-06-30.md`.
+- 2026-06-30: The M3 multiplayer gate is WORR-native playtest/release
+  tooling, tests, and documentation work with no new upstream imports claimed.
+  It adds `tools/bot_playtest/check_m3_multiplayer_gate.py`, combines the
+  automated multiplayer scenario baseline with the Duel/CTF play-depth
+  attachment, and adds an `m3_multiplayer_gate_tooling` check to
+  `tools/bot_release/run_bot_acceptance.py`. Current local gate evidence is
+  pending only on unfilled live Duel/CTF notes, while the release tooling proof
+  artifact `.tmp\bot_release\bot_release_acceptance_m3_gate.json` passes
+  14/14 checks. Implementation log:
+  `docs-dev/q3a-botlib-m3-multiplayer-gate-2026-06-30.md`.
+- 2026-06-30: The Duel/CTF play-depth evidence attachment tooling is
+  WORR-native playtest/release tooling, tests, and documentation work with no
+  new upstream imports claimed. It adds
+  `tools/bot_playtest/build_bot_playdepth_evidence.py`, release-note style
+  JSON/Markdown output for the required `duel_rotation` and `ctf_objectives`
+  notes, and a `playdepth_evidence_tooling` gate in
+  `tools/bot_release/run_bot_acceptance.py`. The latest acceptance artifact
+  `.tmp\bot_release\bot_release_acceptance_playdepth_evidence.json` passes
+  13/13 checks. Implementation log:
+  `docs-dev/q3a-botlib-duel-ctf-playdepth-evidence-tooling-2026-06-30.md`.
+- 2026-06-30: The post-crouch-reference release acceptance hardening is
+  WORR-native release tooling, tests, and documentation work with no new
+  upstream imports claimed. It expands `tools/bot_release/run_bot_acceptance.py`
+  to require the eleven-map staged AAS set, staged `worr_crouch_ref.bsp`,
+  promoted `movement_crouch_route` and `movement_hazard_context` evidence, and
+  an accepted movement-reference audit with zero blockers. The post-promotion
+  artifact `.tmp\bot_release\bot_release_acceptance_post_crouch_reference.json`
+  passes 12/12 checks. Implementation log:
+  `docs-dev/q3a-botlib-release-acceptance-post-crouch-reference-2026-06-30.md`.
 - 2026-06-30: The crouch reference promotion modifies the existing vendored
   q2aas/BSPC reachability generator file
   `tools/q2aas/deps/botlib/be_aas_reach.c` and otherwise adds WORR-native
@@ -139,6 +521,13 @@ Track source provenance, credits, licenses, and local modification notes for the
   min-player smoke spawned profile-backed `B|Bulwark`, `B|Relay`, and
   `B|Vanguard`.
 - 2026-06-26: The coop campaign interaction matrix slice is WORR-native work with no new upstream imports claimed. Mode `91` `coop_campaign_interaction_matrix` validates the coop live-loop interaction family on packaged campaign map `base1`, with route-interaction retry, campaign mover source ownership, teammate hold commands, nav interaction candidates, and coop wait policy evidence at `.tmp\bot_scenarios\20260626Tcoop-campaign-interaction-final\20260626T185108Z`. The latest full `implemented` suite passed 99/99 rows from `.tmp\bot_scenarios\20260626Timplemented-coop-campaign-interaction-json\20260626T185549Z`.
+- 2026-07-01: The second campaign interaction row is WORR-native scenario and release-gate work with no new upstream imports claimed. Mode `91` `coop_campaign_interaction_matrix_base2` validates the same coop live-loop interaction family on packaged campaign map `base2`, with focused evidence at `.tmp\bot_scenarios\coop_campaign_interaction_matrix_base2.json` and implementation log `docs-dev/q3a-botlib-second-campaign-interaction-row-2026-07-01.md`.
+- 2026-07-01: The base2 campaign interaction-depth row is WORR-native scenario and release-gate work with no new upstream imports claimed. Mode `91` `coop_campaign_interaction_depth_base2` validates button, trigger, mover, use/touch, wait/use-frame, coop intent, and live pickup timing evidence on packaged campaign map `base2`, with focused evidence at `.tmp\bot_scenarios\coop_campaign_interaction_depth_base2.json` and implementation log `docs-dev/q3a-botlib-campaign-interaction-depth-base2-2026-07-01.md`.
+
+- 2026-07-01: The base2 campaign progression-chain row is WORR-native route-status, scenario, and release-gate work with no new upstream imports claimed. Mode `91` `coop_campaign_progression_chain_base2` validates target-chain diagnostics for level-flow target classes, outbound target links, named target anchors, key-entity counter exposure, and combined progression context on packaged campaign map `base2`, with focused evidence at `.tmp\bot_scenarios\coop_campaign_progression_chain_base2.json` and implementation log `docs-dev/q3a-botlib-campaign-progression-chain-base2-2026-07-01.md`.
+- 2026-07-01: The base2 campaign progression-consumer row is WORR-native route-status, interaction-selection, scenario, and release-gate work with no new upstream imports claimed. Mode `91` `coop_campaign_progression_consumer_base2` validates that the live route-interaction chooser scores target-chain candidates, selects scored progression interactions, and records at least one preference selection over pure nearest-distance choice on packaged campaign map `base2`, with focused evidence at `.tmp\bot_scenarios\coop_campaign_progression_consumer_base2.json` and implementation log `docs-dev/q3a-botlib-campaign-progression-consumer-base2-2026-07-01.md`.
+- 2026-07-01: The base2 campaign post-interaction progression row is WORR-native route-status, interaction-lifecycle, scenario, and release-gate work with no new upstream imports claimed. Mode `91` `coop_campaign_post_interaction_base2` validates target-linked progression selection, command-backed completion, post-interaction route refresh, post-window telemetry, and repeat suppression on packaged campaign map `base2`, with focused evidence at `.tmp\bot_scenarios\coop_campaign_post_interaction_base2.json` and implementation log `docs-dev/q3a-botlib-campaign-post-interaction-base2-2026-07-01.md`.
+- 2026-07-01: The base2 campaign progression-carry row and dedicated-server bot print crash guard are WORR-native route-status, engine-safety, scenario, and release-gate work with no new upstream imports claimed. Mode `91` `coop_campaign_progression_carry_base2` validates that one bot can complete multiple scored progression interactions, including distinct follow-up entities after a prior completion, on packaged campaign map `base2`. Focused evidence passed from `.tmp\bot_scenarios\coop_campaign_progression_carry_base2.json`, release acceptance passed from `.tmp\bot_release\bot_release_acceptance_progression_carry.json`, and implementation details are recorded in `docs-dev/q3a-botlib-campaign-progression-carry-base2-2026-07-01.md`.
 - 2026-06-26: The bot chat live match-result slice is WORR-native work with no new upstream imports claimed. Mode `90` `bot_chat_live_match_result` validates native intermission/match-result `victory_defeat` live chat telemetry through `q3a_bot_chat_policy_status` and `q3a_bot_intermission_status`, with focused evidence at `.tmp\bot_scenarios\20260626Tmatch-result\20260626T182046Z`. The then-current full `implemented` suite passed 98/98 rows from `.tmp\bot_scenarios\20260626Timplemented-match-result\20260626T182111Z`.
 - 2026-06-26: The bot chat live item-denied slice is WORR-native work with no new upstream imports claimed. Mode `89` `bot_chat_live_item_denied` validates TDM deny-enemy resource-policy `item_denied` live chat telemetry through `q3a_bot_chat_policy_status`, with focused evidence at `.tmp\bot_scenarios\20260626Titem-denied\20260626T154429Z`. The then-current full `implemented` suite passed 97/97 rows from `.tmp\bot_scenarios\20260626Timplemented-item-denied-json-file\20260626T154954Z`.
 - 2026-06-26: The bot chat live blocked slice is WORR-native work with no new upstream imports claimed. Mode `88` `bot_chat_live_blocked` validates route-failure `blocked` live chat telemetry through `q3a_bot_chat_policy_status`, with focused evidence at `.tmp\bot_scenarios\20260626Tblocked-fixed\20260626T151437Z`. The then-current full `implemented` suite passed 96/96 rows from `.tmp\bot_scenarios\20260626Timplemented-blocked\20260626T151446Z`.
@@ -4683,9 +5072,177 @@ Tasks: `FR-04-T07`, `FR-04-T16`, `DV-07-T06`
 - Implementation log:
   `docs-dev/q3a-botlib-public-defaults-docs-gate-2026-06-29.md`.
 
+## Native Validation Update: Second Campaign Interaction Row
+
+Date: 2026-07-01
+
+Tasks: `FR-04-T04`, `FR-04-T05`, `FR-04-T15`, `DV-03-T05`, `DV-07-T06`
+
+- WORR-native `tools/bot_scenarios/run_bot_scenarios.py` factors the mode
+  `91` coop campaign marker contract and adds
+  `coop_campaign_interaction_matrix_base2` on packaged campaign map `base2`.
+- WORR-native `tools/bot_scenarios/test_run_bot_scenarios.py`,
+  `tools/bot_scenarios/README.md`, `tools/bot_release/run_bot_acceptance.py`,
+  and `tools/bot_release/README.md` add catalog, command, marker, and release
+  acceptance coverage for the second campaign interaction row.
+- No new upstream Q3A, Gladiator, BSPC, idTech3, Quake3e, baseq3a, or
+  `q2proto/` source files were imported or modified for this round.
+- Validation: `python -m unittest tools.bot_scenarios.test_run_bot_scenarios
+  tools.bot_release.test_run_bot_acceptance` passed 76 tests; focused
+  `coop_campaign_interaction_matrix_base2` validation passed from
+  `.tmp\bot_scenarios\coop_campaign_interaction_matrix_base2.json`.
+- Implementation log:
+  `docs-dev/q3a-botlib-second-campaign-interaction-row-2026-07-01.md`.
+
+## Native Validation Update: Base2 Campaign Interaction Depth
+
+Date: 2026-07-01
+
+Tasks: `FR-04-T04`, `FR-04-T05`, `FR-04-T15`, `DV-03-T05`, `DV-07-T06`
+
+- WORR-native `tools/bot_scenarios/run_bot_scenarios.py` adds
+  `coop_campaign_interaction_depth_base2`, a stricter mode `91` campaign row
+  on `base2` that requires button, trigger, mover, use/touch, wait/use-frame,
+  coop intent, and live pickup timing marker evidence.
+- WORR-native `tools/bot_scenarios/test_run_bot_scenarios.py`,
+  `tools/bot_scenarios/README.md`, `tools/bot_release/run_bot_acceptance.py`,
+  and `tools/bot_release/README.md` add catalog, command, marker, and release
+  acceptance coverage for the depth row.
+- No new upstream Q3A, Gladiator, BSPC, idTech3, Quake3e, baseq3a, or
+  `q2proto/` source files were imported or modified for this round.
+- Validation: `python -m unittest tools.bot_scenarios.test_run_bot_scenarios
+  tools.bot_release.test_run_bot_acceptance` passed 77 tests; focused
+  `coop_campaign_interaction_depth_base2` validation passed from
+  `.tmp\bot_scenarios\coop_campaign_interaction_depth_base2.json`; release
+  acceptance passed 15/15 checks from
+  `.tmp\bot_release\bot_release_acceptance_campaign_depth.json`.
+- Implementation log:
+  `docs-dev/q3a-botlib-campaign-interaction-depth-base2-2026-07-01.md`.
+
+## Native Validation Update: Base2 Campaign Post-Interaction Progression
+
+Date: 2026-07-01
+
+Tasks: `FR-04-T04`, `FR-04-T05`, `FR-04-T15`, `DV-03-T05`, `DV-07-T06`
+
+- WORR-native `src/game/sgame/bots/bot_nav.cpp`,
+  `src/game/sgame/bots/bot_nav.hpp`, and
+  `src/game/sgame/bots/bot_brain.cpp` add progression interaction lifecycle
+  telemetry: commanded wait/use frames, completion on natural expiry or
+  command-backed goal reset, post-interaction route refresh, post-window status,
+  repeat suppression, and aggregate target-link selection counters.
+- WORR-native `tools/bot_scenarios/run_bot_scenarios.py`,
+  `tools/bot_scenarios/test_run_bot_scenarios.py`,
+  `tools/bot_scenarios/README.md`, `tools/bot_release/run_bot_acceptance.py`,
+  and `tools/bot_release/README.md` add
+  `coop_campaign_post_interaction_base2`, require target-linked progression
+  selection, completion, post-refresh, post-frame, and repeat-suppression
+  evidence, and promote the row into release acceptance.
+- No new upstream Q3A, Gladiator, BSPC, idTech3, Quake3e, baseq3a, or
+  `q2proto/` source files were imported or modified for this round.
+- Validation: `meson compile -C builddir-win sgame_x86_64 copy_sgame_dll`
+  passed; `python tools\refresh_install.py --build-dir builddir-win
+  --install-dir .install --base-game basew --platform-id windows-x86_64
+  --package-q2aas-aas` refreshed `.install`; focused
+  `coop_campaign_post_interaction_base2` validation passed from
+  `.tmp\bot_scenarios\coop_campaign_post_interaction_base2.json` with
+  `nav_interaction_progression_target_link_selections=3`,
+  `nav_interaction_progression_completions=3`,
+  `nav_interaction_progression_post_refreshes=3`,
+  `nav_interaction_progression_post_frames=241`, and
+  `nav_interaction_progression_repeat_suppressions=1`; `python -m unittest
+  tools.bot_scenarios.test_run_bot_scenarios
+  tools.bot_release.test_run_bot_acceptance` passed 80 tests; release
+  acceptance passed 15/15 checks from
+  `.tmp\bot_release\bot_release_acceptance_post_interaction.json`; the
+  scenario catalog now reports 121 implemented rows and zero pending rows.
+- Implementation log:
+  `docs-dev/q3a-botlib-campaign-post-interaction-base2-2026-07-01.md`.
+
+## Native Validation Update: Base2 Campaign Progression Carry
+
+Date: 2026-07-01
+
+Tasks: `FR-04-T04`, `FR-04-T05`, `FR-04-T15`, `DV-03-T05`, `DV-07-T06`
+
+- WORR-native `src/game/sgame/bots/bot_nav.cpp`,
+  `src/game/sgame/bots/bot_nav.hpp`, and
+  `src/game/sgame/bots/bot_brain.cpp` add per-route-slot progression
+  completion memory and aggregate status counters for follow-up completions,
+  distinct follow-up completions, completed clients, and the last carried
+  previous/current entity pair.
+- WORR-native `src/server/game.c` now skips bot clients in single-client
+  q2proto game-import output paths (`PF_Unicast`, `PF_Client_Print`,
+  `PF_Center_Print`, and `PF_LocalSound`). The focused carry run exposed the
+  existing crash when a bot triggered `G_PlayerNotifyGoal`, which attempted to
+  send localized objective text through a bot client's null network writer.
+- WORR-native `tools/bot_scenarios/run_bot_scenarios.py`,
+  `tools/bot_scenarios/test_run_bot_scenarios.py`,
+  `tools/bot_scenarios/README.md`, `tools/bot_release/run_bot_acceptance.py`,
+  and `tools/bot_release/README.md` add
+  `coop_campaign_progression_carry_base2`, require the carry counters, and
+  promote the row into release acceptance.
+- No new upstream Q3A, Gladiator, BSPC, idTech3, Quake3e, baseq3a, or
+  `q2proto/` source files were imported or modified for this round.
+- Validation: `meson compile -C builddir-win worr_ded_x86_64
+  worr_ded_engine_x86_64 sgame_x86_64 copy_sgame_dll` passed; `python
+  tools\refresh_install.py --build-dir builddir-win --install-dir .install
+  --base-game basew --platform-id windows-x86_64 --package-q2aas-aas`
+  refreshed `.install`; focused `coop_campaign_progression_carry_base2`
+  validation passed from
+  `.tmp\bot_scenarios\coop_campaign_progression_carry_base2.json` with
+  `nav_interaction_progression_completions=3`,
+  `nav_interaction_progression_carry_completions=2`,
+  `nav_interaction_progression_carry_distinct_completions=2`,
+  `last_nav_interaction_progression_carry_previous_entity=42`,
+  `last_nav_interaction_progression_carry_entity=332`, and
+  `last_nav_interaction_progression_carry_distinct_count=3`; `python -m
+  unittest tools.bot_scenarios.test_run_bot_scenarios
+  tools.bot_release.test_run_bot_acceptance` passed 81 tests; release
+  acceptance passed 15/15 checks from
+  `.tmp\bot_release\bot_release_acceptance_progression_carry.json`; the
+  scenario catalog now reports 122 implemented rows and zero pending rows.
+- Implementation log:
+  `docs-dev/q3a-botlib-campaign-progression-carry-base2-2026-07-01.md`.
+
+## Native Validation Update: Train Campaign Keyed Path
+
+Date: 2026-07-01
+
+Tasks: `FR-04-T04`, `FR-04-T05`, `FR-04-T15`, `DV-03-T05`, `DV-07-T06`
+
+- WORR-native `src/game/sgame/bots/bot_nav.cpp` and
+  `src/game/sgame/bots/bot_brain.cpp` add key entity/lock classification,
+  `trigger_key` progression scoring, stable keyed-path telemetry, and the raw
+  mode `91` train proof route.
+- WORR-native `tools/bot_scenarios/run_bot_scenarios.py`,
+  `tools/bot_scenarios/test_run_bot_scenarios.py`,
+  `tools/bot_scenarios/README.md`, `tools/bot_release/run_bot_acceptance.py`,
+  and `tools/bot_release/README.md` add `coop_campaign_keyed_path_train`,
+  require key-path selection and required-key counters, and promote the row
+  into release acceptance.
+- No new upstream Q3A, Gladiator, BSPC, idTech3, Quake3e, baseq3a, or
+  `q2proto/` source files were imported or modified for this round.
+- Validation: `meson compile -C builddir-win sgame_x86_64 copy_sgame_dll`
+  passed; `python tools\refresh_install.py --build-dir builddir-win
+  --install-dir .install --base-game basew --platform-id windows-x86_64
+  --package-q2aas-aas` refreshed `.install`; focused
+  `coop_campaign_keyed_path_train` validation passed from
+  `.tmp\bot_scenarios\coop_campaign_keyed_path_train.json` with
+  `nav_interaction_progression_key_path_selections=1`,
+  `last_nav_interaction_progression_key_path_key_lock=1`, and
+  `last_nav_interaction_progression_key_path_required_item=70`; `python -m
+  unittest tools.bot_scenarios.test_run_bot_scenarios
+  tools.bot_release.test_run_bot_acceptance` passed 82 tests; release
+  acceptance passed 15/15 checks from
+  `.tmp\bot_release\bot_release_acceptance_keyed_path.json`; the scenario
+  catalog now reports 123 implemented rows and zero pending rows.
+- Implementation log:
+  `docs-dev/q3a-botlib-campaign-keyed-path-train-2026-07-01.md`.
+
 ## Candidate Source Inventory
 
-These files were audited as likely first candidates or reference points. BSPC candidates now land through the `tools/q2aas/` snapshot; the first Q3A utility, AAS file-loader, AAS sampling, AAS reachability, AAS clustering, AAS route-query, AAS alternative-routing, AAS optimization, AAS start-frame, AAS entity-cache, AAS movement, and AAS debug helper subsets are imported and recorded above, while the WORR-owned entity-sync, entity-trace, BSP leaf-link/box-query, debug draw, route-overlay, debug-polygon, debug-area, cluster, alternative-route, memory allocator, filesystem, route-cache miss policy, lifecycle telemetry, bot frame command dispatch, route-steered frame command, nav route-cache, nav debug-overlay, nav reachability-debug, nav polyline-debug, nav debug-client-filter, nav persistent-goal, nav item-goal, nav item-reservation, nav look-ahead steering, nav velocity-aware steering, nav route-target stabilization, trace-checked corner cutting, nav stuck-repath, nav stuck recovery command, nav goal-blacklist cooldown, nav failed-goal reason, nav movement-state commands, bot brain command ownership, target-memory retention and decay telemetry, weapon scoring arsenal telemetry, aim/fire policy depth telemetry, ammo pressure pickup telemetry, survival inventory-use telemetry, survival health-route telemetry, survival armor-route telemetry, combat/survival regression telemetry, q2dm2 second-map combat/survival regression telemetry, q2dm8 combat/retreat map-regression telemetry, CTF objective live-loop telemetry, CTF objective transition telemetry, TDM role spawn-stability telemetry, FFA live-pacing telemetry, Duel live-pacing telemetry, coop live-loop combined validation, coop share-loop target/resource validation, coop campaign interaction matrix validation, bot chat live-event taxonomy, cooldown, enemy-sighted, duplicate-suppression, low-health, item-taken, objective-changed, flag-state, blocked, item-denied, and match-result validation, nuke retreat route ownership, timed route-goal ownership, teleporter escape route ownership, team role route ownership, team item-role route selection, FFA item-role route selection, CTF item-role route selection, team fire-avoidance command suppression, team role-combat command ownership, FFA roam-route ownership, FFA role-combat command ownership, FFA spawn-camp-combat-avoidance command veto, Duel deny-enemy item scoring, Duel route/combat pacing status reuse, team resource-denial pickup scoring, match item-policy umbrella scoring, behavior policy umbrella cvar/status/scenario gating, profile role-policy status/scenario gating, profile team-policy status/scenario gating, profile item-policy status/scenario gating, profile movement-policy status/scenario gating, bot chat-policy live-dispatch, team-policy, rate-policy, initial-policy, reply-policy, event-policy, live-events policy, behavior-arbitration owner/cvar status/scenario gating, and target-memory blackboard status/scenario gating, CTF role-route ownership, CTF role-combat command ownership, CTF dropped-flag route ownership, CTF carrier-support route ownership, CTF base-return route ownership, CTF objective route-policy ownership, CTF objective route precedence ownership, CTF objective pickup/drop/return transition ownership, coop leader route ownership and validation gating, coop lead-advance route ownership, coop progress-wait command ownership, coop interaction-retry command ownership, coop resource-share route selection, coop anti-blocking command ownership, coop target-sharing blackboard adoption, coop door/elevator source-hold command ownership, bot warmup readiness status and smoke validation, bot vote-exclusion status and smoke validation, bot admin-audit status/attempt smoke validation, bot tournament status/veto/replay smoke validation, match logging schema status and smoke validation, match logging catalog/index status and smoke validation, bot MyMap status/queue/consume smoke validation, bot queued-nextmap transition status and smoke validation, bot map-vote status/finalize smoke validation, bot scoreboard classification status and smoke validation, bot intermission cleanup status and smoke validation, nav position-goal, nav natural travel-goal including barrier-jump direct reach validation, nav rocket-jump route policy, nav four-bot frame-command smoke, nav eight-bot frame-command smoke, nav soak frame-command smoke, nav map-change repeat/restart smoke, map-restart cleanup scenario promotion, warmup bot-start readiness scenario promotion, vote bot-exclusion scenario promotion, admin bot privilege audit scenario promotion, tournament bot veto-exclusion scenario promotion, tournament replay reset scenario promotion, match logging schema scenario promotion, match logging catalog/index scenario proof, MyMap queue scenario promotion, queued nextmap transition scenario promotion, map-vote bot-exclusion transition scenario promotion, scoreboard bot-classification scenario promotion, intermission bot-cleanup scenario promotion, nav natural movement support diagnostics, behavior action dispatcher and telemetry boundary, weapon/inventory command-request API and exact dispatch, aim/fairness and live-aim/projectile-leading helper APIs, live combat policy consumption, live item timing consumers, item timer fairness helper policy, special-item utility buckets, static BSP trace CPU counters, entity-clip CPU counters, AAS memory source counters, source-counter completeness diagnostics, FFA/TDM/CTF/Duel objective-side helper policy, team-role policy and lane/depth helpers, coop/resource policy helpers, status harness/status surface expansion, bot validation tooling, scenario coverage expansion and marker hardening including the 110-row implemented catalog total, profile behavior validation, botfile behavior-depth metadata, botfile parity polish, public bot/user documentation, competitive server tools operator documentation, high-bot degradation policy and soak budget, q2aas reference-map coverage and available-reference validation reporting, q2aas required-feature gap diagnostics, q2aas binary/license notice policy, release packaging hardening, Q3-style WORR botfile layout correction, and legacy Q2R bot surface removal work is recorded as native adapter, tooling, asset, documentation, status, or replacement work. The remaining Q3A runtime and behavior files remain reference-only until matched to a pinned source.
+These files were audited as likely first candidates or reference points. BSPC candidates now land through the `tools/q2aas/` snapshot; the first Q3A utility, AAS file-loader, AAS sampling, AAS reachability, AAS clustering, AAS route-query, AAS alternative-routing, AAS optimization, AAS start-frame, AAS entity-cache, AAS movement, and AAS debug helper subsets are imported and recorded above, while the WORR-owned entity-sync, entity-trace, BSP leaf-link/box-query, debug draw, route-overlay, debug-polygon, debug-area, cluster, alternative-route, memory allocator, filesystem, route-cache miss policy, lifecycle telemetry, bot frame command dispatch, route-steered frame command, nav route-cache, nav debug-overlay, nav reachability-debug, nav polyline-debug, nav debug-client-filter, nav persistent-goal, nav item-goal, nav item-reservation, nav look-ahead steering, nav velocity-aware steering, nav route-target stabilization, route-target anti-spin, route movement projection, trace-checked corner cutting, nav stuck-repath, nav stuck recovery command, nav goal-blacklist cooldown, nav failed-goal reason, nav movement-state commands, bot brain command ownership, target-memory retention and decay telemetry, weapon scoring arsenal telemetry, aim/fire policy depth telemetry, ammo pressure pickup telemetry, survival inventory-use telemetry, survival health-route telemetry, survival armor-route telemetry, combat/survival regression telemetry, q2dm2 second-map combat/survival regression telemetry, q2dm8 combat/retreat map-regression telemetry, CTF objective live-loop telemetry, CTF objective transition telemetry, TDM role spawn-stability telemetry, FFA live-pacing telemetry, Duel live-pacing telemetry, coop live-loop combined validation, coop share-loop target/resource validation, coop campaign interaction matrix validation, coop campaign progression-chain validation, coop campaign progression-consumer validation, coop campaign post-interaction progression validation, coop campaign progression-carry validation, coop campaign keyed-path validation, dedicated-server bot print safety, bot chat live-event taxonomy, cooldown, enemy-sighted, duplicate-suppression, low-health, item-taken, objective-changed, flag-state, blocked, item-denied, match-result validation, and match-result status-surface telemetry, nuke retreat route ownership, timed route-goal ownership, teleporter escape route ownership, team role route ownership, team item-role route selection, FFA item-role route selection, CTF item-role route selection, team fire-avoidance command suppression, team role-combat command ownership, FFA roam-route ownership, FFA role-combat command ownership, FFA spawn-camp-combat-avoidance command veto, Duel deny-enemy item scoring, Duel route/combat pacing status reuse, team resource-denial pickup scoring, match item-policy umbrella scoring, behavior policy umbrella cvar/status/scenario gating, profile role-policy status/scenario gating, profile team-policy status/scenario gating, profile item-policy status/scenario gating, profile movement-policy status/scenario gating, bot chat-policy live-dispatch, team-policy, rate-policy, initial-policy, reply-policy, event-policy, live-events policy, behavior-arbitration owner/cvar status/scenario gating, and target-memory blackboard status/scenario gating, CTF role-route ownership, CTF role-combat command ownership, CTF dropped-flag route ownership, CTF carrier-support route ownership, CTF base-return route ownership, CTF objective route-policy ownership, CTF objective route precedence ownership, CTF objective pickup/drop/return transition ownership, coop leader route ownership and validation gating, coop lead-advance route ownership, coop progress-wait command ownership, coop interaction-retry command ownership, coop resource-share route selection, coop anti-blocking command ownership, coop target-sharing blackboard adoption, coop door/elevator source-hold command ownership, bot warmup readiness status and smoke validation, bot vote-exclusion status and smoke validation, bot admin-audit status/attempt smoke validation, bot tournament status/veto/replay smoke validation, match logging schema status and smoke validation, match logging catalog/index status and smoke validation, bot MyMap status/queue/consume smoke validation, bot queued-nextmap transition status and smoke validation, bot map-vote status/finalize smoke validation, bot scoreboard classification status and smoke validation, bot intermission cleanup status and smoke validation, nav position-goal, nav natural travel-goal including barrier-jump direct reach validation, nav rocket-jump route policy, nav four-bot frame-command smoke, nav eight-bot frame-command smoke, nav soak frame-command smoke, nav map-change repeat/restart smoke, map-restart cleanup scenario promotion, warmup bot-start readiness scenario promotion, vote bot-exclusion scenario promotion, admin bot privilege audit scenario promotion, tournament bot veto-exclusion scenario promotion, tournament replay reset scenario promotion, match logging schema scenario promotion, match logging catalog/index scenario proof, MyMap queue scenario promotion, queued nextmap transition scenario promotion, map-vote bot-exclusion transition scenario promotion, scoreboard bot-classification scenario promotion, intermission bot-cleanup scenario promotion, nav natural movement support diagnostics, behavior action dispatcher and telemetry boundary, weapon/inventory command-request API and exact dispatch, aim/fairness and live-aim/projectile-leading helper APIs, live combat policy consumption, live item timing consumers, item timer fairness helper policy, special-item utility buckets, static BSP trace CPU counters, entity-clip CPU counters, AAS memory source counters, source-counter completeness diagnostics, FFA/TDM/CTF/Duel objective-side helper policy, team-role policy and lane/depth helpers, coop/resource policy helpers, status harness/status surface expansion, bot validation tooling, scenario coverage expansion and marker hardening including the current 123-row implemented catalog total, profile behavior validation, botfile behavior-depth metadata, botfile parity polish, public bot/user documentation, competitive server tools operator documentation, high-bot degradation policy and soak budget, q2aas reference-map coverage and available-reference validation reporting, q2aas required-feature gap diagnostics, q2aas binary/license notice policy, release packaging hardening, Q3-style WORR botfile layout correction, and legacy Q2R bot surface removal work is recorded as native adapter, tooling, asset, documentation, status, or replacement work. The remaining Q3A runtime and behavior files remain reference-only until matched to a pinned source.
 
 | Candidate | Upstream / Local Ref | Current Use Decision | Required Before Import |
 |---|---|---|---|

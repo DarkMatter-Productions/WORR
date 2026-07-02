@@ -10,6 +10,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
 
 namespace {
 
@@ -21,12 +22,20 @@ constexpr uint32_t BOT_NAV_STUCK_RECOVERY_FRAMES = 6;
 constexpr uint32_t BOT_NAV_INTERACTION_RETRY_FRAMES = 12;
 constexpr uint32_t BOT_NAV_INTERACTION_RETRY_COOLDOWN_FRAMES = 24;
 constexpr int BOT_NAV_STUCK_FRAME_THRESHOLD = 8;
+constexpr float BOT_NAV_STUCK_RECOVERY_LEGACY_FORWARD_MOVE = -80.0f;
+constexpr float BOT_NAV_STUCK_RECOVERY_LEGACY_SIDE_MOVE = 140.0f;
+constexpr float BOT_NAV_STUCK_RECOVERY_MOVE_SPEED = 160.0f;
+constexpr float BOT_NAV_STUCK_RECOVERY_PROBE_DISTANCE = 72.0f;
+constexpr float BOT_NAV_STUCK_RECOVERY_PROBE_MIN_FRACTION = 0.25f;
+constexpr float BOT_NAV_STUCK_RECOVERY_AWAY_BONUS = 0.08f;
+constexpr float BOT_NAV_STUCK_RECOVERY_SIDE_BONUS = 0.02f;
 constexpr float BOT_NAV_TARGET_REACHED_DIST_SQUARED = 16.0f * 16.0f;
 constexpr float BOT_NAV_GOAL_REACHED_DIST_SQUARED = 48.0f * 48.0f;
 constexpr float BOT_NAV_PICKUP_RECORD_DIST_SQUARED = 96.0f * 96.0f;
 constexpr float BOT_NAV_ROUTE_DRIFT_DIST_SQUARED = 96.0f * 96.0f;
 constexpr float BOT_NAV_ROUTE_TARGET_STABILIZE_DIST_SQUARED = 24.0f * 24.0f;
 constexpr float BOT_NAV_ROUTE_TARGET_STABLE_MIN_DIST_SQUARED = 64.0f * 64.0f;
+constexpr float BOT_NAV_ROUTE_PROGRESS_TARGET_SHIFT_DIST_SQUARED = 32.0f * 32.0f;
 constexpr float BOT_NAV_CORNER_CUT_MIN_DIST_SQUARED = 48.0f * 48.0f;
 constexpr float BOT_NAV_CORNER_CUT_MAX_DIST_SQUARED = 256.0f * 256.0f;
 constexpr float BOT_NAV_CORNER_CUT_GROUND_PROBE_DEPTH = STEPSIZE_BELOW + 8.0f;
@@ -35,6 +44,10 @@ constexpr float BOT_NAV_CORNER_CUT_TRACE_FRACTION_SCALE = 1000.0f;
 constexpr float BOT_NAV_STUCK_MIN_PROGRESS_DELTA_SQUARED = 16.0f;
 constexpr float BOT_NAV_INTERACTION_NEAR_DIST_SQUARED = 192.0f * 192.0f;
 constexpr float BOT_NAV_ELEVATOR_INTERACTION_DIST_SQUARED = 384.0f * 384.0f;
+constexpr int BOT_NAV_INTERACTION_PROGRESSION_PREFERENCE_SLACK_SQUARED =
+	96 * 96;
+constexpr uint32_t BOT_NAV_INTERACTION_PROGRESSION_POST_FRAMES = 24;
+constexpr uint32_t BOT_NAV_INTERACTION_PROGRESSION_SUPPRESS_FRAMES = 48;
 constexpr float BOT_NAV_DEBUG_ROUTE_LIFETIME = 0.10f;
 constexpr float BOT_NAV_DEBUG_CROSS_SIZE = 10.0f;
 constexpr float BOT_NAV_DEBUG_LABEL_SIZE = 6.0f;
@@ -99,6 +112,13 @@ enum class BotNavInteractionKind {
 	Mover = 7,
 	Teleporter = 8,
 	Hazard = 9,
+};
+
+enum class BotNavInteractionArrivalSource {
+	None = 0,
+	DestinationOffset = 1,
+	DestinationDirect = 2,
+	MoverEndpoint = 3,
 };
 
 enum class BotNavNaturalMovementSupportReason {
@@ -194,11 +214,45 @@ struct BotNavRouteSlot {
 	uint32_t interactionUntilFrame = 0;
 	uint32_t nextInteractionFrame = 0;
 	int recoverySideSign = 0;
+	bool recoveryMoveValid = false;
+	Vector3 recoveryMoveDirection = vec3_origin;
+	int recoveryProbeCandidate = -1;
+	int recoveryProbeFraction = 0;
 	int interactionAction = 0;
 	int interactionKind = 0;
 	int interactionEntityNumber = -1;
+	int interactionEntitySpawnCount = 0;
+	int interactionProgressionScore = 0;
+	int interactionProgressionPreferred = 0;
+	int interactionTargetEntity = 0;
+	int interactionProgressionTarget = 0;
+	int interactionTargetLink = 0;
+	int interactionNamedTarget = 0;
+	int interactionKeyEntity = 0;
+	int interactionKeyItem = 0;
+	int interactionKeyLock = 0;
+	int interactionKeyRequiredItem = 0;
+	int interactionCommandFrames = 0;
+	uint32_t postInteractionUntilFrame = 0;
+	int postInteractionEntityNumber = -1;
+	int postInteractionEntitySpawnCount = 0;
+	int postInteractionProgressionScore = 0;
+	uint32_t suppressedInteractionUntilFrame = 0;
+	int suppressedInteractionEntityNumber = -1;
+	int suppressedInteractionEntitySpawnCount = 0;
+	int suppressedInteractionProgressionScore = 0;
+	int completedProgressionEntityNumber = -1;
+	int completedProgressionEntitySpawnCount = 0;
+	int completedProgressionCount = 0;
+	int completedProgressionDistinctCount = 0;
 	int persistentGoalArea = 0;
 	bool persistentGoalIsPosition = false;
+	bool persistentGoalIsInteractionArrival = false;
+	int persistentInteractionArrivalEntityNumber = -1;
+	int persistentInteractionArrivalKind = 0;
+	int persistentInteractionArrivalAction = 0;
+	int persistentInteractionArrivalArea = 0;
+	Vector3 persistentInteractionArrivalPosition = vec3_origin;
 	int persistentGoalTravelType = 0;
 	int persistentGoalEntityNumber = -1;
 	int persistentGoalEntitySpawnCount = 0;
@@ -212,6 +266,8 @@ struct BotNavRouteSlot {
 	item_id_t blacklistedGoalItem = IT_NULL;
 	int progressGoalArea = 0;
 	float lastProgressDistanceSquared = -1.0f;
+	float lastProgressTargetDistanceSquared = -1.0f;
+	Vector3 progressRouteTarget = vec3_origin;
 	int stagnantProgressFrames = 0;
 	int lastStuckReason = 0;
 	int lastStuckDistanceSq = 0;
@@ -226,12 +282,24 @@ struct BotNavRouteSlot {
 	BotLibAdapterRouteSteer route{};
 };
 
+gentity_t *BotNavClientEntity(int clientIndex);
+bool BotNavInteractionArrivalKindHasMoverEndpoint(int kind);
+bool BotNavRecordMoverRideState(
+	const gentity_t *bot,
+	int interactionEntityNumber,
+	BotNavMoverRidePhase phase,
+	const BotNavInteractionGoal *goal);
+
 struct BotNavPositionGoalCandidate {
 	int area = 0;
 	int entityNumber = -1;
 	int action = 0;
 	int distanceSquared = 0;
 	Vector3 origin = vec3_origin;
+	bool interactionArrivalGoal = false;
+	int interactionArrivalEntityNumber = -1;
+	int interactionArrivalKind = 0;
+	int interactionArrivalAction = 0;
 };
 
 struct BotNavInteractionCandidate {
@@ -239,11 +307,28 @@ struct BotNavInteractionCandidate {
 	int action = 0;
 	int kind = 0;
 	int distanceSquared = 0;
+	int progressionScore = 0;
+	int progressionPreferred = 0;
+	int targetEntity = 0;
+	int progressionTarget = 0;
+	int targetLink = 0;
+	int namedTarget = 0;
+	int keyEntity = 0;
+	int keyItem = 0;
+	int keyLock = 0;
+	int keyRequiredItem = 0;
 };
 
 std::array<BotNavRouteSlot, MAX_CLIENTS> botNavRouteSlots{};
 BotNavRouteStatus botNavRouteStatus;
 bool botNavNaturalMovementSupportChecked = false;
+
+void BotNavRecordInteractionArrivalRouteGoal(
+	const BotNavPositionGoalCandidate &candidate,
+	const gentity_t *bot);
+void BotNavRecordPersistentInteractionArrivalRouteGoal(
+	const BotNavRouteSlot &slot,
+	const gentity_t *bot);
 
 bool BotNavRocketJumpAllowed() {
 	static cvar_t *allowRocketJump = nullptr;
@@ -712,17 +797,17 @@ bool BotNavShortcutGroundSupported(
 	return true;
 }
 
-bool BotNavRouteShortcutTraceClear(
+bool BotNavRouteShortcutTraceCandidateClear(
 	const gentity_t *bot,
 	const Vector3 &target,
 	int travelType,
+	const Vector3 &mins,
+	const Vector3 &maxs,
 	bool recordCornerCutStatus) {
 	if (bot == nullptr) {
 		return false;
 	}
 
-	const Vector3 mins = bot->mins;
-	const Vector3 maxs = bot->maxs;
 	const trace_t trace = gi.trace(bot->s.origin, mins, maxs, target, bot, MASK_PLAYERSOLID);
 	if (recordCornerCutStatus) {
 		botNavRouteStatus.cornerCutTraceAttempts++;
@@ -747,9 +832,244 @@ bool BotNavRouteShortcutTraceClear(
 	return true;
 }
 
+bool BotNavRouteShortcutTraceClear(
+	const gentity_t *bot,
+	const Vector3 &target,
+	int travelType,
+	bool recordCornerCutStatus) {
+	if (bot == nullptr) {
+		return false;
+	}
+
+	const Vector3 mins = bot->mins;
+	const Vector3 maxs = bot->maxs;
+	const float hullFootOffset = std::max(-mins.z, 0.0f);
+	const std::array<float, 4> zOffsets = {
+		0.0f,
+		std::min(8.0f, hullFootOffset),
+		std::min(16.0f, hullFootOffset),
+		hullFootOffset
+	};
+	float previousOffset = -1.0f;
+	for (const float zOffset : zOffsets) {
+		if (std::abs(zOffset - previousOffset) < 0.5f) {
+			continue;
+		}
+		previousOffset = zOffset;
+
+		Vector3 traceTarget = target;
+		traceTarget.z += zOffset;
+		if (BotNavRouteShortcutTraceCandidateClear(
+				bot,
+				traceTarget,
+				travelType,
+				mins,
+				maxs,
+				recordCornerCutStatus)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+struct BotNavRecoveryProbeCandidate {
+	float forwardMove = 0.0f;
+	float sideMove = 0.0f;
+};
+
+Vector3 BotNavRecoveryViewAngles(const gentity_t *bot, const float viewAngles[3]) {
+	Vector3 angles = vec3_origin;
+	if (viewAngles != nullptr) {
+		angles = { viewAngles[PITCH], viewAngles[YAW], viewAngles[ROLL] };
+	} else if (bot != nullptr && bot->client != nullptr) {
+		angles = bot->client->vAngle;
+	} else if (bot != nullptr) {
+		angles = bot->s.angles;
+	}
+	angles[PITCH] = 0.0f;
+	angles[ROLL] = 0.0f;
+	return angles;
+}
+
+Vector3 BotNavRecoveryCommandDirection(
+	const Vector3 &viewAngles,
+	float forwardMove,
+	float sideMove) {
+	Vector3 forward = vec3_origin;
+	Vector3 right = vec3_origin;
+	AngleVectors(viewAngles, &forward, &right, nullptr);
+	forward.z = 0.0f;
+	right.z = 0.0f;
+	forward.normalize();
+	right.normalize();
+
+	Vector3 direction = (forward * forwardMove) + (right * sideMove);
+	direction.z = 0.0f;
+	const float length = direction.normalize();
+	if (length < 1.0f) {
+		return vec3_origin;
+	}
+	return direction;
+}
+
+bool BotNavRecoveryProjectDirection(
+	const Vector3 &viewAngles,
+	const Vector3 &direction,
+	float *forwardMove,
+	float *sideMove) {
+	if (forwardMove != nullptr) {
+		*forwardMove = 0.0f;
+	}
+	if (sideMove != nullptr) {
+		*sideMove = 0.0f;
+	}
+
+	Vector3 flatDirection = direction;
+	flatDirection.z = 0.0f;
+	const float directionLength = flatDirection.normalize();
+	if (directionLength < 0.1f) {
+		return false;
+	}
+
+	Vector3 forward = vec3_origin;
+	Vector3 right = vec3_origin;
+	AngleVectors(viewAngles, &forward, &right, nullptr);
+	forward.z = 0.0f;
+	right.z = 0.0f;
+	forward.normalize();
+	right.normalize();
+
+	float projectedForward = flatDirection.dot(forward) * BOT_NAV_STUCK_RECOVERY_MOVE_SPEED;
+	float projectedSide = flatDirection.dot(right) * BOT_NAV_STUCK_RECOVERY_MOVE_SPEED;
+	if (std::abs(projectedForward) < 1.0f) {
+		projectedForward = 0.0f;
+	}
+	if (std::abs(projectedSide) < 1.0f) {
+		projectedSide = 0.0f;
+	}
+
+	if (forwardMove != nullptr) {
+		*forwardMove = projectedForward;
+	}
+	if (sideMove != nullptr) {
+		*sideMove = projectedSide;
+	}
+	return true;
+}
+
+bool BotNavEnsureRecoveryMove(
+	const gentity_t *bot,
+	BotNavRouteSlot &slot,
+	const float viewAngles[3]) {
+	if (slot.recoveryMoveValid) {
+		return true;
+	}
+	if (bot == nullptr) {
+		return false;
+	}
+
+	botNavRouteStatus.stuckRecoveryProbeChecks++;
+	const Vector3 view = BotNavRecoveryViewAngles(bot, viewAngles);
+	const int sideSign = slot.recoverySideSign == 0 ? 1 : slot.recoverySideSign;
+	const float side = static_cast<float>(sideSign);
+	const std::array<BotNavRecoveryProbeCandidate, 9> candidates = { {
+		{ BOT_NAV_STUCK_RECOVERY_LEGACY_FORWARD_MOVE,
+		  BOT_NAV_STUCK_RECOVERY_LEGACY_SIDE_MOVE * side },
+		{ -120.0f, 100.0f * side },
+		{ 0.0f, 160.0f * side },
+		{ 80.0f, 140.0f * side },
+		{ -150.0f, 0.0f },
+		{ BOT_NAV_STUCK_RECOVERY_LEGACY_FORWARD_MOVE,
+		  -BOT_NAV_STUCK_RECOVERY_LEGACY_SIDE_MOVE * side },
+		{ -120.0f, -100.0f * side },
+		{ 0.0f, -160.0f * side },
+		{ 80.0f, -140.0f * side },
+	} };
+
+	Vector3 targetDirection = BotNavRouteTarget(slot.route) - bot->s.origin;
+	targetDirection.z = 0.0f;
+	const bool hasTargetDirection = targetDirection.normalize() >= 1.0f;
+
+	float bestScore = -1.0f;
+	int bestCandidate = -1;
+	int bestFraction = 0;
+	Vector3 bestDirection = vec3_origin;
+	for (size_t candidateIndex = 0; candidateIndex < candidates.size(); ++candidateIndex) {
+		const BotNavRecoveryProbeCandidate &candidate = candidates[candidateIndex];
+		const Vector3 direction =
+			BotNavRecoveryCommandDirection(view, candidate.forwardMove, candidate.sideMove);
+		if (direction.is_zero()) {
+			continue;
+		}
+
+		const Vector3 end = bot->s.origin + (direction * BOT_NAV_STUCK_RECOVERY_PROBE_DISTANCE);
+		const trace_t trace = gi.trace(bot->s.origin, bot->mins, bot->maxs, end, bot, MASK_PLAYERSOLID);
+		if (trace.startSolid || trace.allSolid) {
+			continue;
+		}
+
+		const int traceFraction = BotNavStatusTraceFraction(trace.fraction);
+		float score = trace.fraction;
+		if (hasTargetDirection) {
+			score += std::max(0.0f, -direction.dot(targetDirection)) *
+				BOT_NAV_STUCK_RECOVERY_AWAY_BONUS;
+		}
+		if (candidate.sideMove * side > 0.0f) {
+			score += BOT_NAV_STUCK_RECOVERY_SIDE_BONUS;
+		}
+		if (score > bestScore) {
+			bestScore = score;
+			bestCandidate = static_cast<int>(candidateIndex);
+			bestFraction = traceFraction;
+			bestDirection = direction;
+		}
+	}
+
+	if (bestCandidate >= 0) {
+		slot.recoveryMoveValid = true;
+		slot.recoveryMoveDirection = bestDirection;
+		slot.recoveryProbeCandidate = bestCandidate;
+		slot.recoveryProbeFraction = bestFraction;
+		botNavRouteStatus.stuckRecoveryProbeUses++;
+		if (bestFraction <
+			BotNavStatusTraceFraction(BOT_NAV_STUCK_RECOVERY_PROBE_MIN_FRACTION)) {
+			botNavRouteStatus.stuckRecoveryProbeBlocks++;
+		}
+	} else {
+		slot.recoveryMoveDirection = BotNavRecoveryCommandDirection(
+			view,
+			BOT_NAV_STUCK_RECOVERY_LEGACY_FORWARD_MOVE,
+			BOT_NAV_STUCK_RECOVERY_LEGACY_SIDE_MOVE * side);
+		slot.recoveryMoveValid = !slot.recoveryMoveDirection.is_zero();
+		slot.recoveryProbeCandidate = -1;
+		slot.recoveryProbeFraction = 0;
+		botNavRouteStatus.stuckRecoveryProbeFallbacks++;
+	}
+
+	botNavRouteStatus.lastStuckRecoveryProbeCandidate = slot.recoveryProbeCandidate;
+	botNavRouteStatus.lastStuckRecoveryProbeFraction = slot.recoveryProbeFraction;
+	if (slot.recoveryMoveValid) {
+		float forwardMove = 0.0f;
+		float sideMove = 0.0f;
+		if (BotNavRecoveryProjectDirection(
+				view,
+				slot.recoveryMoveDirection,
+				&forwardMove,
+				&sideMove)) {
+			botNavRouteStatus.lastStuckRecoveryForwardMove =
+				static_cast<int>(std::round(forwardMove));
+			botNavRouteStatus.lastStuckRecoverySideMove =
+				static_cast<int>(std::round(sideMove));
+		}
+	}
+	return slot.recoveryMoveValid;
+}
+
 void BotNavResetProgress(BotNavRouteSlot &slot) {
 	slot.progressGoalArea = 0;
 	slot.lastProgressDistanceSquared = -1.0f;
+	slot.lastProgressTargetDistanceSquared = -1.0f;
+	slot.progressRouteTarget = vec3_origin;
 	slot.stagnantProgressFrames = 0;
 	slot.lastStuckDistanceSq = 0;
 	slot.lastStuckProgressDelta = 0;
@@ -758,6 +1078,10 @@ void BotNavResetProgress(BotNavRouteSlot &slot) {
 void BotNavClearRecovery(BotNavRouteSlot &slot) {
 	slot.recoveryUntilFrame = 0;
 	slot.recoverySideSign = 0;
+	slot.recoveryMoveValid = false;
+	slot.recoveryMoveDirection = vec3_origin;
+	slot.recoveryProbeCandidate = -1;
+	slot.recoveryProbeFraction = 0;
 }
 
 void BotNavClearInteraction(BotNavRouteSlot &slot) {
@@ -765,6 +1089,18 @@ void BotNavClearInteraction(BotNavRouteSlot &slot) {
 	slot.interactionAction = static_cast<int>(BotNavInteractionAction::None);
 	slot.interactionKind = static_cast<int>(BotNavInteractionKind::None);
 	slot.interactionEntityNumber = -1;
+	slot.interactionEntitySpawnCount = 0;
+	slot.interactionProgressionScore = 0;
+	slot.interactionProgressionPreferred = 0;
+	slot.interactionTargetEntity = 0;
+	slot.interactionProgressionTarget = 0;
+	slot.interactionTargetLink = 0;
+	slot.interactionNamedTarget = 0;
+	slot.interactionKeyEntity = 0;
+	slot.interactionKeyItem = 0;
+	slot.interactionKeyLock = 0;
+	slot.interactionKeyRequiredItem = 0;
+	slot.interactionCommandFrames = 0;
 }
 
 float BotNavDistanceSquaredToBounds(const Vector3 &point, const gentity_t *ent) {
@@ -858,6 +1194,272 @@ bool BotNavClassIs(const gentity_t *ent, const char *className) {
 		Q_strcasecmp(ent->className, className) == 0;
 }
 
+bool BotNavClassStartsWith(const gentity_t *ent, const char *prefix, size_t prefixLength) {
+	return ent != nullptr &&
+		ent->className != nullptr &&
+		prefix != nullptr &&
+		Q_strncasecmp(ent->className, prefix, prefixLength) == 0;
+}
+
+bool BotNavStringPresent(const char *value) {
+	return value != nullptr && value[0] != '\0';
+}
+
+bool BotNavClassIsTargetEntity(const gentity_t *ent) {
+	return BotNavClassStartsWith(ent, "target_", 7);
+}
+
+bool BotNavClassIsProgressionTarget(const gentity_t *ent) {
+	return BotNavClassIs(ent, "target_changelevel") ||
+		BotNavClassIs(ent, "target_goal") ||
+		BotNavClassIs(ent, "target_secret") ||
+		BotNavClassIs(ent, "target_crosslevel_trigger") ||
+		BotNavClassIs(ent, "target_crosslevel_target") ||
+		BotNavClassIs(ent, "target_crossunit_trigger") ||
+		BotNavClassIs(ent, "target_crossunit_target") ||
+		BotNavClassIs(ent, "target_help") ||
+		BotNavClassIs(ent, "trigger_key") ||
+		BotNavClassIs(ent, "trigger_secret");
+}
+
+bool BotNavClassIsKeyEntity(const gentity_t *ent) {
+	return BotNavClassStartsWith(ent, "key_", 4) ||
+		(ent != nullptr && ent->item != nullptr && (ent->item->flags & IF_KEY));
+}
+
+bool BotNavClassIsKeyLock(const gentity_t *ent) {
+	return BotNavClassIs(ent, "trigger_key");
+}
+
+int BotNavKeyRequiredItemId(const gentity_t *ent) {
+	if (ent == nullptr || ent->item == nullptr || (ent->item->flags & IF_KEY) == 0) {
+		return 0;
+	}
+	return static_cast<int>(ent->item->id);
+}
+
+int BotNavInteractionProgressionScore(
+	const gentity_t *ent,
+	BotNavInteractionCandidate *candidate) {
+	const bool targetEntity = BotNavClassIsTargetEntity(ent);
+	const bool progressionTarget = BotNavClassIsProgressionTarget(ent);
+	const bool targetLink = BotNavStringPresent(ent != nullptr ? ent->target : nullptr);
+	const bool namedTarget = BotNavStringPresent(ent != nullptr ? ent->targetName : nullptr);
+	const bool keyItem = BotNavClassIsKeyEntity(ent);
+	const bool keyLock = BotNavClassIsKeyLock(ent);
+	const bool keyEntity = keyItem || keyLock;
+	const int keyRequiredItem = BotNavKeyRequiredItemId(ent);
+
+	if (candidate != nullptr) {
+		candidate->targetEntity = targetEntity ? 1 : 0;
+		candidate->progressionTarget = progressionTarget ? 1 : 0;
+		candidate->targetLink = targetLink ? 1 : 0;
+		candidate->namedTarget = namedTarget ? 1 : 0;
+		candidate->keyEntity = keyEntity ? 1 : 0;
+		candidate->keyItem = keyItem ? 1 : 0;
+		candidate->keyLock = keyLock ? 1 : 0;
+		candidate->keyRequiredItem = keyRequiredItem;
+	}
+
+	int score = 0;
+	if (progressionTarget) {
+		score += 8;
+	}
+	if (keyLock) {
+		score += 8;
+	}
+	if (keyEntity) {
+		score += 6;
+	}
+	if (targetLink) {
+		score += 4;
+	}
+	if (namedTarget) {
+		score += 2;
+	}
+	if (targetEntity) {
+		score += 1;
+	}
+	return score;
+}
+
+bool BotNavInteractionCandidateBetter(
+	const BotNavInteractionCandidate &candidate,
+	const BotNavInteractionCandidate &best) {
+	if (best.entityNumber < 0) {
+		return true;
+	}
+
+	const int slack = BOT_NAV_INTERACTION_PROGRESSION_PREFERENCE_SLACK_SQUARED;
+	if (candidate.progressionScore > best.progressionScore &&
+		candidate.distanceSquared <= best.distanceSquared + slack) {
+		return true;
+	}
+	if (candidate.progressionScore < best.progressionScore &&
+		best.distanceSquared <= candidate.distanceSquared + slack) {
+		return false;
+	}
+	if (candidate.distanceSquared != best.distanceSquared) {
+		return candidate.distanceSquared < best.distanceSquared;
+	}
+	return candidate.progressionScore > best.progressionScore;
+}
+
+bool BotNavInteractionEntityMatches(
+	const gentity_t *ent,
+	int entityNumber,
+	int targetEntityNumber,
+	int spawnCount) {
+	return ent != nullptr &&
+		entityNumber >= 0 &&
+		entityNumber == targetEntityNumber &&
+		ent->spawn_count == spawnCount;
+}
+
+bool BotNavInteractionSuppressed(
+	const BotNavRouteSlot &slot,
+	const gentity_t *ent,
+	int entityNumber,
+	uint32_t frame) {
+	return frame < slot.suppressedInteractionUntilFrame &&
+		BotNavInteractionEntityMatches(
+			ent,
+			entityNumber,
+			slot.suppressedInteractionEntityNumber,
+			slot.suppressedInteractionEntitySpawnCount);
+}
+
+void BotNavRecordProgressionSuppression(
+	const BotNavRouteSlot &slot,
+	const gentity_t *ent,
+	int entityNumber) {
+	botNavRouteStatus.interactionProgressionRepeatSuppressions++;
+	botNavRouteStatus.lastInteractionProgressionSuppressedEntity = entityNumber;
+	botNavRouteStatus.lastInteractionProgressionSuppressedScore =
+		slot.suppressedInteractionProgressionScore;
+	(void)ent;
+}
+
+bool BotNavCompleteProgressionInteraction(
+	BotNavRouteSlot &slot,
+	int clientIndex,
+	uint32_t frame) {
+	if (slot.interactionAction == static_cast<int>(BotNavInteractionAction::None) ||
+		slot.interactionProgressionScore <= 0 ||
+		slot.interactionCommandFrames <= 0) {
+		return false;
+	}
+
+	botNavRouteStatus.interactionProgressionCompletions++;
+	botNavRouteStatus.lastClient = clientIndex;
+	botNavRouteStatus.lastInteractionProgressionCompletedEntity =
+		slot.interactionEntityNumber;
+	botNavRouteStatus.lastInteractionProgressionCompletedScore =
+		slot.interactionProgressionScore;
+	if (slot.interactionKeyEntity) {
+		botNavRouteStatus.interactionProgressionKeyPathCompletions++;
+		botNavRouteStatus.lastInteractionProgressionKeyPathEntity =
+			slot.interactionEntityNumber;
+		botNavRouteStatus.lastInteractionProgressionKeyPathScore =
+			slot.interactionProgressionScore;
+		botNavRouteStatus.lastInteractionProgressionKeyPathKeyItem =
+			slot.interactionKeyItem;
+		botNavRouteStatus.lastInteractionProgressionKeyPathKeyLock =
+			slot.interactionKeyLock;
+		botNavRouteStatus.lastInteractionProgressionKeyPathRequiredItem =
+			slot.interactionKeyRequiredItem;
+	}
+
+	const bool hasPreviousCompletion = slot.completedProgressionEntityNumber >= 0;
+	const bool distinctCompletion =
+		!hasPreviousCompletion ||
+		slot.completedProgressionEntityNumber != slot.interactionEntityNumber ||
+		slot.completedProgressionEntitySpawnCount != slot.interactionEntitySpawnCount;
+	if (slot.completedProgressionCount == 0) {
+		botNavRouteStatus.interactionProgressionCompletedClients++;
+	}
+	if (hasPreviousCompletion) {
+		botNavRouteStatus.interactionProgressionCarryCompletions++;
+		botNavRouteStatus.lastInteractionProgressionCarryPreviousEntity =
+			slot.completedProgressionEntityNumber;
+		botNavRouteStatus.lastInteractionProgressionCarryEntity =
+			slot.interactionEntityNumber;
+		botNavRouteStatus.lastInteractionProgressionCarryDistinct =
+			distinctCompletion ? 1 : 0;
+	}
+	if (distinctCompletion) {
+		if (slot.completedProgressionDistinctCount == 0) {
+			botNavRouteStatus.interactionProgressionDistinctCompletedClients++;
+		}
+		if (hasPreviousCompletion) {
+			botNavRouteStatus.interactionProgressionCarryDistinctCompletions++;
+		}
+		slot.completedProgressionDistinctCount++;
+	}
+	slot.completedProgressionCount++;
+	slot.completedProgressionEntityNumber = slot.interactionEntityNumber;
+	slot.completedProgressionEntitySpawnCount = slot.interactionEntitySpawnCount;
+	botNavRouteStatus.lastInteractionProgressionCarryCount =
+		slot.completedProgressionCount;
+	botNavRouteStatus.lastInteractionProgressionCarryDistinctCount =
+		slot.completedProgressionDistinctCount;
+
+	slot.postInteractionUntilFrame =
+		frame + BOT_NAV_INTERACTION_PROGRESSION_POST_FRAMES;
+	slot.postInteractionEntityNumber = slot.interactionEntityNumber;
+	slot.postInteractionEntitySpawnCount = slot.interactionEntitySpawnCount;
+	slot.postInteractionProgressionScore = slot.interactionProgressionScore;
+
+	slot.suppressedInteractionUntilFrame =
+		frame + BOT_NAV_INTERACTION_PROGRESSION_SUPPRESS_FRAMES;
+	slot.suppressedInteractionEntityNumber = slot.interactionEntityNumber;
+	slot.suppressedInteractionEntitySpawnCount = slot.interactionEntitySpawnCount;
+	slot.suppressedInteractionProgressionScore = slot.interactionProgressionScore;
+
+	slot.valid = false;
+	botNavRouteStatus.interactionProgressionPostRefreshes++;
+
+	return true;
+}
+
+bool BotNavCompleteExpiredInteraction(
+	BotNavRouteSlot &slot,
+	int clientIndex,
+	uint32_t frame) {
+	if (slot.interactionAction == static_cast<int>(BotNavInteractionAction::None) ||
+		frame < slot.interactionUntilFrame) {
+		return false;
+	}
+
+	BotNavCompleteProgressionInteraction(slot, clientIndex, frame);
+	if (slot.interactionCommandFrames > 0 &&
+		BotNavInteractionArrivalKindHasMoverEndpoint(slot.interactionKind)) {
+		gentity_t *bot = BotNavClientEntity(clientIndex);
+		(void)BotNavRecordMoverRideState(
+			bot,
+			slot.interactionEntityNumber,
+			BotNavMoverRidePhase::Leave,
+			nullptr);
+	}
+	BotNavClearInteraction(slot);
+	return true;
+}
+
+void BotNavRecordPostInteractionProgress(
+	const BotNavRouteSlot &slot,
+	uint32_t frame) {
+	if (frame >= slot.postInteractionUntilFrame ||
+		slot.postInteractionEntityNumber < 0) {
+		return;
+	}
+
+	botNavRouteStatus.interactionProgressionPostFrames++;
+	botNavRouteStatus.lastInteractionProgressionPostEntity =
+		slot.postInteractionEntityNumber;
+	botNavRouteStatus.lastInteractionProgressionPostFramesRemaining =
+		static_cast<int>(slot.postInteractionUntilFrame - frame);
+}
+
 int BotNavInteractionKindForEntity(const gentity_t *ent) {
 	if (BotNavClassIs(ent, "func_door") ||
 		BotNavClassIs(ent, "func_door_rotating") ||
@@ -895,7 +1497,8 @@ int BotNavInteractionKindForEntity(const gentity_t *ent) {
 		return static_cast<int>(BotNavInteractionKind::Hazard);
 	}
 	if (BotNavClassIs(ent, "trigger_once") ||
-		BotNavClassIs(ent, "trigger_multiple")) {
+		BotNavClassIs(ent, "trigger_multiple") ||
+		BotNavClassIsKeyLock(ent)) {
 		return static_cast<int>(BotNavInteractionKind::Trigger);
 	}
 	if (ent != nullptr && ent->moveType == MoveType::Push && ent->solid == SOLID_BSP) {
@@ -988,6 +1591,15 @@ void BotNavUpdateInteractionWorldContextStatus() {
 	botNavRouteStatus.interactionWorldHazards = 0;
 	botNavRouteStatus.interactionWorldUseEntities = 0;
 	botNavRouteStatus.interactionWorldTouchEntities = 0;
+	botNavRouteStatus.interactionWorldTargetEntities = 0;
+	botNavRouteStatus.interactionWorldProgressionTargets = 0;
+	botNavRouteStatus.interactionWorldTargetLinks = 0;
+	botNavRouteStatus.interactionWorldNamedTargets = 0;
+	botNavRouteStatus.interactionWorldKeyEntities = 0;
+	botNavRouteStatus.interactionWorldKeyItems = 0;
+	botNavRouteStatus.interactionWorldKeyLocks = 0;
+	botNavRouteStatus.interactionWorldKeyPathEntities = 0;
+	botNavRouteStatus.interactionWorldProgressionEntities = 0;
 	if (g_entities == nullptr) {
 		return;
 	}
@@ -1001,6 +1613,42 @@ void BotNavUpdateInteractionWorldContextStatus() {
 		}
 
 		const int kind = BotNavInteractionKindForEntity(ent);
+		const bool interactionEntity = kind != static_cast<int>(BotNavInteractionKind::None);
+		const bool targetEntity = BotNavClassIsTargetEntity(ent);
+		const bool progressionTarget = BotNavClassIsProgressionTarget(ent);
+		const bool targetLink = BotNavStringPresent(ent->target);
+		const bool namedTarget = BotNavStringPresent(ent->targetName);
+		const bool keyItem = BotNavClassIsKeyEntity(ent);
+		const bool keyLock = BotNavClassIsKeyLock(ent);
+		const bool keyEntity = keyItem || keyLock;
+		if (targetEntity) {
+			botNavRouteStatus.interactionWorldTargetEntities++;
+		}
+		if (progressionTarget) {
+			botNavRouteStatus.interactionWorldProgressionTargets++;
+		}
+		if (targetLink) {
+			botNavRouteStatus.interactionWorldTargetLinks++;
+		}
+		if (namedTarget) {
+			botNavRouteStatus.interactionWorldNamedTargets++;
+		}
+		if (keyEntity) {
+			botNavRouteStatus.interactionWorldKeyEntities++;
+		}
+		if (keyItem) {
+			botNavRouteStatus.interactionWorldKeyItems++;
+		}
+		if (keyLock) {
+			botNavRouteStatus.interactionWorldKeyLocks++;
+		}
+		if (keyEntity && (targetLink || progressionTarget || keyLock)) {
+			botNavRouteStatus.interactionWorldKeyPathEntities++;
+		}
+		if (interactionEntity || targetEntity || progressionTarget || targetLink || namedTarget || keyEntity) {
+			botNavRouteStatus.interactionWorldProgressionEntities++;
+		}
+
 		if (kind == static_cast<int>(BotNavInteractionKind::None)) {
 			continue;
 		}
@@ -1022,6 +1670,7 @@ void BotNavUpdateInteractionWorldContextStatus() {
 bool BotNavInteractionKindMatchesRoute(int kind, const BotLibAdapterRouteSteer &route) {
 	if (route.reachabilityTravelType == BOT_NAV_TRAVEL_ELEVATOR) {
 		return kind == static_cast<int>(BotNavInteractionKind::Platform) ||
+			kind == static_cast<int>(BotNavInteractionKind::Train) ||
 			kind == static_cast<int>(BotNavInteractionKind::Mover);
 	}
 	return kind != static_cast<int>(BotNavInteractionKind::None);
@@ -1030,6 +1679,9 @@ bool BotNavInteractionKindMatchesRoute(int kind, const BotLibAdapterRouteSteer &
 bool BotNavFindInteractionCandidate(
 	const gentity_t *bot,
 	const BotLibAdapterRouteSteer &route,
+	const BotNavRouteSlot &slot,
+	uint32_t frame,
+	int requiredKind,
 	BotNavInteractionCandidate *candidate) {
 	if (bot == nullptr || g_entities == nullptr) {
 		return false;
@@ -1041,8 +1693,11 @@ bool BotNavFindInteractionCandidate(
 		BOT_NAV_INTERACTION_NEAR_DIST_SQUARED;
 	const Vector3 routeTarget = BotNavRouteTarget(route);
 	const Vector3 routeGoal = BotNavRouteGoal(route);
+	const bool hasPersistentPositionGoal = slot.persistentGoalIsPosition;
+	const Vector3 persistentPositionGoal = slot.persistentPositionGoal;
 	BotNavInteractionCandidate best{};
 	best.distanceSquared = BotNavStatusDistance(maxDistanceSquared) + 1;
+	int nearestCandidateDistance = best.distanceSquared;
 
 	botNavRouteStatus.interactionChecks++;
 	for (uint32_t entnum = game.maxClients + 1; entnum < globals.numEntities; ++entnum) {
@@ -1056,35 +1711,60 @@ bool BotNavFindInteractionCandidate(
 		const int kind = BotNavInteractionKindForEntity(ent);
 		const int action = BotNavInteractionActionForEntity(ent);
 		if (kind == static_cast<int>(BotNavInteractionKind::None) ||
+			(requiredKind > 0 && kind != requiredKind) ||
 			action == static_cast<int>(BotNavInteractionAction::None) ||
 			!BotNavInteractionKindMatchesRoute(kind, route)) {
+			continue;
+		}
+		if (BotNavInteractionSuppressed(slot, ent, static_cast<int>(entnum), frame)) {
+			BotNavRecordProgressionSuppression(slot, ent, static_cast<int>(entnum));
 			continue;
 		}
 
 		const float botDistance = BotNavDistanceSquaredToBounds(bot->s.origin, ent);
 		const float targetDistance = BotNavDistanceSquaredToBounds(routeTarget, ent);
 		const float goalDistance = BotNavDistanceSquaredToBounds(routeGoal, ent);
-		const float distanceSquared = std::min(botDistance, std::min(targetDistance, goalDistance));
+		float distanceSquared = std::min(botDistance, std::min(targetDistance, goalDistance));
+		if (hasPersistentPositionGoal) {
+			distanceSquared = std::min(
+				distanceSquared,
+				BotNavDistanceSquaredToBounds(persistentPositionGoal, ent));
+		}
 		if (distanceSquared > maxDistanceSquared) {
 			continue;
 		}
 
 		botNavRouteStatus.interactionCandidates++;
 		const int statusDistance = BotNavStatusDistance(distanceSquared);
-		if (statusDistance >= best.distanceSquared) {
+		nearestCandidateDistance = std::min(nearestCandidateDistance, statusDistance);
+
+		BotNavInteractionCandidate current{};
+		current.entityNumber = static_cast<int>(entnum);
+		current.action = action;
+		current.kind = kind;
+		current.distanceSquared = statusDistance;
+		current.progressionScore = BotNavInteractionProgressionScore(ent, &current);
+		if (current.progressionScore > 0) {
+			botNavRouteStatus.interactionProgressionCandidates++;
+		}
+		if (current.keyEntity) {
+			botNavRouteStatus.interactionProgressionKeyPathCandidates++;
+		}
+		if (!BotNavInteractionCandidateBetter(current, best)) {
 			continue;
 		}
 
-		best.entityNumber = static_cast<int>(entnum);
-		best.action = action;
-		best.kind = kind;
-		best.distanceSquared = statusDistance;
+		best = current;
 	}
 
 	if (best.entityNumber < 0) {
 		botNavRouteStatus.interactionMisses++;
 		return false;
 	}
+
+	best.progressionPreferred =
+		best.progressionScore > 0 &&
+		best.distanceSquared > nearestCandidateDistance ? 1 : 0;
 
 	if (candidate != nullptr) {
 		*candidate = best;
@@ -1098,13 +1778,14 @@ bool BotNavActivateInteractionRetry(
 	int clientIndex,
 	uint32_t frame,
 	const BotLibAdapterRouteSteer &route,
-	bool fromStuck) {
+	bool fromStuck,
+	int requiredKind = 0) {
 	if (frame < slot.interactionUntilFrame || frame < slot.nextInteractionFrame) {
 		return false;
 	}
 
 	BotNavInteractionCandidate candidate{};
-	if (!BotNavFindInteractionCandidate(bot, route, &candidate)) {
+	if (!BotNavFindInteractionCandidate(bot, route, slot, frame, requiredKind, &candidate)) {
 		return false;
 	}
 
@@ -1113,6 +1794,23 @@ bool BotNavActivateInteractionRetry(
 	slot.interactionAction = candidate.action;
 	slot.interactionKind = candidate.kind;
 	slot.interactionEntityNumber = candidate.entityNumber;
+	if (candidate.entityNumber >= 0 &&
+		candidate.entityNumber < static_cast<int>(globals.numEntities)) {
+		slot.interactionEntitySpawnCount = g_entities[candidate.entityNumber].spawn_count;
+	} else {
+		slot.interactionEntitySpawnCount = 0;
+	}
+	slot.interactionProgressionScore = candidate.progressionScore;
+	slot.interactionProgressionPreferred = candidate.progressionPreferred;
+	slot.interactionTargetEntity = candidate.targetEntity;
+	slot.interactionProgressionTarget = candidate.progressionTarget;
+	slot.interactionTargetLink = candidate.targetLink;
+	slot.interactionNamedTarget = candidate.namedTarget;
+	slot.interactionKeyEntity = candidate.keyEntity;
+	slot.interactionKeyItem = candidate.keyItem;
+	slot.interactionKeyLock = candidate.keyLock;
+	slot.interactionKeyRequiredItem = candidate.keyRequiredItem;
+	slot.interactionCommandFrames = 0;
 
 	botNavRouteStatus.interactionActivations++;
 	if (fromStuck) {
@@ -1123,14 +1821,59 @@ bool BotNavActivateInteractionRetry(
 	botNavRouteStatus.lastInteractionAction = candidate.action;
 	botNavRouteStatus.lastInteractionKind = candidate.kind;
 	botNavRouteStatus.lastInteractionEntity = candidate.entityNumber;
+	botNavRouteStatus.lastInteractionClient = clientIndex;
 	botNavRouteStatus.lastInteractionDistanceSq = candidate.distanceSquared;
 	botNavRouteStatus.lastInteractionTravelType = route.reachabilityTravelType;
 	botNavRouteStatus.lastInteractionMoveState = 0;
+	botNavRouteStatus.lastInteractionProgressionScore = candidate.progressionScore;
+	botNavRouteStatus.lastInteractionProgressionPreferred = candidate.progressionPreferred;
+	botNavRouteStatus.lastInteractionTargetEntity = candidate.targetEntity;
+	botNavRouteStatus.lastInteractionProgressionTarget = candidate.progressionTarget;
+	botNavRouteStatus.lastInteractionTargetLink = candidate.targetLink;
+	botNavRouteStatus.lastInteractionNamedTarget = candidate.namedTarget;
+	botNavRouteStatus.lastInteractionKeyEntity = candidate.keyEntity;
+	botNavRouteStatus.lastInteractionKeyItem = candidate.keyItem;
+	botNavRouteStatus.lastInteractionKeyLock = candidate.keyLock;
+	botNavRouteStatus.lastInteractionKeyRequiredItem = candidate.keyRequiredItem;
 	if (candidate.entityNumber >= 0 &&
 		candidate.entityNumber < static_cast<int>(globals.numEntities)) {
 		const gentity_t *ent = &g_entities[candidate.entityNumber];
 		botNavRouteStatus.lastInteractionMoveState = static_cast<int>(ent->moveInfo.state);
 		BotNavRecordInteractionEntityContext(ent);
+	}
+	if (candidate.progressionScore > 0) {
+		botNavRouteStatus.interactionProgressionSelections++;
+		if (candidate.targetEntity) {
+			botNavRouteStatus.interactionProgressionTargetEntitySelections++;
+		}
+		if (candidate.progressionTarget) {
+			botNavRouteStatus.interactionProgressionTargetSelections++;
+		}
+		if (candidate.targetLink) {
+			botNavRouteStatus.interactionProgressionTargetLinkSelections++;
+		}
+		if (candidate.namedTarget) {
+			botNavRouteStatus.interactionProgressionNamedTargetSelections++;
+		}
+		if (candidate.keyEntity) {
+			botNavRouteStatus.interactionProgressionKeyEntitySelections++;
+		}
+		if (candidate.keyEntity) {
+			botNavRouteStatus.interactionProgressionKeyPathSelections++;
+			botNavRouteStatus.lastInteractionProgressionKeyPathEntity =
+				candidate.entityNumber;
+			botNavRouteStatus.lastInteractionProgressionKeyPathScore =
+				candidate.progressionScore;
+			botNavRouteStatus.lastInteractionProgressionKeyPathKeyItem =
+				candidate.keyItem;
+			botNavRouteStatus.lastInteractionProgressionKeyPathKeyLock =
+				candidate.keyLock;
+			botNavRouteStatus.lastInteractionProgressionKeyPathRequiredItem =
+				candidate.keyRequiredItem;
+		}
+	}
+	if (candidate.progressionPreferred) {
+		botNavRouteStatus.interactionProgressionPreferenceSelections++;
 	}
 	botNavRouteStatus.lastInteractionFramesRemaining =
 		static_cast<int>(BOT_NAV_INTERACTION_RETRY_FRAMES);
@@ -1349,7 +2092,11 @@ void BotNavUpdateNaturalMovementSupportStatus() {
 
 void BotNavActivateGoalBlacklist(BotNavRouteSlot &slot, int clientIndex, uint32_t frame);
 
-void BotNavActivateRecovery(BotNavRouteSlot &slot, int clientIndex, uint32_t frame) {
+void BotNavActivateRecovery(
+	const gentity_t *bot,
+	BotNavRouteSlot &slot,
+	int clientIndex,
+	uint32_t frame) {
 	if (slot.recoverySideSign == 0) {
 		slot.recoverySideSign = (clientIndex & 1) == 0 ? 1 : -1;
 	} else {
@@ -1357,6 +2104,11 @@ void BotNavActivateRecovery(BotNavRouteSlot &slot, int clientIndex, uint32_t fra
 	}
 
 	slot.recoveryUntilFrame = frame + BOT_NAV_STUCK_RECOVERY_FRAMES;
+	slot.recoveryMoveValid = false;
+	slot.recoveryMoveDirection = vec3_origin;
+	slot.recoveryProbeCandidate = -1;
+	slot.recoveryProbeFraction = 0;
+	(void)BotNavEnsureRecoveryMove(bot, slot, nullptr);
 	botNavRouteStatus.stuckRecoveryActivations++;
 	botNavRouteStatus.lastStuckRecoveryClient = clientIndex;
 	botNavRouteStatus.lastStuckRecoverySide = slot.recoverySideSign;
@@ -1370,15 +2122,23 @@ bool BotNavCheckStuckProgress(BotNavRouteSlot &slot, const gentity_t *bot, int c
 		return false;
 	}
 
+	const Vector3 routeTarget = BotNavRouteTarget(slot.route);
 	const float distanceSquared = BotNavHorizontalDistanceSquared(bot->s.origin, BotNavRouteGoal(slot.route));
+	const float targetDistanceSquared = BotNavHorizontalDistanceSquared(bot->s.origin, routeTarget);
 	slot.lastStuckDistanceSq = BotNavStatusDistance(distanceSquared);
 	botNavRouteStatus.stuckChecks++;
 	botNavRouteStatus.lastStuckClient = clientIndex;
 	botNavRouteStatus.lastStuckDistanceSq = slot.lastStuckDistanceSq;
+	botNavRouteStatus.lastStuckTargetDistanceSq = BotNavStatusDistance(targetDistanceSquared);
+	botNavRouteStatus.lastStuckConsumedTarget = 0;
 
-	if (slot.progressGoalArea != slot.route.goalArea || slot.lastProgressDistanceSquared < 0.0f) {
+	if (slot.progressGoalArea != slot.route.goalArea ||
+		slot.lastProgressDistanceSquared < 0.0f ||
+		slot.lastProgressTargetDistanceSquared < 0.0f) {
 		slot.progressGoalArea = slot.route.goalArea;
 		slot.lastProgressDistanceSquared = distanceSquared;
+		slot.lastProgressTargetDistanceSquared = targetDistanceSquared;
+		slot.progressRouteTarget = routeTarget;
 		slot.stagnantProgressFrames = 0;
 		slot.lastStuckProgressDelta = 0;
 		botNavRouteStatus.lastStuckProgressDelta = 0;
@@ -1387,11 +2147,47 @@ bool BotNavCheckStuckProgress(BotNavRouteSlot &slot, const gentity_t *bot, int c
 	}
 
 	const float progressDelta = slot.lastProgressDistanceSquared - distanceSquared;
-	slot.lastStuckProgressDelta = static_cast<int>(progressDelta);
+	float targetProgressDelta = 0.0f;
+	const bool targetShifted =
+		BotNavHorizontalDistanceSquared(slot.progressRouteTarget, routeTarget) >
+			BOT_NAV_ROUTE_PROGRESS_TARGET_SHIFT_DIST_SQUARED;
+	const bool targetReached =
+		targetDistanceSquared <= BOT_NAV_TARGET_REACHED_DIST_SQUARED;
+	const bool targetPreviouslyReached =
+		!targetShifted &&
+		slot.lastProgressTargetDistanceSquared >= 0.0f &&
+		slot.lastProgressTargetDistanceSquared <= BOT_NAV_TARGET_REACHED_DIST_SQUARED;
+	if (targetShifted) {
+		slot.progressRouteTarget = routeTarget;
+		slot.lastProgressTargetDistanceSquared = targetDistanceSquared;
+	} else {
+		targetProgressDelta =
+			slot.lastProgressTargetDistanceSquared - targetDistanceSquared;
+	}
+
+	const float bestProgressDelta = std::max(progressDelta, targetProgressDelta);
+	slot.lastStuckProgressDelta = static_cast<int>(bestProgressDelta);
 	botNavRouteStatus.lastStuckProgressDelta = slot.lastStuckProgressDelta;
-	if (progressDelta >= BOT_NAV_STUCK_MIN_PROGRESS_DELTA_SQUARED ||
-		distanceSquared <= BOT_NAV_GOAL_REACHED_DIST_SQUARED) {
+	const bool goalReached = distanceSquared <= BOT_NAV_GOAL_REACHED_DIST_SQUARED;
+	const bool targetReachedIsProgress = targetReached && !targetPreviouslyReached;
+	if (targetReached &&
+		targetPreviouslyReached &&
+		bestProgressDelta < BOT_NAV_STUCK_MIN_PROGRESS_DELTA_SQUARED &&
+		!goalReached) {
+		botNavRouteStatus.stuckConsumedTargetStalls++;
+		botNavRouteStatus.lastStuckConsumedTarget = 1;
+	}
+	if (bestProgressDelta >= BOT_NAV_STUCK_MIN_PROGRESS_DELTA_SQUARED ||
+		goalReached ||
+		targetReachedIsProgress) {
+		if (targetReachedIsProgress &&
+			bestProgressDelta < BOT_NAV_STUCK_MIN_PROGRESS_DELTA_SQUARED &&
+			!goalReached) {
+			botNavRouteStatus.stuckTargetReachedProgresses++;
+		}
 		slot.lastProgressDistanceSquared = distanceSquared;
+		slot.lastProgressTargetDistanceSquared = targetDistanceSquared;
+		slot.progressRouteTarget = routeTarget;
 		slot.stagnantProgressFrames = 0;
 		slot.lastStuckProgressDelta = 0;
 		botNavRouteStatus.lastStuckFrames = 0;
@@ -1409,11 +2205,13 @@ bool BotNavCheckStuckProgress(BotNavRouteSlot &slot, const gentity_t *bot, int c
 	slot.nextStuckRepathFrame = frame + BOT_NAV_STUCK_REPATH_COOLDOWN_FRAMES;
 	slot.stagnantProgressFrames = 0;
 	slot.lastProgressDistanceSquared = distanceSquared;
+	slot.lastProgressTargetDistanceSquared = targetDistanceSquared;
+	slot.progressRouteTarget = routeTarget;
 	botNavRouteStatus.stuckDetections++;
 	slot.lastStuckReason = static_cast<int>(BotNavStuckReason::NoGoalProgress);
 	botNavRouteStatus.lastStuckReason = slot.lastStuckReason;
 	if (!BotNavActivateInteractionRetry(slot, bot, clientIndex, frame, slot.route, true)) {
-		BotNavActivateRecovery(slot, clientIndex, frame);
+		BotNavActivateRecovery(bot, slot, clientIndex, frame);
 		BotNavActivateGoalBlacklist(slot, clientIndex, frame);
 	}
 	return true;
@@ -1904,16 +2702,33 @@ bool BotNavFindPickupGoal(const gentity_t *bot, int clientIndex, uint32_t frame,
 	return true;
 }
 
-bool BotNavFindPositionGoal(const BotNavRouteRequest *request, BotNavPositionGoalCandidate *candidate) {
+bool BotNavFindPositionGoal(
+	const gentity_t *bot,
+	const BotNavRouteRequest *request,
+	BotNavPositionGoalCandidate *candidate) {
 	if (request == nullptr || !request->hasPositionGoal) {
 		return false;
 	}
 
 	botNavRouteStatus.positionGoalRequests++;
+	const bool hasInteractionArrivalGoal =
+		request->hasInteractionArrivalGoal &&
+		request->interactionArrivalEntityNumber >= 0 &&
+		request->interactionArrivalKind > 0 &&
+		request->interactionArrivalAction > 0;
+	if (request->hasInteractionArrivalGoal) {
+		botNavRouteStatus.interactionArrivalRouteRequests++;
+		if (!hasInteractionArrivalGoal) {
+			botNavRouteStatus.interactionArrivalRouteInvalidSkips++;
+		}
+	}
 
 	float routeOrigin[3] = {};
 	int area = 0;
 	if (!BotLibAdapter_FindRouteAreaForPoint(request->positionGoal, &area, routeOrigin) || area <= 0) {
+		if (request->hasInteractionArrivalGoal) {
+			botNavRouteStatus.interactionArrivalRouteInvalidSkips++;
+		}
 		return false;
 	}
 
@@ -1925,7 +2740,19 @@ bool BotNavFindPositionGoal(const BotNavRouteRequest *request, BotNavPositionGoa
 
 	if (candidate != nullptr) {
 		candidate->area = area;
-		candidate->origin = { routeOrigin[0], routeOrigin[1], routeOrigin[2] };
+		candidate->origin = {
+			request->positionGoal[0],
+			request->positionGoal[1],
+			request->positionGoal[2]
+		};
+		candidate->distanceSquared = bot != nullptr ?
+			BotNavStatusDistance(BotNavHorizontalDistanceSquared(bot->s.origin, candidate->origin)) :
+			0;
+		candidate->interactionArrivalGoal = hasInteractionArrivalGoal;
+		candidate->interactionArrivalEntityNumber = request->interactionArrivalEntityNumber;
+		candidate->interactionArrivalKind = request->interactionArrivalKind;
+		candidate->interactionArrivalAction = request->interactionArrivalAction;
+		BotNavRecordInteractionArrivalRouteGoal(*candidate, bot);
 	}
 	return true;
 }
@@ -1990,6 +2817,157 @@ void BotNavRecordTeleporterEntityGoal(const BotNavPositionGoalCandidate &candida
 	botNavRouteStatus.lastTeleporterEntityGoalAction = candidate.action;
 }
 
+Vector3 BotNavInteractionEntityRouteOrigin(const gentity_t *ent) {
+	if (ent == nullptr) {
+		return vec3_origin;
+	}
+	if (ent->s.origin.lengthSquared() > 1.0f) {
+		return ent->s.origin;
+	}
+	if (ent->linked) {
+		return (ent->absMin + ent->absMax) * 0.5f;
+	}
+	return ent->s.origin;
+}
+
+bool BotNavResolveInteractionEntityRouteArea(
+	const gentity_t *ent,
+	int *area,
+	Vector3 *origin) {
+	if (area != nullptr) {
+		*area = 0;
+	}
+	if (origin != nullptr) {
+		*origin = vec3_origin;
+	}
+	if (ent == nullptr) {
+		return false;
+	}
+
+	std::array<Vector3, 2> candidates = {
+		BotNavInteractionEntityRouteOrigin(ent),
+		ent->linked ? (ent->absMin + ent->absMax) * 0.5f : ent->s.origin,
+	};
+	for (const Vector3 &candidate : candidates) {
+		const float point[3] = { candidate.x, candidate.y, candidate.z };
+		float routeOrigin[3] = {};
+		int routeArea = 0;
+		if (!BotLibAdapter_FindRouteAreaForPoint(point, &routeArea, routeOrigin) ||
+			routeArea <= 0) {
+			continue;
+		}
+		if (area != nullptr) {
+			*area = routeArea;
+		}
+		if (origin != nullptr) {
+			*origin = { routeOrigin[0], routeOrigin[1], routeOrigin[2] };
+		}
+		return true;
+	}
+	return false;
+}
+
+void BotNavRecordInteractionGoal(const BotNavInteractionGoal &goal) {
+	botNavRouteStatus.lastInteractionGoalEntity = goal.entityNumber;
+	botNavRouteStatus.lastInteractionGoalKind = goal.kind;
+	botNavRouteStatus.lastInteractionGoalAction = goal.action;
+	botNavRouteStatus.lastInteractionGoalArea = goal.area;
+	botNavRouteStatus.lastInteractionGoalX = static_cast<int>(goal.position[0]);
+	botNavRouteStatus.lastInteractionGoalY = static_cast<int>(goal.position[1]);
+	botNavRouteStatus.lastInteractionGoalZ = static_cast<int>(goal.position[2]);
+	botNavRouteStatus.lastInteractionGoalDistanceSq = goal.distanceSquared;
+	botNavRouteStatus.lastInteractionGoalDestinationDistanceSq =
+		goal.destinationDistanceSquared;
+}
+
+void BotNavRecordInteractionArrivalGoal(const BotNavInteractionGoal &goal) {
+	botNavRouteStatus.lastInteractionArrivalGoalEntity = goal.entityNumber;
+	botNavRouteStatus.lastInteractionArrivalGoalKind = goal.kind;
+	botNavRouteStatus.lastInteractionArrivalGoalAction = goal.action;
+	botNavRouteStatus.lastInteractionArrivalGoalArea = goal.area;
+	botNavRouteStatus.lastInteractionArrivalGoalSource = goal.source;
+	botNavRouteStatus.lastInteractionArrivalGoalX = static_cast<int>(goal.position[0]);
+	botNavRouteStatus.lastInteractionArrivalGoalY = static_cast<int>(goal.position[1]);
+	botNavRouteStatus.lastInteractionArrivalGoalZ = static_cast<int>(goal.position[2]);
+	botNavRouteStatus.lastInteractionArrivalGoalDistanceSq = goal.distanceSquared;
+	botNavRouteStatus.lastInteractionArrivalGoalDestinationDistanceSq =
+		goal.destinationDistanceSquared;
+}
+
+void BotNavRecordInteractionArrivalMoverEndpoint(const BotNavInteractionGoal &goal) {
+	botNavRouteStatus.lastInteractionArrivalMoverEndpointEntity = goal.entityNumber;
+	botNavRouteStatus.lastInteractionArrivalMoverEndpointKind = goal.kind;
+	botNavRouteStatus.lastInteractionArrivalMoverEndpointAction = goal.action;
+	botNavRouteStatus.lastInteractionArrivalMoverEndpointArea = goal.area;
+	botNavRouteStatus.lastInteractionArrivalMoverEndpointX =
+		static_cast<int>(goal.position[0]);
+	botNavRouteStatus.lastInteractionArrivalMoverEndpointY =
+		static_cast<int>(goal.position[1]);
+	botNavRouteStatus.lastInteractionArrivalMoverEndpointZ =
+		static_cast<int>(goal.position[2]);
+	botNavRouteStatus.lastInteractionArrivalMoverEndpointDistanceSq =
+		goal.distanceSquared;
+	botNavRouteStatus.lastInteractionArrivalMoverEndpointDestinationDistanceSq =
+		goal.destinationDistanceSquared;
+}
+
+void BotNavRecordInteractionArrivalRouteGoal(
+	int entityNumber,
+	int kind,
+	int action,
+	int area,
+	const Vector3 &origin,
+	int distanceSquared) {
+	botNavRouteStatus.lastInteractionArrivalRouteEntity = entityNumber;
+	botNavRouteStatus.lastInteractionArrivalRouteKind = kind;
+	botNavRouteStatus.lastInteractionArrivalRouteAction = action;
+	botNavRouteStatus.lastInteractionArrivalRouteArea = area;
+	botNavRouteStatus.lastInteractionArrivalRouteX = static_cast<int>(origin.x);
+	botNavRouteStatus.lastInteractionArrivalRouteY = static_cast<int>(origin.y);
+	botNavRouteStatus.lastInteractionArrivalRouteZ = static_cast<int>(origin.z);
+	botNavRouteStatus.lastInteractionArrivalRouteDistanceSq = distanceSquared;
+}
+
+void BotNavRecordInteractionArrivalRouteGoal(
+	const BotNavPositionGoalCandidate &candidate,
+	const gentity_t *bot) {
+	if (!candidate.interactionArrivalGoal) {
+		return;
+	}
+
+	const int distanceSquared = bot != nullptr ?
+		BotNavStatusDistance(BotNavHorizontalDistanceSquared(bot->s.origin, candidate.origin)) :
+		candidate.distanceSquared;
+	BotNavRecordInteractionArrivalRouteGoal(
+		candidate.interactionArrivalEntityNumber,
+		candidate.interactionArrivalKind,
+		candidate.interactionArrivalAction,
+		candidate.area,
+		candidate.origin,
+		distanceSquared);
+}
+
+void BotNavRecordPersistentInteractionArrivalRouteGoal(
+	const BotNavRouteSlot &slot,
+	const gentity_t *bot) {
+	if (!slot.persistentGoalIsInteractionArrival) {
+		return;
+	}
+
+	const int distanceSquared = bot != nullptr ?
+		BotNavStatusDistance(BotNavHorizontalDistanceSquared(
+			bot->s.origin,
+			slot.persistentInteractionArrivalPosition)) :
+		botNavRouteStatus.lastInteractionArrivalRouteDistanceSq;
+	BotNavRecordInteractionArrivalRouteGoal(
+		slot.persistentInteractionArrivalEntityNumber,
+		slot.persistentInteractionArrivalKind,
+		slot.persistentInteractionArrivalAction,
+		slot.persistentInteractionArrivalArea,
+		slot.persistentInteractionArrivalPosition,
+		distanceSquared);
+}
+
 bool BotNavFindTeleporterEntityGoal(const gentity_t *bot, BotNavPositionGoalCandidate *candidate) {
 	botNavRouteStatus.teleporterEntityGoalRequests++;
 	if (bot == nullptr || g_entities == nullptr) {
@@ -2039,6 +3017,493 @@ bool BotNavFindTeleporterEntityGoal(const gentity_t *bot, BotNavPositionGoalCand
 	BotNavRecordTeleporterEntityGoal(best);
 	if (candidate != nullptr) {
 		*candidate = best;
+	}
+	return true;
+}
+
+bool BotNavFindInteractionGoal(
+	const gentity_t *bot,
+	int requiredKind,
+	BotNavInteractionGoal *goal) {
+	botNavRouteStatus.interactionGoalRequests++;
+	if (goal != nullptr) {
+		*goal = {};
+	}
+	if (bot == nullptr || g_entities == nullptr || requiredKind <= 0) {
+		botNavRouteStatus.interactionGoalInvalidSkips++;
+		return false;
+	}
+
+	BotNavApplyRoutePolicy();
+	BotNavInteractionGoal best{};
+	best.distanceSquared = 0x7fffffff;
+	for (uint32_t entnum = game.maxClients + 1; entnum < globals.numEntities; ++entnum) {
+		const gentity_t *ent = &g_entities[entnum];
+		if (ent == nullptr ||
+			!ent->inUse ||
+			(ent->flags & FL_NO_BOTS) != 0) {
+			continue;
+		}
+
+		const int kind = BotNavInteractionKindForEntity(ent);
+		const int action = BotNavInteractionActionForEntity(ent);
+		if (kind != requiredKind ||
+			action == static_cast<int>(BotNavInteractionAction::None)) {
+			continue;
+		}
+
+		botNavRouteStatus.interactionGoalCandidates++;
+		Vector3 routeOrigin = vec3_origin;
+		int area = 0;
+		if (!BotNavResolveInteractionEntityRouteArea(ent, &area, &routeOrigin) ||
+			area <= 0) {
+			botNavRouteStatus.interactionGoalInvalidSkips++;
+			continue;
+		}
+
+		const int distanceSquared =
+			BotNavStatusDistance(BotNavHorizontalDistanceSquared(bot->s.origin, routeOrigin));
+		if (distanceSquared >= best.distanceSquared) {
+			continue;
+		}
+
+		best.entityNumber = static_cast<int>(entnum);
+		best.kind = kind;
+		best.action = action;
+		best.area = area;
+		best.distanceSquared = distanceSquared;
+		best.position[0] = routeOrigin.x;
+		best.position[1] = routeOrigin.y;
+		best.position[2] = routeOrigin.z;
+	}
+
+	if (best.area <= 0) {
+		return false;
+	}
+
+	botNavRouteStatus.interactionGoalResolved++;
+	BotNavRecordInteractionGoal(best);
+	if (goal != nullptr) {
+		*goal = best;
+	}
+	return true;
+}
+
+bool BotNavInteractionArrivalKindHasMoverEndpoint(int kind) {
+	return kind == static_cast<int>(BotNavInteractionKind::Platform) ||
+		kind == static_cast<int>(BotNavInteractionKind::Train) ||
+		kind == static_cast<int>(BotNavInteractionKind::Mover);
+}
+
+bool BotNavRecordMoverRideState(
+	const gentity_t *bot,
+	int interactionEntityNumber,
+	BotNavMoverRidePhase phase,
+	const BotNavInteractionGoal *goal) {
+	botNavRouteStatus.interactionMoverRideChecks++;
+	if (bot == nullptr ||
+		g_entities == nullptr ||
+		interactionEntityNumber < 0 ||
+		interactionEntityNumber >= static_cast<int>(globals.numEntities) ||
+		phase == BotNavMoverRidePhase::None) {
+		botNavRouteStatus.interactionMoverRideInvalidSkips++;
+		return false;
+	}
+
+	const gentity_t *ent = &g_entities[interactionEntityNumber];
+	if (ent == nullptr || !ent->inUse) {
+		botNavRouteStatus.interactionMoverRideInvalidSkips++;
+		return false;
+	}
+
+	const bool goalMatches =
+		goal != nullptr &&
+		goal->entityNumber == interactionEntityNumber;
+	const int kind =
+		goalMatches && goal->kind > 0 ?
+			goal->kind :
+			BotNavInteractionKindForEntity(ent);
+	if (!BotNavInteractionArrivalKindHasMoverEndpoint(kind)) {
+		botNavRouteStatus.interactionMoverRideInvalidSkips++;
+		return false;
+	}
+
+	const int action =
+		goalMatches && goal->action > 0 ?
+			goal->action :
+			BotNavInteractionActionForEntity(ent);
+	const int area = goalMatches ? goal->area : 0;
+	const Vector3 position =
+		goalMatches && goal->area > 0 ?
+			Vector3{ goal->position[0], goal->position[1], goal->position[2] } :
+			BotNavInteractionEntityRouteOrigin(ent);
+	const int groundEntity =
+		bot->groundEntity != nullptr ? bot->groundEntity->s.number : -1;
+	const bool groundedOnMover = groundEntity == interactionEntityNumber;
+	const bool moverMoving =
+		ent->moveInfo.state == MoveState::Up ||
+		ent->moveInfo.state == MoveState::Down;
+	const int distanceSquared =
+		BotNavStatusDistance(BotNavHorizontalDistanceSquared(bot->s.origin, position));
+
+	switch (phase) {
+	case BotNavMoverRidePhase::Wait:
+		botNavRouteStatus.interactionMoverRideWaitStates++;
+		break;
+	case BotNavMoverRidePhase::Board:
+		botNavRouteStatus.interactionMoverRideBoardStates++;
+		break;
+	case BotNavMoverRidePhase::Ride:
+		botNavRouteStatus.interactionMoverRideRideStates++;
+		break;
+	case BotNavMoverRidePhase::Leave:
+		botNavRouteStatus.interactionMoverRideLeaveStates++;
+		break;
+	case BotNavMoverRidePhase::None:
+	default:
+		botNavRouteStatus.interactionMoverRideInvalidSkips++;
+		return false;
+	}
+
+	if (groundedOnMover) {
+		botNavRouteStatus.interactionMoverRideGroundStates++;
+	}
+	if (moverMoving) {
+		botNavRouteStatus.interactionMoverRideMovingStates++;
+	}
+
+	const int clientIndex = BotNavClientIndex(bot);
+	const bool preserveCompletedLeave =
+		phase != BotNavMoverRidePhase::Leave &&
+		botNavRouteStatus.lastInteractionMoverRidePhase ==
+			static_cast<int>(BotNavMoverRidePhase::Leave) &&
+		botNavRouteStatus.lastInteractionMoverRideEntity == interactionEntityNumber &&
+		botNavRouteStatus.lastInteractionMoverRideClient == clientIndex;
+	if (preserveCompletedLeave) {
+		return true;
+	}
+
+	botNavRouteStatus.lastInteractionMoverRidePhase = static_cast<int>(phase);
+	botNavRouteStatus.lastInteractionMoverRideEntity = interactionEntityNumber;
+	botNavRouteStatus.lastInteractionMoverRideKind = kind;
+	botNavRouteStatus.lastInteractionMoverRideAction = action;
+	botNavRouteStatus.lastInteractionMoverRideArea = area;
+	botNavRouteStatus.lastInteractionMoverRideClient = clientIndex;
+	botNavRouteStatus.lastInteractionMoverRideMoveState =
+		static_cast<int>(ent->moveInfo.state);
+	botNavRouteStatus.lastInteractionMoverRideGroundEntity = groundEntity;
+	botNavRouteStatus.lastInteractionMoverRideX = static_cast<int>(position.x);
+	botNavRouteStatus.lastInteractionMoverRideY = static_cast<int>(position.y);
+	botNavRouteStatus.lastInteractionMoverRideZ = static_cast<int>(position.z);
+	botNavRouteStatus.lastInteractionMoverRideDistanceSq = distanceSquared;
+	return true;
+}
+
+bool BotNavInteractionArrivalCandidateBetter(
+	int source,
+	int destinationDistanceSquared,
+	int botDistanceSquared,
+	const BotNavInteractionGoal &best) {
+	if (best.area <= 0) {
+		return true;
+	}
+
+	const bool candidateMoverEndpoint =
+		source == static_cast<int>(BotNavInteractionArrivalSource::MoverEndpoint);
+	const bool bestMoverEndpoint =
+		best.source == static_cast<int>(BotNavInteractionArrivalSource::MoverEndpoint);
+	if (candidateMoverEndpoint != bestMoverEndpoint) {
+		static constexpr int moverEndpointPreferenceSlackSquared = 160 * 160;
+		if (candidateMoverEndpoint &&
+			destinationDistanceSquared <=
+				best.destinationDistanceSquared + moverEndpointPreferenceSlackSquared) {
+			return true;
+		}
+		if (bestMoverEndpoint &&
+			best.destinationDistanceSquared <=
+				destinationDistanceSquared + moverEndpointPreferenceSlackSquared) {
+			return false;
+		}
+	}
+
+	return destinationDistanceSquared < best.destinationDistanceSquared ||
+		(destinationDistanceSquared == best.destinationDistanceSquared &&
+		 botDistanceSquared < best.distanceSquared);
+}
+
+bool BotNavTryInteractionArrivalCandidate(
+	const gentity_t *bot,
+	const gentity_t *ent,
+	int entityNumber,
+	int kind,
+	int action,
+	const Vector3 &destination,
+	const Vector3 &candidate,
+	int source,
+	BotNavInteractionGoal *best) {
+	if (best == nullptr) {
+		return false;
+	}
+
+	const bool moverEndpoint =
+		source == static_cast<int>(BotNavInteractionArrivalSource::MoverEndpoint);
+	if (moverEndpoint) {
+		botNavRouteStatus.interactionArrivalMoverEndpointChecks++;
+	}
+
+	const float point[3] = { candidate.x, candidate.y, candidate.z };
+	float routeOrigin[3] = {};
+	int area = 0;
+	botNavRouteStatus.interactionArrivalGoalCandidates++;
+	if (!BotLibAdapter_FindRouteAreaForPoint(point, &area, routeOrigin) ||
+		area <= 0) {
+		botNavRouteStatus.interactionArrivalGoalInvalidSkips++;
+		return false;
+	}
+	if (moverEndpoint) {
+		botNavRouteStatus.interactionArrivalMoverEndpointCandidates++;
+	}
+
+	const Vector3 resolved = { routeOrigin[0], routeOrigin[1], routeOrigin[2] };
+	const int destinationDistanceSquared =
+		BotNavStatusDistance(BotNavHorizontalDistanceSquared(destination, resolved));
+	const int botDistanceSquared =
+		BotNavStatusDistance(BotNavHorizontalDistanceSquared(bot->s.origin, resolved));
+	if (!BotNavInteractionArrivalCandidateBetter(
+			source,
+			destinationDistanceSquared,
+			botDistanceSquared,
+			*best)) {
+		return false;
+	}
+
+	best->entityNumber = entityNumber;
+	best->kind = kind;
+	best->action = action;
+	best->area = area;
+	best->source = source;
+	best->distanceSquared = botDistanceSquared;
+	best->destinationDistanceSquared = destinationDistanceSquared;
+	best->position[0] = resolved.x;
+	best->position[1] = resolved.y;
+	best->position[2] = resolved.z;
+	if (moverEndpoint) {
+		botNavRouteStatus.interactionArrivalMoverEndpointSelections++;
+		BotNavRecordInteractionArrivalMoverEndpoint(*best);
+	}
+	(void)ent;
+	return true;
+}
+
+bool BotNavAddUniqueInteractionArrivalEndpoint(
+	std::array<Vector3, 8> &endpoints,
+	size_t *count,
+	const Vector3 &candidate) {
+	if (count == nullptr ||
+		*count >= endpoints.size() ||
+		candidate.lengthSquared() <= 1.0f) {
+		return false;
+	}
+
+	for (size_t i = 0; i < *count; ++i) {
+		if ((endpoints[i] - candidate).lengthSquared() <= 1.0f) {
+			return false;
+		}
+	}
+
+	endpoints[*count] = candidate;
+	++(*count);
+	return true;
+}
+
+bool BotNavCollectInteractionArrivalMoverEndpoints(
+	const gentity_t *ent,
+	std::array<Vector3, 8> &endpoints,
+	size_t *count) {
+	if (ent == nullptr || count == nullptr) {
+		return false;
+	}
+
+	const size_t initialCount = *count;
+	(void)BotNavAddUniqueInteractionArrivalEndpoint(
+		endpoints,
+		count,
+		ent->moveInfo.endOrigin);
+	(void)BotNavAddUniqueInteractionArrivalEndpoint(
+		endpoints,
+		count,
+		ent->moveInfo.dest);
+	(void)BotNavAddUniqueInteractionArrivalEndpoint(
+		endpoints,
+		count,
+		ent->pos2);
+	(void)BotNavAddUniqueInteractionArrivalEndpoint(
+		endpoints,
+		count,
+		ent->pos1);
+
+	if (ent->targetEnt != nullptr && ent->targetEnt->inUse) {
+		(void)BotNavAddUniqueInteractionArrivalEndpoint(
+			endpoints,
+			count,
+			ent->targetEnt->s.origin);
+	}
+
+	if (ent->target != nullptr && ent->target[0] != '\0') {
+		gentity_t *target = nullptr;
+		while ((target = G_FindByString<&gentity_t::targetName>(target, ent->target)) != nullptr) {
+			if (!target->inUse) {
+				continue;
+			}
+			(void)BotNavAddUniqueInteractionArrivalEndpoint(
+				endpoints,
+				count,
+				target->s.origin);
+		}
+	}
+
+	return *count > initialCount;
+}
+
+void BotNavTryInteractionArrivalMoverEndpointCandidates(
+	const gentity_t *bot,
+	const gentity_t *ent,
+	int entityNumber,
+	int kind,
+	int action,
+	const Vector3 &destination,
+	BotNavInteractionGoal *best) {
+	if (!BotNavInteractionArrivalKindHasMoverEndpoint(kind)) {
+		return;
+	}
+
+	std::array<Vector3, 8> endpoints{};
+	size_t endpointCount = 0;
+	if (!BotNavCollectInteractionArrivalMoverEndpoints(ent, endpoints, &endpointCount)) {
+		return;
+	}
+
+	for (size_t endpointIndex = 0; endpointIndex < endpointCount; ++endpointIndex) {
+		const Vector3 endpoint = endpoints[endpointIndex];
+		(void)BotNavTryInteractionArrivalCandidate(
+			bot,
+			ent,
+			entityNumber,
+			kind,
+			action,
+			destination,
+			endpoint,
+			static_cast<int>(BotNavInteractionArrivalSource::MoverEndpoint),
+			best);
+	}
+}
+
+bool BotNavFindInteractionArrivalGoal(
+	const gentity_t *bot,
+	int interactionEntityNumber,
+	const float destinationPoint[3],
+	BotNavInteractionGoal *goal) {
+	botNavRouteStatus.interactionArrivalGoalRequests++;
+	if (goal != nullptr) {
+		*goal = {};
+	}
+	if (bot == nullptr ||
+		g_entities == nullptr ||
+		destinationPoint == nullptr ||
+		interactionEntityNumber < 0 ||
+		interactionEntityNumber >= static_cast<int>(globals.numEntities)) {
+		botNavRouteStatus.interactionArrivalGoalInvalidSkips++;
+		return false;
+	}
+
+	const gentity_t *ent = &g_entities[interactionEntityNumber];
+	if (ent == nullptr ||
+		!ent->inUse ||
+		(ent->flags & FL_NO_BOTS) != 0) {
+		botNavRouteStatus.interactionArrivalGoalInvalidSkips++;
+		return false;
+	}
+
+	const int kind = BotNavInteractionKindForEntity(ent);
+	const int action = BotNavInteractionActionForEntity(ent);
+	if (kind == static_cast<int>(BotNavInteractionKind::None) ||
+		action == static_cast<int>(BotNavInteractionAction::None)) {
+		botNavRouteStatus.interactionArrivalGoalInvalidSkips++;
+		return false;
+	}
+
+	BotNavApplyRoutePolicy();
+	const Vector3 destination = {
+		destinationPoint[0],
+		destinationPoint[1],
+		destinationPoint[2],
+	};
+	Vector3 origin = BotNavInteractionEntityRouteOrigin(ent);
+	Vector3 forward = destination - origin;
+	forward.z = 0.0f;
+	if (forward.lengthSquared() <= 1.0f) {
+		forward = { 1.0f, 0.0f, 0.0f };
+	} else {
+		forward = forward.normalized();
+	}
+	const Vector3 right = { -forward.y, forward.x, 0.0f };
+
+	static constexpr float backOffsets[] = { 384.0f, 256.0f, 160.0f, 96.0f };
+	static constexpr float sideOffsets[] = { 0.0f, 96.0f, -96.0f, 192.0f, -192.0f };
+	static constexpr float zOffsets[] = { 0.0f, 48.0f, -48.0f };
+
+	BotNavInteractionGoal best{};
+	BotNavTryInteractionArrivalMoverEndpointCandidates(
+		bot,
+		ent,
+		interactionEntityNumber,
+		kind,
+		action,
+		destination,
+		&best);
+	for (const float backOffset : backOffsets) {
+		for (const float sideOffset : sideOffsets) {
+			for (const float zOffset : zOffsets) {
+				Vector3 candidate =
+					destination -
+					forward * backOffset +
+					right * sideOffset;
+				candidate.z += zOffset;
+				(void)BotNavTryInteractionArrivalCandidate(
+					bot,
+					ent,
+					interactionEntityNumber,
+					kind,
+					action,
+					destination,
+					candidate,
+					static_cast<int>(BotNavInteractionArrivalSource::DestinationOffset),
+					&best);
+			}
+		}
+	}
+
+	if (best.area <= 0) {
+		(void)BotNavTryInteractionArrivalCandidate(
+			bot,
+			ent,
+			interactionEntityNumber,
+			kind,
+			action,
+			destination,
+			destination,
+			static_cast<int>(BotNavInteractionArrivalSource::DestinationDirect),
+			&best);
+	}
+
+	if (best.area <= 0) {
+		return false;
+	}
+
+	botNavRouteStatus.interactionArrivalGoalResolved++;
+	BotNavRecordInteractionArrivalGoal(best);
+	if (goal != nullptr) {
+		*goal = best;
 	}
 	return true;
 }
@@ -2168,6 +3633,15 @@ void BotNavClearPositionGoal(BotNavRouteSlot &slot) {
 	slot.persistentPositionGoal = vec3_origin;
 }
 
+void BotNavClearInteractionArrivalRouteGoal(BotNavRouteSlot &slot) {
+	slot.persistentGoalIsInteractionArrival = false;
+	slot.persistentInteractionArrivalEntityNumber = -1;
+	slot.persistentInteractionArrivalKind = 0;
+	slot.persistentInteractionArrivalAction = 0;
+	slot.persistentInteractionArrivalArea = 0;
+	slot.persistentInteractionArrivalPosition = vec3_origin;
+}
+
 void BotNavClearTravelTypeGoal(BotNavRouteSlot &slot) {
 	if (slot.persistentGoalTravelType > 0) {
 		botNavRouteStatus.travelTypeGoalClears++;
@@ -2176,12 +3650,15 @@ void BotNavClearTravelTypeGoal(BotNavRouteSlot &slot) {
 }
 
 void BotNavClearPersistentGoal(BotNavRouteSlot &slot, BotNavGoalClearReason reason, int clientIndex) {
+	const uint32_t frame = gi.ServerFrame();
+	BotNavCompleteProgressionInteraction(slot, clientIndex, frame);
 	BotNavRecordFailedGoal(slot, clientIndex, reason);
 	if (slot.persistentGoalArea > 0) {
 		botNavRouteStatus.persistentGoalClears++;
 	}
 	BotNavClearItemGoal(slot);
 	BotNavClearPositionGoal(slot);
+	BotNavClearInteractionArrivalRouteGoal(slot);
 	BotNavClearTravelTypeGoal(slot);
 	slot.persistentGoalArea = 0;
 	BotNavResetProgress(slot);
@@ -2426,6 +3903,32 @@ void BotNavAssignPersistentGoal(BotNavRouteSlot &slot, const BotLibAdapterRouteS
 	botNavRouteStatus.lastPersistentGoalArea = slot.persistentGoalArea;
 }
 
+void BotNavAssignInteractionArrivalRouteGoal(
+	BotNavRouteSlot &slot,
+	const BotNavPositionGoalCandidate &candidate) {
+	if (!candidate.interactionArrivalGoal || candidate.area <= 0) {
+		return;
+	}
+
+	const bool newInteractionArrivalAssignment =
+		!slot.persistentGoalIsInteractionArrival ||
+		slot.persistentInteractionArrivalEntityNumber != candidate.interactionArrivalEntityNumber ||
+		slot.persistentInteractionArrivalKind != candidate.interactionArrivalKind ||
+		slot.persistentInteractionArrivalAction != candidate.interactionArrivalAction ||
+		slot.persistentInteractionArrivalArea != candidate.area ||
+		(slot.persistentInteractionArrivalPosition - candidate.origin).lengthSquared() > 1.0f;
+	if (newInteractionArrivalAssignment) {
+		botNavRouteStatus.interactionArrivalRouteAssignments++;
+	}
+	slot.persistentGoalIsInteractionArrival = true;
+	slot.persistentInteractionArrivalEntityNumber = candidate.interactionArrivalEntityNumber;
+	slot.persistentInteractionArrivalKind = candidate.interactionArrivalKind;
+	slot.persistentInteractionArrivalAction = candidate.interactionArrivalAction;
+	slot.persistentInteractionArrivalArea = candidate.area;
+	slot.persistentInteractionArrivalPosition = candidate.origin;
+	BotNavRecordInteractionArrivalRouteGoal(candidate, nullptr);
+}
+
 void BotNavAssignPositionGoal(BotNavRouteSlot &slot, const BotNavPositionGoalCandidate &candidate) {
 	if (candidate.area <= 0) {
 		return;
@@ -2433,6 +3936,11 @@ void BotNavAssignPositionGoal(BotNavRouteSlot &slot, const BotNavPositionGoalCan
 
 	if (!slot.persistentGoalIsPosition || slot.persistentGoalArea != candidate.area) {
 		botNavRouteStatus.positionGoalAssignments++;
+	}
+	if (candidate.interactionArrivalGoal) {
+		BotNavAssignInteractionArrivalRouteGoal(slot, candidate);
+	} else {
+		BotNavClearInteractionArrivalRouteGoal(slot);
 	}
 
 	slot.persistentGoalIsPosition = true;
@@ -2473,6 +3981,7 @@ void BotNavAssignTravelTypeGoal(BotNavRouteSlot &slot, int travelTypeGoal, const
 
 	slot.persistentGoalTravelType = travelTypeGoal;
 	slot.persistentGoalIsPosition = false;
+	BotNavClearInteractionArrivalRouteGoal(slot);
 	slot.persistentPositionGoal = vec3_origin;
 	botNavRouteStatus.lastTravelTypeGoalType = travelTypeGoal;
 	botNavRouteStatus.lastTravelTypeGoalArea = route.goalArea;
@@ -2500,6 +4009,7 @@ void BotNavAssignItemGoal(BotNavRouteSlot &slot, const BotNavItemGoalCandidate &
 	slot.persistentGoalArmorAtAssignment =
 		bot != nullptr && bot->client != nullptr ? BotNavArmorValue(bot->client) : 0;
 	slot.persistentGoalIsPosition = false;
+	BotNavClearInteractionArrivalRouteGoal(slot);
 	slot.persistentGoalTravelType = 0;
 	slot.persistentPositionGoal = vec3_origin;
 	botNavRouteStatus.lastItemGoalEntity = candidate.entityNumber;
@@ -2723,6 +4233,9 @@ bool BotNavRefreshRoute(
 		BotNavClearPersistentGoal(slot, BotNavGoalClearReason::RouteFallback, clientIndex);
 	}
 	BotNavAssignPersistentGoal(slot, refreshedRoute);
+	if (requestedPositionGoal != nullptr && requestedPositionGoal->interactionArrivalGoal) {
+		BotNavAssignInteractionArrivalRouteGoal(slot, *requestedPositionGoal);
+	}
 	if (requestedTravelTypeGoal > 0 && refreshedRoute.reachabilityTravelType == requestedTravelTypeGoal) {
 		BotNavAssignTravelTypeGoal(slot, requestedTravelTypeGoal, refreshedRoute);
 	} else if (requestedTravelTypeGoal == BOT_NAV_TRAVEL_TELEPORT &&
@@ -2783,6 +4296,153 @@ void BotNav_ResetClient(int clientIndex) {
 	BotNavUpdateActiveReservations();
 }
 
+bool BotNav_FindInteractionGoal(
+	const gentity_t *bot,
+	int requiredKind,
+	BotNavInteractionGoal *goal) {
+	return BotNavFindInteractionGoal(bot, requiredKind, goal);
+}
+
+bool BotNav_FindInteractionArrivalGoal(
+	const gentity_t *bot,
+	int interactionEntityNumber,
+	const float destination[3],
+	BotNavInteractionGoal *goal) {
+	return BotNavFindInteractionArrivalGoal(
+		bot,
+		interactionEntityNumber,
+		destination,
+		goal);
+}
+
+bool BotNav_SetInteractionArrivalRouteRequest(
+	const BotNavInteractionGoal &goal,
+	BotNavRouteRequest *request) {
+	if (request == nullptr ||
+		goal.entityNumber < 0 ||
+		goal.kind <= 0 ||
+		goal.action <= 0 ||
+		goal.area <= 0) {
+		botNavRouteStatus.interactionArrivalRouteInvalidSkips++;
+		return false;
+	}
+
+	request->hasPositionGoal = true;
+	request->positionGoal[0] = goal.position[0];
+	request->positionGoal[1] = goal.position[1];
+	request->positionGoal[2] = goal.position[2];
+	request->hasInteractionArrivalGoal = true;
+	request->interactionArrivalEntityNumber = goal.entityNumber;
+	request->interactionArrivalKind = goal.kind;
+	request->interactionArrivalAction = goal.action;
+	return true;
+}
+
+bool BotNav_BuildInteractionArrivalRouteRequest(
+	const gentity_t *bot,
+	int interactionEntityNumber,
+	const float destination[3],
+	BotNavRouteRequest *request,
+	BotNavInteractionGoal *goal) {
+	BotNavInteractionGoal resolved{};
+	if (!BotNavFindInteractionArrivalGoal(
+			bot,
+			interactionEntityNumber,
+			destination,
+			&resolved)) {
+		botNavRouteStatus.interactionArrivalRouteInvalidSkips++;
+		return false;
+	}
+
+	if (goal != nullptr) {
+		*goal = resolved;
+	}
+	return BotNav_SetInteractionArrivalRouteRequest(resolved, request);
+}
+
+bool BotNav_InteractionArrivalRouteReached(
+	const gentity_t *bot,
+	const BotNavInteractionGoal *goal,
+	int distanceSquaredThreshold) {
+	const int clientIndex = BotNavClientIndex(bot);
+	if (clientIndex < 0 ||
+		goal == nullptr ||
+		goal->entityNumber < 0 ||
+		goal->kind <= 0 ||
+		goal->action <= 0 ||
+		goal->area <= 0 ||
+		distanceSquaredThreshold <= 0) {
+		botNavRouteStatus.interactionArrivalRouteInvalidSkips++;
+		return false;
+	}
+
+	BotNavRouteSlot &slot = botNavRouteSlots[clientIndex];
+	const Vector3 goalOrigin = {
+		goal->position[0],
+		goal->position[1],
+		goal->position[2],
+	};
+	const int directDistanceSquared =
+		BotNavStatusDistance(BotNavHorizontalDistanceSquared(bot->s.origin, goalOrigin));
+	BotNavRecordInteractionArrivalRouteGoal(
+		goal->entityNumber,
+		goal->kind,
+		goal->action,
+		goal->area,
+		goalOrigin,
+		directDistanceSquared);
+
+	if (!slot.persistentGoalIsInteractionArrival ||
+		slot.persistentInteractionArrivalEntityNumber != goal->entityNumber ||
+		slot.persistentInteractionArrivalKind != goal->kind ||
+		slot.persistentInteractionArrivalAction != goal->action ||
+		slot.persistentInteractionArrivalArea != goal->area ||
+		(slot.persistentInteractionArrivalPosition - goalOrigin).lengthSquared() > 1.0f ||
+		!slot.valid) {
+		return false;
+	}
+
+	const Vector3 routeTarget = BotNavRouteTarget(slot.route);
+	const int routeTargetDistanceSquared =
+		BotNavStatusDistance(BotNavHorizontalDistanceSquared(bot->s.origin, routeTarget));
+	const int bestDistanceSquared =
+		std::min(directDistanceSquared, routeTargetDistanceSquared);
+	BotNavRecordInteractionArrivalRouteGoal(
+		goal->entityNumber,
+		goal->kind,
+		goal->action,
+		goal->area,
+		goalOrigin,
+		bestDistanceSquared);
+
+	if (slot.route.routeEndArea <= 0) {
+		return false;
+	}
+	if (BotNavRoutePointCount(slot.route) > 1 &&
+		directDistanceSquared > distanceSquaredThreshold &&
+		routeTargetDistanceSquared > distanceSquaredThreshold) {
+		return false;
+	}
+	if (bestDistanceSquared > distanceSquaredThreshold) {
+		return false;
+	}
+
+	botNavRouteStatus.interactionArrivalRouteReached++;
+	return true;
+}
+
+bool BotNav_RecordMoverRideState(
+	const gentity_t *bot,
+	int interactionEntityNumber,
+	BotNavMoverRidePhase phase,
+	const BotNavInteractionGoal *goal) {
+	return BotNavRecordMoverRideState(
+		bot,
+		interactionEntityNumber,
+		phase,
+		goal);
+}
+
 bool BotNav_ProbePickupGoal(const gentity_t *bot) {
 	const int clientIndex = BotNavClientIndex(bot);
 	if (clientIndex < 0) {
@@ -2797,6 +4457,22 @@ bool BotNav_ProbePickupGoal(const gentity_t *bot) {
 		&selectedItemGoal);
 }
 
+bool BotNav_RouteTargetTraceClear(
+	const gentity_t *bot,
+	const BotLibAdapterRouteSteer *route,
+	const float target[3]) {
+	if (bot == nullptr || route == nullptr || !route->success || target == nullptr) {
+		return false;
+	}
+
+	const Vector3 targetPoint = { target[0], target[1], target[2] };
+	return BotNavRouteShortcutTraceClear(
+		bot,
+		targetPoint,
+		route->reachabilityTravelType,
+		false);
+}
+
 bool BotNav_GetRouteSteer(const gentity_t *bot, const BotNavRouteRequest *request, BotLibAdapterRouteSteer *route) {
 	const int clientIndex = BotNavClientIndex(bot);
 	const uint32_t frame = gi.ServerFrame();
@@ -2808,6 +4484,8 @@ bool BotNav_GetRouteSteer(const gentity_t *bot, const BotNavRouteRequest *reques
 	}
 
 	BotNavRouteSlot &slot = botNavRouteSlots[clientIndex];
+	BotNavCompleteExpiredInteraction(slot, clientIndex, frame);
+	BotNavRecordPostInteractionProgress(slot, frame);
 	if (slot.persistentGoalEntityNumber >= 0 && !BotNavItemGoalStillAvailable(slot)) {
 		BotNavRecordPotentialPickup(slot, bot);
 		BotNavClearPersistentGoal(slot, BotNavGoalClearReason::ItemUnavailable, clientIndex);
@@ -2819,7 +4497,7 @@ bool BotNav_GetRouteSteer(const gentity_t *bot, const BotNavRouteRequest *reques
 	BotNavPositionGoalCandidate selectedPositionGoal{};
 	BotNavPositionGoalCandidate selectedTeleporterEntityGoal{};
 	bool hasSelectedItemGoal = false;
-	const bool hasSelectedPositionGoal = BotNavFindPositionGoal(request, &selectedPositionGoal);
+	const bool hasSelectedPositionGoal = BotNavFindPositionGoal(bot, request, &selectedPositionGoal);
 	const int requestedTravelTypeGoal =
 		request != nullptr && request->hasTravelTypeGoal && request->travelTypeGoal > 0 ?
 			request->travelTypeGoal :
@@ -2917,6 +4595,10 @@ bool BotNav_GetRouteSteer(const gentity_t *bot, const BotNavRouteRequest *reques
 			botNavRouteStatus.lastPositionGoalY = static_cast<int>(slot.persistentPositionGoal.y);
 			botNavRouteStatus.lastPositionGoalZ = static_cast<int>(slot.persistentPositionGoal.z);
 		}
+		if (slot.persistentGoalIsInteractionArrival) {
+			botNavRouteStatus.interactionArrivalRouteCacheReuses++;
+			BotNavRecordPersistentInteractionArrivalRouteGoal(slot, bot);
+		}
 		if (slot.persistentGoalTravelType > 0) {
 			botNavRouteStatus.travelTypeGoalCacheReuses++;
 			botNavRouteStatus.lastTravelTypeGoalType = slot.persistentGoalTravelType;
@@ -2953,6 +4635,8 @@ bool BotNav_RequestInteractionRetry(
 
 	BotNavRouteSlot &slot = botNavRouteSlots[clientIndex];
 	const uint32_t frame = gi.ServerFrame();
+	BotNavCompleteExpiredInteraction(slot, clientIndex, frame);
+	BotNavRecordPostInteractionProgress(slot, frame);
 	return BotNavActivateInteractionRetry(
 		slot,
 		bot,
@@ -2964,7 +4648,51 @@ bool BotNav_RequestInteractionRetry(
 		 frame < slot.interactionUntilFrame);
 }
 
+bool BotNav_ActivateInteractionNearPosition(
+	const gentity_t *bot,
+	const float position[3],
+	int requiredKind,
+	int forcedTravelType) {
+	const int clientIndex = BotNavClientIndex(bot);
+	if (clientIndex < 0 ||
+		position == nullptr ||
+		requiredKind <= 0 ||
+		forcedTravelType <= 0) {
+		return false;
+	}
+
+	BotLibAdapterRouteSteer route{};
+	route.success = true;
+	route.reachabilityTravelType = forcedTravelType;
+	route.routePointCount = 1;
+	for (int axis = 0; axis < 3; ++axis) {
+		route.moveTarget[axis] = position[axis];
+		route.goalOrigin[axis] = position[axis];
+		route.routePoints[0][axis] = position[axis];
+	}
+
+	BotNavRouteSlot &slot = botNavRouteSlots[clientIndex];
+	const uint32_t frame = gi.ServerFrame();
+	BotNavCompleteExpiredInteraction(slot, clientIndex, frame);
+	BotNavRecordPostInteractionProgress(slot, frame);
+	return BotNavActivateInteractionRetry(
+		slot,
+		bot,
+		clientIndex,
+		frame,
+		route,
+		false,
+		requiredKind) ||
+		(slot.interactionAction != static_cast<int>(BotNavInteractionAction::None) &&
+		 slot.interactionKind == requiredKind &&
+		 frame < slot.interactionUntilFrame);
+}
+
 bool BotNav_GetRecoveryMove(const gentity_t *bot, BotNavRecoveryMove *move) {
+	return BotNav_GetRecoveryMove(bot, nullptr, move);
+}
+
+bool BotNav_GetRecoveryMove(const gentity_t *bot, const float viewAngles[3], BotNavRecoveryMove *move) {
 	if (move != nullptr) {
 		*move = {};
 	}
@@ -2976,6 +4704,8 @@ bool BotNav_GetRecoveryMove(const gentity_t *bot, BotNavRecoveryMove *move) {
 
 	BotNavRouteSlot &slot = botNavRouteSlots[clientIndex];
 	const uint32_t frame = gi.ServerFrame();
+	BotNavCompleteExpiredInteraction(slot, clientIndex, frame);
+	BotNavRecordPostInteractionProgress(slot, frame);
 	if (slot.interactionAction != static_cast<int>(BotNavInteractionAction::None) &&
 		frame < slot.interactionUntilFrame) {
 		const int framesRemaining = static_cast<int>(slot.interactionUntilFrame - frame);
@@ -2992,15 +4722,67 @@ bool BotNav_GetRecoveryMove(const gentity_t *bot, BotNavRecoveryMove *move) {
 		if (use) {
 			botNavRouteStatus.interactionUseFrames++;
 		}
+		slot.interactionCommandFrames++;
 		botNavRouteStatus.lastInteractionAction = slot.interactionAction;
 		botNavRouteStatus.lastInteractionKind = slot.interactionKind;
 		botNavRouteStatus.lastInteractionEntity = slot.interactionEntityNumber;
+		botNavRouteStatus.lastInteractionClient = clientIndex;
 		botNavRouteStatus.lastInteractionFramesRemaining = framesRemaining;
+		botNavRouteStatus.lastInteractionProgressionScore = slot.interactionProgressionScore;
+		botNavRouteStatus.lastInteractionProgressionPreferred = slot.interactionProgressionPreferred;
+		botNavRouteStatus.lastInteractionTargetEntity = slot.interactionTargetEntity;
+		botNavRouteStatus.lastInteractionProgressionTarget = slot.interactionProgressionTarget;
+		botNavRouteStatus.lastInteractionTargetLink = slot.interactionTargetLink;
+		botNavRouteStatus.lastInteractionNamedTarget = slot.interactionNamedTarget;
+		botNavRouteStatus.lastInteractionKeyEntity = slot.interactionKeyEntity;
+		botNavRouteStatus.lastInteractionKeyItem = slot.interactionKeyItem;
+		botNavRouteStatus.lastInteractionKeyLock = slot.interactionKeyLock;
+		botNavRouteStatus.lastInteractionKeyRequiredItem = slot.interactionKeyRequiredItem;
 		if (slot.interactionEntityNumber >= 0 &&
 			slot.interactionEntityNumber < static_cast<int>(globals.numEntities)) {
 			const gentity_t *ent = &g_entities[slot.interactionEntityNumber];
 			botNavRouteStatus.lastInteractionMoveState = static_cast<int>(ent->moveInfo.state);
 			BotNavRecordInteractionEntityContext(ent);
+			if (BotNavInteractionArrivalKindHasMoverEndpoint(slot.interactionKind)) {
+				const bool moverMoving =
+					ent->moveInfo.state == MoveState::Up ||
+					ent->moveInfo.state == MoveState::Down;
+				if (moverMoving) {
+					(void)BotNavRecordMoverRideState(
+						bot,
+						slot.interactionEntityNumber,
+						BotNavMoverRidePhase::Ride,
+						nullptr);
+				}
+				if (wait) {
+					(void)BotNavRecordMoverRideState(
+						bot,
+						slot.interactionEntityNumber,
+						BotNavMoverRidePhase::Wait,
+						nullptr);
+				}
+				if (use) {
+					(void)BotNavRecordMoverRideState(
+						bot,
+						slot.interactionEntityNumber,
+						BotNavMoverRidePhase::Board,
+						nullptr);
+				}
+				if (!moverMoving && !wait && !use) {
+					(void)BotNavRecordMoverRideState(
+						bot,
+						slot.interactionEntityNumber,
+						BotNavMoverRidePhase::Wait,
+						nullptr);
+				}
+				if (framesRemaining <= 1) {
+					(void)BotNavRecordMoverRideState(
+						bot,
+						slot.interactionEntityNumber,
+						BotNavMoverRidePhase::Leave,
+						nullptr);
+				}
+			}
 		}
 
 		if (move != nullptr) {
@@ -3027,6 +4809,20 @@ bool BotNav_GetRecoveryMove(const gentity_t *bot, BotNavRecoveryMove *move) {
 	if (move != nullptr) {
 		move->sideSign = slot.recoverySideSign;
 		move->framesRemaining = framesRemaining;
+		if (BotNavEnsureRecoveryMove(bot, slot, viewAngles)) {
+			const Vector3 view = BotNavRecoveryViewAngles(bot, viewAngles);
+			if (BotNavRecoveryProjectDirection(
+					view,
+					slot.recoveryMoveDirection,
+					&move->forwardMove,
+					&move->sideMove)) {
+				move->hasMovement = true;
+				botNavRouteStatus.lastStuckRecoveryForwardMove =
+					static_cast<int>(std::round(move->forwardMove));
+				botNavRouteStatus.lastStuckRecoverySideMove =
+					static_cast<int>(std::round(move->sideMove));
+			}
+		}
 	}
 	return true;
 }

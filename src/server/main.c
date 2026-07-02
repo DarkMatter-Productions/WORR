@@ -1557,16 +1557,6 @@ static const bot_profile_t *bot_find_profile(const char *profile_name)
     return NULL;
 }
 
-static bool bot_profile_is_smoke(const bot_profile_t *profile)
-{
-    if (!profile) {
-        return false;
-    }
-
-    return !Q_stricmp(profile->id, "smoke") ||
-           !Q_stricmp(profile->name, "Smoke");
-}
-
 static const bot_profile_t *bot_select_autofill_profile(void)
 {
     const bot_profile_t *fallback = NULL;
@@ -1595,10 +1585,6 @@ static const bot_profile_t *bot_select_autofill_profile(void)
 
         if (!fallback) {
             fallback = candidate;
-        }
-
-        if (bot_profile_is_smoke(candidate)) {
-            continue;
         }
 
         bot_autofill_profile_cursor = (index + 1) % bot_profile_count;
@@ -1783,6 +1769,19 @@ static void bot_update_add_frame(void)
 static void bot_clear_add_queue(void)
 {
     memset(bot_add_queue, 0, sizeof(bot_add_queue));
+}
+
+static int bot_add_queue_count(void)
+{
+    int count = 0;
+
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (bot_add_queue[i].active) {
+            count++;
+        }
+    }
+
+    return count;
 }
 
 static bool bot_enqueue_add(const char *name, const char *team)
@@ -2174,11 +2173,24 @@ static int SV_BotAutofillCount(void)
     return count;
 }
 
-static int SV_BotAutofillProfileCount(char *first_profile, size_t size)
+typedef struct {
+    int total;
+    int profiled;
+    int bulwark;
+    int relay;
+    int smoke;
+    int vanguard;
+    int vector;
+} bot_autofill_profile_coverage_t;
+
+static void SV_BotAutofillProfileCoverage(
+    bot_autofill_profile_coverage_t *coverage,
+    char *first_profile,
+    size_t size)
 {
-    int count = 0;
     int limit = bot_client_pool_limit();
 
+    memset(coverage, 0, sizeof(*coverage));
     if (first_profile && size > 0) {
         first_profile[0] = 0;
     }
@@ -2191,6 +2203,7 @@ static int SV_BotAutofillProfileCount(char *first_profile, size_t size)
             continue;
         }
 
+        coverage->total++;
         profile = Info_ValueForKey(cl->userinfo, "bot_profile");
         if (!profile[0]) {
             continue;
@@ -2199,10 +2212,27 @@ static int SV_BotAutofillProfileCount(char *first_profile, size_t size)
         if (first_profile && size > 0 && !first_profile[0]) {
             Q_strlcpy(first_profile, profile, size);
         }
-        count++;
-    }
+        coverage->profiled++;
 
-    return count;
+        if (!Q_stricmp(profile, "bulwark")) {
+            coverage->bulwark = 1;
+        } else if (!Q_stricmp(profile, "relay")) {
+            coverage->relay = 1;
+        } else if (!Q_stricmp(profile, "smoke")) {
+            coverage->smoke = 1;
+        } else if (!Q_stricmp(profile, "vanguard")) {
+            coverage->vanguard = 1;
+        } else if (!Q_stricmp(profile, "vector")) {
+            coverage->vector = 1;
+        }
+    }
+}
+
+static int SV_BotAutofillRequiredProfileCoverage(
+    const bot_autofill_profile_coverage_t *coverage)
+{
+    return coverage->bulwark + coverage->relay + coverage->smoke +
+           coverage->vanguard + coverage->vector;
 }
 
 static client_t *SV_BotFindAutofill(void)
@@ -2273,6 +2303,7 @@ static void SV_BotMinPlayersSmokeFrame(void)
 {
     static int seen_spawncount;
     static int stage;
+    bool profile_coverage_mode;
     int fill_target;
 
     if (!bot_min_players_smoke || bot_min_players_smoke->integer <= 0) {
@@ -2290,7 +2321,8 @@ static void SV_BotMinPlayersSmokeFrame(void)
         return;
     }
 
-    fill_target = min(3, bot_public_client_limit());
+    profile_coverage_mode = bot_min_players_smoke->integer >= 2;
+    fill_target = min(profile_coverage_mode ? 5 : 3, bot_public_client_limit());
 
     if (stage == 0) {
         SV_BotRemoveAll();
@@ -2303,18 +2335,39 @@ static void SV_BotMinPlayersSmokeFrame(void)
 
     if (stage == 1) {
         char first_profile[MAX_QPATH];
+        bot_autofill_profile_coverage_t coverage;
+        int required_profile_count;
+        int required_profiles_covered;
+        int profile_coverage_pass;
         int profiled;
 
         if (SV_BotAutofillCount() < fill_target) {
             return;
         }
 
-        profiled = SV_BotAutofillProfileCount(first_profile,
-                                              sizeof(first_profile));
+        SV_BotAutofillProfileCoverage(&coverage, first_profile,
+                                      sizeof(first_profile));
+        profiled = coverage.profiled;
         Com_Printf("q3a_bot_min_players_smoke_after_fill count=%d auto=%d humans=%d target=%d profiled=%d first_profile=%s\n",
                    SV_BotCount(), SV_BotAutofillCount(), SV_CountClients(),
                    bot_min_players->integer, profiled,
                    first_profile[0] ? first_profile : "<none>");
+        if (profile_coverage_mode) {
+            required_profile_count = 5;
+            required_profiles_covered =
+                SV_BotAutofillRequiredProfileCoverage(&coverage);
+            profile_coverage_pass =
+                coverage.total >= required_profile_count &&
+                coverage.profiled >= required_profile_count &&
+                required_profiles_covered >= required_profile_count;
+            Com_Printf("q3a_bot_min_players_smoke_profile_coverage count=%d auto=%d target=%d profiled=%d required=%d covered=%d bulwark=%d relay=%d smoke=%d vanguard=%d vector=%d pass=%d\n",
+                       SV_BotCount(), coverage.total,
+                       bot_min_players->integer, coverage.profiled,
+                       required_profile_count, required_profiles_covered,
+                       coverage.bulwark, coverage.relay, coverage.smoke,
+                       coverage.vanguard, coverage.vector,
+                       profile_coverage_pass);
+        }
         Cvar_Set("bot_min_players", "1");
         stage = 2;
         return;
@@ -5566,6 +5619,10 @@ static int SV_BotFrameCommandSmokeSettleFrames(void)
         return 14;
     }
 
+    if (SV_BotFrameCommandSmokeMode() == 12) {
+        return 24;
+    }
+
     if (SV_BotFrameCommandSmokeUsesScenarioCvars()) {
         return 60;
     }
@@ -6495,12 +6552,18 @@ static void SV_BotFrameCommandSmokeFrame(void)
     }
 
     if (SV_BotCount() < target_bots) {
-        const int bot_index = SV_BotCount();
+        const int count = SV_BotCount();
+        const int pending = bot_add_queue_count();
+        const int requested = count + pending;
 
-        added = SV_BotAdd(SV_BotFrameCommandSmokeBotName(bot_index), NULL);
+        if (requested >= target_bots) {
+            return;
+        }
+
+        added = SV_BotAdd(SV_BotFrameCommandSmokeBotName(requested), NULL);
         Com_Printf("q3a_bot_frame_command_smoke_after_extra_add_request "
-                   "index=%d added=%d count=%d target=%d\n",
-                   bot_index, added, SV_BotCount(), target_bots);
+                   "index=%d added=%d count=%d pending=%d target=%d\n",
+                   requested, added, count, pending, target_bots);
         return;
     }
 

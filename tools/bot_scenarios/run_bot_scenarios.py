@@ -113,6 +113,18 @@ RAW_RESERVED_MODE_MARKERS = (
 RAW_RESERVED_METRIC_SOURCE_HINTS = {
     "pass": (STATUS_MARKER,),
     "route_failures": (STATUS_MARKER,),
+    "stuck_target_reached_progresses": (NAV_POLICY_STATUS_MARKER,),
+    "stuck_consumed_target_stalls": (NAV_POLICY_STATUS_MARKER,),
+    "stuck_recovery_probe_checks": (NAV_POLICY_STATUS_MARKER,),
+    "stuck_recovery_probe_uses": (NAV_POLICY_STATUS_MARKER,),
+    "stuck_recovery_probe_blocks": (NAV_POLICY_STATUS_MARKER,),
+    "stuck_recovery_probe_fallbacks": (NAV_POLICY_STATUS_MARKER,),
+    "last_stuck_target_distance_sq": (NAV_POLICY_STATUS_MARKER,),
+    "last_stuck_consumed_target": (NAV_POLICY_STATUS_MARKER,),
+    "last_stuck_recovery_probe_candidate": (NAV_POLICY_STATUS_MARKER,),
+    "last_stuck_recovery_probe_fraction": (NAV_POLICY_STATUS_MARKER,),
+    "last_stuck_recovery_forward_move": (NAV_POLICY_STATUS_MARKER,),
+    "last_stuck_recovery_side_move": (NAV_POLICY_STATUS_MARKER,),
     "combat_fire_decisions": (ACTION_STATUS_MARKER,),
     "combat_weapon_switch_decisions": (ACTION_STATUS_MARKER,),
     "combat_damage_events": (ACTION_STATUS_MARKER,),
@@ -161,6 +173,8 @@ RAW_RESERVED_METRIC_PREFIX_SOURCE_HINTS = (
     ("route_corner_cut_", (STATUS_MARKER, NAV_POLICY_STATUS_MARKER)),
     ("corner_cut_", (NAV_POLICY_STATUS_MARKER,)),
     ("trace_checked_corner_", (NAV_POLICY_STATUS_MARKER,)),
+    ("stuck_recovery_probe_", (NAV_POLICY_STATUS_MARKER,)),
+    ("last_stuck_recovery_probe_", (NAV_POLICY_STATUS_MARKER,)),
     ("combat_enemy_", (ACTION_STATUS_MARKER, BLACKBOARD_STATUS_MARKER, STATUS_MARKER)),
     ("combat_weapon_selection_", (ACTION_STATUS_MARKER, ACTION_DETAIL_STATUS_MARKER)),
     ("last_combat_enemy_", (ACTION_STATUS_MARKER, BLACKBOARD_STATUS_MARKER, STATUS_MARKER)),
@@ -212,6 +226,10 @@ RAW_RESERVED_METRIC_PREFIX_SOURCE_HINTS = (
     ("last_team_fire_avoidance_", (STATUS_MARKER,)),
     ("threat_retreat_", (STATUS_MARKER,)),
     ("last_threat_retreat_", (STATUS_MARKER,)),
+    ("travel_type_elevator_", (STATUS_MARKER,)),
+    ("last_travel_type_elevator_", (STATUS_MARKER,)),
+    ("interaction_direct_use_", (NAV_POLICY_STATUS_MARKER,)),
+    ("last_interaction_direct_use_", (NAV_POLICY_STATUS_MARKER,)),
     ("team_item_role_", (NAV_POLICY_STATUS_MARKER,)),
     ("last_team_item_role_", (NAV_POLICY_STATUS_MARKER,)),
     ("team_resource_denial_", (NAV_POLICY_STATUS_MARKER,)),
@@ -469,6 +487,1361 @@ def reserved_mode_marker_checks(
             gametype,
             "reserved smoke gametype flag must match the scenario setup",
         ),
+    )
+
+
+COOP_CAMPAIGN_INTERACTION_TASK_IDS = (
+    "FR-04-T04",
+    "FR-04-T05",
+    "FR-04-T15",
+    "DV-03-T05",
+    "DV-07-T06",
+)
+COOP_CAMPAIGN_INTERACTION_EXTRA_CVARS = (
+    ("deathmatch", "0"),
+    ("coop", "1"),
+    ("bot_coop_live_loop", "1"),
+)
+COOP_CAMPAIGN_INTERACTION_TAGS = (
+    "match",
+    "coop",
+    "interaction",
+    "movement",
+    "maps",
+    "campaign",
+)
+
+
+def coop_campaign_interaction_marker_checks(
+    map_name: str,
+) -> tuple[MarkerMetricCheck, ...]:
+    return (
+        *reserved_mode_marker_checks(
+            91,
+            combat=0,
+            weapon_switch=0,
+            item_focus=0,
+            team_objective=0,
+            target=2,
+            gametype=0,
+        ),
+        MarkerMetricCheck(
+            SCENARIO_BEGIN_MARKER,
+            "map",
+            "eq",
+            map_name,
+            f"campaign interaction matrix must run on the {map_name} reference map",
+        ),
+        MarkerMetricCheck(
+            SCENARIO_BEGIN_MARKER,
+            "coop_live_loop",
+            "eq",
+            1,
+            "reserved smoke must enable the coop live-loop proof lane",
+        ),
+        MarkerMetricCheck(
+            COOP_READINESS_STATUS_MARKER,
+            "pass",
+            "eq",
+            1,
+            "campaign coop readiness status must pass",
+        ),
+        MarkerMetricCheck(
+            COOP_READINESS_STATUS_MARKER,
+            "bots",
+            "ge",
+            2,
+            "campaign coop matrix must run with at least two bots",
+        ),
+        MarkerMetricCheck(
+            MATCH_READINESS_STATUS_MARKER,
+            "deathmatch",
+            "eq",
+            0,
+            "campaign coop matrix must disable deathmatch",
+        ),
+        MarkerMetricCheck(
+            COOP_COMMAND_STATUS_MARKER,
+            "coop_leader_route_activations",
+            "ge",
+            1,
+            "campaign coop matrix must activate the leader-route owner",
+        ),
+        MarkerMetricCheck(
+            COOP_COMMAND_STATUS_MARKER,
+            "coop_progress_wait_commands",
+            "ge",
+            1,
+            "campaign coop matrix must keep progress-wait command ownership",
+        ),
+        MarkerMetricCheck(
+            COOP_COMMAND_STATUS_MARKER,
+            "coop_interaction_retry_commands",
+            "ge",
+            1,
+            "campaign coop matrix must own route interaction retry commands",
+        ),
+        MarkerMetricCheck(
+            COOP_COMMAND_STATUS_MARKER,
+            "coop_door_elevator_source_commands",
+            "ge",
+            1,
+            "campaign coop matrix must own source wait/use commands",
+        ),
+        MarkerMetricCheck(
+            COOP_COMMAND_STATUS_MARKER,
+            "coop_door_elevator_hold_commands",
+            "ge",
+            1,
+            "campaign coop matrix must keep teammate hold commands",
+        ),
+        MarkerMetricCheck(
+            COOP_COMMAND_STATUS_MARKER,
+            "last_coop_door_elevator_kind",
+            "ge",
+            1,
+            f"campaign coop matrix must record a concrete {map_name} interaction kind",
+        ),
+        MarkerMetricCheck(
+            COOP_COMMAND_STATUS_MARKER,
+            "last_coop_door_elevator_entity",
+            "gt",
+            0,
+            "campaign coop matrix must record the interacted campaign entity",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "nav_interaction_activations",
+            "ge",
+            1,
+            "campaign coop matrix must activate route interaction handling",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "nav_interaction_candidates",
+            "ge",
+            1,
+            "campaign coop matrix must inspect at least one route interaction candidate",
+        ),
+        MarkerMetricCheck(
+            NAV_INTERACTION_CONTEXT_STATUS_MARKER,
+            "interaction_world_entities",
+            "ge",
+            1,
+            f"campaign coop matrix must scan interaction entities on {map_name}",
+        ),
+        MarkerMetricCheck(
+            NAV_INTERACTION_CONTEXT_STATUS_MARKER,
+            "interaction_world_doors",
+            "ge",
+            1,
+            f"campaign coop matrix must expose door entities on {map_name}",
+        ),
+        MarkerMetricCheck(
+            OBJECTIVE_STATUS_MARKER,
+            "team_objective_coop_policy_wait",
+            "ge",
+            1,
+            "campaign coop policy must still record WaitForLeader decisions",
+        ),
+    )
+
+
+def coop_campaign_interaction_scenario(
+    *,
+    name: str,
+    title: str,
+    map_name: str,
+    description: str,
+) -> Scenario:
+    return Scenario(
+        name=name,
+        title=title,
+        smoke_mode=91,
+        description=description,
+        task_ids=COOP_CAMPAIGN_INTERACTION_TASK_IDS,
+        budget_seconds=30,
+        extra_cvars=COOP_CAMPAIGN_INTERACTION_EXTRA_CVARS,
+        map_name=map_name,
+        selection_tags=COOP_CAMPAIGN_INTERACTION_TAGS,
+        checks=(
+            MetricCheck("pass", "eq", 1, "source smoke status must pass"),
+            MetricCheck("route_commands", "ge", 1, "campaign coop matrix must emit route commands"),
+            MetricCheck("route_failures", "eq", 0, "campaign coop matrix must remain route-clean"),
+        ),
+        marker_checks=coop_campaign_interaction_marker_checks(map_name),
+    )
+
+
+def coop_campaign_interaction_depth_marker_checks(
+    map_name: str,
+) -> tuple[MarkerMetricCheck, ...]:
+    return (
+        *coop_campaign_interaction_marker_checks(map_name),
+        MarkerMetricCheck(
+            NAV_INTERACTION_CONTEXT_STATUS_MARKER,
+            "interaction_world_buttons",
+            "ge",
+            1,
+            f"{map_name} campaign depth proof must expose button entities",
+        ),
+        MarkerMetricCheck(
+            NAV_INTERACTION_CONTEXT_STATUS_MARKER,
+            "interaction_world_triggers",
+            "ge",
+            1,
+            f"{map_name} campaign depth proof must expose trigger entities",
+        ),
+        MarkerMetricCheck(
+            NAV_INTERACTION_CONTEXT_STATUS_MARKER,
+            "interaction_world_movers",
+            "ge",
+            1,
+            f"{map_name} campaign depth proof must expose mover entities",
+        ),
+        MarkerMetricCheck(
+            NAV_INTERACTION_CONTEXT_STATUS_MARKER,
+            "interaction_world_use_entities",
+            "ge",
+            1,
+            f"{map_name} campaign depth proof must expose use-capable entities",
+        ),
+        MarkerMetricCheck(
+            NAV_INTERACTION_CONTEXT_STATUS_MARKER,
+            "interaction_world_touch_entities",
+            "ge",
+            1,
+            f"{map_name} campaign depth proof must expose touch-capable entities",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "nav_interaction_wait_frames",
+            "ge",
+            1,
+            "campaign depth proof must spend command frames waiting for an interaction",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "nav_interaction_use_frames",
+            "ge",
+            1,
+            "campaign depth proof must spend command frames using an interaction",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "last_nav_interaction_action",
+            "eq",
+            3,
+            "campaign depth proof must record a combined wait/use interaction action",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "last_nav_interaction_entity",
+            "gt",
+            0,
+            "campaign depth proof must record the runtime interaction entity",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "nav_interaction_misses",
+            "eq",
+            0,
+            "campaign depth proof must not lose all interaction context",
+        ),
+        MarkerMetricCheck(
+            COOP_COMMAND_STATUS_MARKER,
+            "last_coop_interaction_retry_action",
+            "eq",
+            3,
+            "campaign depth proof must record wait/use retry ownership",
+        ),
+        MarkerMetricCheck(
+            COOP_COMMAND_STATUS_MARKER,
+            "last_coop_interaction_retry_entity",
+            "gt",
+            0,
+            "campaign depth proof must record the retried interaction entity",
+        ),
+        MarkerMetricCheck(
+            COOP_COMMAND_STATUS_MARKER,
+            "last_coop_door_elevator_action",
+            "eq",
+            3,
+            "campaign depth proof must record wait/use source ownership",
+        ),
+        MarkerMetricCheck(
+            OBJECTIVE_STATUS_MARKER,
+            "team_objective_coop_policy_follow",
+            "ge",
+            1,
+            "campaign depth proof must keep follow intent available",
+        ),
+        MarkerMetricCheck(
+            OBJECTIVE_STATUS_MARKER,
+            "team_objective_coop_policy_regroup",
+            "ge",
+            1,
+            "campaign depth proof must keep regroup intent available",
+        ),
+        MarkerMetricCheck(
+            OBJECTIVE_STATUS_MARKER,
+            "team_objective_coop_policy_lead",
+            "ge",
+            1,
+            "campaign depth proof must record at least one lead policy decision",
+        ),
+        MarkerMetricCheck(
+            OBJECTIVE_STATUS_MARKER,
+            "team_objective_coop_policy_resource_share",
+            "ge",
+            1,
+            "campaign depth proof must keep coop resource-share intent evaluated",
+        ),
+        MarkerMetricCheck(
+            ACTION_DETAIL_STATUS_MARKER,
+            "item_timing_consumer_live_pickups",
+            "ge",
+            1,
+            "campaign depth proof must observe live pickup timing on the map",
+        ),
+        MarkerMetricCheck(
+            ACTION_DETAIL_STATUS_MARKER,
+            ITEM_TIMING_CONSUMER_READY_OR_LIVE_METRIC,
+            "ge",
+            1,
+            "campaign depth proof must expose item timing as ready or live",
+        ),
+    )
+
+
+def coop_campaign_progression_chain_marker_checks(
+    map_name: str,
+) -> tuple[MarkerMetricCheck, ...]:
+    return (
+        *coop_campaign_interaction_depth_marker_checks(map_name),
+        MarkerMetricCheck(
+            NAV_INTERACTION_CONTEXT_STATUS_MARKER,
+            "interaction_world_target_entities",
+            "ge",
+            1,
+            f"{map_name} campaign progression proof must expose target-chain entities",
+        ),
+        MarkerMetricCheck(
+            NAV_INTERACTION_CONTEXT_STATUS_MARKER,
+            "interaction_world_progression_targets",
+            "ge",
+            1,
+            f"{map_name} campaign progression proof must expose level-flow target entities",
+        ),
+        MarkerMetricCheck(
+            NAV_INTERACTION_CONTEXT_STATUS_MARKER,
+            "interaction_world_target_links",
+            "ge",
+            1,
+            f"{map_name} campaign progression proof must expose outbound target links",
+        ),
+        MarkerMetricCheck(
+            NAV_INTERACTION_CONTEXT_STATUS_MARKER,
+            "interaction_world_named_targets",
+            "ge",
+            1,
+            f"{map_name} campaign progression proof must expose named target anchors",
+        ),
+        MarkerMetricCheck(
+            NAV_INTERACTION_CONTEXT_STATUS_MARKER,
+            "interaction_world_key_entities",
+            "ge",
+            0,
+            "campaign progression proof must expose the key-entity counter for key-backed maps",
+        ),
+        MarkerMetricCheck(
+            NAV_INTERACTION_CONTEXT_STATUS_MARKER,
+            "interaction_world_progression_entities",
+            "ge",
+            1,
+            f"{map_name} campaign progression proof must expose combined progression context",
+        ),
+    )
+
+
+def coop_campaign_progression_consumer_marker_checks(
+    map_name: str,
+) -> tuple[MarkerMetricCheck, ...]:
+    return (
+        *coop_campaign_progression_chain_marker_checks(map_name),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "nav_interaction_progression_candidates",
+            "ge",
+            1,
+            "campaign progression consumer must score at least one route interaction candidate",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "nav_interaction_progression_selections",
+            "ge",
+            1,
+            "campaign progression consumer must select a scored route interaction",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "nav_interaction_progression_preference_selections",
+            "ge",
+            1,
+            "campaign progression consumer must prefer a progression candidate over pure distance",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "nav_interaction_progression_target_link_selections",
+            "ge",
+            1,
+            "campaign progression consumer must select at least one outbound target-linked interaction",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "last_nav_interaction_progression_score",
+            "ge",
+            1,
+            "campaign progression consumer must record the selected interaction score",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "last_nav_interaction_progression_preferred",
+            "ge",
+            0,
+            "campaign progression consumer must expose the distance-overrule flag",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "last_nav_interaction_target_entity",
+            "ge",
+            0,
+            "campaign progression consumer must expose the target-entity bit",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "last_nav_interaction_progression_target",
+            "ge",
+            0,
+            "campaign progression consumer must expose the progression-target bit",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "last_nav_interaction_target_link",
+            "ge",
+            0,
+            "campaign progression consumer must expose the target-link bit",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "last_nav_interaction_named_target",
+            "ge",
+            0,
+            "campaign progression consumer must expose the named-target bit",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "last_nav_interaction_key_entity",
+            "ge",
+            0,
+            "campaign progression consumer must expose the key-entity bit",
+        ),
+    )
+
+
+def coop_campaign_post_interaction_marker_checks(
+    map_name: str,
+) -> tuple[MarkerMetricCheck, ...]:
+    return (
+        *coop_campaign_progression_consumer_marker_checks(map_name),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "nav_interaction_progression_completions",
+            "ge",
+            1,
+            "campaign post-interaction proof must complete at least one scored progression interaction",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "nav_interaction_progression_post_refreshes",
+            "ge",
+            1,
+            "campaign post-interaction proof must refresh the route after a completed progression interaction",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "nav_interaction_progression_post_frames",
+            "ge",
+            1,
+            "campaign post-interaction proof must expose the post-interaction recovery window",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "nav_interaction_progression_repeat_suppressions",
+            "ge",
+            1,
+            "campaign post-interaction proof must suppress at least one immediate repeat interaction",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "last_nav_interaction_progression_completed_entity",
+            "gt",
+            0,
+            "campaign post-interaction proof must remember the completed progression entity",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "last_nav_interaction_progression_completed_score",
+            "ge",
+            1,
+            "campaign post-interaction proof must remember the completed progression score",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "last_nav_interaction_progression_post_entity",
+            "gt",
+            0,
+            "campaign post-interaction proof must remember the post-interaction entity",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "last_nav_interaction_progression_post_frames_remaining",
+            "ge",
+            0,
+            "campaign post-interaction proof must expose post-interaction frames remaining",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "last_nav_interaction_progression_suppressed_entity",
+            "gt",
+            0,
+            "campaign post-interaction proof must remember the last suppressed entity",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "last_nav_interaction_progression_suppressed_score",
+            "ge",
+            1,
+            "campaign post-interaction proof must remember the last suppressed progression score",
+        ),
+    )
+
+
+def coop_campaign_progression_carry_marker_checks(
+    map_name: str,
+) -> tuple[MarkerMetricCheck, ...]:
+    return (
+        *coop_campaign_post_interaction_marker_checks(map_name),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "nav_interaction_progression_carry_completions",
+            "ge",
+            1,
+            "campaign progression-carry proof must complete a scored interaction after a prior completion",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "nav_interaction_progression_carry_distinct_completions",
+            "ge",
+            1,
+            "campaign progression-carry proof must complete a different progression entity after a prior completion",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "nav_interaction_progression_completed_clients",
+            "ge",
+            1,
+            "campaign progression-carry proof must track at least one client with completed progression",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "nav_interaction_progression_distinct_completed_clients",
+            "ge",
+            1,
+            "campaign progression-carry proof must track at least one client with distinct progression completions",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "last_nav_interaction_progression_carry_previous_entity",
+            "gt",
+            0,
+            "campaign progression-carry proof must remember the previous completed progression entity",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "last_nav_interaction_progression_carry_entity",
+            "gt",
+            0,
+            "campaign progression-carry proof must remember the carried follow-up progression entity",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "last_nav_interaction_progression_carry_distinct",
+            "eq",
+            1,
+            "campaign progression-carry proof must end on a distinct follow-up completion",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "last_nav_interaction_progression_carry_count",
+            "ge",
+            2,
+            "campaign progression-carry proof must record multiple completed progression interactions for one client",
+        ),
+        MarkerMetricCheck(
+            NAV_POLICY_STATUS_MARKER,
+            "last_nav_interaction_progression_carry_distinct_count",
+            "ge",
+            2,
+            "campaign progression-carry proof must record multiple distinct completed progression interactions for one client",
+        ),
+    )
+
+
+def coop_campaign_keyed_path_marker_checks(
+	map_name: str,
+) -> tuple[MarkerMetricCheck, ...]:
+	return (
+		*coop_campaign_interaction_marker_checks(map_name),
+		MarkerMetricCheck(
+			NAV_INTERACTION_CONTEXT_STATUS_MARKER,
+			"interaction_world_key_entities",
+			"ge",
+			1,
+			f"{map_name} keyed-path proof must expose runtime key entities or locks",
+		),
+		MarkerMetricCheck(
+			NAV_INTERACTION_CONTEXT_STATUS_MARKER,
+			"interaction_world_key_items",
+			"ge",
+			1,
+			f"{map_name} keyed-path proof must expose spawned key items",
+		),
+		MarkerMetricCheck(
+			NAV_INTERACTION_CONTEXT_STATUS_MARKER,
+			"interaction_world_key_locks",
+			"ge",
+			1,
+            f"{map_name} keyed-path proof must expose a trigger_key lock",
+        ),
+        MarkerMetricCheck(
+            NAV_INTERACTION_CONTEXT_STATUS_MARKER,
+            "interaction_world_key_path_entities",
+            "ge",
+            1,
+            f"{map_name} keyed-path proof must expose linked key-path entities",
+        ),
+		MarkerMetricCheck(
+			NAV_POLICY_STATUS_MARKER,
+			"nav_interaction_progression_key_path_candidates",
+			"ge",
+			1,
+			"keyed-path proof must inspect route-local key-path candidates",
+		),
+		MarkerMetricCheck(
+			NAV_POLICY_STATUS_MARKER,
+			"nav_interaction_progression_key_path_selections",
+			"ge",
+			1,
+			"keyed-path proof must select a route-local key-path interaction",
+		),
+		MarkerMetricCheck(
+			NAV_POLICY_STATUS_MARKER,
+			"last_nav_interaction_progression_key_path_key_lock",
+			"eq",
+			1,
+			"keyed-path proof must end on a trigger_key lock interaction",
+		),
+		MarkerMetricCheck(
+			NAV_POLICY_STATUS_MARKER,
+			"last_nav_interaction_progression_key_path_required_item",
+			"gt",
+			0,
+			"keyed-path proof must expose the required item id for key locks",
+		),
+	)
+
+
+def coop_campaign_key_carry_marker_checks(
+	map_name: str,
+) -> tuple[MarkerMetricCheck, ...]:
+	return (
+		*coop_campaign_keyed_path_marker_checks(map_name),
+		MarkerMetricCheck(
+			NAV_POLICY_STATUS_MARKER,
+			"key_carry_active",
+			"eq",
+			1,
+			"key-carry proof must enable the train key-carry overlay",
+		),
+		MarkerMetricCheck(
+			NAV_POLICY_STATUS_MARKER,
+			"key_carry_prepared",
+			"ge",
+			1,
+			"key-carry proof must stage the proof bot at the key leg",
+		),
+		MarkerMetricCheck(
+			NAV_POLICY_STATUS_MARKER,
+			"key_carry_key_route_requests",
+			"ge",
+			1,
+			"key-carry proof must request a route to the red key before the lock",
+		),
+		MarkerMetricCheck(
+			NAV_POLICY_STATUS_MARKER,
+			"key_carry_key_touch_attempts",
+			"ge",
+			1,
+			"key-carry proof must exercise the real item touch path",
+		),
+		MarkerMetricCheck(
+			NAV_POLICY_STATUS_MARKER,
+			"key_carry_key_pickups",
+			"ge",
+			1,
+			"key-carry proof must observe red-key inventory after pickup",
+		),
+		MarkerMetricCheck(
+			NAV_POLICY_STATUS_MARKER,
+			"key_carry_bridge_route_requests",
+			"ge",
+			1,
+			"key-carry proof must request a train/mover bridge route before the lock",
+		),
+		MarkerMetricCheck(
+			STATUS_MARKER,
+			"interaction_goal_requests",
+			"ge",
+			1,
+			"key-carry bridge proof must query live interaction entities for the bridge goal",
+		),
+		MarkerMetricCheck(
+			STATUS_MARKER,
+			"interaction_goal_resolved",
+			"ge",
+			1,
+			"key-carry bridge proof must resolve a routeable live interaction goal",
+		),
+		MarkerMetricCheck(
+			STATUS_MARKER,
+			"last_interaction_goal_kind",
+			"eq",
+			4,
+			"key-carry bridge goal must be discovered from a func_train entity",
+		),
+		MarkerMetricCheck(
+			STATUS_MARKER,
+			"last_interaction_goal_entity",
+			"gt",
+			0,
+			"key-carry bridge goal must record the discovered interaction entity",
+		),
+		MarkerMetricCheck(
+			STATUS_MARKER,
+			"last_interaction_goal_area",
+			"gt",
+			0,
+			"key-carry bridge goal must resolve to an AAS area",
+		),
+		MarkerMetricCheck(
+			STATUS_MARKER,
+			"interaction_arrival_goal_requests",
+			"ge",
+			1,
+			"key-carry bridge proof must request a post-mover arrival goal",
+		),
+		MarkerMetricCheck(
+			STATUS_MARKER,
+			"interaction_arrival_goal_resolved",
+			"ge",
+			1,
+			"key-carry bridge proof must resolve a routeable post-mover arrival goal",
+		),
+		MarkerMetricCheck(
+			STATUS_MARKER,
+			"last_interaction_arrival_goal_kind",
+			"eq",
+			4,
+			"key-carry bridge arrival must be tied to the func_train interaction",
+		),
+		MarkerMetricCheck(
+			STATUS_MARKER,
+			"last_interaction_arrival_goal_entity",
+			"gt",
+			0,
+			"key-carry bridge arrival must record the source train entity",
+		),
+		MarkerMetricCheck(
+			STATUS_MARKER,
+			"last_interaction_arrival_goal_area",
+			"gt",
+			0,
+			"key-carry bridge arrival must resolve to an AAS area",
+		),
+		MarkerMetricCheck(
+			STATUS_MARKER,
+			"interaction_arrival_mover_endpoint_checks",
+			"ge",
+			1,
+			"key-carry bridge arrival must inspect mover endpoint candidates",
+		),
+		MarkerMetricCheck(
+			STATUS_MARKER,
+			"interaction_arrival_mover_endpoint_candidates",
+			"ge",
+			1,
+			"key-carry bridge arrival must resolve a routeable mover endpoint",
+		),
+		MarkerMetricCheck(
+			STATUS_MARKER,
+			"interaction_arrival_mover_endpoint_selections",
+			"ge",
+			1,
+			"key-carry bridge arrival must select a mover endpoint candidate",
+		),
+		MarkerMetricCheck(
+			STATUS_MARKER,
+			"last_interaction_arrival_goal_source",
+			"in",
+			(1, 3),
+			"key-carry bridge arrival must prefer a useful mover endpoint or fall back to a destination-side offset",
+		),
+		MarkerMetricCheck(
+			STATUS_MARKER,
+			"last_interaction_arrival_mover_endpoint_entity",
+			"gt",
+			0,
+			"key-carry bridge arrival must record the endpoint source entity",
+		),
+		MarkerMetricCheck(
+			STATUS_MARKER,
+			"last_interaction_arrival_mover_endpoint_area",
+			"gt",
+			0,
+			"key-carry bridge arrival endpoint must resolve to an AAS area",
+		),
+		MarkerMetricCheck(
+			STATUS_MARKER,
+			"interaction_mover_ride_checks",
+			"ge",
+			4,
+			"key-carry bridge proof must record the full mover ride-state lifecycle",
+		),
+		MarkerMetricCheck(
+			STATUS_MARKER,
+			"interaction_mover_ride_wait_states",
+			"ge",
+			1,
+			"key-carry bridge proof must record waiting for the mover interaction",
+		),
+		MarkerMetricCheck(
+			STATUS_MARKER,
+			"interaction_mover_ride_board_states",
+			"ge",
+			1,
+			"key-carry bridge proof must record boarding the mover arrival leg",
+		),
+		MarkerMetricCheck(
+			STATUS_MARKER,
+			"interaction_mover_ride_ride_states",
+			"ge",
+			1,
+			"key-carry bridge proof must record riding the mover arrival leg",
+		),
+		MarkerMetricCheck(
+			STATUS_MARKER,
+			"interaction_mover_ride_leave_states",
+			"ge",
+			1,
+			"key-carry bridge proof must record leaving the mover arrival leg",
+		),
+		MarkerMetricCheck(
+			STATUS_MARKER,
+			"last_interaction_mover_ride_phase",
+			"eq",
+			4,
+			"key-carry bridge proof must finish the mover lifecycle in the leave phase",
+		),
+		MarkerMetricCheck(
+			STATUS_MARKER,
+			"last_interaction_mover_ride_entity",
+			"gt",
+			0,
+			"key-carry bridge proof must record the mover lifecycle source entity",
+		),
+		MarkerMetricCheck(
+			STATUS_MARKER,
+			"last_interaction_mover_ride_kind",
+			"eq",
+			4,
+			"key-carry bridge ride-state proof must remain tied to the func_train",
+		),
+		MarkerMetricCheck(
+			STATUS_MARKER,
+			"last_interaction_mover_ride_client",
+			"ge",
+			0,
+			"key-carry bridge ride-state proof must record the owning bot client",
+		),
+		MarkerMetricCheck(
+			STATUS_MARKER,
+			"last_interaction_arrival_goal_destination_distance_sq",
+			"gt",
+			0,
+			"key-carry bridge arrival must land before the final lock trigger, not directly on it",
+		),
+		MarkerMetricCheck(
+			STATUS_MARKER,
+			"interaction_arrival_route_requests",
+			"ge",
+			1,
+			"key-carry bridge arrival must be promoted into a reusable interaction-arrival route request",
+		),
+		MarkerMetricCheck(
+			STATUS_MARKER,
+			"interaction_arrival_route_assignments",
+			"ge",
+			1,
+			"key-carry bridge arrival route must be assigned by the nav layer",
+		),
+		MarkerMetricCheck(
+			STATUS_MARKER,
+			"interaction_arrival_route_reached",
+			"ge",
+			1,
+			"key-carry bridge arrival route must be reached by the nav layer",
+		),
+		MarkerMetricCheck(
+			STATUS_MARKER,
+			"last_interaction_arrival_route_entity",
+			"gt",
+			0,
+			"key-carry bridge arrival route must retain the source train entity",
+		),
+		MarkerMetricCheck(
+			STATUS_MARKER,
+			"last_interaction_arrival_route_area",
+			"gt",
+			0,
+			"key-carry bridge arrival route must retain a routeable AAS area",
+		),
+		MarkerMetricCheck(
+			NAV_POLICY_STATUS_MARKER,
+			"key_carry_bridge_approach_requests",
+			"ge",
+			1,
+			"key-carry proof must request natural movement toward the train-side bridge start",
+		),
+		MarkerMetricCheck(
+			NAV_POLICY_STATUS_MARKER,
+			"key_carry_bridge_approach_ready",
+			"ge",
+			1,
+			"key-carry proof must reach the train-side bridge start before activating the bridge interaction",
+		),
+		MarkerMetricCheck(
+			NAV_POLICY_STATUS_MARKER,
+			"key_carry_bridge_warps",
+			"eq",
+			0,
+			"key-carry proof must no longer use the temporary train-side bridge-start warp",
+		),
+		MarkerMetricCheck(
+			NAV_POLICY_STATUS_MARKER,
+			"key_carry_bridge_arrival_requests",
+			"ge",
+			1,
+			"key-carry proof must request a bridge-arrival projection before the lock leg",
+		),
+		MarkerMetricCheck(
+			NAV_POLICY_STATUS_MARKER,
+			"key_carry_bridge_arrival_resolved",
+			"ge",
+			1,
+			"key-carry proof must resolve a bridge-arrival projection before the lock leg",
+		),
+		MarkerMetricCheck(
+			NAV_POLICY_STATUS_MARKER,
+			"key_carry_bridge_arrival_route_requests",
+			"ge",
+			1,
+			"key-carry proof must route toward the projected bridge-arrival point before the lock leg",
+		),
+		MarkerMetricCheck(
+			NAV_POLICY_STATUS_MARKER,
+			"key_carry_bridge_arrival_reached",
+			"ge",
+			1,
+			"key-carry proof must reach the projected bridge-arrival point before the lock leg",
+		),
+		MarkerMetricCheck(
+			NAV_POLICY_STATUS_MARKER,
+			"key_carry_bridge_arrival_warps",
+			"eq",
+			0,
+			"key-carry proof must no longer use the temporary post-mover arrival warp",
+		),
+		MarkerMetricCheck(
+			NAV_POLICY_STATUS_MARKER,
+			"key_carry_bridge_interactions",
+			"ge",
+			1,
+			"key-carry proof must observe a real train/mover bridge interaction",
+		),
+		MarkerMetricCheck(
+			NAV_POLICY_STATUS_MARKER,
+			"key_carry_bridge_interaction_commands",
+			"ge",
+			1,
+			"key-carry proof must issue wait/use commands for the bridge interaction",
+		),
+		MarkerMetricCheck(
+			NAV_POLICY_STATUS_MARKER,
+			"key_carry_bridge_ride_observation_requests",
+			"ge",
+			1,
+			"key-carry proof must start a bounded ride-observation window after bridge activation",
+		),
+		MarkerMetricCheck(
+			NAV_POLICY_STATUS_MARKER,
+			"key_carry_bridge_ride_observation_frames",
+			"ge",
+			1,
+			"key-carry proof must sample the bridge mover during the ride-observation window",
+		),
+		MarkerMetricCheck(
+			NAV_POLICY_STATUS_MARKER,
+			"key_carry_bridge_ride_observation_completed",
+			"ge",
+			1,
+			"key-carry proof must close the bridge ride-observation window before routing to the lock",
+		),
+		MarkerMetricCheck(
+			NAV_POLICY_STATUS_MARKER,
+			"last_key_carry_bridge_ride_observation_elapsed_ms",
+			"ge",
+			200,
+			"key-carry proof must keep the bridge ride-observation window open long enough to sample mover state",
+		),
+		MarkerMetricCheck(
+			NAV_POLICY_STATUS_MARKER,
+			"last_key_carry_bridge_entity",
+			"gt",
+			0,
+			"key-carry proof must record the bridge entity used before the lock",
+		),
+		MarkerMetricCheck(
+			NAV_POLICY_STATUS_MARKER,
+			"last_key_carry_bridge_kind",
+			"eq",
+			4,
+			"train key-carry proof must bridge through a func_train interaction",
+		),
+		MarkerMetricCheck(
+			NAV_POLICY_STATUS_MARKER,
+			"last_key_carry_bridge_travel_type",
+			"eq",
+			11,
+			"key-carry bridge must be driven by an elevator/travel-mover route",
+		),
+		MarkerMetricCheck(
+			NAV_POLICY_STATUS_MARKER,
+			"key_carry_lock_route_requests",
+			"ge",
+			1,
+			"key-carry proof must request the lock leg after carrying the key",
+		),
+		MarkerMetricCheck(
+			NAV_POLICY_STATUS_MARKER,
+			"key_carry_lock_warps",
+			"eq",
+			0,
+			"key-carry proof must route the lock leg from the bridge-arrival point instead of directly warping to the lock",
+		),
+		MarkerMetricCheck(
+			NAV_POLICY_STATUS_MARKER,
+			"last_key_carry_pickup_inventory",
+			"ge",
+			1,
+			"key-carry proof must remember positive red-key inventory from pickup",
+		),
+		MarkerMetricCheck(
+			NAV_POLICY_STATUS_MARKER,
+			"last_key_carry_lock_required_item",
+			"gt",
+			0,
+			"key-carry proof must expose the lock's required red-key item id",
+		),
+	)
+
+
+def coop_campaign_interaction_depth_scenario(
+    *,
+    name: str,
+    title: str,
+    map_name: str,
+    description: str,
+) -> Scenario:
+    return Scenario(
+        name=name,
+        title=title,
+        smoke_mode=91,
+        description=description,
+        task_ids=COOP_CAMPAIGN_INTERACTION_TASK_IDS,
+        budget_seconds=30,
+        extra_cvars=COOP_CAMPAIGN_INTERACTION_EXTRA_CVARS,
+		map_name=map_name,
+		selection_tags=(
+			*COOP_CAMPAIGN_INTERACTION_TAGS,
+			"depth",
+            "trigger",
+            "button",
+            "progression",
+        ),
+        checks=(
+            MetricCheck("pass", "eq", 1, "campaign depth status must pass"),
+            MetricCheck("route_commands", "ge", 1, "campaign depth proof must emit route commands"),
+            MetricCheck("route_failures", "eq", 0, "campaign depth proof must remain route-clean"),
+        ),
+        marker_checks=coop_campaign_interaction_depth_marker_checks(map_name),
+    )
+
+
+def coop_campaign_progression_chain_scenario(
+    *,
+    name: str,
+    title: str,
+    map_name: str,
+    description: str,
+) -> Scenario:
+    return Scenario(
+        name=name,
+        title=title,
+        smoke_mode=91,
+        description=description,
+        task_ids=COOP_CAMPAIGN_INTERACTION_TASK_IDS,
+        budget_seconds=30,
+        extra_cvars=COOP_CAMPAIGN_INTERACTION_EXTRA_CVARS,
+        map_name=map_name,
+        selection_tags=(
+            *COOP_CAMPAIGN_INTERACTION_TAGS,
+            "depth",
+            "trigger",
+            "button",
+            "target-chain",
+            "progression-chain",
+        ),
+        checks=(
+            MetricCheck("pass", "eq", 1, "campaign progression-chain status must pass"),
+            MetricCheck("route_commands", "ge", 1, "campaign progression-chain proof must emit route commands"),
+            MetricCheck("route_failures", "eq", 0, "campaign progression-chain proof must remain route-clean"),
+        ),
+        marker_checks=coop_campaign_progression_chain_marker_checks(map_name),
+    )
+
+
+def coop_campaign_progression_consumer_scenario(
+    *,
+    name: str,
+    title: str,
+    map_name: str,
+    description: str,
+) -> Scenario:
+    return Scenario(
+        name=name,
+        title=title,
+        smoke_mode=91,
+        description=description,
+        task_ids=COOP_CAMPAIGN_INTERACTION_TASK_IDS,
+        budget_seconds=30,
+        extra_cvars=COOP_CAMPAIGN_INTERACTION_EXTRA_CVARS,
+        map_name=map_name,
+        selection_tags=(
+            *COOP_CAMPAIGN_INTERACTION_TAGS,
+            "depth",
+            "trigger",
+            "button",
+            "target-chain",
+            "progression-chain",
+            "progression-consumer",
+            "preference",
+        ),
+        checks=(
+            MetricCheck("pass", "eq", 1, "campaign progression-consumer status must pass"),
+            MetricCheck("route_commands", "ge", 1, "campaign progression-consumer proof must emit route commands"),
+            MetricCheck("route_failures", "eq", 0, "campaign progression-consumer proof must remain route-clean"),
+        ),
+        marker_checks=coop_campaign_progression_consumer_marker_checks(map_name),
+    )
+
+
+def coop_campaign_post_interaction_scenario(
+    *,
+    name: str,
+    title: str,
+    map_name: str,
+    description: str,
+) -> Scenario:
+    return Scenario(
+        name=name,
+        title=title,
+        smoke_mode=91,
+        description=description,
+        task_ids=COOP_CAMPAIGN_INTERACTION_TASK_IDS,
+        budget_seconds=30,
+        extra_cvars=COOP_CAMPAIGN_INTERACTION_EXTRA_CVARS,
+        map_name=map_name,
+        selection_tags=(
+            *COOP_CAMPAIGN_INTERACTION_TAGS,
+            "depth",
+            "trigger",
+            "button",
+            "target-chain",
+            "progression-chain",
+            "progression-consumer",
+            "post-interaction",
+            "route-refresh",
+        ),
+        checks=(
+            MetricCheck("pass", "eq", 1, "campaign post-interaction status must pass"),
+            MetricCheck("route_commands", "ge", 1, "campaign post-interaction proof must emit route commands"),
+            MetricCheck("route_failures", "eq", 0, "campaign post-interaction proof must remain route-clean"),
+        ),
+        marker_checks=coop_campaign_post_interaction_marker_checks(map_name),
+    )
+
+
+def coop_campaign_progression_carry_scenario(
+    *,
+    name: str,
+    title: str,
+    map_name: str,
+    description: str,
+) -> Scenario:
+    return Scenario(
+        name=name,
+        title=title,
+        smoke_mode=91,
+        description=description,
+        task_ids=COOP_CAMPAIGN_INTERACTION_TASK_IDS,
+        budget_seconds=30,
+        extra_cvars=COOP_CAMPAIGN_INTERACTION_EXTRA_CVARS,
+        map_name=map_name,
+        selection_tags=(
+            *COOP_CAMPAIGN_INTERACTION_TAGS,
+            "depth",
+            "trigger",
+            "button",
+            "target-chain",
+            "progression-chain",
+            "progression-consumer",
+            "post-interaction",
+            "route-refresh",
+            "progression-carry",
+            "multi-objective",
+        ),
+        checks=(
+            MetricCheck("pass", "eq", 1, "campaign progression-carry status must pass"),
+            MetricCheck("route_commands", "ge", 1, "campaign progression-carry proof must emit route commands"),
+            MetricCheck("route_failures", "eq", 0, "campaign progression-carry proof must remain route-clean"),
+        ),
+        marker_checks=coop_campaign_progression_carry_marker_checks(map_name),
+    )
+
+
+def coop_campaign_keyed_path_scenario(
+    *,
+    name: str,
+    title: str,
+    map_name: str,
+    description: str,
+) -> Scenario:
+    return Scenario(
+        name=name,
+        title=title,
+        smoke_mode=91,
+        description=description,
+        task_ids=COOP_CAMPAIGN_INTERACTION_TASK_IDS,
+        budget_seconds=30,
+        extra_cvars=(
+            *COOP_CAMPAIGN_INTERACTION_EXTRA_CVARS,
+            ("bot_nav_position_goal_enable", "1"),
+            ("bot_nav_position_goal_x", "-1584"),
+            ("bot_nav_position_goal_y", "952"),
+            ("bot_nav_position_goal_z", "184"),
+        ),
+        map_name=map_name,
+        selection_tags=(
+            *COOP_CAMPAIGN_INTERACTION_TAGS,
+            "depth",
+            "trigger",
+            "button",
+            "target-chain",
+            "progression-chain",
+            "progression-consumer",
+            "post-interaction",
+            "route-refresh",
+            "progression-carry",
+            "multi-objective",
+            "keyed-path",
+            "key-lock",
+            "position-goal",
+        ),
+        checks=(
+            MetricCheck("pass", "eq", 1, "campaign keyed-path status must pass"),
+            MetricCheck("route_commands", "ge", 1, "campaign keyed-path proof must emit route commands"),
+            MetricCheck("route_failures", "eq", 0, "campaign keyed-path proof must remain route-clean"),
+        ),
+        marker_checks=coop_campaign_keyed_path_marker_checks(map_name),
+    )
+
+
+def coop_campaign_key_carry_scenario(
+    *,
+    name: str,
+    title: str,
+    map_name: str,
+    description: str,
+) -> Scenario:
+    return Scenario(
+        name=name,
+        title=title,
+        smoke_mode=91,
+        description=description,
+        task_ids=COOP_CAMPAIGN_INTERACTION_TASK_IDS,
+        budget_seconds=30,
+        extra_cvars=(
+            *COOP_CAMPAIGN_INTERACTION_EXTRA_CVARS,
+            ("bot_campaign_key_carry_smoke", "1"),
+        ),
+        map_name=map_name,
+        selection_tags=(
+            *COOP_CAMPAIGN_INTERACTION_TAGS,
+            "depth",
+            "trigger",
+            "button",
+            "target-chain",
+            "progression-chain",
+            "progression-consumer",
+            "post-interaction",
+            "route-refresh",
+            "progression-carry",
+            "multi-objective",
+            "keyed-path",
+            "key-lock",
+            "key-carry",
+            "inventory",
+            "train-bridge",
+            "mover-bridge",
+            "ride-state",
+        ),
+        checks=(
+            MetricCheck("pass", "eq", 1, "campaign key-carry status must pass"),
+            MetricCheck("route_commands", "ge", 1, "campaign key-carry proof must emit route commands"),
+            MetricCheck("route_failures", "eq", 0, "campaign key-carry proof must remain route-clean"),
+        ),
+        marker_checks=coop_campaign_key_carry_marker_checks(map_name),
     )
 
 
@@ -1274,13 +2647,54 @@ OPTIONAL_FIELD_FAMILIES: tuple[OptionalFieldFamily, ...] = (
             "route_target_stabilization_checks",
             "route_target_stabilizations",
             "route_target_stabilization_skips",
+            "lookahead_preserved_move_targets",
+            "lookahead_approx_move_target_matches",
+            "lookahead_unmatched_move_targets",
+            "lookahead_close_point_skips",
+            "lookahead_goal_fallbacks",
+            "route_movement_projected_commands",
+            "route_movement_strafe_commands",
+            "route_movement_backpedal_commands",
             "last_route_target_original_distance_sq",
             "last_route_target_stable_distance_sq",
             "last_route_target_stable_point_index",
+            "last_lookahead_move_target_index",
+            "last_lookahead_start_index",
+            "last_lookahead_close_point_skips",
+            "last_route_movement_yaw_delta",
+            "last_route_movement_forward_move",
+            "last_route_movement_side_move",
         ),
         metric_prefixes=(
             "route_target_stabilization_",
             "last_route_target_",
+            "lookahead_",
+            "last_lookahead_",
+            "route_movement_",
+            "last_route_movement_",
+        ),
+    ),
+    OptionalFieldFamily(
+        name="stuck_recovery_probe_signals",
+        title="Stuck recovery probe signals",
+        description=(
+            "Obstacle-aware stuck recovery probe checks, selected/fallback "
+            "moves, and last chosen command metadata emitted by nav policy status."
+        ),
+        markers=(NAV_POLICY_STATUS_MARKER,),
+        metric_names=(
+            "stuck_recovery_probe_checks",
+            "stuck_recovery_probe_uses",
+            "stuck_recovery_probe_blocks",
+            "stuck_recovery_probe_fallbacks",
+            "last_stuck_recovery_probe_candidate",
+            "last_stuck_recovery_probe_fraction",
+            "last_stuck_recovery_forward_move",
+            "last_stuck_recovery_side_move",
+        ),
+        metric_prefixes=(
+            "stuck_recovery_probe_",
+            "last_stuck_recovery_probe_",
         ),
     ),
     OptionalFieldFamily(
@@ -2545,6 +3959,15 @@ SCENARIOS: tuple[Scenario, ...] = (
             MetricCheck("stuck_recovery_activations", "ge", 1, "recovery policy must activate"),
             MetricCheck("recovery_command_uses", "ge", 1, "recovery commands must be emitted"),
         ),
+        marker_checks=(
+            MarkerMetricCheck(
+                NAV_POLICY_STATUS_MARKER,
+                "stuck_recovery_probe_uses",
+                "ge",
+                1,
+                "stuck recovery must select an obstacle-aware escape probe",
+            ),
+        ),
     ),
     Scenario(
         name="movement_forced_jump_command",
@@ -2711,7 +4134,53 @@ SCENARIOS: tuple[Scenario, ...] = (
         task_ids=("FR-04-T11", "FR-04-T14", "FR-04-T16", "DV-03-T05"),
         budget_seconds=20,
         selection_tags=("movement", "navigation", "mover"),
-        checks=movement_route_goal_checks(11, "elevator"),
+        checks=movement_route_goal_checks(11, "elevator") + (
+            MetricCheck(
+                "travel_type_elevator_interactions",
+                "ge",
+                1,
+                "elevator route must record the route-detected mover interaction",
+            ),
+            MetricCheck(
+                "travel_type_elevator_activation_requests",
+                "ge",
+                1,
+                "elevator route must request the mover activation through bot recovery",
+            ),
+            MetricCheck(
+                "travel_type_elevator_ride_observation_requests",
+                "ge",
+                1,
+                "elevator route must start a physical mover observation",
+            ),
+            MetricCheck(
+                "travel_type_elevator_ride_observation_moving",
+                "ge",
+                1,
+                "elevator route must observe the mover in a moving state",
+            ),
+            MetricCheck(
+                "travel_type_elevator_ride_observation_completed",
+                "ge",
+                1,
+                "elevator route must complete the mover observation",
+            ),
+            MetricCheck(
+                "interaction_mover_ride_moving_states",
+                "ge",
+                1,
+                "elevator route must feed moving samples into shared mover ride-state telemetry",
+            ),
+        ),
+        marker_checks=(
+            MarkerMetricCheck(
+                NAV_POLICY_STATUS_MARKER,
+                "interaction_direct_use_activations",
+                "ge",
+                1,
+                "elevator route must invoke direct mover use from the selected recovery interaction",
+            ),
+        ),
     ),
     Scenario(
         name="movement_barrierjump_route",
@@ -6206,6 +7675,126 @@ SCENARIOS: tuple[Scenario, ...] = (
         ),
     ),
     Scenario(
+        name="min_players_profile_coverage",
+        title="Min-player profile coverage",
+        smoke_mode=2,
+        description=(
+            "Exercises bot_min_players autofill until it reaches the complete "
+            "first-party profile roster and verifies the rotated profile IDs."
+        ),
+        task_ids=("FR-04-T13", "FR-04-T16", "DV-07-T06"),
+        budget_seconds=25,
+        smoke_cvar="bot_min_players_smoke",
+        marker_checks=(
+            MarkerMetricCheck(
+                "q3a_bot_min_players_smoke=begin",
+                "target",
+                "eq",
+                5,
+                "profile-coverage smoke must request the full first-party roster",
+            ),
+            MarkerMetricCheck(
+                "q3a_bot_min_players_smoke_after_fill",
+                "count",
+                "eq",
+                5,
+                "min-player autofill must reach five bot slots",
+            ),
+            MarkerMetricCheck(
+                "q3a_bot_min_players_smoke_after_fill",
+                "auto",
+                "eq",
+                5,
+                "all filled slots must be min-player autofill bots",
+            ),
+            MarkerMetricCheck(
+                "q3a_bot_min_players_smoke_after_fill",
+                "profiled",
+                "eq",
+                5,
+                "all autofill bots must carry profile metadata",
+            ),
+            MarkerMetricCheck(
+                "q3a_bot_min_players_smoke_profile_coverage",
+                "required",
+                "eq",
+                5,
+                "coverage marker must require five first-party profiles",
+            ),
+            MarkerMetricCheck(
+                "q3a_bot_min_players_smoke_profile_coverage",
+                "covered",
+                "eq",
+                5,
+                "autofill profile rotation must cover the required roster",
+            ),
+            MarkerMetricCheck(
+                "q3a_bot_min_players_smoke_profile_coverage",
+                "bulwark",
+                "eq",
+                1,
+                "Bulwark must be selected by public min-player autofill",
+            ),
+            MarkerMetricCheck(
+                "q3a_bot_min_players_smoke_profile_coverage",
+                "relay",
+                "eq",
+                1,
+                "Relay must be selected by public min-player autofill",
+            ),
+            MarkerMetricCheck(
+                "q3a_bot_min_players_smoke_profile_coverage",
+                "smoke",
+                "eq",
+                1,
+                "Smoke must be selected by public min-player autofill",
+            ),
+            MarkerMetricCheck(
+                "q3a_bot_min_players_smoke_profile_coverage",
+                "vanguard",
+                "eq",
+                1,
+                "Vanguard must be selected by public min-player autofill",
+            ),
+            MarkerMetricCheck(
+                "q3a_bot_min_players_smoke_profile_coverage",
+                "vector",
+                "eq",
+                1,
+                "Vector must be selected by public min-player autofill",
+            ),
+            MarkerMetricCheck(
+                "q3a_bot_min_players_smoke_profile_coverage",
+                "pass",
+                "eq",
+                1,
+                "profile coverage smoke must pass",
+            ),
+            MarkerMetricCheck(
+                "q3a_bot_min_players_smoke_after_trim",
+                "count",
+                "eq",
+                1,
+                "lowering bot_min_players must trim autofill bots",
+            ),
+            MarkerMetricCheck(
+                "q3a_bot_min_players_smoke_after_disable",
+                "count",
+                "eq",
+                0,
+                "disabling bot_min_players must remove autofill bots",
+            ),
+            MarkerMetricCheck(
+                "q3a_bot_min_players_smoke=end",
+                "final_count",
+                "eq",
+                0,
+                "min-player profile coverage smoke must clean up all bots",
+            ),
+        ),
+        selection_tags=("profiles", "min_players", "release"),
+    ),
+    Scenario(
         name="team_policy_duel_readiness",
         title="Team-policy duel readiness",
         smoke_mode=2,
@@ -6914,6 +8503,13 @@ SCENARIOS: tuple[Scenario, ...] = (
                 "ge",
                 1,
                 "corner-cut proof should be backed by BSP trace counters",
+            ),
+            MarkerMetricCheck(
+                STATUS_MARKER,
+                "lookahead_close_point_skips",
+                "ge",
+                1,
+                "route steering must skip close route points that can cause local spin loops",
             ),
         ),
     ),
@@ -12344,13 +13940,6 @@ SCENARIOS: tuple[Scenario, ...] = (
                 "ge",
                 1,
                 "q2dm2 combined smoke must record a health goal assignment",
-            ),
-            MarkerMetricCheck(
-                ACTION_STATUS_MARKER,
-                "item_last_utility_kind_name",
-                "any_eq",
-                "health",
-                "q2dm2 combined smoke must classify the selected utility as health",
             ),
             MarkerMetricCheck(
                 BEHAVIOR_POLICY_STATUS_MARKER,
@@ -18908,6 +20497,41 @@ SCENARIOS: tuple[Scenario, ...] = (
             ),
             MarkerMetricCheck(
                 CHAT_POLICY_STATUS_MARKER,
+                "reply_chat_match_result_win",
+                "ge",
+                1,
+                "live match-result smoke must record winning-team result phrases",
+            ),
+            MarkerMetricCheck(
+                CHAT_POLICY_STATUS_MARKER,
+                "reply_chat_match_result_loss",
+                "ge",
+                1,
+                "live match-result smoke must record losing-team result phrases",
+            ),
+            MarkerMetricCheck(
+                CHAT_POLICY_STATUS_MARKER,
+                "reply_chat_match_result_unknown",
+                "eq",
+                0,
+                "live match-result smoke must classify every staged bot outcome",
+            ),
+            MarkerMetricCheck(
+                CHAT_POLICY_STATUS_MARKER,
+                "reply_chat_match_result_tie",
+                "eq",
+                0,
+                "live match-result smoke must not classify the forced score as a tie",
+            ),
+            MarkerMetricCheck(
+                CHAT_POLICY_STATUS_MARKER,
+                "reply_chat_match_result_abort",
+                "eq",
+                0,
+                "live match-result smoke must not classify normal intermission as an abort",
+            ),
+            MarkerMetricCheck(
+                CHAT_POLICY_STATUS_MARKER,
                 "reply_chat_item_denied",
                 "eq",
                 0,
@@ -18947,6 +20571,20 @@ SCENARIOS: tuple[Scenario, ...] = (
                 "eq",
                 11,
                 "live match-result status must record victory_defeat as the latest reply event",
+            ),
+            MarkerMetricCheck(
+                CHAT_POLICY_STATUS_MARKER,
+                "last_match_result_outcome",
+                "in",
+                (1, 2),
+                "live match-result status must expose a classified win/loss latest outcome id",
+            ),
+            MarkerMetricCheck(
+                CHAT_POLICY_STATUS_MARKER,
+                "last_match_result_outcome_name",
+                "in",
+                ("win", "loss"),
+                "live match-result status must expose a classified win/loss latest outcome name",
             ),
             MarkerMetricCheck(
                 CHAT_POLICY_STATUS_MARKER,
@@ -19770,6 +21408,62 @@ SCENARIOS: tuple[Scenario, ...] = (
                 0,
                 "door/elevator smoke must record the interacted entity",
             ),
+            MarkerMetricCheck(
+                STATUS_MARKER,
+                "interaction_mover_ride_checks",
+                "ge",
+                3,
+                "door/elevator smoke must record generic mover lifecycle samples",
+            ),
+            MarkerMetricCheck(
+                STATUS_MARKER,
+                "interaction_mover_ride_wait_states",
+                "ge",
+                1,
+                "door/elevator smoke must record waiting at the mover interaction",
+            ),
+            MarkerMetricCheck(
+                STATUS_MARKER,
+                "interaction_mover_ride_board_states",
+                "ge",
+                1,
+                "door/elevator smoke must record boarding/use at the mover interaction",
+            ),
+            MarkerMetricCheck(
+                STATUS_MARKER,
+                "interaction_mover_ride_leave_states",
+                "ge",
+                1,
+                "door/elevator smoke must record the terminal mover interaction phase",
+            ),
+            MarkerMetricCheck(
+                STATUS_MARKER,
+                "last_interaction_mover_ride_phase",
+                "eq",
+                4,
+                "door/elevator smoke must finish the mover lifecycle in leave phase",
+            ),
+            MarkerMetricCheck(
+                STATUS_MARKER,
+                "last_interaction_mover_ride_entity",
+                "gt",
+                0,
+                "door/elevator smoke must record the lifecycle mover entity",
+            ),
+            MarkerMetricCheck(
+                STATUS_MARKER,
+                "last_interaction_mover_ride_kind",
+                "ge",
+                3,
+                "door/elevator smoke lifecycle must remain tied to a mover-like entity",
+            ),
+            MarkerMetricCheck(
+                STATUS_MARKER,
+                "interaction_mover_ride_invalid_skips",
+                "eq",
+                0,
+                "door/elevator smoke must not emit invalid mover lifecycle samples",
+            ),
         ),
     ),
     Scenario(
@@ -19953,6 +21647,62 @@ SCENARIOS: tuple[Scenario, ...] = (
                 "coop live loop must activate an elevator interaction window",
             ),
             MarkerMetricCheck(
+                STATUS_MARKER,
+                "interaction_mover_ride_checks",
+                "ge",
+                3,
+                "coop live loop must record generic mover lifecycle samples",
+            ),
+            MarkerMetricCheck(
+                STATUS_MARKER,
+                "interaction_mover_ride_wait_states",
+                "ge",
+                1,
+                "coop live loop must record waiting at the mover interaction",
+            ),
+            MarkerMetricCheck(
+                STATUS_MARKER,
+                "interaction_mover_ride_board_states",
+                "ge",
+                1,
+                "coop live loop must record boarding/use at the mover interaction",
+            ),
+            MarkerMetricCheck(
+                STATUS_MARKER,
+                "interaction_mover_ride_leave_states",
+                "ge",
+                1,
+                "coop live loop must record the terminal mover interaction phase",
+            ),
+            MarkerMetricCheck(
+                STATUS_MARKER,
+                "last_interaction_mover_ride_phase",
+                "eq",
+                4,
+                "coop live loop must finish the mover lifecycle in leave phase",
+            ),
+            MarkerMetricCheck(
+                STATUS_MARKER,
+                "last_interaction_mover_ride_entity",
+                "gt",
+                0,
+                "coop live loop must record the lifecycle mover entity",
+            ),
+            MarkerMetricCheck(
+                STATUS_MARKER,
+                "last_interaction_mover_ride_kind",
+                "ge",
+                3,
+                "coop live loop lifecycle must remain tied to a mover-like entity",
+            ),
+            MarkerMetricCheck(
+                STATUS_MARKER,
+                "interaction_mover_ride_invalid_skips",
+                "eq",
+                0,
+                "coop live loop must not emit invalid mover lifecycle samples",
+            ),
+            MarkerMetricCheck(
                 OBJECTIVE_STATUS_MARKER,
                 "team_objective_coop_policy_wait",
                 "ge",
@@ -19968,159 +21718,111 @@ SCENARIOS: tuple[Scenario, ...] = (
             ),
         ),
     ),
-    Scenario(
+    coop_campaign_interaction_scenario(
         name="coop_campaign_interaction_matrix",
         title="Coop campaign interaction matrix",
-        smoke_mode=91,
+        map_name="base1",
         description=(
             "Runs the coop live-loop interaction proof on the base1 campaign "
             "reference map, widening the map matrix beyond the original "
             "mm-rage aggregate by hard-gating route-interaction retry, "
             "campaign mover source ownership, and teammate hold behavior."
         ),
-        task_ids=("FR-04-T04", "FR-04-T05", "FR-04-T15", "DV-03-T05", "DV-07-T06"),
-        budget_seconds=30,
-        extra_cvars=(
-            ("deathmatch", "0"),
-            ("coop", "1"),
-            ("bot_coop_live_loop", "1"),
+    ),
+    coop_campaign_interaction_scenario(
+        name="coop_campaign_interaction_matrix_base2",
+        title="Coop campaign interaction matrix (base2)",
+        map_name="base2",
+        description=(
+            "Runs the same coop live-loop interaction proof on the base2 "
+            "campaign reference map, proving the route-interaction, campaign "
+            "mover, and teammate-hold owners are not special-cased to the "
+            "first base1 row."
         ),
-        map_name="base1",
-        selection_tags=("match", "coop", "interaction", "movement", "maps", "campaign"),
-        checks=(
-            MetricCheck("pass", "eq", 1, "source smoke status must pass"),
-            MetricCheck("route_commands", "ge", 1, "campaign coop matrix must emit route commands"),
-            MetricCheck("route_failures", "eq", 0, "campaign coop matrix must remain route-clean"),
+    ),
+    coop_campaign_interaction_depth_scenario(
+        name="coop_campaign_interaction_depth_base2",
+        title="Coop campaign interaction depth (base2)",
+        map_name="base2",
+        description=(
+            "Promotes the base2 campaign interaction row into a deeper "
+            "progression-oriented gate, requiring button, trigger, mover, "
+            "use/touch, wait/use-frame, coop intent, and live pickup timing "
+            "evidence from the same coop live-loop run."
         ),
-        marker_checks=(
-            *reserved_mode_marker_checks(
-                91,
-                combat=0,
-                weapon_switch=0,
-                item_focus=0,
-                team_objective=0,
-                target=2,
-                gametype=0,
-            ),
-            MarkerMetricCheck(
-                SCENARIO_BEGIN_MARKER,
-                "map",
-                "eq",
-                "base1",
-                "campaign interaction matrix must run on the base1 reference map",
-            ),
-            MarkerMetricCheck(
-                SCENARIO_BEGIN_MARKER,
-                "coop_live_loop",
-                "eq",
-                1,
-                "reserved smoke must enable the coop live-loop proof lane",
-            ),
-            MarkerMetricCheck(
-                COOP_READINESS_STATUS_MARKER,
-                "pass",
-                "eq",
-                1,
-                "campaign coop readiness status must pass",
-            ),
-            MarkerMetricCheck(
-                COOP_READINESS_STATUS_MARKER,
-                "bots",
-                "ge",
-                2,
-                "campaign coop matrix must run with at least two bots",
-            ),
-            MarkerMetricCheck(
-                MATCH_READINESS_STATUS_MARKER,
-                "deathmatch",
-                "eq",
-                0,
-                "campaign coop matrix must disable deathmatch",
-            ),
-            MarkerMetricCheck(
-                COOP_COMMAND_STATUS_MARKER,
-                "coop_leader_route_activations",
-                "ge",
-                1,
-                "campaign coop matrix must activate the leader-route owner",
-            ),
-            MarkerMetricCheck(
-                COOP_COMMAND_STATUS_MARKER,
-                "coop_progress_wait_commands",
-                "ge",
-                1,
-                "campaign coop matrix must keep progress-wait command ownership",
-            ),
-            MarkerMetricCheck(
-                COOP_COMMAND_STATUS_MARKER,
-                "coop_interaction_retry_commands",
-                "ge",
-                1,
-                "campaign coop matrix must own route interaction retry commands",
-            ),
-            MarkerMetricCheck(
-                COOP_COMMAND_STATUS_MARKER,
-                "coop_door_elevator_source_commands",
-                "ge",
-                1,
-                "campaign coop matrix must own source wait/use commands",
-            ),
-            MarkerMetricCheck(
-                COOP_COMMAND_STATUS_MARKER,
-                "coop_door_elevator_hold_commands",
-                "ge",
-                1,
-                "campaign coop matrix must keep teammate hold commands",
-            ),
-            MarkerMetricCheck(
-                COOP_COMMAND_STATUS_MARKER,
-                "last_coop_door_elevator_kind",
-                "ge",
-                1,
-                "campaign coop matrix must record a concrete base1 interaction kind",
-            ),
-            MarkerMetricCheck(
-                COOP_COMMAND_STATUS_MARKER,
-                "last_coop_door_elevator_entity",
-                "gt",
-                0,
-                "campaign coop matrix must record the interacted campaign entity",
-            ),
-            MarkerMetricCheck(
-                NAV_POLICY_STATUS_MARKER,
-                "nav_interaction_activations",
-                "ge",
-                1,
-                "campaign coop matrix must activate route interaction handling",
-            ),
-            MarkerMetricCheck(
-                NAV_POLICY_STATUS_MARKER,
-                "nav_interaction_candidates",
-                "ge",
-                1,
-                "campaign coop matrix must inspect at least one route interaction candidate",
-            ),
-            MarkerMetricCheck(
-                NAV_INTERACTION_CONTEXT_STATUS_MARKER,
-                "interaction_world_entities",
-                "ge",
-                1,
-                "campaign coop matrix must scan interaction entities on base1",
-            ),
-            MarkerMetricCheck(
-                NAV_INTERACTION_CONTEXT_STATUS_MARKER,
-                "interaction_world_doors",
-                "ge",
-                1,
-                "campaign coop matrix must expose door entities on base1",
-            ),
-            MarkerMetricCheck(
-                OBJECTIVE_STATUS_MARKER,
-                "team_objective_coop_policy_wait",
-                "ge",
-                1,
-                "campaign coop policy must still record WaitForLeader decisions",
-            ),
+    ),
+    coop_campaign_progression_chain_scenario(
+        name="coop_campaign_progression_chain_base2",
+        title="Coop campaign progression chain (base2)",
+        map_name="base2",
+        description=(
+            "Extends the base2 campaign interaction proof with runtime "
+            "target-chain diagnostics, requiring level-flow target classes, "
+            "outbound target links, named target anchors, and combined "
+            "progression context beside the existing wait/use interaction "
+            "and coop intent evidence."
+        ),
+    ),
+    coop_campaign_progression_consumer_scenario(
+        name="coop_campaign_progression_consumer_base2",
+        title="Coop campaign progression consumer (base2)",
+        map_name="base2",
+        description=(
+            "Extends the base2 campaign progression-chain proof by "
+            "requiring the live route-interaction chooser to score and "
+            "select a target-linked progression candidate instead of only "
+            "reporting map-wide target-chain diagnostics."
+        ),
+    ),
+    coop_campaign_post_interaction_scenario(
+        name="coop_campaign_post_interaction_base2",
+        title="Coop campaign post-interaction progression (base2)",
+        map_name="base2",
+        description=(
+            "Extends the base2 campaign progression-consumer proof by "
+            "requiring a selected progression interaction to complete, "
+            "force a route refresh, and expose the short post-interaction "
+            "suppression window that keeps bots from reselecting the same "
+            "target-linked entity immediately."
+        ),
+    ),
+    coop_campaign_progression_carry_scenario(
+        name="coop_campaign_progression_carry_base2",
+        title="Coop campaign progression carry (base2)",
+        map_name="base2",
+        description=(
+            "Extends the base2 post-interaction proof by requiring a bot to "
+            "carry progression state through a follow-up scored interaction, "
+            "including a distinct completed progression entity after a prior "
+            "completion in the same coop campaign live-loop run."
+        ),
+    ),
+    coop_campaign_keyed_path_scenario(
+        name="coop_campaign_keyed_path_train",
+        title="Coop campaign keyed path (train)",
+        map_name="train",
+        description=(
+            "Extends the campaign progression-carry proof onto the staged "
+            "train reference map, requiring runtime nav context to expose a "
+            "real key-backed path with a trigger_key lock and linked key-path "
+            "entities instead of only generic target-chain diagnostics."
+        ),
+    ),
+    coop_campaign_key_carry_scenario(
+        name="coop_campaign_key_carry_train",
+        title="Coop campaign key carry (train)",
+        map_name="train",
+        description=(
+            "Extends the train keyed-path proof by routing first to the real "
+            "red-key item, recording the normal item-touch pickup path, "
+            "routing through the key-side func_train bridge interaction, then "
+            "projecting a routeable post-bridge arrival before carrying that "
+            "inventory into the trigger_key lock leg. The bridge-start and "
+            "post-mover arrival legs must both be reached by normal route "
+            "progress, and the arrival leg is now tracked through reusable "
+            "interaction-arrival route assignment/reached telemetry plus "
+            "explicit mover wait/board/ride/leave state and a bounded "
+            "post-activation bridge ride-observation window."
         ),
     ),
     Scenario(

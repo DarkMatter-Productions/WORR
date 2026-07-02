@@ -455,7 +455,8 @@ def passing_raw_reserved_mode_lines(mode: int) -> list[str]:
     if mode == 21:
         return [
             *common,
-            "q3a_bot_frame_command_status pass=1 route_failures=0",
+            "q3a_bot_frame_command_status pass=1 route_failures=0 "
+            "lookahead_close_point_skips=2",
             "q3a_bot_action_status combat_weapon_switch_decisions=1 "
             "action_weapon_switch_decisions=1 action_pending_weapon_switches=1 "
             "weapon_switch_requests=1 weapon_switch_completions=1 weapon_switch_failures=0 "
@@ -785,7 +786,21 @@ def passing_raw_reserved_mode_lines(mode: int) -> list[str]:
         return [
             *common,
             "q3a_bot_frame_command_status pass=1 route_commands=24 "
-            "route_failures=0 expected_min_commands=2",
+            "route_failures=0 expected_min_commands=2 "
+            "interaction_mover_ride_checks=9 "
+            "interaction_mover_ride_wait_states=4 "
+            "interaction_mover_ride_board_states=4 "
+            "interaction_mover_ride_ride_states=0 "
+            "interaction_mover_ride_leave_states=1 "
+            "interaction_mover_ride_ground_states=0 "
+            "interaction_mover_ride_moving_states=0 "
+            "interaction_mover_ride_invalid_skips=0 "
+            "last_interaction_mover_ride_phase=4 "
+            "last_interaction_mover_ride_entity=17 "
+            "last_interaction_mover_ride_kind=3 "
+            "last_interaction_mover_ride_action=3 "
+            "last_interaction_mover_ride_area=0 "
+            "last_interaction_mover_ride_client=0",
             "q3a_bot_coop_readiness_status pass=1 coop=1 bots=2 "
             "humans=0 playing=2",
             "q3a_bot_match_readiness_status ffa_pass=0 tdm_pass=0 "
@@ -1381,12 +1396,18 @@ def passing_raw_reserved_mode_lines(mode: int) -> list[str]:
             "reply_chat_flag_state=0 reply_chat_enemy_sighted=0 "
             "reply_chat_low_health=0 reply_chat_blocked=0 "
             "reply_chat_match_result=4 "
+            "reply_chat_match_result_unknown=0 "
+            "reply_chat_match_result_win=2 "
+            "reply_chat_match_result_loss=2 "
+            "reply_chat_match_result_tie=0 "
+            "reply_chat_match_result_abort=0 "
             "reply_chat_submitted=8 reply_chat_rate_limited=0 "
             "reply_chat_duplicate_suppressed=0 reply_chat_failures=0 "
             "reply_chat_phrase_variants=4 reply_chat_unique_variants=4 "
             "last_reply_chat_client=3 "
-            "last_reply_chat_personality=2 last_reply_chat_phrase=2123 "
+            "last_reply_chat_personality=2 last_reply_chat_phrase=12223 "
             "last_reply_chat_variant=3 last_reply_chat_event=11 "
+            "last_match_result_outcome=2 last_match_result_outcome_name=loss "
             "live_chat_enabled=1 live_chat_events=12 "
             "live_chat_spawn=4 live_chat_route_ready=4 "
             "live_chat_item_taken=0 live_chat_item_denied=0 "
@@ -1440,19 +1461,198 @@ def passing_raw_reserved_mode_lines(mode: int) -> list[str]:
             "last_coop_door_elevator_intent=5 "
             "last_coop_door_elevator_intent_name=support_combat "
             "last_coop_interaction_retry_action=3 "
-            "last_coop_interaction_retry_kind=1",
+            "last_coop_interaction_retry_kind=1 "
+            "last_coop_interaction_retry_entity=17",
             "q3a_bot_nav_policy_status nav_interaction_elevator_activations=1 "
             "nav_interaction_activations=2 nav_interaction_candidates=2 "
-            "nav_interaction_checks=4",
+            "nav_interaction_checks=4 nav_interaction_wait_frames=8 "
+            "nav_interaction_use_frames=8 nav_interaction_misses=0 "
+            "last_nav_interaction_action=3 last_nav_interaction_kind=1 "
+            "last_nav_interaction_entity=17 "
+            "nav_interaction_progression_candidates=2 "
+            "nav_interaction_progression_selections=2 "
+            "nav_interaction_progression_preference_selections=1 "
+            "nav_interaction_progression_target_entity_selections=0 "
+            "nav_interaction_progression_target_selections=0 "
+            "nav_interaction_progression_target_link_selections=1 "
+            "nav_interaction_progression_named_target_selections=1 "
+            "nav_interaction_progression_key_entity_selections=1 "
+            "nav_interaction_progression_key_path_candidates=1 "
+            "nav_interaction_progression_key_path_selections=1 "
+            "nav_interaction_progression_key_path_completions=1 "
+            "nav_interaction_progression_completions=2 "
+            "nav_interaction_progression_post_refreshes=2 "
+            "nav_interaction_progression_post_frames=4 "
+            "nav_interaction_progression_repeat_suppressions=1 "
+            "nav_interaction_progression_carry_completions=1 "
+            "nav_interaction_progression_carry_distinct_completions=1 "
+            "nav_interaction_progression_completed_clients=1 "
+            "nav_interaction_progression_distinct_completed_clients=1 "
+            "last_nav_interaction_progression_score=6 "
+            "last_nav_interaction_progression_preferred=1 "
+            "last_nav_interaction_target_entity=0 "
+            "last_nav_interaction_progression_target=0 "
+            "last_nav_interaction_target_link=1 "
+            "last_nav_interaction_named_target=1 "
+            "last_nav_interaction_key_entity=1 "
+            "last_nav_interaction_key_item=0 "
+            "last_nav_interaction_key_lock=1 "
+            "last_nav_interaction_key_required_item=17 "
+            "last_nav_interaction_progression_completed_entity=17 "
+            "last_nav_interaction_progression_completed_score=6 "
+            "last_nav_interaction_progression_key_path_entity=17 "
+            "last_nav_interaction_progression_key_path_score=22 "
+            "last_nav_interaction_progression_key_path_key_item=0 "
+            "last_nav_interaction_progression_key_path_key_lock=1 "
+            "last_nav_interaction_progression_key_path_required_item=17 "
+            "last_nav_interaction_progression_post_entity=17 "
+            "last_nav_interaction_progression_post_frames_remaining=3 "
+            "last_nav_interaction_progression_suppressed_entity=17 "
+            "last_nav_interaction_progression_suppressed_score=6 "
+            "last_nav_interaction_progression_carry_previous_entity=12 "
+            "last_nav_interaction_progression_carry_entity=17 "
+            "last_nav_interaction_progression_carry_distinct=1 "
+            "last_nav_interaction_progression_carry_count=2 "
+            "last_nav_interaction_progression_carry_distinct_count=2",
+            "q3a_bot_frame_command_status interaction_goal_requests=1 "
+            "interaction_goal_candidates=3 "
+            "interaction_goal_resolved=1 "
+            "interaction_goal_invalid_skips=0 "
+            "interaction_arrival_goal_requests=1 "
+            "interaction_arrival_goal_candidates=60 "
+            "interaction_arrival_goal_resolved=1 "
+            "interaction_arrival_goal_invalid_skips=3 "
+            "interaction_arrival_mover_endpoint_checks=2 "
+            "interaction_arrival_mover_endpoint_candidates=2 "
+            "interaction_arrival_mover_endpoint_selections=1 "
+            "interaction_arrival_route_requests=1 "
+            "interaction_arrival_route_assignments=1 "
+            "interaction_arrival_route_cache_reuses=1 "
+            "interaction_arrival_route_reached=1 "
+            "interaction_arrival_route_invalid_skips=0 "
+            "interaction_mover_ride_checks=4 "
+            "interaction_mover_ride_wait_states=1 "
+            "interaction_mover_ride_board_states=1 "
+            "interaction_mover_ride_ride_states=1 "
+            "interaction_mover_ride_leave_states=1 "
+            "interaction_mover_ride_ground_states=0 "
+            "interaction_mover_ride_moving_states=1 "
+            "interaction_mover_ride_invalid_skips=0 "
+            "last_interaction_goal_entity=21 "
+            "last_interaction_goal_kind=4 "
+            "last_interaction_goal_action=3 "
+            "last_interaction_goal_area=123 "
+            "last_interaction_goal_x=-1088 "
+            "last_interaction_goal_y=-316 "
+            "last_interaction_goal_z=88 "
+            "last_interaction_goal_distance_sq=1024 "
+            "last_interaction_goal_destination_distance_sq=0 "
+            "last_interaction_arrival_goal_entity=21 "
+            "last_interaction_arrival_goal_kind=4 "
+            "last_interaction_arrival_goal_action=3 "
+            "last_interaction_arrival_goal_area=321 "
+            "last_interaction_arrival_goal_source=1 "
+            "last_interaction_arrival_goal_x=-1584 "
+            "last_interaction_arrival_goal_y=824 "
+            "last_interaction_arrival_goal_z=184 "
+            "last_interaction_arrival_goal_distance_sq=4096 "
+            "last_interaction_arrival_goal_destination_distance_sq=16384 "
+            "last_interaction_arrival_mover_endpoint_entity=21 "
+            "last_interaction_arrival_mover_endpoint_kind=4 "
+            "last_interaction_arrival_mover_endpoint_action=3 "
+            "last_interaction_arrival_mover_endpoint_area=321 "
+            "last_interaction_arrival_mover_endpoint_x=-1584 "
+            "last_interaction_arrival_mover_endpoint_y=824 "
+            "last_interaction_arrival_mover_endpoint_z=184 "
+            "last_interaction_arrival_mover_endpoint_distance_sq=4096 "
+            "last_interaction_arrival_mover_endpoint_destination_distance_sq=16384 "
+            "last_interaction_arrival_route_entity=21 "
+            "last_interaction_arrival_route_kind=4 "
+            "last_interaction_arrival_route_action=3 "
+            "last_interaction_arrival_route_area=321 "
+            "last_interaction_arrival_route_x=-1584 "
+            "last_interaction_arrival_route_y=824 "
+            "last_interaction_arrival_route_z=184 "
+            "last_interaction_arrival_route_distance_sq=4096 "
+            "last_interaction_mover_ride_phase=4 "
+            "last_interaction_mover_ride_entity=21 "
+            "last_interaction_mover_ride_kind=4 "
+            "last_interaction_mover_ride_action=3 "
+            "last_interaction_mover_ride_area=321 "
+            "last_interaction_mover_ride_client=0 "
+            "last_interaction_mover_ride_move_state=2 "
+            "last_interaction_mover_ride_ground_entity=-1 "
+            "last_interaction_mover_ride_x=-1584 "
+            "last_interaction_mover_ride_y=824 "
+            "last_interaction_mover_ride_z=184 "
+            "last_interaction_mover_ride_distance_sq=4096",
+            "q3a_bot_nav_policy_status key_carry_active=1 "
+            "key_carry_prepared=1 "
+            "key_carry_key_route_requests=1 "
+            "key_carry_key_touch_attempts=1 "
+            "key_carry_key_pickups=1 "
+            "key_carry_bridge_route_requests=1 "
+            "key_carry_bridge_approach_requests=4 "
+            "key_carry_bridge_approach_ready=1 "
+            "key_carry_bridge_warps=0 "
+            "key_carry_bridge_arrival_requests=1 "
+            "key_carry_bridge_arrival_resolved=1 "
+            "key_carry_bridge_arrival_route_requests=1 "
+            "key_carry_bridge_arrival_reached=1 "
+            "key_carry_bridge_arrival_warps=0 "
+            "key_carry_bridge_interactions=1 "
+            "key_carry_bridge_interaction_commands=2 "
+            "key_carry_bridge_ride_observation_requests=1 "
+            "key_carry_bridge_ride_observation_frames=8 "
+            "key_carry_bridge_ride_observation_moving=0 "
+            "key_carry_bridge_ride_observation_grounded=0 "
+            "key_carry_bridge_ride_observation_completed=1 "
+            "key_carry_bridge_ride_observation_timeouts=1 "
+            "key_carry_lock_route_requests=1 "
+            "key_carry_lock_warps=0 "
+            "last_key_carry_client=0 "
+            "last_key_carry_phase=3 "
+            "last_key_carry_item=70 "
+            "last_key_carry_key_entity=12 "
+            "last_key_carry_bridge_entity=21 "
+            "last_key_carry_bridge_kind=4 "
+            "last_key_carry_bridge_action=3 "
+            "last_key_carry_bridge_travel_type=11 "
+            "last_key_carry_bridge_approach_distance_sq=8192 "
+            "last_key_carry_bridge_arrival_distance_sq=4096 "
+            "last_key_carry_bridge_ride_observation_move_state=0 "
+            "last_key_carry_bridge_ride_observation_ground_entity=-1 "
+            "last_key_carry_bridge_ride_observation_elapsed_ms=512 "
+            "last_key_carry_inventory=1 "
+            "last_key_carry_pickup_inventory=1 "
+            "last_key_carry_lock_required_item=70 "
+            "last_key_carry_goal_x=-1584 "
+            "last_key_carry_goal_y=952 "
+            "last_key_carry_goal_z=184",
             "q3a_bot_nav_interaction_context_status "
-            "interaction_world_entities=9 interaction_world_doors=4 "
-            "interaction_world_buttons=0 interaction_world_platforms=1 "
+            "interaction_world_entities=54 interaction_world_doors=19 "
+            "interaction_world_buttons=5 interaction_world_platforms=1 "
             "interaction_world_trains=0 interaction_world_waters=0 "
-            "interaction_world_triggers=2 interaction_world_movers=2 "
+            "interaction_world_triggers=22 interaction_world_movers=7 "
             "interaction_world_teleporters=0 interaction_world_hazards=0 "
-            "interaction_world_use_entities=5 interaction_world_touch_entities=3",
+            "interaction_world_use_entities=49 interaction_world_touch_entities=49 "
+            "interaction_world_target_entities=111 "
+            "interaction_world_progression_targets=11 "
+            "interaction_world_target_links=96 "
+            "interaction_world_named_targets=142 "
+            "interaction_world_key_entities=2 "
+            "interaction_world_key_items=1 "
+            "interaction_world_key_locks=1 "
+            "interaction_world_key_path_entities=1 "
+            "interaction_world_progression_entities=183",
             "q3a_bot_objective_status team_objective_coop_policy_wait=4 "
+            "team_objective_coop_policy_follow=4 "
+            "team_objective_coop_policy_regroup=4 "
+            "team_objective_coop_policy_lead=1 "
+            "team_objective_coop_policy_resource_share=4 "
             "team_objective_coop_policy_support=0",
+            "q3a_bot_action_detail_status item_timing_consumer_live_pickups=59 "
+            "item_timing_consumer_ready_or_live=59",
         ]
     if mode == 92:
         return [
@@ -1535,8 +1735,14 @@ def passing_raw_reserved_mode_lines(mode: int) -> list[str]:
     raise AssertionError(f"unexpected reserved mode: {mode}")
 
 
-def passing_raw_reserved_mode_text(mode: int) -> str:
-    return "\n".join(passing_raw_reserved_mode_lines(mode))
+def passing_raw_reserved_mode_text(mode: int, *, map_name: str | None = None) -> str:
+    lines = passing_raw_reserved_mode_lines(mode)
+    if map_name is not None:
+        lines = [
+            line.replace("map=base1", f"map={map_name}", 1)
+            for line in lines
+        ]
+    return "\n".join(lines)
 
 
 def passing_high_bot_soak_text() -> str:
@@ -2124,6 +2330,22 @@ class BotScenarioHarnessTests(unittest.TestCase):
             (harness.COOP_COMMAND_STATUS_MARKER, "coop_door_elevator_hold_commands", "ge", 1),
             required_marker_metrics,
         )
+        self.assertIn(
+            (harness.STATUS_MARKER, "interaction_mover_ride_wait_states", "ge", 1),
+            required_marker_metrics,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "interaction_mover_ride_board_states", "ge", 1),
+            required_marker_metrics,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "interaction_mover_ride_leave_states", "ge", 1),
+            required_marker_metrics,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_interaction_mover_ride_phase", "eq", 4),
+            required_marker_metrics,
+        )
 
         text = passing_raw_reserved_mode_text(77)
         marker_metrics = harness.parse_marker_metrics(
@@ -2141,16 +2363,112 @@ class BotScenarioHarnessTests(unittest.TestCase):
         )
 
     def test_coop_campaign_interaction_matrix_catalog_and_marker_checks(self) -> None:
-        scenario = harness.scenario_map()["coop_campaign_interaction_matrix"]
+        scenarios = harness.scenario_map()
+        base1 = scenarios["coop_campaign_interaction_matrix"]
+        base2 = scenarios["coop_campaign_interaction_matrix_base2"]
+        report = harness.catalog_report([base1, base2])
+        rows = {row["name"]: row for row in report["scenarios"]}
+
+        for name, map_name in (
+            ("coop_campaign_interaction_matrix", "base1"),
+            ("coop_campaign_interaction_matrix_base2", "base2"),
+        ):
+            row = rows[name]
+            self.assertEqual(row["status"], "implemented")
+            self.assertEqual(row["smoke_mode"], 91)
+            self.assertEqual(row["map_name"], map_name)
+            self.assertEqual(
+                row["selection_tags"],
+                ["match", "coop", "interaction", "movement", "maps", "campaign"],
+            )
+            self.assertEqual(
+                row["extra_cvars"],
+                [
+                    {"name": "deathmatch", "value": "0"},
+                    {"name": "coop", "value": "1"},
+                    {"name": "bot_coop_live_loop", "value": "1"},
+                ],
+            )
+
+            required_marker_metrics = {
+                (check["source"], check["metric"], check["op"], check["expected"])
+                for check in row["required_marker_metrics"]
+            }
+            self.assertIn(
+                (harness.SCENARIO_BEGIN_MARKER, "mode", "eq", 91),
+                required_marker_metrics,
+            )
+            self.assertIn(
+                (harness.SCENARIO_BEGIN_MARKER, "map", "eq", map_name),
+                required_marker_metrics,
+            )
+            self.assertIn(
+                (harness.SCENARIO_BEGIN_MARKER, "coop_live_loop", "eq", 1),
+                required_marker_metrics,
+            )
+            self.assertIn(
+                (harness.COOP_COMMAND_STATUS_MARKER, "coop_interaction_retry_commands", "ge", 1),
+                required_marker_metrics,
+            )
+            self.assertIn(
+                (harness.COOP_COMMAND_STATUS_MARKER, "coop_door_elevator_source_commands", "ge", 1),
+                required_marker_metrics,
+            )
+            self.assertIn(
+                (harness.COOP_COMMAND_STATUS_MARKER, "coop_door_elevator_hold_commands", "ge", 1),
+                required_marker_metrics,
+            )
+            self.assertIn(
+                (harness.COOP_COMMAND_STATUS_MARKER, "last_coop_door_elevator_kind", "ge", 1),
+                required_marker_metrics,
+            )
+            self.assertIn(
+                (harness.COOP_COMMAND_STATUS_MARKER, "last_coop_door_elevator_entity", "gt", 0),
+                required_marker_metrics,
+            )
+            self.assertIn(
+                (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_candidates", "ge", 1),
+                required_marker_metrics,
+            )
+
+            scenario = scenarios[name]
+            text = passing_raw_reserved_mode_text(91, map_name=map_name)
+            marker_metrics = harness.parse_marker_metrics(
+                text,
+                {check.marker for check in scenario.marker_checks},
+            )
+            matrix_results = [
+                harness.evaluate_marker_check(check, marker_metrics)
+                for check in scenario.marker_checks
+            ]
+
+            self.assertTrue(
+                all(result["passed"] for result in matrix_results),
+                matrix_results,
+            )
+
+    def test_coop_campaign_interaction_depth_base2_catalog_and_marker_checks(self) -> None:
+        scenario = harness.scenario_map()["coop_campaign_interaction_depth_base2"]
         report = harness.catalog_report([scenario])
         row = report["scenarios"][0]
 
         self.assertEqual(row["status"], "implemented")
         self.assertEqual(row["smoke_mode"], 91)
-        self.assertEqual(row["map_name"], "base1")
+        self.assertEqual(row["map_name"], "base2")
         self.assertEqual(
             row["selection_tags"],
-            ["match", "coop", "interaction", "movement", "maps", "campaign"],
+            [
+                "match",
+                "coop",
+                "interaction",
+                "movement",
+                "maps",
+                "campaign",
+                "depth",
+                "trigger",
+                "button",
+                "progression",
+            ],
         )
         self.assertEqual(
             row["extra_cvars"],
@@ -2165,71 +2483,487 @@ class BotScenarioHarnessTests(unittest.TestCase):
             (check["source"], check["metric"], check["op"], check["expected"])
             for check in row["required_marker_metrics"]
         }
-        self.assertIn(
-            (harness.SCENARIO_BEGIN_MARKER, "mode", "eq", 91),
-            required_marker_metrics,
-        )
-        self.assertIn(
-            (harness.SCENARIO_BEGIN_MARKER, "map", "eq", "base1"),
-            required_marker_metrics,
-        )
-        self.assertIn(
-            (harness.SCENARIO_BEGIN_MARKER, "coop_live_loop", "eq", 1),
-            required_marker_metrics,
-        )
-        self.assertIn(
-            (harness.COOP_COMMAND_STATUS_MARKER, "coop_interaction_retry_commands", "ge", 1),
-            required_marker_metrics,
-        )
-        self.assertIn(
-            (harness.COOP_COMMAND_STATUS_MARKER, "coop_door_elevator_source_commands", "ge", 1),
-            required_marker_metrics,
-        )
-        self.assertIn(
-            (harness.COOP_COMMAND_STATUS_MARKER, "coop_door_elevator_hold_commands", "ge", 1),
-            required_marker_metrics,
-        )
-        self.assertIn(
-            (harness.COOP_COMMAND_STATUS_MARKER, "last_coop_door_elevator_kind", "ge", 1),
-            required_marker_metrics,
-        )
-        self.assertIn(
-            (harness.COOP_COMMAND_STATUS_MARKER, "last_coop_door_elevator_entity", "gt", 0),
-            required_marker_metrics,
-        )
-        self.assertIn(
-            (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_candidates", "ge", 1),
-            required_marker_metrics,
-        )
+        for required in (
+            (harness.SCENARIO_BEGIN_MARKER, "map", "eq", "base2"),
+            (harness.NAV_INTERACTION_CONTEXT_STATUS_MARKER, "interaction_world_buttons", "ge", 1),
+            (harness.NAV_INTERACTION_CONTEXT_STATUS_MARKER, "interaction_world_triggers", "ge", 1),
+            (harness.NAV_INTERACTION_CONTEXT_STATUS_MARKER, "interaction_world_movers", "ge", 1),
+            (harness.NAV_INTERACTION_CONTEXT_STATUS_MARKER, "interaction_world_use_entities", "ge", 1),
+            (harness.NAV_INTERACTION_CONTEXT_STATUS_MARKER, "interaction_world_touch_entities", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_wait_frames", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_use_frames", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_action", "eq", 3),
+            (harness.COOP_COMMAND_STATUS_MARKER, "last_coop_interaction_retry_entity", "gt", 0),
+            (harness.OBJECTIVE_STATUS_MARKER, "team_objective_coop_policy_follow", "ge", 1),
+            (harness.OBJECTIVE_STATUS_MARKER, "team_objective_coop_policy_regroup", "ge", 1),
+            (harness.OBJECTIVE_STATUS_MARKER, "team_objective_coop_policy_lead", "ge", 1),
+            (harness.OBJECTIVE_STATUS_MARKER, "team_objective_coop_policy_resource_share", "ge", 1),
+            (harness.ACTION_DETAIL_STATUS_MARKER, "item_timing_consumer_live_pickups", "ge", 1),
+            (harness.ACTION_DETAIL_STATUS_MARKER, harness.ITEM_TIMING_CONSUMER_READY_OR_LIVE_METRIC, "ge", 1),
+        ):
+            self.assertIn(required, required_marker_metrics)
 
-        text = passing_raw_reserved_mode_text(91)
         marker_metrics = harness.parse_marker_metrics(
-            text,
+            passing_raw_reserved_mode_text(91, map_name="base2"),
             {check.marker for check in scenario.marker_checks},
         )
-        matrix_results = [
+        depth_results = [
             harness.evaluate_marker_check(check, marker_metrics)
             for check in scenario.marker_checks
         ]
 
         self.assertTrue(
-            all(result["passed"] for result in matrix_results),
-            matrix_results,
+            all(result["passed"] for result in depth_results),
+            depth_results,
+        )
+
+    def test_coop_campaign_progression_chain_base2_catalog_and_marker_checks(self) -> None:
+        scenario = harness.scenario_map()["coop_campaign_progression_chain_base2"]
+        report = harness.catalog_report([scenario])
+        row = report["scenarios"][0]
+
+        self.assertEqual(row["status"], "implemented")
+        self.assertEqual(row["smoke_mode"], 91)
+        self.assertEqual(row["map_name"], "base2")
+        self.assertEqual(
+            row["selection_tags"],
+            [
+                "match",
+                "coop",
+                "interaction",
+                "movement",
+                "maps",
+                "campaign",
+                "depth",
+                "trigger",
+                "button",
+                "target-chain",
+                "progression-chain",
+            ],
+        )
+
+        required_marker_metrics = {
+            (check["source"], check["metric"], check["op"], check["expected"])
+            for check in row["required_marker_metrics"]
+        }
+        for required in (
+            (harness.SCENARIO_BEGIN_MARKER, "map", "eq", "base2"),
+            (harness.NAV_INTERACTION_CONTEXT_STATUS_MARKER, "interaction_world_buttons", "ge", 1),
+            (harness.NAV_INTERACTION_CONTEXT_STATUS_MARKER, "interaction_world_triggers", "ge", 1),
+            (harness.NAV_INTERACTION_CONTEXT_STATUS_MARKER, "interaction_world_target_entities", "ge", 1),
+            (harness.NAV_INTERACTION_CONTEXT_STATUS_MARKER, "interaction_world_progression_targets", "ge", 1),
+            (harness.NAV_INTERACTION_CONTEXT_STATUS_MARKER, "interaction_world_target_links", "ge", 1),
+            (harness.NAV_INTERACTION_CONTEXT_STATUS_MARKER, "interaction_world_named_targets", "ge", 1),
+            (harness.NAV_INTERACTION_CONTEXT_STATUS_MARKER, "interaction_world_key_entities", "ge", 0),
+            (harness.NAV_INTERACTION_CONTEXT_STATUS_MARKER, "interaction_world_progression_entities", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_action", "eq", 3),
+            (harness.COOP_COMMAND_STATUS_MARKER, "last_coop_interaction_retry_entity", "gt", 0),
+            (harness.OBJECTIVE_STATUS_MARKER, "team_objective_coop_policy_lead", "ge", 1),
+            (harness.ACTION_DETAIL_STATUS_MARKER, harness.ITEM_TIMING_CONSUMER_READY_OR_LIVE_METRIC, "ge", 1),
+        ):
+            self.assertIn(required, required_marker_metrics)
+
+        marker_metrics = harness.parse_marker_metrics(
+            passing_raw_reserved_mode_text(91, map_name="base2"),
+            {check.marker for check in scenario.marker_checks},
+        )
+        progression_results = [
+            harness.evaluate_marker_check(check, marker_metrics)
+            for check in scenario.marker_checks
+        ]
+
+        self.assertTrue(
+            all(result["passed"] for result in progression_results),
+            progression_results,
+        )
+
+    def test_coop_campaign_progression_consumer_base2_catalog_and_marker_checks(self) -> None:
+        scenario = harness.scenario_map()["coop_campaign_progression_consumer_base2"]
+        report = harness.catalog_report([scenario])
+        row = report["scenarios"][0]
+
+        self.assertEqual(row["status"], "implemented")
+        self.assertEqual(row["smoke_mode"], 91)
+        self.assertEqual(row["map_name"], "base2")
+        self.assertEqual(
+            row["selection_tags"],
+            [
+                "match",
+                "coop",
+                "interaction",
+                "movement",
+                "maps",
+                "campaign",
+                "depth",
+                "trigger",
+                "button",
+                "target-chain",
+                "progression-chain",
+                "progression-consumer",
+                "preference",
+            ],
+        )
+
+        required_marker_metrics = {
+            (check["source"], check["metric"], check["op"], check["expected"])
+            for check in row["required_marker_metrics"]
+        }
+        for required in (
+            (harness.SCENARIO_BEGIN_MARKER, "map", "eq", "base2"),
+            (harness.NAV_INTERACTION_CONTEXT_STATUS_MARKER, "interaction_world_target_links", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_progression_candidates", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_progression_selections", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_progression_preference_selections", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_progression_target_link_selections", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_progression_score", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_progression_preferred", "ge", 0),
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_target_link", "ge", 0),
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_key_entity", "ge", 0),
+        ):
+            self.assertIn(required, required_marker_metrics)
+
+        marker_metrics = harness.parse_marker_metrics(
+            passing_raw_reserved_mode_text(91, map_name="base2"),
+            {check.marker for check in scenario.marker_checks},
+        )
+        consumer_results = [
+            harness.evaluate_marker_check(check, marker_metrics)
+            for check in scenario.marker_checks
+        ]
+
+        self.assertTrue(
+            all(result["passed"] for result in consumer_results),
+            consumer_results,
+        )
+
+    def test_coop_campaign_post_interaction_base2_catalog_and_marker_checks(self) -> None:
+        scenario = harness.scenario_map()["coop_campaign_post_interaction_base2"]
+        report = harness.catalog_report([scenario])
+        row = report["scenarios"][0]
+
+        self.assertEqual(row["status"], "implemented")
+        self.assertEqual(row["smoke_mode"], 91)
+        self.assertEqual(row["map_name"], "base2")
+        self.assertEqual(
+            row["selection_tags"],
+            [
+                "match",
+                "coop",
+                "interaction",
+                "movement",
+                "maps",
+                "campaign",
+                "depth",
+                "trigger",
+                "button",
+                "target-chain",
+                "progression-chain",
+                "progression-consumer",
+                "post-interaction",
+                "route-refresh",
+            ],
+        )
+
+        required_marker_metrics = {
+            (check["source"], check["metric"], check["op"], check["expected"])
+            for check in row["required_marker_metrics"]
+        }
+        for required in (
+            (harness.SCENARIO_BEGIN_MARKER, "map", "eq", "base2"),
+            (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_progression_completions", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_progression_post_refreshes", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_progression_post_frames", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_progression_repeat_suppressions", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_progression_completed_entity", "gt", 0),
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_progression_completed_score", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_progression_post_entity", "gt", 0),
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_progression_post_frames_remaining", "ge", 0),
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_progression_suppressed_entity", "gt", 0),
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_progression_suppressed_score", "ge", 1),
+        ):
+            self.assertIn(required, required_marker_metrics)
+
+        marker_metrics = harness.parse_marker_metrics(
+            passing_raw_reserved_mode_text(91, map_name="base2"),
+            {check.marker for check in scenario.marker_checks},
+        )
+        post_interaction_results = [
+            harness.evaluate_marker_check(check, marker_metrics)
+            for check in scenario.marker_checks
+        ]
+
+        self.assertTrue(
+            all(result["passed"] for result in post_interaction_results),
+            post_interaction_results,
+        )
+
+    def test_coop_campaign_progression_carry_base2_catalog_and_marker_checks(self) -> None:
+        scenario = harness.scenario_map()["coop_campaign_progression_carry_base2"]
+        report = harness.catalog_report([scenario])
+        row = report["scenarios"][0]
+
+        self.assertEqual(row["status"], "implemented")
+        self.assertEqual(row["smoke_mode"], 91)
+        self.assertEqual(row["map_name"], "base2")
+        self.assertEqual(
+            row["selection_tags"],
+            [
+                "match",
+                "coop",
+                "interaction",
+                "movement",
+                "maps",
+                "campaign",
+                "depth",
+                "trigger",
+                "button",
+                "target-chain",
+                "progression-chain",
+                "progression-consumer",
+                "post-interaction",
+                "route-refresh",
+                "progression-carry",
+                "multi-objective",
+            ],
+        )
+
+        required_marker_metrics = {
+            (check["source"], check["metric"], check["op"], check["expected"])
+            for check in row["required_marker_metrics"]
+        }
+        for required in (
+            (harness.SCENARIO_BEGIN_MARKER, "map", "eq", "base2"),
+            (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_progression_carry_completions", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_progression_carry_distinct_completions", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_progression_completed_clients", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_progression_distinct_completed_clients", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_progression_carry_previous_entity", "gt", 0),
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_progression_carry_entity", "gt", 0),
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_progression_carry_distinct", "eq", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_progression_carry_count", "ge", 2),
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_progression_carry_distinct_count", "ge", 2),
+        ):
+            self.assertIn(required, required_marker_metrics)
+
+        marker_metrics = harness.parse_marker_metrics(
+            passing_raw_reserved_mode_text(91, map_name="base2"),
+            {check.marker for check in scenario.marker_checks},
+        )
+        carry_results = [
+            harness.evaluate_marker_check(check, marker_metrics)
+            for check in scenario.marker_checks
+        ]
+
+        self.assertTrue(
+            all(result["passed"] for result in carry_results),
+            carry_results,
+        )
+
+    def test_coop_campaign_keyed_path_train_catalog_and_marker_checks(self) -> None:
+        scenario = harness.scenario_map()["coop_campaign_keyed_path_train"]
+        report = harness.catalog_report([scenario])
+        row = report["scenarios"][0]
+
+        self.assertEqual(row["status"], "implemented")
+        self.assertEqual(row["smoke_mode"], 91)
+        self.assertEqual(row["map_name"], "train")
+        self.assertEqual(
+            row["selection_tags"],
+            [
+                "match",
+                "coop",
+                "interaction",
+                "movement",
+                "maps",
+                "campaign",
+                "depth",
+                "trigger",
+                "button",
+                "target-chain",
+                "progression-chain",
+                "progression-consumer",
+                "post-interaction",
+                "route-refresh",
+                "progression-carry",
+                "multi-objective",
+                "keyed-path",
+                "key-lock",
+                "position-goal",
+            ],
+        )
+
+        required_marker_metrics = {
+            (check["source"], check["metric"], check["op"], check["expected"])
+            for check in row["required_marker_metrics"]
+        }
+        for required in (
+            (harness.SCENARIO_BEGIN_MARKER, "map", "eq", "train"),
+            (harness.NAV_INTERACTION_CONTEXT_STATUS_MARKER, "interaction_world_key_entities", "ge", 1),
+            (harness.NAV_INTERACTION_CONTEXT_STATUS_MARKER, "interaction_world_key_items", "ge", 1),
+            (harness.NAV_INTERACTION_CONTEXT_STATUS_MARKER, "interaction_world_key_locks", "ge", 1),
+            (harness.NAV_INTERACTION_CONTEXT_STATUS_MARKER, "interaction_world_key_path_entities", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_progression_key_path_candidates", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_progression_key_path_selections", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_progression_key_path_key_lock", "eq", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_progression_key_path_required_item", "gt", 0),
+        ):
+            self.assertIn(required, required_marker_metrics)
+
+        marker_metrics = harness.parse_marker_metrics(
+            passing_raw_reserved_mode_text(91, map_name="train"),
+            {check.marker for check in scenario.marker_checks},
+        )
+        keyed_path_results = [
+            harness.evaluate_marker_check(check, marker_metrics)
+            for check in scenario.marker_checks
+        ]
+
+        self.assertTrue(
+            all(result["passed"] for result in keyed_path_results),
+            keyed_path_results,
+        )
+
+    def test_coop_campaign_key_carry_train_catalog_and_marker_checks(self) -> None:
+        scenario = harness.scenario_map()["coop_campaign_key_carry_train"]
+        report = harness.catalog_report([scenario])
+        row = report["scenarios"][0]
+
+        self.assertEqual(row["status"], "implemented")
+        self.assertEqual(row["smoke_mode"], 91)
+        self.assertEqual(row["map_name"], "train")
+        self.assertEqual(
+            row["selection_tags"],
+            [
+                "match",
+                "coop",
+                "interaction",
+                "movement",
+                "maps",
+                "campaign",
+                "depth",
+                "trigger",
+                "button",
+                "target-chain",
+                "progression-chain",
+                "progression-consumer",
+                "post-interaction",
+                "route-refresh",
+                "progression-carry",
+                "multi-objective",
+                "keyed-path",
+                "key-lock",
+                "key-carry",
+                "inventory",
+                "train-bridge",
+                "mover-bridge",
+                "ride-state",
+            ],
+        )
+
+        required_marker_metrics = {
+            (check["source"], check["metric"], check["op"], check["expected"])
+            for check in row["required_marker_metrics"]
+        }
+        for required in (
+            (harness.SCENARIO_BEGIN_MARKER, "map", "eq", "train"),
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_active", "eq", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_prepared", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_key_route_requests", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_key_touch_attempts", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_key_pickups", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_bridge_route_requests", "ge", 1),
+            (harness.STATUS_MARKER, "interaction_goal_requests", "ge", 1),
+            (harness.STATUS_MARKER, "interaction_goal_resolved", "ge", 1),
+            (harness.STATUS_MARKER, "last_interaction_goal_kind", "eq", 4),
+            (harness.STATUS_MARKER, "last_interaction_goal_entity", "gt", 0),
+            (harness.STATUS_MARKER, "last_interaction_goal_area", "gt", 0),
+            (harness.STATUS_MARKER, "interaction_arrival_goal_requests", "ge", 1),
+            (harness.STATUS_MARKER, "interaction_arrival_goal_resolved", "ge", 1),
+            (harness.STATUS_MARKER, "last_interaction_arrival_goal_kind", "eq", 4),
+            (harness.STATUS_MARKER, "last_interaction_arrival_goal_entity", "gt", 0),
+            (harness.STATUS_MARKER, "last_interaction_arrival_goal_area", "gt", 0),
+            (harness.STATUS_MARKER, "interaction_arrival_mover_endpoint_checks", "ge", 1),
+            (harness.STATUS_MARKER, "interaction_arrival_mover_endpoint_candidates", "ge", 1),
+            (harness.STATUS_MARKER, "interaction_arrival_mover_endpoint_selections", "ge", 1),
+            (harness.STATUS_MARKER, "last_interaction_arrival_goal_source", "in", (1, 3)),
+            (harness.STATUS_MARKER, "last_interaction_arrival_mover_endpoint_entity", "gt", 0),
+            (harness.STATUS_MARKER, "last_interaction_arrival_mover_endpoint_area", "gt", 0),
+            (harness.STATUS_MARKER, "interaction_mover_ride_checks", "ge", 4),
+            (harness.STATUS_MARKER, "interaction_mover_ride_wait_states", "ge", 1),
+            (harness.STATUS_MARKER, "interaction_mover_ride_board_states", "ge", 1),
+            (harness.STATUS_MARKER, "interaction_mover_ride_ride_states", "ge", 1),
+            (harness.STATUS_MARKER, "interaction_mover_ride_leave_states", "ge", 1),
+            (harness.STATUS_MARKER, "last_interaction_mover_ride_phase", "eq", 4),
+            (harness.STATUS_MARKER, "last_interaction_mover_ride_entity", "gt", 0),
+            (harness.STATUS_MARKER, "last_interaction_mover_ride_kind", "eq", 4),
+            (harness.STATUS_MARKER, "last_interaction_mover_ride_client", "ge", 0),
+            (harness.STATUS_MARKER, "last_interaction_arrival_goal_destination_distance_sq", "gt", 0),
+            (harness.STATUS_MARKER, "interaction_arrival_route_requests", "ge", 1),
+            (harness.STATUS_MARKER, "interaction_arrival_route_assignments", "ge", 1),
+            (harness.STATUS_MARKER, "interaction_arrival_route_reached", "ge", 1),
+            (harness.STATUS_MARKER, "last_interaction_arrival_route_entity", "gt", 0),
+            (harness.STATUS_MARKER, "last_interaction_arrival_route_area", "gt", 0),
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_bridge_approach_requests", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_bridge_approach_ready", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_bridge_warps", "eq", 0),
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_bridge_arrival_requests", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_bridge_arrival_resolved", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_bridge_arrival_route_requests", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_bridge_arrival_reached", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_bridge_arrival_warps", "eq", 0),
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_bridge_interactions", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_bridge_interaction_commands", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_bridge_ride_observation_requests", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_bridge_ride_observation_frames", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_bridge_ride_observation_completed", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "last_key_carry_bridge_ride_observation_elapsed_ms", "ge", 200),
+            (harness.NAV_POLICY_STATUS_MARKER, "last_key_carry_bridge_entity", "gt", 0),
+            (harness.NAV_POLICY_STATUS_MARKER, "last_key_carry_bridge_kind", "eq", 4),
+            (harness.NAV_POLICY_STATUS_MARKER, "last_key_carry_bridge_travel_type", "eq", 11),
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_lock_route_requests", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_lock_warps", "eq", 0),
+            (harness.NAV_POLICY_STATUS_MARKER, "last_key_carry_pickup_inventory", "ge", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "last_key_carry_lock_required_item", "gt", 0),
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_progression_key_path_key_lock", "eq", 1),
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_progression_key_path_required_item", "gt", 0),
+        ):
+            self.assertIn(required, required_marker_metrics)
+
+        marker_metrics = harness.parse_marker_metrics(
+            passing_raw_reserved_mode_text(91, map_name="train"),
+            {check.marker for check in scenario.marker_checks},
+        )
+        key_carry_results = [
+            harness.evaluate_marker_check(check, marker_metrics)
+            for check in scenario.marker_checks
+        ]
+
+        self.assertTrue(
+            all(result["passed"] for result in key_carry_results),
+            key_carry_results,
         )
 
     def test_movement_context_rows_catalog_and_marker_checks(self) -> None:
         scenarios = harness.scenario_map()
         crouch_route = scenarios["movement_crouch_route"]
+        elevator_route = scenarios["movement_elevator_route"]
         door_context = scenarios["movement_door_context"]
         teleporter_route = scenarios["movement_teleporter_entity_route"]
         hazard_context = scenarios["movement_hazard_context"]
-        report = harness.catalog_report([crouch_route, door_context, teleporter_route, hazard_context])
+        report = harness.catalog_report([
+            crouch_route,
+            elevator_route,
+            door_context,
+            teleporter_route,
+            hazard_context,
+        ])
         rows = {row["name"]: row for row in report["scenarios"]}
 
-        self.assertEqual(report["summary"]["implemented"], 4)
+        self.assertEqual(report["summary"]["implemented"], 5)
         self.assertEqual(report["summary"]["pending"], 0)
         self.assertEqual(rows["movement_crouch_route"]["smoke_mode"], 92)
         self.assertEqual(rows["movement_crouch_route"]["map_name"], "worr_crouch_ref")
+        self.assertEqual(rows["movement_elevator_route"]["smoke_mode"], 12)
         self.assertEqual(rows["movement_door_context"]["smoke_mode"], 91)
         self.assertEqual(rows["movement_door_context"]["map_name"], "base1")
         self.assertEqual(rows["movement_teleporter_entity_route"]["smoke_mode"], 95)
@@ -2239,6 +2973,7 @@ class BotScenarioHarnessTests(unittest.TestCase):
         self.assertIn("crouch", rows["movement_crouch_route"]["selection_tags"])
         self.assertNotIn("gap", rows["movement_crouch_route"]["selection_tags"])
         self.assertIn("door", rows["movement_door_context"]["selection_tags"])
+        self.assertIn("mover", rows["movement_elevator_route"]["selection_tags"])
         self.assertIn("teleporter", rows["movement_teleporter_entity_route"]["selection_tags"])
         self.assertIn("interaction", rows["movement_teleporter_entity_route"]["selection_tags"])
         self.assertIn("hazard", rows["movement_hazard_context"]["selection_tags"])
@@ -2256,6 +2991,28 @@ class BotScenarioHarnessTests(unittest.TestCase):
         self.assertIn(
             (harness.NAV_NATURAL_SUPPORT_STATUS_MARKER, "natural_crouch_supported", "eq", 1),
             crouch_marker_required,
+        )
+
+        elevator_required = {
+            (check["metric"], check["op"], check["expected"])
+            for check in rows["movement_elevator_route"]["required_metrics"]
+        }
+        self.assertIn(
+            ("travel_type_elevator_ride_observation_moving", "ge", 1),
+            elevator_required,
+        )
+        self.assertIn(
+            ("interaction_mover_ride_moving_states", "ge", 1),
+            elevator_required,
+        )
+
+        elevator_marker_required = {
+            (check["source"], check["metric"], check["op"], check["expected"])
+            for check in rows["movement_elevator_route"]["required_marker_metrics"]
+        }
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "interaction_direct_use_activations", "ge", 1),
+            elevator_marker_required,
         )
 
         door_marker_required = {
@@ -3510,6 +4267,68 @@ class BotScenarioHarnessTests(unittest.TestCase):
         )
         self.assertIn("mm-rage", command)
 
+    def test_min_players_profile_coverage_catalog_and_command(self) -> None:
+        scenario = harness.scenario_map()["min_players_profile_coverage"]
+        report = harness.catalog_report([scenario])
+        row = report["scenarios"][0]
+
+        self.assertEqual(row["status"], "implemented")
+        self.assertEqual(row["task_ids"], ["FR-04-T13", "FR-04-T16", "DV-07-T06"])
+        self.assertEqual(row["smoke_cvar"], "bot_min_players_smoke")
+        self.assertEqual(row["smoke_mode"], 2)
+        self.assertEqual(row["selection_tags"], ["profiles", "min_players", "release"])
+        required_marker_metrics = {
+            (check["source"], check["metric"], check["op"], check["expected"])
+            for check in row["required_marker_metrics"]
+        }
+        self.assertIn(
+            (
+                "q3a_bot_min_players_smoke_profile_coverage",
+                "covered",
+                "eq",
+                5,
+            ),
+            required_marker_metrics,
+        )
+        self.assertIn(
+            (
+                "q3a_bot_min_players_smoke_profile_coverage",
+                "smoke",
+                "eq",
+                1,
+            ),
+            required_marker_metrics,
+        )
+        self.assertIn(
+            (
+                "q3a_bot_min_players_smoke_profile_coverage",
+                "pass",
+                "eq",
+                1,
+            ),
+            required_marker_metrics,
+        )
+
+        command = harness.build_command(
+            pathlib.Path(".install/worr_ded_x86_64.exe"),
+            pathlib.Path(".install"),
+            scenario,
+            "basew",
+            "mm-rage",
+            27970,
+            "min_players_profiles",
+        )
+
+        self.assertIn("bot_min_players_smoke", command)
+        self.assertNotIn("sv_bot_min_players_smoke", command)
+        self.assertEqual(command_cvar_value(command, "bot_min_players"), "0")
+        self.assertEqual(command_cvar_value(command, "bot_min_players_smoke"), "2")
+        self.assertLess(
+            command_cvar_index(command, "bot_min_players"),
+            command_cvar_index(command, "bot_min_players_smoke"),
+        )
+        self.assertIn("mm-rage", command)
+
     def test_scenario_map_override_in_command(self) -> None:
         scenario = harness.scenario_map()["combat_survival_regression_q2dm2"]
         row = harness.catalog_report([scenario])["scenarios"][0]
@@ -3918,6 +4737,14 @@ class BotScenarioHarnessTests(unittest.TestCase):
         door_elevator = scenarios["coop_door_elevator"]
         coop_live_loop = scenarios["coop_live_loop"]
         coop_campaign_interaction_matrix = scenarios["coop_campaign_interaction_matrix"]
+        coop_campaign_interaction_matrix_base2 = scenarios["coop_campaign_interaction_matrix_base2"]
+        coop_campaign_interaction_depth_base2 = scenarios["coop_campaign_interaction_depth_base2"]
+        coop_campaign_progression_chain_base2 = scenarios["coop_campaign_progression_chain_base2"]
+        coop_campaign_progression_consumer_base2 = scenarios["coop_campaign_progression_consumer_base2"]
+        coop_campaign_post_interaction_base2 = scenarios["coop_campaign_post_interaction_base2"]
+        coop_campaign_progression_carry_base2 = scenarios["coop_campaign_progression_carry_base2"]
+        coop_campaign_keyed_path_train = scenarios["coop_campaign_keyed_path_train"]
+        coop_campaign_key_carry_train = scenarios["coop_campaign_key_carry_train"]
         coop_share_loop = scenarios["coop_share_loop"]
         ffa_roam_route = scenarios["ffa_roam_route"]
         ffa_spawn_camp_avoidance = scenarios["ffa_spawn_camp_avoidance"]
@@ -3995,6 +4822,14 @@ class BotScenarioHarnessTests(unittest.TestCase):
             door_elevator,
             coop_live_loop,
             coop_campaign_interaction_matrix,
+            coop_campaign_interaction_matrix_base2,
+            coop_campaign_interaction_depth_base2,
+            coop_campaign_progression_chain_base2,
+            coop_campaign_progression_consumer_base2,
+            coop_campaign_post_interaction_base2,
+            coop_campaign_progression_carry_base2,
+            coop_campaign_keyed_path_train,
+            coop_campaign_key_carry_train,
             coop_share_loop,
             ffa_roam_route,
             ffa_spawn_camp_avoidance,
@@ -4059,7 +4894,7 @@ class BotScenarioHarnessTests(unittest.TestCase):
         ])
         rows = {row["name"]: row for row in report["scenarios"]}
 
-        self.assertEqual(report["summary"]["implemented"], 76)
+        self.assertEqual(report["summary"]["implemented"], 84)
         self.assertEqual(report["summary"]["pending"], 0)
         self.assertEqual(rows["team_objective"]["smoke_mode"], 23)
         self.assertEqual(rows["aim_fairness_policy_integration"]["smoke_mode"], 24)
@@ -4075,8 +4910,44 @@ class BotScenarioHarnessTests(unittest.TestCase):
         self.assertEqual(rows["coop_target_share"]["smoke_mode"], 30)
         self.assertEqual(rows["coop_door_elevator"]["smoke_mode"], 31)
         self.assertEqual(rows["coop_live_loop"]["smoke_mode"], 77)
+        door_elevator_required = {
+            (check["source"], check["metric"], check["op"], check["expected"])
+            for check in rows["coop_door_elevator"]["required_marker_metrics"]
+        }
+        self.assertIn(
+            (harness.STATUS_MARKER, "interaction_mover_ride_wait_states", "ge", 1),
+            door_elevator_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "interaction_mover_ride_board_states", "ge", 1),
+            door_elevator_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "interaction_mover_ride_leave_states", "ge", 1),
+            door_elevator_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_interaction_mover_ride_phase", "eq", 4),
+            door_elevator_required,
+        )
         self.assertEqual(rows["coop_campaign_interaction_matrix"]["smoke_mode"], 91)
         self.assertEqual(rows["coop_campaign_interaction_matrix"]["map_name"], "base1")
+        self.assertEqual(rows["coop_campaign_interaction_matrix_base2"]["smoke_mode"], 91)
+        self.assertEqual(rows["coop_campaign_interaction_matrix_base2"]["map_name"], "base2")
+        self.assertEqual(rows["coop_campaign_interaction_depth_base2"]["smoke_mode"], 91)
+        self.assertEqual(rows["coop_campaign_interaction_depth_base2"]["map_name"], "base2")
+        self.assertEqual(rows["coop_campaign_progression_chain_base2"]["smoke_mode"], 91)
+        self.assertEqual(rows["coop_campaign_progression_chain_base2"]["map_name"], "base2")
+        self.assertEqual(rows["coop_campaign_progression_consumer_base2"]["smoke_mode"], 91)
+        self.assertEqual(rows["coop_campaign_progression_consumer_base2"]["map_name"], "base2")
+        self.assertEqual(rows["coop_campaign_post_interaction_base2"]["smoke_mode"], 91)
+        self.assertEqual(rows["coop_campaign_post_interaction_base2"]["map_name"], "base2")
+        self.assertEqual(rows["coop_campaign_progression_carry_base2"]["smoke_mode"], 91)
+        self.assertEqual(rows["coop_campaign_progression_carry_base2"]["map_name"], "base2")
+        self.assertEqual(rows["coop_campaign_keyed_path_train"]["smoke_mode"], 91)
+        self.assertEqual(rows["coop_campaign_keyed_path_train"]["map_name"], "train")
+        self.assertEqual(rows["coop_campaign_key_carry_train"]["smoke_mode"], 91)
+        self.assertEqual(rows["coop_campaign_key_carry_train"]["map_name"], "train")
         self.assertEqual(rows["coop_share_loop"]["smoke_mode"], 78)
         self.assertEqual(rows["ffa_roam_route"]["smoke_mode"], 42)
         self.assertEqual(rows["ffa_spawn_camp_avoidance"]["smoke_mode"], 45)
@@ -4217,6 +5088,75 @@ class BotScenarioHarnessTests(unittest.TestCase):
                 {"name": "deathmatch", "value": "0"},
                 {"name": "coop", "value": "1"},
                 {"name": "bot_coop_live_loop", "value": "1"},
+            ],
+        )
+        self.assertEqual(
+            rows["coop_campaign_interaction_matrix_base2"]["extra_cvars"],
+            [
+                {"name": "deathmatch", "value": "0"},
+                {"name": "coop", "value": "1"},
+                {"name": "bot_coop_live_loop", "value": "1"},
+            ],
+        )
+        self.assertEqual(
+            rows["coop_campaign_interaction_depth_base2"]["extra_cvars"],
+            [
+                {"name": "deathmatch", "value": "0"},
+                {"name": "coop", "value": "1"},
+                {"name": "bot_coop_live_loop", "value": "1"},
+            ],
+        )
+        self.assertEqual(
+            rows["coop_campaign_progression_chain_base2"]["extra_cvars"],
+            [
+                {"name": "deathmatch", "value": "0"},
+                {"name": "coop", "value": "1"},
+                {"name": "bot_coop_live_loop", "value": "1"},
+            ],
+        )
+        self.assertEqual(
+            rows["coop_campaign_progression_consumer_base2"]["extra_cvars"],
+            [
+                {"name": "deathmatch", "value": "0"},
+                {"name": "coop", "value": "1"},
+                {"name": "bot_coop_live_loop", "value": "1"},
+            ],
+        )
+        self.assertEqual(
+            rows["coop_campaign_post_interaction_base2"]["extra_cvars"],
+            [
+                {"name": "deathmatch", "value": "0"},
+                {"name": "coop", "value": "1"},
+                {"name": "bot_coop_live_loop", "value": "1"},
+            ],
+        )
+        self.assertEqual(
+            rows["coop_campaign_progression_carry_base2"]["extra_cvars"],
+            [
+                {"name": "deathmatch", "value": "0"},
+                {"name": "coop", "value": "1"},
+                {"name": "bot_coop_live_loop", "value": "1"},
+            ],
+        )
+        self.assertEqual(
+            rows["coop_campaign_keyed_path_train"]["extra_cvars"],
+            [
+                {"name": "deathmatch", "value": "0"},
+                {"name": "coop", "value": "1"},
+                {"name": "bot_coop_live_loop", "value": "1"},
+                {"name": "bot_nav_position_goal_enable", "value": "1"},
+                {"name": "bot_nav_position_goal_x", "value": "-1584"},
+                {"name": "bot_nav_position_goal_y", "value": "952"},
+                {"name": "bot_nav_position_goal_z", "value": "184"},
+            ],
+        )
+        self.assertEqual(
+            rows["coop_campaign_key_carry_train"]["extra_cvars"],
+            [
+                {"name": "deathmatch", "value": "0"},
+                {"name": "coop", "value": "1"},
+                {"name": "bot_coop_live_loop", "value": "1"},
+                {"name": "bot_campaign_key_carry_smoke", "value": "1"},
             ],
         )
         self.assertEqual(
@@ -4718,6 +5658,10 @@ class BotScenarioHarnessTests(unittest.TestCase):
             (harness.SOURCE_STATUS_MARKER, "bsp_trace_calls", "ge", 1),
             trace_required,
         )
+        self.assertIn(
+            (harness.STATUS_MARKER, "lookahead_close_point_skips", "ge", 1),
+            trace_required,
+        )
 
         team_objective_required = {
             (check["source"], check["metric"], check["op"], check["expected"])
@@ -5024,6 +5968,450 @@ class BotScenarioHarnessTests(unittest.TestCase):
         self.assertIn(
             (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_candidates", "ge", 1),
             coop_campaign_matrix_marker_required,
+        )
+
+        coop_campaign_matrix_base2_marker_required = {
+            (check["source"], check["metric"], check["op"], check["expected"])
+            for check in rows["coop_campaign_interaction_matrix_base2"]["required_marker_metrics"]
+        }
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "mode", "eq", 91),
+            coop_campaign_matrix_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "map", "eq", "base2"),
+            coop_campaign_matrix_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "coop_live_loop", "eq", 1),
+            coop_campaign_matrix_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.COOP_COMMAND_STATUS_MARKER, "coop_interaction_retry_commands", "ge", 1),
+            coop_campaign_matrix_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.COOP_COMMAND_STATUS_MARKER, "coop_door_elevator_source_commands", "ge", 1),
+            coop_campaign_matrix_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.COOP_COMMAND_STATUS_MARKER, "last_coop_door_elevator_kind", "ge", 1),
+            coop_campaign_matrix_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.COOP_COMMAND_STATUS_MARKER, "last_coop_door_elevator_entity", "gt", 0),
+            coop_campaign_matrix_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_candidates", "ge", 1),
+            coop_campaign_matrix_base2_marker_required,
+        )
+
+        coop_campaign_depth_base2_marker_required = {
+            (check["source"], check["metric"], check["op"], check["expected"])
+            for check in rows["coop_campaign_interaction_depth_base2"]["required_marker_metrics"]
+        }
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "map", "eq", "base2"),
+            coop_campaign_depth_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_INTERACTION_CONTEXT_STATUS_MARKER, "interaction_world_buttons", "ge", 1),
+            coop_campaign_depth_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_INTERACTION_CONTEXT_STATUS_MARKER, "interaction_world_triggers", "ge", 1),
+            coop_campaign_depth_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_wait_frames", "ge", 1),
+            coop_campaign_depth_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_use_frames", "ge", 1),
+            coop_campaign_depth_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.ACTION_DETAIL_STATUS_MARKER, "item_timing_consumer_live_pickups", "ge", 1),
+            coop_campaign_depth_base2_marker_required,
+        )
+
+        coop_campaign_progression_chain_base2_marker_required = {
+            (check["source"], check["metric"], check["op"], check["expected"])
+            for check in rows["coop_campaign_progression_chain_base2"]["required_marker_metrics"]
+        }
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "map", "eq", "base2"),
+            coop_campaign_progression_chain_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_INTERACTION_CONTEXT_STATUS_MARKER, "interaction_world_target_entities", "ge", 1),
+            coop_campaign_progression_chain_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_INTERACTION_CONTEXT_STATUS_MARKER, "interaction_world_progression_targets", "ge", 1),
+            coop_campaign_progression_chain_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_INTERACTION_CONTEXT_STATUS_MARKER, "interaction_world_target_links", "ge", 1),
+            coop_campaign_progression_chain_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_INTERACTION_CONTEXT_STATUS_MARKER, "interaction_world_named_targets", "ge", 1),
+            coop_campaign_progression_chain_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_INTERACTION_CONTEXT_STATUS_MARKER, "interaction_world_progression_entities", "ge", 1),
+            coop_campaign_progression_chain_base2_marker_required,
+        )
+
+        coop_campaign_progression_consumer_base2_marker_required = {
+            (check["source"], check["metric"], check["op"], check["expected"])
+            for check in rows["coop_campaign_progression_consumer_base2"]["required_marker_metrics"]
+        }
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "map", "eq", "base2"),
+            coop_campaign_progression_consumer_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_progression_candidates", "ge", 1),
+            coop_campaign_progression_consumer_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_progression_selections", "ge", 1),
+            coop_campaign_progression_consumer_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_progression_target_link_selections", "ge", 1),
+            coop_campaign_progression_consumer_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_progression_score", "ge", 1),
+            coop_campaign_progression_consumer_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_target_link", "ge", 0),
+            coop_campaign_progression_consumer_base2_marker_required,
+        )
+
+        coop_campaign_post_interaction_base2_marker_required = {
+            (check["source"], check["metric"], check["op"], check["expected"])
+            for check in rows["coop_campaign_post_interaction_base2"]["required_marker_metrics"]
+        }
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "map", "eq", "base2"),
+            coop_campaign_post_interaction_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_progression_completions", "ge", 1),
+            coop_campaign_post_interaction_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_progression_post_refreshes", "ge", 1),
+            coop_campaign_post_interaction_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_progression_post_frames", "ge", 1),
+            coop_campaign_post_interaction_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_progression_repeat_suppressions", "ge", 1),
+            coop_campaign_post_interaction_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_progression_completed_entity", "gt", 0),
+            coop_campaign_post_interaction_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_progression_post_entity", "gt", 0),
+            coop_campaign_post_interaction_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_progression_suppressed_entity", "gt", 0),
+            coop_campaign_post_interaction_base2_marker_required,
+        )
+
+        coop_campaign_progression_carry_base2_marker_required = {
+            (check["source"], check["metric"], check["op"], check["expected"])
+            for check in rows["coop_campaign_progression_carry_base2"]["required_marker_metrics"]
+        }
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "map", "eq", "base2"),
+            coop_campaign_progression_carry_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_progression_carry_completions", "ge", 1),
+            coop_campaign_progression_carry_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_progression_carry_distinct_completions", "ge", 1),
+            coop_campaign_progression_carry_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_progression_carry_previous_entity", "gt", 0),
+            coop_campaign_progression_carry_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_progression_carry_entity", "gt", 0),
+            coop_campaign_progression_carry_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_progression_carry_distinct", "eq", 1),
+            coop_campaign_progression_carry_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_progression_carry_count", "ge", 2),
+            coop_campaign_progression_carry_base2_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_progression_carry_distinct_count", "ge", 2),
+            coop_campaign_progression_carry_base2_marker_required,
+        )
+
+        coop_campaign_keyed_path_train_marker_required = {
+            (check["source"], check["metric"], check["op"], check["expected"])
+            for check in rows["coop_campaign_keyed_path_train"]["required_marker_metrics"]
+        }
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "map", "eq", "train"),
+            coop_campaign_keyed_path_train_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_INTERACTION_CONTEXT_STATUS_MARKER, "interaction_world_key_entities", "ge", 1),
+            coop_campaign_keyed_path_train_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_INTERACTION_CONTEXT_STATUS_MARKER, "interaction_world_key_items", "ge", 1),
+            coop_campaign_keyed_path_train_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_INTERACTION_CONTEXT_STATUS_MARKER, "interaction_world_key_locks", "ge", 1),
+            coop_campaign_keyed_path_train_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_INTERACTION_CONTEXT_STATUS_MARKER, "interaction_world_key_path_entities", "ge", 1),
+            coop_campaign_keyed_path_train_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_progression_key_path_candidates", "ge", 1),
+            coop_campaign_keyed_path_train_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "nav_interaction_progression_key_path_selections", "ge", 1),
+            coop_campaign_keyed_path_train_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_progression_key_path_key_lock", "eq", 1),
+            coop_campaign_keyed_path_train_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_progression_key_path_required_item", "gt", 0),
+            coop_campaign_keyed_path_train_marker_required,
+        )
+
+        coop_campaign_key_carry_train_marker_required = {
+            (check["source"], check["metric"], check["op"], check["expected"])
+            for check in rows["coop_campaign_key_carry_train"]["required_marker_metrics"]
+        }
+        self.assertIn(
+            (harness.SCENARIO_BEGIN_MARKER, "map", "eq", "train"),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_active", "eq", 1),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_key_route_requests", "ge", 1),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_key_pickups", "ge", 1),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_bridge_approach_requests", "ge", 1),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_bridge_approach_ready", "ge", 1),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_bridge_warps", "eq", 0),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "interaction_goal_requests", "ge", 1),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "interaction_goal_resolved", "ge", 1),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_interaction_goal_kind", "eq", 4),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "interaction_arrival_goal_requests", "ge", 1),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "interaction_arrival_goal_resolved", "ge", 1),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_interaction_arrival_goal_kind", "eq", 4),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "interaction_arrival_mover_endpoint_checks", "ge", 1),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "interaction_arrival_mover_endpoint_candidates", "ge", 1),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "interaction_arrival_mover_endpoint_selections", "ge", 1),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_interaction_arrival_goal_source", "in", (1, 3)),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_interaction_arrival_mover_endpoint_entity", "gt", 0),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_interaction_arrival_mover_endpoint_area", "gt", 0),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "interaction_mover_ride_checks", "ge", 4),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "interaction_mover_ride_wait_states", "ge", 1),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "interaction_mover_ride_board_states", "ge", 1),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "interaction_mover_ride_ride_states", "ge", 1),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "interaction_mover_ride_leave_states", "ge", 1),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_interaction_mover_ride_phase", "eq", 4),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_interaction_mover_ride_entity", "gt", 0),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_interaction_mover_ride_kind", "eq", 4),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_interaction_mover_ride_client", "ge", 0),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_interaction_arrival_goal_destination_distance_sq", "gt", 0),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "interaction_arrival_route_requests", "ge", 1),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "interaction_arrival_route_assignments", "ge", 1),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "interaction_arrival_route_reached", "ge", 1),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_interaction_arrival_route_entity", "gt", 0),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.STATUS_MARKER, "last_interaction_arrival_route_area", "gt", 0),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_bridge_arrival_requests", "ge", 1),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_bridge_arrival_resolved", "ge", 1),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_bridge_arrival_route_requests", "ge", 1),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_bridge_arrival_reached", "ge", 1),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_bridge_arrival_warps", "eq", 0),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_bridge_interactions", "ge", 1),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_bridge_ride_observation_requests", "ge", 1),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_bridge_ride_observation_frames", "ge", 1),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_bridge_ride_observation_completed", "ge", 1),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "last_key_carry_bridge_ride_observation_elapsed_ms", "ge", 200),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "last_key_carry_bridge_kind", "eq", 4),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "last_key_carry_bridge_travel_type", "eq", 11),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_lock_route_requests", "ge", 1),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "key_carry_lock_warps", "eq", 0),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "last_key_carry_pickup_inventory", "ge", 1),
+            coop_campaign_key_carry_train_marker_required,
+        )
+        self.assertIn(
+            (harness.NAV_POLICY_STATUS_MARKER, "last_nav_interaction_progression_key_path_key_lock", "eq", 1),
+            coop_campaign_key_carry_train_marker_required,
         )
 
         coop_share_loop_marker_required = {
@@ -7851,6 +9239,26 @@ class BotScenarioHarnessTests(unittest.TestCase):
             bot_chat_match_result_marker_required,
         )
         self.assertIn(
+            (harness.CHAT_POLICY_STATUS_MARKER, "reply_chat_match_result_win", "ge", 1),
+            bot_chat_match_result_marker_required,
+        )
+        self.assertIn(
+            (harness.CHAT_POLICY_STATUS_MARKER, "reply_chat_match_result_loss", "ge", 1),
+            bot_chat_match_result_marker_required,
+        )
+        self.assertIn(
+            (harness.CHAT_POLICY_STATUS_MARKER, "reply_chat_match_result_unknown", "eq", 0),
+            bot_chat_match_result_marker_required,
+        )
+        self.assertIn(
+            (harness.CHAT_POLICY_STATUS_MARKER, "last_match_result_outcome", "in", (1, 2)),
+            bot_chat_match_result_marker_required,
+        )
+        self.assertIn(
+            (harness.CHAT_POLICY_STATUS_MARKER, "last_match_result_outcome_name", "in", ("win", "loss")),
+            bot_chat_match_result_marker_required,
+        )
+        self.assertIn(
             (harness.CHAT_POLICY_STATUS_MARKER, "live_chat_match_result", "ge", 1),
             bot_chat_match_result_marker_required,
         )
@@ -8079,6 +9487,210 @@ class BotScenarioHarnessTests(unittest.TestCase):
         self.assertLess(
             coop_campaign_matrix_command.index("bot_coop_live_loop"),
             coop_campaign_matrix_command.index("bot_frame_command_smoke"),
+        )
+
+        coop_campaign_matrix_base2_command = harness.build_command(
+            pathlib.Path(".install/worr_ded_x86_64.exe"),
+            pathlib.Path(".install"),
+            scenarios["coop_campaign_interaction_matrix_base2"],
+            "basew",
+            "mm-rage",
+            27980,
+            "coop_campaign_interaction_matrix_base2",
+        )
+        self.assertEqual(coop_campaign_matrix_base2_command[coop_campaign_matrix_base2_command.index("coop") + 1], "1")
+        self.assertEqual(
+            coop_campaign_matrix_base2_command[coop_campaign_matrix_base2_command.index("bot_coop_live_loop") + 1],
+            "1",
+        )
+        self.assertEqual(
+            coop_campaign_matrix_base2_command[coop_campaign_matrix_base2_command.index("+map") + 1],
+            "base2",
+        )
+        self.assertLess(
+            coop_campaign_matrix_base2_command.index("bot_coop_live_loop"),
+            coop_campaign_matrix_base2_command.index("bot_frame_command_smoke"),
+        )
+
+        coop_campaign_depth_base2_command = harness.build_command(
+            pathlib.Path(".install/worr_ded_x86_64.exe"),
+            pathlib.Path(".install"),
+            scenarios["coop_campaign_interaction_depth_base2"],
+            "basew",
+            "mm-rage",
+            27980,
+            "coop_campaign_interaction_depth_base2",
+        )
+        self.assertEqual(coop_campaign_depth_base2_command[coop_campaign_depth_base2_command.index("coop") + 1], "1")
+        self.assertEqual(
+            coop_campaign_depth_base2_command[coop_campaign_depth_base2_command.index("bot_coop_live_loop") + 1],
+            "1",
+        )
+        self.assertEqual(
+            coop_campaign_depth_base2_command[coop_campaign_depth_base2_command.index("+map") + 1],
+            "base2",
+        )
+        self.assertLess(
+            coop_campaign_depth_base2_command.index("bot_coop_live_loop"),
+            coop_campaign_depth_base2_command.index("bot_frame_command_smoke"),
+        )
+
+        coop_campaign_progression_chain_base2_command = harness.build_command(
+            pathlib.Path(".install/worr_ded_x86_64.exe"),
+            pathlib.Path(".install"),
+            scenarios["coop_campaign_progression_chain_base2"],
+            "basew",
+            "mm-rage",
+            27980,
+            "coop_campaign_progression_chain_base2",
+        )
+        self.assertEqual(coop_campaign_progression_chain_base2_command[coop_campaign_progression_chain_base2_command.index("coop") + 1], "1")
+        self.assertEqual(
+            coop_campaign_progression_chain_base2_command[coop_campaign_progression_chain_base2_command.index("bot_coop_live_loop") + 1],
+            "1",
+        )
+        self.assertEqual(
+            coop_campaign_progression_chain_base2_command[coop_campaign_progression_chain_base2_command.index("+map") + 1],
+            "base2",
+        )
+        self.assertLess(
+            coop_campaign_progression_chain_base2_command.index("bot_coop_live_loop"),
+            coop_campaign_progression_chain_base2_command.index("bot_frame_command_smoke"),
+        )
+
+        coop_campaign_progression_consumer_base2_command = harness.build_command(
+            pathlib.Path(".install/worr_ded_x86_64.exe"),
+            pathlib.Path(".install"),
+            scenarios["coop_campaign_progression_consumer_base2"],
+            "basew",
+            "mm-rage",
+            27980,
+            "coop_campaign_progression_consumer_base2",
+        )
+        self.assertEqual(coop_campaign_progression_consumer_base2_command[coop_campaign_progression_consumer_base2_command.index("coop") + 1], "1")
+        self.assertEqual(
+            coop_campaign_progression_consumer_base2_command[coop_campaign_progression_consumer_base2_command.index("bot_coop_live_loop") + 1],
+            "1",
+        )
+        self.assertEqual(
+            coop_campaign_progression_consumer_base2_command[coop_campaign_progression_consumer_base2_command.index("+map") + 1],
+            "base2",
+        )
+        self.assertLess(
+            coop_campaign_progression_consumer_base2_command.index("bot_coop_live_loop"),
+            coop_campaign_progression_consumer_base2_command.index("bot_frame_command_smoke"),
+        )
+
+        coop_campaign_post_interaction_base2_command = harness.build_command(
+            pathlib.Path(".install/worr_ded_x86_64.exe"),
+            pathlib.Path(".install"),
+            scenarios["coop_campaign_post_interaction_base2"],
+            "basew",
+            "mm-rage",
+            27980,
+            "coop_campaign_post_interaction_base2",
+        )
+        self.assertEqual(coop_campaign_post_interaction_base2_command[coop_campaign_post_interaction_base2_command.index("coop") + 1], "1")
+        self.assertEqual(
+            coop_campaign_post_interaction_base2_command[coop_campaign_post_interaction_base2_command.index("bot_coop_live_loop") + 1],
+            "1",
+        )
+        self.assertEqual(
+            coop_campaign_post_interaction_base2_command[coop_campaign_post_interaction_base2_command.index("+map") + 1],
+            "base2",
+        )
+        self.assertLess(
+            coop_campaign_post_interaction_base2_command.index("bot_coop_live_loop"),
+            coop_campaign_post_interaction_base2_command.index("bot_frame_command_smoke"),
+        )
+
+        coop_campaign_progression_carry_base2_command = harness.build_command(
+            pathlib.Path(".install/worr_ded_x86_64.exe"),
+            pathlib.Path(".install"),
+            scenarios["coop_campaign_progression_carry_base2"],
+            "basew",
+            "mm-rage",
+            27980,
+            "coop_campaign_progression_carry_base2",
+        )
+        self.assertEqual(coop_campaign_progression_carry_base2_command[coop_campaign_progression_carry_base2_command.index("coop") + 1], "1")
+        self.assertEqual(
+            coop_campaign_progression_carry_base2_command[coop_campaign_progression_carry_base2_command.index("bot_coop_live_loop") + 1],
+            "1",
+        )
+        self.assertEqual(
+            coop_campaign_progression_carry_base2_command[coop_campaign_progression_carry_base2_command.index("+map") + 1],
+            "base2",
+        )
+        self.assertLess(
+            coop_campaign_progression_carry_base2_command.index("bot_coop_live_loop"),
+            coop_campaign_progression_carry_base2_command.index("bot_frame_command_smoke"),
+        )
+
+        coop_campaign_keyed_path_train_command = harness.build_command(
+            pathlib.Path(".install/worr_ded_x86_64.exe"),
+            pathlib.Path(".install"),
+            scenarios["coop_campaign_keyed_path_train"],
+            "basew",
+            "mm-rage",
+            27980,
+            "coop_campaign_keyed_path_train",
+        )
+        self.assertEqual(coop_campaign_keyed_path_train_command[coop_campaign_keyed_path_train_command.index("coop") + 1], "1")
+        self.assertEqual(
+            coop_campaign_keyed_path_train_command[coop_campaign_keyed_path_train_command.index("bot_coop_live_loop") + 1],
+            "1",
+        )
+        self.assertEqual(
+            coop_campaign_keyed_path_train_command[coop_campaign_keyed_path_train_command.index("bot_nav_position_goal_enable") + 1],
+            "1",
+        )
+        self.assertEqual(
+            coop_campaign_keyed_path_train_command[coop_campaign_keyed_path_train_command.index("bot_nav_position_goal_x") + 1],
+            "-1584",
+        )
+        self.assertEqual(
+            coop_campaign_keyed_path_train_command[coop_campaign_keyed_path_train_command.index("bot_nav_position_goal_y") + 1],
+            "952",
+        )
+        self.assertEqual(
+            coop_campaign_keyed_path_train_command[coop_campaign_keyed_path_train_command.index("bot_nav_position_goal_z") + 1],
+            "184",
+        )
+        self.assertEqual(
+            coop_campaign_keyed_path_train_command[coop_campaign_keyed_path_train_command.index("+map") + 1],
+            "train",
+        )
+        self.assertLess(
+            coop_campaign_keyed_path_train_command.index("bot_nav_position_goal_z"),
+            coop_campaign_keyed_path_train_command.index("bot_frame_command_smoke"),
+        )
+
+        coop_campaign_key_carry_train_command = harness.build_command(
+            pathlib.Path(".install/worr_ded_x86_64.exe"),
+            pathlib.Path(".install"),
+            scenarios["coop_campaign_key_carry_train"],
+            "basew",
+            "mm-rage",
+            27980,
+            "coop_campaign_key_carry_train",
+        )
+        self.assertEqual(coop_campaign_key_carry_train_command[coop_campaign_key_carry_train_command.index("coop") + 1], "1")
+        self.assertEqual(
+            coop_campaign_key_carry_train_command[coop_campaign_key_carry_train_command.index("bot_coop_live_loop") + 1],
+            "1",
+        )
+        self.assertEqual(
+            coop_campaign_key_carry_train_command[coop_campaign_key_carry_train_command.index("bot_campaign_key_carry_smoke") + 1],
+            "1",
+        )
+        self.assertEqual(
+            coop_campaign_key_carry_train_command[coop_campaign_key_carry_train_command.index("+map") + 1],
+            "train",
+        )
+        self.assertLess(
+            coop_campaign_key_carry_train_command.index("bot_campaign_key_carry_smoke"),
+            coop_campaign_key_carry_train_command.index("bot_frame_command_smoke"),
         )
 
         coop_share_loop_command = harness.build_command(
@@ -9611,7 +11223,8 @@ class BotScenarioHarnessTests(unittest.TestCase):
 
         trace_text = "\n".join((
             RESERVED_MODE_BEGIN_LINES[21],
-            "q3a_bot_frame_command_status pass=1 route_failures=0",
+            "q3a_bot_frame_command_status pass=1 route_failures=0 "
+            "lookahead_close_point_skips=2",
             "q3a_bot_nav_policy_status route_corner_cut_candidates=35 "
             "route_corner_cut_trace_checks=38 route_corner_cut_trace_hits=9 "
             "route_corner_cut_ground_trace_checks=27 route_corner_cut_accepted=9 "
@@ -9874,7 +11487,21 @@ class BotScenarioHarnessTests(unittest.TestCase):
             "weapon_switch=0 item_focus=0 team_objective=0 target=2 "
             "gametype=0 door_elevator=1",
             "q3a_bot_frame_command_status pass=1 route_commands=12 "
-            "route_failures=0",
+            "route_failures=0 "
+            "interaction_mover_ride_checks=9 "
+            "interaction_mover_ride_wait_states=4 "
+            "interaction_mover_ride_board_states=4 "
+            "interaction_mover_ride_ride_states=0 "
+            "interaction_mover_ride_leave_states=1 "
+            "interaction_mover_ride_ground_states=0 "
+            "interaction_mover_ride_moving_states=0 "
+            "interaction_mover_ride_invalid_skips=0 "
+            "last_interaction_mover_ride_phase=4 "
+            "last_interaction_mover_ride_entity=17 "
+            "last_interaction_mover_ride_kind=3 "
+            "last_interaction_mover_ride_action=3 "
+            "last_interaction_mover_ride_area=0 "
+            "last_interaction_mover_ride_client=0",
             "q3a_bot_nav_policy_status nav_interaction_elevator_activations=1",
             "q3a_bot_coop_readiness_status pass=1 coop=1 bots=2 "
             "playing=2 spectators=0 queued=0",
@@ -12614,6 +14241,9 @@ class BotScenarioHarnessTests(unittest.TestCase):
             "route_target_stabilization_checks=3 route_target_stabilizations=1 "
             "route_target_stabilization_skips=2 last_route_target_original_distance_sq=16 "
             "last_route_target_stable_distance_sq=128 last_route_target_stable_point_index=2 "
+            "lookahead_preserved_move_targets=1 lookahead_close_point_skips=2 "
+            "last_lookahead_move_target_index=2 last_lookahead_start_index=3 "
+            "last_lookahead_close_point_skips=1 "
             "ffa_roam_route_requests=4 ffa_roam_route_policy_selections=4 "
             "ffa_roam_route_activations=2 ffa_roam_route_route_requests=3 "
             "last_ffa_roam_route_client=1 last_ffa_roam_route_mode=1 "
@@ -13018,6 +14648,11 @@ class BotScenarioHarnessTests(unittest.TestCase):
         self.assertEqual(route_targets["route_target_stabilization_checks"], 3)
         self.assertEqual(route_targets["route_target_stabilizations"], 1)
         self.assertEqual(route_targets["last_route_target_stable_point_index"], 2)
+        self.assertEqual(route_targets["lookahead_preserved_move_targets"], 1)
+        self.assertEqual(route_targets["lookahead_close_point_skips"], 2)
+        self.assertEqual(route_targets["last_lookahead_move_target_index"], 2)
+        self.assertEqual(route_targets["last_lookahead_start_index"], 3)
+        self.assertEqual(route_targets["last_lookahead_close_point_skips"], 1)
 
         ffa_roam_route = groups[("ffa_roam_route_counters", harness.STATUS_MARKER)]
         self.assertEqual(ffa_roam_route["ffa_roam_route_requests"], 4)
@@ -13286,7 +14921,8 @@ class BotScenarioHarnessTests(unittest.TestCase):
             *passing_raw_reserved_mode_lines(21),
             "q3a_bot_frame_command_status pass=1 route_failures=0 "
             "route_target_stabilization_checks=5 route_target_stabilizations=2 "
-            "route_target_stabilization_skips=3 last_route_target_stable_point_index=4",
+            "route_target_stabilization_skips=3 last_route_target_stable_point_index=4 "
+            "lookahead_preserved_move_targets=2 last_lookahead_move_target_index=4",
             "q3a_bot_action_status action_command_request_builds=3 "
             "action_command_request_accepted=3 action_command_request_dispatch_attempts=3 "
             "action_command_request_submitted=2 action_command_request_deferred=1 "
@@ -13321,6 +14957,18 @@ class BotScenarioHarnessTests(unittest.TestCase):
                 ("route_target_stabilization_counters", harness.STATUS_MARKER)
             ]["route_target_stabilizations"],
             2,
+        )
+        self.assertEqual(
+            optional_groups[
+                ("route_target_stabilization_counters", harness.STATUS_MARKER)
+            ]["lookahead_preserved_move_targets"],
+            2,
+        )
+        self.assertEqual(
+            optional_groups[
+                ("route_target_stabilization_counters", harness.STATUS_MARKER)
+            ]["last_lookahead_move_target_index"],
+            4,
         )
         self.assertEqual(diagnostic["metrics"]["pass"], 1)
         self.assertEqual(
