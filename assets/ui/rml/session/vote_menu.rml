@@ -5,37 +5,28 @@
     <link type="text/rcss" href="../common/theme/session.rcss" />
     <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
-  <body id="session-vote-menu" data-route-id="vote_menu" data-route-version="1">
-    <div class="screen" id="vote-menu-screen">
-      <header class="page-header">
+  <body id="session-vote-menu" data-route-id="vote_menu" data-route-group="session" data-route-version="1" data-menu-music="menu" data-menu-sound-open="open">
+    <div class="screen compact-screen session-screen" id="vote-menu-screen" data-close-command="popmenu; worr_vote_close">
+      <header class="page-header" id="vote-menu-header" data-model="session.vote" data-owner-boundary="sgame-published-cvars">
         <h1>Vote</h1>
         <p id="vote-menu-summary">
           Cast your vote before the timer runs out.
         </p>
       </header>
 
-      <section class="content" id="vote-menu-content" data-model="session_vote">
-        <h2 id="vote-menu-title" data-bind="session_vote.title">Vote in progress</h2>
-        <p id="vote-menu-description" data-bind="session_vote.description">
-          Review the current proposal and choose yes or no.
-        </p>
-
-        <dl class="vote-status" id="vote-menu-status">
-          <dt>Caller</dt>
-          <dd data-bind="session_vote.caller">Pending</dd>
-          <dt>Yes</dt>
-          <dd data-bind="session_vote.yes_count">0</dd>
-          <dt>No</dt>
-          <dd data-bind="session_vote.no_count">0</dd>
-          <dt>Time Remaining</dt>
-          <dd data-bind="session_vote.time_remaining">--</dd>
-        </dl>
+      <section class="session-vote-prompt" id="vote-menu-content" data-model="session.vote" data-owner-boundary="sgame-published-cvars">
+        <p id="vote-menu-line-0" data-bind="cvars.ui_vote_line_0" data-bind-cvar="ui_vote_line_0" data-visible-if="ui_vote_line_0">Vote in progress</p>
+        <p id="vote-menu-line-1" data-bind="cvars.ui_vote_line_1" data-bind-cvar="ui_vote_line_1" data-visible-if="ui_vote_line_1">Review the current proposal.</p>
+        <p id="vote-menu-line-2" data-bind="cvars.ui_vote_line_2" data-bind-cvar="ui_vote_line_2" data-visible-if="ui_vote_line_2">Choose yes or no.</p>
+        <p id="vote-menu-ready-label" class="session-badge is-warning" data-bind="cvars.ui_vote_ready_label" data-bind-cvar="ui_vote_ready_label" data-visible-if="ui_vote_can_vote=0">Vote opens soon</p>
+        <p id="vote-menu-ready-countdown" class="session-countdown" data-bind="cvars.ui_vote_ready_countdown" data-bind-cvar="ui_vote_ready_countdown" data-visible-if="ui_vote_can_vote=0">--</p>
+        <p id="vote-menu-time-left" class="session-countdown" data-bind="cvars.ui_vote_time_left" data-bind-cvar="ui_vote_time_left" data-visible-if="ui_vote_time_left">Time left</p>
       </section>
 
       <footer class="actions" id="vote-menu-actions">
-        <button id="vote-menu-yes" type="button" data-command="session.vote_yes">Yes</button>
-        <button id="vote-menu-no" type="button" data-command="session.vote_no">No</button>
-        <button id="vote-menu-close" type="button" data-command="ui.close">Close</button>
+        <button id="vote-menu-yes" type="button" data-command="worr_vote_yes" data-visible-if="ui_vote_can_vote!=0" data-menu-sound="confirm">YES</button>
+        <button id="vote-menu-no" type="button" data-command="worr_vote_no" data-visible-if="ui_vote_can_vote!=0" data-menu-sound="confirm">NO</button>
+        <button id="vote-menu-close" type="button" data-command="popmenu; worr_vote_close" data-menu-sound="cancel">Close</button>
       </footer>
     </div>
   </body>

@@ -13,10 +13,12 @@
 {
 	display: flex;
 	flex-direction: column;
-	flex: 0 0 auto;
+	flex: 1 1 auto;
 	width: 604px;
-	height: 500px;
+	max-width: 100%;
+	height: auto;
 	min-height: 0px;
+	min-width: 0px;
 	margin-bottom: 12px;
 	padding-right: 8px;
 	overflow: auto;
@@ -64,11 +66,87 @@
 	border-left-color: #b99b5b;
 }
 
+.setting-widget-icon
+{
+	display: none;
+	flex: 0 0 auto;
+	width: 0px;
+	height: 0px;
+	min-width: 0px;
+	min-height: 0px;
+	margin-right: 0px;
+	opacity: 0.88;
+}
+
+.setting-widget-icon img
+{
+	display: block;
+	width: 16px;
+	height: 16px;
+	min-width: 16px;
+	min-height: 16px;
+}
+
+.setting-row:hover .setting-widget-icon
+{
+	opacity: 1.0;
+}
+
+.setting-row[data-control="select"],
+.setting-row[data-control="combo"],
+.setting-row[data-control="imagevalues"]
+{
+	border-left-color: #8d7447;
+}
+
+.setting-row[data-control="range"]
+{
+	border-left-color: #426f72;
+}
+
+.setting-row[data-control="toggle"]
+{
+	border-left-color: #4c6f4f;
+}
+
+.setting-row[data-control="field"]
+{
+	border-left-color: #77644d;
+}
+
+.setting-row[data-control="action"]
+{
+	border-left-color: #7b5f37;
+}
+
+.setting-row[data-control="progress"]
+{
+	border-left-color: #578f94;
+}
+
+.setting-row[data-control="select"]:hover,
+.setting-row[data-control="combo"]:hover,
+.setting-row[data-control="imagevalues"]:hover
+{
+	border-left-color: #ffd967;
+}
+
+.setting-row[data-control="range"]:hover,
+.setting-row[data-control="progress"]:hover
+{
+	border-left-color: #7ed4d8;
+}
+
+.setting-row[data-control="toggle"]:hover
+{
+	border-left-color: #83d18f;
+}
+
 .setting-row label
 {
 	display: block;
-	width: 180px;
-	margin-right: 14px;
+	width: 160px;
+	margin-right: 12px;
 	color: #c9beb0;
 	font-weight: bold;
 	white-space: normal;
@@ -89,6 +167,23 @@
 .setting-row[data-control="field"] input
 {
 	width: 220px;
+	decorator: image(../skins/widgets/textbox-normal.svg);
+}
+
+.setting-row[data-control="field"] input:hover
+{
+	decorator: image(../skins/widgets/textbox-hover.svg);
+}
+
+.setting-row[data-control="field"] input:focus
+{
+	decorator: image(../skins/widgets/textbox-focus.svg);
+}
+
+.setting-row[data-control="field"] input:disabled,
+.setting-row[data-control="field"] input[disabled]
+{
+	decorator: image(../skins/widgets/textbox-disabled.svg);
 }
 
 .setting-row[data-control="field"] input[type="number"]
@@ -103,10 +198,40 @@
 	width: 288px;
 }
 
+.setting-row[data-control="combo"] select,
+.setting-row[data-control="imagevalues"] select
+{
+	decorator: image(../skins/widgets/combo-normal.svg);
+}
+
+.setting-row[data-control="combo"] select:hover,
+.setting-row[data-control="imagevalues"] select:hover
+{
+	decorator: image(../skins/widgets/combo-hover.svg);
+}
+
+.setting-row[data-control="combo"] select:focus,
+.setting-row[data-control="imagevalues"] select:focus
+{
+	decorator: image(../skins/widgets/combo-focus.svg);
+}
+
+.setting-row[data-control="combo"] select:disabled,
+.setting-row[data-control="combo"] select[disabled],
+.setting-row[data-control="imagevalues"] select:disabled,
+.setting-row[data-control="imagevalues"] select[disabled]
+{
+	decorator: image(../skins/widgets/combo-disabled.svg);
+}
+
 .setting-row[data-control="range"] input,
 .setting-row .worr-slider
 {
 	width: 260px;
+	background-color: #111a1b;
+	border-left-width: 4px;
+	border-left-color: #578f94;
+	border-right-color: #293f41;
 }
 
 .setting-row[data-control="range"] .setting-value
@@ -116,7 +241,7 @@
 
 .setting-row[data-control="toggle"] label
 {
-	width: 528px;
+	width: 500px;
 }
 
 .setting-row[data-control="toggle"] input
@@ -128,11 +253,24 @@
 	padding: 0px;
 }
 
+.setting-row[data-control="toggle"] input:checked
+{
+	background-color: #1f3324;
+	border-color: #83d18f;
+}
+
 .setting-row[data-control="toggle"] input:hover,
 .setting-row[data-control="toggle"] input:focus
 {
 	background-color: #332d23;
 	border-color: #ffd967;
+}
+
+.setting-row[data-control="toggle"] input:checked:hover,
+.setting-row[data-control="toggle"] input:checked:focus
+{
+	background-color: #294830;
+	border-color: #c7f0a1;
 }
 
 .setting-row[data-control="progress"] progress
@@ -146,17 +284,28 @@
 	width: 84px;
 }
 
+.setting-row[data-control="action"] button
+{
+	width: 144px;
+	min-width: 144px;
+	height: 30px;
+	padding: 5px 14px;
+}
+
 #downloads-settings-form
 {
-	height: 540px;
+	flex: 1 1 auto;
+	height: auto;
 }
 
 #sound-settings-form
 {
 	width: 780px;
-	height: 456px;
+	max-width: 100%;
+	height: auto;
+	flex: 1 1 auto;
 	padding-right: 0px;
-	overflow: hidden;
+	overflow: auto;
 }
 
 #sound-settings-columns
@@ -202,9 +351,26 @@
 	padding: 4px 6px;
 }
 
+#sound-settings-form .setting-widget-icon
+{
+	width: 14px;
+	height: 14px;
+	min-width: 14px;
+	min-height: 14px;
+	margin-right: 6px;
+}
+
+#sound-settings-form .setting-widget-icon img
+{
+	width: 14px;
+	height: 14px;
+	min-width: 14px;
+	min-height: 14px;
+}
+
 #sound-settings-form .setting-row label
 {
-	width: 142px;
+	width: 124px;
 	margin-right: 8px;
 }
 
@@ -245,10 +411,386 @@
 
 #sound-settings-form .setting-row[data-control="toggle"] label
 {
-	width: 300px;
+	width: 276px;
 }
 
 #sound-settings-form .setting-row[data-control="toggle"] input
+{
+	width: 32px;
+	min-width: 32px;
+	height: 26px;
+	min-height: 26px;
+}
+
+#video-settings-form
+{
+	width: 924px;
+	max-width: 100%;
+	height: auto;
+	flex: 1 1 auto;
+	padding-right: 0px;
+	overflow: auto;
+}
+
+#video-settings-columns
+{
+	display: flex;
+	flex-direction: row;
+	width: 924px;
+	min-height: 0px;
+}
+
+#video-settings-form .settings-column
+{
+	display: flex;
+	flex-direction: column;
+	width: 300px;
+	min-height: 0px;
+	margin-right: 12px;
+}
+
+#video-light-column
+{
+	margin-right: 0px;
+}
+
+#video-settings-form .settings-section
+{
+	width: 288px;
+	margin-bottom: 10px;
+	padding-bottom: 6px;
+}
+
+#video-settings-form .settings-section h2
+{
+	margin-bottom: 5px;
+	font-size: 17px;
+}
+
+#video-settings-form .setting-row
+{
+	width: 276px;
+	min-height: 34px;
+	margin-bottom: 5px;
+	padding: 4px 6px;
+}
+
+#video-settings-form .setting-widget-icon
+{
+	width: 14px;
+	height: 14px;
+	min-width: 14px;
+	min-height: 14px;
+	margin-right: 6px;
+}
+
+#video-settings-form .setting-widget-icon img
+{
+	width: 14px;
+	height: 14px;
+	min-width: 14px;
+	min-height: 14px;
+}
+
+#video-settings-form .setting-row label
+{
+	width: 112px;
+	margin-right: 4px;
+}
+
+#video-settings-form .setting-row input,
+#video-settings-form .setting-row select
+{
+	width: 110px;
+}
+
+#video-settings-form .setting-row[data-control="select"] select,
+#video-settings-form .setting-row[data-control="combo"] select,
+#video-settings-form .setting-row[data-control="imagevalues"] select
+{
+	width: 110px;
+}
+
+#video-settings-form .setting-row[data-control="range"] input,
+#video-settings-form .setting-row .worr-slider
+{
+	width: 104px;
+}
+
+#video-settings-form .setting-row[data-control="range"] .setting-value
+{
+	width: 38px;
+}
+
+#video-settings-form .setting-row[data-control="toggle"] label
+{
+	width: 220px;
+}
+
+#video-settings-form .setting-row[data-control="toggle"] input
+{
+	width: 32px;
+	min-width: 32px;
+	height: 26px;
+	min-height: 26px;
+}
+
+#video-settings-form .setting-row[data-control="action"] button
+{
+	width: 110px;
+	min-width: 110px;
+	height: 28px;
+	padding: 4px 10px;
+}
+
+#screen-settings-form,
+#effects-settings-form
+{
+	width: 780px;
+	max-width: 100%;
+	height: auto;
+	flex: 1 1 auto;
+	padding-right: 0px;
+	overflow: auto;
+}
+
+#screen-settings-columns,
+#effects-settings-columns
+{
+	display: flex;
+	flex-direction: row;
+	width: 780px;
+	min-height: 0px;
+}
+
+#screen-settings-form .settings-column,
+#effects-settings-form .settings-column
+{
+	display: flex;
+	flex-direction: column;
+	width: 382px;
+	min-height: 0px;
+	margin-right: 12px;
+}
+
+#screen-scale-column,
+#effects-gameplay-column
+{
+	margin-right: 0px;
+}
+
+#screen-settings-form .settings-section,
+#effects-settings-form .settings-section
+{
+	width: 370px;
+	margin-bottom: 10px;
+	padding-bottom: 6px;
+}
+
+#screen-settings-form .settings-section h2,
+#effects-settings-form .settings-section h2
+{
+	margin-bottom: 5px;
+	font-size: 17px;
+}
+
+#screen-settings-form .setting-row,
+#effects-settings-form .setting-row
+{
+	width: 358px;
+	min-height: 34px;
+	margin-bottom: 5px;
+	padding: 4px 6px;
+}
+
+#screen-settings-form .setting-widget-icon,
+#effects-settings-form .setting-widget-icon
+{
+	width: 14px;
+	height: 14px;
+	min-width: 14px;
+	min-height: 14px;
+	margin-right: 6px;
+}
+
+#screen-settings-form .setting-widget-icon img,
+#effects-settings-form .setting-widget-icon img
+{
+	width: 14px;
+	height: 14px;
+	min-width: 14px;
+	min-height: 14px;
+}
+
+#screen-settings-form .setting-row label,
+#effects-settings-form .setting-row label
+{
+	width: 124px;
+	margin-right: 8px;
+}
+
+#screen-settings-form .setting-row input,
+#screen-settings-form .setting-row select,
+#effects-settings-form .setting-row input,
+#effects-settings-form .setting-row select
+{
+	width: 146px;
+}
+
+#screen-settings-form .setting-row[data-control="select"] select,
+#screen-settings-form .setting-row[data-control="combo"] select,
+#screen-settings-form .setting-row[data-control="imagevalues"] select,
+#effects-settings-form .setting-row[data-control="select"] select,
+#effects-settings-form .setting-row[data-control="combo"] select,
+#effects-settings-form .setting-row[data-control="imagevalues"] select
+{
+	width: 146px;
+}
+
+#screen-settings-form .setting-row[data-control="range"] input,
+#screen-settings-form .setting-row .worr-slider,
+#effects-settings-form .setting-row[data-control="range"] input,
+#effects-settings-form .setting-row .worr-slider
+{
+	width: 150px;
+}
+
+#screen-settings-form .setting-row[data-control="range"] .setting-value,
+#effects-settings-form .setting-row[data-control="range"] .setting-value
+{
+	width: 54px;
+}
+
+#screen-settings-form .setting-row[data-control="toggle"] label,
+#effects-settings-form .setting-row[data-control="toggle"] label
+{
+	width: 276px;
+}
+
+#screen-settings-form .setting-row[data-control="toggle"] input,
+#effects-settings-form .setting-row[data-control="toggle"] input
+{
+	width: 32px;
+	min-width: 32px;
+	height: 26px;
+	min-height: 26px;
+}
+
+#screen-settings-form .setting-row[data-control="action"] button,
+#effects-settings-form .setting-row[data-control="action"] button
+{
+	width: 146px;
+	min-width: 146px;
+	height: 28px;
+	padding: 4px 10px;
+}
+
+#crosshair-settings-form
+{
+	width: 780px;
+	max-width: 100%;
+	height: auto;
+	flex: 1 1 auto;
+	padding-right: 0px;
+	overflow: auto;
+}
+
+#crosshair-settings-columns
+{
+	display: flex;
+	flex-direction: row;
+	width: 780px;
+	min-height: 0px;
+}
+
+#crosshair-settings-form .settings-column
+{
+	display: flex;
+	flex-direction: column;
+	width: 382px;
+	min-height: 0px;
+	margin-right: 12px;
+}
+
+#crosshair-hit-column
+{
+	margin-right: 0px;
+}
+
+#crosshair-settings-form .settings-section
+{
+	width: 370px;
+	margin-bottom: 10px;
+	padding-bottom: 6px;
+}
+
+#crosshair-settings-form .settings-section h2
+{
+	margin-bottom: 5px;
+	font-size: 17px;
+}
+
+#crosshair-settings-form .setting-row
+{
+	width: 358px;
+	min-height: 34px;
+	margin-bottom: 5px;
+	padding: 4px 6px;
+}
+
+#crosshair-settings-form .setting-widget-icon
+{
+	width: 14px;
+	height: 14px;
+	min-width: 14px;
+	min-height: 14px;
+	margin-right: 6px;
+}
+
+#crosshair-settings-form .setting-widget-icon img
+{
+	width: 14px;
+	height: 14px;
+	min-width: 14px;
+	min-height: 14px;
+}
+
+#crosshair-settings-form .setting-row label
+{
+	width: 104px;
+	margin-right: 8px;
+}
+
+#crosshair-settings-form .setting-row input,
+#crosshair-settings-form .setting-row select
+{
+	width: 170px;
+}
+
+#crosshair-settings-form .setting-row[data-control="select"] select,
+#crosshair-settings-form .setting-row[data-control="combo"] select,
+#crosshair-settings-form .setting-row[data-control="imagevalues"] select
+{
+	width: 190px;
+}
+
+#crosshair-settings-form .setting-row[data-control="range"] input,
+#crosshair-settings-form .setting-row .worr-slider
+{
+	width: 150px;
+}
+
+#crosshair-settings-form .setting-row[data-control="range"] .setting-value
+{
+	width: 54px;
+}
+
+#crosshair-settings-form .setting-row[data-control="toggle"] label
+{
+	width: 276px;
+}
+
+#crosshair-settings-form .setting-row[data-control="toggle"] input
 {
 	width: 32px;
 	min-width: 32px;
@@ -260,15 +802,67 @@
 {
 	display: block;
 	width: 86px;
+	min-height: 21px;
 	margin-left: 10px;
+	padding: 3px 0px;
+	background-color: #100f0d;
 	color: #c9beb0;
+	border-width: 1px;
+	border-color: #443d33;
+	border-radius: 3px;
 	font-size: 14px;
 	line-height: 1.1;
+	text-align: center;
 	white-space: normal;
 	word-break: break-word;
+}
+
+.setting-value.setting-meter
+{
+	position: relative;
+	min-height: 21px;
+	padding: 0px;
+	overflow: hidden;
+	background-color: #0c1314;
+	border-color: #31474a;
+}
+
+.setting-meter-fill
+{
+	position: absolute;
+	top: 0px;
+	bottom: 0px;
+	left: 0px;
+	display: block;
+	width: 0%;
+	height: 100%;
+	background-color: #244f53;
+	border-right-width: 1px;
+	border-right-color: #7ed4d8;
+}
+
+.setting-meter-text
+{
+	position: relative;
+	display: block;
+	width: 100%;
+	padding: 3px 0px;
+	color: #d9eee8;
+	text-align: center;
 }
 
 .setting-row:hover .setting-value
 {
 	color: #ffd967;
+}
+
+.setting-row:hover .setting-meter-fill
+{
+	background-color: #2f6267;
+	border-right-color: #a6edf0;
+}
+
+.setting-row:hover .setting-meter-text
+{
+	color: #ffffff;
 }

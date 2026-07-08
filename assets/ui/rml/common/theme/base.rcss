@@ -215,26 +215,42 @@ li
 	flex-direction: column;
 	align-items: center;
 	justify-content: center;
-	background-color: #0c0b0a;
+	padding: 18px;
+	background-color: #080706;
 }
 
 .popup-dialog
 {
-	width: 390px;
-	max-width: 390px;
-	padding: 16px;
-	background-color: #171511;
+	width: 420px;
+	max-width: 420px;
+	padding: 18px;
+	background-color: #16130f;
 	border-width: 1px;
-	border-color: #3b3429;
+	border-color: #5f5548;
 	border-left-width: 4px;
 	border-left-color: #ee6758;
 	border-radius: 6px;
+	decorator: image(../skins/widgets/popup-frame.svg);
 	transition: background-color border-color color 0.12s cubic-out;
+}
+
+.confirmation-dialog
+{
+	border-top-width: 2px;
+	border-top-color: #b99b5b;
+}
+
+.confirmation-dialog:hover
+{
+	background-color: #1c1813;
+	border-color: #8b7c6a;
+	border-left-color: #ff9285;
+	decorator: image(../skins/widgets/popup-frame-hover.svg);
 }
 
 .popup-header
 {
-	margin-bottom: 8px;
+	margin-bottom: 10px;
 	padding-bottom: 8px;
 	border-bottom-width: 1px;
 	border-bottom-color: #332d23;
@@ -245,6 +261,7 @@ li
 	margin-bottom: 0px;
 	font-size: 24px;
 	color: #f3eee4;
+	line-height: 1.05;
 }
 
 .popup-kicker
@@ -256,11 +273,13 @@ li
 
 .popup-message
 {
-	min-height: 36px;
-	margin-bottom: 14px;
+	min-height: 42px;
+	margin-bottom: 16px;
 	color: #f3eee4;
 	font-size: 18px;
 	line-height: 1.2;
+	white-space: normal;
+	word-break: break-word;
 }
 
 .popup-actions
@@ -268,7 +287,7 @@ li
 	display: flex;
 	flex-direction: row;
 	flex-wrap: wrap;
-	padding-top: 10px;
+	padding-top: 12px;
 	border-top-width: 1px;
 	border-top-color: #332d23;
 }
@@ -276,10 +295,66 @@ li
 .popup-actions button,
 .popup-actions .ui-button
 {
-	width: 146px;
-	min-width: 146px;
+	width: 150px;
+	min-width: 150px;
+	min-height: 38px;
 	margin-right: 8px;
 	margin-bottom: 0px;
+}
+
+.popup-primary
+{
+	background-color: #1f271d;
+	border-color: #5f8765;
+	border-left-width: 4px;
+	border-left-color: #83d18f;
+	decorator: image(../skins/widgets/button-primary.svg);
+}
+
+.popup-primary:hover,
+.popup-primary:focus
+{
+	background-color: #263322;
+	border-color: #83d18f;
+	border-left-color: #a6e3ad;
+	color: #83d18f;
+	decorator: image(../skins/widgets/button-primary-hover.svg);
+}
+
+.popup-danger
+{
+	background-color: #281b18;
+	border-color: #895047;
+	border-left-width: 4px;
+	border-left-color: #ee6758;
+	decorator: image(../skins/widgets/button-danger.svg);
+}
+
+.popup-danger:hover,
+.popup-danger:focus
+{
+	background-color: #321f1b;
+	border-color: #ee6758;
+	border-left-color: #ff9285;
+	color: #ee6758;
+	decorator: image(../skins/widgets/button-danger-hover.svg);
+}
+
+.popup-secondary
+{
+	background-color: #1b1916;
+	border-color: #5f5548;
+	color: #c9beb0;
+	decorator: image(../skins/widgets/button-normal.svg);
+}
+
+.popup-secondary:hover,
+.popup-secondary:focus
+{
+	background-color: #27231d;
+	border-color: #b99b5b;
+	color: #ffd967;
+	decorator: image(../skins/widgets/button-hover.svg);
 }
 
 button,
@@ -300,16 +375,20 @@ button,
 	display: block;
 	min-height: 36px;
 	min-width: 96px;
+	max-width: 100%;
 	padding: 6px 12px;
 	background-color: #27231d;
 	color: #f3eee4;
 	border-width: 2px;
 	border-color: #756a5d;
 	border-radius: 3px;
+	decorator: image(../skins/widgets/button-normal.svg);
 	text-align: center;
 	font-family: "WORR Display";
 	font-size: 16px;
 	line-height: 1.1;
+	white-space: normal;
+	word-break: break-word;
 	transition: background-color border-color color 0.12s cubic-out;
 }
 
@@ -319,6 +398,7 @@ button:hover,
 	background-color: #332d23;
 	border-color: #b99b5b;
 	color: #ffd967;
+	decorator: image(../skins/widgets/button-hover.svg);
 }
 
 button:active,
@@ -327,6 +407,7 @@ button:active,
 	background-color: #e5b64f;
 	border-color: #ffd967;
 	color: #000000;
+	decorator: image(../skins/widgets/button-active.svg);
 }
 
 button:focus,
@@ -339,6 +420,13 @@ textarea:focus,
 	background-color: #332d23;
 	border-color: #ffd967;
 	color: #ffd967;
+	decorator: image(../skins/widgets/input-focus.svg);
+}
+
+button:focus,
+.ui-button:focus
+{
+	decorator: image(../skins/widgets/button-focus.svg);
 }
 
 button[data-command="ui.back"],
@@ -351,6 +439,7 @@ button[data-command="popmenu"],
 	background-color: #1b1916;
 	border-color: #5f5548;
 	color: #c9beb0;
+	decorator: image(../skins/widgets/button-normal.svg);
 }
 
 button[data-command="ui.back"]:hover,
@@ -369,9 +458,11 @@ button[data-command="popmenu"]:focus,
 	background-color: #27231d;
 	border-color: #b99b5b;
 	color: #ffd967;
+	decorator: image(../skins/widgets/button-hover.svg);
 }
 
 #game-resume,
+#multiplayer-startserver,
 #players-apply,
 #startserver-begin,
 #singleplayer-start-episode,
@@ -383,9 +474,11 @@ button[data-command="popmenu"]:focus,
 	border-color: #5f8765;
 	border-left-width: 4px;
 	border-left-color: #83d18f;
+	decorator: image(../skins/widgets/button-primary.svg);
 }
 
 #game-resume:hover,
+#multiplayer-startserver:hover,
 #players-apply:hover,
 #startserver-begin:hover,
 #singleplayer-start-episode:hover,
@@ -393,6 +486,7 @@ button[data-command="popmenu"]:focus,
 #vote-menu-yes:hover,
 #tourney-replay-yes:hover,
 #game-resume:focus,
+#multiplayer-startserver:focus,
 #players-apply:focus,
 #startserver-begin:focus,
 #singleplayer-start-episode:focus,
@@ -404,6 +498,7 @@ button[data-command="popmenu"]:focus,
 	border-color: #83d18f;
 	border-left-color: #a6e3ad;
 	color: #83d18f;
+	decorator: image(../skins/widgets/button-primary-hover.svg);
 }
 
 #main-quit,
@@ -420,6 +515,7 @@ button[data-command="popmenu"]:focus,
 	border-color: #895047;
 	border-left-width: 4px;
 	border-left-color: #ee6758;
+	decorator: image(../skins/widgets/button-danger.svg);
 }
 
 #main-quit:hover,
@@ -445,6 +541,7 @@ button[data-command="popmenu"]:focus,
 	border-color: #ee6758;
 	border-left-color: #ff9285;
 	color: #ee6758;
+	decorator: image(../skins/widgets/button-danger-hover.svg);
 }
 
 input,
@@ -453,15 +550,19 @@ textarea,
 .ui-field
 {
 	min-height: 36px;
+	max-width: 100%;
 	padding: 6px 10px;
 	background-color: #1b1916;
 	color: #f3eee4;
 	border-width: 2px;
 	border-color: #756a5d;
 	border-radius: 3px;
+	decorator: image(../skins/widgets/input-normal.svg);
 	font-family: "WORR UI";
 	font-size: 16px;
 	line-height: 1.2;
+	white-space: normal;
+	word-break: break-word;
 	transition: background-color border-color color 0.12s cubic-out;
 }
 
@@ -475,6 +576,7 @@ input[type="checkbox"],
 	padding: 0px;
 	background-color: #171511;
 	border-color: #756a5d;
+	decorator: image(../skins/widgets/checkbox-off.svg);
 }
 
 input[type="range"],
@@ -484,6 +586,7 @@ input[type="range"],
 	padding: 0px;
 	background-color: #171511;
 	border-color: #5f5548;
+	decorator: image(../skins/widgets/range-track.svg);
 }
 
 progress,
@@ -495,6 +598,7 @@ progress,
 	border-width: 2px;
 	border-color: #756a5d;
 	border-radius: 3px;
+	decorator: image(../skins/widgets/progress-track.svg);
 	transition: background-color border-color 0.12s cubic-out;
 }
 
@@ -507,6 +611,293 @@ progress:hover,
 {
 	background-color: #211e19;
 	border-color: #b99b5b;
+	decorator: image(../skins/widgets/input-hover.svg);
+}
+
+select
+{
+	decorator: image(../skins/widgets/select-normal.svg);
+}
+
+select:hover
+{
+	decorator: image(../skins/widgets/select-hover.svg);
+}
+
+select:focus
+{
+	decorator: image(../skins/widgets/select-focus.svg);
+}
+
+select selectvalue
+{
+	margin-right: 36px;
+}
+
+select selectarrow
+{
+	width: 30px;
+	min-width: 30px;
+	decorator: image(../skins/widgets/arrowbox-normal.svg);
+}
+
+select:hover selectarrow,
+select:focus selectarrow
+{
+	decorator: image(../skins/widgets/arrowbox-hover.svg);
+}
+
+select:active selectarrow,
+select selectarrow:checked
+{
+	decorator: image(../skins/widgets/arrowbox-hover.svg);
+}
+
+select selectbox
+{
+	padding: 4px;
+	background-color: #16130f;
+	border-width: 1px;
+	border-color: #5f5548;
+	decorator: image(../skins/widgets/dropdown-panel.svg);
+}
+
+select selectbox option
+{
+	padding: 4px 8px;
+	background-color: #16130f;
+	color: #f3eee4;
+}
+
+select selectbox option:hover,
+select selectbox option:checked
+{
+	background-color: #332d23;
+	color: #ffd967;
+	decorator: image(../skins/widgets/dropdown-option-hover.svg);
+}
+
+input[type="checkbox"]:hover,
+input[type="checkbox"]:focus,
+.worr-toggle:hover,
+.worr-toggle:focus
+{
+	decorator: image(../skins/widgets/checkbox-off-hover.svg);
+}
+
+input[type="checkbox"]:checked,
+.worr-toggle:checked
+{
+	decorator: image(../skins/widgets/checkbox-on.svg);
+}
+
+input[type="checkbox"]:checked:hover,
+input[type="checkbox"]:checked:focus,
+.worr-toggle:checked:hover,
+.worr-toggle:checked:focus
+{
+	decorator: image(../skins/widgets/checkbox-on-hover.svg);
+}
+
+input[type="range"]:hover,
+input[type="range"]:focus,
+.worr-slider:hover,
+.worr-slider:focus
+{
+	decorator: image(../skins/widgets/range-track-hover.svg);
+}
+
+input[type="range"] slidertrack,
+.worr-slider slidertrack
+{
+	height: 22px;
+	margin-top: 3px;
+	decorator: image(../skins/widgets/range-track.svg);
+}
+
+input[type="range"]:hover slidertrack,
+input[type="range"]:focus slidertrack,
+.worr-slider:hover slidertrack,
+.worr-slider:focus slidertrack
+{
+	decorator: image(../skins/widgets/range-track-hover.svg);
+}
+
+input[type="range"] sliderprogress,
+.worr-slider sliderprogress
+{
+	height: 7px;
+	margin-top: 8px;
+	background-color: #426f72;
+}
+
+input[type="range"] sliderbar,
+.worr-slider sliderbar
+{
+	width: 24px;
+	height: 28px;
+	margin-left: -7px;
+	margin-right: -7px;
+	margin-top: -3px;
+	decorator: image(../skins/widgets/range-thumb.svg);
+}
+
+input[type="range"] sliderbar:hover,
+input[type="range"] sliderbar:active,
+.worr-slider sliderbar:hover,
+.worr-slider sliderbar:active
+{
+	decorator: image(../skins/widgets/range-thumb-hover.svg);
+}
+
+input[type="range"]:disabled,
+input[type="range"][disabled],
+.worr-slider:disabled,
+.worr-slider[disabled]
+{
+	decorator: image(../skins/widgets/range-track-disabled.svg);
+}
+
+input[type="range"]:disabled slidertrack,
+input[type="range"][disabled] slidertrack,
+.worr-slider:disabled slidertrack,
+.worr-slider[disabled] slidertrack
+{
+	decorator: image(../skins/widgets/range-track-disabled.svg);
+}
+
+input[type="range"]:disabled sliderbar,
+input[type="range"][disabled] sliderbar,
+.worr-slider:disabled sliderbar,
+.worr-slider[disabled] sliderbar
+{
+	decorator: image(../skins/widgets/range-thumb-disabled.svg);
+}
+
+input[type="range"] sliderarrowdec,
+input[type="range"] sliderarrowinc,
+.worr-slider sliderarrowdec,
+.worr-slider sliderarrowinc
+{
+	display: none;
+	width: 0px;
+	height: 0px;
+	min-width: 0px;
+	min-height: 0px;
+}
+
+input[type="range"] sliderarrowdec:hover,
+input[type="range"] sliderarrowinc:hover,
+.worr-slider sliderarrowdec:hover,
+.worr-slider sliderarrowinc:hover
+{
+	decorator: image(../skins/widgets/arrowbox-hover.svg);
+}
+
+progress fill,
+.worr-progress fill
+{
+	background-color: #426f72;
+	decorator: image(../skins/widgets/progress-fill.svg);
+}
+
+progress:hover,
+.worr-progress:hover
+{
+	decorator: image(../skins/widgets/progress-track-hover.svg);
+}
+
+progress:disabled,
+progress[disabled],
+.worr-progress:disabled,
+.worr-progress[disabled]
+{
+	decorator: image(../skins/widgets/progress-track-disabled.svg);
+}
+
+progress:disabled fill,
+progress[disabled] fill,
+.worr-progress:disabled fill,
+.worr-progress[disabled] fill
+{
+	decorator: image(../skins/widgets/progress-fill-disabled.svg);
+}
+
+scrollbarvertical slidertrack,
+scrollbarhorizontal slidertrack
+{
+	background-color: #12110f;
+	decorator: image(../skins/widgets/scroll-track.svg);
+}
+
+scrollbarvertical
+{
+	width: 12px;
+	min-width: 12px;
+}
+
+scrollbarhorizontal
+{
+	display: none;
+	height: 0px;
+	min-height: 0px;
+}
+
+scrollbarvertical slidertrack
+{
+	width: 12px;
+	min-width: 12px;
+}
+
+scrollbarhorizontal slidertrack
+{
+	height: 12px;
+	min-height: 12px;
+}
+
+scrollbarvertical sliderbar,
+scrollbarhorizontal sliderbar
+{
+	background-color: #26221c;
+	decorator: image(../skins/widgets/scroll-thumb.svg);
+}
+
+scrollbarvertical sliderbar
+{
+	width: 12px;
+	min-width: 12px;
+	min-height: 24px;
+}
+
+scrollbarhorizontal sliderbar
+{
+	height: 12px;
+	min-height: 12px;
+	min-width: 24px;
+}
+
+scrollbarvertical sliderbar:hover,
+scrollbarhorizontal sliderbar:hover
+{
+	decorator: image(../skins/widgets/scroll-thumb-hover.svg);
+}
+
+scrollbarvertical:disabled sliderbar,
+scrollbarhorizontal:disabled sliderbar
+{
+	decorator: image(../skins/widgets/scroll-thumb-disabled.svg);
+}
+
+scrollbarvertical sliderarrowdec,
+scrollbarvertical sliderarrowinc,
+scrollbarhorizontal sliderarrowdec,
+scrollbarhorizontal sliderarrowinc
+{
+	display: none;
+	width: 0px;
+	height: 0px;
+	min-width: 0px;
+	min-height: 0px;
 }
 
 textarea
@@ -520,6 +911,45 @@ textarea
 	color: #81776a;
 	border-color: #756a5d;
 	opacity: 0.65;
+}
+
+button:disabled,
+.ui-button:disabled,
+button[disabled],
+.ui-button[disabled]
+{
+	decorator: image(../skins/widgets/button-disabled.svg);
+}
+
+input:disabled,
+textarea:disabled,
+input[disabled],
+textarea[disabled],
+.ui-field.is-disabled
+{
+	decorator: image(../skins/widgets/input-disabled.svg);
+}
+
+select:disabled,
+select[disabled]
+{
+	decorator: image(../skins/widgets/select-disabled.svg);
+}
+
+input[type="checkbox"]:disabled,
+input[type="checkbox"][disabled],
+.worr-toggle:disabled,
+.worr-toggle[disabled]
+{
+	decorator: image(../skins/widgets/checkbox-disabled.svg);
+}
+
+input[type="checkbox"]:checked:disabled,
+input[type="checkbox"]:checked[disabled],
+.worr-toggle:checked:disabled,
+.worr-toggle:checked[disabled]
+{
+	decorator: image(../skins/widgets/checkbox-on-disabled.svg);
 }
 
 .ui-scroll

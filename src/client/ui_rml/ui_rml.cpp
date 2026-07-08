@@ -203,6 +203,20 @@ static const ui_rml_menu_route_t *UI_Rml_FindRuntimeMenuRoute(const char *route_
     return NULL;
 }
 
+static bool UI_Rml_PopupRouteIsKnown(const char *route_id)
+{
+    return route_id &&
+           (!strcmp(route_id, "quit_confirm") ||
+            !strcmp(route_id, "forfeit_confirm") ||
+            !strcmp(route_id, "leave_match_confirm") ||
+            !strcmp(route_id, "tourney_replay_confirm"));
+}
+
+bool UI_Rml_RouteIsPopup(const char *route_id)
+{
+    return UI_Rml_PopupRouteIsKnown(route_id);
+}
+
 static bool UI_Rml_RuntimeRouteIsAllowed(const char *route_id)
 {
     return UI_Rml_FindRoute(route_id) != NULL;
@@ -794,6 +808,11 @@ static bool UI_Rml_OpenPopupRouteInternal(const char *route_id)
     (void)route_id;
     return false;
 #endif
+}
+
+bool UI_Rml_OpenPopupRoute(const char *route_id)
+{
+    return UI_Rml_OpenPopupRouteInternal(route_id);
 }
 
 static void UI_Rml_RuntimePopupRoute_f(void)

@@ -5,7 +5,7 @@
     <link type="text/rcss" href="../common/theme/session.rcss" />
     <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
-  <body id="session-callvote-scorelimit" data-route-id="callvote_scorelimit" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-owner="agent5" data-session-owner="sgame">
+  <body id="session-callvote-scorelimit" data-route-id="callvote_scorelimit" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-owner="agent5" data-session-owner="sgame" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen compact-screen session-screen" id="callvote-scorelimit-screen">
       <header class="page-header">
         <h1>Callvote: Scorelimit</h1>
@@ -13,19 +13,19 @@
       </header>
 
       <nav class="menu-list" id="callvote-scorelimit-menu" data-model="session.callvote.scorelimit" data-owner-boundary="sgame-published-cvars">
-        <button id="callvote-scorelimit-0" type="button" data-command="worr_callvote_scorelimit 0">Disable</button>
-        <button id="callvote-scorelimit-5" type="button" data-label-cvar="ui_callvote_scorelimit_set_5" data-command="worr_callvote_scorelimit 5">Set 5</button>
-        <button id="callvote-scorelimit-10" type="button" data-label-cvar="ui_callvote_scorelimit_set_10" data-command="worr_callvote_scorelimit 10">Set 10</button>
-        <button id="callvote-scorelimit-15" type="button" data-label-cvar="ui_callvote_scorelimit_set_15" data-command="worr_callvote_scorelimit 15">Set 15</button>
-        <button id="callvote-scorelimit-20" type="button" data-label-cvar="ui_callvote_scorelimit_set_20" data-command="worr_callvote_scorelimit 20">Set 20</button>
-        <button id="callvote-scorelimit-25" type="button" data-label-cvar="ui_callvote_scorelimit_set_25" data-command="worr_callvote_scorelimit 25">Set 25</button>
-        <button id="callvote-scorelimit-30" type="button" data-label-cvar="ui_callvote_scorelimit_set_30" data-command="worr_callvote_scorelimit 30">Set 30</button>
-        <button id="callvote-scorelimit-50" type="button" data-label-cvar="ui_callvote_scorelimit_set_50" data-command="worr_callvote_scorelimit 50">Set 50</button>
-        <button id="callvote-scorelimit-100" type="button" data-label-cvar="ui_callvote_scorelimit_set_100" data-command="worr_callvote_scorelimit 100">Set 100</button>
+        <button id="callvote-scorelimit-0" type="button" data-command="worr_callvote_scorelimit 0" data-menu-sound="confirm">Disable</button>
+        <button id="callvote-scorelimit-5" type="button" data-label-cvar="ui_callvote_scorelimit_set_5" data-command="worr_callvote_scorelimit 5" data-menu-sound="confirm">Set 5</button>
+        <button id="callvote-scorelimit-10" type="button" data-label-cvar="ui_callvote_scorelimit_set_10" data-command="worr_callvote_scorelimit 10" data-menu-sound="confirm">Set 10</button>
+        <button id="callvote-scorelimit-15" type="button" data-label-cvar="ui_callvote_scorelimit_set_15" data-command="worr_callvote_scorelimit 15" data-menu-sound="confirm">Set 15</button>
+        <button id="callvote-scorelimit-20" type="button" data-label-cvar="ui_callvote_scorelimit_set_20" data-command="worr_callvote_scorelimit 20" data-menu-sound="confirm">Set 20</button>
+        <button id="callvote-scorelimit-25" type="button" data-label-cvar="ui_callvote_scorelimit_set_25" data-command="worr_callvote_scorelimit 25" data-menu-sound="confirm">Set 25</button>
+        <button id="callvote-scorelimit-30" type="button" data-label-cvar="ui_callvote_scorelimit_set_30" data-command="worr_callvote_scorelimit 30" data-menu-sound="confirm">Set 30</button>
+        <button id="callvote-scorelimit-50" type="button" data-label-cvar="ui_callvote_scorelimit_set_50" data-command="worr_callvote_scorelimit 50" data-menu-sound="confirm">Set 50</button>
+        <button id="callvote-scorelimit-100" type="button" data-label-cvar="ui_callvote_scorelimit_set_100" data-command="worr_callvote_scorelimit 100" data-menu-sound="confirm">Set 100</button>
       </nav>
 
       <footer class="actions" id="callvote-scorelimit-actions">
-        <button id="callvote-scorelimit-return" type="button" data-command="popmenu">Return</button>
+        <button id="callvote-scorelimit-return" type="button" data-command="popmenu" data-menu-sound="cancel">Return</button>
       </footer>
     </div>
   </body>

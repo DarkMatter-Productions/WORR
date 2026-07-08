@@ -4,79 +4,98 @@
     <link type="text/rcss" href="../common/theme/base.rcss" />
     <link type="text/rcss" href="../common/theme/settings.rcss" />
   </head>
-  <body id="settings-effects" data-route-id="effects" data-route-group="settings" data-route-version="1" data-document-status="scaffolded-round3">
+  <body id="settings-effects" data-route-id="effects" data-route-group="settings" data-route-version="1" data-document-status="scaffolded-round3" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen settings-screen" id="effects-screen">
       <header class="menu-header">
         <h1>Effects Setup</h1>
       </header>
 
       <main class="settings-form" id="effects-settings-form" data-component="common.components.cvar_controls">
-        <section class="settings-section" id="effects-rendering-section">
-          <h2>Rendering Effects</h2>
-          <div class="setting-row" data-control="select" data-cvar="gl_dynamic">
-            <label for="effects-dynamic-lighting">Dynamic Lighting</label>
-            <select id="effects-dynamic-lighting" data-cvar="gl_dynamic" data-source-menu-type="dropdown">
-              <option value="0">No</option>
-              <option value="1">Yes</option>
-              <option value="2">Only Switchable</option>
-            </select>
+        <div class="settings-columns" id="effects-settings-columns">
+          <div class="settings-column" id="effects-rendering-column">
+            <section class="settings-section" id="effects-rendering-section">
+              <h2>Rendering Effects</h2>
+              <div class="setting-row" data-control="select" data-cvar="gl_dynamic">
+                <span class="setting-widget-icon" data-widget="select"><img src="../common/icons/widgets/select.svg" /></span>
+                <label for="effects-dynamic-lighting">Dynamic Lighting</label>
+                <select id="effects-dynamic-lighting" data-cvar="gl_dynamic" data-source-menu-type="dropdown">
+                  <option value="0">No</option>
+                  <option value="1">Yes</option>
+                  <option value="2">Only Switchable</option>
+                </select>
+              </div>
+              <div class="setting-row" data-control="select" data-cvar="gl_celshading">
+                <span class="setting-widget-icon" data-widget="select"><img src="../common/icons/widgets/select.svg" /></span>
+                <label for="effects-cel-shading">Entity Cel-Shading</label>
+                <select id="effects-cel-shading" data-cvar="gl_celshading" data-source-menu-type="dropdown">
+                  <option value="0">No</option>
+                  <option value="1">1x</option>
+                  <option value="2">2x</option>
+                  <option value="3">3x</option>
+                </select>
+              </div>
+              <div class="setting-row" data-control="toggle" data-cvar="cl_noglow" data-negate="true">
+                <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
+                <label for="effects-entity-glow">Entity Glowing</label>
+                <input id="effects-entity-glow" type="checkbox" data-cvar="cl_noglow" data-negate="true" />
+              </div>
+              <div class="setting-row" data-control="select" data-cvar="gl_shadows">
+                <span class="setting-widget-icon" data-widget="select"><img src="../common/icons/widgets/select.svg" /></span>
+                <label for="effects-ground-shadows">Ground Shadows</label>
+                <select id="effects-ground-shadows" data-cvar="gl_shadows" data-source-menu-type="dropdown">
+                  <option value="0">No</option>
+                  <option value="1">Yes</option>
+                  <option value="2">Fade</option>
+                </select>
+              </div>
+              <div class="setting-row" data-control="toggle" data-cvar="gl_polyblend">
+                <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
+                <label for="effects-screen-blending">Screen Blending</label>
+                <input id="effects-screen-blending" type="checkbox" data-cvar="gl_polyblend" />
+              </div>
+              <div class="setting-row" data-control="toggle" data-cvar="gl_waterwarp">
+                <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
+                <label for="effects-screen-warping">Screen Warping</label>
+                <input id="effects-screen-warping" type="checkbox" data-cvar="gl_waterwarp" />
+              </div>
+            </section>
           </div>
-          <div class="setting-row" data-control="select" data-cvar="gl_celshading">
-            <label for="effects-cel-shading">Entity Cel-Shading</label>
-            <select id="effects-cel-shading" data-cvar="gl_celshading" data-source-menu-type="dropdown">
-              <option value="0">No</option>
-              <option value="1">1x</option>
-              <option value="2">2x</option>
-              <option value="3">3x</option>
-            </select>
-          </div>
-          <div class="setting-row" data-control="toggle" data-cvar="cl_noglow" data-negate="true">
-            <label for="effects-entity-glow">Entity Glowing</label>
-            <input id="effects-entity-glow" type="checkbox" data-cvar="cl_noglow" data-negate="true" />
-          </div>
-          <div class="setting-row" data-control="select" data-cvar="gl_shadows">
-            <label for="effects-ground-shadows">Ground Shadows</label>
-            <select id="effects-ground-shadows" data-cvar="gl_shadows" data-source-menu-type="dropdown">
-              <option value="0">No</option>
-              <option value="1">Yes</option>
-              <option value="2">Fade</option>
-            </select>
-          </div>
-          <div class="setting-row" data-control="toggle" data-cvar="gl_polyblend">
-            <label for="effects-screen-blending">Screen Blending</label>
-            <input id="effects-screen-blending" type="checkbox" data-cvar="gl_polyblend" />
-          </div>
-          <div class="setting-row" data-control="toggle" data-cvar="gl_waterwarp">
-            <label for="effects-screen-warping">Screen Warping</label>
-            <input id="effects-screen-warping" type="checkbox" data-cvar="gl_waterwarp" />
-          </div>
-        </section>
 
-        <section class="settings-section" id="effects-gameplay-section">
-          <h2>Gameplay Effects</h2>
-          <div class="setting-row" data-control="select" data-cvar="cg_weapon_bob">
-            <label for="effects-weapon-bob">Weapon Bob</label>
-            <select id="effects-weapon-bob" data-cvar="cg_weapon_bob" data-source-menu-type="pairs">
-              <option value="0">Off</option>
-              <option value="1">Quake 3</option>
-              <option value="2">Doom 3</option>
-            </select>
+          <div class="settings-column" id="effects-gameplay-column">
+            <section class="settings-section" id="effects-gameplay-section">
+              <h2>Gameplay Effects</h2>
+              <div class="setting-row" data-control="select" data-cvar="cg_weapon_bob">
+                <span class="setting-widget-icon" data-widget="select"><img src="../common/icons/widgets/select.svg" /></span>
+                <label for="effects-weapon-bob">Weapon Bob</label>
+                <select id="effects-weapon-bob" data-cvar="cg_weapon_bob" data-source-menu-type="pairs">
+                  <option value="0">Off</option>
+                  <option value="1">Quake 3</option>
+                  <option value="2">Doom 3</option>
+                </select>
+              </div>
+              <div class="setting-row" data-control="toggle" data-cvar="cl_disable_explosions" data-bit="0" data-negate="true">
+                <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
+                <label for="effects-grenade-explosions">Grenade Explosions</label>
+                <input id="effects-grenade-explosions" type="checkbox" data-cvar="cl_disable_explosions" data-bit="0" data-negate="true" />
+              </div>
+              <div class="setting-row" data-control="toggle" data-cvar="cl_disable_explosions" data-bit="1" data-negate="true">
+                <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
+                <label for="effects-rocket-explosions">Rocket Explosions</label>
+                <input id="effects-rocket-explosions" type="checkbox" data-cvar="cl_disable_explosions" data-bit="1" data-negate="true" />
+              </div>
+              <div class="setting-row" data-control="action">
+                <span class="setting-widget-icon" data-widget="action"><img src="../common/icons/widgets/action.svg" /></span>
+                <label for="effects-railtrail">Railgun Trail</label>
+                <button id="effects-railtrail" type="button" data-component="common.components.command_button" data-command="pushmenu railtrail" data-route-target="railtrail" data-menu-sound="open">Open</button>
+              </div>
+            </section>
           </div>
-          <div class="setting-row" data-control="toggle" data-cvar="cl_disable_explosions" data-bit="0" data-negate="true">
-            <label for="effects-grenade-explosions">Grenade Explosions</label>
-            <input id="effects-grenade-explosions" type="checkbox" data-cvar="cl_disable_explosions" data-bit="0" data-negate="true" />
-          </div>
-          <div class="setting-row" data-control="toggle" data-cvar="cl_disable_explosions" data-bit="1" data-negate="true">
-            <label for="effects-rocket-explosions">Rocket Explosions</label>
-            <input id="effects-rocket-explosions" type="checkbox" data-cvar="cl_disable_explosions" data-bit="1" data-negate="true" />
-          </div>
-          <button id="effects-railtrail" type="button" data-component="common.components.command_button" data-command="pushmenu railtrail" data-route-target="railtrail">Railgun Trail Setup...</button>
-        </section>
+        </div>
       </main>
 
       <footer class="menu-footer" id="effects-menu-footer">
-        <button id="effects-back" type="button" data-command="ui.back">Back</button>
-        <button id="effects-close" type="button" data-command="ui.close">Close</button>
+        <button id="effects-back" type="button" data-command="ui.back" data-menu-sound="cancel">Back</button>
+        <button id="effects-close" type="button" data-command="ui.close" data-menu-sound="cancel">Close</button>
       </footer>
     </div>
   </body>

@@ -4,7 +4,7 @@
     <link type="text/rcss" href="../common/theme/base.rcss" />
     <link type="text/rcss" href="../common/theme/settings.rcss" />
   </head>
-  <body id="settings-performance" data-route-id="performance" data-route-group="settings" data-route-version="1" data-document-status="scaffolded-round2">
+  <body id="settings-performance" data-route-id="performance" data-route-group="settings" data-route-version="1" data-document-status="scaffolded-round2" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen settings-screen" id="performance-screen">
       <header class="menu-header">
         <h1>Performance</h1>
@@ -14,6 +14,7 @@
         <section class="settings-section" id="performance-framecap-section">
           <h2>Frame Caps</h2>
           <div class="setting-row" data-control="combo" data-cvar="cl_maxfps">
+            <span class="setting-widget-icon" data-widget="combo"><img src="../common/icons/widgets/combo.svg" /></span>
             <label for="performance-client-fps">Client FPS Cap</label>
             <select id="performance-client-fps" data-cvar="cl_maxfps" data-numeric="true" data-integer="true">
               <option value="0">0</option>
@@ -28,6 +29,7 @@
             <span class="setting-value">0 - uncapped</span>
           </div>
           <div class="setting-row" data-control="combo" data-cvar="r_maxfps">
+            <span class="setting-widget-icon" data-widget="combo"><img src="../common/icons/widgets/combo.svg" /></span>
             <label for="performance-renderer-fps">Renderer FPS Cap</label>
             <select id="performance-renderer-fps" data-cvar="r_maxfps" data-numeric="true" data-integer="true">
               <option value="0">0</option>
@@ -46,18 +48,22 @@
         <section class="settings-section" id="performance-client-section">
           <h2>Client Behavior</h2>
           <div class="setting-row" data-control="toggle" data-cvar="cl_predict">
+            <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
             <label for="performance-client-prediction">Client Prediction</label>
             <input id="performance-client-prediction" type="checkbox" data-cvar="cl_predict" />
           </div>
           <div class="setting-row" data-control="toggle" data-cvar="cl_footsteps">
+            <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
             <label for="performance-footsteps">Footsteps</label>
             <input id="performance-footsteps" type="checkbox" data-cvar="cl_footsteps" />
           </div>
           <div class="setting-row" data-control="toggle" data-cvar="cl_warn_on_fps_rounding">
+            <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
             <label for="performance-fps-warning">Warn On FPS Rounding</label>
             <input id="performance-fps-warning" type="checkbox" data-cvar="cl_warn_on_fps_rounding" />
           </div>
           <div class="setting-row" data-control="toggle" data-cvar="cl_async">
+            <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
             <label for="performance-async">Async Frame Processing</label>
             <input id="performance-async" type="checkbox" data-cvar="cl_async" />
           </div>
@@ -65,8 +71,8 @@
       </main>
 
       <footer class="menu-footer" id="performance-menu-footer">
-        <button id="performance-back" type="button" data-command="ui.back">Back</button>
-        <button id="performance-close" type="button" data-command="ui.close">Close</button>
+        <button id="performance-back" type="button" data-command="ui.back" data-menu-sound="cancel">Back</button>
+        <button id="performance-close" type="button" data-command="ui.close" data-menu-sound="cancel">Close</button>
       </footer>
     </div>
   </body>

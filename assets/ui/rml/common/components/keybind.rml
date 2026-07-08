@@ -9,7 +9,7 @@
     <div class="worr-keybind-list" data-model="{{model}}" data-contract-id="{{id}}">
       <div class="worr-keybind-toolbar">
         <div class="worr-keybind-title">{{title}}</div>
-        <button class="worr-keybind-toolbar-action" type="button" data-command="{{reset_command}}" data-event-click="command.dispatch">
+        <button class="worr-keybind-toolbar-action" type="button" data-command="{{reset_command}}" data-event-click="command.dispatch" data-menu-sound="cancel">
           {{reset_label}}
         </button>
       </div>
@@ -29,13 +29,13 @@
             </div>
 
             <div class="worr-keybind-slots">
-              <button class="worr-keybind-slot" type="button" data-bind-id="{{binding.id}}" data-slot="primary" data-key="{{binding.primary.key}}" data-event-click="keybind.capture_begin">
+              <button class="worr-keybind-slot" type="button" data-bind-id="{{binding.id}}" data-slot="primary" data-key="{{binding.primary.key}}" data-event-click="keybind.capture_begin" data-menu-sound="change">
                 {{binding.primary.display}}
               </button>
-              <button class="worr-keybind-slot" type="button" data-bind-id="{{binding.id}}" data-slot="alternate" data-key="{{binding.alternate.key}}" data-event-click="keybind.capture_begin">
+              <button class="worr-keybind-slot" type="button" data-bind-id="{{binding.id}}" data-slot="alternate" data-key="{{binding.alternate.key}}" data-event-click="keybind.capture_begin" data-menu-sound="change">
                 {{binding.alternate.display}}
               </button>
-              <button class="worr-keybind-clear" type="button" data-bind-id="{{binding.id}}" data-event-click="keybind.clear_binding">
+              <button class="worr-keybind-clear" type="button" data-bind-id="{{binding.id}}" data-event-click="keybind.clear_binding" data-menu-sound="cancel">
                 {{clear_label}}
               </button>
             </div>
@@ -46,10 +46,10 @@
       <div class="worr-keybind-conflict" data-if="{{conflict.active}}" data-conflict-bind-id="{{conflict.bind_id}}">
         <div class="worr-keybind-conflict-title">{{conflict.title}}</div>
         <div class="worr-keybind-conflict-detail">{{conflict.detail}}</div>
-        <button class="worr-keybind-conflict-action" type="button" data-event-click="keybind.accept_conflict">
+        <button class="worr-keybind-conflict-action" type="button" data-event-click="keybind.accept_conflict" data-menu-sound="confirm">
           {{conflict.accept_label}}
         </button>
-        <button class="worr-keybind-conflict-action" type="button" data-event-click="keybind.cancel_capture">
+        <button class="worr-keybind-conflict-action" type="button" data-event-click="keybind.cancel_capture" data-menu-sound="cancel">
           {{conflict.cancel_label}}
         </button>
       </div>
@@ -64,13 +64,13 @@
       </div>
 
       <div class="worr-keybind-slots">
-        <button class="worr-keybind-slot" type="button" data-bind-id="{{id}}" data-slot="primary" data-key="{{primary.key}}" data-event-click="keybind.capture_begin">
+        <button class="worr-keybind-slot" type="button" data-bind-id="{{id}}" data-slot="primary" data-key="{{primary.key}}" data-event-click="keybind.capture_begin" data-menu-sound="change">
           {{primary.display}}
         </button>
-        <button class="worr-keybind-slot" type="button" data-bind-id="{{id}}" data-slot="alternate" data-key="{{alternate.key}}" data-event-click="keybind.capture_begin">
+        <button class="worr-keybind-slot" type="button" data-bind-id="{{id}}" data-slot="alternate" data-key="{{alternate.key}}" data-event-click="keybind.capture_begin" data-menu-sound="change">
           {{alternate.display}}
         </button>
-        <button class="worr-keybind-clear" type="button" data-bind-id="{{id}}" data-event-click="keybind.clear_binding">
+        <button class="worr-keybind-clear" type="button" data-bind-id="{{id}}" data-event-click="keybind.clear_binding" data-menu-sound="cancel">
           {{clear_label}}
         </button>
       </div>

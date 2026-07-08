@@ -5,27 +5,27 @@
     <link type="text/rcss" href="../common/theme/session.rcss" />
     <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
-  <body id="session-callvote-map-flags" data-route-id="callvote_map_flags" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-owner="agent5" data-session-owner="sgame">
+  <body id="session-callvote-map-flags" data-route-id="callvote_map_flags" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-owner="agent5" data-session-owner="sgame" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen compact-screen session-screen" id="callvote-map-flags-screen">
       <header class="page-header">
         <h1>Map Flags</h1>
       </header>
 
       <section class="content session-command-list" id="callvote-map-flags-content" data-model="session.callvote.map_flags" data-owner-boundary="sgame-published-cvars">
-        <button id="callvote-map-flag-pu" type="button" data-label-cvar="ui_callvote_flag_pu" data-command="worr_callvote_map_flag pu">Powerups</button>
-        <button id="callvote-map-flag-pa" type="button" data-label-cvar="ui_callvote_flag_pa" data-command="worr_callvote_map_flag pa">Power Armor</button>
-        <button id="callvote-map-flag-ar" type="button" data-label-cvar="ui_callvote_flag_ar" data-command="worr_callvote_map_flag ar">Armor</button>
-        <button id="callvote-map-flag-am" type="button" data-label-cvar="ui_callvote_flag_am" data-command="worr_callvote_map_flag am">Ammo</button>
-        <button id="callvote-map-flag-ht" type="button" data-label-cvar="ui_callvote_flag_ht" data-command="worr_callvote_map_flag ht">Health</button>
-        <button id="callvote-map-flag-bfg" type="button" data-label-cvar="ui_callvote_flag_bfg" data-command="worr_callvote_map_flag bfg">BFG10K</button>
-        <button id="callvote-map-flag-pb" type="button" data-label-cvar="ui_callvote_flag_pb" data-command="worr_callvote_map_flag pb">Plasma Beam</button>
-        <button id="callvote-map-flag-fd" type="button" data-label-cvar="ui_callvote_flag_fd" data-command="worr_callvote_map_flag fd">Falling Damage</button>
-        <button id="callvote-map-flag-sd" type="button" data-label-cvar="ui_callvote_flag_sd" data-command="worr_callvote_map_flag sd">Self Damage</button>
-        <button id="callvote-map-flag-ws" type="button" data-label-cvar="ui_callvote_flag_ws" data-command="worr_callvote_map_flag ws">Weapons Stay</button>
+        <button id="callvote-map-flag-pu" type="button" data-label-cvar="ui_callvote_flag_pu" data-command="worr_callvote_map_flag pu" data-menu-sound="change">Powerups</button>
+        <button id="callvote-map-flag-pa" type="button" data-label-cvar="ui_callvote_flag_pa" data-command="worr_callvote_map_flag pa" data-menu-sound="change">Power Armor</button>
+        <button id="callvote-map-flag-ar" type="button" data-label-cvar="ui_callvote_flag_ar" data-command="worr_callvote_map_flag ar" data-menu-sound="change">Armor</button>
+        <button id="callvote-map-flag-am" type="button" data-label-cvar="ui_callvote_flag_am" data-command="worr_callvote_map_flag am" data-menu-sound="change">Ammo</button>
+        <button id="callvote-map-flag-ht" type="button" data-label-cvar="ui_callvote_flag_ht" data-command="worr_callvote_map_flag ht" data-menu-sound="change">Health</button>
+        <button id="callvote-map-flag-bfg" type="button" data-label-cvar="ui_callvote_flag_bfg" data-command="worr_callvote_map_flag bfg" data-menu-sound="change">BFG10K</button>
+        <button id="callvote-map-flag-pb" type="button" data-label-cvar="ui_callvote_flag_pb" data-command="worr_callvote_map_flag pb" data-menu-sound="change">Plasma Beam</button>
+        <button id="callvote-map-flag-fd" type="button" data-label-cvar="ui_callvote_flag_fd" data-command="worr_callvote_map_flag fd" data-menu-sound="change">Falling Damage</button>
+        <button id="callvote-map-flag-sd" type="button" data-label-cvar="ui_callvote_flag_sd" data-command="worr_callvote_map_flag sd" data-menu-sound="change">Self Damage</button>
+        <button id="callvote-map-flag-ws" type="button" data-label-cvar="ui_callvote_flag_ws" data-command="worr_callvote_map_flag ws" data-menu-sound="change">Weapons Stay</button>
       </section>
 
       <footer class="actions" id="callvote-map-flags-actions">
-        <button id="callvote-map-flags-back" type="button" data-command="popmenu">Back</button>
+        <button id="callvote-map-flags-back" type="button" data-command="popmenu" data-menu-sound="cancel">Back</button>
       </footer>
     </div>
   </body>

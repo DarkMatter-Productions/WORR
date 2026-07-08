@@ -5,7 +5,7 @@
     <link type="text/rcss" href="../common/theme/session.rcss" />
     <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
-  <body id="session-callvote-unlagged" data-route-id="callvote_unlagged" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-owner="agent5" data-session-owner="sgame">
+  <body id="session-callvote-unlagged" data-route-id="callvote_unlagged" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-owner="agent5" data-session-owner="sgame" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen compact-screen session-screen" id="callvote-unlagged-screen">
       <header class="page-header">
         <h1>Callvote: Unlagged</h1>
@@ -13,12 +13,12 @@
       </header>
 
       <nav class="menu-list" id="callvote-unlagged-menu" data-model="session.callvote.unlagged" data-owner-boundary="sgame-published-cvars">
-        <button id="callvote-unlagged-enable" type="button" data-command="worr_callvote_unlagged 1">Enable</button>
-        <button id="callvote-unlagged-disable" type="button" data-command="worr_callvote_unlagged 0">Disable</button>
+        <button id="callvote-unlagged-enable" type="button" data-command="worr_callvote_unlagged 1" data-menu-sound="confirm">Enable</button>
+        <button id="callvote-unlagged-disable" type="button" data-command="worr_callvote_unlagged 0" data-menu-sound="confirm">Disable</button>
       </nav>
 
       <footer class="actions" id="callvote-unlagged-actions">
-        <button id="callvote-unlagged-return" type="button" data-command="popmenu">Return</button>
+        <button id="callvote-unlagged-return" type="button" data-command="popmenu" data-menu-sound="cancel">Return</button>
       </footer>
     </div>
   </body>

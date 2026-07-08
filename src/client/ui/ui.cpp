@@ -642,6 +642,17 @@ static void UI_PushMenu_f(void)
         return;
     }
     s = Cmd_Argv(1);
+
+    if (UI_Rml_IsEnabled() && UI_Rml_DocumentForRoute(s)) {
+        if (UI_Rml_RouteIsPopup(s)) {
+            if (UI_Rml_OpenPopupRoute(s)) {
+                return;
+            }
+        } else if (UI_Rml_OpenRoute(s)) {
+            return;
+        }
+    }
+
     menu = UI_FindMenu(s);
     if (menu) {
         UI_PushMenu(menu);

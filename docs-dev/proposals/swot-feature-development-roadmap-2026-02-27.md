@@ -2160,12 +2160,116 @@ Tasks:
   localization/text shaping parity, and native Vulkan/RTX-vkpt RmlUi rendering
   remain pending. Implementation log:
   `docs-dev/rmlui-round55-popup-audio-menu-refinement-2026-07-07.md`.
+  Round 56 note: the staged OpenGL RmlUi path now consumes
+  `data-menu-music="menu"` through the existing OGG playback path, adds music
+  intent to high-level hub routes, routes Game menu Quit through the same
+  `quit_confirm` popup path as Main Quit, and keeps the final staged all-route
+  sweep at `58` unique routes with Quake II Rerelease font-source evidence and
+  no failure/parser/transition/error hits. Live data-model/controller
+  behavior, localization/text shaping parity, and native Vulkan/RTX-vkpt
+  RmlUi rendering remain pending. Implementation log:
+  `docs-dev/rmlui-round56-menu-music-popup-parity-2026-07-07.md`.
+  Round 57 note: the staged OpenGL RmlUi path now consumes
+  `data-menu-sound-open`, attaches target-level focus/change audio listeners
+  to interactive controls, keeps high-level hub routes on explicit open-sound
+  and menu-music metadata, and keeps the final staged all-route sweep at `58`
+  unique routes with `14` open-sound cue markers, Quake II Rerelease
+  font-source evidence, and no failure/parser/transition/error hits. Live
+  data-model/controller behavior, localization/text shaping parity, and native
+  Vulkan/RTX-vkpt RmlUi rendering remain pending. Implementation log:
+  `docs-dev/rmlui-round57-open-focus-audio-refinement-2026-07-07.md`.
+  Round 58 note: client-side and cgame-side `pushmenu` producers now prefer
+  registered RmlUi route IDs when `ui_rml_enable` is active, confirmation route
+  IDs use the RmlUi popup route command, and the cgame UI import/export
+  contract now exposes deterministic command insertion through
+  `CGameUI_Import_v5` / `CGameUI_Export_v5`. Staged OpenGL probes prove
+  `pushmenu options` opens the RmlUi Options route, while Quit, Forfeit, Leave
+  Match, and Tournament Replay confirmations open through the popup path with
+  alert sounds and menu music cues. Live data-model/controller behavior,
+  localization/text shaping parity, and native Vulkan/RTX-vkpt RmlUi rendering
+  remain pending. Implementation log:
+  `docs-dev/rmlui-round58-pushmenu-popup-bridge-2026-07-07.md`.
+  Round 59 note: the staged OpenGL RmlUi path now refines the Multiplayer hub
+  against the original pre-RmlUi menu. The page uses shell-grid styling,
+  removes the dead `multiplayer.connect_address` command, restores q2servers,
+  address-book, demos, Start Server setup defaults, Player Setup, and Options
+  as real legacy command strings, and validates `pushmenu multiplayer` with
+  TTF font-source, open-sound, menu-music, active runtime status, and `960x720`
+  visual evidence. Live data-model/controller behavior, localization/text
+  shaping parity, and native Vulkan/RTX-vkpt RmlUi rendering remain pending.
+  Implementation log:
+  `docs-dev/rmlui-round59-multiplayer-hub-parity-refinement-2026-07-07.md`.
+  Round 60 note: the staged OpenGL RmlUi path now refines Video Setup against
+  the original pre-RmlUi settings menu. The page restores three-state
+  borderless mode, Multi-Monitor, anti-aliasing, hardware gamma, anisotropic
+  filtering, texture saturation/intensity, lightmap saturation/brightness, and
+  renderer backend controls with typed widgets in a compact three-column
+  layout, and validates `pushmenu video` with TTF font-source, open-sound,
+  menu-music, active runtime status, and `960x720` visual evidence. Live
+  settings persistence/navigation parity, localization/text shaping parity,
+  and native Vulkan/RTX-vkpt RmlUi rendering remain pending. Implementation
+  log:
+  `docs-dev/rmlui-round60-video-settings-parity-refinement-2026-07-07.md`.
+  Round 61 note: the settings family now consistently requests menu music and
+  open-sound cues on route open, while Screen Setup and Effects Setup use typed
+  action rows for their nested Crosshair/Railgun Trail navigation and compact
+  two-column layouts that keep all rows above Back/Close at `960x720`. Live
+  settings persistence/navigation parity, localization/text shaping parity,
+  and native Vulkan/RTX-vkpt RmlUi rendering remain pending. Implementation
+  log:
+  `docs-dev/rmlui-round61-settings-audio-action-row-refinement-2026-07-07.md`.
+  Round 62 note: the single-player/local-session pages now request the same
+  menu music and open-sound cues as the refined shell/settings pages. Skill
+  Select difficulty choices and Start Server's Begin Game action carry
+  explicit confirm cues, while Start Server uses a three-column static fallback
+  layout that keeps Server, Match Setup, Rules, and footer controls visible at
+  `960x720`. Live condition evaluation, settings persistence/navigation
+  parity, localization/text shaping parity, and native Vulkan/RTX-vkpt RmlUi
+  rendering remain pending. Implementation log:
+  `docs-dev/rmlui-round62-singleplayer-audio-startserver-refinement-2026-07-07.md`.
+  Round 63 note: the staged OpenGL RmlUi path now normalizes the full utility
+  route family. Address Book, Demos, Key Bindings, Legacy Keys, Player Setup,
+  Servers, Session List, and Weapon Bindings all carry menu-music/open-sound
+  metadata, intent-specific action sounds, and `pushmenu` runtime evidence
+  with Quake II Rerelease TTF markers at `960x720`. Address Book, Key
+  Bindings, and Weapon Bindings now have bounded grid layouts that keep their
+  static fallback content above footer actions. Live utility controllers,
+  key-capture behavior, localization/text shaping parity, and native
+  Vulkan/RTX-vkpt RmlUi rendering remain pending. Implementation log:
+  `docs-dev/rmlui-round63-utility-audio-layout-refinement-2026-07-07.md`.
+  Round 64 note: the staged OpenGL RmlUi path now normalizes the
+  session/match route family. Non-popup session pages carry menu-music and
+  open-sound metadata, confirmation pages keep popup/alert treatment, session
+  controls carry intent-specific sounds, the Vote menu uses live `ui_vote_*`
+  cvars plus `worr_vote_*` commands, and representative lobby/callvote/admin/
+  stats/map-choice surfaces have bounded `960x720` evidence. Live
+  session/list controllers, full navigation parity, and native Vulkan/RTX-vkpt
+  RmlUi rendering remain pending. Implementation log:
+  `docs-dev/rmlui-round64-session-audio-layout-refinement-2026-07-07.md`.
+  Round 65 note: shell hub routes now use grouped RmlUi sections for Options,
+  Game, and Multiplayer, authored route buttons across shell/settings/
+  single-player/session/utility carry explicit action sounds, and final
+  `960x720` captures prove Main, Options, Game, Multiplayer, and Single
+  Player stay contained with Quake II Rerelease TTF markers. Live controllers,
+  full navigation parity, and native Vulkan/RTX-vkpt RmlUi rendering remain
+  pending. Implementation log:
+  `docs-dev/rmlui-round65-shell-hub-audio-refinement-2026-07-07.md`.
+  Round 66 note: shared popup styling now gives Quit/Forfeit/Leave/Replay
+  confirmations compact modal framing with side-by-side actions, fixed-width
+  menu panels use looser minimums and contained overflow, and reusable RmlUi
+  component templates declare action/change sounds for future live
+  controllers. Runtime captures cover Quit popup, Options, Video, Key
+  Bindings, and DM Join with Quake II Rerelease TTF markers. True
+  narrow-viewport runtime parity remains pending because the staged Windows
+  launch path still reported a `960x720` RmlUi canvas when smaller geometry
+  was requested. Implementation log:
+  `docs-dev/rmlui-round66-menu-containment-popup-refinement-2026-07-07.md`.
 - [ ] `FR-09-T04` Integrate fonts, localization, theme assets, cursor/audio
   affordances, and accessibility policy into the RmlUi stack.
   Dependency: `FR-09-T03`. Priority: P1.
   Progress: source theme contracts now include base, utility, session, and
-  accessibility styles plus font/theme staging notes. Live runtime font,
-  cursor, audio, and input services remain pending.
+  accessibility styles plus font/theme staging notes. Final localization,
+  accessibility, text-shaping, and broader input-service parity remain pending.
   Round 25 note: the first runtime-visible glyph geometry exists for the
   guarded smoke route through a temporary ASCII bitmap font engine. Final font
   source, fallback policy, localization text flow, shaping, scaling, and
@@ -2254,6 +2358,53 @@ Tasks:
   numeric field under the same Quake II Rerelease TTF font source markers.
   Localization flow, text shaping policy, live accessibility services, and a
   user-facing reduced-motion preference remain pending.
+  Round 56 note: RmlUi menu music metadata now triggers `OGG_Play()` after a
+  document successfully opens, leaving the existing OGG layer responsible for
+  menu-track versus connected-map track selection. Localization flow, text
+  shaping policy, live accessibility services, and a user-facing reduced-motion
+  preference remain pending.
+  Round 57 note: RmlUi open-sound metadata now drives legacy menu feedback
+  through the engine UI bridge, and RmlUi focus/change events on command/form
+  controls use the legacy move cue with per-element override hooks. Localization
+  flow, text shaping policy, live accessibility services, and a user-facing
+  reduced-motion preference remain pending.
+  Round 60 note: Video Setup now keeps menu-music and open-sound metadata while
+  using a compact settings layout under the Quake II Rerelease TTF font-source
+  markers. Localization flow, text shaping policy, live accessibility
+  services, and a user-facing reduced-motion preference remain pending.
+  Round 61 note: every settings route now carries the same menu-music and
+  open-sound metadata, and the focused Screen/Effects runtime proof records
+  consumed cues plus Quake II Rerelease TTF font-source markers. Localization
+  flow, text shaping policy, live accessibility services, and a user-facing
+  reduced-motion preference remain pending.
+  Round 62 note: single-player/local-session routes now carry menu-music and
+  open-sound metadata too, and focused Skill Select/Start Server runtime
+  evidence records consumed cues plus Quake II Rerelease TTF font-source
+  markers. Localization flow, text shaping policy, live accessibility
+  services, and a user-facing reduced-motion preference remain pending.
+  Round 63 note: utility routes now carry menu-music and open-sound metadata
+  too, and focused Address Book/Demos/Keys/Legacy Keys/Players/Servers/
+  Session List/Weapons runtime evidence records consumed cues plus Quake II
+  Rerelease TTF font-source markers. Localization flow, text shaping policy,
+  live accessibility services, and a user-facing reduced-motion preference
+  remain pending.
+  Round 64 note: session routes now carry menu-music/open-sound metadata too,
+  confirmation routes retain alert popup treatment, and focused session
+  runtime evidence records consumed cues plus Quake II Rerelease TTF
+  font-source markers. Localization flow, text shaping policy, live
+  accessibility services, and a user-facing reduced-motion preference remain
+  pending.
+  Round 65 note: authored shell/settings/single-player/save-load/
+  download-status controls now finish the explicit action-audio sweep, and
+  Single Player/Start Server typed widgets declare change-sound hints while
+  continuing to load Quake II Rerelease TTF faces in staged OpenGL logs.
+  Localization flow, text shaping policy, live accessibility services, and a
+  user-facing reduced-motion preference remain pending.
+  Round 66 note: the shared popup/dialog theme now carries stronger
+  confirmation affordances, fixed menu containers use contained overflow
+  instead of clipping, and reusable component templates now publish explicit
+  audio intent. Localization flow, text shaping policy, live accessibility
+  services, and a user-facing reduced-motion preference remain pending.
 - [ ] `FR-09-T05` Implement reusable data-model and controller bridges for
   cvars, commands, conditions, dynamic labels, and shared list/table flows.
   Dependency: `FR-09-T03`. Priority: P0.
@@ -2368,6 +2519,24 @@ Tasks:
   `964x765`, `1280x720`, `1280x960`, and `2048x1152` showing intact main-menu
   button right edges. Live settings persistence, navigation parity, and
   controller behavior remain pending.
+  Round 60 note: the Video Setup page now restores the original pre-RmlUi
+  display, texture, gamma/light, and renderer controls in RmlUi, using selects
+  for enumerations, toggles for booleans, ranges for scalar cvars, and a real
+  `pushmenu multimonitor` action. The compact three-column layout has focused
+  `960x720` screenshot evidence with all restored controls above Back/Close.
+  Live settings persistence, navigation parity, and controller behavior remain
+  pending.
+  Round 61 note: Screen Setup and Effects Setup now use compact two-column
+  RmlUi settings layouts, and their nested Crosshair/Railgun Trail navigation
+  is represented as typed `action` rows instead of loose buttons. Focused
+  `960x720` screenshots confirm all rows remain visible above Back/Close.
+  Live settings persistence, navigation parity, and controller behavior remain
+  pending.
+  Round 62 note: Start Server now uses a compact three-column RmlUi layout
+  that preserves the legacy Server, Match Setup, cooperative rule fields, and
+  Deathmatch Flags/Begin Game actions while keeping the static fallback view
+  visible above Back/Close at `960x720`. Live condition evaluation, settings
+  persistence, navigation parity, and controller behavior remain pending.
 - [ ] `FR-09-T07` Translate browser, player-config, save/load, keybind, and
   other rich utility surfaces that need shared controllers or preview support.
   Dependency: `FR-09-T05`. Priority: P0.
@@ -2416,6 +2585,24 @@ Tasks:
   of the RmlUi shell, with focused screenshot evidence covering `keys`,
   `players`, `servers`, and `ui_list`. Live keybind capture, list providers,
   focus behavior, and utility parity remain pending.
+  Round 63 note: all eight utility routes now open through the RmlUi
+  `pushmenu` bridge with menu music/open-sound metadata and intent-specific
+  action sounds. Address Book uses typed fields for all sixteen legacy
+  address slots in a four-column grid, Key Bindings uses a three-column
+  capture grid with a unique Backpedal id, and Weapon Bindings uses a
+  two-column arsenal layout. Live keybind capture, list providers, player
+  preview behavior, and utility parity remain pending.
+  Round 65 note: the Save/Load route buttons now carry explicit confirm
+  sounds, shell hub buttons that enter player, keybind, weapon, server, demo,
+  and address-book routes declare open sounds, and the grouped Options/Game/
+  Multiplayer hub captures keep utility/browser entry points clear of footer
+  actions. Live keybind capture, list providers, player preview behavior, and
+  utility parity remain pending.
+  Round 66 note: reusable command, cvar-control, save/load, image-grid,
+  list-table, preview, and keybind templates now declare explicit
+  `data-menu-sound` or `data-menu-sound-change` intent, and Key Bindings
+  containment has fresh staged OpenGL evidence. Live keybind capture, list
+  providers, player preview behavior, and utility parity remain pending.
 - [ ] `FR-09-T08` Translate multiplayer/session/match menus and their
   cgame/sgame-driven state flows into RmlUi documents.
   Dependency: `FR-09-T05`. Priority: P0.
@@ -2466,6 +2653,55 @@ Tasks:
   admin rows now have matching subtle hover/transition feedback, with focused
   screenshot evidence covering `callvote_main`, `dm_join`, and
   `admin_commands`. Live session controllers, real match-state updates,
+  focus/scroll behavior, and parity remain pending.
+  Round 59 note: the Multiplayer hub now mirrors the original q2servers,
+  address-book, demos, start-server, player-setup, and options command intent
+  in the RmlUi shell grid, removes the stale custom connect command, and has
+  staged `pushmenu multiplayer` plus `960x720` visual evidence. Live session
+  controllers, real match-state updates, focus/scroll behavior, and parity
+  remain pending.
+  Round 64 note: the session/match routes now preserve more of the original
+  pre-RmlUi command flow in RmlUi: Call Vote, MyMap, Host Info, Match Info,
+  Admin, Forfeit, and Replay picker buttons run their original `worr_*`
+  commands before the pushmenu bridge opens RmlUi routes, and the Vote menu
+  uses live `ui_vote_*` cvars plus `worr_vote_yes/no/close`. Lobby, callvote,
+  Admin Commands, Match Stats, Tournament Map Choices, flags, and popup
+  confirmations have staged `960x720` visual evidence. Live session
+  controllers, real match-state updates, focus/scroll behavior, and parity
+  remain pending.
+  Round 65 note: the Multiplayer and Game shell entry points now present
+  grouped Find/Host/Profile and Session/Browse/Save-And-Exit sections while
+  preserving the original q2servers, address-book, demos, start-server,
+  player-setup, options, save/load, disconnect, and quit command intent.
+  Final `960x720` captures show the groups contained after right-column
+  clipping was corrected. Live session controllers, real match-state updates,
+  focus/scroll behavior, and parity remain pending.
+  Round 66 note: session/lobby fixed panels now use contained scroll overflow,
+  and the DM Join route has fresh staged OpenGL containment evidence while
+  preserving the original session command labels and popup confirmation route
+  for Leave Match. Live session controllers, real match-state updates,
+  focus/scroll behavior, and parity remain pending.
+  Round 73 note: direct `join` and `dm_join` route probes now preserve authored
+  fallback lobby titles and action labels when session cvars exist but are
+  empty, and the lobby command surface uses a bounded two-column command grid
+  with footer controls visible at `960x720`. `callvote_main` keeps the same
+  two-column command intent with looser row pitch, `admin_commands` uses a
+  readable command/usage row format, and `admin_menu` keeps Replay Game on the
+  popup-confirmation route. Live session controllers, real match-state
+  updates, focus/scroll behavior, and parity remain pending.
+  Round 74 note: direct `map_selector`, `tourney_veto`, and generic
+  `ui_list` route probes now keep authored fallback options/panels visible
+  unless live cvars explicitly hide them, while `servers` and `demos` use
+  corrected full-width table layout for empty states. Expected missing
+  data-model log notices are suppressed by default behind
+  `ui_rml_log_missing_data_models`, but live session/list controllers, real
+  match-state updates, focus/scroll behavior, and parity remain pending.
+  Round 75 note: direct `match_stats` and `tourney_mapchoices` probes now show
+  report/list-shaped fallback content when their live line-zero cvars are
+  absent or falsey, while preserving the existing `ui_matchstats_line_*` and
+  `ui_tourney_mapchoice_line_*` live cvar contracts. `download_status` now has
+  a contained idle state and explicit percent meter unit. Live
+  session/tournament/download controllers, real match-state updates,
   focus/scroll behavior, and parity remain pending.
 - [ ] `FR-09-T09` Add migration-specific validation for navigation, scaling,
   localization, and renderer parity.
@@ -2803,6 +3039,184 @@ Tasks:
   runtime status samples, and `0` failure/parser/transition/unsupported/error
   hits with Quake II Rerelease font-source markers. This proves the selected
   popup/audio/menu-layout refinement, not live controller parity, broad input
+  parity, true narrow-viewport capture parity, full screenshot layout parity,
+  or native Vulkan/RTX renderer parity.
+  Round 56 note: focused `960x720` captures now cover Game, Main, Quit
+  Confirm, and Sound Settings after Game Quit was moved to the popup route,
+  popup-command validation records `2` popup route markers with `0` bad lines,
+  and the final staged route sweep still records `58` unique route IDs opened,
+  `59` total document opens, `58` runtime status samples, `14` menu music cue
+  markers, and `0` failure/parser/transition/unsupported/error hits with Quake
+  II Rerelease font-source markers. This proves the selected menu-music and
+  popup-parity refinement, not live controller parity, broad input parity,
+  true narrow-viewport capture parity, full screenshot layout parity, or
+  native Vulkan/RTX renderer parity.
+  Round 57 note: focused captures now cover Main, Game, Download Status, and
+  Quit Confirm after open-sound and focus/change audio wiring, popup validation
+  records `2` `quit_confirm` popup route requests with `0` bad lines, and the
+  final staged route sweep still records `58` unique route IDs opened, `59`
+  total document opens, `58` runtime status samples, `14` menu music cue
+  markers, `14` menu open-sound cue markers, and `0`
+  failure/parser/transition/unsupported/error hits with Quake II Rerelease
+  font-source markers. This proves the selected open/focus audio refinement,
+  not live controller parity, broad input parity, true narrow-viewport capture
+  parity, full screenshot layout parity, or native Vulkan/RTX renderer parity.
+  Round 58 note: deterministic staged OpenGL probes now cover legacy
+  `pushmenu` entrypoints for Options and the four confirmation routes. Options
+  routes through `ui_rml_runtime_open`; Quit, Forfeit, Leave Match, and
+  Tournament Replay confirmations route through `ui_rml_runtime_popup`, open
+  their RmlUi documents, consume alert/open sound metadata, consume menu music
+  metadata, and report active runtime status. This proves selected
+  menu-entrypoint bridge parity, not live controller parity, broad input
+  parity, true narrow-viewport capture parity, full screenshot layout parity,
+  or native Vulkan/RTX renderer parity.
+  Round 59 note: deterministic staged OpenGL probes now cover the refined
+  Multiplayer hub from `pushmenu multiplayer`. The route opens through
+  `ui_rml_runtime_open`, reports active runtime status, consumes open-sound and
+  menu-music metadata, records Quake II Rerelease TTF markers, and has
+  `960x720` screenshot evidence for the two-column shell grid with no
+  missing-model warnings. This proves selected Multiplayer hub command/layout
+  parity, not live controller parity, broad input parity, true narrow-viewport
+  capture parity, full screenshot layout parity, or native Vulkan/RTX renderer
+  parity.
+  Round 60 note: deterministic staged OpenGL probes now cover the refined
+  Video Setup route from `pushmenu video`. The route opens through
+  `ui_rml_runtime_open`, reports active runtime status, consumes open-sound and
+  menu-music metadata, records Quake II Rerelease TTF markers, and has
+  `960x720` screenshot evidence for the three-column settings layout. This
+  proves selected Video Setup content/widget/layout parity, not live settings
+  persistence, broad input parity, true narrow-viewport capture parity, full
+  screenshot layout parity, or native Vulkan/RTX renderer parity.
+  Round 61 note: deterministic staged OpenGL probes now cover the refined
+  Screen Setup and Effects Setup routes from `pushmenu screen` and
+  `pushmenu effects`. Both routes open through `ui_rml_runtime_open`, report
+  active runtime status, consume open-sound and menu-music metadata, record
+  Quake II Rerelease TTF markers, and have `960x720` screenshot evidence for
+  their two-column settings layouts. This proves selected settings-family
+  audio/action-row/layout parity, not live settings persistence, broad input
+  parity, true narrow-viewport capture parity, full screenshot layout parity,
+  or native Vulkan/RTX renderer parity.
+  Round 62 note: deterministic staged OpenGL probes now cover the refined
+  Skill Select and Start Server routes from `pushmenu skill_select` and
+  `pushmenu startserver`. Both routes open through `ui_rml_runtime_open`,
+  report active runtime status, consume open-sound and menu-music metadata,
+  record Quake II Rerelease TTF markers, and have `960x720` screenshot
+  evidence. This proves selected single-player/local-session audio and
+  Start Server layout parity, not live condition evaluation, broad input
+  parity, true narrow-viewport capture parity, full screenshot layout parity,
+  or native Vulkan/RTX renderer parity.
+  Round 63 note: deterministic staged OpenGL probes now cover every utility
+  route from `pushmenu addressbook`, `pushmenu demos`, `pushmenu keys`,
+  `pushmenu legacykeys`, `pushmenu players`, `pushmenu servers`,
+  `pushmenu ui_list`, and `pushmenu weapons`. Each route opens through
+  `ui_rml_runtime_open`, reports active runtime status, consumes open-sound
+  and menu-music metadata, records Quake II Rerelease TTF markers, and has
+  `960x720` screenshot evidence. This proves selected utility audio/layout
+  parity, not live list/keybind/player-preview controllers, broad input
+  parity, true narrow-viewport capture parity, full screenshot layout parity,
+  or native Vulkan/RTX renderer parity.
+  Round 64 note: deterministic staged OpenGL probes now cover representative
+  session routes from `pushmenu dm_join`, `pushmenu callvote_main`,
+  `pushmenu admin_commands`, `pushmenu match_stats`, and popup
+  `pushmenu forfeit_confirm`, plus additional session route captures for
+  join, vote, map selector, flags, random callvote ranges, and tournament map
+  choices. The final captures report active runtime status, consume
+  open/alert sound plus menu-music metadata, record Quake II Rerelease TTF
+  markers, and show bounded `960x720` layouts. This proves selected
+  session-family audio/layout/popup parity, not live session controllers,
+  broad input parity, true narrow-viewport capture parity, full screenshot
+  layout parity, or native Vulkan/RTX renderer parity.
+  Round 65 note: deterministic staged OpenGL probes now cover Main, Options,
+  Game, Multiplayer, and Single Player after the shell hub grouping and
+  action-audio sweep. The final captures report active runtime status,
+  consume open-sound plus menu-music metadata, record Quake II Rerelease TTF
+  markers, and show corrected `960x720` hub layouts. This proves selected
+  shell hub/audio/layout parity, not live controllers, broad input parity,
+  true narrow-viewport capture parity, full screenshot layout parity, or
+  native Vulkan/RTX renderer parity.
+  Round 66 note: deterministic staged OpenGL probes now cover the refined
+  Quit popup plus Options, Video, Key Bindings, and DM Join after the
+  containment/template-audio sweep. Static validation also requires every
+  RmlUi button, including shared templates, to declare sound intent. This
+  proves selected containment/popup/audio-template parity, not live
+  controllers, broad input parity, true narrow-viewport capture parity, full
+  screenshot layout parity, or native Vulkan/RTX renderer parity.
+  Round 67 note: deterministic staged OpenGL probes now cover runtime cvar
+  form binding, cvar-backed text/labels, visibility/enabled condition
+  evaluation, and typed settings widget value badges. Video, Sound, Start
+  Server, DM Join, and Quit popup evidence proves selected cvar/condition
+  widget behavior with open/alert sound, menu music, and Quake II Rerelease
+  TTF markers, not live list/session controllers, broad input parity, true
+  narrow-viewport capture parity, full screenshot layout parity, or native
+  Vulkan/RTX renderer parity.
+  Round 68 note: deterministic staged OpenGL probes now cover RmlUi-native
+  meter/value badges for range and progress-style controls, plus Crosshair's
+  two-column Crosshair/Hit Feedback containment. Video, Sound, Crosshair, and
+  Quit popup evidence proves selected meter-widget, layout, popup, menu
+  audio, and Quake II Rerelease TTF behavior, not live list/session
+  controllers, broad input parity, true SVG vector asset support, true
+  narrow-viewport capture parity, full screenshot layout parity, or native
+  Vulkan/RTX renderer parity.
+  Round 69 note: deterministic staged OpenGL probes now cover first-party SVG
+  UX icon generation and iconized high-level menu surfaces. Main, Game,
+  Options, Multiplayer, Single Player, and Quit popup evidence proves the
+  OpenGL RmlUi texture path can rasterize WORR's supported SVG subset and keep
+  command icons contained with Quake II Rerelease TTF markers, not full SVG
+  specification/plugin parity, dynamic SVG tinting, broad input parity, true
+  narrow-viewport capture parity, full screenshot layout parity, or native
+  Vulkan/RTX renderer parity.
+  Round 70 note: deterministic staged OpenGL probes now cover widget-specific
+  SVG assets and removal of the previous command-menu pictograms. Video,
+  Sound, Start Server, Player Setup, Address Book, Download Status, and Main
+  evidence proves the supported SVG subset works for compact widget markers
+  while Main command buttons are plain text again, not dynamic SVG state skins,
+  broad input parity, true narrow-viewport capture parity, full screenshot
+  layout parity, or native Vulkan/RTX renderer parity.
+  Round 71 note: deterministic staged OpenGL probes now cover stateful SVG
+  widget skins for real control surfaces. Video, Sound, Start Server,
+  Download Status, and Quit popup captures prove button, text-box, combo,
+  select, checkbox, range, progress, arrow-box, scrollbar, and popup-frame
+  skin loading, and the final all-route sweep remains clean. This proves
+  selected stateful widget-surface rendering, not route-wide automated pixel
+  assertions for every state, broad input parity, true narrow-viewport capture
+  parity, full screenshot layout parity, or native Vulkan/RTX renderer parity.
+  Round 72 note: staged OpenGL probes now cover menu coverage and containment
+  refinements across Main, Options, Video, Sound, Start Server, Player Setup,
+  Address Book, Keys, Call Vote, Admin Commands, Download Status, and Quit
+  popup. The pass removes decorative text/select skin interference, hides the
+  old widget pictograms, converts range controls away from visible stepper
+  arrows, fixes direct Call Vote and Admin Commands fallback coverage, and keeps
+  the all-route sweep clean. It still does not establish live controller parity,
+  broad input parity, true narrow-viewport capture parity, full screenshot
+  layout parity, or native Vulkan/RTX renderer parity.
+  Round 73 note: staged OpenGL probes now cover direct-route fallback text for
+  session labels/titles, two-column `callvote_main` and lobby command grids,
+  admin command-reference rows, save/load slot containment, and the Start
+  Server map fallback. The final all-route sweep opened `59` documents across
+  `58` registered route IDs, recorded `58` runtime status samples, and found
+  `0` parser/CSS/texture/runtime error lines after excluding expected missing
+  data-model notices. This proves selected menu coverage/fallback behavior, not
+  live controller parity, broad input parity, true narrow-viewport capture
+  parity, full screenshot layout parity, or native Vulkan/RTX renderer parity.
+  Round 74 note: staged OpenGL probes now cover utility table empty-state
+  layout, generic session list fallback visibility, map-selector fallback
+  visibility, and tournament-veto inactive fallback containment. The final
+  all-route sweep opened `59` documents across `58` registered route IDs,
+  recorded `58` runtime status samples, found `0` missing data-model notice
+  lines at default settings, and found `0` parser/CSS/texture/runtime error
+  lines. This proves cleaner route-sweep signal and selected fallback/layout
+  behavior, not live controller parity, broad input parity, true
+  narrow-viewport capture parity, full screenshot layout parity, or native
+  Vulkan/RTX renderer parity.
+  Round 75 note: staged OpenGL probes now cover direct fallback content for
+  `match_stats` and `tourney_mapchoices`, plus the `download_status` idle
+  state and explicit percent meter. Static condition inventory validation now
+  accepts leading `!cvar` expressions to match the compiled runtime evaluator.
+  The final all-route sweep opened `59` documents across `58` registered route
+  IDs, recorded `58` runtime status samples, found `0` missing data-model
+  notice lines at default settings, and found `0` parser/CSS/texture/runtime
+  error lines. This proves selected report/list fallback behavior and a
+  condition-grammar validation fix, not live controller parity, broad input
   parity, true narrow-viewport capture parity, full screenshot layout parity,
   or native Vulkan/RTX renderer parity.
 - [ ] `FR-09-T10` Remove legacy JSON menu loading/widgets, close migration
@@ -3830,6 +4244,179 @@ Tasks:
   Vulkan/RTX renderer parity, final route ownership, live runtime/controller
   behavior, true narrow-viewport capture parity, full screenshot layout parity,
   or end-user documentation.
+  RmlUi Round 56 note: staged OpenGL validation now adds consumed menu-music
+  cue evidence, focused Game/Main Quit popup parity evidence, and a capture
+  sheet for Game, Main, Quit Confirm, and Sound Settings; the final all-route
+  sweep remains clean. It still does not establish native Vulkan/RTX renderer
+  parity, final route ownership, live runtime/controller behavior, true
+  narrow-viewport capture parity, full screenshot layout parity, or end-user
+  documentation.
+  RmlUi Round 57 note: staged OpenGL validation now adds consumed open-sound
+  cue evidence, target-level focus/change audio wiring, focused popup audio
+  flow evidence, and visual captures for Main, Game, Download Status, and Quit
+  Confirm; the final all-route sweep remains clean. It still does not establish
+  native Vulkan/RTX renderer parity, final route ownership, live
+  runtime/controller behavior, true narrow-viewport capture parity, full
+  screenshot layout parity, or end-user documentation.
+  RmlUi Round 58 note: staged OpenGL validation now adds deterministic
+  `pushmenu` bridge evidence for one normal route and four confirmation popup
+  routes, including popup-command selection, active runtime status, menu music
+  cues, and alert/open sound cues. It still does not establish native
+  Vulkan/RTX renderer parity, final route ownership, live runtime/controller
+  behavior, true narrow-viewport capture parity, full screenshot layout
+  parity, or end-user documentation.
+  RmlUi Round 59 note: staged OpenGL validation now adds focused Multiplayer
+  hub parity evidence. The hub restores q2servers/address-book/demos/start
+  server/player/options command intent, removes the stale custom connect
+  command, validates `pushmenu multiplayer`, and carries `960x720` screenshot
+  evidence for the two-column shell grid. It still does not establish native
+  Vulkan/RTX renderer parity, final route ownership, live runtime/controller
+  behavior, true narrow-viewport capture parity, full screenshot layout
+  parity, or end-user documentation.
+  RmlUi Round 60 note: staged OpenGL validation now adds focused Video Setup
+  parity evidence. The page restores the legacy display, texture, gamma/light,
+  and renderer controls with typed widgets, validates `pushmenu video`, and
+  carries `960x720` screenshot evidence for a three-column layout contained
+  above Back/Close. It still does not establish native Vulkan/RTX renderer
+  parity, final route ownership, live runtime/controller behavior, true
+  narrow-viewport capture parity, full screenshot layout parity, or end-user
+  documentation.
+  RmlUi Round 61 note: staged OpenGL validation now adds focused settings
+  family audio/action-row evidence. Settings routes consistently carry
+  menu-music/open-sound metadata, Screen/Effects nested navigation uses typed
+  action rows, and `960x720` captures prove both two-column pages remain above
+  Back/Close. It still does not establish native Vulkan/RTX renderer parity,
+  final route ownership, live runtime/controller behavior, true narrow-viewport
+  capture parity, full screenshot layout parity, or end-user documentation.
+  RmlUi Round 62 note: staged OpenGL validation now adds focused
+  single-player/local-session audio and Start Server layout evidence. The
+  single-player route family carries menu-music/open-sound metadata, decisive
+  Skill Select/Start Server actions carry explicit sound cues, and `960x720`
+  captures prove Start Server's three-column static fallback layout remains
+  above Back/Close. It still does not establish native Vulkan/RTX renderer
+  parity, final route ownership, live runtime/controller behavior, true
+  narrow-viewport capture parity, full screenshot layout parity, or end-user
+  documentation.
+  RmlUi Round 63 note: staged OpenGL validation now adds full utility-family
+  audio/layout evidence. All eight utility routes carry menu-music/open-sound
+  metadata, intent-specific action sounds, and `pushmenu` runtime evidence,
+  while `960x720` captures prove the Address Book, Key Bindings, and Weapon
+  Bindings grids remain above footer actions. It still does not establish
+  native Vulkan/RTX renderer parity, final route ownership, live
+  runtime/controller behavior, true narrow-viewport capture parity, full
+  screenshot layout parity, or end-user documentation.
+  RmlUi Round 64 note: staged OpenGL validation now adds session-family
+  audio/layout/popup evidence. Session routes carry menu-music/open-sound
+  metadata, dynamic session buttons preserve original `worr_*` command
+  publication before RmlUi pushmenu routing, confirmation routes retain popup
+  presentation, and `960x720` captures prove the lobby, Call Vote, Admin
+  Commands, Match Stats, Tournament Map Choices, and Forfeit confirmation stay
+  contained. It still does not establish native Vulkan/RTX renderer parity,
+  final route ownership, live runtime/controller behavior, true narrow-viewport
+  capture parity, full screenshot layout parity, or end-user documentation.
+  RmlUi Round 65 note: staged OpenGL validation now adds grouped shell-hub and
+  cross-family action-audio evidence. Options, Game, and Multiplayer use
+  grouped hub sections, authored route buttons declare explicit action sounds,
+  Quit confirmations continue through popup routes, and final `960x720`
+  captures prove Main, Options, Game, Multiplayer, and Single Player stay
+  contained after right-column clipping was corrected. It still does not
+  establish native Vulkan/RTX renderer parity, final route ownership, live
+  runtime/controller behavior, true narrow-viewport capture parity, full
+  screenshot layout parity, or end-user documentation.
+  RmlUi Round 66 note: staged OpenGL validation now adds popup/containment and
+  reusable-template audio evidence. Confirmation popups share modal framing,
+  fixed menu panels prefer contained overflow over clipping, and representative
+  Options, Video, Key Bindings, DM Join, and Quit popup captures stay usable
+  at the current staged canvas. It still does not establish native Vulkan/RTX
+  renderer parity, final route ownership, live runtime/controller behavior,
+  true narrow-viewport capture parity, full screenshot layout parity, or
+  end-user documentation.
+  RmlUi Round 67 note: staged OpenGL validation now adds compiled-runtime cvar
+  binding and condition evaluation evidence. `data-cvar` form controls,
+  `data-bind-cvar`, `data-label-cvar`, `data-bind="cvars.*"`, and
+  `data-visible-if`/`data-enable-if` are exercised through Video, Sound, Start
+  Server, DM Join, and Quit popup captures; settings value badges and the DM
+  Join command grid now reflect live cvar state. It still does not establish
+  native Vulkan/RTX renderer parity, final route ownership, full live
+  data-model/controller behavior, true narrow-viewport capture parity, full
+  screenshot layout parity, or end-user documentation.
+  RmlUi Round 68 note: staged OpenGL validation now adds meter-widget and
+  Crosshair containment evidence. `data-meter-cvar` meter fills update from
+  live cvars on Video, Sound, Screen, Crosshair, Rail Trail, and Download
+  Status surfaces, while the Crosshair page keeps its original Crosshair and
+  Hit Feedback controls visible in two columns. SVG widget art is deferred
+  until the RmlUi texture path has active SVG rasterization. It still does not
+  establish native Vulkan/RTX renderer parity, final route ownership, full
+  live data-model/controller behavior, true narrow-viewport capture parity,
+  full screenshot layout parity, or end-user documentation.
+  RmlUi Round 69 note: staged OpenGL validation now adds first-party SVG UX
+  asset evidence. The OpenGL RmlUi bridge rasterizes the supported local SVG
+  subset for high-level menu icons, and Main, Game, Options, Multiplayer,
+  Single Player, and Quit popup captures show icons contained in shared
+  command-button styling. It still does not establish full SVG
+  specification/plugin parity, native Vulkan/RTX renderer parity, final route
+  ownership, full live data-model/controller behavior, true narrow-viewport
+  capture parity, full screenshot layout parity, or end-user documentation.
+  RmlUi Round 70 note: staged OpenGL validation now redirects SVG asset usage
+  from high-level command pictograms to widget markers. The old `common/icons/ux`
+  command asset set was removed, the new `common/icons/widgets` library covers
+  authored control types, and Video, Sound, Start Server, Player Setup,
+  Address Book, Download Status, and Main captures prove widget-marker loading
+  plus plain Main menu commands. It still does not establish dynamic SVG
+  state skins, full SVG specification/plugin parity, native Vulkan/RTX
+  renderer parity, final route ownership, full live data-model/controller
+  behavior, true narrow-viewport capture parity, full screenshot layout
+  parity, or end-user documentation.
+  RmlUi Round 71 note: staged OpenGL validation now adds a `55`-asset
+  stateful SVG widget-skin library for buttons, primary/destructive buttons,
+  text boxes, combo/drop-down boxes, checkboxes, range controls, progress
+  controls, scrollbars, arrow boxes, and popup frames. Focused Video, Sound,
+  Start Server, Download Status, and Quit popup captures plus the clean
+  all-route sweep prove the skins load through the current OpenGL SVG texture
+  path. It still does not establish route-wide automated pixel assertions for
+  every state, native Vulkan/RTX renderer parity, final route ownership, full
+  live data-model/controller behavior, true narrow-viewport capture parity,
+  full screenshot layout parity, or end-user documentation.
+  RmlUi Round 72 note: staged OpenGL validation now adds menu coverage-gap
+  fixes and refined widget containment. Focused captures cover shell hubs,
+  dense settings, utility pages, session fallback routes, download status, and
+  the Quit popup; the final all-route sweep again reports `58` registered route
+  IDs, `59` document opens, `58` status samples, and `0` bad parser/texture
+  lines. It still does not establish native Vulkan/RTX renderer parity, final
+  route ownership, full live data-model/controller behavior, true
+  narrow-viewport capture parity, full screenshot layout parity, or end-user
+  documentation.
+  RmlUi Round 73 note: staged OpenGL validation now adds direct fallback text
+  and command-grid evidence for the session/lobby family. `join`/`dm_join`
+  keep authored labels when empty cvars exist, `callvote_main` and DM Join
+  retain two-column command surfaces, Admin Commands has a readable command/
+  usage row format, Start Server no longer exposes `$$com_maplist` as visible
+  fallback text, and the all-route sweep again reports `58` registered route
+  IDs, `59` document opens, `58` status samples, and `0` parser/CSS/texture/
+  runtime error lines after excluding expected missing data-model notices. It
+  still does not establish native Vulkan/RTX renderer parity, final route
+  ownership, full live data-model/controller behavior, true narrow-viewport
+  capture parity, full screenshot layout parity, or end-user documentation.
+  RmlUi Round 74 note: staged OpenGL validation now adds utility table
+  empty-state fixes, direct `ui_list`/`map_selector`/`tourney_veto` fallback
+  evidence, and default suppression of expected controller-stub missing
+  data-model notices through `ui_rml_log_missing_data_models`. The all-route
+  sweep reports `58` registered route IDs, `59` document opens, `58` status
+  samples, `0` missing data-model notice lines at default settings, and `0`
+  parser/CSS/texture/runtime error lines. It still does not establish native
+  Vulkan/RTX renderer parity, final route ownership, full live
+  data-model/controller behavior, true narrow-viewport capture parity, full
+  screenshot layout parity, or end-user documentation.
+  RmlUi Round 75 note: staged OpenGL validation now adds direct report/list
+  fallback evidence for Match Stats and Tournament Map Choices, a Download
+  Status idle/progress-unit capture, and static condition-inventory support
+  for runtime-compatible `!cvar` expressions. The all-route sweep again
+  reports `58` registered route IDs, `59` document opens, `58` status samples,
+  `0` missing data-model notice lines at default settings, and `0`
+  parser/CSS/texture/runtime error lines. It still does not establish native
+  Vulkan/RTX renderer parity, final route ownership, full live
+  data-model/controller behavior, true narrow-viewport capture parity, full
+  screenshot layout parity, or end-user documentation.
 - [x] `DV-07-T05` Keep the canonical shadowmapping replacement baseline synchronized with implementation status.
   Dependency: `FR-02-T09`. Priority: P1.
 - [ ] `DV-07-T06` Maintain imported-source credits and provenance ledgers for the Q3A BotLib and `TTimo/bspc` AAS work.

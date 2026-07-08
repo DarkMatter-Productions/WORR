@@ -3,7 +3,7 @@
   <template name="worr-data-table">
     <div class="worr-table" data-model="{{model}}" data-contract-id="{{id}}">
       <div class="worr-table-toolbar">
-        <button class="worr-table-action" data-for="action : actions" data-command="{{action.command}}" data-event-click="command.dispatch">
+        <button class="worr-table-action" data-for="action : actions" data-command="{{action.command}}" data-event-click="command.dispatch" data-menu-sound="confirm">
           {{action.label}}
         </button>
       </div>

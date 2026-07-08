@@ -9,40 +9,27 @@
 	min-height: 0px;
 }
 
-#startserver-settings-form,
 #gameflags-settings-form
 {
 	width: 604px;
-	height: 455px;
+	flex: 1 1 auto;
+	height: auto;
 	overflow: auto;
 }
 
 #gameflags-settings-form
 {
-	height: 500px;
+	height: auto;
 }
 
-#startserver-settings-form .setting-row,
 #gameflags-settings-form .setting-row
 {
 	width: 584px;
 }
 
-#startserver-settings-form .settings-section,
 #gameflags-settings-form .settings-section
 {
 	width: 592px;
-}
-
-#startserver-settings-form input,
-#startserver-settings-form select
-{
-	width: 288px;
-}
-
-#startserver-settings-form .setting-row[data-control="field"] input[type="number"]
-{
-	width: 150px;
 }
 
 #gameflags-settings-form input
@@ -50,9 +37,111 @@
 	width: 36px;
 }
 
+#startserver-settings-form
+{
+	width: 924px;
+	max-width: 100%;
+	height: auto;
+	flex: 1 1 auto;
+	padding-right: 0px;
+	overflow: auto;
+}
+
+#startserver-settings-columns
+{
+	display: flex;
+	flex-direction: row;
+	width: 924px;
+	min-height: 0px;
+}
+
+#startserver-settings-form .settings-column
+{
+	display: flex;
+	flex-direction: column;
+	width: 300px;
+	min-height: 0px;
+	margin-right: 12px;
+}
+
+#startserver-rules-column
+{
+	margin-right: 0px;
+}
+
+#startserver-settings-form .settings-section
+{
+	width: 288px;
+	margin-bottom: 10px;
+	padding-bottom: 6px;
+}
+
+#startserver-settings-form .settings-section h2
+{
+	margin-bottom: 5px;
+	font-size: 17px;
+}
+
+#startserver-settings-form .setting-row
+{
+	width: 276px;
+	min-height: 34px;
+	margin-bottom: 5px;
+	padding: 4px 6px;
+}
+
+#startserver-settings-form .setting-widget-icon
+{
+	width: 14px;
+	height: 14px;
+	min-width: 14px;
+	min-height: 14px;
+	margin-right: 6px;
+}
+
+#startserver-settings-form .setting-widget-icon img
+{
+	width: 14px;
+	height: 14px;
+	min-width: 14px;
+	min-height: 14px;
+}
+
+#startserver-settings-form .setting-row label
+{
+	width: 100px;
+	margin-right: 4px;
+}
+
+#startserver-settings-form .setting-row input,
+#startserver-settings-form .setting-row select
+{
+	width: 120px;
+}
+
+#startserver-settings-form .setting-row[data-control="select"] select,
+#startserver-settings-form .setting-row[data-control="combo"] select
+{
+	width: 120px;
+}
+
+#startserver-settings-form .setting-row[data-control="field"] input,
+#startserver-settings-form .setting-row[data-control="field"] input[type="number"]
+{
+	width: 74px;
+}
+
+#startserver-settings-form .setting-row[data-control="field"] .setting-value
+{
+	width: 66px;
+}
+
 #startserver-actions button
 {
-	width: 584px;
+	width: 248px;
+	min-width: 248px;
+	height: 34px;
+	min-height: 34px;
 	margin-bottom: 6px;
 }
 
@@ -94,7 +183,7 @@
 .selector-section select,
 .selector-section button
 {
-	width: 248px;
+	width: 224px;
 	margin-bottom: 8px;
 }
 
@@ -103,11 +192,11 @@
 	position: relative;
 	flex: 0 0 auto;
 	width: 604px;
-	min-width: 604px;
-	max-width: 604px;
+	min-width: 0px;
+	max-width: 100%;
 	height: 228px;
 	padding-right: 8px;
-	overflow: hidden;
+	overflow: auto;
 }
 
 #singleplayer-episode-section,
@@ -135,10 +224,10 @@
 	left: 0px;
 	position: absolute;
 	width: 604px;
-	min-width: 604px;
-	max-width: 604px;
+	min-width: 0px;
+	max-width: 100%;
 	height: 54px;
-	overflow: hidden;
+	overflow: auto;
 }
 
 #singleplayer-save-load-actions button
@@ -188,8 +277,11 @@
 
 .save-slot-list
 {
-	position: relative;
-	flex: 0 0 auto;
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	position: static;
+	flex: 1 1 auto;
 	width: 604px;
 	height: 474px;
 	min-height: 0px;
@@ -210,12 +302,13 @@
 
 .save-slot
 {
-	position: absolute;
+	position: static;
+	flex: 0 0 auto;
 	width: 272px;
 	min-width: 272px;
-	height: 24px;
-	min-height: 24px;
-	padding: 5px 12px;
+	height: auto;
+	min-height: 34px;
+	padding: 7px 12px;
 	background-color: #211e19;
 	border-left-width: 4px;
 	border-left-color: #4b4235;
@@ -224,23 +317,25 @@
 	line-height: 1.1;
 	text-align: left;
 	margin-right: 8px;
-	margin-bottom: 6px;
+	margin-bottom: 8px;
 }
 
 .save-slot-autosave
 {
+	flex: 0 0 auto;
 	width: 568px;
 	min-width: 568px;
-	height: 28px;
-	min-height: 28px;
+	height: auto;
+	min-height: 36px;
 	color: #ffd967;
 }
 
 .menu-separator
 {
-	position: absolute;
+	position: static;
+	flex: 0 0 auto;
 	height: 8px;
-	width: 604px;
+	width: 568px;
 }
 
 #loadgame-save0

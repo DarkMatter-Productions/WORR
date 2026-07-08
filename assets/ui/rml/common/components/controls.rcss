@@ -53,12 +53,29 @@
   height: 28px;
   min-height: 28px;
   padding: 0px;
+  decorator: image(../skins/widgets/checkbox-off.svg);
 }
 
 .worr-slider
 {
   min-height: 28px;
   padding: 0px;
+  decorator: image(../skins/widgets/range-track.svg);
+}
+
+.worr-select
+{
+  decorator: image(../skins/widgets/select-normal.svg);
+}
+
+.worr-select:hover
+{
+  decorator: image(../skins/widgets/select-hover.svg);
+}
+
+.worr-select:focus
+{
+  decorator: image(../skins/widgets/select-focus.svg);
 }
 
 .worr-command-button
@@ -69,6 +86,7 @@
   background-color: #27231d;
   border-width: 2px;
   border-color: #756a5d;
+  decorator: image(../skins/widgets/button-normal.svg);
   transition: background-color border-color color 0.12s cubic-out;
 }
 
@@ -77,6 +95,7 @@
   background-color: #332d23;
   border-color: #b99b5b;
   color: #ffd967;
+  decorator: image(../skins/widgets/button-hover.svg);
 }
 
 .worr-command-button:disabled
@@ -84,6 +103,7 @@
   color: #81776a;
   background-color: #1b1916;
   border-color: #756a5d;
+  decorator: image(../skins/widgets/button-disabled.svg);
 }
 
 .worr-conditional-region

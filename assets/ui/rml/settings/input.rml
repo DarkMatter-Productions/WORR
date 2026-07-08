@@ -4,7 +4,7 @@
     <link type="text/rcss" href="../common/theme/base.rcss" />
     <link type="text/rcss" href="../common/theme/settings.rcss" />
   </head>
-  <body id="settings-input" data-route-id="input" data-route-group="settings" data-route-version="1" data-document-status="scaffolded-round2">
+  <body id="settings-input" data-route-id="input" data-route-group="settings" data-route-version="1" data-document-status="scaffolded-round2" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen settings-screen" id="input-screen">
       <header class="menu-header">
         <h1>Input Setup</h1>
@@ -14,18 +14,22 @@
         <section class="settings-section" id="input-mouse-section">
           <h2>Mouse</h2>
           <div class="setting-row" data-control="field" data-cvar="sensitivity">
+            <span class="setting-widget-icon" data-widget="number"><img src="../common/icons/widgets/number.svg" /></span>
             <label for="input-sensitivity">Mouse Sens</label>
             <input id="input-sensitivity" type="number" step="0.01" data-cvar="sensitivity" data-numeric="true" />
           </div>
           <div class="setting-row" data-control="toggle" data-cvar="m_autosens">
+            <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
             <label for="input-autosens">Auto Sens</label>
             <input id="input-autosens" type="checkbox" data-cvar="m_autosens" />
           </div>
           <div class="setting-row" data-control="toggle" data-cvar="m_filter">
+            <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
             <label for="input-mouse-filter">Mouse Filter</label>
             <input id="input-mouse-filter" type="checkbox" data-cvar="m_filter" />
           </div>
           <div class="setting-row" data-control="toggle" data-cvar="freelook">
+            <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
             <label for="input-freelook">Free Look</label>
             <input id="input-freelook" type="checkbox" data-cvar="freelook" />
           </div>
@@ -34,6 +38,7 @@
         <section class="settings-section" id="input-movement-section">
           <h2>Movement</h2>
           <div class="setting-row" data-control="toggle" data-cvar="cl_run">
+            <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
             <label for="input-always-run">Always Run</label>
             <input id="input-always-run" type="checkbox" data-cvar="cl_run" />
           </div>
@@ -41,8 +46,8 @@
       </main>
 
       <footer class="menu-footer" id="input-menu-footer">
-        <button id="input-back" type="button" data-command="ui.back">Back</button>
-        <button id="input-close" type="button" data-command="ui.close">Close</button>
+        <button id="input-back" type="button" data-command="ui.back" data-menu-sound="cancel">Back</button>
+        <button id="input-close" type="button" data-command="ui.close" data-menu-sound="cancel">Close</button>
       </footer>
     </div>
   </body>

@@ -4,7 +4,7 @@
     <link type="text/rcss" href="../common/theme/base.rcss" />
     <link type="text/rcss" href="../common/theme/settings.rcss" />
   </head>
-  <body id="settings-multimonitor" data-route-id="multimonitor" data-route-group="settings" data-route-version="1" data-document-status="scaffolded-round2">
+  <body id="settings-multimonitor" data-route-id="multimonitor" data-route-group="settings" data-route-version="1" data-document-status="scaffolded-round2" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen settings-screen" id="multimonitor-screen">
       <header class="menu-header">
         <h1>Multi-Monitor Settings</h1>
@@ -14,6 +14,7 @@
         <section class="settings-section" id="multimonitor-display-section">
           <h2>Display Selection</h2>
           <div class="setting-row" data-control="select" data-cvar="r_monitor_mode">
+            <span class="setting-widget-icon" data-widget="select"><img src="../common/icons/widgets/select.svg" /></span>
             <label for="multimonitor-monitor-mode">Monitor Mode</label>
             <select id="multimonitor-monitor-mode" data-cvar="r_monitor_mode">
               <option value="0">Primary</option>
@@ -22,6 +23,7 @@
             </select>
           </div>
           <div class="setting-row" data-control="field" data-cvar="r_display" data-enable-if="r_monitor_mode=1">
+            <span class="setting-widget-icon" data-widget="field"><img src="../common/icons/widgets/field.svg" /></span>
             <label for="multimonitor-display">Display</label>
             <input id="multimonitor-display" type="text" data-cvar="r_display" maxlength="18" />
             <span class="setting-value">Used when monitor mode is selected.</span>
@@ -31,6 +33,7 @@
         <section class="settings-section" id="multimonitor-window-section">
           <h2>Window Behavior</h2>
           <div class="setting-row" data-control="select" data-cvar="r_borderless">
+            <span class="setting-widget-icon" data-widget="select"><img src="../common/icons/widgets/select.svg" /></span>
             <label for="multimonitor-borderless">Borderless</label>
             <select id="multimonitor-borderless" data-cvar="r_borderless">
               <option value="0">Off</option>
@@ -42,8 +45,8 @@
       </main>
 
       <footer class="menu-footer" id="multimonitor-menu-footer">
-        <button id="multimonitor-back" type="button" data-command="ui.back">Back</button>
-        <button id="multimonitor-close" type="button" data-command="ui.close">Close</button>
+        <button id="multimonitor-back" type="button" data-command="ui.back" data-menu-sound="cancel">Back</button>
+        <button id="multimonitor-close" type="button" data-command="ui.close" data-menu-sound="cancel">Close</button>
       </footer>
     </div>
   </body>

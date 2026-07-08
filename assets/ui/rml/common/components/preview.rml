@@ -12,7 +12,7 @@
       </div>
 
       <div class="worr-preview-actions">
-        <button data-for="action : actions" class="worr-preview-action" data-command="{{action.command}}" data-event-click="command.dispatch">
+        <button data-for="action : actions" class="worr-preview-action" data-command="{{action.command}}" data-event-click="command.dispatch" data-menu-sound="confirm">
           {{action.label}}
         </button>
       </div>

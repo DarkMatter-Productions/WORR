@@ -7,7 +7,7 @@
   </head>
   <body id="session-leave-match-confirm" data-route-id="leave_match_confirm" data-route-group="session" data-route-version="1" data-document-status="round2-scaffold" data-owner="agent5" data-menu-presentation="popup" data-menu-sound-open="alert" data-menu-music="menu">
     <div class="screen compact-screen session-screen popup-screen" id="leave-match-confirm-screen" data-close-command="popmenu">
-      <main class="popup-dialog confirmation-dialog" id="leave-match-confirm-dialog">
+      <main class="popup-dialog confirmation-dialog" id="leave-match-confirm-dialog" data-confirm-kind="destructive">
         <header class="popup-header">
           <h1 data-loc-key="m_confirm_leave_match">Confirm Leave Match</h1>
         </header>
@@ -15,8 +15,8 @@
           Are you sure you want to leave the match?
         </p>
         <footer class="popup-actions" id="leave-match-confirm-actions">
-          <button id="leave-match-yes" type="button" data-loc-key="m_yes" data-command="forcemenuoff; disconnect" data-menu-sound="confirm">YES</button>
-          <button id="leave-match-no" type="button" data-loc-key="m_no" data-command="popmenu" data-menu-sound="cancel">NO</button>
+          <button class="popup-primary popup-danger" id="leave-match-yes" type="button" data-loc-key="m_yes" data-command="forcemenuoff; disconnect" data-menu-sound="confirm">YES</button>
+          <button class="popup-secondary" id="leave-match-no" type="button" data-loc-key="m_no" data-command="popmenu" data-menu-sound="cancel">NO</button>
         </footer>
       </main>
     </div>

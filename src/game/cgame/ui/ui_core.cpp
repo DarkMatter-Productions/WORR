@@ -175,6 +175,111 @@ static void UI_Command_NoOp()
 {
 }
 
+static bool UI_IsRmlRouteName(const char *menu_name)
+{
+    static const char *const rml_routes[] = {
+        "main",
+        "game",
+        "options",
+        "video",
+        "multimonitor",
+        "performance",
+        "accessibility",
+        "sound",
+        "railtrail",
+        "effects",
+        "crosshair",
+        "screen",
+        "language",
+        "downloads",
+        "download_status",
+        "addressbook",
+        "input",
+        "keys",
+        "legacykeys",
+        "weapons",
+        "quit_confirm",
+        "gameflags",
+        "startserver",
+        "multiplayer",
+        "singleplayer",
+        "skill_select",
+        "loadgame",
+        "savegame",
+        "servers",
+        "demos",
+        "players",
+        "ui_list",
+        "dm_welcome",
+        "dm_join",
+        "join",
+        "dm_hostinfo",
+        "dm_matchinfo",
+        "callvote_main",
+        "callvote_ruleset",
+        "callvote_timelimit",
+        "callvote_scorelimit",
+        "callvote_unlagged",
+        "callvote_random",
+        "callvote_map_flags",
+        "mymap_main",
+        "mymap_flags",
+        "forfeit_confirm",
+        "leave_match_confirm",
+        "admin_menu",
+        "admin_commands",
+        "tourney_info",
+        "tourney_mapchoices",
+        "tourney_veto",
+        "tourney_replay_confirm",
+        "vote_menu",
+        "map_selector",
+        "match_stats",
+    };
+
+    if (!menu_name || !menu_name[0])
+        return false;
+
+    for (const char *route : rml_routes) {
+        if (!strcmp(menu_name, route))
+            return true;
+    }
+
+    return false;
+}
+
+static bool UI_IsRmlPopupRouteName(const char *menu_name)
+{
+    return menu_name &&
+           (!strcmp(menu_name, "quit_confirm") ||
+            !strcmp(menu_name, "forfeit_confirm") ||
+            !strcmp(menu_name, "leave_match_confirm") ||
+            !strcmp(menu_name, "tourney_replay_confirm"));
+}
+
+static bool UI_Command_TryPushRmlRoute(const char *menu_name)
+{
+    cvar_t *ui_rml_enable = Cvar_Get("ui_rml_enable", "0", 0);
+
+    if (!ui_rml_enable || !ui_rml_enable->integer ||
+        !UI_IsRmlRouteName(menu_name)) {
+        return false;
+    }
+
+    Cbuf_InsertText(&cmd_buffer,
+                    va("%s %s\n",
+                       UI_IsRmlPopupRouteName(menu_name)
+                           ? "ui_rml_runtime_popup"
+                           : "ui_rml_runtime_open",
+                       menu_name));
+    Com_Printf("RmlUi pushmenu bridge routed '%s' through %s.\n",
+               menu_name,
+               UI_IsRmlPopupRouteName(menu_name)
+                   ? "ui_rml_runtime_popup"
+                   : "ui_rml_runtime_open");
+    return true;
+}
+
 static void UI_Command_PushMenu()
 {
     if (Cmd_Argc() < 2) {
@@ -183,6 +288,9 @@ static void UI_Command_PushMenu()
     }
 
     const char *menu_name = Cmd_Argv(1);
+    if (UI_Command_TryPushRmlRoute(menu_name))
+        return;
+
     MenuPage *menu = GetMenuSystem().FindMenu(menu_name);
     if (menu) {
         const char *args = Cmd_RawArgsFrom(2);

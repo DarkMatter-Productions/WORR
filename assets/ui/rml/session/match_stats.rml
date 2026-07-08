@@ -5,7 +5,7 @@
     <link type="text/rcss" href="../common/theme/session.rcss" />
     <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
-  <body id="session-match-stats" data-route-id="match_stats" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-owner="agent5" data-session-owner="sgame" data-open-command="worr_matchstats_menu">
+  <body id="session-match-stats" data-route-id="match_stats" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-owner="agent5" data-session-owner="sgame" data-open-command="worr_matchstats_menu" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen compact-screen session-screen" id="match-stats-screen" data-close-command="popmenu; worr_matchstats_close">
       <header class="page-header" id="match-stats-header">
         <h1>Match Stats</h1>
@@ -15,8 +15,22 @@
       </header>
 
       <main class="session-panel" id="match-stats-lines" data-model="session.match_stats.lines" data-controller="session.fixed_list" data-list-provider="session.match_stats.lines" data-owner-boundary="sgame-published-cvars">
+        <section class="session-static-report" id="match-stats-fallback" data-show-if="!ui_matchstats_line_0">
+          <p id="match-stats-fallback-title">Player Stats for Match</p>
+          <p id="match-stats-fallback-player">Player name</p>
+          <p id="match-stats-fallback-rule" class="ui-monospace-wrap">--------------------------</p>
+          <p id="match-stats-fallback-kills">kills</p>
+          <p id="match-stats-fallback-deaths">deaths</p>
+          <p id="match-stats-fallback-kd">k/d ratio</p>
+          <p id="match-stats-fallback-damage-dealt">dmg dealt</p>
+          <p id="match-stats-fallback-damage-received">dmg received</p>
+          <p id="match-stats-fallback-damage-ratio">dmg ratio</p>
+          <p id="match-stats-fallback-shots">shots fired</p>
+          <p id="match-stats-fallback-hits">shots on target</p>
+          <p id="match-stats-fallback-accuracy">total accuracy</p>
+        </section>
         <p id="match-stats-line-0" data-bind="cvars.ui_matchstats_line_0" data-bind-cvar="ui_matchstats_line_0" data-visible-if="ui_matchstats_line_0">Player Stats for Match</p>
-        <p id="match-stats-line-1" class="ui-player-name" data-bind="cvars.ui_matchstats_line_1" data-bind-cvar="ui_matchstats_line_1" data-visible-if="ui_matchstats_line_1">Player name</p>
+        <p id="match-stats-line-1" data-bind="cvars.ui_matchstats_line_1" data-bind-cvar="ui_matchstats_line_1" data-visible-if="ui_matchstats_line_1">Player name</p>
         <p id="match-stats-line-2" class="ui-monospace-wrap" data-bind="cvars.ui_matchstats_line_2" data-bind-cvar="ui_matchstats_line_2" data-visible-if="ui_matchstats_line_2">--------------------------</p>
         <p id="match-stats-line-3" data-bind="cvars.ui_matchstats_line_3" data-bind-cvar="ui_matchstats_line_3" data-visible-if="ui_matchstats_line_3">kills</p>
         <p id="match-stats-line-4" data-bind="cvars.ui_matchstats_line_4" data-bind-cvar="ui_matchstats_line_4" data-visible-if="ui_matchstats_line_4">deaths</p>
@@ -34,7 +48,7 @@
       </main>
 
       <footer class="actions" id="match-stats-actions">
-        <button id="match-stats-return" type="button" data-command="popmenu; worr_matchstats_close">Return</button>
+        <button id="match-stats-return" type="button" data-command="popmenu; worr_matchstats_close" data-menu-sound="cancel">Return</button>
       </footer>
     </div>
   </body>

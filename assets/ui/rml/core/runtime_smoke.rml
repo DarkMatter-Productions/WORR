@@ -23,8 +23,8 @@
       </div>
 
       <div class="actions" id="runtime-smoke-actions">
-        <button id="runtime-smoke-back" type="button" data-command="ui.back">Back</button>
-        <button id="runtime-smoke-close" type="button" data-command="ui.close">Close</button>
+        <button id="runtime-smoke-back" type="button" data-command="ui.back" data-menu-sound="cancel">Back</button>
+        <button id="runtime-smoke-close" type="button" data-command="ui.close" data-menu-sound="cancel">Close</button>
       </div>
     </div>
   </body>

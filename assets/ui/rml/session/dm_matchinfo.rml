@@ -5,7 +5,7 @@
     <link type="text/rcss" href="../common/theme/session.rcss" />
     <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
-  <body id="session-dm-matchinfo" data-route-id="dm_matchinfo" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-owner="agent5" data-session-owner="sgame">
+  <body id="session-dm-matchinfo" data-route-id="dm_matchinfo" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-owner="agent5" data-session-owner="sgame" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen compact-screen session-screen" id="dm-matchinfo-screen">
       <header class="page-header">
         <h1>Match Info</h1>
@@ -23,7 +23,7 @@
       </section>
 
       <footer class="actions" id="dm-matchinfo-actions">
-        <button id="dm-matchinfo-return" type="button" data-command="popmenu">Return</button>
+        <button id="dm-matchinfo-return" type="button" data-command="popmenu" data-menu-sound="cancel">Return</button>
       </footer>
     </div>
   </body>

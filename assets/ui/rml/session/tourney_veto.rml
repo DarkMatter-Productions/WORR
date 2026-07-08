@@ -5,7 +5,7 @@
     <link type="text/rcss" href="../common/theme/session.rcss" />
     <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
-  <body id="session-tourney-veto" data-route-id="tourney_veto" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-owner="agent5" data-session-owner="sgame">
+  <body id="session-tourney-veto" data-route-id="tourney_veto" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-owner="agent5" data-session-owner="sgame" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen compact-screen session-screen" id="tourney-veto-screen">
       <header class="page-header" id="tourney-veto-header">
         <h1>Tournament Veto</h1>
@@ -15,7 +15,7 @@
       </header>
 
       <main class="session-flow" id="tourney-veto-content" data-model="session.tournament.veto" data-owner-boundary="sgame-published-cvars" data-list-provider="session.tournament.veto.maps">
-        <section class="session-flow-step is-danger" id="tourney-veto-inactive-panel" data-visible-if="ui_tourney_veto_show_inactive=1">
+        <section class="session-flow-step is-danger" id="tourney-veto-inactive-panel" data-visible-if="ui_tourney_veto_show_inactive!=0">
           <h2>Inactive</h2>
           <p id="tourney-veto-inactive" data-bind="cvars.ui_tourney_veto_inactive" data-label-cvar="ui_tourney_veto_inactive">
             Veto is not active.
@@ -36,8 +36,8 @@
         <section class="session-panel" id="tourney-veto-action-panel" data-visible-if="ui_tourney_veto_can_pick=1" data-controller="session.tournament_veto">
           <h2>Action</h2>
           <div class="session-command-strip" id="tourney-veto-command-strip">
-            <button id="tourney-veto-pick" type="button" data-command="worr_tourney_pick" data-visible-if="ui_tourney_veto_can_pick=1">Pick</button>
-            <button id="tourney-veto-ban" type="button" data-command="worr_tourney_ban" data-visible-if="ui_tourney_veto_can_ban=1">Ban</button>
+            <button id="tourney-veto-pick" type="button" data-command="worr_tourney_pick" data-visible-if="ui_tourney_veto_can_pick=1" data-menu-sound="confirm">Pick</button>
+            <button id="tourney-veto-ban" type="button" data-command="worr_tourney_ban" data-visible-if="ui_tourney_veto_can_ban=1" data-menu-sound="confirm">Ban</button>
             <span id="tourney-veto-ban-locked" class="session-badge is-warning" data-visible-if="ui_tourney_veto_can_pick=1;ui_tourney_veto_can_ban=0">Ban locked</span>
           </div>
           <dl class="session-stat-grid" id="tourney-veto-state">
@@ -50,7 +50,7 @@
       </main>
 
       <footer class="actions" id="tourney-veto-actions">
-        <button id="tourney-veto-back" type="button" data-command="popmenu">Back</button>
+        <button id="tourney-veto-back" type="button" data-command="popmenu" data-menu-sound="cancel">Back</button>
       </footer>
     </div>
   </body>

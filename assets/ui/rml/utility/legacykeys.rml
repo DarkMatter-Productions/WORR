@@ -5,7 +5,7 @@
     <link type="text/rcss" href="../common/theme/utility.rcss" />
     <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
-  <body id="utility-legacykeys" data-route-id="legacykeys" data-route-group="utility" data-route-version="1" data-document-status="round2-scaffold" data-owner="agent5">
+  <body id="utility-legacykeys" data-route-id="legacykeys" data-route-group="utility" data-route-version="1" data-document-status="round2-scaffold" data-owner="agent5" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen" id="legacykeys-screen">
       <header class="page-header">
         <h1>Legacy Key Bindings</h1>
@@ -14,21 +14,21 @@
         </p>
       </header>
 
-      <section class="content" id="legacykeys-content" data-model="utility.legacy_keybinds" data-controller="keybind.capture">
+      <section class="content" id="legacykeys-content" data-model="utility.legacy_keybinds" data-controller="keybind.capture" data-action-type="capture">
         <div class="bind-group" id="legacykeys-binds" data-bind-group="legacy">
-          <button id="legacykeys-left" type="button" data-bind-command="+left" data-event-click="keybind.capture">Turn Left</button>
-          <button id="legacykeys-right" type="button" data-bind-command="+right" data-event-click="keybind.capture">Turn Right</button>
-          <button id="legacykeys-strafe" type="button" data-bind-command="+strafe" data-event-click="keybind.capture">Sidestep</button>
-          <button id="legacykeys-lookup" type="button" data-bind-command="+lookup" data-event-click="keybind.capture">Look Up</button>
-          <button id="legacykeys-lookdown" type="button" data-bind-command="+lookdown" data-event-click="keybind.capture">Look Down</button>
-          <button id="legacykeys-centerview" type="button" data-bind-command="centerview" data-event-click="keybind.capture">Center View</button>
-          <button id="legacykeys-mlook" type="button" data-bind-command="+mlook" data-event-click="keybind.capture">Mouse Look</button>
-          <button id="legacykeys-klook" type="button" data-bind-command="+klook" data-event-click="keybind.capture">Keyboard Look</button>
+          <button id="legacykeys-left" type="button" data-bind-command="+left" data-event-click="keybind.capture" data-menu-sound="change">Turn Left</button>
+          <button id="legacykeys-right" type="button" data-bind-command="+right" data-event-click="keybind.capture" data-menu-sound="change">Turn Right</button>
+          <button id="legacykeys-strafe" type="button" data-bind-command="+strafe" data-event-click="keybind.capture" data-menu-sound="change">Sidestep</button>
+          <button id="legacykeys-lookup" type="button" data-bind-command="+lookup" data-event-click="keybind.capture" data-menu-sound="change">Look Up</button>
+          <button id="legacykeys-lookdown" type="button" data-bind-command="+lookdown" data-event-click="keybind.capture" data-menu-sound="change">Look Down</button>
+          <button id="legacykeys-centerview" type="button" data-bind-command="centerview" data-event-click="keybind.capture" data-menu-sound="change">Center View</button>
+          <button id="legacykeys-mlook" type="button" data-bind-command="+mlook" data-event-click="keybind.capture" data-menu-sound="change">Mouse Look</button>
+          <button id="legacykeys-klook" type="button" data-bind-command="+klook" data-event-click="keybind.capture" data-menu-sound="change">Keyboard Look</button>
         </div>
       </section>
 
       <footer class="actions" id="legacykeys-actions">
-        <button id="legacykeys-back" type="button" data-command="ui.back">Back</button>
+        <button id="legacykeys-back" type="button" data-command="ui.back" data-menu-sound="cancel">Back</button>
       </footer>
     </div>
   </body>

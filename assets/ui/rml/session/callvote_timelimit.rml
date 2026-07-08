@@ -5,7 +5,7 @@
     <link type="text/rcss" href="../common/theme/session.rcss" />
     <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
-  <body id="session-callvote-timelimit" data-route-id="callvote_timelimit" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-owner="agent5" data-session-owner="sgame">
+  <body id="session-callvote-timelimit" data-route-id="callvote_timelimit" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-owner="agent5" data-session-owner="sgame" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen compact-screen session-screen" id="callvote-timelimit-screen">
       <header class="page-header">
         <h1>Callvote: Timelimit</h1>
@@ -13,20 +13,20 @@
       </header>
 
       <nav class="menu-list" id="callvote-timelimit-menu" data-model="session.callvote.timelimit" data-owner-boundary="sgame-published-cvars">
-        <button id="callvote-timelimit-0" type="button" data-command="worr_callvote_timelimit 0">Disable</button>
-        <button id="callvote-timelimit-5" type="button" data-command="worr_callvote_timelimit 5">Set 5 minutes</button>
-        <button id="callvote-timelimit-10" type="button" data-command="worr_callvote_timelimit 10">Set 10 minutes</button>
-        <button id="callvote-timelimit-15" type="button" data-command="worr_callvote_timelimit 15">Set 15 minutes</button>
-        <button id="callvote-timelimit-20" type="button" data-command="worr_callvote_timelimit 20">Set 20 minutes</button>
-        <button id="callvote-timelimit-30" type="button" data-command="worr_callvote_timelimit 30">Set 30 minutes</button>
-        <button id="callvote-timelimit-45" type="button" data-command="worr_callvote_timelimit 45">Set 45 minutes</button>
-        <button id="callvote-timelimit-60" type="button" data-command="worr_callvote_timelimit 60">Set 60 minutes</button>
-        <button id="callvote-timelimit-90" type="button" data-command="worr_callvote_timelimit 90">Set 90 minutes</button>
-        <button id="callvote-timelimit-120" type="button" data-command="worr_callvote_timelimit 120">Set 120 minutes</button>
+        <button id="callvote-timelimit-0" type="button" data-command="worr_callvote_timelimit 0" data-menu-sound="confirm">Disable</button>
+        <button id="callvote-timelimit-5" type="button" data-command="worr_callvote_timelimit 5" data-menu-sound="confirm">Set 5 minutes</button>
+        <button id="callvote-timelimit-10" type="button" data-command="worr_callvote_timelimit 10" data-menu-sound="confirm">Set 10 minutes</button>
+        <button id="callvote-timelimit-15" type="button" data-command="worr_callvote_timelimit 15" data-menu-sound="confirm">Set 15 minutes</button>
+        <button id="callvote-timelimit-20" type="button" data-command="worr_callvote_timelimit 20" data-menu-sound="confirm">Set 20 minutes</button>
+        <button id="callvote-timelimit-30" type="button" data-command="worr_callvote_timelimit 30" data-menu-sound="confirm">Set 30 minutes</button>
+        <button id="callvote-timelimit-45" type="button" data-command="worr_callvote_timelimit 45" data-menu-sound="confirm">Set 45 minutes</button>
+        <button id="callvote-timelimit-60" type="button" data-command="worr_callvote_timelimit 60" data-menu-sound="confirm">Set 60 minutes</button>
+        <button id="callvote-timelimit-90" type="button" data-command="worr_callvote_timelimit 90" data-menu-sound="confirm">Set 90 minutes</button>
+        <button id="callvote-timelimit-120" type="button" data-command="worr_callvote_timelimit 120" data-menu-sound="confirm">Set 120 minutes</button>
       </nav>
 
       <footer class="actions" id="callvote-timelimit-actions">
-        <button id="callvote-timelimit-return" type="button" data-command="popmenu">Return</button>
+        <button id="callvote-timelimit-return" type="button" data-command="popmenu" data-menu-sound="cancel">Return</button>
       </footer>
     </div>
   </body>

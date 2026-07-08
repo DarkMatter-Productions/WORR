@@ -5,7 +5,7 @@
     <link type="text/rcss" href="../common/theme/settings.rcss" />
     <link type="text/rcss" href="../common/theme/singleplayer.rcss" />
   </head>
-  <body id="singleplayer-gameflags" data-route-id="gameflags" data-route-group="singleplayer" data-route-version="1" data-document-status="scaffolded-round3">
+  <body id="singleplayer-gameflags" data-route-id="gameflags" data-route-group="singleplayer" data-route-version="1" data-document-status="scaffolded-round3" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen singleplayer-screen" id="gameflags-screen">
       <header class="menu-header">
         <h1>Deathmatch Flags</h1>
@@ -15,26 +15,32 @@
         <section class="settings-section" id="gameflags-items-section">
           <h2>Items And Damage</h2>
           <div class="setting-row" data-control="toggle" data-cvar="dmflags" data-bit="3" data-negate="true">
+            <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
             <label for="gameflags-falling-damage">Falling Damage</label>
             <input id="gameflags-falling-damage" type="checkbox" data-cvar="dmflags" data-bit="3" data-negate="true" />
           </div>
           <div class="setting-row" data-control="toggle" data-cvar="dmflags" data-bit="2">
+            <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
             <label for="gameflags-weapons-stay">Weapons Stay</label>
             <input id="gameflags-weapons-stay" type="checkbox" data-cvar="dmflags" data-bit="2" />
           </div>
           <div class="setting-row" data-control="toggle" data-cvar="dmflags" data-bit="4">
+            <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
             <label for="gameflags-instant-powerups">Instant Powerups</label>
             <input id="gameflags-instant-powerups" type="checkbox" data-cvar="dmflags" data-bit="4" />
           </div>
           <div class="setting-row" data-control="toggle" data-cvar="dmflags" data-bit="1" data-negate="true">
+            <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
             <label for="gameflags-allow-powerups">Allow Powerups</label>
             <input id="gameflags-allow-powerups" type="checkbox" data-cvar="dmflags" data-bit="1" data-negate="true" />
           </div>
           <div class="setting-row" data-control="toggle" data-cvar="dmflags" data-bit="0" data-negate="true">
+            <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
             <label for="gameflags-allow-health">Allow Health</label>
             <input id="gameflags-allow-health" type="checkbox" data-cvar="dmflags" data-bit="0" data-negate="true" />
           </div>
           <div class="setting-row" data-control="toggle" data-cvar="dmflags" data-bit="11" data-negate="true">
+            <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
             <label for="gameflags-allow-armor">Allow Armor</label>
             <input id="gameflags-allow-armor" type="checkbox" data-cvar="dmflags" data-bit="11" data-negate="true" />
           </div>
@@ -43,26 +49,32 @@
         <section class="settings-section" id="gameflags-match-section">
           <h2>Match Rules</h2>
           <div class="setting-row" data-control="toggle" data-cvar="dmflags" data-bit="9">
+            <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
             <label for="gameflags-spawn-farthest">Spawn Farthest</label>
             <input id="gameflags-spawn-farthest" type="checkbox" data-cvar="dmflags" data-bit="9" />
           </div>
           <div class="setting-row" data-control="toggle" data-cvar="dmflags" data-bit="5">
+            <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
             <label for="gameflags-same-map">Same Map</label>
             <input id="gameflags-same-map" type="checkbox" data-cvar="dmflags" data-bit="5" />
           </div>
           <div class="setting-row" data-control="toggle" data-cvar="dmflags" data-bit="10">
+            <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
             <label for="gameflags-force-respawn">Force Respawn</label>
             <input id="gameflags-force-respawn" type="checkbox" data-cvar="dmflags" data-bit="10" />
           </div>
           <div class="setting-row" data-control="toggle" data-cvar="dmflags" data-bit="13">
+            <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
             <label for="gameflags-infinite-ammo">Infinite Ammo</label>
             <input id="gameflags-infinite-ammo" type="checkbox" data-cvar="dmflags" data-bit="13" />
           </div>
           <div class="setting-row" data-control="toggle" data-cvar="dmflags" data-bit="15">
+            <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
             <label for="gameflags-fixed-fov">Fixed FOV</label>
             <input id="gameflags-fixed-fov" type="checkbox" data-cvar="dmflags" data-bit="15" />
           </div>
           <div class="setting-row" data-control="toggle" data-cvar="dmflags" data-bit="14">
+            <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
             <label for="gameflags-quad-drop">Quad Drop</label>
             <input id="gameflags-quad-drop" type="checkbox" data-cvar="dmflags" data-bit="14" />
           </div>
@@ -70,8 +82,8 @@
       </main>
 
       <footer class="menu-footer" id="gameflags-menu-footer">
-        <button id="gameflags-back" type="button" data-command="ui.back">Back</button>
-        <button id="gameflags-close" type="button" data-command="ui.close">Close</button>
+        <button id="gameflags-back" type="button" data-command="ui.back" data-menu-sound="cancel">Back</button>
+        <button id="gameflags-close" type="button" data-command="ui.close" data-menu-sound="cancel">Close</button>
       </footer>
     </div>
   </body>

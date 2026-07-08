@@ -107,6 +107,45 @@ def test_supported_condition_attrs_are_inventoried(
     assert "Result: RmlUi condition inventory check passed." in captured.out
 
 
+def test_negated_static_condition_attrs_are_supported(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    repo_root = tmp_path / "repo"
+    write_text(
+        repo_root / "assets/ui/rml/session/report.rml",
+        """
+<rml>
+  <body>
+    <section id="fallback" data-show-if="!ui_report_line_0">Fallback</section>
+    <button id="action" data-enable-if="!ui_report_busy">Action</button>
+  </body>
+</rml>
+""",
+    )
+
+    result, captured = run_checker(
+        repo_root,
+        capsys,
+        [route("report", "assets/ui/rml/session/report.rml")],
+        output_format="json",
+    )
+
+    payload = json.loads(captured.out)
+    assert result == 0
+    assert payload["ok"] is True
+    assert payload["total_condition_refs"] == 2
+    assert payload["unique_condition_expressions"]["expressions"] == [
+        "!ui_report_busy",
+        "!ui_report_line_0",
+    ]
+    assert payload["unique_condition_tokens"]["tokens"] == [
+        "ui_report_busy",
+        "ui_report_line_0",
+    ]
+    assert payload["malformed_condition_attributes"] == []
+
+
 def test_missing_document_fails_with_manifest_context(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -247,4 +286,3 @@ def test_current_repository_condition_inventory_is_broadly_stable() -> None:
     assert report.stats.total_condition_refs > 0
     assert len(report.routes_with_condition_hooks) > 0
     assert len(report.unique_condition_tokens) > 0
-

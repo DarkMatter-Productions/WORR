@@ -4,7 +4,7 @@
     <link type="text/rcss" href="../common/theme/base.rcss" />
     <link type="text/rcss" href="../common/theme/settings.rcss" />
   </head>
-  <body id="settings-railtrail" data-route-id="railtrail" data-route-group="settings" data-route-version="1" data-document-status="scaffolded-round3">
+  <body id="settings-railtrail" data-route-id="railtrail" data-route-group="settings" data-route-version="1" data-document-status="scaffolded-round3" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen settings-screen" id="railtrail-screen">
       <header class="menu-header">
         <h1>Railgun Trail Setup</h1>
@@ -14,6 +14,7 @@
         <section class="settings-section" id="railtrail-shape-section">
           <h2>Trail Shape</h2>
           <div class="setting-row" data-control="select" data-cvar="cl_railtrail_type">
+            <span class="setting-widget-icon" data-widget="select"><img src="../common/icons/widgets/select.svg" /></span>
             <label for="railtrail-type">Rail Trail Type</label>
             <select id="railtrail-type" data-cvar="cl_railtrail_type" data-source-menu-type="values">
               <option value="0">Default</option>
@@ -22,25 +23,29 @@
             </select>
           </div>
           <div class="setting-row" data-control="range" data-cvar="cl_railtrail_time">
+            <span class="setting-widget-icon" data-widget="range"><img src="../common/icons/widgets/range.svg" /></span>
             <label for="railtrail-duration">Rail Trail Duration</label>
             <input id="railtrail-duration" type="range" min="0.1" max="3.0" step="0.1" data-cvar="cl_railtrail_time" />
-            <span class="setting-value" data-bind-cvar="cl_railtrail_time"></span>
+            <span class="setting-value setting-meter"><span class="setting-meter-fill" data-meter-cvar="cl_railtrail_time" data-meter-min="0.1" data-meter-max="3.0"></span><span class="setting-meter-text" data-bind-cvar="cl_railtrail_time"></span></span>
           </div>
           <div class="setting-row" data-control="range" data-cvar="cl_railcore_width">
+            <span class="setting-widget-icon" data-widget="range"><img src="../common/icons/widgets/range.svg" /></span>
             <label for="railtrail-core-width">Core Width</label>
             <input id="railtrail-core-width" type="range" min="1" max="6" step="1" data-cvar="cl_railcore_width" />
-            <span class="setting-value" data-bind-cvar="cl_railcore_width"></span>
+            <span class="setting-value setting-meter"><span class="setting-meter-fill" data-meter-cvar="cl_railcore_width" data-meter-min="1" data-meter-max="6"></span><span class="setting-meter-text" data-bind-cvar="cl_railcore_width"></span></span>
           </div>
           <div class="setting-row" data-control="range" data-cvar="cl_railspiral_radius">
+            <span class="setting-widget-icon" data-widget="range"><img src="../common/icons/widgets/range.svg" /></span>
             <label for="railtrail-spiral-radius">Spiral Radius</label>
             <input id="railtrail-spiral-radius" type="range" min="1" max="6" step="1" data-cvar="cl_railspiral_radius" />
-            <span class="setting-value" data-bind-cvar="cl_railspiral_radius"></span>
+            <span class="setting-value setting-meter"><span class="setting-meter-fill" data-meter-cvar="cl_railspiral_radius" data-meter-min="1" data-meter-max="6"></span><span class="setting-meter-text" data-bind-cvar="cl_railspiral_radius"></span></span>
           </div>
         </section>
 
         <section class="settings-section" id="railtrail-color-section">
           <h2>Trail Color</h2>
           <div class="setting-row" data-control="select" data-cvar="cl_railcore_color">
+            <span class="setting-widget-icon" data-widget="select"><img src="../common/icons/widgets/select.svg" /></span>
             <label for="railtrail-core-color">Core Color</label>
             <select id="railtrail-core-color" data-cvar="cl_railcore_color" data-source-menu-type="strings">
               <option value="black">Black</option>
@@ -54,6 +59,7 @@
             </select>
           </div>
           <div class="setting-row" data-control="select" data-cvar="cl_railspiral_color">
+            <span class="setting-widget-icon" data-widget="select"><img src="../common/icons/widgets/select.svg" /></span>
             <label for="railtrail-spiral-color">Spiral Color</label>
             <select id="railtrail-spiral-color" data-cvar="cl_railspiral_color" data-source-menu-type="strings">
               <option value="black">Black</option>
@@ -70,8 +76,8 @@
       </main>
 
       <footer class="menu-footer" id="railtrail-menu-footer">
-        <button id="railtrail-back" type="button" data-command="ui.back">Back</button>
-        <button id="railtrail-close" type="button" data-command="ui.close">Close</button>
+        <button id="railtrail-back" type="button" data-command="ui.back" data-menu-sound="cancel">Back</button>
+        <button id="railtrail-close" type="button" data-command="ui.close" data-menu-sound="cancel">Close</button>
       </footer>
     </div>
   </body>

@@ -9,7 +9,7 @@
   <template name="worr-cvar-toggle">
     <div class="worr-control worr-cvar-control" data-contract-id="{{id}}" data-cvar="{{cvar}}">
       <label class="worr-control-label" for="{{id}}">{{label}}</label>
-      <input class="worr-toggle" id="{{id}}" type="checkbox" data-event-change="cvar.set" />
+      <input class="worr-toggle" id="{{id}}" type="checkbox" data-event-change="cvar.set" data-menu-sound-change="change" />
       <div class="worr-control-hint">{{hint}}</div>
     </div>
   </template>
@@ -20,7 +20,7 @@
         <label class="worr-control-label" for="{{id}}">{{label}}</label>
         <span class="worr-control-value">{{display_value}}</span>
       </div>
-      <input class="worr-slider" id="{{id}}" type="range" min="{{min}}" max="{{max}}" step="{{step}}" data-event-change="cvar.set" />
+      <input class="worr-slider" id="{{id}}" type="range" min="{{min}}" max="{{max}}" step="{{step}}" data-event-change="cvar.set" data-menu-sound-change="change" />
       <div class="worr-control-hint">{{hint}}</div>
     </div>
   </template>
@@ -28,7 +28,7 @@
   <template name="worr-cvar-select">
     <div class="worr-control worr-cvar-control" data-contract-id="{{id}}" data-cvar="{{cvar}}">
       <label class="worr-control-label" for="{{id}}">{{label}}</label>
-      <select class="worr-select" id="{{id}}" data-event-change="cvar.set">
+      <select class="worr-select" id="{{id}}" data-event-change="cvar.set" data-menu-sound-change="change">
         <option data-for="option : options" value="{{option.value}}">{{option.label}}</option>
       </select>
       <div class="worr-control-hint">{{hint}}</div>
@@ -36,9 +36,7 @@
   </template>
 
   <template name="worr-command-button">
-    <button class="worr-command-button" data-command="{{command}}" data-event-click="command.dispatch">
-      {{label}}
-    </button>
+    <button class="worr-command-button" data-command="{{command}}" data-event-click="command.dispatch" data-menu-sound="confirm">{{label}}</button>
   </template>
 
   <template name="worr-conditional-region">

@@ -5,7 +5,7 @@
     <link type="text/rcss" href="../common/theme/session.rcss" />
     <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
-  <body id="session-callvote-ruleset" data-route-id="callvote_ruleset" data-route-group="session" data-route-version="1" data-document-status="round2-scaffold" data-owner="agent5" data-session-owner="sgame">
+  <body id="session-callvote-ruleset" data-route-id="callvote_ruleset" data-route-group="session" data-route-version="1" data-document-status="round2-scaffold" data-owner="agent5" data-session-owner="sgame" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen compact-screen" id="callvote-ruleset-screen">
       <header class="page-header">
         <h1>Callvote: Ruleset</h1>
@@ -15,13 +15,13 @@
       </header>
 
       <nav class="menu-list" id="callvote-ruleset-menu" data-model="session.callvote.ruleset">
-        <button id="callvote-ruleset-q1" type="button" data-command="worr_callvote_ruleset q1">SLIPGATE</button>
-        <button id="callvote-ruleset-q2" type="button" data-command="worr_callvote_ruleset q2">STROYENT</button>
-        <button id="callvote-ruleset-q3" type="button" data-command="worr_callvote_ruleset q3">VADRIGAR</button>
+        <button id="callvote-ruleset-q1" type="button" data-command="worr_callvote_ruleset q1" data-menu-sound="confirm">SLIPGATE</button>
+        <button id="callvote-ruleset-q2" type="button" data-command="worr_callvote_ruleset q2" data-menu-sound="confirm">STROYENT</button>
+        <button id="callvote-ruleset-q3" type="button" data-command="worr_callvote_ruleset q3" data-menu-sound="confirm">VADRIGAR</button>
       </nav>
 
       <footer class="actions" id="callvote-ruleset-actions">
-        <button id="callvote-ruleset-return" type="button" data-command="popmenu">Return</button>
+        <button id="callvote-ruleset-return" type="button" data-command="popmenu" data-menu-sound="cancel">Return</button>
       </footer>
     </div>
   </body>

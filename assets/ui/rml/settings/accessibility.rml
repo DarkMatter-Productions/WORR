@@ -4,7 +4,7 @@
     <link type="text/rcss" href="../common/theme/base.rcss" />
     <link type="text/rcss" href="../common/theme/settings.rcss" />
   </head>
-  <body id="settings-accessibility" data-route-id="accessibility" data-route-group="settings" data-route-version="1" data-document-status="scaffolded-round2">
+  <body id="settings-accessibility" data-route-id="accessibility" data-route-group="settings" data-route-version="1" data-document-status="scaffolded-round2" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen settings-screen" id="accessibility-screen">
       <header class="menu-header">
         <h1>Accessibility</h1>
@@ -14,11 +14,13 @@
         <section class="settings-section" id="accessibility-text-section">
           <h2>Text</h2>
           <div class="setting-row" data-control="toggle" data-cvar="ui_high_visibility_text">
+            <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
             <label for="accessibility-high-visibility">High-Visibility Text</label>
             <input id="accessibility-high-visibility" type="checkbox" data-cvar="ui_high_visibility_text" />
             <span class="setting-value">Adds black text backgrounds and forces TrueType.</span>
           </div>
           <div class="setting-row" data-control="select" data-cvar="ui_text_typeface">
+            <span class="setting-widget-icon" data-widget="select"><img src="../common/icons/widgets/select.svg" /></span>
             <label for="accessibility-typeface">Typeface</label>
             <select id="accessibility-typeface" data-cvar="ui_text_typeface">
               <option value="0">Legacy</option>
@@ -31,8 +33,8 @@
       </main>
 
       <footer class="menu-footer" id="accessibility-menu-footer">
-        <button id="accessibility-back" type="button" data-command="ui.back">Back</button>
-        <button id="accessibility-close" type="button" data-command="ui.close">Close</button>
+        <button id="accessibility-back" type="button" data-command="ui.back" data-menu-sound="cancel">Back</button>
+        <button id="accessibility-close" type="button" data-command="ui.close" data-menu-sound="cancel">Close</button>
       </footer>
     </div>
   </body>

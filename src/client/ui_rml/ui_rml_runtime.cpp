@@ -25,6 +25,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "common/cvar.h"
 #include "common/files.h"
 #include "client/keys.h"
+#include "client/sound/sound.h"
 #include "renderer/renderer.h"
 #include "system/system.h"
 
@@ -41,6 +42,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Element.h>
 #include <RmlUi/Core/ElementDocument.h>
+#include <RmlUi/Core/Elements/ElementFormControl.h>
 #include <RmlUi/Core/Event.h>
 #include <RmlUi/Core/EventListener.h>
 #include <RmlUi/Core/FontEngineInterface.h>
@@ -62,7 +64,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #endif
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <initializer_list>
@@ -80,6 +84,15 @@ static Rml::String ui_rml_active_route;
 static Rml::String ui_rml_active_document;
 static int ui_rml_context_width;
 static int ui_rml_context_height;
+static int ui_rml_last_menu_sound = -1;
+static unsigned ui_rml_last_menu_sound_msec;
+static bool ui_rml_applying_cvar_bindings;
+static cvar_t *ui_rml_log_missing_data_models;
+
+static bool UI_Rml_IsMissingDataModelNotice(const Rml::String &message)
+{
+    return message.find("Could not locate data model") != Rml::String::npos;
+}
 
 class UI_Rml_SystemInterface final : public Rml::SystemInterface {
 public:
@@ -134,6 +147,12 @@ public:
 
     bool LogMessage(Rml::Log::Type type, const Rml::String &message) override
     {
+        if (UI_Rml_IsMissingDataModelNotice(message) &&
+            (!ui_rml_log_missing_data_models ||
+             !ui_rml_log_missing_data_models->integer)) {
+            return true;
+        }
+
         switch (type) {
         case Rml::Log::LT_ERROR:
         case Rml::Log::LT_ASSERT:
@@ -1371,6 +1390,20 @@ static int UI_Rml_MenuSoundForName(const Rml::String &sound_name)
     return UI_FEEDBACK_OPEN;
 }
 
+static void UI_Rml_PlayMenuFeedbackSound(uiFeedbackSound_t sound)
+{
+    const unsigned now = Sys_Milliseconds();
+
+    if (ui_rml_last_menu_sound == sound &&
+        now - ui_rml_last_menu_sound_msec < 75) {
+        return;
+    }
+
+    ui_rml_last_menu_sound = sound;
+    ui_rml_last_menu_sound_msec = now;
+    UI_StartFeedbackSound(sound);
+}
+
 static void UI_Rml_PlayElementMenuSound(Rml::Element *element,
                                         const Rml::String &command,
                                         const Rml::String &route_target)
@@ -1397,7 +1430,827 @@ static void UI_Rml_PlayElementMenuSound(Rml::Element *element,
     }
 
     if (sound >= 0) {
-        UI_StartFeedbackSound(static_cast<uiFeedbackSound_t>(sound));
+        UI_Rml_PlayMenuFeedbackSound(static_cast<uiFeedbackSound_t>(sound));
+    }
+}
+
+static Rml::Element *UI_Rml_DocumentBody(Rml::ElementDocument *document)
+{
+    if (!document) {
+        return nullptr;
+    }
+
+    Rml::Element *body = document->QuerySelector("body");
+    if (body) {
+        return body;
+    }
+
+    return document->GetFirstChild();
+}
+
+static bool UI_Rml_ElementBoolAttribute(Rml::Element *element,
+                                        const char *name)
+{
+    if (!element || !element->HasAttribute(name)) {
+        return false;
+    }
+
+    const Rml::String value = element->GetAttribute<Rml::String>(name, "");
+    if (value.empty() ||
+        !Q_stricmp(value.c_str(), "1") ||
+        !Q_stricmp(value.c_str(), "true") ||
+        !Q_stricmp(value.c_str(), "yes") ||
+        !Q_stricmp(value.c_str(), "on")) {
+        return true;
+    }
+
+    return false;
+}
+
+static int UI_Rml_ElementIntAttribute(Rml::Element *element,
+                                      const char *name,
+                                      int fallback)
+{
+    if (!element || !element->HasAttribute(name)) {
+        return fallback;
+    }
+
+    const Rml::String value = element->GetAttribute<Rml::String>(name, "");
+    if (value.empty()) {
+        return fallback;
+    }
+
+    return static_cast<int>(strtol(value.c_str(), nullptr, 10));
+}
+
+static Rml::String UI_Rml_EscapeTextForInnerRml(const char *text)
+{
+    Rml::String escaped;
+
+    if (!text) {
+        return escaped;
+    }
+
+    for (const char *cursor = text; *cursor; cursor++) {
+        switch (*cursor) {
+        case '&':
+            escaped += "&amp;";
+            break;
+        case '<':
+            escaped += "&lt;";
+            break;
+        case '>':
+            escaped += "&gt;";
+            break;
+        default:
+            escaped += *cursor;
+            break;
+        }
+    }
+
+    return escaped;
+}
+
+static void UI_Rml_SetElementInnerText(Rml::Element *element,
+                                       const char *text)
+{
+    if (!element) {
+        return;
+    }
+
+    const Rml::String escaped = UI_Rml_EscapeTextForInnerRml(text);
+    if (element->GetInnerRML() != escaped) {
+        element->SetInnerRML(escaped);
+    }
+}
+
+static Rml::String UI_Rml_FormatCvarDisplayText(cvar_t *var)
+{
+    Rml::String text = (var && var->string) ? var->string : "";
+    const bool numeric =
+        text.find_first_not_of("+-0123456789.") == Rml::String::npos &&
+        text.find('.') != Rml::String::npos;
+
+    if (!numeric) {
+        return text;
+    }
+
+    while (!text.empty() && text.back() == '0') {
+        text.pop_back();
+    }
+
+    if (!text.empty() && text.back() == '.') {
+        text.pop_back();
+    }
+
+    return text.empty() ? "0" : text;
+}
+
+static bool UI_Rml_CvarHasDisplayText(cvar_t *var)
+{
+    return var && var->string && var->string[0] != '\0';
+}
+
+static Rml::String UI_Rml_TrimString(Rml::String value)
+{
+    size_t start = 0;
+    while (start < value.size() &&
+           static_cast<unsigned char>(value[start]) <= ' ') {
+        start++;
+    }
+
+    size_t end = value.size();
+    while (end > start &&
+           static_cast<unsigned char>(value[end - 1]) <= ' ') {
+        end--;
+    }
+
+    return value.substr(start, end - start);
+}
+
+static bool UI_Rml_ParseDouble(const Rml::String &value, double *out)
+{
+    if (value.empty()) {
+        return false;
+    }
+
+    char *end = nullptr;
+    const double parsed = strtod(value.c_str(), &end);
+    if (!end || *end != '\0') {
+        return false;
+    }
+
+    if (out) {
+        *out = parsed;
+    }
+    return true;
+}
+
+static bool UI_Rml_CvarStringTruthy(const char *value)
+{
+    if (!value || !value[0]) {
+        return false;
+    }
+
+    if (!Q_stricmp(value, "0") ||
+        !Q_stricmp(value, "false") ||
+        !Q_stricmp(value, "no") ||
+        !Q_stricmp(value, "off")) {
+        return false;
+    }
+
+    return true;
+}
+
+static bool UI_Rml_ConditionTermMatches(Rml::String term)
+{
+    term = UI_Rml_TrimString(term);
+    if (term.empty()) {
+        return true;
+    }
+
+    bool negate = false;
+    if (term[0] == '!') {
+        negate = true;
+        term = UI_Rml_TrimString(term.substr(1));
+    }
+
+    size_t operator_pos = term.find("!=");
+    bool not_equal = operator_pos != Rml::String::npos;
+    if (operator_pos == Rml::String::npos) {
+        operator_pos = term.find('=');
+    }
+
+    bool matches = false;
+
+    if (operator_pos == Rml::String::npos) {
+        cvar_t *var = Cvar_FindVar(term.c_str());
+        matches = var && UI_Rml_CvarStringTruthy(var->string);
+    } else {
+        const size_t operator_len = not_equal ? 2 : 1;
+        const Rml::String name = UI_Rml_TrimString(term.substr(0, operator_pos));
+        const Rml::String expected =
+            UI_Rml_TrimString(term.substr(operator_pos + operator_len));
+        const char *actual_text = Cvar_VariableString(name.c_str());
+        double actual_number = 0.0;
+        double expected_number = 0.0;
+
+        if (UI_Rml_ParseDouble(actual_text, &actual_number) &&
+            UI_Rml_ParseDouble(expected, &expected_number)) {
+            matches = fabs(actual_number - expected_number) < 0.000001;
+        } else {
+            matches = !Q_stricmp(actual_text, expected.c_str());
+        }
+
+        if (not_equal) {
+            matches = !matches;
+        }
+    }
+
+    return negate ? !matches : matches;
+}
+
+static bool UI_Rml_ConditionExpressionMatches(const Rml::String &expression)
+{
+    if (expression.empty()) {
+        return true;
+    }
+
+    size_t start = 0;
+    while (start <= expression.size()) {
+        const size_t end = expression.find(';', start);
+        const Rml::String term =
+            end == Rml::String::npos
+                ? expression.substr(start)
+                : expression.substr(start, end - start);
+
+        if (!UI_Rml_ConditionTermMatches(term)) {
+            return false;
+        }
+
+        if (end == Rml::String::npos) {
+            break;
+        }
+        start = end + 1;
+    }
+
+    return true;
+}
+
+static Rml::String UI_Rml_ElementCondition(Rml::Element *element,
+                                           const char *first,
+                                           const char *second)
+{
+    if (!element) {
+        return "";
+    }
+
+    Rml::String value = element->GetAttribute<Rml::String>(first, "");
+    if (value.empty() && second) {
+        value = element->GetAttribute<Rml::String>(second, "");
+    }
+    return value;
+}
+
+static void UI_Rml_ApplyElementConditions(Rml::Element *element)
+{
+    if (!element) {
+        return;
+    }
+
+    bool visible = true;
+    const Rml::String visible_if =
+        UI_Rml_ElementCondition(element, "data-visible-if", nullptr);
+    const Rml::String show_if =
+        UI_Rml_ElementCondition(element, "data-show-if", nullptr);
+    const bool has_visible_condition =
+        !visible_if.empty() || !show_if.empty();
+    if (!visible_if.empty()) {
+        visible = visible && UI_Rml_ConditionExpressionMatches(visible_if);
+    }
+    if (!show_if.empty()) {
+        visible = visible && UI_Rml_ConditionExpressionMatches(show_if);
+    }
+
+    if (has_visible_condition) {
+        if (visible) {
+            element->RemoveProperty("display");
+        } else {
+            element->SetProperty("display", "none");
+        }
+    }
+
+    const Rml::String enable_if =
+        UI_Rml_ElementCondition(element, "data-enable-if", "data-enabled-if");
+    if (!enable_if.empty()) {
+        const bool enabled = UI_Rml_ConditionExpressionMatches(enable_if);
+        if (enabled) {
+            element->RemoveAttribute("disabled");
+        } else {
+            element->SetAttribute("disabled", "");
+        }
+    }
+
+    const int num_children = element->GetNumChildren();
+    for (int child_index = 0; child_index < num_children; child_index++) {
+        UI_Rml_ApplyElementConditions(element->GetChild(child_index));
+    }
+}
+
+static bool UI_Rml_ElementIsCheckbox(Rml::Element *element)
+{
+    if (!element || Q_stricmp(element->GetTagName().c_str(), "input")) {
+        return false;
+    }
+
+    const Rml::String type = element->GetAttribute<Rml::String>("type", "");
+    return !Q_stricmp(type.c_str(), "checkbox");
+}
+
+static bool UI_Rml_CvarValueToChecked(Rml::Element *element, cvar_t *var)
+{
+    const int bit = UI_Rml_ElementIntAttribute(element, "data-bit", -1);
+    const bool negate = UI_Rml_ElementBoolAttribute(element, "data-negate");
+    bool checked = false;
+
+    if (var) {
+        if (bit >= 0 && bit < 31) {
+            checked = (var->integer & (1 << bit)) != 0;
+        } else {
+            checked = var->integer != 0;
+        }
+    }
+
+    return negate ? !checked : checked;
+}
+
+static void UI_Rml_SetCheckboxValue(Rml::Element *element, bool checked)
+{
+    if (!element) {
+        return;
+    }
+
+    if (checked) {
+        if (!element->HasAttribute("checked")) {
+            element->SetAttribute("checked", "");
+        }
+    } else if (element->HasAttribute("checked")) {
+        element->RemoveAttribute("checked");
+    }
+}
+
+static void UI_Rml_ApplyCvarToControl(Rml::Element *element, cvar_t *var)
+{
+    if (!element || !var) {
+        return;
+    }
+
+    auto *control =
+        rmlui_dynamic_cast<Rml::ElementFormControl *>(element);
+    if (!control) {
+        return;
+    }
+
+    if (UI_Rml_ElementIsCheckbox(element)) {
+        UI_Rml_SetCheckboxValue(element, UI_Rml_CvarValueToChecked(element, var));
+        return;
+    }
+
+    control->SetValue(var->string ? var->string : "");
+}
+
+static void UI_Rml_ApplyCvarToProgress(Rml::Element *element, cvar_t *var)
+{
+    if (!element || !var ||
+        Q_stricmp(element->GetTagName().c_str(), "progress")) {
+        return;
+    }
+
+    element->SetAttribute("value", var->string ? var->string : "0");
+}
+
+static void UI_Rml_ApplyCvarToText(Rml::Element *element, cvar_t *var)
+{
+    if (!element || !var) {
+        return;
+    }
+
+    const Rml::String text = UI_Rml_FormatCvarDisplayText(var);
+    UI_Rml_SetElementInnerText(element, text.c_str());
+}
+
+static void UI_Rml_ApplyCvarToMeter(Rml::Element *element, cvar_t *var)
+{
+    if (!element || !var) {
+        return;
+    }
+
+    double value = 0.0;
+    double minimum = 0.0;
+    double maximum = 1.0;
+
+    if (!UI_Rml_ParseDouble(var->string ? var->string : "", &value) ||
+        !UI_Rml_ParseDouble(
+            element->GetAttribute<Rml::String>("data-meter-min", "0"),
+            &minimum) ||
+        !UI_Rml_ParseDouble(
+            element->GetAttribute<Rml::String>("data-meter-max", "1"),
+            &maximum) ||
+        maximum <= minimum) {
+        element->SetProperty("width", "0%");
+        return;
+    }
+
+    double ratio = (value - minimum) / (maximum - minimum);
+    if (ratio < 0.0) {
+        ratio = 0.0;
+    } else if (ratio > 1.0) {
+        ratio = 1.0;
+    }
+    element->SetProperty("width", va("%.3f%%", ratio * 100.0));
+}
+
+static Rml::String UI_Rml_DataBindCvarName(Rml::Element *element)
+{
+    if (!element) {
+        return "";
+    }
+
+    const Rml::String data_bind =
+        element->GetAttribute<Rml::String>("data-bind", "");
+    static const char prefix[] = "cvars.";
+    const size_t prefix_length = sizeof(prefix) - 1;
+
+    if (data_bind.size() <= prefix_length ||
+        data_bind.compare(0, prefix_length, prefix)) {
+        return "";
+    }
+
+    return data_bind.substr(prefix_length);
+}
+
+static void UI_Rml_RefreshCvarBindings(Rml::Element *element,
+                                       const Rml::String *only_cvar,
+                                       bool include_controls)
+{
+    if (!element) {
+        return;
+    }
+
+    const Rml::String data_cvar =
+        element->GetAttribute<Rml::String>("data-cvar", "");
+    if (!data_cvar.empty() &&
+        (!only_cvar || data_cvar == *only_cvar)) {
+        if (cvar_t *var = Cvar_FindVar(data_cvar.c_str())) {
+            if (include_controls) {
+                UI_Rml_ApplyCvarToControl(element, var);
+            }
+            UI_Rml_ApplyCvarToProgress(element, var);
+        }
+    }
+
+    const Rml::String meter_cvar =
+        element->GetAttribute<Rml::String>("data-meter-cvar", "");
+    if (!meter_cvar.empty() &&
+        (!only_cvar || meter_cvar == *only_cvar)) {
+        if (cvar_t *var = Cvar_FindVar(meter_cvar.c_str())) {
+            UI_Rml_ApplyCvarToMeter(element, var);
+        }
+    }
+
+    const Rml::String bind_cvar =
+        element->GetAttribute<Rml::String>("data-bind-cvar", "");
+    if (!bind_cvar.empty() &&
+        (!only_cvar || bind_cvar == *only_cvar)) {
+        if (cvar_t *var = Cvar_FindVar(bind_cvar.c_str())) {
+            if (UI_Rml_CvarHasDisplayText(var)) {
+                UI_Rml_ApplyCvarToText(element, var);
+            }
+        }
+    }
+
+    const Rml::String label_cvar =
+        element->GetAttribute<Rml::String>("data-label-cvar", "");
+    if (!label_cvar.empty() &&
+        (!only_cvar || label_cvar == *only_cvar)) {
+        if (cvar_t *var = Cvar_FindVar(label_cvar.c_str())) {
+            if (UI_Rml_CvarHasDisplayText(var)) {
+                UI_Rml_ApplyCvarToText(element, var);
+            }
+        }
+    }
+
+    const Rml::String data_bind_cvar = UI_Rml_DataBindCvarName(element);
+    if (!data_bind_cvar.empty() &&
+        (!only_cvar || data_bind_cvar == *only_cvar)) {
+        if (cvar_t *var = Cvar_FindVar(data_bind_cvar.c_str())) {
+            if (UI_Rml_CvarHasDisplayText(var)) {
+                UI_Rml_ApplyCvarToText(element, var);
+            }
+        }
+    }
+
+    const int num_children = element->GetNumChildren();
+    for (int child_index = 0; child_index < num_children; child_index++) {
+        UI_Rml_RefreshCvarBindings(element->GetChild(child_index),
+                                   only_cvar,
+                                   include_controls);
+    }
+}
+
+static void UI_Rml_ApplyDocumentCvarBindings(Rml::ElementDocument *document)
+{
+    if (!document) {
+        return;
+    }
+
+    ui_rml_applying_cvar_bindings = true;
+    UI_Rml_RefreshCvarBindings(document, nullptr, true);
+    UI_Rml_ApplyElementConditions(document);
+    ui_rml_applying_cvar_bindings = false;
+}
+
+static void UI_Rml_RefreshDocumentCvarDisplays(Rml::ElementDocument *document)
+{
+    if (!document) {
+        return;
+    }
+
+    ui_rml_applying_cvar_bindings = true;
+    UI_Rml_RefreshCvarBindings(document, nullptr, false);
+    UI_Rml_ApplyElementConditions(document);
+    ui_rml_applying_cvar_bindings = false;
+}
+
+static cvar_t *UI_Rml_SetCvarInteger(const Rml::String &name,
+                                     cvar_t *var,
+                                     int value)
+{
+    if (var) {
+        Cvar_SetInteger(var, value, FROM_MENU);
+        return var;
+    }
+
+    const std::string value_text = std::to_string(value);
+    return Cvar_SetEx(name.c_str(), value_text.c_str(), FROM_MENU);
+}
+
+static cvar_t *UI_Rml_SetCvarFloat(const Rml::String &name,
+                                   cvar_t *var,
+                                   float value)
+{
+    if (var) {
+        Cvar_SetValue(var, value, FROM_MENU);
+        return var;
+    }
+
+    return Cvar_SetEx(name.c_str(), va("%g", value), FROM_MENU);
+}
+
+static cvar_t *UI_Rml_SetCvarString(const Rml::String &name,
+                                    cvar_t *var,
+                                    const Rml::String &value)
+{
+    if (var) {
+        Cvar_SetByVar(var, value.c_str(), FROM_MENU);
+        return var;
+    }
+
+    return Cvar_SetEx(name.c_str(), value.c_str(), FROM_MENU);
+}
+
+static Rml::Element *UI_Rml_FindCvarControlElement(Rml::Element *element)
+{
+    for (Rml::Element *current = element; current; current = current->GetParentNode()) {
+        if (current->GetAttribute<Rml::String>("data-cvar", "").empty()) {
+            continue;
+        }
+
+        if (rmlui_dynamic_cast<Rml::ElementFormControl *>(current)) {
+            return current;
+        }
+    }
+
+    return nullptr;
+}
+
+static void UI_Rml_SetCvarFromControl(Rml::Element *element)
+{
+    if (ui_rml_applying_cvar_bindings || !element) {
+        return;
+    }
+
+    auto *control =
+        rmlui_dynamic_cast<Rml::ElementFormControl *>(element);
+    if (!control) {
+        return;
+    }
+
+    const Rml::String cvar_name =
+        element->GetAttribute<Rml::String>("data-cvar", "");
+    if (cvar_name.empty()) {
+        return;
+    }
+
+    cvar_t *var = Cvar_FindVar(cvar_name.c_str());
+
+    if (UI_Rml_ElementIsCheckbox(element)) {
+        const int bit = UI_Rml_ElementIntAttribute(element, "data-bit", -1);
+        const bool negate = UI_Rml_ElementBoolAttribute(element, "data-negate");
+        const bool visible_checked = element->HasAttribute("checked");
+        const bool cvar_checked = negate ? !visible_checked : visible_checked;
+
+        if (bit >= 0 && bit < 31) {
+            const int mask = 1 << bit;
+            int next_value = var ? var->integer : 0;
+            if (cvar_checked) {
+                next_value |= mask;
+            } else {
+                next_value &= ~mask;
+            }
+            var = UI_Rml_SetCvarInteger(cvar_name, var, next_value);
+        } else {
+            var = UI_Rml_SetCvarInteger(cvar_name, var, cvar_checked ? 1 : 0);
+        }
+    } else {
+        const Rml::String value = control->GetValue();
+        const Rml::String type = element->GetAttribute<Rml::String>("type", "");
+
+        if (UI_Rml_ElementBoolAttribute(element, "data-integer")) {
+            var = UI_Rml_SetCvarInteger(cvar_name,
+                                        var,
+                                        static_cast<int>(strtol(value.c_str(), nullptr, 10)));
+        } else if (!Q_stricmp(type.c_str(), "range")) {
+            var = UI_Rml_SetCvarFloat(cvar_name,
+                                      var,
+                                      static_cast<float>(atof(value.c_str())));
+        } else {
+            var = UI_Rml_SetCvarString(cvar_name, var, value);
+        }
+    }
+
+    if (!ui_rml_document || !var) {
+        return;
+    }
+
+    ui_rml_applying_cvar_bindings = true;
+    UI_Rml_RefreshCvarBindings(ui_rml_document, &cvar_name, true);
+    UI_Rml_ApplyElementConditions(ui_rml_document);
+    ui_rml_applying_cvar_bindings = false;
+}
+
+class UI_Rml_CvarEventListener final : public Rml::EventListener {
+public:
+    void ProcessEvent(Rml::Event &event) override
+    {
+        if (event.GetId() != Rml::EventId::Change) {
+            return;
+        }
+
+        UI_Rml_SetCvarFromControl(
+            UI_Rml_FindCvarControlElement(event.GetTargetElement()));
+    }
+};
+
+static UI_Rml_CvarEventListener ui_rml_cvar_event_listener;
+
+static void UI_Rml_AttachElementCvarListeners(Rml::Element *element)
+{
+    if (!element) {
+        return;
+    }
+
+    if (!element->GetAttribute<Rml::String>("data-cvar", "").empty() &&
+        rmlui_dynamic_cast<Rml::ElementFormControl *>(element)) {
+        element->AddEventListener(Rml::EventId::Change,
+                                  &ui_rml_cvar_event_listener);
+    }
+
+    const int num_children = element->GetNumChildren();
+    for (int child_index = 0; child_index < num_children; child_index++) {
+        UI_Rml_AttachElementCvarListeners(element->GetChild(child_index));
+    }
+}
+
+static void UI_Rml_ApplyDocumentAudioHints(const char *route_id,
+                                           Rml::ElementDocument *document)
+{
+    Rml::String music;
+    Rml::String open_sound;
+    Rml::Element *body = UI_Rml_DocumentBody(document);
+
+    if (!document) {
+        return;
+    }
+
+    open_sound = document->GetAttribute<Rml::String>("data-menu-sound-open", "");
+    if (open_sound.empty() && body) {
+        open_sound = body->GetAttribute<Rml::String>("data-menu-sound-open", "");
+    }
+
+    if (!open_sound.empty()) {
+        const int sound = UI_Rml_MenuSoundForName(open_sound);
+
+        if (sound >= 0) {
+            UI_Rml_PlayMenuFeedbackSound(static_cast<uiFeedbackSound_t>(sound));
+            Com_Printf("RmlUi route '%s' requested menu open sound '%s'.\n",
+                       route_id && route_id[0] ? route_id : "<unknown>",
+                       open_sound.c_str());
+        }
+    }
+
+    music = document->GetAttribute<Rml::String>("data-menu-music", "");
+    if (music.empty() && body) {
+        music = body->GetAttribute<Rml::String>("data-menu-music", "");
+    }
+
+    if (music.empty() ||
+        !Q_stricmp(music.c_str(), "none") ||
+        !Q_stricmp(music.c_str(), "silent")) {
+        return;
+    }
+
+    if (!Q_stricmp(music.c_str(), "menu") ||
+        !Q_stricmp(music.c_str(), "auto")) {
+        OGG_Play();
+        Com_Printf("RmlUi route '%s' requested menu music cue '%s'.\n",
+                   route_id && route_id[0] ? route_id : "<unknown>",
+                   music.c_str());
+        return;
+    }
+
+    if (!Q_stricmp(music.c_str(), "off") ||
+        !Q_stricmp(music.c_str(), "stop")) {
+        OGG_Stop();
+        Com_Printf("RmlUi route '%s' requested music stop cue '%s'.\n",
+                   route_id && route_id[0] ? route_id : "<unknown>",
+                   music.c_str());
+    }
+}
+
+static bool UI_Rml_ElementIsInteractionTag(Rml::Element *element)
+{
+    if (!element) {
+        return false;
+    }
+
+    const Rml::String &tag = element->GetTagName();
+
+    return !Q_stricmp(tag.c_str(), "button") ||
+           !Q_stricmp(tag.c_str(), "input") ||
+           !Q_stricmp(tag.c_str(), "select") ||
+           !Q_stricmp(tag.c_str(), "textarea");
+}
+
+static bool UI_Rml_ElementWantsInteractionAudio(Rml::Element *element)
+{
+    return element &&
+           (UI_Rml_ElementIsInteractionTag(element) ||
+            element->HasAttribute("data-command") ||
+            element->HasAttribute("data-command-cvar") ||
+            element->HasAttribute("data-route") ||
+            element->HasAttribute("data-route-target") ||
+            element->HasAttribute("data-cvar") ||
+            element->HasAttribute("data-event-click") ||
+            element->HasAttribute("data-event-change") ||
+            element->HasAttribute("data-menu-sound-focus") ||
+            element->HasAttribute("data-menu-sound-change"));
+}
+
+class UI_Rml_AudioEventListener final : public Rml::EventListener {
+public:
+    void ProcessEvent(Rml::Event &event) override
+    {
+        if (ui_rml_applying_cvar_bindings) {
+            return;
+        }
+
+        const Rml::EventId event_id = event.GetId();
+
+        if (event_id != Rml::EventId::Focus &&
+            event_id != Rml::EventId::Change) {
+            return;
+        }
+
+        Rml::Element *element = event.GetTargetElement();
+        if (!UI_Rml_ElementWantsInteractionAudio(element)) {
+            return;
+        }
+
+        const char *attribute =
+            event_id == Rml::EventId::Focus
+                ? "data-menu-sound-focus"
+                : "data-menu-sound-change";
+        const Rml::String sound_name =
+            element->GetAttribute<Rml::String>(attribute, "");
+        const int sound = sound_name.empty()
+                              ? UI_FEEDBACK_MOVE
+                              : UI_Rml_MenuSoundForName(sound_name);
+
+        if (sound >= 0) {
+            UI_Rml_PlayMenuFeedbackSound(static_cast<uiFeedbackSound_t>(sound));
+        }
+    }
+};
+
+static UI_Rml_AudioEventListener ui_rml_audio_event_listener;
+
+static void UI_Rml_AttachElementAudioListeners(Rml::Element *element)
+{
+    if (!element) {
+        return;
+    }
+
+    if (UI_Rml_ElementWantsInteractionAudio(element)) {
+        element->AddEventListener(Rml::EventId::Focus,
+                                  &ui_rml_audio_event_listener);
+        element->AddEventListener(Rml::EventId::Change,
+                                  &ui_rml_audio_event_listener);
+    }
+
+    const int num_children = element->GetNumChildren();
+    for (int child_index = 0; child_index < num_children; child_index++) {
+        UI_Rml_AttachElementAudioListeners(element->GetChild(child_index));
     }
 }
 
@@ -1515,6 +2368,9 @@ static bool UI_Rml_CompiledRuntimeInit(void)
     if (ui_rml_core_initialized) {
         return true;
     }
+
+    ui_rml_log_missing_data_models =
+        Cvar_Get("ui_rml_log_missing_data_models", "0", 0);
 
     UI_Rml_InstallCoreInterfaces();
 
@@ -1864,6 +2720,7 @@ static void UI_Rml_CompiledRuntimeShutdown(void)
 
     Rml::Shutdown();
     ui_rml_core_initialized = false;
+    ui_rml_log_missing_data_models = NULL;
 }
 
 static bool UI_Rml_CompiledRuntimeOpenRoute(const char *route_id, const char *document_path)
@@ -1929,7 +2786,11 @@ static bool UI_Rml_CompiledRuntimeOpenRoute(const char *route_id, const char *do
     ui_rml_document->Show();
     ui_rml_active_route = route_id ? route_id : "";
     ui_rml_active_document = document_path;
+    UI_Rml_ApplyDocumentCvarBindings(ui_rml_document);
     ui_rml_context->Update();
+    UI_Rml_AttachElementCvarListeners(ui_rml_document);
+    UI_Rml_AttachElementAudioListeners(ui_rml_document);
+    UI_Rml_ApplyDocumentAudioHints(route_id, ui_rml_document);
 
     Com_Printf("RmlUi route '%s' opened document '%s' in guarded context '%s'.\n",
                ui_rml_active_route.c_str(),
@@ -1971,6 +2832,7 @@ static bool UI_Rml_CompiledRuntimeUpdate(int width, int height, unsigned realtim
         return false;
     }
 
+    UI_Rml_RefreshDocumentCvarDisplays(ui_rml_document);
     (void)ui_rml_context->Update();
     return true;
 }

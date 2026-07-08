@@ -4,22 +4,22 @@
     <link type="text/rcss" href="../common/theme/base.rcss" />
     <link type="text/rcss" href="../common/theme/singleplayer.rcss" />
   </head>
-  <body id="singleplayer-skill-select" data-route-id="skill_select" data-route-group="singleplayer" data-route-version="1" data-document-status="scaffolded-round3" data-banner="m_banner_game">
+  <body id="singleplayer-skill-select" data-route-id="skill_select" data-route-group="singleplayer" data-route-version="1" data-document-status="scaffolded-round3" data-banner="m_banner_game" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen singleplayer-screen" id="skill-select-screen">
       <header class="menu-header">
         <h1>Select Skill</h1>
       </header>
 
       <main class="menu-stack" id="skill-select-actions" data-component="common.components.command_button">
-        <button id="skill-select-easy" type="button" data-command="forcemenuoff; skill 0; deathmatch 0; coop 0; maxclients 1; _mapdb_run">Easy</button>
-        <button id="skill-select-medium" type="button" data-command="forcemenuoff; skill 1; deathmatch 0; coop 0; maxclients 1; _mapdb_run">Medium</button>
-        <button id="skill-select-hard" type="button" data-command="forcemenuoff; skill 2; deathmatch 0; coop 0; maxclients 1; _mapdb_run">Hard</button>
-        <button id="skill-select-nightmare" type="button" data-command="forcemenuoff; skill 3; deathmatch 0; coop 0; maxclients 1; _mapdb_run">Nightmare</button>
+        <button id="skill-select-easy" type="button" data-command="forcemenuoff; skill 0; deathmatch 0; coop 0; maxclients 1; _mapdb_run" data-menu-sound="confirm">Easy</button>
+        <button id="skill-select-medium" type="button" data-command="forcemenuoff; skill 1; deathmatch 0; coop 0; maxclients 1; _mapdb_run" data-menu-sound="confirm">Medium</button>
+        <button id="skill-select-hard" type="button" data-command="forcemenuoff; skill 2; deathmatch 0; coop 0; maxclients 1; _mapdb_run" data-menu-sound="confirm">Hard</button>
+        <button id="skill-select-nightmare" type="button" data-command="forcemenuoff; skill 3; deathmatch 0; coop 0; maxclients 1; _mapdb_run" data-menu-sound="confirm">Nightmare</button>
       </main>
 
       <footer class="menu-footer" id="skill-select-menu-footer">
-        <button id="skill-select-back" type="button" data-command="ui.back">Back</button>
-        <button id="skill-select-close" type="button" data-command="ui.close">Close</button>
+        <button id="skill-select-back" type="button" data-command="ui.back" data-menu-sound="cancel">Back</button>
+        <button id="skill-select-close" type="button" data-command="ui.close" data-menu-sound="cancel">Close</button>
       </footer>
     </div>
   </body>

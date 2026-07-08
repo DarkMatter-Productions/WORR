@@ -87,65 +87,43 @@
 	overflow: auto;
 }
 
-#multiplayer-menu
-{
-	position: relative;
-	flex: 0 0 auto;
-	width: 604px;
-	min-width: 604px;
-	max-width: 604px;
-	height: 150px;
-	margin-bottom: 12px;
-	padding-right: 8px;
-	overflow: hidden;
-}
-
-#multiplayer-menu button
-{
-	position: absolute;
-	width: 272px;
-	min-width: 272px;
-	height: 30px;
-	min-height: 30px;
-	padding: 5px 12px;
-	margin-right: 0px;
-	margin-bottom: 0px;
-	background-color: #211e19;
-	border-left-width: 4px;
-	border-left-color: #4b4235;
-	border-radius: 5px;
-}
-
 #multiplayer-session-status
 {
-	width: 584px;
+	width: 568px;
+	max-width: 568px;
 }
 
 #callvote-main-menu
 {
 	position: relative;
+	display: block;
 	flex: 0 0 auto;
-	width: 604px;
-	min-width: 604px;
-	height: 332px;
-	padding-right: 8px;
+	width: 632px;
+	min-width: 0px;
+	max-width: 100%;
+	height: 430px;
+	max-height: 430px;
+	padding-right: 6px;
 	margin-bottom: 8px;
-	overflow: hidden;
+	overflow: auto;
 }
 
 #callvote-main-menu button
 {
 	position: absolute;
-	width: 272px;
-	min-width: 272px;
-	height: 26px;
-	min-height: 26px;
-	padding: 5px 12px;
+	display: block;
+	width: 286px;
+	min-width: 286px;
+	max-width: 286px;
+	height: 42px;
+	min-height: 42px;
+	padding: 7px 12px;
 	background-color: #211e19;
 	border-left-width: 4px;
 	border-left-color: #4b4235;
 	border-radius: 5px;
 	font-size: 16px;
+	text-align: left;
 	margin-right: 0px;
 	margin-bottom: 0px;
 }
@@ -154,28 +132,35 @@
 #join-team-actions
 {
 	position: relative;
+	display: block;
 	flex: 0 0 auto;
-	width: 604px;
-	min-width: 604px;
-	height: 92px;
-	padding: 8px;
+	width: 632px;
+	min-width: 0px;
+	max-width: 100%;
+	height: 126px;
+	min-height: 0px;
+	max-height: 126px;
+	padding: 8px 0px 0px 8px;
 	margin-bottom: 10px;
-	overflow: hidden;
+	overflow: auto;
 }
 
 #dm-join-team-actions button,
 #join-team-actions button
 {
 	position: absolute;
-	width: 272px;
-	min-width: 272px;
-	height: 26px;
-	min-height: 26px;
-	padding: 5px 12px;
+	display: block;
+	width: 286px;
+	min-width: 286px;
+	max-width: 286px;
+	height: 42px;
+	min-height: 42px;
+	padding: 7px 12px;
 	background-color: #211e19;
 	border-left-width: 4px;
 	border-left-color: #4b4235;
 	border-radius: 5px;
+	text-align: left;
 	margin-right: 0px;
 	margin-bottom: 0px;
 }
@@ -184,29 +169,36 @@
 #join-session-menu
 {
 	position: relative;
+	display: block;
 	flex: 0 0 auto;
-	width: 604px;
-	min-width: 604px;
-	height: 286px;
-	padding-right: 8px;
+	width: 632px;
+	min-width: 0px;
+	max-width: 100%;
+	height: 360px;
+	min-height: 0px;
+	max-height: 360px;
+	padding: 0px 0px 0px 0px;
 	margin-bottom: 8px;
-	overflow: hidden;
+	overflow: auto;
 }
 
 #dm-join-session-menu button,
 #join-session-menu button
 {
 	position: absolute;
-	width: 272px;
-	min-width: 272px;
-	height: 26px;
-	min-height: 26px;
-	padding: 5px 12px;
+	display: block;
+	width: 286px;
+	min-width: 286px;
+	max-width: 286px;
+	height: 42px;
+	min-height: 42px;
+	padding: 7px 12px;
 	background-color: #211e19;
 	border-left-width: 4px;
 	border-left-color: #4b4235;
 	border-radius: 5px;
 	font-size: 16px;
+	text-align: left;
 	margin-right: 0px;
 	margin-bottom: 0px;
 }
@@ -214,9 +206,7 @@
 #dm-join-community-links,
 #join-community-links
 {
-	width: 584px;
-	padding: 8px 10px;
-	margin-bottom: 8px;
+	display: none;
 }
 
 #dm-join-community-links p
@@ -225,9 +215,6 @@
 	font-size: 14px;
 }
 
-#multiplayer-servers,
-#multiplayer-startserver,
-#multiplayer-demos,
 #callvote-main-map,
 #callvote-main-restart,
 #callvote-main-ruleset,
@@ -255,9 +242,6 @@
 	left: 0px;
 }
 
-#multiplayer-connect,
-#multiplayer-player,
-#multiplayer-back,
 #callvote-main-nextmap,
 #callvote-main-gametype,
 #callvote-main-timelimit,
@@ -282,8 +266,6 @@
 	left: 304px;
 }
 
-#multiplayer-servers,
-#multiplayer-connect,
 #callvote-main-map,
 #callvote-main-nextmap,
 #dm-join-red,
@@ -298,8 +280,6 @@
 	top: 0px;
 }
 
-#multiplayer-startserver,
-#multiplayer-player,
 #callvote-main-restart,
 #callvote-main-gametype,
 #dm-join-free,
@@ -311,11 +291,9 @@
 #join-callvote,
 #join-mymap
 {
-	top: 48px;
+	top: 60px;
 }
 
-#multiplayer-demos,
-#multiplayer-back,
 #callvote-main-ruleset,
 #callvote-main-timelimit,
 #dm-join-hostinfo,
@@ -323,7 +301,7 @@
 #join-hostinfo,
 #join-forfeit
 {
-	top: 96px;
+	top: 120px;
 }
 
 #callvote-main-scorelimit,
@@ -333,7 +311,7 @@
 #join-matchinfo,
 #join-matchstats
 {
-	top: 144px;
+	top: 180px;
 }
 
 #callvote-main-balance,
@@ -343,7 +321,7 @@
 #join-admin,
 #join-settings
 {
-	top: 192px;
+	top: 240px;
 }
 
 #callvote-main-cointoss,
@@ -351,12 +329,12 @@
 #dm-join-leave,
 #join-leave
 {
-	top: 240px;
+	top: 300px;
 }
 
 #callvote-main-arena
 {
-	top: 288px;
+	top: 360px;
 }
 
 .menu-list button,
@@ -567,9 +545,12 @@
 
 #admin-commands-list
 {
-	flex: 0 0 auto;
-	max-width: 620px;
-	height: 520px;
+	flex: 1 1 auto;
+	width: 632px;
+	min-width: 0px;
+	max-width: 100%;
+	height: auto;
+	min-height: 0px;
 	padding-right: 6px;
 	margin-bottom: 8px;
 	overflow: auto;
@@ -577,29 +558,196 @@
 
 #admin-commands-list .session-admin-row
 {
+	align-items: flex-start;
+	flex-wrap: wrap;
 	width: 584px;
-	min-height: 28px;
-	padding: 5px 8px;
-}
-
-#admin-commands-list .session-admin-label
-{
-	flex: 0 0 auto;
-	width: 130px;
+	min-height: 44px;
+	padding: 7px 9px;
 }
 
 #admin-commands-list .session-admin-row span
 {
+	display: block;
 	flex: 0 0 auto;
-	width: 210px;
+	width: 394px;
 	white-space: normal;
 	word-break: break-word;
 }
 
+#admin-commands-list .session-admin-row .session-admin-label
+{
+	width: 132px;
+	margin-right: 14px;
+	color: #ffd967;
+	font-family: "WORR Mono";
+	font-size: 14px;
+}
+
 #admin-commands-list .session-admin-row .ui-command-line
 {
-	width: 220px;
-	font-size: 13px;
+	width: 394px;
+	margin-left: 146px;
+	margin-top: 3px;
+	font-size: 12px;
+	color: #c9beb0;
+	white-space: normal;
+	word-break: break-word;
+}
+
+#admin-menu-actions,
+#callvote-random-menu,
+#callvote-scorelimit-menu,
+#callvote-timelimit-menu,
+#callvote-unlagged-menu,
+#callvote-ruleset-menu,
+#mymap-main-content,
+#map-selector-options,
+#match-stats-lines,
+#tourney-mapchoices-list,
+#dm-hostinfo-content,
+#dm-matchinfo-content,
+#dm-welcome-content
+{
+	flex: 1 1 auto;
+	min-height: 0px;
+	overflow: auto;
+}
+
+#callvote-random-menu,
+#callvote-scorelimit-menu,
+#callvote-timelimit-menu,
+#callvote-ruleset-menu
+{
+	width: 620px;
+	min-width: 0px;
+	max-width: 100%;
+	padding-right: 0px;
+}
+
+#callvote-random-menu button,
+#callvote-scorelimit-menu button,
+#callvote-timelimit-menu button,
+#callvote-ruleset-menu button
+{
+	width: 572px;
+	min-width: 0px;
+	max-width: 604px;
+	margin-right: 0px;
+	margin-bottom: 8px;
+	border-left-width: 4px;
+	border-left-color: #4b4235;
+}
+
+#callvote-map-flags-content,
+#mymap-flags-content
+{
+	flex: 1 1 auto;
+	width: 620px;
+	min-width: 0px;
+	min-height: 0px;
+	max-width: 100%;
+	padding-right: 0px;
+	overflow: auto;
+}
+
+#callvote-map-flags-content button,
+#mymap-flags-content button
+{
+	width: 572px;
+	min-width: 0px;
+	max-width: 604px;
+	margin-right: 0px;
+	margin-bottom: 8px;
+	border-left-width: 4px;
+	border-left-color: #4b4235;
+	text-align: left;
+}
+
+#map-selector-options
+{
+	padding-right: 6px;
+}
+
+#map-selector-options button
+{
+	min-height: 54px;
+	margin-bottom: 8px;
+	padding: 10px 12px;
+	border-left-width: 4px;
+	border-left-color: #4b4235;
+	text-align: left;
+}
+
+#map-selector-status .status-panel
+{
+	padding: 12px;
+	margin-bottom: 8px;
+}
+
+#map-selector-bar
+{
+	padding: 6px 8px;
+	background-color: #14120f;
+	border-width: 1px;
+	border-color: #443d33;
+	border-radius: 3px;
+	color: #ffd967;
+}
+
+#tourney-veto-content
+{
+	width: 620px;
+	max-width: 100%;
+}
+
+#tourney-veto-inactive-panel
+{
+	min-height: 74px;
+}
+
+#match-stats-lines,
+#tourney-mapchoices-list
+{
+	width: 620px;
+	min-width: 0px;
+	max-width: 100%;
+	padding: 10px;
+	background-color: #171511;
+	border-left-width: 3px;
+	border-left-color: #4b4235;
+}
+
+.session-static-report
+{
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	min-height: 0px;
+}
+
+#match-stats-lines p,
+#tourney-mapchoices-list p
+{
+	width: 560px;
+	min-width: 0px;
+	padding: 5px 8px;
+	background-color: #211e19;
+	border-left-width: 4px;
+	border-left-color: #4b4235;
+	border-radius: 3px;
+	margin-bottom: 4px;
+	font-size: 15px;
+	line-height: 1.1;
+	white-space: normal;
+	word-break: break-word;
+}
+
+#match-stats-line-0,
+#tourney-mapchoice-line-0
+{
+	border-left-color: #b99b5b;
+	color: #ffd967;
+	font-weight: bold;
 }
 
 .session-badge

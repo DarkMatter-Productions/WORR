@@ -6,14 +6,14 @@
   </head>
   <body id="shell-quit-confirm" data-route-id="quit_confirm" data-route-group="shell" data-route-version="1" data-document-status="scaffolded-round2" data-menu-presentation="popup" data-menu-sound-open="alert" data-menu-music="menu">
     <div class="screen shell-screen popup-screen" id="quit-confirm-screen" data-close-command="popmenu">
-      <main class="popup-dialog confirmation-dialog" id="quit-confirm-dialog" data-component="common.components.menu_frame">
+      <main class="popup-dialog confirmation-dialog" id="quit-confirm-dialog" data-component="common.components.menu_frame" data-confirm-kind="destructive">
         <header class="popup-header" id="quit-confirm-header">
           <h1>CONFIRM QUIT</h1>
         </header>
         <p class="popup-message" id="quit-confirm-prompt">Exit WORR?</p>
         <footer class="popup-actions" id="quit-confirm-actions">
-          <button id="quit-confirm-yes" type="button" data-command="quit" data-menu-sound="confirm">YES</button>
-          <button id="quit-confirm-no" type="button" data-command="popmenu" data-menu-sound="cancel">NO</button>
+          <button class="popup-primary popup-danger" id="quit-confirm-yes" type="button" data-command="quit" data-menu-sound="confirm">YES</button>
+          <button class="popup-secondary" id="quit-confirm-no" type="button" data-command="popmenu" data-menu-sound="cancel">NO</button>
         </footer>
       </main>
     </div>

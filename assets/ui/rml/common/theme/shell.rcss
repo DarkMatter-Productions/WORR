@@ -20,6 +20,7 @@
 	flex-direction: column;
 	flex: 1 1 auto;
 	min-height: 0px;
+	min-width: 0px;
 	margin-bottom: 16px;
 	overflow: auto;
 }
@@ -41,14 +42,16 @@
 
 #main-menu-actions
 {
-	width: 320px;
-	max-width: 320px;
+	width: 268px;
+	max-width: 268px;
+	min-width: 0px;
 }
 
 #main-menu-actions button,
 #main-menu-actions .ui-button
 {
-	width: 300px;
+	width: 236px;
+	min-width: 236px;
 }
 
 #options-menu-actions
@@ -65,7 +68,9 @@
 #options-menu-actions button,
 #options-menu-actions .ui-button,
 #game-menu-actions button,
-#game-menu-actions .ui-button
+#game-menu-actions .ui-button,
+#multiplayer-menu-actions button,
+#multiplayer-menu-actions .ui-button
 {
 	display: inline-block;
 	vertical-align: top;
@@ -96,14 +101,29 @@
 	overflow: hidden;
 }
 
+#multiplayer-menu-actions
+{
+	position: relative;
+	width: 604px;
+	min-width: 604px;
+	max-width: 604px;
+	height: 174px;
+	padding-right: 8px;
+	overflow: hidden;
+}
+
 #options-menu-actions button:hover,
 #options-menu-actions .ui-button:hover,
 #game-menu-actions button:hover,
 #game-menu-actions .ui-button:hover,
+#multiplayer-menu-actions button:hover,
+#multiplayer-menu-actions .ui-button:hover,
 #options-menu-actions button:focus,
 #options-menu-actions .ui-button:focus,
 #game-menu-actions button:focus,
-#game-menu-actions .ui-button:focus
+#game-menu-actions .ui-button:focus,
+#multiplayer-menu-actions button:focus,
+#multiplayer-menu-actions .ui-button:focus
 {
 	background-color: #30291f;
 	border-color: #b99b5b;
@@ -122,7 +142,10 @@
 #game-servers-q2servers,
 #game-demos,
 #game-load,
-#game-quit
+#game-quit,
+#multiplayer-servers-q2servers,
+#multiplayer-demos,
+#multiplayer-player
 {
 	left: 0px;
 }
@@ -138,7 +161,10 @@
 #game-gameflags,
 #game-servers-addressbook,
 #game-save,
-#game-disconnect
+#game-disconnect,
+#multiplayer-servers-addressbook,
+#multiplayer-startserver,
+#multiplayer-options
 {
 	left: 304px;
 }
@@ -146,7 +172,9 @@
 #options-player,
 #options-input,
 #game-resume,
-#game-player-setup
+#game-player-setup,
+#multiplayer-servers-q2servers,
+#multiplayer-servers-addressbook
 {
 	top: 0px;
 }
@@ -154,7 +182,9 @@
 #options-keys,
 #options-weapons,
 #game-options,
-#game-gameflags
+#game-gameflags,
+#multiplayer-demos,
+#multiplayer-startserver
 {
 	top: 58px;
 }
@@ -162,7 +192,9 @@
 #options-video,
 #options-multimonitor,
 #game-servers-q2servers,
-#game-servers-addressbook
+#game-servers-addressbook,
+#multiplayer-player,
+#multiplayer-options
 {
 	top: 116px;
 }
@@ -211,7 +243,8 @@
 	margin-bottom: 8px;
 }
 
-#game-menu-actions #game-resume
+#game-menu-actions #game-resume,
+#multiplayer-menu-actions #multiplayer-startserver
 {
 	background-color: #1f271d;
 	border-color: #5f8765;
@@ -232,7 +265,9 @@
 }
 
 #game-menu-actions #game-resume:hover,
-#game-menu-actions #game-resume:focus
+#multiplayer-menu-actions #multiplayer-startserver:hover,
+#game-menu-actions #game-resume:focus,
+#multiplayer-menu-actions #multiplayer-startserver:focus
 {
 	background-color: #263322;
 	border-color: #83d18f;
@@ -255,4 +290,105 @@
 	border-color: #ee6758;
 	border-left-color: #ff9285;
 	color: #ee6758;
+}
+
+#download-status-idle
+{
+	padding: 8px 10px;
+	background-color: #14120f;
+	color: #c9beb0;
+	border-width: 1px;
+	border-color: #443d33;
+	border-left-width: 4px;
+	border-left-color: #4b4235;
+	border-radius: 3px;
+	margin-bottom: 8px;
+	white-space: normal;
+	word-break: break-word;
+}
+
+#options-menu-actions.hub-actions,
+#game-menu-actions.hub-actions,
+#multiplayer-menu-actions.hub-actions
+{
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	align-items: flex-start;
+	flex: 1 1 auto;
+	width: 888px;
+	min-width: 0px;
+	max-width: 100%;
+	height: auto;
+	min-height: 0px;
+	padding-right: 0px;
+	overflow: auto;
+}
+
+#game-menu-actions.hub-actions
+{
+	height: auto;
+}
+
+#multiplayer-menu-actions.hub-actions
+{
+	height: auto;
+}
+
+#options-menu-actions.hub-actions .hub-section,
+#game-menu-actions.hub-actions .hub-section,
+#multiplayer-menu-actions.hub-actions .hub-section
+{
+	display: flex;
+	flex-direction: column;
+	width: 252px;
+	min-width: 252px;
+	min-height: 0px;
+	margin-right: 12px;
+	margin-bottom: 12px;
+	padding: 10px;
+	background-color: #171511;
+	border-width: 1px;
+	border-color: #332d23;
+	border-left-width: 3px;
+	border-left-color: #4b4235;
+	border-radius: 5px;
+	transition: background-color border-color color 0.12s cubic-out;
+}
+
+#options-menu-actions.hub-actions .hub-section:hover,
+#game-menu-actions.hub-actions .hub-section:hover,
+#multiplayer-menu-actions.hub-actions .hub-section:hover
+{
+	background-color: #1d1a16;
+	border-left-color: #b99b5b;
+}
+
+#options-menu-actions.hub-actions .hub-section h2,
+#game-menu-actions.hub-actions .hub-section h2,
+#multiplayer-menu-actions.hub-actions .hub-section h2
+{
+	margin-bottom: 8px;
+	font-size: 17px;
+	color: #ffd967;
+}
+
+#options-menu-actions.hub-actions .hub-section button,
+#options-menu-actions.hub-actions .hub-section .ui-button,
+#game-menu-actions.hub-actions .hub-section button,
+#game-menu-actions.hub-actions .hub-section .ui-button,
+#multiplayer-menu-actions.hub-actions .hub-section button,
+#multiplayer-menu-actions.hub-actions .hub-section .ui-button
+{
+	position: static;
+	top: auto;
+	left: auto;
+	display: block;
+	width: 220px;
+	min-width: 220px;
+	height: 34px;
+	min-height: 34px;
+	margin-right: 0px;
+	margin-bottom: 7px;
+	padding: 5px 12px;
 }

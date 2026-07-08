@@ -25,8 +25,9 @@ CONDITION_ATTRS = (
 TOKEN_RE = re.compile(r"^_?[a-z][a-z0-9]*(?:_[a-z0-9]+)*$")
 VALUE_RE = re.compile(r"^[A-Za-z0-9_.:+/-]+$")
 SIMPLE_CONDITION_RE = re.compile(
-    r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*"
-    r"(?:(==|!=|>=|<=|=|>|<)\s*([A-Za-z0-9_.:+/-]+))?\s*$"
+    r"^\s*(?P<negate>!)?\s*(?P<token>[A-Za-z_][A-Za-z0-9_]*)\s*"
+    r"(?:(?P<operator>==|!=|>=|<=|=|>|<)\s*"
+    r"(?P<value>[A-Za-z0-9_.:+/-]+))?\s*$"
 )
 
 
@@ -234,11 +235,11 @@ def classify_condition_expression(value: str) -> tuple[str, tuple[str, ...], str
         if match is None:
             return "malformed", (), "expected token or token comparison expression"
 
-        token = match.group(1)
+        token = match.group("token")
         if not TOKEN_RE.fullmatch(token):
             return "malformed", (), "condition token must use lowercase snake_case style"
 
-        compared_value = match.group(3)
+        compared_value = match.group("value")
         if compared_value is not None and not VALUE_RE.fullmatch(compared_value):
             return "malformed", (), "condition comparison value has unsupported characters"
         tokens.append(token)

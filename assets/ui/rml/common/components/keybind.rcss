@@ -16,7 +16,7 @@
 }
 
 .worr-keybind-title {
-  color: #f2eee6;
+  color: #f3eee4;
   font-size: 18px;
 }
 
@@ -25,15 +25,16 @@
   min-width: 120px;
   padding: 6px 10px;
   color: #f8f2e6;
-  background-color: #28323d;
-  border-width: 1px;
-  border-color: #596878;
+  background-color: #27231d;
+  border-width: 2px;
+  border-color: #756a5d;
+  decorator: image(../skins/widgets/button-normal.svg);
 }
 
 .worr-keybind-status {
   min-height: 22px;
   margin-bottom: 8px;
-  color: #d9c48f;
+  color: #ffd967;
   font-size: 13px;
 }
 
@@ -44,10 +45,10 @@
 
 .worr-keybind-group-title {
   padding-bottom: 4px;
-  color: #d9c48f;
+  color: #ffd967;
   font-size: 15px;
   border-bottom-width: 1px;
-  border-bottom-color: #3b4652;
+  border-bottom-color: #332d23;
 }
 
 .worr-keybind-row {
@@ -57,7 +58,7 @@
   min-height: 48px;
   padding: 6px 0;
   border-bottom-width: 1px;
-  border-bottom-color: #2c3540;
+  border-bottom-color: #332d23;
 }
 
 .worr-keybind-label-block {
@@ -66,13 +67,13 @@
 }
 
 .worr-keybind-label {
-  color: #f2eee6;
+  color: #f3eee4;
   font-size: 15px;
 }
 
 .worr-keybind-hint {
   margin-top: 2px;
-  color: #9ca3ad;
+  color: #c9beb0;
   font-size: 12px;
 }
 
@@ -88,16 +89,20 @@
   margin-left: 6px;
   text-align: center;
   color: #f8f2e6;
-  background-color: #202832;
-  border-width: 1px;
-  border-color: #596878;
+  background-color: #1b1916;
+  border-width: 2px;
+  border-color: #756a5d;
+  decorator: image(../skins/widgets/textbox-normal.svg);
 }
 
 .worr-keybind-slot:hover,
 .worr-keybind-clear:hover,
 .worr-keybind-toolbar-action:hover,
 .worr-keybind-conflict-action:hover {
-  background-color: #374656;
+  background-color: #332d23;
+  border-color: #b99b5b;
+  color: #ffd967;
+  decorator: image(../skins/widgets/button-hover.svg);
 }
 
 .worr-keybind-clear {
@@ -105,27 +110,28 @@
   padding: 6px 8px;
   margin-left: 6px;
   text-align: center;
-  color: #d9c48f;
-  background-color: #1d232b;
-  border-width: 1px;
-  border-color: #4b5662;
+  color: #c9beb0;
+  background-color: #1b1916;
+  border-width: 2px;
+  border-color: #5f5548;
+  decorator: image(../skins/widgets/button-normal.svg);
 }
 
 .worr-keybind-conflict {
   margin-top: 12px;
   padding: 10px;
-  background-color: #2d2326;
-  border-width: 1px;
-  border-color: #7a5559;
+  background-color: #281b18;
+  border-width: 2px;
+  border-color: #895047;
 }
 
 .worr-keybind-conflict-title {
-  color: #f2d2d2;
+  color: #ee6758;
   font-size: 15px;
 }
 
 .worr-keybind-conflict-detail {
   margin: 4px 0 8px;
-  color: #d8b8b8;
+  color: #c9beb0;
   font-size: 13px;
 }

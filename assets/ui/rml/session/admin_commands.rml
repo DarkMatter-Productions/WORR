@@ -5,14 +5,14 @@
     <link type="text/rcss" href="../common/theme/session.rcss" />
     <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
-  <body id="session-admin-commands" data-route-id="admin_commands" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-owner="agent5" data-session-owner="sgame">
+  <body id="session-admin-commands" data-route-id="admin_commands" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-owner="agent5" data-session-owner="sgame" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen compact-screen session-screen" id="admin-commands-screen">
       <header class="page-header">
         <h1>Admin Commands</h1>
         <p>Commands need /admin login. Use console for args.</p>
       </header>
 
-      <section class="session-admin-list" id="admin-commands-list" data-model="session.admin.commands" data-owner-boundary="sgame-command-reference">
+      <section class="session-admin-list" id="admin-commands-list" data-owner-boundary="sgame-command-reference">
         <div class="session-admin-row" id="admin-command-add-admin" data-admin-command="add_admin">
           <span class="session-admin-label">add_admin</span>
           <span>Adds player to admin.txt</span>
@@ -157,7 +157,7 @@
       </section>
 
       <footer class="actions" id="admin-commands-actions">
-        <button id="admin-commands-back" type="button" data-command="popmenu">Back</button>
+        <button id="admin-commands-back" type="button" data-command="popmenu" data-menu-sound="cancel">Back</button>
       </footer>
     </div>
   </body>

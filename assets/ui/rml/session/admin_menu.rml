@@ -5,20 +5,20 @@
     <link type="text/rcss" href="../common/theme/session.rcss" />
     <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
-  <body id="session-admin-menu" data-route-id="admin_menu" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-owner="agent5" data-session-owner="sgame">
+  <body id="session-admin-menu" data-route-id="admin_menu" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-owner="agent5" data-session-owner="sgame" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen compact-screen session-screen" id="admin-menu-screen">
       <header class="page-header">
-        <h1>*Admin Menu*</h1>
+        <h1>Admin Menu</h1>
         <p id="admin-menu-note">Match settings are set on server start.</p>
       </header>
 
       <nav class="menu-list" id="admin-menu-actions" data-model="session.admin.menu" data-owner-boundary="sgame-published-cvars">
-        <button id="admin-menu-replay" type="button" data-command="ui.popup" data-source-command="worr_tourney_replay_menu" data-visible-if="ui_admin_show_replay=1" data-route-target="tourney_replay_confirm" data-menu-sound="alert">Replay Game</button>
-        <button id="admin-menu-commands" type="button" data-command="pushmenu admin_commands" data-route-target="admin_commands">Admin Commands</button>
+        <button id="admin-menu-replay" type="button" data-command="ui.popup" data-source-command="worr_tourney_replay_menu" data-visible-if="ui_admin_show_replay!=0" data-route-target="tourney_replay_confirm" data-menu-sound="alert">Replay Game</button>
+        <button id="admin-menu-commands" type="button" data-command="pushmenu admin_commands" data-route-target="admin_commands" data-menu-sound="open">Admin Commands</button>
       </nav>
 
       <footer class="actions" id="admin-menu-footer">
-        <button id="admin-menu-return" type="button" data-command="popmenu">Return</button>
+        <button id="admin-menu-return" type="button" data-command="popmenu" data-menu-sound="cancel">Return</button>
       </footer>
     </div>
   </body>

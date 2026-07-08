@@ -5,20 +5,20 @@
     <link type="text/rcss" href="../common/theme/utility.rcss" />
     <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
-  <body id="utility-demos" data-route-id="demos" data-route-version="1">
+  <body id="utility-demos" data-route-id="demos" data-route-group="utility" data-route-version="1" data-document-status="round2-scaffold" data-owner="agent5" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen" id="demos-screen">
       <header class="page-header">
         <h1>Demos</h1>
         <p id="demos-summary">
-          Browse recorded demos, move through folders, and start playback.
+          Recorded demos.
         </p>
       </header>
 
       <section class="toolbar" id="demos-toolbar" data-model="demo_browser">
-        <button id="demos-up" type="button" data-command="demos.parent_directory">Up</button>
-        <button id="demos-refresh" type="button" data-command="demos.refresh">Refresh</button>
-        <button id="demos-play" type="button" data-command="demos.play_selected">Play</button>
-        <button id="demos-back" type="button" data-command="ui.back">Back</button>
+        <button id="demos-up" type="button" data-command="demos.parent_directory" data-menu-sound="open">Up</button>
+        <button id="demos-refresh" type="button" data-command="demos.refresh" data-menu-sound="change">Refresh</button>
+        <button id="demos-play" type="button" data-command="demos.play_selected" data-menu-sound="confirm">Play</button>
+        <button id="demos-back" type="button" data-command="ui.back" data-menu-sound="cancel">Back</button>
       </section>
 
       <section class="content" id="demos-content">
@@ -33,7 +33,7 @@
           </thead>
           <tbody>
             <tr class="placeholder-row">
-              <td colspan="4">No demos listed.</td>
+              <td colspan="4">No demos found.</td>
             </tr>
           </tbody>
         </table>

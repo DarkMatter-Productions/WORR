@@ -4,7 +4,7 @@
     <link type="text/rcss" href="../common/theme/base.rcss" />
     <link type="text/rcss" href="../common/theme/settings.rcss" />
   </head>
-  <body id="settings-sound" data-route-id="sound" data-route-group="settings" data-route-version="1" data-document-status="scaffolded-round2" data-menu-music="menu">
+  <body id="settings-sound" data-route-id="sound" data-route-group="settings" data-route-version="1" data-document-status="scaffolded-round2" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen settings-screen" id="sound-screen">
       <header class="menu-header">
         <h1>Sound Setup</h1>
@@ -16,6 +16,7 @@
             <section class="settings-section" id="sound-engine-section">
               <h2>Sound Engine</h2>
               <div class="setting-row" data-control="select" data-cvar="s_enable">
+                <span class="setting-widget-icon" data-widget="select"><img src="../common/icons/widgets/select.svg" /></span>
                 <label for="sound-engine">Sound Engine</label>
                 <select id="sound-engine" data-cvar="s_enable">
                   <option value="0">No Sound</option>
@@ -24,23 +25,26 @@
                 </select>
               </div>
               <div class="setting-row" data-control="range" data-cvar="s_mixahead">
+                <span class="setting-widget-icon" data-widget="range"><img src="../common/icons/widgets/range.svg" /></span>
                 <label for="sound-latency">Sound Latency</label>
                 <input id="sound-latency" type="range" min="0.05" max="0.2" step="0.01" data-cvar="s_mixahead" />
-                <span class="setting-value" data-bind-cvar="s_mixahead"></span>
+                <span class="setting-value setting-meter"><span class="setting-meter-fill" data-meter-cvar="s_mixahead" data-meter-min="0.05" data-meter-max="0.2"></span><span class="setting-meter-text" data-bind-cvar="s_mixahead"></span></span>
               </div>
             </section>
 
             <section class="settings-section" id="sound-volume-section">
               <h2>Volume</h2>
               <div class="setting-row" data-control="range" data-cvar="s_volume">
+                <span class="setting-widget-icon" data-widget="range"><img src="../common/icons/widgets/range.svg" /></span>
                 <label for="sound-volume">Sound Volume</label>
                 <input id="sound-volume" type="range" min="0" max="1" step="0.01" data-cvar="s_volume" />
-                <span class="setting-value" data-bind-cvar="s_volume"></span>
+                <span class="setting-value setting-meter"><span class="setting-meter-fill" data-meter-cvar="s_volume" data-meter-min="0" data-meter-max="1"></span><span class="setting-meter-text" data-bind-cvar="s_volume"></span></span>
               </div>
               <div class="setting-row" data-control="range" data-cvar="ogg_volume">
+                <span class="setting-widget-icon" data-widget="range"><img src="../common/icons/widgets/range.svg" /></span>
                 <label for="sound-music-volume">Music Volume</label>
                 <input id="sound-music-volume" type="range" min="0" max="1" step="0.01" data-cvar="ogg_volume" />
-                <span class="setting-value" data-bind-cvar="ogg_volume"></span>
+                <span class="setting-value setting-meter"><span class="setting-meter-fill" data-meter-cvar="ogg_volume" data-meter-min="0" data-meter-max="1"></span><span class="setting-meter-text" data-bind-cvar="ogg_volume"></span></span>
               </div>
             </section>
           </div>
@@ -49,23 +53,28 @@
             <section class="settings-section" id="sound-music-section">
               <h2>Music And Effects</h2>
               <div class="setting-row" data-control="toggle" data-cvar="ogg_enable">
+                <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
                 <label for="sound-music-enable">Enable Music</label>
                 <input id="sound-music-enable" type="checkbox" data-cvar="ogg_enable" />
               </div>
               <div class="setting-row" data-control="toggle" data-cvar="ogg_shuffle">
+                <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
                 <label for="sound-music-shuffle">Shuffle Tracks</label>
                 <input id="sound-music-shuffle" type="checkbox" data-cvar="ogg_shuffle" />
               </div>
               <div class="setting-row" data-control="field" data-cvar="ogg_menu_track">
+                <span class="setting-widget-icon" data-widget="number"><img src="../common/icons/widgets/number.svg" /></span>
                 <label for="sound-menu-track">Menu Track</label>
                 <input id="sound-menu-track" type="number" min="0" step="1" data-cvar="ogg_menu_track" data-integer="true" data-width="3" />
                 <span class="setting-value">0 - off</span>
               </div>
               <div class="setting-row" data-control="toggle" data-cvar="s_underwater">
+                <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
                 <label for="sound-underwater">Underwater Effect</label>
                 <input id="sound-underwater" type="checkbox" data-cvar="s_underwater" />
               </div>
               <div class="setting-row" data-control="select" data-cvar="s_ambient">
+                <span class="setting-widget-icon" data-widget="select"><img src="../common/icons/widgets/select.svg" /></span>
                 <label for="sound-ambient">Ambient Sounds</label>
                 <select id="sound-ambient" data-cvar="s_ambient">
                   <option value="0">No</option>
@@ -74,6 +83,7 @@
                 </select>
               </div>
               <div class="setting-row" data-control="select" data-cvar="cl_chat_sound">
+                <span class="setting-widget-icon" data-widget="select"><img src="../common/icons/widgets/select.svg" /></span>
                 <label for="sound-chat-beep">Chat Beep</label>
                 <select id="sound-chat-beep" data-cvar="cl_chat_sound">
                   <option value="0">Disabled</option>
@@ -87,8 +97,8 @@
       </main>
 
       <footer class="menu-footer" id="sound-menu-footer">
-        <button id="sound-back" type="button" data-command="ui.back">Back</button>
-        <button id="sound-close" type="button" data-command="ui.close">Close</button>
+        <button id="sound-back" type="button" data-command="ui.back" data-menu-sound="cancel">Back</button>
+        <button id="sound-close" type="button" data-command="ui.close" data-menu-sound="cancel">Close</button>
       </footer>
     </div>
   </body>

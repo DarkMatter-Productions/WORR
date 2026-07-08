@@ -15,7 +15,7 @@
       <div class="worr-image-grid-hint">{{hint}}</div>
 
       <div class="worr-image-grid-items" data-columns="{{columns}}">
-        <button class="worr-image-grid-item {{item.state_class}}" type="button" data-for="item : items" data-item-id="{{item.id}}" data-value="{{item.value}}" data-selected="{{item.selected}}" data-event-click="image_grid.select">
+        <button class="worr-image-grid-item {{item.state_class}}" type="button" data-for="item : items" data-item-id="{{item.id}}" data-value="{{item.value}}" data-selected="{{item.selected}}" data-event-click="image_grid.select" data-menu-sound="change">
           <div class="worr-image-grid-thumb">
             <img class="worr-image-grid-image" src="{{item.image}}" alt="{{item.label}}" />
             <div class="worr-image-grid-fallback">{{item.fallback}}</div>
@@ -30,7 +30,7 @@
       </div>
 
       <div class="worr-image-grid-actions">
-        <button class="worr-image-grid-action" type="button" data-for="action : actions" data-command="{{action.command}}" data-event-click="command.dispatch">
+        <button class="worr-image-grid-action" type="button" data-for="action : actions" data-command="{{action.command}}" data-event-click="command.dispatch" data-menu-sound="confirm">
           {{action.label}}
         </button>
       </div>
@@ -38,7 +38,7 @@
   </template>
 
   <template name="worr-image-grid-item">
-    <button class="worr-image-grid-item {{state_class}}" type="button" data-item-id="{{id}}" data-value="{{value}}" data-selected="{{selected}}" data-event-click="image_grid.select">
+    <button class="worr-image-grid-item {{state_class}}" type="button" data-item-id="{{id}}" data-value="{{value}}" data-selected="{{selected}}" data-event-click="image_grid.select" data-menu-sound="change">
       <div class="worr-image-grid-thumb">
         <img class="worr-image-grid-image" src="{{image}}" alt="{{label}}" />
         <div class="worr-image-grid-fallback">{{fallback}}</div>

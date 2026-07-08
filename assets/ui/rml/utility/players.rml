@@ -5,7 +5,7 @@
     <link type="text/rcss" href="../common/theme/utility.rcss" />
     <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
-  <body id="utility-players" data-route-id="players" data-route-version="1">
+  <body id="utility-players" data-route-id="players" data-route-group="utility" data-route-version="1" data-document-status="round2-scaffold" data-owner="agent5" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen" id="players-screen">
       <header class="page-header">
         <h1>Player Setup</h1>
@@ -16,25 +16,39 @@
 
       <section class="content two-column" id="players-content" data-model="player_config">
         <div class="form-panel" id="players-form">
-          <label for="players-name">Name</label>
-          <input id="players-name" type="text" data-bind="player_config.name" />
+          <h2>Identity</h2>
+          <div class="utility-field" data-control="field">
+            <span class="setting-widget-icon" data-widget="field"><img src="../common/icons/widgets/field.svg" /></span>
+            <label for="players-name">Name</label>
+            <input id="players-name" type="text" data-bind="player_config.name" data-menu-sound-change="change" />
+          </div>
 
-          <label for="players-model">Model</label>
-          <select id="players-model" data-bind="player_config.model" data-options="player_config.models">
-            <option value="">Choose Model</option>
-          </select>
+          <h2>Appearance</h2>
+          <div class="utility-field" data-control="select">
+            <span class="setting-widget-icon" data-widget="select"><img src="../common/icons/widgets/select.svg" /></span>
+            <label for="players-model">Model</label>
+            <select id="players-model" data-bind="player_config.model" data-options="player_config.models" data-menu-sound-change="change">
+              <option value="">Choose Model</option>
+            </select>
+          </div>
 
-          <label for="players-skin">Skin</label>
-          <select id="players-skin" data-bind="player_config.skin" data-options="player_config.skins">
-            <option value="">Choose Skin</option>
-          </select>
+          <div class="utility-field" data-control="select">
+            <span class="setting-widget-icon" data-widget="select"><img src="../common/icons/widgets/select.svg" /></span>
+            <label for="players-skin">Skin</label>
+            <select id="players-skin" data-bind="player_config.skin" data-options="player_config.skins" data-menu-sound-change="change">
+              <option value="">Choose Skin</option>
+            </select>
+          </div>
 
-          <label for="players-hand">Weapon Hand</label>
-          <select id="players-hand" data-bind="player_config.hand">
-            <option value="right">Right</option>
-            <option value="left">Left</option>
-            <option value="center">Center</option>
-          </select>
+          <div class="utility-field" data-control="select">
+            <span class="setting-widget-icon" data-widget="select"><img src="../common/icons/widgets/select.svg" /></span>
+            <label for="players-hand">Weapon Hand</label>
+            <select id="players-hand" data-bind="player_config.hand" data-menu-sound-change="change">
+              <option value="right">Right</option>
+              <option value="left">Left</option>
+              <option value="center">Center</option>
+            </select>
+          </div>
         </div>
 
         <div class="preview-panel" id="players-preview" data-component="player_preview" data-model="player_config.preview">
@@ -46,9 +60,9 @@
       </section>
 
       <footer class="actions" id="players-actions">
-        <button id="players-apply" type="button" data-command="players.apply">Apply</button>
-        <button id="players-reset" type="button" data-command="players.reset">Reset</button>
-        <button id="players-back" type="button" data-command="ui.back">Back</button>
+        <button id="players-apply" type="button" data-command="players.apply" data-menu-sound="confirm">Apply</button>
+        <button id="players-reset" type="button" data-command="players.reset" data-menu-sound="cancel">Reset</button>
+        <button id="players-back" type="button" data-command="ui.back" data-menu-sound="cancel">Back</button>
       </footer>
     </div>
   </body>

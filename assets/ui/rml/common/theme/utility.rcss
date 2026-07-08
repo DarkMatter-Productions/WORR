@@ -24,24 +24,50 @@
 #ui-list-extra-actions
 {
 	width: 560px;
+	max-width: 100%;
 }
 
 #ui-list-content
 {
-	flex: 0 0 auto;
+	flex: 1 1 auto;
 	width: 560px;
-	height: 420px;
+	height: auto;
+	min-height: 0px;
+	max-width: 100%;
 	overflow: auto;
 }
 
 #ui-list-content button
 {
-	width: 520px;
+	width: 492px;
 	min-height: 34px;
 	padding: 5px 10px;
 	font-size: 15px;
 	line-height: 1.1;
 	margin-bottom: 4px;
+	border-left-width: 4px;
+	border-left-color: #4b4235;
+	text-align: left;
+}
+
+#ui-list-actions
+{
+	width: 560px;
+	max-width: 100%;
+}
+
+#ui-list-page-label
+{
+	display: block;
+	min-height: 30px;
+	padding: 6px 10px;
+	color: #c9beb0;
+	background-color: #1b1916;
+	border-width: 1px;
+	border-color: #5f5548;
+	border-radius: 3px;
+	margin-right: 8px;
+	margin-bottom: 8px;
 }
 
 .page-header
@@ -105,13 +131,38 @@
 	overflow: auto;
 }
 
+#servers-content,
+#demos-content
+{
+	flex: 1 1 auto;
+	width: 904px;
+	height: auto;
+	max-width: 100%;
+	min-height: 0px;
+	padding-right: 6px;
+	overflow: auto;
+}
+
+#servers-table,
+#demos-table
+{
+	min-height: 238px;
+}
+
+#addressbook-content
+{
+	flex: 1 1 auto;
+	min-height: 0px;
+	overflow: auto;
+}
+
 .content.two-column,
 .utility-two-column
 {
 	display: flex;
 	flex-direction: row;
 	align-items: stretch;
-	overflow: hidden;
+	overflow: auto;
 }
 
 .form-panel,
@@ -143,9 +194,20 @@
 
 .form-panel
 {
-	width: 304px;
-	min-width: 304px;
+	width: 292px;
+	min-width: 292px;
 	margin-right: 14px;
+	overflow: auto;
+}
+
+.utility-wide-panel,
+#addressbook-fields
+{
+	width: 904px;
+	min-width: 0px;
+	max-width: 100%;
+	height: auto;
+	flex: 1 1 auto;
 	overflow: auto;
 }
 
@@ -161,7 +223,7 @@
 .utility-label
 {
 	display: block;
-	width: 280px;
+	width: 264px;
 	color: #c9beb0;
 	font-weight: bold;
 	margin-bottom: 3px;
@@ -170,8 +232,116 @@
 .form-panel input,
 .form-panel select
 {
-	width: 280px;
+	width: 264px;
 	margin-bottom: 10px;
+}
+
+.utility-field-grid
+{
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	align-items: flex-start;
+	width: 884px;
+	min-height: 0px;
+}
+
+.utility-field
+{
+	display: flex;
+	flex-direction: column;
+	position: relative;
+	width: 280px;
+	min-width: 280px;
+	margin-right: 12px;
+	margin-bottom: 8px;
+}
+
+.utility-field .setting-widget-icon
+{
+	position: absolute;
+	top: 1px;
+	left: 0px;
+	display: none;
+	width: 0px;
+	height: 0px;
+	min-width: 0px;
+	min-height: 0px;
+	opacity: 0.86;
+}
+
+.utility-field .setting-widget-icon img
+{
+	display: block;
+	width: 14px;
+	height: 14px;
+	min-width: 14px;
+	min-height: 14px;
+}
+
+.utility-field:hover .setting-widget-icon
+{
+	opacity: 1.0;
+}
+
+.utility-field label
+{
+	width: 258px;
+	padding-left: 0px;
+	margin-bottom: 3px;
+}
+
+.utility-field input,
+.utility-field select
+{
+	width: 280px;
+	margin-bottom: 0px;
+}
+
+#addressbook-field-grid .utility-field
+{
+	width: 206px;
+	min-width: 206px;
+	margin-right: 12px;
+	margin-bottom: 7px;
+}
+
+#addressbook-field-grid .utility-field label
+{
+	width: 184px;
+	font-size: 15px;
+}
+
+#addressbook-field-grid .utility-field input
+{
+	width: 204px;
+	height: 32px;
+	min-height: 32px;
+}
+
+#players-content
+{
+	flex: 1 1 auto;
+	height: auto;
+	min-height: 0px;
+	overflow: auto;
+}
+
+#players-form
+{
+	height: auto;
+	max-height: 100%;
+}
+
+#players-preview
+{
+	height: auto;
+	max-height: 100%;
+}
+
+#players-preview-surface
+{
+	min-height: 320px;
 }
 
 .preview-surface,
@@ -239,7 +409,27 @@
 
 #keys-content
 {
-	height: 548px;
+	position: relative;
+	width: 904px;
+	max-width: 100%;
+	min-width: 0px;
+	height: 492px;
+	overflow: auto;
+}
+
+#legacykeys-content,
+#weapons-content
+{
+	height: 452px;
+}
+
+#weapons-content
+{
+	position: relative;
+	width: 640px;
+	max-width: 100%;
+	min-width: 0px;
+	overflow: auto;
 }
 
 #keys-content .bind-group,
@@ -254,16 +444,55 @@
 
 #keys-content .bind-group
 {
+	position: absolute;
 	width: 242px;
 	max-width: 242px;
 	margin-right: 10px;
 	margin-bottom: 8px;
 }
 
+#keys-combat
+{
+	left: 0px;
+	top: 0px;
+}
+
+#keys-inventory
+{
+	left: 0px;
+	top: 156px;
+}
+
+#keys-movement
+{
+	left: 292px;
+	top: 0px;
+}
+
+#keys-interface
+{
+	left: 584px;
+	top: 0px;
+}
+
 #weapons-content .bind-group
 {
 	width: 300px;
 	max-width: 300px;
+}
+
+#weapons-primary
+{
+	position: absolute;
+	left: 0px;
+	top: 0px;
+}
+
+#weapons-heavy
+{
+	position: absolute;
+	left: 320px;
+	top: 0px;
 }
 
 .bind-group h2
@@ -297,12 +526,13 @@
 #weapons-content .bind-group button,
 #weapons-content .bind-group .ui-button
 {
-	width: 276px;
+	width: 260px;
 }
 
 .data-table,
 .utility-table
 {
+	display: table;
 	width: 100%;
 	background-color: #1b1916;
 	border-width: 2px;
@@ -311,9 +541,24 @@
 	color: #f3eee4;
 }
 
+.data-table thead,
+.data-table tbody,
+.utility-table thead,
+.utility-table tbody
+{
+	display: table-row-group;
+}
+
+.data-table tr,
+.utility-table tr
+{
+	display: table-row;
+}
+
 .data-table th,
 .utility-table th
 {
+	display: table-cell;
 	padding: 8px;
 	background-color: #27231d;
 	color: #ffd967;
@@ -327,12 +572,21 @@
 .data-table td,
 .utility-table td
 {
+	display: table-cell;
 	padding: 8px;
 	color: #f3eee4;
 	border-bottom-width: 1px;
 	border-bottom-color: #756a5d;
 	white-space: normal;
 	word-break: break-word;
+}
+
+#servers-table th,
+#servers-table td,
+#demos-table th,
+#demos-table td
+{
+	width: 220px;
 }
 
 .data-table tr:hover td,
@@ -364,7 +618,9 @@
 .utility-empty-state
 {
 	padding: 12px;
+	background-color: #14120f;
 	color: #c9beb0;
+	border-color: #443d33;
 	text-align: center;
 	white-space: normal;
 	word-break: break-word;
@@ -381,6 +637,7 @@
 	border-width: 2px;
 	border-color: #756a5d;
 	border-radius: 3px;
+	margin-top: 8px;
 	white-space: normal;
 	word-break: break-word;
 }

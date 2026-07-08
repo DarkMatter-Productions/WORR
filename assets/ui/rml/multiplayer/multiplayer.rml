@@ -2,31 +2,50 @@
   <head>
     <title>WORR Multiplayer</title>
     <link type="text/rcss" href="../common/theme/base.rcss" />
+    <link type="text/rcss" href="../common/theme/shell.rcss" />
     <link type="text/rcss" href="../common/theme/session.rcss" />
     <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
-  <body id="multiplayer-root" data-route-id="multiplayer" data-route-version="1">
-    <div class="screen" id="multiplayer-screen">
-      <header class="page-header">
+  <body id="multiplayer-root" data-route-id="multiplayer" data-route-version="1" data-menu-music="menu" data-menu-sound-open="open">
+    <div class="screen shell-screen" id="multiplayer-screen">
+      <header class="menu-header">
         <h1>Multiplayer</h1>
         <p id="multiplayer-summary">
-          Find a server, connect directly, host a match, or adjust your player.
+          Find a public server, browse saved addresses, watch demos, host a match, or tune your player.
         </p>
       </header>
 
-      <nav class="menu-list" id="multiplayer-menu" data-model="multiplayer_menu">
-        <button id="multiplayer-servers" type="button" data-command="ui.open_route" data-route="servers">Server Browser</button>
-        <button id="multiplayer-connect" type="button" data-command="multiplayer.connect_address">Connect Address</button>
-        <button id="multiplayer-startserver" type="button" data-command="ui.open_route" data-route="startserver">Start Server</button>
-        <button id="multiplayer-player" type="button" data-command="ui.open_route" data-route="players">Player Setup</button>
-        <button id="multiplayer-demos" type="button" data-command="ui.open_route" data-route="demos">Demos</button>
-        <button id="multiplayer-back" type="button" data-command="ui.back">Back</button>
-      </nav>
+      <main class="menu-stack" id="multiplayer-menu-stack" data-component="common.components.menu_frame">
+        <nav class="menu-actions hub-actions" id="multiplayer-menu-actions">
+          <section class="hub-section" id="multiplayer-find-section">
+            <h2>Find</h2>
+            <button id="multiplayer-servers-q2servers" type="button" data-command="pushmenu servers &quot;+https://q2servers.com/?raw=2&quot; &quot;https://q2servers.com/?raw=0&quot;" data-route-target="servers" data-owner="agent5" data-menu-sound="open">Browse q2servers.com</button>
+            <button id="multiplayer-servers-addressbook" type="button" data-command="pushmenu servers &quot;favorites://&quot; &quot;file:///servers.lst&quot; &quot;broadcast://&quot;" data-route-target="servers" data-owner="agent5" data-menu-sound="open">Browse Address Book</button>
+            <button id="multiplayer-demos" type="button" data-command="pushmenu demos" data-route-target="demos" data-menu-sound="open">Browse Demos</button>
+          </section>
 
-      <section class="status-panel" id="multiplayer-session-status" data-model="session_summary">
-        <h2>Session Status</h2>
-        <p data-bind="session_summary.message">No active multiplayer session.</p>
-      </section>
+          <section class="hub-section" id="multiplayer-host-section">
+            <h2>Host</h2>
+            <button id="multiplayer-startserver" type="button" data-command="if $match_setup_format == &quot;&quot; then match_setup_format regular; if $match_setup_gametype == &quot;&quot; then match_setup_gametype ffa; if $match_setup_modifier == &quot;&quot; then match_setup_modifier standard; if $match_setup_length == &quot;&quot; then match_setup_length standard; if $match_setup_type == &quot;&quot; then match_setup_type standard; if $match_setup_bestof == &quot;&quot; then match_setup_bestof bo1; if $match_setup_maxplayers == &quot;&quot; then match_setup_maxplayers 8; pushmenu startserver" data-route-target="startserver" data-menu-sound="confirm">Start Server</button>
+          </section>
+
+          <section class="hub-section" id="multiplayer-player-section">
+            <h2>Profile</h2>
+            <button id="multiplayer-player" type="button" data-command="pushmenu players" data-route-target="players" data-menu-sound="open">Player Setup</button>
+            <button id="multiplayer-options" type="button" data-command="pushmenu options" data-route-target="options" data-menu-sound="open">Options</button>
+          </section>
+        </nav>
+
+        <section class="status-panel" id="multiplayer-session-status">
+          <h2>Session Status</h2>
+          <p>No active multiplayer session.</p>
+        </section>
+      </main>
+
+      <footer class="menu-footer" id="multiplayer-menu-footer">
+        <button id="multiplayer-back" type="button" data-command="ui.back" data-menu-sound="cancel">Back</button>
+        <button id="multiplayer-close" type="button" data-command="ui.close" data-menu-sound="cancel">Close</button>
+      </footer>
     </div>
   </body>
 </rml>

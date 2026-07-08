@@ -4,7 +4,7 @@
     <link type="text/rcss" href="../common/theme/base.rcss" />
     <link type="text/rcss" href="../common/theme/settings.rcss" />
   </head>
-  <body id="settings-language" data-route-id="language" data-route-group="settings" data-route-version="1" data-document-status="scaffolded-round2">
+  <body id="settings-language" data-route-id="language" data-route-group="settings" data-route-version="1" data-document-status="scaffolded-round2" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen settings-screen" id="language-screen">
       <header class="menu-header">
         <h1>Language</h1>
@@ -14,6 +14,7 @@
         <section class="settings-section" id="language-locale-section">
           <h2>Localization</h2>
           <div class="setting-row" data-control="select" data-cvar="loc_language">
+            <span class="setting-widget-icon" data-widget="select"><img src="../common/icons/widgets/select.svg" /></span>
             <label for="language-selection">Language</label>
             <select id="language-selection" data-cvar="loc_language">
               <option value="auto">Auto (System)</option>
@@ -45,8 +46,8 @@
       </main>
 
       <footer class="menu-footer" id="language-menu-footer">
-        <button id="language-back" type="button" data-command="ui.back">Back</button>
-        <button id="language-close" type="button" data-command="ui.close">Close</button>
+        <button id="language-back" type="button" data-command="ui.back" data-menu-sound="cancel">Back</button>
+        <button id="language-close" type="button" data-command="ui.close" data-menu-sound="cancel">Close</button>
       </footer>
     </div>
   </body>

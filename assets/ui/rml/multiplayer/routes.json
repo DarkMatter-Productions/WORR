@@ -14,6 +14,8 @@
   ],
   "planned_shared_imports": [
     "../common/theme/base.rcss",
+    "../common/theme/shell.rcss",
+    "../common/theme/session.rcss",
     "../common/components/command_button.rml"
   ],
   "status_values": {
@@ -62,7 +64,7 @@
           "fixture": "command-action.mock.json",
           "model": "multiplayer.commands",
           "status": "mock_fixture",
-          "notes": "Server browser, connect-address, start-server, player setup, demos, and back controls expose static data-command hooks for later command dispatch wiring."
+          "notes": "q2servers.com browsing, address-book browsing, demo browsing, start-server setup defaults, player setup, Options, Back, and Close controls expose static command hooks that mirror the legacy multiplayer hub."
         },
         {
           "category": "navigation",
@@ -70,10 +72,10 @@
           "fixture": "navigation.mock.json",
           "model": "ui.navigation",
           "status": "mock_fixture",
-          "notes": "Route-opening controls declare static data-route targets for servers, startserver, players, and demos while retaining command fallback metadata."
+          "notes": "Command controls declare static data-route-target metadata for servers, demos, startserver, players, and options while retaining legacy pushmenu command strings."
         }
       ],
-      "notes": "Controller-stub metadata only. Static RML declares multiplayer hub and session summary data-model hooks, command buttons, and route-open targets while the legacy menu fallback remains authoritative; no live multiplayer controller, runtime RmlUi open path, screenshots, or parity is claimed."
+      "notes": "Static RML declares the legacy multiplayer hub options with RmlUi shell styling, menu music/open sound metadata, a no-session fallback summary, and command/route-target pairs for q2servers.com, address-book, demos, startserver, players, and options. Full live multiplayer controller binding remains pending, so runtime data-model bindings are intentionally deferred to avoid missing-model warnings."
     }
   ]
 }
