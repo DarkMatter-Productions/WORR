@@ -203,13 +203,27 @@ static const ui_rml_menu_route_t *UI_Rml_FindRuntimeMenuRoute(const char *route_
     return NULL;
 }
 
+// Keep in sync with data-menu-presentation="popup" in the RML documents.
+static const char *const ui_rml_popup_routes[] = {
+    "quit_confirm",
+    "forfeit_confirm",
+    "leave_match_confirm",
+    "tourney_replay_confirm",
+};
+
 static bool UI_Rml_PopupRouteIsKnown(const char *route_id)
 {
-    return route_id &&
-           (!strcmp(route_id, "quit_confirm") ||
-            !strcmp(route_id, "forfeit_confirm") ||
-            !strcmp(route_id, "leave_match_confirm") ||
-            !strcmp(route_id, "tourney_replay_confirm"));
+    if (!route_id || !route_id[0]) {
+        return false;
+    }
+
+    for (size_t i = 0; i < q_countof(ui_rml_popup_routes); i++) {
+        if (!strcmp(route_id, ui_rml_popup_routes[i])) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 bool UI_Rml_RouteIsPopup(const char *route_id)
@@ -341,14 +355,11 @@ static void UI_Rml_ClampMouseToCanvas(void)
 
 static void UI_Rml_EnsureMousePosition(void)
 {
+    // The cursor stays hidden and unpositioned until the player actually
+    // moves the mouse, so keyboard/controller navigation is not disturbed
+    // by a synthetic center-screen hover.
     if (!ui_rml_mouse_valid) {
-        int width;
-        int height;
-
-        UI_Rml_GetCanvas(&width, &height, NULL);
-        ui_rml_mouse_x = width / 2;
-        ui_rml_mouse_y = height / 2;
-        ui_rml_mouse_valid = true;
+        return;
     }
 
     UI_Rml_ClampMouseToCanvas();
@@ -373,22 +384,39 @@ static void UI_Rml_MouseFromFramebuffer(int x, int y, int *out_x, int *out_y)
     }
 }
 
+static bool ui_rml_cursor_register_attempted;
+
 static void UI_Rml_RegisterCursor(void)
 {
-    if (ui_rml_cursor_handle) {
+    if (ui_rml_cursor_handle || ui_rml_cursor_register_attempted) {
         return;
     }
 
+    ui_rml_cursor_register_attempted = true;
     ui_rml_cursor_handle = R_RegisterPic("/gfx/cursor.png");
     ui_rml_cursor_width = 12;
     ui_rml_cursor_height = 12;
+
+    if (ui_rml_cursor_handle) {
+        int width = 0;
+        int height = 0;
+
+        R_GetPicSize(&width, &height, ui_rml_cursor_handle);
+        if (width > 0 && height > 0) {
+            ui_rml_cursor_width = width;
+            ui_rml_cursor_height = height;
+        }
+    }
 }
 
 static void UI_Rml_DrawCursor(void)
 {
-    if (!ui_rml_cursor_handle) {
-        UI_Rml_RegisterCursor();
+    // No cursor until the player uses the mouse.
+    if (!ui_rml_mouse_valid) {
+        return;
     }
+
+    UI_Rml_RegisterCursor();
     if (!ui_rml_cursor_handle) {
         return;
     }
@@ -631,7 +659,6 @@ static bool UI_Rml_OpenRouteInternalEx(const char *route_id, bool record_history
 #if UI_RML_HAS_RUNTIME
     const ui_rml_route_t *route = UI_Rml_FindRoute(route_id);
     const char *document;
-    bool document_found;
     bool had_previous_route = false;
     char previous_route[MAX_QPATH];
 
@@ -653,9 +680,9 @@ static bool UI_Rml_OpenRouteInternalEx(const char *route_id, bool record_history
         return false;
     }
 
-    Com_Printf("RmlUi route '%s' requested; probing document.\n", route->id);
-    document_found = UI_Rml_ProbeRoute(route->id);
-
+    // Availability first: probing (a full document read) is pointless when
+    // the runtime cannot open routes, and the runtime's own open path
+    // already reports unreadable documents.
     if (!UI_Rml_RuntimeIsAvailable()) {
         Com_Printf("RmlUi availability is '%s' with renderer='%s' family='%s'; falling back to legacy UI.\n",
                    UI_Rml_AvailabilityString(UI_Rml_Availability()),
@@ -664,8 +691,8 @@ static bool UI_Rml_OpenRouteInternalEx(const char *route_id, bool record_history
         return false;
     }
 
-    if (!document_found) {
-        return false;
+    if (ui_rml_debug && ui_rml_debug->integer) {
+        Com_Printf("RmlUi route '%s' requested.\n", route->id);
     }
 
     document = UI_Rml_DocumentForRoute(route->id);
@@ -701,6 +728,12 @@ static bool UI_Rml_OpenRouteInternalEx(const char *route_id, bool record_history
 
     Com_Printf("RmlUi runtime '%s' declined route '%s'; falling back to legacy UI.\n",
                UI_Rml_RuntimeName(), route->id);
+
+    // In-menu navigation failed with no visible change; give the user
+    // audible feedback distinct from the optimistic open cue.
+    if (had_previous_route) {
+        UI_StartFeedbackSound(UI_FEEDBACK_ALERT);
+    }
     return false;
 #else
     (void)route_id;
@@ -1037,6 +1070,7 @@ void UI_Rml_Shutdown(void)
     ui_rml_cursor_handle = 0;
     ui_rml_cursor_width = 0;
     ui_rml_cursor_height = 0;
+    ui_rml_cursor_register_attempted = false;
     ui_rml_mouse_valid = false;
 #endif
 
@@ -1375,10 +1409,6 @@ bool UI_Rml_KeyEvent(int key, bool down)
         return false;
     }
 
-    if (ui_rml_runtime.KeyEvent) {
-        (void)ui_rml_runtime.KeyEvent(key, down);
-    }
-
     ui_rml_route_metrics.key_events++;
     if (UI_Rml_KeyIsMouseButton(key)) {
         ui_rml_route_metrics.mouse_buttons++;
@@ -1387,8 +1417,28 @@ bool UI_Rml_KeyEvent(int key, bool down)
     }
 
     if (down && (key == K_ESCAPE || key == K_MOUSE2)) {
+        // The runtime may consume the back request itself: an active
+        // keybind capture, or a document-declared data-close-command
+        // whose legacy side effects must run.
+        if (ui_rml_runtime.HandleBackKey && ui_rml_runtime.HandleBackKey(key)) {
+            return true;
+        }
+
         UI_StartFeedbackSound(UI_FEEDBACK_CLOSE);
         UI_Rml_RuntimeBackRoute_f();
+        return true;
+    }
+
+    // Keyboard navigation dismisses the software cursor until the mouse
+    // moves again.
+    if (down && !UI_Rml_KeyIsMouseButton(key) && !UI_Rml_KeyIsMouseWheel(key) &&
+        (key == K_UPARROW || key == K_DOWNARROW ||
+         key == K_LEFTARROW || key == K_RIGHTARROW || key == K_TAB)) {
+        ui_rml_mouse_valid = false;
+    }
+
+    if (ui_rml_runtime.KeyEvent) {
+        (void)ui_rml_runtime.KeyEvent(key, down);
     }
 
     return true;

@@ -38,44 +38,15 @@
   font-size: 13px;
 }
 
+/*
+  .worr-toggle/.worr-slider/.worr-select widget skinning is owned by
+  common/theme/base.rcss; only layout defaults live here.
+*/
 .worr-toggle,
 .worr-slider,
 .worr-select
 {
-  width: 100%;
   margin-top: 6px;
-}
-
-.worr-toggle
-{
-  width: 36px;
-  min-width: 36px;
-  height: 28px;
-  min-height: 28px;
-  padding: 0px;
-  decorator: image(../skins/widgets/checkbox-off.svg);
-}
-
-.worr-slider
-{
-  min-height: 28px;
-  padding: 0px;
-  decorator: image(../skins/widgets/range-track.svg);
-}
-
-.worr-select
-{
-  decorator: image(../skins/widgets/select-normal.svg);
-}
-
-.worr-select:hover
-{
-  decorator: image(../skins/widgets/select-hover.svg);
-}
-
-.worr-select:focus
-{
-  decorator: image(../skins/widgets/select-focus.svg);
 }
 
 .worr-command-button
@@ -98,9 +69,25 @@
   decorator: image(../skins/widgets/button-hover.svg);
 }
 
+.worr-command-button:focus
+{
+  background-color: #332d23;
+  border-color: #ffd967;
+  color: #ffd967;
+  decorator: image(../skins/widgets/button-focus.svg);
+}
+
+.worr-command-button:active
+{
+  background-color: #3f3626;
+  border-color: #ffd967;
+  color: #ffd967;
+  decorator: image(../skins/widgets/button-active.svg);
+}
+
 .worr-command-button:disabled
 {
-  color: #81776a;
+  color: #8d8375;
   background-color: #1b1916;
   border-color: #756a5d;
   decorator: image(../skins/widgets/button-disabled.svg);

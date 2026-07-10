@@ -4,6 +4,7 @@
     <link type="text/rcss" href="../common/theme/base.rcss" />
     <link type="text/rcss" href="../common/theme/settings.rcss" />
     <link type="text/rcss" href="../common/theme/singleplayer.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
   <body id="singleplayer-gameflags" data-route-id="gameflags" data-route-group="singleplayer" data-route-version="1" data-document-status="scaffolded-round3" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen singleplayer-screen" id="gameflags-screen">

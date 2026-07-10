@@ -105,6 +105,16 @@
   decorator: image(../skins/widgets/button-hover.svg);
 }
 
+.worr-keybind-slot:focus,
+.worr-keybind-clear:focus,
+.worr-keybind-toolbar-action:focus,
+.worr-keybind-conflict-action:focus {
+  background-color: #332d23;
+  border-color: #ffd967;
+  color: #ffd967;
+  decorator: image(../skins/widgets/button-focus.svg);
+}
+
 .worr-keybind-clear {
   width: 76px;
   padding: 6px 8px;

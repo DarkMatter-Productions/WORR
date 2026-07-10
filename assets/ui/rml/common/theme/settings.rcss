@@ -1,5 +1,11 @@
 /*
  * Shared settings layout and typed control treatment for RmlUi menu pages.
+ *
+ * Density/width tiers:
+ * - .settings-form                   single-column default (604px)
+ * - .settings-form.form-compact      denser rows/headings for multi-column pages
+ * - .settings-form.cols-2            two-column layout (780px)
+ * - .settings-form.cols-3            three-column layout (924px)
  */
 
 .settings-screen
@@ -68,14 +74,15 @@
 
 .setting-widget-icon
 {
-	display: none;
+	display: block;
 	flex: 0 0 auto;
-	width: 0px;
-	height: 0px;
-	min-width: 0px;
-	min-height: 0px;
-	margin-right: 0px;
+	width: 16px;
+	height: 16px;
+	min-width: 16px;
+	min-height: 16px;
+	margin-right: 8px;
 	opacity: 0.88;
+	transition: opacity 0.12s cubic-out;
 }
 
 .setting-widget-icon img
@@ -142,6 +149,16 @@
 	border-left-color: #83d18f;
 }
 
+.setting-row[data-control="field"]:hover
+{
+	border-left-color: #e8cf9a;
+}
+
+.setting-row[data-control="action"]:hover
+{
+	border-left-color: #ffd967;
+}
+
 .setting-row label
 {
 	display: block;
@@ -151,11 +168,24 @@
 	font-weight: bold;
 	white-space: normal;
 	word-break: break-word;
+	transition: color 0.12s cubic-out;
 }
 
 .setting-row:hover label
 {
 	color: #f3eee4;
+}
+
+.setting-hint
+{
+	display: block;
+	width: 560px;
+	max-width: 100%;
+	margin: -2px 0px 8px 11px;
+	color: #8f8577;
+	font-size: 13px;
+	white-space: normal;
+	word-break: break-word;
 }
 
 .setting-row input,
@@ -259,18 +289,28 @@
 	border-color: #83d18f;
 }
 
-.setting-row[data-control="toggle"] input:hover,
+.setting-row[data-control="toggle"] input:hover
+{
+	background-color: #332d23;
+	border-color: #b99b5b;
+}
+
 .setting-row[data-control="toggle"] input:focus
 {
 	background-color: #332d23;
 	border-color: #ffd967;
 }
 
-.setting-row[data-control="toggle"] input:checked:hover,
-.setting-row[data-control="toggle"] input:checked:focus
+.setting-row[data-control="toggle"] input:checked:hover
 {
 	background-color: #294830;
 	border-color: #c7f0a1;
+}
+
+.setting-row[data-control="toggle"] input:checked:focus
+{
+	background-color: #294830;
+	border-color: #ffd967;
 }
 
 .setting-row[data-control="progress"] progress
@@ -292,66 +332,56 @@
 	padding: 5px 14px;
 }
 
-#downloads-settings-form
-{
-	flex: 1 1 auto;
-	height: auto;
-}
+/* Compact density for multi-column pages. */
 
-#sound-settings-form
+.settings-form.form-compact
 {
-	width: 780px;
-	max-width: 100%;
 	height: auto;
 	flex: 1 1 auto;
 	padding-right: 0px;
 	overflow: auto;
 }
 
-#sound-settings-columns
+.form-compact .settings-columns
 {
 	display: flex;
 	flex-direction: row;
-	width: 780px;
 	min-height: 0px;
 }
 
-#sound-settings-form .settings-column
+.form-compact .settings-column
 {
 	display: flex;
 	flex-direction: column;
-	width: 382px;
 	min-height: 0px;
 	margin-right: 12px;
 }
 
-#sound-music-column
+.form-compact .settings-column:last-child
 {
 	margin-right: 0px;
 }
 
-#sound-settings-form .settings-section
+.form-compact .settings-section
 {
-	width: 370px;
 	margin-bottom: 10px;
 	padding-bottom: 6px;
 }
 
-#sound-settings-form .settings-section h2
+.form-compact .settings-section h2
 {
 	margin-bottom: 5px;
 	font-size: 17px;
 }
 
-#sound-settings-form .setting-row
+.form-compact .setting-row
 {
-	width: 358px;
 	min-height: 34px;
 	margin-bottom: 5px;
 	padding: 4px 6px;
 }
 
-#sound-settings-form .setting-widget-icon
+.form-compact .setting-widget-icon
 {
 	width: 14px;
 	height: 14px;
@@ -360,7 +390,7 @@
 	margin-right: 6px;
 }
 
-#sound-settings-form .setting-widget-icon img
+.form-compact .setting-widget-icon img
 {
 	width: 14px;
 	height: 14px;
@@ -368,316 +398,89 @@
 	min-height: 14px;
 }
 
-#sound-settings-form .setting-row label
+.form-compact .setting-row[data-control="toggle"] input
+{
+	width: 32px;
+	min-width: 32px;
+	height: 26px;
+	min-height: 26px;
+}
+
+/* Two-column width tier (780px). */
+
+.settings-form.cols-2
+{
+	width: 780px;
+	max-width: 100%;
+}
+
+.cols-2 .settings-columns
+{
+	width: 780px;
+}
+
+.cols-2 .settings-column
+{
+	width: 382px;
+}
+
+.cols-2 .settings-section
+{
+	width: 370px;
+}
+
+.cols-2 .setting-row
+{
+	width: 358px;
+}
+
+.cols-2 .setting-row label
 {
 	width: 124px;
 	margin-right: 8px;
 }
 
-#sound-settings-form .setting-row input,
-#sound-settings-form .setting-row select
+.cols-2 .setting-row input,
+.cols-2 .setting-row select,
+.cols-2 .setting-row[data-control="select"] select,
+.cols-2 .setting-row[data-control="combo"] select,
+.cols-2 .setting-row[data-control="imagevalues"] select
 {
 	width: 146px;
 }
 
-#sound-settings-form .setting-row[data-control="select"] select,
-#sound-settings-form .setting-row[data-control="combo"] select,
-#sound-settings-form .setting-row[data-control="imagevalues"] select
+.cols-2 .setting-row[data-control="range"] input,
+.cols-2 .setting-row .worr-slider
 {
 	width: 146px;
 }
 
-#sound-settings-form .setting-row[data-control="range"] input,
-#sound-settings-form .setting-row .worr-slider
-{
-	width: 132px;
-}
-
-#sound-settings-form .setting-row[data-control="range"] .setting-value
+.cols-2 .setting-row[data-control="range"] .setting-value
 {
 	width: 54px;
 }
 
-#sound-settings-form .setting-row[data-control="field"] input,
-#sound-settings-form .setting-row[data-control="field"] input[type="number"]
+.cols-2 .setting-row[data-control="field"] input
+{
+	width: 110px;
+}
+
+.cols-2 .setting-row[data-control="field"] input[type="number"]
 {
 	width: 74px;
 }
 
-#sound-settings-form .setting-row[data-control="field"] .setting-value
+.cols-2 .setting-row[data-control="field"] .setting-value
 {
 	width: 66px;
 }
 
-#sound-settings-form .setting-row[data-control="toggle"] label
+.cols-2 .setting-row[data-control="toggle"] label
 {
 	width: 276px;
 }
 
-#sound-settings-form .setting-row[data-control="toggle"] input
-{
-	width: 32px;
-	min-width: 32px;
-	height: 26px;
-	min-height: 26px;
-}
-
-#video-settings-form
-{
-	width: 924px;
-	max-width: 100%;
-	height: auto;
-	flex: 1 1 auto;
-	padding-right: 0px;
-	overflow: auto;
-}
-
-#video-settings-columns
-{
-	display: flex;
-	flex-direction: row;
-	width: 924px;
-	min-height: 0px;
-}
-
-#video-settings-form .settings-column
-{
-	display: flex;
-	flex-direction: column;
-	width: 300px;
-	min-height: 0px;
-	margin-right: 12px;
-}
-
-#video-light-column
-{
-	margin-right: 0px;
-}
-
-#video-settings-form .settings-section
-{
-	width: 288px;
-	margin-bottom: 10px;
-	padding-bottom: 6px;
-}
-
-#video-settings-form .settings-section h2
-{
-	margin-bottom: 5px;
-	font-size: 17px;
-}
-
-#video-settings-form .setting-row
-{
-	width: 276px;
-	min-height: 34px;
-	margin-bottom: 5px;
-	padding: 4px 6px;
-}
-
-#video-settings-form .setting-widget-icon
-{
-	width: 14px;
-	height: 14px;
-	min-width: 14px;
-	min-height: 14px;
-	margin-right: 6px;
-}
-
-#video-settings-form .setting-widget-icon img
-{
-	width: 14px;
-	height: 14px;
-	min-width: 14px;
-	min-height: 14px;
-}
-
-#video-settings-form .setting-row label
-{
-	width: 112px;
-	margin-right: 4px;
-}
-
-#video-settings-form .setting-row input,
-#video-settings-form .setting-row select
-{
-	width: 110px;
-}
-
-#video-settings-form .setting-row[data-control="select"] select,
-#video-settings-form .setting-row[data-control="combo"] select,
-#video-settings-form .setting-row[data-control="imagevalues"] select
-{
-	width: 110px;
-}
-
-#video-settings-form .setting-row[data-control="range"] input,
-#video-settings-form .setting-row .worr-slider
-{
-	width: 104px;
-}
-
-#video-settings-form .setting-row[data-control="range"] .setting-value
-{
-	width: 38px;
-}
-
-#video-settings-form .setting-row[data-control="toggle"] label
-{
-	width: 220px;
-}
-
-#video-settings-form .setting-row[data-control="toggle"] input
-{
-	width: 32px;
-	min-width: 32px;
-	height: 26px;
-	min-height: 26px;
-}
-
-#video-settings-form .setting-row[data-control="action"] button
-{
-	width: 110px;
-	min-width: 110px;
-	height: 28px;
-	padding: 4px 10px;
-}
-
-#screen-settings-form,
-#effects-settings-form
-{
-	width: 780px;
-	max-width: 100%;
-	height: auto;
-	flex: 1 1 auto;
-	padding-right: 0px;
-	overflow: auto;
-}
-
-#screen-settings-columns,
-#effects-settings-columns
-{
-	display: flex;
-	flex-direction: row;
-	width: 780px;
-	min-height: 0px;
-}
-
-#screen-settings-form .settings-column,
-#effects-settings-form .settings-column
-{
-	display: flex;
-	flex-direction: column;
-	width: 382px;
-	min-height: 0px;
-	margin-right: 12px;
-}
-
-#screen-scale-column,
-#effects-gameplay-column
-{
-	margin-right: 0px;
-}
-
-#screen-settings-form .settings-section,
-#effects-settings-form .settings-section
-{
-	width: 370px;
-	margin-bottom: 10px;
-	padding-bottom: 6px;
-}
-
-#screen-settings-form .settings-section h2,
-#effects-settings-form .settings-section h2
-{
-	margin-bottom: 5px;
-	font-size: 17px;
-}
-
-#screen-settings-form .setting-row,
-#effects-settings-form .setting-row
-{
-	width: 358px;
-	min-height: 34px;
-	margin-bottom: 5px;
-	padding: 4px 6px;
-}
-
-#screen-settings-form .setting-widget-icon,
-#effects-settings-form .setting-widget-icon
-{
-	width: 14px;
-	height: 14px;
-	min-width: 14px;
-	min-height: 14px;
-	margin-right: 6px;
-}
-
-#screen-settings-form .setting-widget-icon img,
-#effects-settings-form .setting-widget-icon img
-{
-	width: 14px;
-	height: 14px;
-	min-width: 14px;
-	min-height: 14px;
-}
-
-#screen-settings-form .setting-row label,
-#effects-settings-form .setting-row label
-{
-	width: 124px;
-	margin-right: 8px;
-}
-
-#screen-settings-form .setting-row input,
-#screen-settings-form .setting-row select,
-#effects-settings-form .setting-row input,
-#effects-settings-form .setting-row select
-{
-	width: 146px;
-}
-
-#screen-settings-form .setting-row[data-control="select"] select,
-#screen-settings-form .setting-row[data-control="combo"] select,
-#screen-settings-form .setting-row[data-control="imagevalues"] select,
-#effects-settings-form .setting-row[data-control="select"] select,
-#effects-settings-form .setting-row[data-control="combo"] select,
-#effects-settings-form .setting-row[data-control="imagevalues"] select
-{
-	width: 146px;
-}
-
-#screen-settings-form .setting-row[data-control="range"] input,
-#screen-settings-form .setting-row .worr-slider,
-#effects-settings-form .setting-row[data-control="range"] input,
-#effects-settings-form .setting-row .worr-slider
-{
-	width: 150px;
-}
-
-#screen-settings-form .setting-row[data-control="range"] .setting-value,
-#effects-settings-form .setting-row[data-control="range"] .setting-value
-{
-	width: 54px;
-}
-
-#screen-settings-form .setting-row[data-control="toggle"] label,
-#effects-settings-form .setting-row[data-control="toggle"] label
-{
-	width: 276px;
-}
-
-#screen-settings-form .setting-row[data-control="toggle"] input,
-#effects-settings-form .setting-row[data-control="toggle"] input
-{
-	width: 32px;
-	min-width: 32px;
-	height: 26px;
-	min-height: 26px;
-}
-
-#screen-settings-form .setting-row[data-control="action"] button,
-#effects-settings-form .setting-row[data-control="action"] button
+.cols-2 .setting-row[data-control="action"] button
 {
 	width: 146px;
 	min-width: 146px;
@@ -685,80 +488,99 @@
 	padding: 4px 10px;
 }
 
-#crosshair-settings-form
+/* Three-column width tier (924px). */
+
+.settings-form.cols-3
 {
-	width: 780px;
+	width: 924px;
 	max-width: 100%;
-	height: auto;
+}
+
+.cols-3 .settings-columns
+{
+	width: 924px;
+}
+
+.cols-3 .settings-column
+{
+	width: 300px;
+}
+
+.cols-3 .settings-section
+{
+	width: 288px;
+}
+
+.cols-3 .setting-row
+{
+	width: 276px;
+}
+
+.cols-3 .setting-row label
+{
+	width: 112px;
+	margin-right: 4px;
+}
+
+.cols-3 .setting-row input,
+.cols-3 .setting-row select,
+.cols-3 .setting-row[data-control="select"] select,
+.cols-3 .setting-row[data-control="combo"] select,
+.cols-3 .setting-row[data-control="imagevalues"] select
+{
+	width: 110px;
+}
+
+.cols-3 .setting-row[data-control="range"] input,
+.cols-3 .setting-row .worr-slider
+{
+	width: 104px;
+}
+
+.cols-3 .setting-row[data-control="range"] .setting-value
+{
+	width: 38px;
+}
+
+.cols-3 .setting-row[data-control="field"] input
+{
+	width: 110px;
+}
+
+.cols-3 .setting-row[data-control="field"] input[type="number"]
+{
+	width: 74px;
+}
+
+.cols-3 .setting-row[data-control="field"] .setting-value
+{
+	width: 66px;
+}
+
+.cols-3 .setting-row[data-control="toggle"] label
+{
+	width: 220px;
+}
+
+.cols-3 .setting-row[data-control="action"] button
+{
+	width: 110px;
+	min-width: 110px;
+	height: 28px;
+	padding: 4px 10px;
+}
+
+/* Page-specific exceptions. */
+
+#downloads-settings-form
+{
 	flex: 1 1 auto;
-	padding-right: 0px;
-	overflow: auto;
-}
-
-#crosshair-settings-columns
-{
-	display: flex;
-	flex-direction: row;
-	width: 780px;
-	min-height: 0px;
-}
-
-#crosshair-settings-form .settings-column
-{
-	display: flex;
-	flex-direction: column;
-	width: 382px;
-	min-height: 0px;
-	margin-right: 12px;
-}
-
-#crosshair-hit-column
-{
-	margin-right: 0px;
-}
-
-#crosshair-settings-form .settings-section
-{
-	width: 370px;
-	margin-bottom: 10px;
-	padding-bottom: 6px;
-}
-
-#crosshair-settings-form .settings-section h2
-{
-	margin-bottom: 5px;
-	font-size: 17px;
-}
-
-#crosshair-settings-form .setting-row
-{
-	width: 358px;
-	min-height: 34px;
-	margin-bottom: 5px;
-	padding: 4px 6px;
-}
-
-#crosshair-settings-form .setting-widget-icon
-{
-	width: 14px;
-	height: 14px;
-	min-width: 14px;
-	min-height: 14px;
-	margin-right: 6px;
-}
-
-#crosshair-settings-form .setting-widget-icon img
-{
-	width: 14px;
-	height: 14px;
-	min-width: 14px;
-	min-height: 14px;
+	height: auto;
 }
 
 #crosshair-settings-form .setting-row label
 {
 	width: 104px;
-	margin-right: 8px;
 }
 
 #crosshair-settings-form .setting-row input,
@@ -780,23 +602,7 @@
 	width: 150px;
 }
 
-#crosshair-settings-form .setting-row[data-control="range"] .setting-value
-{
-	width: 54px;
-}
-
-#crosshair-settings-form .setting-row[data-control="toggle"] label
-{
-	width: 276px;
-}
-
-#crosshair-settings-form .setting-row[data-control="toggle"] input
-{
-	width: 32px;
-	min-width: 32px;
-	height: 26px;
-	min-height: 26px;
-}
+/* Value readouts and meters. */
 
 .setting-value
 {
@@ -815,6 +621,7 @@
 	text-align: center;
 	white-space: normal;
 	word-break: break-word;
+	transition: color background-color border-color 0.12s cubic-out;
 }
 
 .setting-value.setting-meter
@@ -839,6 +646,7 @@
 	background-color: #244f53;
 	border-right-width: 1px;
 	border-right-color: #7ed4d8;
+	transition: width 0.15s cubic-out;
 }
 
 .setting-meter-text
@@ -849,6 +657,7 @@
 	padding: 3px 0px;
 	color: #d9eee8;
 	text-align: center;
+	transition: color 0.12s cubic-out;
 }
 
 .setting-row:hover .setting-value

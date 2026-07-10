@@ -62,14 +62,6 @@
 	transition: background-color border-color 0.12s cubic-out;
 }
 
-.session-panel:hover,
-.status-panel:hover,
-.session-card:hover
-{
-	background-color: #211e19;
-	border-color: #8b7c6a;
-}
-
 .status-panel p
 {
 	margin-bottom: 0px;
@@ -95,13 +87,15 @@
 
 #callvote-main-menu
 {
-	position: relative;
-	display: block;
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	align-content: flex-start;
 	flex: 0 0 auto;
 	width: 632px;
 	min-width: 0px;
 	max-width: 100%;
-	height: 430px;
+	height: auto;
 	max-height: 430px;
 	padding-right: 6px;
 	margin-bottom: 8px;
@@ -110,12 +104,13 @@
 
 #callvote-main-menu button
 {
-	position: absolute;
+	position: static;
 	display: block;
-	width: 286px;
-	min-width: 286px;
-	max-width: 286px;
-	height: 42px;
+	box-sizing: border-box;
+	width: 304px;
+	min-width: 304px;
+	max-width: 304px;
+	height: auto;
 	min-height: 42px;
 	padding: 7px 12px;
 	background-color: #211e19;
@@ -124,20 +119,22 @@
 	border-radius: 5px;
 	font-size: 16px;
 	text-align: left;
-	margin-right: 0px;
-	margin-bottom: 0px;
+	margin-right: 12px;
+	margin-bottom: 10px;
 }
 
 #dm-join-team-actions,
 #join-team-actions
 {
-	position: relative;
-	display: block;
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	align-content: flex-start;
 	flex: 0 0 auto;
 	width: 632px;
 	min-width: 0px;
 	max-width: 100%;
-	height: 126px;
+	height: auto;
 	min-height: 0px;
 	max-height: 126px;
 	padding: 8px 0px 0px 8px;
@@ -148,12 +145,13 @@
 #dm-join-team-actions button,
 #join-team-actions button
 {
-	position: absolute;
+	position: static;
 	display: block;
-	width: 286px;
-	min-width: 286px;
-	max-width: 286px;
-	height: 42px;
+	box-sizing: border-box;
+	width: 304px;
+	min-width: 304px;
+	max-width: 304px;
+	height: auto;
 	min-height: 42px;
 	padding: 7px 12px;
 	background-color: #211e19;
@@ -161,20 +159,22 @@
 	border-left-color: #4b4235;
 	border-radius: 5px;
 	text-align: left;
-	margin-right: 0px;
-	margin-bottom: 0px;
+	margin-right: 12px;
+	margin-bottom: 10px;
 }
 
 #dm-join-session-menu,
 #join-session-menu
 {
-	position: relative;
-	display: block;
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	align-content: flex-start;
 	flex: 0 0 auto;
 	width: 632px;
 	min-width: 0px;
 	max-width: 100%;
-	height: 360px;
+	height: auto;
 	min-height: 0px;
 	max-height: 360px;
 	padding: 0px 0px 0px 0px;
@@ -185,12 +185,13 @@
 #dm-join-session-menu button,
 #join-session-menu button
 {
-	position: absolute;
+	position: static;
 	display: block;
-	width: 286px;
-	min-width: 286px;
-	max-width: 286px;
-	height: 42px;
+	box-sizing: border-box;
+	width: 304px;
+	min-width: 304px;
+	max-width: 304px;
+	height: auto;
 	min-height: 42px;
 	padding: 7px 12px;
 	background-color: #211e19;
@@ -199,142 +200,40 @@
 	border-radius: 5px;
 	font-size: 16px;
 	text-align: left;
-	margin-right: 0px;
-	margin-bottom: 0px;
+	margin-right: 12px;
+	margin-bottom: 10px;
 }
 
-#dm-join-community-links,
-#join-community-links
+#callvote-main-menu button:hover,
+#callvote-main-menu button:focus,
+#dm-join-team-actions button:hover,
+#dm-join-team-actions button:focus,
+#join-team-actions button:hover,
+#join-team-actions button:focus,
+#dm-join-session-menu button:hover,
+#dm-join-session-menu button:focus,
+#join-session-menu button:hover,
+#join-session-menu button:focus,
+#callvote-random-menu button:hover,
+#callvote-random-menu button:focus,
+#callvote-scorelimit-menu button:hover,
+#callvote-scorelimit-menu button:focus,
+#callvote-timelimit-menu button:hover,
+#callvote-timelimit-menu button:focus,
+#callvote-unlagged-menu button:hover,
+#callvote-unlagged-menu button:focus,
+#callvote-ruleset-menu button:hover,
+#callvote-ruleset-menu button:focus,
+#callvote-map-flags-content button:hover,
+#callvote-map-flags-content button:focus,
+#mymap-flags-content button:hover,
+#mymap-flags-content button:focus,
+#map-selector-options button:hover,
+#map-selector-options button:focus
 {
-	display: none;
-}
-
-#dm-join-community-links p
-{
-	margin-bottom: 2px;
-	font-size: 14px;
-}
-
-#callvote-main-map,
-#callvote-main-restart,
-#callvote-main-ruleset,
-#callvote-main-scorelimit,
-#callvote-main-balance,
-#callvote-main-cointoss,
-#callvote-main-arena,
-#dm-join-red,
-#dm-join-free,
-#join-red,
-#join-free,
-#dm-join-info,
-#dm-join-callvote,
-#dm-join-hostinfo,
-#dm-join-matchinfo,
-#dm-join-admin,
-#dm-join-leave,
-#join-info,
-#join-callvote,
-#join-hostinfo,
-#join-matchinfo,
-#join-admin,
-#join-leave
-{
-	left: 0px;
-}
-
-#callvote-main-nextmap,
-#callvote-main-gametype,
-#callvote-main-timelimit,
-#callvote-main-shuffle,
-#callvote-main-unlagged,
-#callvote-main-random,
-#dm-join-blue,
-#dm-join-spectate,
-#join-blue,
-#join-spectate,
-#dm-join-maps,
-#dm-join-mymap,
-#dm-join-forfeit,
-#dm-join-matchstats,
-#dm-join-settings,
-#join-maps,
-#join-mymap,
-#join-forfeit,
-#join-matchstats,
-#join-settings
-{
-	left: 304px;
-}
-
-#callvote-main-map,
-#callvote-main-nextmap,
-#dm-join-red,
-#dm-join-blue,
-#join-red,
-#join-blue,
-#dm-join-info,
-#dm-join-maps,
-#join-info,
-#join-maps
-{
-	top: 0px;
-}
-
-#callvote-main-restart,
-#callvote-main-gametype,
-#dm-join-free,
-#dm-join-spectate,
-#join-free,
-#join-spectate,
-#dm-join-callvote,
-#dm-join-mymap,
-#join-callvote,
-#join-mymap
-{
-	top: 60px;
-}
-
-#callvote-main-ruleset,
-#callvote-main-timelimit,
-#dm-join-hostinfo,
-#dm-join-forfeit,
-#join-hostinfo,
-#join-forfeit
-{
-	top: 120px;
-}
-
-#callvote-main-scorelimit,
-#callvote-main-shuffle,
-#dm-join-matchinfo,
-#dm-join-matchstats,
-#join-matchinfo,
-#join-matchstats
-{
-	top: 180px;
-}
-
-#callvote-main-balance,
-#callvote-main-unlagged,
-#dm-join-admin,
-#dm-join-settings,
-#join-admin,
-#join-settings
-{
-	top: 240px;
-}
-
-#callvote-main-cointoss,
-#callvote-main-random,
-#dm-join-leave,
-#join-leave
-{
-	top: 300px;
-}
-
-#callvote-main-arena
-{
-	top: 360px;
+	background-color: #30291f;
+	border-color: #b99b5b;
+	border-left-color: #ffd967;
 }
 
 .menu-list button,
@@ -613,6 +512,12 @@
 	overflow: auto;
 }
 
+#match-stats-lines,
+#tourney-mapchoices-list
+{
+	flex: 0 1 auto;
+}
+
 #callvote-random-menu,
 #callvote-scorelimit-menu,
 #callvote-timelimit-menu,
@@ -708,7 +613,7 @@
 #match-stats-lines,
 #tourney-mapchoices-list
 {
-	width: 620px;
+	width: auto;
 	min-width: 0px;
 	max-width: 100%;
 	padding: 10px;
@@ -728,12 +633,13 @@
 #match-stats-lines p,
 #tourney-mapchoices-list p
 {
-	width: 560px;
+	width: auto;
+	max-width: 100%;
 	min-width: 0px;
 	padding: 5px 8px;
 	background-color: #211e19;
-	border-left-width: 4px;
-	border-left-color: #4b4235;
+	border-left-width: 1px;
+	border-left-color: #332d23;
 	border-radius: 3px;
 	margin-bottom: 4px;
 	font-size: 15px;
@@ -743,8 +649,11 @@
 }
 
 #match-stats-line-0,
-#tourney-mapchoice-line-0
+#tourney-mapchoice-line-0,
+#match-stats-fallback-title,
+#tourney-mapchoices-fallback-0
 {
+	border-left-width: 4px;
 	border-left-color: #b99b5b;
 	color: #ffd967;
 	font-weight: bold;
@@ -818,8 +727,9 @@
 .ui-high-visibility .session-player-row,
 .ui-high-visibility .session-admin-row
 {
-	background-color: #1b1916;
-	border-color: #756a5d;
+	background-color: #000000;
+	border-color: #ffffff;
+	color: #ffffff;
 }
 
 .ui-high-visibility .session-flow-step.is-active,
@@ -842,17 +752,50 @@
 	border-left-color: #ee6758;
 }
 
+#dm-join-session-menu #dm-join-forfeit,
+#join-session-menu #join-forfeit
+{
+	background-color: #281b18;
+	border-color: #895047;
+	border-left-width: 4px;
+	border-left-color: #ee6758;
+}
+
 #dm-join-session-menu #dm-join-leave:hover,
 #join-session-menu #join-leave:hover,
+#dm-join-session-menu #dm-join-forfeit:hover,
+#join-session-menu #join-forfeit:hover,
 #leave-match-yes:hover,
-#forfeit-confirm-yes:hover,
-#dm-join-session-menu #dm-join-leave:focus,
-#join-session-menu #join-leave:focus,
-#leave-match-yes:focus,
-#forfeit-confirm-yes:focus
+#forfeit-confirm-yes:hover
 {
 	background-color: #321f1b;
 	border-color: #ee6758;
 	border-left-color: #ff9285;
 	color: #ee6758;
+}
+
+#dm-join-session-menu #dm-join-leave:focus,
+#join-session-menu #join-leave:focus,
+#dm-join-session-menu #dm-join-forfeit:focus,
+#join-session-menu #join-forfeit:focus,
+#leave-match-yes:focus,
+#forfeit-confirm-yes:focus
+{
+	background-color: #321f1b;
+	border-color: #ffd967;
+	border-left-color: #ff9285;
+	color: #ee6758;
+}
+
+#dm-join-session-menu #dm-join-leave:active,
+#join-session-menu #join-leave:active,
+#dm-join-session-menu #dm-join-forfeit:active,
+#join-session-menu #join-forfeit:active,
+#leave-match-yes:active,
+#forfeit-confirm-yes:active
+{
+	background-color: #402420;
+	border-color: #ff9285;
+	border-left-color: #ff9285;
+	color: #ff9285;
 }

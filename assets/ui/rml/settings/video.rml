@@ -3,6 +3,7 @@
     <title>WORR Video Settings</title>
     <link type="text/rcss" href="../common/theme/base.rcss" />
     <link type="text/rcss" href="../common/theme/settings.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
   <body id="settings-video" data-route-id="video" data-route-group="settings" data-route-version="1" data-document-status="first-round-scaffold" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen settings-screen" id="video-screen">
@@ -10,7 +11,7 @@
         <h1>Video Setup</h1>
       </header>
 
-      <main class="settings-form" id="video-settings-form" data-component="common.components.cvar_controls">
+      <main class="settings-form form-compact cols-3" id="video-settings-form" data-component="common.components.cvar_controls">
         <div class="settings-columns" id="video-settings-columns">
           <div class="settings-column" id="video-display-column">
             <section class="settings-section" id="video-window-section">
@@ -106,7 +107,7 @@
 
           <div class="settings-column" id="video-light-column">
             <section class="settings-section" id="video-gamma-section">
-              <h2>Gamma And Light</h2>
+              <h2>Gamma &amp; Light</h2>
               <div class="setting-row" data-control="range" data-cvar="r_gamma">
                 <span class="setting-widget-icon" data-widget="range"><img src="../common/icons/widgets/range.svg" /></span>
                 <label for="video-gamma">Texture Gamma</label>

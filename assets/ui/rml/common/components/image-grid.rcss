@@ -15,19 +15,19 @@
 }
 
 .worr-image-grid-title {
-  color: #f2eee6;
+  color: #f3eee4;
   font-size: 18px;
 }
 
 .worr-image-grid-value {
-  color: #d9c48f;
+  color: #ffd967;
   font-size: 14px;
 }
 
 .worr-image-grid-hint {
   margin-top: 4px;
   margin-bottom: 10px;
-  color: #9ca3ad;
+  color: #c9beb0;
   font-size: 13px;
 }
 
@@ -42,27 +42,34 @@
   padding: 6px;
   margin-right: 8px;
   margin-bottom: 8px;
-  color: #f8f2e6;
-  background-color: #202832;
+  color: #f3eee4;
+  background-color: #1b1916;
   border-width: 1px;
-  border-color: #465463;
+  border-color: #756a5d;
+  transition: background-color border-color color 0.12s cubic-out;
 }
 
 .worr-image-grid-item:hover {
-  background-color: #2d3845;
+  background-color: #332d23;
+}
+
+.worr-image-grid-item:focus {
+  background-color: #332d23;
+  border-color: #ffd967;
 }
 
 .worr-image-grid-item-selected {
-  background-color: #303c49;
-  border-color: #d9c48f;
+  background-color: #332d23;
+  border-color: #ffd967;
 }
 
 .worr-image-grid-thumb {
   width: 96px;
   height: 72px;
-  background-color: #111820;
+  background-color: #080706;
   border-width: 1px;
-  border-color: #303945;
+  border-color: #332d23;
+  overflow: hidden;
 }
 
 .worr-image-grid-image {
@@ -73,7 +80,7 @@
 .worr-image-grid-fallback {
   margin-top: 25px;
   text-align: center;
-  color: #9ca3ad;
+  color: #c9beb0;
   font-size: 12px;
 }
 
@@ -81,7 +88,7 @@
   margin-top: 6px;
   min-height: 28px;
   text-align: center;
-  color: #f2eee6;
+  color: #f3eee4;
   font-size: 13px;
 }
 
@@ -90,13 +97,13 @@
 }
 
 .worr-image-grid-selected-label {
-  color: #f2eee6;
+  color: #f3eee4;
   font-size: 15px;
 }
 
 .worr-image-grid-selected-detail {
   margin-top: 2px;
-  color: #9ca3ad;
+  color: #c9beb0;
   font-size: 13px;
 }
 
@@ -111,12 +118,21 @@
   padding: 6px 10px;
   margin-right: 8px;
   margin-bottom: 8px;
-  color: #f8f2e6;
-  background-color: #28323d;
+  color: #f3eee4;
+  background-color: #27231d;
   border-width: 1px;
-  border-color: #596878;
+  border-color: #756a5d;
+  transition: background-color border-color color 0.12s cubic-out;
 }
 
 .worr-image-grid-action:hover {
-  background-color: #374656;
+  background-color: #332d23;
+  border-color: #b99b5b;
+  color: #ffd967;
+}
+
+.worr-image-grid-action:focus {
+  background-color: #332d23;
+  border-color: #ffd967;
+  color: #ffd967;
 }

@@ -9,14 +9,21 @@
   margin-bottom: 8px;
   padding: 10px;
   text-align: left;
-  color: #f2eee6;
-  background-color: #202832;
+  color: #f3eee4;
+  background-color: #1b1916;
   border-width: 1px;
-  border-color: #3b4652;
+  border-color: #5f5548;
+  transition: background-color border-color color 0.12s cubic-out;
 }
 
 .worr-save-slot:hover {
-  background-color: #2d3845;
+  background-color: #332d23;
+  border-color: #b99b5b;
+}
+
+.worr-save-slot:focus {
+  background-color: #332d23;
+  border-color: #ffd967;
 }
 
 .worr-save-slot-name {
@@ -26,6 +33,6 @@
 .worr-save-slot-meta,
 .worr-save-slot-status {
   margin-top: 3px;
-  color: #9ca3ad;
+  color: #c9beb0;
   font-size: 13px;
 }

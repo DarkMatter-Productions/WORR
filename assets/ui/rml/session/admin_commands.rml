@@ -5,7 +5,7 @@
     <link type="text/rcss" href="../common/theme/session.rcss" />
     <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
-  <body id="session-admin-commands" data-route-id="admin_commands" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-owner="agent5" data-session-owner="sgame" data-menu-music="menu" data-menu-sound-open="open">
+  <body id="session-admin-commands" data-route-id="admin_commands" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-session-owner="sgame" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen compact-screen session-screen" id="admin-commands-screen">
       <header class="page-header">
         <h1>Admin Commands</h1>
@@ -157,7 +157,7 @@
       </section>
 
       <footer class="actions" id="admin-commands-actions">
-        <button id="admin-commands-back" type="button" data-command="popmenu" data-menu-sound="cancel">Back</button>
+        <button id="admin-commands-back" type="button" data-command="popmenu" data-menu-sound="cancel">Return</button>
       </footer>
     </div>
   </body>

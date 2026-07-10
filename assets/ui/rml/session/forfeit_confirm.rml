@@ -5,16 +5,16 @@
     <link type="text/rcss" href="../common/theme/session.rcss" />
     <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
-  <body id="session-forfeit-confirm" data-route-id="forfeit_confirm" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-owner="agent5" data-session-owner="sgame" data-menu-presentation="popup" data-menu-sound-open="alert" data-menu-music="menu">
+  <body id="session-forfeit-confirm" data-route-id="forfeit_confirm" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-session-owner="sgame" data-menu-presentation="popup" data-menu-sound-open="alert" data-menu-music="menu">
     <div class="screen compact-screen session-screen popup-screen" id="forfeit-confirm-screen" data-close-command="popmenu">
       <main class="popup-dialog confirmation-dialog" id="forfeit-confirm-dialog" data-model="session.forfeit" data-owner-boundary="sgame-commands" data-confirm-kind="destructive">
         <header class="popup-header">
-          <h1>CONFIRM FORFEIT</h1>
+          <h1>Confirm Forfeit</h1>
         </header>
         <p class="popup-message" id="forfeit-confirm-prompt">Are you sure you want to forfeit?</p>
         <footer class="popup-actions" id="forfeit-confirm-actions">
-          <button class="popup-primary popup-danger" id="forfeit-confirm-yes" type="button" data-command="worr_forfeit_yes" data-menu-sound="confirm">YES</button>
-          <button class="popup-secondary" id="forfeit-confirm-no" type="button" data-command="popmenu" data-menu-sound="cancel">NO</button>
+          <button class="popup-danger" id="forfeit-confirm-yes" type="button" data-command="worr_forfeit_yes" data-loc-key="m_yes" data-menu-sound="confirm">Yes</button>
+          <button class="popup-secondary" id="forfeit-confirm-no" type="button" data-command="popmenu" data-loc-key="m_no" data-menu-sound="cancel">No</button>
         </footer>
       </main>
     </div>

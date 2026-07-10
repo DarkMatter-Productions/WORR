@@ -5,7 +5,7 @@
     <link type="text/rcss" href="../common/theme/session.rcss" />
     <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
-  <body id="session-map-selector" data-route-id="map_selector" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-owner="agent5" data-session-owner="sgame" data-menu-music="menu" data-menu-sound-open="open">
+  <body id="session-map-selector" data-route-id="map_selector" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-session-owner="sgame" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen compact-screen session-screen" id="map-selector-screen" data-close-command="popmenu; worr_mapselector_close">
       <header class="page-header" id="map-selector-header" data-model="session.map_selector" data-owner-boundary="sgame-published-cvars">
         <h1 data-bind="cvars.ui_mapselector_title" data-bind-cvar="ui_mapselector_title">Vote for the next arena:</h1>
@@ -16,6 +16,7 @@
 
       <main class="session-layout" id="map-selector-content">
         <section class="session-main" id="map-selector-options" data-model="session.map_selector.options" data-controller="session.map_selector" data-list-provider="session.map_selector.options">
+          <p id="map-selector-empty" class="session-pending" data-show-if="!ui_mapselector_option_show_0">Waiting for map candidates.</p>
           <button id="map-selector-option-0" type="button" class="ui-map-name" data-command="worr_mapselector_vote 0" data-label-cvar="ui_mapselector_option_0" data-visible-if="ui_mapselector_option_show_0!=0" data-menu-sound="confirm">Map Option 1</button>
           <button id="map-selector-option-1" type="button" class="ui-map-name" data-command="worr_mapselector_vote 1" data-label-cvar="ui_mapselector_option_1" data-visible-if="ui_mapselector_option_show_1!=0" data-menu-sound="confirm">Map Option 2</button>
           <button id="map-selector-option-2" type="button" class="ui-map-name" data-command="worr_mapselector_vote 2" data-label-cvar="ui_mapselector_option_2" data-visible-if="ui_mapselector_option_show_2!=0" data-menu-sound="confirm">Map Option 3</button>
@@ -28,7 +29,7 @@
             <p id="map-selector-ack-1" class="ui-map-name" data-bind="cvars.ui_mapselector_ack_1" data-bind-cvar="ui_mapselector_ack_1">Selected map</p>
           </section>
 
-          <section class="status-panel" id="map-selector-countdown">
+          <section class="status-panel" id="map-selector-countdown" data-visible-if="ui_mapselector_bar">
             <h2>Countdown</h2>
             <p id="map-selector-bar" class="ui-monospace-wrap" data-bind="cvars.ui_mapselector_bar" data-bind-cvar="ui_mapselector_bar">============================</p>
           </section>

@@ -1141,7 +1141,7 @@
         "pushmenu vote_menu"
       ],
       "data_models": [
-        "session_vote"
+        "session.vote"
       ],
       "controller_contracts": [
         {

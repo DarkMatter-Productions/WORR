@@ -5,7 +5,7 @@
     <link type="text/rcss" href="../common/theme/utility.rcss" />
     <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
-  <body id="utility-ui-list" data-route-id="ui_list" data-route-group="utility" data-route-version="1" data-document-status="round2-scaffold" data-owner="agent5" data-menu-music="menu" data-menu-sound-open="open">
+  <body id="utility-ui-list" data-route-id="ui_list" data-route-group="utility" data-route-version="1" data-document-status="round2-scaffold" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen compact-screen" id="ui-list-screen" data-close-command="popmenu; worr_ui_list_close">
       <header class="page-header" id="ui-list-header" data-model="session.ui_list" data-owner-boundary="sgame-published-cvars">
         <h1 data-bind="cvars.ui_list_title">Session List</h1>
@@ -23,6 +23,7 @@
       </section>
 
       <section class="content" id="ui-list-content" data-model="session.ui_list.items" data-controller="session.fixed_list">
+        <p id="ui-list-empty" class="utility-empty-state" data-show-if="!ui_list_item_show_0">No entries available.</p>
         <button id="ui-list-item-0" type="button" data-label-cvar="ui_list_item_label_0" data-command-cvar="ui_list_item_cmd_0" data-visible-if="ui_list_item_show_0!=0" data-menu-sound="confirm">Item 1</button>
         <button id="ui-list-item-1" type="button" data-label-cvar="ui_list_item_label_1" data-command-cvar="ui_list_item_cmd_1" data-visible-if="ui_list_item_show_1!=0" data-menu-sound="confirm">Item 2</button>
         <button id="ui-list-item-2" type="button" data-label-cvar="ui_list_item_label_2" data-command-cvar="ui_list_item_cmd_2" data-visible-if="ui_list_item_show_2!=0" data-menu-sound="confirm">Item 3</button>

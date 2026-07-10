@@ -35,9 +35,7 @@
     </div>
   </template>
 
-  <template name="worr-command-button">
-    <button class="worr-command-button" data-command="{{command}}" data-event-click="command.dispatch" data-menu-sound="confirm">{{label}}</button>
-  </template>
+  <!-- worr-command-button is owned by command_button.rml; keep exactly one definition. -->
 
   <template name="worr-conditional-region">
     <div class="worr-conditional-region" data-condition="{{condition}}" data-if="{{condition_result}}">

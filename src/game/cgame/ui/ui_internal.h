@@ -897,6 +897,7 @@ public:
 
     void RegisterMenu(std::unique_ptr<MenuPage> menu);
     MenuPage *FindMenu(const char *name) const;
+    bool HasOpenMenus() const { return !stack_.empty(); }
 
 private:
     void Resize();

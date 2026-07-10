@@ -1,5 +1,9 @@
 /*
  * Shell-specific RmlUi menu styles.
+ *
+ * The shell hubs (Options, Game, Multiplayer) lay out as wrapping flex
+ * sections via .hub-actions/.hub-section; the Main menu is a centered
+ * single-column stack.
  */
 
 .shell-screen
@@ -40,6 +44,12 @@
 	margin-bottom: 6px;
 }
 
+#main-menu-stack
+{
+	justify-content: center;
+	align-items: center;
+}
+
 #main-menu-actions
 {
 	width: 268px;
@@ -52,180 +62,6 @@
 {
 	width: 236px;
 	min-width: 236px;
-}
-
-#options-menu-actions
-{
-	position: relative;
-	width: 604px;
-	min-width: 604px;
-	max-width: 604px;
-	height: 406px;
-	padding-right: 8px;
-	overflow: hidden;
-}
-
-#options-menu-actions button,
-#options-menu-actions .ui-button,
-#game-menu-actions button,
-#game-menu-actions .ui-button,
-#multiplayer-menu-actions button,
-#multiplayer-menu-actions .ui-button
-{
-	display: inline-block;
-	vertical-align: top;
-	position: absolute;
-	width: 272px;
-	min-width: 272px;
-	height: 36px;
-	min-height: 36px;
-	padding: 6px 12px;
-	margin-right: 0px;
-	margin-bottom: 0px;
-	background-color: #211e19;
-	border-color: #6f6253;
-	border-left-width: 4px;
-	border-left-color: #4b4235;
-	border-radius: 5px;
-	text-align: left;
-}
-
-#game-menu-actions
-{
-	position: relative;
-	width: 604px;
-	min-width: 604px;
-	max-width: 604px;
-	height: 348px;
-	padding-right: 8px;
-	overflow: hidden;
-}
-
-#multiplayer-menu-actions
-{
-	position: relative;
-	width: 604px;
-	min-width: 604px;
-	max-width: 604px;
-	height: 174px;
-	padding-right: 8px;
-	overflow: hidden;
-}
-
-#options-menu-actions button:hover,
-#options-menu-actions .ui-button:hover,
-#game-menu-actions button:hover,
-#game-menu-actions .ui-button:hover,
-#multiplayer-menu-actions button:hover,
-#multiplayer-menu-actions .ui-button:hover,
-#options-menu-actions button:focus,
-#options-menu-actions .ui-button:focus,
-#game-menu-actions button:focus,
-#game-menu-actions .ui-button:focus,
-#multiplayer-menu-actions button:focus,
-#multiplayer-menu-actions .ui-button:focus
-{
-	background-color: #30291f;
-	border-color: #b99b5b;
-	border-left-color: #ffd967;
-}
-
-#options-player,
-#options-keys,
-#options-video,
-#options-performance,
-#options-sound,
-#options-screen-setup,
-#options-downloads,
-#game-resume,
-#game-options,
-#game-servers-q2servers,
-#game-demos,
-#game-load,
-#game-quit,
-#multiplayer-servers-q2servers,
-#multiplayer-demos,
-#multiplayer-player
-{
-	left: 0px;
-}
-
-#options-input,
-#options-weapons,
-#options-multimonitor,
-#options-accessibility,
-#options-effects,
-#options-language,
-#options-addressbook,
-#game-player-setup,
-#game-gameflags,
-#game-servers-addressbook,
-#game-save,
-#game-disconnect,
-#multiplayer-servers-addressbook,
-#multiplayer-startserver,
-#multiplayer-options
-{
-	left: 304px;
-}
-
-#options-player,
-#options-input,
-#game-resume,
-#game-player-setup,
-#multiplayer-servers-q2servers,
-#multiplayer-servers-addressbook
-{
-	top: 0px;
-}
-
-#options-keys,
-#options-weapons,
-#game-options,
-#game-gameflags,
-#multiplayer-demos,
-#multiplayer-startserver
-{
-	top: 58px;
-}
-
-#options-video,
-#options-multimonitor,
-#game-servers-q2servers,
-#game-servers-addressbook,
-#multiplayer-player,
-#multiplayer-options
-{
-	top: 116px;
-}
-
-#options-performance,
-#options-accessibility,
-#game-demos,
-#game-save
-{
-	top: 174px;
-}
-
-#options-sound,
-#options-effects,
-#game-load,
-#game-disconnect
-{
-	top: 232px;
-}
-
-#options-screen-setup,
-#options-language,
-#game-quit
-{
-	top: 290px;
-}
-
-#options-downloads,
-#options-addressbook
-{
-	top: 348px;
 }
 
 .menu-footer
@@ -243,73 +79,9 @@
 	margin-bottom: 8px;
 }
 
-#game-menu-actions #game-resume,
-#multiplayer-menu-actions #multiplayer-startserver
-{
-	background-color: #1f271d;
-	border-color: #5f8765;
-	border-left-width: 4px;
-	border-left-color: #83d18f;
-}
+/* Hub layout: wrapping columns of grouped actions. */
 
-#main-menu-actions #main-quit,
-#game-menu-actions #game-quit,
-#game-menu-actions #game-disconnect,
-#download-status-cancel,
-#quit-confirm-yes
-{
-	background-color: #281b18;
-	border-color: #895047;
-	border-left-width: 4px;
-	border-left-color: #ee6758;
-}
-
-#game-menu-actions #game-resume:hover,
-#multiplayer-menu-actions #multiplayer-startserver:hover,
-#game-menu-actions #game-resume:focus,
-#multiplayer-menu-actions #multiplayer-startserver:focus
-{
-	background-color: #263322;
-	border-color: #83d18f;
-	border-left-color: #a6e3ad;
-	color: #83d18f;
-}
-
-#main-menu-actions #main-quit:hover,
-#game-menu-actions #game-quit:hover,
-#game-menu-actions #game-disconnect:hover,
-#download-status-cancel:hover,
-#quit-confirm-yes:hover,
-#main-menu-actions #main-quit:focus,
-#game-menu-actions #game-quit:focus,
-#game-menu-actions #game-disconnect:focus,
-#download-status-cancel:focus,
-#quit-confirm-yes:focus
-{
-	background-color: #321f1b;
-	border-color: #ee6758;
-	border-left-color: #ff9285;
-	color: #ee6758;
-}
-
-#download-status-idle
-{
-	padding: 8px 10px;
-	background-color: #14120f;
-	color: #c9beb0;
-	border-width: 1px;
-	border-color: #443d33;
-	border-left-width: 4px;
-	border-left-color: #4b4235;
-	border-radius: 3px;
-	margin-bottom: 8px;
-	white-space: normal;
-	word-break: break-word;
-}
-
-#options-menu-actions.hub-actions,
-#game-menu-actions.hub-actions,
-#multiplayer-menu-actions.hub-actions
+.menu-actions.hub-actions
 {
 	display: flex;
 	flex-direction: row;
@@ -325,19 +97,7 @@
 	overflow: auto;
 }
 
-#game-menu-actions.hub-actions
-{
-	height: auto;
-}
-
-#multiplayer-menu-actions.hub-actions
-{
-	height: auto;
-}
-
-#options-menu-actions.hub-actions .hub-section,
-#game-menu-actions.hub-actions .hub-section,
-#multiplayer-menu-actions.hub-actions .hub-section
+.hub-actions .hub-section
 {
 	display: flex;
 	flex-direction: column;
@@ -353,36 +113,19 @@
 	border-left-width: 3px;
 	border-left-color: #4b4235;
 	border-radius: 5px;
-	transition: background-color border-color color 0.12s cubic-out;
 }
 
-#options-menu-actions.hub-actions .hub-section:hover,
-#game-menu-actions.hub-actions .hub-section:hover,
-#multiplayer-menu-actions.hub-actions .hub-section:hover
-{
-	background-color: #1d1a16;
-	border-left-color: #b99b5b;
-}
-
-#options-menu-actions.hub-actions .hub-section h2,
-#game-menu-actions.hub-actions .hub-section h2,
-#multiplayer-menu-actions.hub-actions .hub-section h2
+.hub-actions .hub-section h2
 {
 	margin-bottom: 8px;
 	font-size: 17px;
 	color: #ffd967;
 }
 
-#options-menu-actions.hub-actions .hub-section button,
-#options-menu-actions.hub-actions .hub-section .ui-button,
-#game-menu-actions.hub-actions .hub-section button,
-#game-menu-actions.hub-actions .hub-section .ui-button,
-#multiplayer-menu-actions.hub-actions .hub-section button,
-#multiplayer-menu-actions.hub-actions .hub-section .ui-button
+.hub-actions .hub-section button,
+.hub-actions .hub-section .ui-button
 {
 	position: static;
-	top: auto;
-	left: auto;
 	display: block;
 	width: 220px;
 	min-width: 220px;
@@ -391,4 +134,101 @@
 	margin-right: 0px;
 	margin-bottom: 7px;
 	padding: 5px 12px;
+	background-color: #211e19;
+	border-color: #756a5d;
+	border-left-width: 4px;
+	border-left-color: #4b4235;
+	border-radius: 5px;
+	text-align: left;
+}
+
+.hub-actions .hub-section button:hover,
+.hub-actions .hub-section .ui-button:hover
+{
+	background-color: #30291f;
+	border-color: #b99b5b;
+	border-left-color: #ffd967;
+}
+
+.hub-actions .hub-section button:focus,
+.hub-actions .hub-section .ui-button:focus
+{
+	background-color: #30291f;
+	border-color: #ffd967;
+	border-left-color: #ffd967;
+}
+
+.hub-actions .hub-section button:active,
+.hub-actions .hub-section .ui-button:active
+{
+	background-color: #3f3626;
+	border-color: #ffd967;
+	border-left-color: #ffd967;
+	color: #ffd967;
+}
+
+/* Primary/danger variants keep their palette inside hub sections. */
+
+.hub-actions .hub-section button.ui-button-primary
+{
+	background-color: #1f271d;
+	border-color: #5f8765;
+	border-left-width: 4px;
+	border-left-color: #83d18f;
+}
+
+.hub-actions .hub-section button.ui-button-primary:hover
+{
+	background-color: #263322;
+	border-color: #83d18f;
+	border-left-color: #a6e3ad;
+	color: #83d18f;
+}
+
+.hub-actions .hub-section button.ui-button-primary:focus
+{
+	background-color: #263322;
+	border-color: #ffd967;
+	border-left-color: #a6e3ad;
+	color: #83d18f;
+}
+
+.hub-actions .hub-section button.ui-button-primary:active
+{
+	background-color: #2c4028;
+	border-color: #a6e3ad;
+	border-left-color: #a6e3ad;
+	color: #a6e3ad;
+}
+
+.hub-actions .hub-section button.ui-button-danger
+{
+	background-color: #281b18;
+	border-color: #895047;
+	border-left-width: 4px;
+	border-left-color: #ee6758;
+}
+
+.hub-actions .hub-section button.ui-button-danger:hover
+{
+	background-color: #321f1b;
+	border-color: #ee6758;
+	border-left-color: #ff9285;
+	color: #ee6758;
+}
+
+.hub-actions .hub-section button.ui-button-danger:focus
+{
+	background-color: #321f1b;
+	border-color: #ffd967;
+	border-left-color: #ff9285;
+	color: #ee6758;
+}
+
+.hub-actions .hub-section button.ui-button-danger:active
+{
+	background-color: #402420;
+	border-color: #ff9285;
+	border-left-color: #ff9285;
+	color: #ff9285;
 }

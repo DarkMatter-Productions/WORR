@@ -5,8 +5,8 @@
     <link type="text/rcss" href="../common/theme/session.rcss" />
     <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
-  <body id="session-callvote-main" data-route-id="callvote_main" data-route-group="session" data-route-version="1" data-document-status="round2-scaffold" data-owner="agent5" data-session-owner="sgame" data-menu-music="menu" data-menu-sound-open="open">
-    <div class="screen compact-screen" id="callvote-main-screen">
+  <body id="session-callvote-main" data-route-id="callvote_main" data-route-group="session" data-route-version="1" data-document-status="round2-scaffold" data-session-owner="sgame" data-menu-music="menu" data-menu-sound-open="open">
+    <div class="screen compact-screen session-screen" id="callvote-main-screen">
       <header class="page-header">
         <h1>Call a Vote</h1>
         <p id="callvote-main-summary">
@@ -15,10 +15,11 @@
       </header>
 
       <nav class="menu-list" id="callvote-main-menu" data-owner-boundary="sgame-published-cvars">
+        <p id="callvote-main-empty" class="session-pending" data-show-if="!ui_callvote_show_map">No vote options are available right now.</p>
         <button id="callvote-main-map" type="button" data-command="worr_callvote_map" data-visible-if="ui_callvote_show_map!=0" data-menu-sound="open">Map</button>
         <button id="callvote-main-nextmap" type="button" data-command="worr_callvote_nextmap" data-visible-if="ui_callvote_show_nextmap!=0" data-menu-sound="confirm">Next Map</button>
         <button id="callvote-main-restart" type="button" data-command="worr_callvote_restart" data-visible-if="ui_callvote_show_restart!=0" data-menu-sound="confirm">Restart Match</button>
-        <button id="callvote-main-gametype" type="button" data-command="worr_callvote_gametype" data-visible-if="ui_callvote_show_gametype!=0" data-menu-sound="confirm">Gametype</button>
+        <button id="callvote-main-gametype" type="button" data-command="worr_callvote_gametype" data-visible-if="ui_callvote_show_gametype!=0" data-menu-sound="open">Gametype</button>
         <button id="callvote-main-ruleset" type="button" data-command="worr_callvote_ruleset" data-visible-if="ui_callvote_show_ruleset!=0" data-menu-sound="open">Ruleset</button>
         <button id="callvote-main-timelimit" type="button" data-command="worr_callvote_timelimit" data-visible-if="ui_callvote_show_timelimit!=0" data-menu-sound="open">Timelimit</button>
         <button id="callvote-main-scorelimit" type="button" data-command="worr_callvote_scorelimit" data-visible-if="ui_callvote_show_scorelimit!=0" data-menu-sound="open">Scorelimit</button>
@@ -27,7 +28,7 @@
         <button id="callvote-main-unlagged" type="button" data-command="worr_callvote_unlagged" data-visible-if="ui_callvote_show_unlagged!=0" data-menu-sound="open">Unlagged</button>
         <button id="callvote-main-cointoss" type="button" data-command="worr_callvote_cointoss" data-visible-if="ui_callvote_show_cointoss!=0" data-menu-sound="confirm">Cointoss</button>
         <button id="callvote-main-random" type="button" data-command="worr_callvote_random" data-visible-if="ui_callvote_show_random!=0" data-menu-sound="open">Random Number</button>
-        <button id="callvote-main-arena" type="button" data-command="worr_callvote_arena" data-visible-if="ui_callvote_show_arena!=0" data-menu-sound="confirm">Arena</button>
+        <button id="callvote-main-arena" type="button" data-command="worr_callvote_arena" data-visible-if="ui_callvote_show_arena!=0" data-menu-sound="open">Arena</button>
       </nav>
 
       <footer class="actions" id="callvote-main-actions">

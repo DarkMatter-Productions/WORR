@@ -714,7 +714,7 @@ static bool R_RmlUiSvgRasterize(const R_RmlUiSvgDocument &document,
     const int high_height = document.height * supersample;
 
     if (high_width <= 0 || high_height <= 0 ||
-        high_width > 768 || high_height > 768) {
+        high_width > 1536 || high_height > 1536) {
         return false;
     }
 
@@ -809,8 +809,29 @@ static bool R_RmlUiSvgLoadFile(const Rml::String &source,
     FS_FreeFile(loaded);
 
     R_RmlUiSvgDocument document;
-    if (!R_RmlUiSvgParseDocument(svg, &document) ||
-        !R_RmlUiSvgRasterize(document, out_rgba)) {
+    if (!R_RmlUiSvgParseDocument(svg, &document)) {
+        return false;
+    }
+
+    // Rasterize at the canvas magnification so skins stay sharp when the
+    // 960x720 canvas is drawn scaled up; decorators stretch the texture to
+    // the element box, so the larger intrinsic size does not affect layout.
+    const int framebuffer_width = r_config.width > 0 ? r_config.width : 960;
+    const int framebuffer_height = r_config.height > 0 ? r_config.height : 720;
+    int output_scale = static_cast<int>(
+        min(framebuffer_width / 960.0f, framebuffer_height / 720.0f));
+    output_scale = max(1, output_scale);
+
+    while (output_scale > 1 &&
+           (document.width * output_scale * 3 > 1536 ||
+            document.height * output_scale * 3 > 1536)) {
+        output_scale--;
+    }
+
+    document.width *= output_scale;
+    document.height *= output_scale;
+
+    if (!R_RmlUiSvgRasterize(document, out_rgba)) {
         return false;
     }
 

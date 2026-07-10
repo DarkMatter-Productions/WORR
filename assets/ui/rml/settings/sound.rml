@@ -3,6 +3,7 @@
     <title>WORR Sound Settings</title>
     <link type="text/rcss" href="../common/theme/base.rcss" />
     <link type="text/rcss" href="../common/theme/settings.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
   <body id="settings-sound" data-route-id="sound" data-route-group="settings" data-route-version="1" data-document-status="scaffolded-round2" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen settings-screen" id="sound-screen">
@@ -10,7 +11,7 @@
         <h1>Sound Setup</h1>
       </header>
 
-      <main class="settings-form" id="sound-settings-form" data-component="common.components.cvar_controls">
+      <main class="settings-form form-compact cols-2" id="sound-settings-form" data-component="common.components.cvar_controls">
         <div class="settings-columns" id="sound-settings-columns">
           <div class="settings-column" id="sound-primary-column">
             <section class="settings-section" id="sound-engine-section">
@@ -26,7 +27,7 @@
               </div>
               <div class="setting-row" data-control="range" data-cvar="s_mixahead">
                 <span class="setting-widget-icon" data-widget="range"><img src="../common/icons/widgets/range.svg" /></span>
-                <label for="sound-latency">Sound Latency</label>
+                <label for="sound-latency">Sound Latency (s)</label>
                 <input id="sound-latency" type="range" min="0.05" max="0.2" step="0.01" data-cvar="s_mixahead" />
                 <span class="setting-value setting-meter"><span class="setting-meter-fill" data-meter-cvar="s_mixahead" data-meter-min="0.05" data-meter-max="0.2"></span><span class="setting-meter-text" data-bind-cvar="s_mixahead"></span></span>
               </div>
@@ -38,20 +39,20 @@
                 <span class="setting-widget-icon" data-widget="range"><img src="../common/icons/widgets/range.svg" /></span>
                 <label for="sound-volume">Sound Volume</label>
                 <input id="sound-volume" type="range" min="0" max="1" step="0.01" data-cvar="s_volume" />
-                <span class="setting-value setting-meter"><span class="setting-meter-fill" data-meter-cvar="s_volume" data-meter-min="0" data-meter-max="1"></span><span class="setting-meter-text" data-bind-cvar="s_volume"></span></span>
+                <span class="setting-value setting-meter"><span class="setting-meter-fill" data-meter-cvar="s_volume" data-meter-min="0" data-meter-max="1"></span><span class="setting-meter-text" data-bind-cvar="s_volume" data-display-scale="100" data-display-suffix="%"></span></span>
               </div>
               <div class="setting-row" data-control="range" data-cvar="ogg_volume">
                 <span class="setting-widget-icon" data-widget="range"><img src="../common/icons/widgets/range.svg" /></span>
                 <label for="sound-music-volume">Music Volume</label>
-                <input id="sound-music-volume" type="range" min="0" max="1" step="0.01" data-cvar="ogg_volume" />
-                <span class="setting-value setting-meter"><span class="setting-meter-fill" data-meter-cvar="ogg_volume" data-meter-min="0" data-meter-max="1"></span><span class="setting-meter-text" data-bind-cvar="ogg_volume"></span></span>
+                <input id="sound-music-volume" type="range" min="0" max="1" step="0.01" data-cvar="ogg_volume" data-enable-if="ogg_enable" />
+                <span class="setting-value setting-meter"><span class="setting-meter-fill" data-meter-cvar="ogg_volume" data-meter-min="0" data-meter-max="1"></span><span class="setting-meter-text" data-bind-cvar="ogg_volume" data-display-scale="100" data-display-suffix="%"></span></span>
               </div>
             </section>
           </div>
 
           <div class="settings-column" id="sound-music-column">
             <section class="settings-section" id="sound-music-section">
-              <h2>Music And Effects</h2>
+              <h2>Music &amp; Effects</h2>
               <div class="setting-row" data-control="toggle" data-cvar="ogg_enable">
                 <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
                 <label for="sound-music-enable">Enable Music</label>
@@ -60,12 +61,12 @@
               <div class="setting-row" data-control="toggle" data-cvar="ogg_shuffle">
                 <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
                 <label for="sound-music-shuffle">Shuffle Tracks</label>
-                <input id="sound-music-shuffle" type="checkbox" data-cvar="ogg_shuffle" />
+                <input id="sound-music-shuffle" type="checkbox" data-cvar="ogg_shuffle" data-enable-if="ogg_enable" />
               </div>
               <div class="setting-row" data-control="field" data-cvar="ogg_menu_track">
                 <span class="setting-widget-icon" data-widget="number"><img src="../common/icons/widgets/number.svg" /></span>
                 <label for="sound-menu-track">Menu Track</label>
-                <input id="sound-menu-track" type="number" min="0" step="1" data-cvar="ogg_menu_track" data-integer="true" data-width="3" />
+                <input id="sound-menu-track" type="number" min="0" step="1" data-cvar="ogg_menu_track" data-integer="true" data-width="3" data-numeric="true" data-enable-if="ogg_enable" />
                 <span class="setting-value">0 - off</span>
               </div>
               <div class="setting-row" data-control="toggle" data-cvar="s_underwater">

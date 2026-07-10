@@ -109,6 +109,20 @@ li
 	color: #7ed4d8;
 }
 
+@keyframes route-enter
+{
+	from
+	{
+		opacity: 0;
+		transform: translateY(8px);
+	}
+	to
+	{
+		opacity: 1;
+		transform: translateY(0px);
+	}
+}
+
 .ui-route,
 .screen
 {
@@ -126,6 +140,15 @@ li
 	display: flex;
 	flex-direction: column;
 	overflow: hidden;
+	animation: 0.18s cubic-out route-enter;
+}
+
+.ui-reduced-motion .ui-route,
+.ui-reduced-motion .screen,
+.ui-a11y-reduced-motion .ui-route,
+.ui-a11y-reduced-motion .screen
+{
+	animation: none;
 }
 
 .compact-screen
@@ -147,6 +170,27 @@ li
 .menu-header p
 {
 	margin-bottom: 0px;
+}
+
+.status-message
+{
+	padding: 8px 10px;
+	background-color: #14120f;
+	color: #c9beb0;
+	border-width: 1px;
+	border-color: #443d33;
+	border-left-width: 4px;
+	border-left-color: #4b4235;
+	border-radius: 3px;
+	margin-bottom: 8px;
+	white-space: normal;
+	word-break: break-word;
+}
+
+.page-header p.status-message,
+.menu-header p.status-message
+{
+	margin-bottom: 8px;
 }
 
 .menu-footer
@@ -240,14 +284,6 @@ li
 	border-top-color: #b99b5b;
 }
 
-.confirmation-dialog:hover
-{
-	background-color: #1c1813;
-	border-color: #8b7c6a;
-	border-left-color: #ff9285;
-	decorator: image(../skins/widgets/popup-frame-hover.svg);
-}
-
 .popup-header
 {
 	margin-bottom: 10px;
@@ -262,6 +298,7 @@ li
 	font-size: 24px;
 	color: #f3eee4;
 	line-height: 1.05;
+	text-transform: uppercase;
 }
 
 .popup-kicker
@@ -311,13 +348,30 @@ li
 	decorator: image(../skins/widgets/button-primary.svg);
 }
 
-.popup-primary:hover,
-.popup-primary:focus
+.popup-primary:hover
 {
 	background-color: #263322;
 	border-color: #83d18f;
 	border-left-color: #a6e3ad;
 	color: #83d18f;
+	decorator: image(../skins/widgets/button-primary-hover.svg);
+}
+
+.popup-primary:focus
+{
+	background-color: #263322;
+	border-color: #ffd967;
+	border-left-color: #a6e3ad;
+	color: #83d18f;
+	decorator: image(../skins/widgets/button-primary-hover.svg);
+}
+
+.popup-primary:active
+{
+	background-color: #2c4028;
+	border-color: #a6e3ad;
+	border-left-color: #a6e3ad;
+	color: #a6e3ad;
 	decorator: image(../skins/widgets/button-primary-hover.svg);
 }
 
@@ -330,13 +384,30 @@ li
 	decorator: image(../skins/widgets/button-danger.svg);
 }
 
-.popup-danger:hover,
-.popup-danger:focus
+.popup-danger:hover
 {
 	background-color: #321f1b;
 	border-color: #ee6758;
 	border-left-color: #ff9285;
 	color: #ee6758;
+	decorator: image(../skins/widgets/button-danger-hover.svg);
+}
+
+.popup-danger:focus
+{
+	background-color: #321f1b;
+	border-color: #ffd967;
+	border-left-color: #ff9285;
+	color: #ee6758;
+	decorator: image(../skins/widgets/button-danger-hover.svg);
+}
+
+.popup-danger:active
+{
+	background-color: #402420;
+	border-color: #ff9285;
+	border-left-color: #ff9285;
+	color: #ff9285;
 	decorator: image(../skins/widgets/button-danger-hover.svg);
 }
 
@@ -348,13 +419,28 @@ li
 	decorator: image(../skins/widgets/button-normal.svg);
 }
 
-.popup-secondary:hover,
-.popup-secondary:focus
+.popup-secondary:hover
 {
 	background-color: #27231d;
 	border-color: #b99b5b;
 	color: #ffd967;
 	decorator: image(../skins/widgets/button-hover.svg);
+}
+
+.popup-secondary:focus
+{
+	background-color: #27231d;
+	border-color: #ffd967;
+	color: #ffd967;
+	decorator: image(../skins/widgets/button-focus.svg);
+}
+
+.popup-secondary:active
+{
+	background-color: #3f3626;
+	border-color: #ffd967;
+	color: #ffd967;
+	decorator: image(../skins/widgets/button-active.svg);
 }
 
 button,
@@ -404,9 +490,9 @@ button:hover,
 button:active,
 .ui-button:active
 {
-	background-color: #e5b64f;
+	background-color: #3f3626;
 	border-color: #ffd967;
-	color: #000000;
+	color: #ffd967;
 	decorator: image(../skins/widgets/button-active.svg);
 }
 
@@ -431,10 +517,13 @@ button:focus,
 
 button[data-command="ui.back"],
 button[data-command="ui.close"],
-button[data-command="popmenu"],
+button[data-command^="popmenu"],
+button[data-command^="forcemenuoff"],
+button.ui-button-back,
 .ui-button[data-command="ui.back"],
 .ui-button[data-command="ui.close"],
-.ui-button[data-command="popmenu"]
+.ui-button[data-command^="popmenu"],
+.ui-button.ui-button-back
 {
 	background-color: #1b1916;
 	border-color: #5f5548;
@@ -444,16 +533,13 @@ button[data-command="popmenu"],
 
 button[data-command="ui.back"]:hover,
 button[data-command="ui.close"]:hover,
-button[data-command="popmenu"]:hover,
+button[data-command^="popmenu"]:hover,
+button[data-command^="forcemenuoff"]:hover,
+button.ui-button-back:hover,
 .ui-button[data-command="ui.back"]:hover,
 .ui-button[data-command="ui.close"]:hover,
-.ui-button[data-command="popmenu"]:hover,
-button[data-command="ui.back"]:focus,
-button[data-command="ui.close"]:focus,
-button[data-command="popmenu"]:focus,
-.ui-button[data-command="ui.back"]:focus,
-.ui-button[data-command="ui.close"]:focus,
-.ui-button[data-command="popmenu"]:focus
+.ui-button[data-command^="popmenu"]:hover,
+.ui-button.ui-button-back:hover
 {
 	background-color: #27231d;
 	border-color: #b99b5b;
@@ -461,14 +547,40 @@ button[data-command="popmenu"]:focus,
 	decorator: image(../skins/widgets/button-hover.svg);
 }
 
-#game-resume,
-#multiplayer-startserver,
-#players-apply,
-#startserver-begin,
-#singleplayer-start-episode,
-#singleplayer-start-level,
-#vote-menu-yes,
-#tourney-replay-yes
+button[data-command="ui.back"]:focus,
+button[data-command="ui.close"]:focus,
+button[data-command^="popmenu"]:focus,
+button[data-command^="forcemenuoff"]:focus,
+button.ui-button-back:focus,
+.ui-button[data-command="ui.back"]:focus,
+.ui-button[data-command="ui.close"]:focus,
+.ui-button[data-command^="popmenu"]:focus,
+.ui-button.ui-button-back:focus
+{
+	background-color: #27231d;
+	border-color: #ffd967;
+	color: #ffd967;
+	decorator: image(../skins/widgets/button-focus.svg);
+}
+
+button[data-command="ui.back"]:active,
+button[data-command="ui.close"]:active,
+button[data-command^="popmenu"]:active,
+button[data-command^="forcemenuoff"]:active,
+button.ui-button-back:active,
+.ui-button[data-command="ui.back"]:active,
+.ui-button[data-command="ui.close"]:active,
+.ui-button[data-command^="popmenu"]:active,
+.ui-button.ui-button-back:active
+{
+	background-color: #3f3626;
+	border-color: #ffd967;
+	color: #ffd967;
+	decorator: image(../skins/widgets/button-active.svg);
+}
+
+button.ui-button-primary,
+.ui-button.ui-button-primary
 {
 	background-color: #1f271d;
 	border-color: #5f8765;
@@ -477,22 +589,8 @@ button[data-command="popmenu"]:focus,
 	decorator: image(../skins/widgets/button-primary.svg);
 }
 
-#game-resume:hover,
-#multiplayer-startserver:hover,
-#players-apply:hover,
-#startserver-begin:hover,
-#singleplayer-start-episode:hover,
-#singleplayer-start-level:hover,
-#vote-menu-yes:hover,
-#tourney-replay-yes:hover,
-#game-resume:focus,
-#multiplayer-startserver:focus,
-#players-apply:focus,
-#startserver-begin:focus,
-#singleplayer-start-episode:focus,
-#singleplayer-start-level:focus,
-#vote-menu-yes:focus,
-#tourney-replay-yes:focus
+button.ui-button-primary:hover,
+.ui-button.ui-button-primary:hover
 {
 	background-color: #263322;
 	border-color: #83d18f;
@@ -501,15 +599,28 @@ button[data-command="popmenu"]:focus,
 	decorator: image(../skins/widgets/button-primary-hover.svg);
 }
 
-#main-quit,
-#game-quit,
-#game-disconnect,
-#download-status-cancel,
-#quit-confirm-yes,
-#dm-join-leave,
-#join-leave,
-#leave-match-yes,
-#forfeit-confirm-yes
+button.ui-button-primary:focus,
+.ui-button.ui-button-primary:focus
+{
+	background-color: #263322;
+	border-color: #ffd967;
+	border-left-color: #a6e3ad;
+	color: #83d18f;
+	decorator: image(../skins/widgets/button-primary-hover.svg);
+}
+
+button.ui-button-primary:active,
+.ui-button.ui-button-primary:active
+{
+	background-color: #2c4028;
+	border-color: #a6e3ad;
+	border-left-color: #a6e3ad;
+	color: #a6e3ad;
+	decorator: image(../skins/widgets/button-primary-hover.svg);
+}
+
+button.ui-button-danger,
+.ui-button.ui-button-danger
 {
 	background-color: #281b18;
 	border-color: #895047;
@@ -518,29 +629,33 @@ button[data-command="popmenu"]:focus,
 	decorator: image(../skins/widgets/button-danger.svg);
 }
 
-#main-quit:hover,
-#game-quit:hover,
-#game-disconnect:hover,
-#download-status-cancel:hover,
-#quit-confirm-yes:hover,
-#dm-join-leave:hover,
-#join-leave:hover,
-#leave-match-yes:hover,
-#forfeit-confirm-yes:hover,
-#main-quit:focus,
-#game-quit:focus,
-#game-disconnect:focus,
-#download-status-cancel:focus,
-#quit-confirm-yes:focus,
-#dm-join-leave:focus,
-#join-leave:focus,
-#leave-match-yes:focus,
-#forfeit-confirm-yes:focus
+button.ui-button-danger:hover,
+.ui-button.ui-button-danger:hover
 {
 	background-color: #321f1b;
 	border-color: #ee6758;
 	border-left-color: #ff9285;
 	color: #ee6758;
+	decorator: image(../skins/widgets/button-danger-hover.svg);
+}
+
+button.ui-button-danger:focus,
+.ui-button.ui-button-danger:focus
+{
+	background-color: #321f1b;
+	border-color: #ffd967;
+	border-left-color: #ff9285;
+	color: #ee6758;
+	decorator: image(../skins/widgets/button-danger-hover.svg);
+}
+
+button.ui-button-danger:active,
+.ui-button.ui-button-danger:active
+{
+	background-color: #402420;
+	border-color: #ff9285;
+	border-left-color: #ff9285;
+	color: #ff9285;
 	decorator: image(../skins/widgets/button-danger-hover.svg);
 }
 
@@ -605,9 +720,7 @@ progress,
 input:hover,
 select:hover,
 textarea:hover,
-.ui-field:hover,
-progress:hover,
-.worr-progress:hover
+.ui-field:hover
 {
 	background-color: #211e19;
 	border-color: #b99b5b;
@@ -667,6 +780,7 @@ select selectbox option
 	padding: 4px 8px;
 	background-color: #16130f;
 	color: #f3eee4;
+	transition: background-color color 0.12s cubic-out;
 }
 
 select selectbox option:hover,
@@ -677,12 +791,24 @@ select selectbox option:checked
 	decorator: image(../skins/widgets/dropdown-option-hover.svg);
 }
 
+select selectbox option:active
+{
+	background-color: #3f3626;
+	color: #ffd967;
+	decorator: image(../skins/widgets/dropdown-option-hover.svg);
+}
+
 input[type="checkbox"]:hover,
-input[type="checkbox"]:focus,
-.worr-toggle:hover,
-.worr-toggle:focus
+.worr-toggle:hover
 {
 	decorator: image(../skins/widgets/checkbox-off-hover.svg);
+}
+
+input[type="checkbox"]:focus,
+.worr-toggle:focus
+{
+	border-color: #ffd967;
+	decorator: image(../skins/widgets/checkbox-off-focus.svg);
 }
 
 input[type="checkbox"]:checked,
@@ -692,19 +818,29 @@ input[type="checkbox"]:checked,
 }
 
 input[type="checkbox"]:checked:hover,
-input[type="checkbox"]:checked:focus,
-.worr-toggle:checked:hover,
-.worr-toggle:checked:focus
+.worr-toggle:checked:hover
 {
 	decorator: image(../skins/widgets/checkbox-on-hover.svg);
 }
 
+input[type="checkbox"]:checked:focus,
+.worr-toggle:checked:focus
+{
+	border-color: #ffd967;
+	decorator: image(../skins/widgets/checkbox-on-focus.svg);
+}
+
 input[type="range"]:hover,
-input[type="range"]:focus,
-.worr-slider:hover,
-.worr-slider:focus
+.worr-slider:hover
 {
 	decorator: image(../skins/widgets/range-track-hover.svg);
+}
+
+input[type="range"]:focus,
+.worr-slider:focus
+{
+	border-color: #ffd967;
+	decorator: image(../skins/widgets/range-track-focus.svg);
 }
 
 input[type="range"] slidertrack,
@@ -716,11 +852,15 @@ input[type="range"] slidertrack,
 }
 
 input[type="range"]:hover slidertrack,
-input[type="range"]:focus slidertrack,
-.worr-slider:hover slidertrack,
-.worr-slider:focus slidertrack
+.worr-slider:hover slidertrack
 {
 	decorator: image(../skins/widgets/range-track-hover.svg);
+}
+
+input[type="range"]:focus slidertrack,
+.worr-slider:focus slidertrack
+{
+	decorator: image(../skins/widgets/range-track-focus.svg);
 }
 
 input[type="range"] sliderprogress,
@@ -804,6 +944,8 @@ progress fill,
 progress:hover,
 .worr-progress:hover
 {
+	background-color: #211e19;
+	border-color: #b99b5b;
 	decorator: image(../skins/widgets/progress-track-hover.svg);
 }
 
@@ -858,8 +1000,9 @@ scrollbarhorizontal slidertrack
 scrollbarvertical sliderbar,
 scrollbarhorizontal sliderbar
 {
-	background-color: #26221c;
+	background-color: #756a5d;
 	decorator: image(../skins/widgets/scroll-thumb.svg);
+	transition: background-color 0.12s cubic-out;
 }
 
 scrollbarvertical sliderbar
@@ -879,6 +1022,7 @@ scrollbarhorizontal sliderbar
 scrollbarvertical sliderbar:hover,
 scrollbarhorizontal sliderbar:hover
 {
+	background-color: #8d8375;
 	decorator: image(../skins/widgets/scroll-thumb-hover.svg);
 }
 
@@ -908,9 +1052,8 @@ textarea
 [disabled],
 .is-disabled
 {
-	color: #81776a;
+	color: #8d8375;
 	border-color: #756a5d;
-	opacity: 0.65;
 }
 
 button:disabled,
@@ -1013,11 +1156,27 @@ body.ui-high-visibility,
 .ui-high-visibility select,
 .ui-high-visibility textarea,
 .ui-high-visibility .ui-field,
-.ui-high-visibility .ui-focusable
+.ui-high-visibility .ui-focusable,
+.ui-high-visibility .popup-dialog,
+.ui-high-visibility .status-message,
+.ui-high-visibility progress
 {
 	border-color: #ffffff;
 	background-color: #000000;
 	color: #ffffff;
+	decorator: none;
+}
+
+.ui-high-visibility button:hover,
+.ui-high-visibility .ui-button:hover,
+.ui-high-visibility input:hover,
+.ui-high-visibility select:hover,
+.ui-high-visibility textarea:hover
+{
+	background-color: #202000;
+	border-color: #ffff00;
+	color: #ffff00;
+	decorator: none;
 }
 
 .ui-high-visibility button:focus,
@@ -1030,4 +1189,102 @@ body.ui-high-visibility,
 	background-color: #202000;
 	border-color: #ffff00;
 	color: #ffff00;
+	decorator: none;
+}
+
+.ui-high-visibility button:active,
+.ui-high-visibility .ui-button:active
+{
+	background-color: #ffff00;
+	border-color: #ffffff;
+	color: #000000;
+	decorator: none;
+}
+
+.ui-high-visibility input[type="checkbox"],
+.ui-high-visibility .worr-toggle
+{
+	background-color: #000000;
+	border-color: #ffffff;
+	decorator: none;
+}
+
+.ui-high-visibility input[type="checkbox"]:checked,
+.ui-high-visibility .worr-toggle:checked
+{
+	background-color: #ffff00;
+	decorator: none;
+}
+
+.ui-high-visibility input[type="range"] slidertrack,
+.ui-high-visibility .worr-slider slidertrack
+{
+	background-color: #000000;
+	border-width: 1px;
+	border-color: #ffffff;
+	decorator: none;
+}
+
+.ui-high-visibility input[type="range"] sliderbar,
+.ui-high-visibility .worr-slider sliderbar
+{
+	background-color: #ffffff;
+	decorator: none;
+}
+
+.ui-high-visibility input[type="range"] sliderprogress,
+.ui-high-visibility .worr-slider sliderprogress
+{
+	background-color: #ffff00;
+}
+
+.ui-high-visibility progress fill,
+.ui-high-visibility .worr-progress fill
+{
+	background-color: #ffff00;
+	decorator: none;
+}
+
+.ui-high-visibility select selectarrow
+{
+	decorator: none;
+	background-color: #000000;
+	border-left-width: 1px;
+	border-left-color: #ffffff;
+}
+
+.ui-high-visibility select selectbox
+{
+	background-color: #000000;
+	border-color: #ffffff;
+	decorator: none;
+}
+
+.ui-high-visibility select selectbox option
+{
+	background-color: #000000;
+	color: #ffffff;
+	decorator: none;
+}
+
+.ui-high-visibility select selectbox option:hover,
+.ui-high-visibility select selectbox option:checked
+{
+	background-color: #202000;
+	color: #ffff00;
+	decorator: none;
+}
+
+.ui-high-visibility scrollbarvertical slidertrack,
+.ui-high-visibility scrollbarhorizontal slidertrack
+{
+	background-color: #000000;
+	decorator: none;
+}
+
+.ui-high-visibility scrollbarvertical sliderbar,
+.ui-high-visibility scrollbarhorizontal sliderbar
+{
+	background-color: #ffffff;
+	decorator: none;
 }

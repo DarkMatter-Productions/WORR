@@ -4,6 +4,7 @@
     <link type="text/rcss" href="../common/theme/base.rcss" />
     <link type="text/rcss" href="../common/theme/shell.rcss" />
     <link type="text/rcss" href="../common/theme/settings.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
   <body id="shell-downloads" data-route-id="downloads" data-route-group="shell" data-route-version="1" data-document-status="scaffolded-round2" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen shell-screen settings-screen" id="downloads-screen">
@@ -22,32 +23,32 @@
           <div class="setting-row" data-control="toggle" data-cvar="allow_download_maps">
             <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
             <label for="downloads-maps">Maps</label>
-            <input id="downloads-maps" type="checkbox" data-cvar="allow_download_maps" />
+            <input id="downloads-maps" type="checkbox" data-cvar="allow_download_maps" data-enable-if="allow_download" />
           </div>
           <div class="setting-row" data-control="toggle" data-cvar="allow_download_players">
             <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
             <label for="downloads-players">Player Models/Skins</label>
-            <input id="downloads-players" type="checkbox" data-cvar="allow_download_players" />
+            <input id="downloads-players" type="checkbox" data-cvar="allow_download_players" data-enable-if="allow_download" />
           </div>
           <div class="setting-row" data-control="toggle" data-cvar="allow_download_models">
             <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
             <label for="downloads-models">Models</label>
-            <input id="downloads-models" type="checkbox" data-cvar="allow_download_models" />
+            <input id="downloads-models" type="checkbox" data-cvar="allow_download_models" data-enable-if="allow_download" />
           </div>
           <div class="setting-row" data-control="toggle" data-cvar="allow_download_sounds">
             <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
             <label for="downloads-sounds">Sounds</label>
-            <input id="downloads-sounds" type="checkbox" data-cvar="allow_download_sounds" />
+            <input id="downloads-sounds" type="checkbox" data-cvar="allow_download_sounds" data-enable-if="allow_download" />
           </div>
           <div class="setting-row" data-control="toggle" data-cvar="allow_download_textures">
             <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
             <label for="downloads-textures">Textures</label>
-            <input id="downloads-textures" type="checkbox" data-cvar="allow_download_textures" />
+            <input id="downloads-textures" type="checkbox" data-cvar="allow_download_textures" data-enable-if="allow_download" />
           </div>
           <div class="setting-row" data-control="toggle" data-cvar="allow_download_pics">
             <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
-            <label for="downloads-pics">Pics</label>
-            <input id="downloads-pics" type="checkbox" data-cvar="allow_download_pics" />
+            <label for="downloads-pics">HUD Images</label>
+            <input id="downloads-pics" type="checkbox" data-cvar="allow_download_pics" data-enable-if="allow_download" />
           </div>
         </div>
 

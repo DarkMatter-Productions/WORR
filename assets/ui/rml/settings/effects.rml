@@ -3,6 +3,7 @@
     <title>WORR Effects Settings</title>
     <link type="text/rcss" href="../common/theme/base.rcss" />
     <link type="text/rcss" href="../common/theme/settings.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
   <body id="settings-effects" data-route-id="effects" data-route-group="settings" data-route-version="1" data-document-status="scaffolded-round3" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen settings-screen" id="effects-screen">
@@ -10,7 +11,7 @@
         <h1>Effects Setup</h1>
       </header>
 
-      <main class="settings-form" id="effects-settings-form" data-component="common.components.cvar_controls">
+      <main class="settings-form form-compact cols-2" id="effects-settings-form" data-component="common.components.cvar_controls">
         <div class="settings-columns" id="effects-settings-columns">
           <div class="settings-column" id="effects-rendering-column">
             <section class="settings-section" id="effects-rendering-section">

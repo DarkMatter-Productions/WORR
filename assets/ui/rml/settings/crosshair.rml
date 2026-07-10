@@ -3,6 +3,7 @@
     <title>WORR Crosshair Settings</title>
     <link type="text/rcss" href="../common/theme/base.rcss" />
     <link type="text/rcss" href="../common/theme/settings.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
   <body id="settings-crosshair" data-route-id="crosshair" data-route-group="settings" data-route-version="1" data-document-status="scaffolded-round3" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen settings-screen" id="crosshair-screen">
@@ -10,7 +11,7 @@
         <h1>Crosshair Setup</h1>
       </header>
 
-      <main class="settings-form" id="crosshair-settings-form">
+      <main class="settings-form form-compact cols-2" id="crosshair-settings-form">
         <div class="settings-columns" id="crosshair-settings-columns">
           <div class="settings-column" id="crosshair-primary-column">
             <section class="settings-section" id="crosshair-picker-section" data-component="common.components.image_grid">
@@ -18,7 +19,7 @@
               <div class="setting-row image-grid-anchor" id="crosshair-type-control" data-control="imagevalues" data-cvar="crosshair" data-path="pics" data-filter="ch*" data-numeric="true" data-value-prefix="ch" data-image-width="16" data-image-height="16">
                 <span class="setting-widget-icon" data-widget="imagevalues"><img src="../common/icons/widgets/imagevalues.svg" /></span>
                 <label for="crosshair-type">Crosshair Type</label>
-                <select id="crosshair-type" data-cvar="crosshair" data-source-menu-type="imagevalues" data-model="settings.crosshair.images">
+                <select id="crosshair-type" data-cvar="crosshair" data-source-menu-type="imagevalues">
                   <option value="0">Default</option>
                 </select>
               </div>

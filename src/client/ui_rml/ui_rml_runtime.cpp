@@ -24,6 +24,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "common/common.h"
 #include "common/cvar.h"
 #include "common/files.h"
+#include "common/mapdb.h"
+#include "../client.h"
 #include "client/keys.h"
 #include "client/sound/sound.h"
 #include "renderer/renderer.h"
@@ -43,6 +45,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <RmlUi/Core/Element.h>
 #include <RmlUi/Core/ElementDocument.h>
 #include <RmlUi/Core/Elements/ElementFormControl.h>
+#include <RmlUi/Core/Elements/ElementFormControlSelect.h>
 #include <RmlUi/Core/Event.h>
 #include <RmlUi/Core/EventListener.h>
 #include <RmlUi/Core/FontEngineInterface.h>
@@ -51,6 +54,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <RmlUi/Core/Log.h>
 #include <RmlUi/Core/RenderInterface.h>
 #include <RmlUi/Core/RenderManager.h>
+#include <RmlUi/Core/ScrollTypes.h>
 #include <RmlUi/Core/StringUtilities.h>
 #include <RmlUi/Core/SystemInterface.h>
 #include <RmlUi/Core/URL.h>
@@ -88,6 +92,10 @@ static int ui_rml_last_menu_sound = -1;
 static unsigned ui_rml_last_menu_sound_msec;
 static bool ui_rml_applying_cvar_bindings;
 static cvar_t *ui_rml_log_missing_data_models;
+static cvar_t *ui_rml_high_visibility;
+static cvar_t *ui_rml_reduced_motion;
+static Rml::Element *ui_rml_keybind_capture_element;
+static Rml::String ui_rml_keybind_capture_command;
 
 static bool UI_Rml_IsMissingDataModelNotice(const Rml::String &message)
 {
@@ -720,6 +728,35 @@ public:
             return 0;
         }
 
+        float draw_opacity = opacity;
+        if (draw_opacity < 0.0f) {
+            draw_opacity = 0.0f;
+        } else if (draw_opacity > 1.0f) {
+            draw_opacity = 1.0f;
+        }
+
+        // Textures are colour-independent alpha masks, so identical strings
+        // at the same face and size share one texture for the lifetime of
+        // the current menu session (released via ReleaseFontResources).
+        const std::string cache_key =
+            std::to_string(face->face_index) + ":" +
+            std::to_string(face->size) + ":" + text;
+        auto cached = string_texture_cache.find(cache_key);
+        if (cached != string_texture_cache.end()) {
+            Rml::TexturedMesh cached_mesh;
+            cached_mesh.texture = cached->second.texture;
+
+            const float x0 = position.x;
+            const float y0 = position.y - face->metrics.ascent;
+            const float x1 =
+                x0 + static_cast<float>(cached->second.dimensions.x) / face->pixel_scale;
+            const float y1 =
+                y0 + static_cast<float>(cached->second.dimensions.y) / face->pixel_scale;
+            AddTexturedQuad(cached_mesh.mesh, x0, y0, x1, y1, colour * draw_opacity);
+            mesh_list.push_back(std::move(cached_mesh));
+            return measured_width;
+        }
+
         SDL_Color white = {255, 255, 255, 255};
         SDL_Surface *surface =
             TTF_RenderText_Blended(face->font, text.c_str(), text.size(), white);
@@ -786,20 +823,17 @@ public:
         Rml::TexturedMesh text_mesh;
         text_mesh.texture = callback_texture;
 
-        float draw_opacity = opacity;
-        if (draw_opacity < 0.0f) {
-            draw_opacity = 0.0f;
-        } else if (draw_opacity > 1.0f) {
-            draw_opacity = 1.0f;
-        }
-
         const float x0 = position.x;
         const float y0 = position.y - face->metrics.ascent;
-        const float x1 = x0 + static_cast<float>(texture_dimensions.x);
-        const float y1 = y0 + static_cast<float>(texture_dimensions.y);
+        const float x1 =
+            x0 + static_cast<float>(texture_dimensions.x) / face->pixel_scale;
+        const float y1 =
+            y0 + static_cast<float>(texture_dimensions.y) / face->pixel_scale;
         AddTexturedQuad(text_mesh.mesh, x0, y0, x1, y1, colour * draw_opacity);
 
-        generated_textures.push_back(std::move(callback_texture));
+        string_texture_cache.emplace(
+            cache_key,
+            UI_Rml_CachedStringTexture{std::move(callback_texture), texture_dimensions});
         mesh_list.push_back(std::move(text_mesh));
 
         ++generated_strings;
@@ -822,12 +856,26 @@ public:
 
     void ReleaseFontResources() override
     {
-        generated_textures.clear();
+        string_texture_cache.clear();
         sized_face_cache.clear();
         sized_faces.clear();
         ++font_version;
         reported_geometry = false;
         generated_strings = 0;
+    }
+
+    // Physical-pixel scale for glyph rasterization. Layout stays in canvas
+    // units; glyphs render at canvas*scale so magnified framebuffers stay
+    // sharp. Callers must invalidate via Rml::ReleaseFontResources() after
+    // changing the scale.
+    void SetPixelScale(float scale)
+    {
+        pixel_scale = scale >= 0.25f ? scale : 1.0f;
+    }
+
+    float GetPixelScale() const
+    {
+        return pixel_scale;
     }
 
 private:
@@ -852,8 +900,14 @@ private:
         size_t face_index = 0;
         int size = 16;
         int version = 1;
+        float pixel_scale = 1.0f;
         TTF_Font *font = nullptr;
         Rml::FontMetrics metrics = {};
+    };
+
+    struct UI_Rml_CachedStringTexture {
+        Rml::CallbackTexture texture;
+        Rml::Vector2i dimensions;
     };
 
     static Rml::FontMetrics MetricsForSize(int size)
@@ -874,7 +928,7 @@ private:
         return metrics;
     }
 
-    static Rml::FontMetrics MetricsForFont(TTF_Font *font, int size)
+    static Rml::FontMetrics MetricsForFont(TTF_Font *font, int size, float scale)
     {
         Rml::FontMetrics metrics = MetricsForSize(size);
 
@@ -885,13 +939,18 @@ private:
         int x_width = 0;
         int x_height = 0;
 
-        metrics.ascent = static_cast<float>(max(1, ascent));
-        metrics.descent = static_cast<float>(descent);
+        if (scale <= 0.0f) {
+            scale = 1.0f;
+        }
+
+        // TTF metrics are in physical pixels; convert back to canvas units.
+        metrics.ascent = static_cast<float>(max(1, ascent)) / scale;
+        metrics.descent = static_cast<float>(descent) / scale;
         metrics.line_spacing = static_cast<float>(
-            max(max(1, line_skip), max(height, ascent + descent)));
+            max(max(1, line_skip), max(height, ascent + descent))) / scale;
 
         if (TTF_GetStringSize(font, "x", 1, &x_width, &x_height) && x_height > 0) {
-            metrics.x_height = static_cast<float>(x_height);
+            metrics.x_height = static_cast<float>(x_height) / scale;
         }
 
         return metrics;
@@ -1137,7 +1196,17 @@ private:
             return nullptr;
         }
 
-        size = max(1, min(size, 256));
+        size = max(1, size);
+        float physical_size = static_cast<float>(size) * pixel_scale;
+        if (physical_size > 256.0f) {
+            physical_size = 256.0f;
+        }
+        if (physical_size < 1.0f) {
+            physical_size = 1.0f;
+        }
+
+        // A pixel-scale change fully invalidates through
+        // ReleaseFontResources, so face:size stays a sufficient key.
         const std::string key =
             std::to_string(face_index) + ":" + std::to_string(size);
 
@@ -1152,19 +1221,23 @@ private:
             return nullptr;
         }
 
-        TTF_Font *font = TTF_OpenFontIO(io, true, static_cast<float>(size));
+        TTF_Font *font = TTF_OpenFontIO(io, true, physical_size);
         if (!font) {
             return nullptr;
         }
 
         TTF_SetFontHinting(font, TTF_HINTING_LIGHT);
 
+        const float effective_scale =
+            physical_size / static_cast<float>(size);
+
         auto sized_face = std::make_unique<UI_Rml_TtfSizedFace>();
         sized_face->face_index = face_index;
         sized_face->size = size;
         sized_face->version = font_version;
+        sized_face->pixel_scale = effective_scale;
         sized_face->font = font;
-        sized_face->metrics = MetricsForFont(font, size);
+        sized_face->metrics = MetricsForFont(font, size, effective_scale);
 
         UI_Rml_TtfSizedFace *ptr = sized_face.get();
         sized_faces.push_back(std::move(sized_face));
@@ -1196,7 +1269,8 @@ private:
         int width = 0;
         int height = 0;
         if (TTF_GetStringSize(face->font, text.c_str(), text.size(), &width, &height)) {
-            return max(0, width);
+            // Physical pixels back to canvas units.
+            return max(0, Q_rint(static_cast<float>(width) / face->pixel_scale));
         }
 
         return static_cast<int>(text.size()) * max(1, face->size / 2);
@@ -1204,11 +1278,12 @@ private:
 
     bool ttf_initialized = false;
     int font_version = 1;
+    float pixel_scale = 1.0f;
     Rml::FontMetrics fallback_metrics = {};
     std::vector<UI_Rml_TtfFace> faces;
     std::vector<std::unique_ptr<UI_Rml_TtfSizedFace>> sized_faces;
-    std::vector<Rml::CallbackTexture> generated_textures;
     std::unordered_map<std::string, UI_Rml_TtfSizedFace *> sized_face_cache;
+    std::unordered_map<std::string, UI_Rml_CachedStringTexture> string_texture_cache;
     int generated_strings = 0;
     bool reported_geometry = false;
 };
@@ -1524,11 +1599,16 @@ static void UI_Rml_SetElementInnerText(Rml::Element *element,
     }
 }
 
+static bool UI_Rml_ParseDouble(const Rml::String &value, double *out);
+
 static Rml::String UI_Rml_FormatCvarDisplayText(cvar_t *var)
 {
     Rml::String text = (var && var->string) ? var->string : "";
+    double parsed = 0.0;
+    // Only trim trailing zeros when the whole string is one number, so
+    // multi-dot values (IP addresses, version strings) pass through intact.
     const bool numeric =
-        text.find_first_not_of("+-0123456789.") == Rml::String::npos &&
+        UI_Rml_ParseDouble(text, &parsed) &&
         text.find('.') != Rml::String::npos;
 
     if (!numeric) {
@@ -1602,6 +1682,31 @@ static bool UI_Rml_CvarStringTruthy(const char *value)
     return true;
 }
 
+static bool UI_Rml_ConditionNameIsValid(const Rml::String &name)
+{
+    if (name.empty()) {
+        return false;
+    }
+
+    for (char ch : name) {
+        const unsigned char c = static_cast<unsigned char>(ch);
+        if (!Q_isalnum(c) && c != '_' && c != '.' && c != '-') {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+typedef enum {
+    UI_RML_CONDITION_OP_EQUAL,
+    UI_RML_CONDITION_OP_NOT_EQUAL,
+    UI_RML_CONDITION_OP_GREATER,
+    UI_RML_CONDITION_OP_GREATER_EQUAL,
+    UI_RML_CONDITION_OP_LESS,
+    UI_RML_CONDITION_OP_LESS_EQUAL
+} ui_rml_condition_op_t;
+
 static bool UI_Rml_ConditionTermMatches(Rml::String term)
 {
     term = UI_Rml_TrimString(term);
@@ -1615,35 +1720,94 @@ static bool UI_Rml_ConditionTermMatches(Rml::String term)
         term = UI_Rml_TrimString(term.substr(1));
     }
 
-    size_t operator_pos = term.find("!=");
-    bool not_equal = operator_pos != Rml::String::npos;
-    if (operator_pos == Rml::String::npos) {
-        operator_pos = term.find('=');
+    ui_rml_condition_op_t op = UI_RML_CONDITION_OP_EQUAL;
+    size_t operator_pos = Rml::String::npos;
+    size_t operator_len = 0;
+
+    static const struct {
+        const char *token;
+        ui_rml_condition_op_t op;
+    } operators[] = {
+        { "!=", UI_RML_CONDITION_OP_NOT_EQUAL },
+        { ">=", UI_RML_CONDITION_OP_GREATER_EQUAL },
+        { "<=", UI_RML_CONDITION_OP_LESS_EQUAL },
+        { ">", UI_RML_CONDITION_OP_GREATER },
+        { "<", UI_RML_CONDITION_OP_LESS },
+        { "=", UI_RML_CONDITION_OP_EQUAL },
+    };
+
+    for (const auto &candidate : operators) {
+        const size_t pos = term.find(candidate.token);
+        if (pos != Rml::String::npos &&
+            (operator_pos == Rml::String::npos || pos < operator_pos)) {
+            operator_pos = pos;
+            operator_len = strlen(candidate.token);
+            op = candidate.op;
+        }
     }
 
     bool matches = false;
 
     if (operator_pos == Rml::String::npos) {
-        cvar_t *var = Cvar_FindVar(term.c_str());
-        matches = var && UI_Rml_CvarStringTruthy(var->string);
+        // Bare tokens: engine-state names first, then truthy cvars. The
+        // legacy JSON menus special-cased 'ingame' as client state.
+        if (!Q_stricmp(term.c_str(), "ingame") ||
+            !Q_stricmp(term.c_str(), "in_game")) {
+            matches = cl.frame.valid;
+        } else {
+            cvar_t *var = Cvar_FindVar(term.c_str());
+            matches = var && UI_Rml_CvarStringTruthy(var->string);
+        }
     } else {
-        const size_t operator_len = not_equal ? 2 : 1;
         const Rml::String name = UI_Rml_TrimString(term.substr(0, operator_pos));
         const Rml::String expected =
             UI_Rml_TrimString(term.substr(operator_pos + operator_len));
-        const char *actual_text = Cvar_VariableString(name.c_str());
         double actual_number = 0.0;
         double expected_number = 0.0;
 
-        if (UI_Rml_ParseDouble(actual_text, &actual_number) &&
-            UI_Rml_ParseDouble(expected, &expected_number)) {
-            matches = fabs(actual_number - expected_number) < 0.000001;
-        } else {
-            matches = !Q_stricmp(actual_text, expected.c_str());
+        if (!UI_Rml_ConditionNameIsValid(name)) {
+            Com_WPrintf("RmlUi condition term '%s' uses unsupported syntax.\n",
+                        term.c_str());
+            return negate;
         }
 
-        if (not_equal) {
-            matches = !matches;
+        const char *actual_text = Cvar_VariableString(name.c_str());
+        const bool expected_numeric =
+            UI_Rml_ParseDouble(expected, &expected_number);
+        // Missing/empty cvars compare as numeric 0 so 'cvar!=0' stays false
+        // until the owner publishes a value (legacy fail-closed behavior).
+        const bool actual_numeric =
+            UI_Rml_ParseDouble(actual_text, &actual_number) ||
+            !actual_text[0];
+
+        switch (op) {
+        case UI_RML_CONDITION_OP_EQUAL:
+        case UI_RML_CONDITION_OP_NOT_EQUAL:
+            if (expected_numeric && actual_numeric) {
+                matches = fabs(actual_number - expected_number) < 0.000001;
+            } else {
+                matches = !Q_stricmp(actual_text, expected.c_str());
+            }
+            if (op == UI_RML_CONDITION_OP_NOT_EQUAL) {
+                matches = !matches;
+            }
+            break;
+        case UI_RML_CONDITION_OP_GREATER:
+            matches = expected_numeric && actual_numeric &&
+                      actual_number > expected_number;
+            break;
+        case UI_RML_CONDITION_OP_GREATER_EQUAL:
+            matches = expected_numeric && actual_numeric &&
+                      actual_number >= expected_number;
+            break;
+        case UI_RML_CONDITION_OP_LESS:
+            matches = expected_numeric && actual_numeric &&
+                      actual_number < expected_number;
+            break;
+        case UI_RML_CONDITION_OP_LESS_EQUAL:
+            matches = expected_numeric && actual_numeric &&
+                      actual_number <= expected_number;
+            break;
         }
     }
 
@@ -1779,6 +1943,73 @@ static void UI_Rml_SetCheckboxValue(Rml::Element *element, bool checked)
     }
 }
 
+static void UI_Rml_SyncSelectCustomOption(Rml::Element *element,
+                                          const Rml::String &value)
+{
+    auto *select =
+        rmlui_dynamic_cast<Rml::ElementFormControlSelect *>(element);
+    if (!select) {
+        return;
+    }
+
+    int custom_index = -1;
+    bool preset_matches = false;
+    bool has_placeholder = false;
+    const int num_options = select->GetNumOptions();
+
+    for (int i = 0; i < num_options; i++) {
+        Rml::Element *option = select->GetOption(i);
+        if (!option) {
+            continue;
+        }
+
+        const bool is_custom = option->HasAttribute("data-custom-option");
+        if (is_custom) {
+            custom_index = i;
+            continue;
+        }
+
+        const Rml::String option_value =
+            option->GetAttribute<Rml::String>("value", "");
+        if (option_value == value) {
+            preset_matches = true;
+        }
+        if (option_value.empty()) {
+            has_placeholder = true;
+        }
+    }
+
+    // Selects with an authored empty-value placeholder represent 'nothing
+    // chosen yet'; unmatched sentinel values fall back to the placeholder
+    // instead of minting a '(custom)' entry.
+    if (preset_matches || value.empty() || has_placeholder) {
+        if (custom_index >= 0) {
+            select->Remove(custom_index);
+        }
+        return;
+    }
+
+    // Keep out-of-preset config values representable instead of showing a
+    // stale first option.
+    if (custom_index >= 0) {
+        Rml::Element *option = select->GetOption(custom_index);
+        if (option &&
+            option->GetAttribute<Rml::String>("value", "") == value) {
+            return;
+        }
+        select->Remove(custom_index);
+    }
+
+    const Rml::String label =
+        UI_Rml_EscapeTextForInnerRml(value.c_str()) + " (custom)";
+    const int added = select->Add(label, value);
+    if (added >= 0) {
+        if (Rml::Element *option = select->GetOption(added)) {
+            option->SetAttribute("data-custom-option", "");
+        }
+    }
+}
+
 static void UI_Rml_ApplyCvarToControl(Rml::Element *element, cvar_t *var)
 {
     if (!element || !var) {
@@ -1796,7 +2027,9 @@ static void UI_Rml_ApplyCvarToControl(Rml::Element *element, cvar_t *var)
         return;
     }
 
-    control->SetValue(var->string ? var->string : "");
+    const Rml::String value = var->string ? var->string : "";
+    UI_Rml_SyncSelectCustomOption(element, value);
+    control->SetValue(value);
 }
 
 static void UI_Rml_ApplyCvarToProgress(Rml::Element *element, cvar_t *var)
@@ -1815,7 +2048,27 @@ static void UI_Rml_ApplyCvarToText(Rml::Element *element, cvar_t *var)
         return;
     }
 
-    const Rml::String text = UI_Rml_FormatCvarDisplayText(var);
+    Rml::String text = UI_Rml_FormatCvarDisplayText(var);
+
+    // Optional display transforms so readouts can show units ('75%')
+    // instead of raw cvar fractions ('0.75').
+    const Rml::String display_scale =
+        element->GetAttribute<Rml::String>("data-display-scale", "");
+    if (!display_scale.empty()) {
+        double value = 0.0;
+        double scale = 1.0;
+        if (UI_Rml_ParseDouble(text, &value) &&
+            UI_Rml_ParseDouble(display_scale, &scale)) {
+            text = va("%g", value * scale);
+        }
+    }
+
+    const Rml::String display_suffix =
+        element->GetAttribute<Rml::String>("data-display-suffix", "");
+    if (!display_suffix.empty()) {
+        text += display_suffix;
+    }
+
     UI_Rml_SetElementInnerText(element, text.c_str());
 }
 
@@ -1898,9 +2151,14 @@ static void UI_Rml_RefreshCvarBindings(Rml::Element *element,
         }
     }
 
+    // Text bindings replace inner RML, which corrupts form controls; those
+    // synchronize exclusively through the data-cvar control path.
+    const bool is_form_control =
+        rmlui_dynamic_cast<Rml::ElementFormControl *>(element) != nullptr;
+
     const Rml::String bind_cvar =
         element->GetAttribute<Rml::String>("data-bind-cvar", "");
-    if (!bind_cvar.empty() &&
+    if (!bind_cvar.empty() && !is_form_control &&
         (!only_cvar || bind_cvar == *only_cvar)) {
         if (cvar_t *var = Cvar_FindVar(bind_cvar.c_str())) {
             if (UI_Rml_CvarHasDisplayText(var)) {
@@ -1911,7 +2169,7 @@ static void UI_Rml_RefreshCvarBindings(Rml::Element *element,
 
     const Rml::String label_cvar =
         element->GetAttribute<Rml::String>("data-label-cvar", "");
-    if (!label_cvar.empty() &&
+    if (!label_cvar.empty() && !is_form_control &&
         (!only_cvar || label_cvar == *only_cvar)) {
         if (cvar_t *var = Cvar_FindVar(label_cvar.c_str())) {
             if (UI_Rml_CvarHasDisplayText(var)) {
@@ -1921,7 +2179,7 @@ static void UI_Rml_RefreshCvarBindings(Rml::Element *element,
     }
 
     const Rml::String data_bind_cvar = UI_Rml_DataBindCvarName(element);
-    if (!data_bind_cvar.empty() &&
+    if (!data_bind_cvar.empty() && !is_form_control &&
         (!only_cvar || data_bind_cvar == *only_cvar)) {
         if (cvar_t *var = Cvar_FindVar(data_bind_cvar.c_str())) {
             if (UI_Rml_CvarHasDisplayText(var)) {
@@ -2064,6 +2322,21 @@ static void UI_Rml_SetCvarFromControl(Rml::Element *element)
             var = UI_Rml_SetCvarFloat(cvar_name,
                                       var,
                                       static_cast<float>(atof(value.c_str())));
+        } else if (UI_Rml_ElementBoolAttribute(element, "data-numeric")) {
+            double parsed = 0.0;
+            if (UI_Rml_ParseDouble(UI_Rml_TrimString(value), &parsed)) {
+                var = UI_Rml_SetCvarFloat(cvar_name, var,
+                                          static_cast<float>(parsed));
+            } else if (var) {
+                // Reject free-form text on numeric fields; restore the
+                // control from the unchanged cvar.
+                ui_rml_applying_cvar_bindings = true;
+                UI_Rml_ApplyCvarToControl(element, var);
+                ui_rml_applying_cvar_bindings = false;
+                return;
+            } else {
+                return;
+            }
         } else {
             var = UI_Rml_SetCvarString(cvar_name, var, value);
         }
@@ -2133,9 +2406,11 @@ static void UI_Rml_ApplyDocumentAudioHints(const char *route_id,
 
         if (sound >= 0) {
             UI_Rml_PlayMenuFeedbackSound(static_cast<uiFeedbackSound_t>(sound));
-            Com_Printf("RmlUi route '%s' requested menu open sound '%s'.\n",
-                       route_id && route_id[0] ? route_id : "<unknown>",
-                       open_sound.c_str());
+            if (Cvar_VariableInteger("ui_rml_debug")) {
+                Com_Printf("RmlUi route '%s' requested menu open sound '%s'.\n",
+                           route_id && route_id[0] ? route_id : "<unknown>",
+                           open_sound.c_str());
+            }
         }
     }
 
@@ -2153,18 +2428,22 @@ static void UI_Rml_ApplyDocumentAudioHints(const char *route_id,
     if (!Q_stricmp(music.c_str(), "menu") ||
         !Q_stricmp(music.c_str(), "auto")) {
         OGG_Play();
-        Com_Printf("RmlUi route '%s' requested menu music cue '%s'.\n",
-                   route_id && route_id[0] ? route_id : "<unknown>",
-                   music.c_str());
+        if (Cvar_VariableInteger("ui_rml_debug")) {
+            Com_Printf("RmlUi route '%s' requested menu music cue '%s'.\n",
+                       route_id && route_id[0] ? route_id : "<unknown>",
+                       music.c_str());
+        }
         return;
     }
 
     if (!Q_stricmp(music.c_str(), "off") ||
         !Q_stricmp(music.c_str(), "stop")) {
         OGG_Stop();
-        Com_Printf("RmlUi route '%s' requested music stop cue '%s'.\n",
-                   route_id && route_id[0] ? route_id : "<unknown>",
-                   music.c_str());
+        if (Cvar_VariableInteger("ui_rml_debug")) {
+            Com_Printf("RmlUi route '%s' requested music stop cue '%s'.\n",
+                       route_id && route_id[0] ? route_id : "<unknown>",
+                       music.c_str());
+        }
     }
 }
 
@@ -2254,10 +2533,168 @@ static void UI_Rml_AttachElementAudioListeners(Rml::Element *element)
     }
 }
 
+static bool UI_Rml_CommandIsPlainRouteOpen(const Rml::String &command,
+                                           const Rml::String &route_target)
+{
+    if (route_target.empty()) {
+        return false;
+    }
+
+    if (command.empty() || command == "ui.open_route") {
+        return true;
+    }
+
+    if (!UI_Rml_CommandStartsWithToken(command, "pushmenu")) {
+        return false;
+    }
+
+    const Rml::String argument =
+        UI_Rml_CommandFirstArgumentAfterToken(command, "pushmenu");
+    if (argument != route_target) {
+        return false;
+    }
+
+    size_t position = command.find(argument, strlen("pushmenu"));
+    if (position == Rml::String::npos) {
+        return false;
+    }
+
+    position += argument.size();
+    while (position < command.size() &&
+           (command[position] == ' ' || command[position] == '\t')) {
+        position++;
+    }
+
+    return position >= command.size();
+}
+
+static Rml::Element *UI_Rml_FindKeybindElement(Rml::Element *element)
+{
+    for (Rml::Element *current = element; current; current = current->GetParentNode()) {
+        if (!current->GetAttribute<Rml::String>("data-bind-command", "").empty()) {
+            return current;
+        }
+    }
+
+    return nullptr;
+}
+
+static void UI_Rml_SetKeybindKeyText(Rml::Element *element, const char *text)
+{
+    if (!element) {
+        return;
+    }
+
+    if (Rml::Element *key_span = element->QuerySelector(".bind-key")) {
+        UI_Rml_SetElementInnerText(key_span, text);
+    }
+}
+
+static void UI_Rml_RefreshKeybindDisplays(Rml::Element *element)
+{
+    if (!element) {
+        return;
+    }
+
+    const Rml::String bind_command =
+        element->GetAttribute<Rml::String>("data-bind-command", "");
+    if (!bind_command.empty() && element != ui_rml_keybind_capture_element) {
+        const char *key_name = Key_GetBinding(bind_command.c_str());
+        UI_Rml_SetKeybindKeyText(element,
+                                 key_name && key_name[0] ? key_name : "---");
+    }
+
+    const int num_children = element->GetNumChildren();
+    for (int child_index = 0; child_index < num_children; child_index++) {
+        UI_Rml_RefreshKeybindDisplays(element->GetChild(child_index));
+    }
+}
+
+static void UI_Rml_EndKeybindCapture(void)
+{
+    if (ui_rml_keybind_capture_element) {
+        ui_rml_keybind_capture_element->SetClass("is-capturing", false);
+        ui_rml_keybind_capture_element = nullptr;
+    }
+
+    ui_rml_keybind_capture_command.clear();
+
+    if (ui_rml_document) {
+        UI_Rml_RefreshKeybindDisplays(ui_rml_document);
+    }
+}
+
+static void UI_Rml_BeginKeybindCapture(Rml::Element *element)
+{
+    UI_Rml_EndKeybindCapture();
+
+    const Rml::String bind_command =
+        element->GetAttribute<Rml::String>("data-bind-command", "");
+    if (bind_command.empty()) {
+        return;
+    }
+
+    ui_rml_keybind_capture_element = element;
+    ui_rml_keybind_capture_command = bind_command;
+    element->SetClass("is-capturing", true);
+    UI_Rml_SetKeybindKeyText(element, "press a key...");
+}
+
+static void UI_Rml_UnbindKeybindCommand(const char *command)
+{
+    int key = 0;
+
+    while ((key = Key_EnumBindings(key, command)) != -1) {
+        Key_SetBinding(key, NULL);
+        key++;
+    }
+}
+
+static bool UI_Rml_HandleKeybindCaptureKey(int key, bool down)
+{
+    if (!ui_rml_keybind_capture_element) {
+        return false;
+    }
+
+    if (!down) {
+        return true;
+    }
+
+    if (key == K_ESCAPE) {
+        UI_Rml_EndKeybindCapture();
+        UI_Rml_PlayMenuFeedbackSound(UI_FEEDBACK_CLOSE);
+        return true;
+    }
+
+    const Rml::String command = ui_rml_keybind_capture_command;
+
+    if (key == K_BACKSPACE || key == K_DEL) {
+        UI_Rml_UnbindKeybindCommand(command.c_str());
+        UI_Rml_EndKeybindCapture();
+        UI_Rml_PlayMenuFeedbackSound(UI_FEEDBACK_MOVE);
+        return true;
+    }
+
+    UI_Rml_UnbindKeybindCommand(command.c_str());
+    Key_SetBinding(key, command.c_str());
+    UI_Rml_EndKeybindCapture();
+    UI_Rml_PlayMenuFeedbackSound(UI_FEEDBACK_ALERT);
+    return true;
+}
+
 class UI_Rml_CommandEventListener final : public Rml::EventListener {
 public:
     void ProcessEvent(Rml::Event &event) override
     {
+        Rml::Element *keybind_element =
+            UI_Rml_FindKeybindElement(event.GetTargetElement());
+        if (keybind_element) {
+            UI_Rml_BeginKeybindCapture(keybind_element);
+            UI_Rml_PlayMenuFeedbackSound(UI_FEEDBACK_MOVE);
+            event.StopPropagation();
+            return;
+        }
+
         Rml::Element *element = UI_Rml_FindCommandElement(event.GetTargetElement());
         if (!element) {
             return;
@@ -2282,13 +2719,22 @@ public:
                 popup_target = UI_Rml_CommandFirstArgumentAfterToken(command, "pushpopup");
             }
 
-            if (UI_Rml_QueueRoutePopup(popup_target)) {
-                event.StopPropagation();
-                return;
+            if (!UI_Rml_QueueRoutePopup(popup_target)) {
+                Com_WPrintf("RmlUi popup target '%s' is not a registered route.\n",
+                            popup_target.empty() ? "<none>" : popup_target.c_str());
             }
+
+            // Popup tokens are UI-internal; never leak them to the console.
+            event.StopPropagation();
+            return;
         }
 
-        if (UI_Rml_QueueRouteOpen(route_target)) {
+        // The route-target shortcut may only replace a data-command that is
+        // exactly a plain 'pushmenu <route>'. Compound commands (cvar seeds,
+        // command tails, extra arguments) must run through the console so
+        // their side effects execute.
+        if (UI_Rml_CommandIsPlainRouteOpen(command, route_target) &&
+            UI_Rml_QueueRouteOpen(route_target)) {
             event.StopPropagation();
             return;
         }
@@ -2371,6 +2817,10 @@ static bool UI_Rml_CompiledRuntimeInit(void)
 
     ui_rml_log_missing_data_models =
         Cvar_Get("ui_rml_log_missing_data_models", "0", 0);
+    ui_rml_high_visibility =
+        Cvar_Get("ui_rml_high_visibility", "0", CVAR_ARCHIVE);
+    ui_rml_reduced_motion =
+        Cvar_Get("ui_rml_reduced_motion", "0", CVAR_ARCHIVE);
 
     UI_Rml_InstallCoreInterfaces();
 
@@ -2475,6 +2925,25 @@ static bool UI_Rml_CompiledRuntimeEnsureContext(int width, int height)
     if (!ui_rml_core_initialized) {
         return false;
     }
+
+#if USE_SDL3_TTF
+    // Rasterize glyphs and SVG skins at physical resolution so they stay
+    // sharp when the canvas is drawn magnified; re-rasterize on mode change.
+    const float font_pixel_scale = UI_Rml_CompiledRuntimeCanvasPixelScale();
+    if (fabsf(font_pixel_scale - ui_rml_font_interface.GetPixelScale()) > 0.01f) {
+        const bool was_default_scale =
+            fabsf(ui_rml_font_interface.GetPixelScale() - 1.0f) < 0.001f &&
+            !ui_rml_context;
+
+        ui_rml_font_interface.SetPixelScale(font_pixel_scale);
+        Rml::ReleaseFontResources();
+
+        // SVG decorator textures are cached per path at load-time scale.
+        if (!was_default_scale) {
+            Rml::ReleaseTextures();
+        }
+    }
+#endif
 
     if (!ui_rml_context) {
         ui_rml_context = Rml::CreateContext("worr_ui", dimensions);
@@ -2606,28 +3075,30 @@ static Rml::Input::KeyIdentifier UI_Rml_CompiledRuntimeKeyIdentifier(int key)
         return Rml::Input::KI_SUBTRACT;
     case K_KP_PLUS:
         return Rml::Input::KI_ADD;
+    // The engine only reports K_KP_* for the navigation cluster (numlock
+    // off), so map them to navigation like the legacy menus did.
     case K_KP_INS:
-        return Rml::Input::KI_NUMPAD0;
+        return Rml::Input::KI_INSERT;
     case K_KP_END:
-        return Rml::Input::KI_NUMPAD1;
+        return Rml::Input::KI_END;
     case K_KP_DOWNARROW:
-        return Rml::Input::KI_NUMPAD2;
+        return Rml::Input::KI_DOWN;
     case K_KP_PGDN:
-        return Rml::Input::KI_NUMPAD3;
+        return Rml::Input::KI_NEXT;
     case K_KP_LEFTARROW:
-        return Rml::Input::KI_NUMPAD4;
+        return Rml::Input::KI_LEFT;
     case K_KP_5:
         return Rml::Input::KI_NUMPAD5;
     case K_KP_RIGHTARROW:
-        return Rml::Input::KI_NUMPAD6;
+        return Rml::Input::KI_RIGHT;
     case K_KP_HOME:
-        return Rml::Input::KI_NUMPAD7;
+        return Rml::Input::KI_HOME;
     case K_KP_UPARROW:
-        return Rml::Input::KI_NUMPAD8;
+        return Rml::Input::KI_UP;
     case K_KP_PGUP:
-        return Rml::Input::KI_NUMPAD9;
+        return Rml::Input::KI_PRIOR;
     case K_KP_DEL:
-        return Rml::Input::KI_DECIMAL;
+        return Rml::Input::KI_DELETE;
     case ';':
     case ':':
         return Rml::Input::KI_OEM_1;
@@ -2678,6 +3149,196 @@ static int UI_Rml_CompiledRuntimeMouseButtonIndex(int key)
 static void UI_Rml_CompiledRuntimeCloseRoute(void);
 static void UI_Rml_CompiledRuntimeCloseActiveDocument(void);
 
+static Rml::ElementFormControlSelect *UI_Rml_SelectFromElement(Rml::Element *element)
+{
+    return rmlui_dynamic_cast<Rml::ElementFormControlSelect *>(element);
+}
+
+// Expands select controls marked data-source-list="$$com_maplist" with the
+// installed map list, mirroring the legacy JSON menu macro expansion.
+static void UI_Rml_ExpandSourceLists(Rml::ElementDocument *document)
+{
+    Rml::ElementList elements;
+    document->QuerySelectorAll(elements, "select[data-source-list]");
+
+    for (Rml::Element *element : elements) {
+        const Rml::String source =
+            element->GetAttribute<Rml::String>("data-source-list", "");
+        Rml::ElementFormControlSelect *select = UI_Rml_SelectFromElement(element);
+
+        if (!select) {
+            continue;
+        }
+
+        if (source != "$$com_maplist") {
+            Com_WPrintf("RmlUi data-source-list '%s' is not supported.\n",
+                        source.c_str());
+            continue;
+        }
+
+        int num_files = 0;
+        void **files = FS_ListFiles("maps", ".bsp", FS_SEARCH_STRIPEXT, &num_files);
+        if (!files || num_files <= 0) {
+            if (files) {
+                FS_FreeList(files);
+            }
+            continue;
+        }
+
+        const mapdb_t *mapdb = MapDB_Get();
+
+        select->RemoveAll();
+        for (int i = 0; i < num_files; i++) {
+            const char *bsp = static_cast<const char *>(files[i]);
+            Rml::String label = UI_Rml_EscapeTextForInnerRml(bsp);
+
+            // Show the friendly title when the map database knows the map.
+            if (mapdb) {
+                for (size_t m = 0; m < mapdb->num_maps; m++) {
+                    if (!Q_stricmp(mapdb->maps[m].bsp, bsp) &&
+                        mapdb->maps[m].title[0]) {
+                        label += " - ";
+                        label += UI_Rml_EscapeTextForInnerRml(mapdb->maps[m].title);
+                        break;
+                    }
+                }
+            }
+
+            select->Add(label, bsp);
+        }
+
+        FS_FreeList(files);
+    }
+}
+
+// Populates the single-player episode/level selects from the map database.
+static void UI_Rml_PopulateMapDbSelects(Rml::ElementDocument *document)
+{
+    const mapdb_t *mapdb = MapDB_Get();
+    if (!mapdb) {
+        return;
+    }
+
+    if (Rml::ElementFormControlSelect *episodes = UI_Rml_SelectFromElement(
+            document->QuerySelector("select[data-model='singleplayer.episodes']"))) {
+        episodes->RemoveAll();
+        for (size_t i = 0; i < mapdb->num_episodes; i++) {
+            episodes->Add(UI_Rml_EscapeTextForInnerRml(mapdb->episodes[i].name),
+                          va("%zu", i));
+        }
+    }
+
+    if (Rml::ElementFormControlSelect *units = UI_Rml_SelectFromElement(
+            document->QuerySelector("select[data-model='singleplayer.units']"))) {
+        units->RemoveAll();
+        for (size_t i = 0; i < mapdb->num_maps; i++) {
+            if (!mapdb->maps[i].sp) {
+                continue;
+            }
+
+            // Option values are indices into mapdb->maps, matching what
+            // MapDB_Run_f expects from _mapdb_level.
+            units->Add(UI_Rml_EscapeTextForInnerRml(mapdb->maps[i].title),
+                       va("%zu", i));
+        }
+    }
+}
+
+// Populates imagevalues pickers (crosshair) by enumerating pics on disk.
+static void UI_Rml_PopulateImageValueSelects(Rml::ElementDocument *document)
+{
+    Rml::ElementList elements;
+    document->QuerySelectorAll(elements, "select[data-source-menu-type='imagevalues']");
+
+    for (Rml::Element *element : elements) {
+        Rml::ElementFormControlSelect *select = UI_Rml_SelectFromElement(element);
+        Rml::Element *row = element->GetParentNode();
+        while (row && !row->HasAttribute("data-path")) {
+            row = row->GetParentNode();
+        }
+
+        if (!select || !row) {
+            continue;
+        }
+
+        const Rml::String path =
+            row->GetAttribute<Rml::String>("data-path", "pics");
+        const Rml::String filter =
+            row->GetAttribute<Rml::String>("data-filter", "");
+        const Rml::String value_prefix =
+            row->GetAttribute<Rml::String>("data-value-prefix", "");
+
+        int num_files = 0;
+        void **files = FS_ListFiles(path.c_str(),
+                                    filter.empty() ? nullptr : filter.c_str(),
+                                    FS_SEARCH_STRIPEXT | FS_SEARCH_BYFILTER,
+                                    &num_files);
+        if (!files || num_files <= 0) {
+            if (files) {
+                FS_FreeList(files);
+            }
+            continue;
+        }
+
+        std::vector<int> values;
+        for (int i = 0; i < num_files; i++) {
+            const char *name = static_cast<const char *>(files[i]);
+            const char *stem = strrchr(name, '/');
+            stem = stem ? stem + 1 : name;
+
+            if (!value_prefix.empty() &&
+                Q_stricmpn(stem, value_prefix.c_str(), value_prefix.size())) {
+                continue;
+            }
+
+            const char *digits = stem + value_prefix.size();
+            if (!digits[0]) {
+                continue;
+            }
+
+            char *end = nullptr;
+            const long value = strtol(digits, &end, 10);
+            if (!end || *end || value <= 0) {
+                continue;
+            }
+
+            values.push_back(static_cast<int>(value));
+        }
+        FS_FreeList(files);
+
+        if (values.empty()) {
+            continue;
+        }
+
+        std::sort(values.begin(), values.end());
+        values.erase(std::unique(values.begin(), values.end()), values.end());
+
+        // Keep the authored leading option (value 0 / Default) and append
+        // the enumerated set after it.
+        while (select->GetNumOptions() > 1) {
+            select->Remove(select->GetNumOptions() - 1);
+        }
+
+        for (const int value : values) {
+            select->Add(va("%s%d", value_prefix.c_str(), value), va("%d", value));
+        }
+    }
+}
+
+static void UI_Rml_ApplyAccessibilityClasses(Rml::ElementDocument *document)
+{
+    if (!document) {
+        return;
+    }
+
+    document->SetClass("ui-high-visibility",
+                       ui_rml_high_visibility &&
+                           ui_rml_high_visibility->integer != 0);
+    document->SetClass("ui-reduced-motion",
+                       ui_rml_reduced_motion &&
+                           ui_rml_reduced_motion->integer != 0);
+}
+
 static bool UI_Rml_CompiledRuntimeProbeRoute(const char *route_id, const char *document_path)
 {
     Rml::String contents;
@@ -2696,10 +3357,12 @@ static bool UI_Rml_CompiledRuntimeProbeRoute(const char *route_id, const char *d
         return false;
     }
 
-    Com_Printf("RmlUi runtime file probe OK: route '%s' loaded %s (%zu bytes) through WORR filesystem.\n",
-               route_id ? route_id : "<null>",
-               document_path,
-               contents.size());
+    if (Cvar_VariableInteger("ui_rml_debug")) {
+        Com_Printf("RmlUi runtime file probe OK: route '%s' loaded %s (%zu bytes) through WORR filesystem.\n",
+                   route_id ? route_id : "<null>",
+                   document_path,
+                   contents.size());
+    }
     return true;
 }
 
@@ -2786,21 +3449,57 @@ static bool UI_Rml_CompiledRuntimeOpenRoute(const char *route_id, const char *do
     ui_rml_document->Show();
     ui_rml_active_route = route_id ? route_id : "";
     ui_rml_active_document = document_path;
+    // Dynamic option population must run before cvar bindings so the
+    // binding pass can select the live cvar value.
+    UI_Rml_ExpandSourceLists(ui_rml_document);
+    UI_Rml_PopulateMapDbSelects(ui_rml_document);
+    UI_Rml_PopulateImageValueSelects(ui_rml_document);
     UI_Rml_ApplyDocumentCvarBindings(ui_rml_document);
+    UI_Rml_ApplyAccessibilityClasses(ui_rml_document);
+    UI_Rml_RefreshKeybindDisplays(ui_rml_document);
     ui_rml_context->Update();
+
+    // Give keyboard/controller users a starting point: focus the first
+    // enabled tabbable control once computed values are current, and before
+    // the audio listeners attach so the initial focus stays silent.
+    {
+        Rml::Element *first_focus =
+            ui_rml_document->FindNextTabElement(ui_rml_document, true);
+        Rml::Element *search_start = first_focus;
+
+        while (first_focus && first_focus->HasAttribute("disabled")) {
+            first_focus =
+                ui_rml_document->FindNextTabElement(first_focus, true);
+            if (first_focus == search_start) {
+                first_focus = nullptr;
+                break;
+            }
+        }
+
+        if (first_focus) {
+            first_focus->Focus(true);
+            first_focus->ScrollIntoView(Rml::ScrollAlignment::Nearest);
+        }
+    }
+
     UI_Rml_AttachElementCvarListeners(ui_rml_document);
     UI_Rml_AttachElementAudioListeners(ui_rml_document);
     UI_Rml_ApplyDocumentAudioHints(route_id, ui_rml_document);
 
-    Com_Printf("RmlUi route '%s' opened document '%s' in guarded context '%s'.\n",
-               ui_rml_active_route.c_str(),
-               ui_rml_active_document.c_str(),
-               "worr_ui");
+    if (Cvar_VariableInteger("ui_rml_debug")) {
+        Com_Printf("RmlUi route '%s' opened document '%s' in guarded context '%s'.\n",
+                   ui_rml_active_route.c_str(),
+                   ui_rml_active_document.c_str(),
+                   "worr_ui");
+    }
     return true;
 }
 
 static void UI_Rml_CompiledRuntimeCloseActiveDocument(void)
 {
+    ui_rml_keybind_capture_element = nullptr;
+    ui_rml_keybind_capture_command.clear();
+
     if (ui_rml_document) {
         Rml::ElementDocument *document = ui_rml_document;
         ui_rml_document = NULL;
@@ -2814,6 +3513,12 @@ static void UI_Rml_CompiledRuntimeCloseRoute(void)
 
     if (ui_rml_context) {
         ui_rml_context->Update();
+    }
+
+    // String textures accumulate for the lifetime of a menu session;
+    // release them whenever the menu system fully closes.
+    if (ui_rml_core_initialized) {
+        Rml::ReleaseFontResources();
     }
 
     ui_rml_active_route.clear();
@@ -2833,6 +3538,7 @@ static bool UI_Rml_CompiledRuntimeUpdate(int width, int height, unsigned realtim
     }
 
     UI_Rml_RefreshDocumentCvarDisplays(ui_rml_document);
+    UI_Rml_ApplyAccessibilityClasses(ui_rml_document);
     (void)ui_rml_context->Update();
     return true;
 }
@@ -2852,6 +3558,12 @@ static bool UI_Rml_CompiledRuntimeKeyEvent(int key, bool down)
 {
     if (!ui_rml_context || !ui_rml_document) {
         return false;
+    }
+
+    // An active keybind capture consumes the next key before RmlUi focus
+    // and navigation processing can react to it.
+    if (UI_Rml_HandleKeybindCaptureKey(key, down)) {
+        return true;
     }
 
     const int modifiers = UI_Rml_CompiledRuntimeModifiers();
@@ -2924,6 +3636,70 @@ static bool UI_Rml_CompiledRuntimeMouseEvent(int x, int y)
     return true;
 }
 
+static Rml::String UI_Rml_ActiveDocumentCloseCommand(void)
+{
+    if (!ui_rml_document) {
+        return "";
+    }
+
+    Rml::String value =
+        ui_rml_document->GetAttribute<Rml::String>("data-close-command", "");
+
+    if (value.empty()) {
+        if (Rml::Element *body = UI_Rml_DocumentBody(ui_rml_document)) {
+            value = body->GetAttribute<Rml::String>("data-close-command", "");
+        }
+    }
+
+    if (value.empty()) {
+        if (Rml::Element *holder =
+                ui_rml_document->QuerySelector("[data-close-command]")) {
+            value = holder->GetAttribute<Rml::String>("data-close-command", "");
+        }
+    }
+
+    return value;
+}
+
+// Handles Escape/Mouse2 back requests: an active keybind capture consumes
+// the key, and documents that declare data-close-command run their legacy
+// close side effects (worr_vote_close etc.) instead of a bare back-pop.
+static bool UI_Rml_CompiledRuntimeHandleBackKey(int key)
+{
+    if (!ui_rml_context || !ui_rml_document) {
+        return false;
+    }
+
+    if (ui_rml_keybind_capture_element) {
+        return UI_Rml_HandleKeybindCaptureKey(key, true);
+    }
+
+    const Rml::String close_command = UI_Rml_ActiveDocumentCloseCommand();
+    if (close_command.empty()) {
+        return false;
+    }
+
+    if (UI_Rml_CommandStartsWithToken(close_command, "popmenu")) {
+        const char *tail = UI_Rml_CommandTailAfterToken(close_command, "popmenu");
+
+        UI_Rml_QueueCommand("ui_rml_runtime_back");
+        UI_Rml_QueueCommand(tail);
+        return true;
+    }
+
+    if (UI_Rml_CommandStartsWithToken(close_command, "forcemenuoff")) {
+        const char *tail =
+            UI_Rml_CommandTailAfterToken(close_command, "forcemenuoff");
+
+        UI_Rml_QueueCommand("ui_rml_runtime_close");
+        UI_Rml_QueueCommand(tail);
+        return true;
+    }
+
+    // Bare commands (e.g. download_cancel) own the close side effects.
+    return UI_Rml_QueueCommand(close_command.c_str());
+}
+
 void UI_Rml_RegisterCompiledRuntime(void)
 {
     static const ui_rml_runtime_interface_t runtime = {
@@ -2939,6 +3715,7 @@ void UI_Rml_RegisterCompiledRuntime(void)
         UI_Rml_CompiledRuntimeProbeRoute,
         UI_Rml_CompiledRuntimeName,
         UI_Rml_CompiledRuntimeCanOpenRoutes,
+        UI_Rml_CompiledRuntimeHandleBackKey,
     };
 
     UI_Rml_SetRuntimeInterface(&runtime);

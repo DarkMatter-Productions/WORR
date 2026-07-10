@@ -168,6 +168,14 @@ void UI_StartSound(Sound sound)
 
 static void UI_Command_ForceMenuOff()
 {
+    // Server-driven closes (worr_forfeit_yes, welcome continue, ...) must
+    // also dismiss an active RmlUi route, or the document keeps rendering
+    // with no input focus. ui_rml_runtime_close is a no-op when inactive.
+    cvar_t *ui_rml_enable = Cvar_Get("ui_rml_enable", "0", 0);
+    if (ui_rml_enable && ui_rml_enable->integer) {
+        Cbuf_InsertText(&cmd_buffer, "ui_rml_runtime_close\n");
+    }
+
     GetMenuSystem().ForceOff();
 }
 
@@ -272,11 +280,13 @@ static bool UI_Command_TryPushRmlRoute(const char *menu_name)
                            ? "ui_rml_runtime_popup"
                            : "ui_rml_runtime_open",
                        menu_name));
-    Com_Printf("RmlUi pushmenu bridge routed '%s' through %s.\n",
-               menu_name,
-               UI_IsRmlPopupRouteName(menu_name)
-                   ? "ui_rml_runtime_popup"
-                   : "ui_rml_runtime_open");
+    if (Cvar_VariableInteger("ui_rml_debug")) {
+        Com_Printf("RmlUi pushmenu bridge routed '%s' through %s.\n",
+                   menu_name,
+                   UI_IsRmlPopupRouteName(menu_name)
+                       ? "ui_rml_runtime_popup"
+                       : "ui_rml_runtime_open");
+    }
     return true;
 }
 
@@ -304,6 +314,16 @@ static void UI_Command_PushMenu()
 
 static void UI_Command_PopMenu()
 {
+    // With no legacy pages open, a popmenu issued from RmlUi content or
+    // server stufftext pops the RmlUi route stack instead.
+    if (!GetMenuSystem().HasOpenMenus()) {
+        cvar_t *ui_rml_enable = Cvar_Get("ui_rml_enable", "0", 0);
+        if (ui_rml_enable && ui_rml_enable->integer) {
+            Cbuf_InsertText(&cmd_buffer, "ui_rml_runtime_back\n");
+            return;
+        }
+    }
+
     GetMenuSystem().Pop();
 }
 

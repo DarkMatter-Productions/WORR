@@ -5,7 +5,7 @@
     <link type="text/rcss" href="../common/theme/utility.rcss" />
     <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
-  <body id="utility-servers" data-route-id="servers" data-route-group="utility" data-route-version="1" data-document-status="round2-scaffold" data-owner="agent5" data-menu-music="menu" data-menu-sound-open="open">
+  <body id="utility-servers" data-route-id="servers" data-route-group="utility" data-route-version="1" data-document-status="round2-scaffold" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen" id="servers-screen">
       <header class="page-header">
         <h1>Servers</h1>
@@ -15,9 +15,9 @@
       </header>
 
       <section class="toolbar" id="servers-toolbar" data-model="server_browser">
-        <button id="servers-refresh" type="button" data-command="servers.refresh" data-menu-sound="change">Refresh</button>
-        <button id="servers-connect" type="button" data-command="servers.connect_selected" data-menu-sound="confirm">Connect</button>
-        <button id="servers-favorites" type="button" data-command="servers.toggle_favorites" data-menu-sound="change">Favorites</button>
+        <button id="servers-refresh" type="button" disabled="disabled" data-menu-sound="none">Refresh</button>
+        <button id="servers-connect" type="button" disabled="disabled" data-menu-sound="none">Connect</button>
+        <button id="servers-favorites" type="button" disabled="disabled" data-menu-sound="none">Favorites</button>
         <button id="servers-back" type="button" data-command="ui.back" data-menu-sound="cancel">Back</button>
       </section>
 
@@ -40,7 +40,7 @@
       </section>
 
       <footer class="status-bar" id="servers-status" data-bind="server_browser.status">
-        Server list ready.
+        The server browser is not wired up in the new UI yet.
       </footer>
     </div>
   </body>

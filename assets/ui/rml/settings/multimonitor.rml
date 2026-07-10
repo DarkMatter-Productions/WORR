@@ -3,6 +3,7 @@
     <title>WORR Multi-Monitor Settings</title>
     <link type="text/rcss" href="../common/theme/base.rcss" />
     <link type="text/rcss" href="../common/theme/settings.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
   <body id="settings-multimonitor" data-route-id="multimonitor" data-route-group="settings" data-route-version="1" data-document-status="scaffolded-round2" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen settings-screen" id="multimonitor-screen">
@@ -22,12 +23,12 @@
               <option value="2">Span All</option>
             </select>
           </div>
-          <div class="setting-row" data-control="field" data-cvar="r_display" data-enable-if="r_monitor_mode=1">
+          <div class="setting-row" data-control="field" data-cvar="r_display">
             <span class="setting-widget-icon" data-widget="field"><img src="../common/icons/widgets/field.svg" /></span>
             <label for="multimonitor-display">Display</label>
-            <input id="multimonitor-display" type="text" data-cvar="r_display" maxlength="18" />
-            <span class="setting-value">Used when monitor mode is selected.</span>
+            <input id="multimonitor-display" type="text" data-cvar="r_display" maxlength="18" data-enable-if="r_monitor_mode=1" />
           </div>
+          <div class="setting-hint">Monitor number (1-based) or device name. Applies when Monitor Mode is "Selected".</div>
         </section>
 
         <section class="settings-section" id="multimonitor-window-section">

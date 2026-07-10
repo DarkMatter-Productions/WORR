@@ -5,11 +5,11 @@
     <link type="text/rcss" href="../common/theme/session.rcss" />
     <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
-  <body id="session-tourney-replay-confirm" data-route-id="tourney_replay_confirm" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-owner="agent5" data-session-owner="sgame" data-menu-presentation="popup" data-menu-sound-open="alert" data-menu-music="menu">
+  <body id="session-tourney-replay-confirm" data-route-id="tourney_replay_confirm" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-session-owner="sgame" data-menu-presentation="popup" data-menu-sound-open="alert" data-menu-music="menu">
     <div class="screen compact-screen session-screen popup-screen" id="tourney-replay-confirm-screen" data-close-command="popmenu">
       <main class="popup-dialog confirmation-dialog" id="tourney-replay-confirm-dialog" data-model="session.tournament.replay_confirm" data-owner-boundary="sgame-published-cvars" data-confirm-kind="primary">
         <header class="popup-header" id="tourney-replay-confirm-header">
-          <h1>CONFIRM REPLAY</h1>
+          <h1>Confirm Replay</h1>
         </header>
         <p class="popup-kicker" id="tourney-replay-confirm-summary">
           Replay Game
@@ -18,8 +18,8 @@
           Replay game?
         </p>
         <footer class="popup-actions" id="tourney-replay-confirm-actions" data-controller="command.cvar">
-          <button class="popup-primary" id="tourney-replay-yes" type="button" data-command-cvar="ui_tourney_replay_yes_cmd" data-menu-sound="confirm">YES</button>
-          <button class="popup-secondary" id="tourney-replay-no" type="button" data-command="popmenu" data-menu-sound="cancel">NO</button>
+          <button class="popup-primary" id="tourney-replay-yes" type="button" data-command-cvar="ui_tourney_replay_yes_cmd" data-loc-key="m_yes" data-menu-sound="confirm">Yes</button>
+          <button class="popup-secondary" id="tourney-replay-no" type="button" data-command="popmenu" data-loc-key="m_no" data-menu-sound="cancel">No</button>
         </footer>
       </main>
     </div>

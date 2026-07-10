@@ -5,7 +5,7 @@
     <link type="text/rcss" href="../common/theme/utility.rcss" />
     <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
-  <body id="utility-players" data-route-id="players" data-route-group="utility" data-route-version="1" data-document-status="round2-scaffold" data-owner="agent5" data-menu-music="menu" data-menu-sound-open="open">
+  <body id="utility-players" data-route-id="players" data-route-group="utility" data-route-version="1" data-document-status="round2-scaffold" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen" id="players-screen">
       <header class="page-header">
         <h1>Player Setup</h1>
@@ -20,7 +20,7 @@
           <div class="utility-field" data-control="field">
             <span class="setting-widget-icon" data-widget="field"><img src="../common/icons/widgets/field.svg" /></span>
             <label for="players-name">Name</label>
-            <input id="players-name" type="text" data-bind="player_config.name" data-menu-sound-change="change" />
+            <input id="players-name" type="text" maxlength="15" data-cvar="name" data-menu-sound-change="change" />
           </div>
 
           <h2>Appearance</h2>
@@ -43,10 +43,10 @@
           <div class="utility-field" data-control="select">
             <span class="setting-widget-icon" data-widget="select"><img src="../common/icons/widgets/select.svg" /></span>
             <label for="players-hand">Weapon Hand</label>
-            <select id="players-hand" data-bind="player_config.hand" data-menu-sound-change="change">
-              <option value="right">Right</option>
-              <option value="left">Left</option>
-              <option value="center">Center</option>
+            <select id="players-hand" data-cvar="hand" data-integer="true" data-menu-sound-change="change">
+              <option value="0">Right</option>
+              <option value="1">Left</option>
+              <option value="2">Center</option>
             </select>
           </div>
         </div>
@@ -60,8 +60,6 @@
       </section>
 
       <footer class="actions" id="players-actions">
-        <button id="players-apply" type="button" data-command="players.apply" data-menu-sound="confirm">Apply</button>
-        <button id="players-reset" type="button" data-command="players.reset" data-menu-sound="cancel">Reset</button>
         <button id="players-back" type="button" data-command="ui.back" data-menu-sound="cancel">Back</button>
       </footer>
     </div>

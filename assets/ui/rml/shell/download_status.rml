@@ -4,6 +4,7 @@
     <link type="text/rcss" href="../common/theme/base.rcss" />
     <link type="text/rcss" href="../common/theme/shell.rcss" />
     <link type="text/rcss" href="../common/theme/settings.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
   <body id="shell-download-status" data-route-id="download_status" data-route-group="shell" data-route-version="1" data-document-status="scaffolded-round2" data-close-command="download_cancel" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen shell-screen settings-screen" id="download-status-screen">
@@ -13,10 +14,10 @@
 
       <div class="menu-stack" id="download-status-stack" data-component="common.components.menu_frame">
         <div class="settings-section" id="download-status-details" data-model="shell.download_status">
-          <p id="download-status-idle" class="download-status-idle" data-show-if="ui_download_active=0">No active download.</p>
+          <p id="download-status-idle" class="status-message" data-show-if="ui_download_active=0">No active download.</p>
           <p id="download-status-file" data-label-cvar="ui_download_file" data-show-if="ui_download_file"></p>
           <p id="download-status-message" data-label-cvar="ui_download_status" data-show-if="ui_download_status"></p>
-          <div class="setting-row" data-control="progress" data-cvar="ui_download_percent">
+          <div class="setting-row" data-control="progress" data-cvar="ui_download_percent" data-show-if="ui_download_active">
             <span class="setting-widget-icon" data-widget="progress"><img src="../common/icons/widgets/progress.svg" /></span>
             <label for="download-status-progress">Progress</label>
             <progress id="download-status-progress" value="0" max="100" data-cvar="ui_download_percent"></progress>
@@ -27,7 +28,7 @@
       </div>
 
       <div class="menu-footer" id="download-status-menu-footer">
-        <button id="download-status-cancel" type="button" data-command="download_cancel" data-menu-sound="alert">Cancel</button>
+        <button id="download-status-cancel" class="ui-button-danger" type="button" data-command="download_cancel" data-menu-sound="alert">Cancel</button>
       </div>
     </div>
   </body>

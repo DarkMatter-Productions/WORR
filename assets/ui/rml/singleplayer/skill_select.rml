@@ -3,6 +3,7 @@
     <title>WORR Skill Select</title>
     <link type="text/rcss" href="../common/theme/base.rcss" />
     <link type="text/rcss" href="../common/theme/singleplayer.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
   <body id="singleplayer-skill-select" data-route-id="skill_select" data-route-group="singleplayer" data-route-version="1" data-document-status="scaffolded-round3" data-banner="m_banner_game" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen singleplayer-screen" id="skill-select-screen">
@@ -10,7 +11,7 @@
         <h1>Select Skill</h1>
       </header>
 
-      <main class="menu-stack" id="skill-select-actions" data-component="common.components.command_button">
+      <main class="menu-stack" id="skill-select-actions" data-component="common.components.menu_frame">
         <button id="skill-select-easy" type="button" data-command="forcemenuoff; skill 0; deathmatch 0; coop 0; maxclients 1; _mapdb_run" data-menu-sound="confirm">Easy</button>
         <button id="skill-select-medium" type="button" data-command="forcemenuoff; skill 1; deathmatch 0; coop 0; maxclients 1; _mapdb_run" data-menu-sound="confirm">Medium</button>
         <button id="skill-select-hard" type="button" data-command="forcemenuoff; skill 2; deathmatch 0; coop 0; maxclients 1; _mapdb_run" data-menu-sound="confirm">Hard</button>

@@ -3,6 +3,7 @@
     <title>WORR Input Settings</title>
     <link type="text/rcss" href="../common/theme/base.rcss" />
     <link type="text/rcss" href="../common/theme/settings.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
   <body id="settings-input" data-route-id="input" data-route-group="settings" data-route-version="1" data-document-status="scaffolded-round2" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen settings-screen" id="input-screen">
@@ -13,14 +14,15 @@
       <main class="settings-form" id="input-settings-form" data-component="common.components.cvar_controls">
         <section class="settings-section" id="input-mouse-section">
           <h2>Mouse</h2>
-          <div class="setting-row" data-control="field" data-cvar="sensitivity">
-            <span class="setting-widget-icon" data-widget="number"><img src="../common/icons/widgets/number.svg" /></span>
-            <label for="input-sensitivity">Mouse Sens</label>
-            <input id="input-sensitivity" type="number" step="0.01" data-cvar="sensitivity" data-numeric="true" />
+          <div class="setting-row" data-control="range" data-cvar="sensitivity">
+            <span class="setting-widget-icon" data-widget="range"><img src="../common/icons/widgets/range.svg" /></span>
+            <label for="input-sensitivity">Mouse Sensitivity</label>
+            <input id="input-sensitivity" type="range" min="0.1" max="20" step="0.1" data-cvar="sensitivity" data-numeric="true" />
+            <span class="setting-value setting-meter"><span class="setting-meter-fill" data-meter-cvar="sensitivity" data-meter-min="0.1" data-meter-max="20"></span><span class="setting-meter-text" data-bind-cvar="sensitivity"></span></span>
           </div>
           <div class="setting-row" data-control="toggle" data-cvar="m_autosens">
             <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
-            <label for="input-autosens">Auto Sens</label>
+            <label for="input-autosens">Auto Sensitivity Scaling</label>
             <input id="input-autosens" type="checkbox" data-cvar="m_autosens" />
           </div>
           <div class="setting-row" data-control="toggle" data-cvar="m_filter">

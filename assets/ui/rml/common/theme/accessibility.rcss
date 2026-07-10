@@ -56,7 +56,6 @@ body.ui-a11y-reduced-motion,
 {
 	animation: none;
 	transition: none;
-	transform: none;
 }
 
 .ui-motion-safe

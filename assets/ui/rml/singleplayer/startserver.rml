@@ -4,6 +4,7 @@
     <link type="text/rcss" href="../common/theme/base.rcss" />
     <link type="text/rcss" href="../common/theme/settings.rcss" />
     <link type="text/rcss" href="../common/theme/singleplayer.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
   <body id="singleplayer-startserver" data-route-id="startserver" data-route-group="singleplayer" data-route-version="1" data-document-status="scaffolded-round3" data-banner="m_banner_start_server" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen singleplayer-screen" id="startserver-screen">
@@ -11,7 +12,7 @@
         <h1>Start Server</h1>
       </header>
 
-      <main class="settings-form" id="startserver-settings-form" data-component="common.components.cvar_controls">
+      <main class="settings-form form-compact cols-3" id="startserver-settings-form" data-component="common.components.cvar_controls">
         <div class="settings-columns" id="startserver-settings-columns">
           <div class="settings-column" id="startserver-server-column">
             <section class="settings-section" id="startserver-basic-section">
@@ -25,7 +26,7 @@
               </div>
               <div class="setting-row" data-control="select" data-cvar="coop">
                 <span class="setting-widget-icon" data-widget="select"><img src="../common/icons/widgets/select.svg" /></span>
-                <label for="startserver-rules">Rules</label>
+                <label for="startserver-rules">Mode</label>
                 <select id="startserver-rules" data-cvar="coop" data-source-menu-type="dropdown" data-menu-sound-change="change">
                   <option value="0">Deathmatch</option>
                   <option value="1">Cooperative</option>
@@ -39,8 +40,8 @@
             </section>
 
             <nav class="menu-actions" id="startserver-actions" data-component="common.components.command_button">
-              <button id="startserver-gameflags" type="button" data-command="pushmenu gameflags" data-route-target="gameflags" data-show-if="coop=0" data-menu-sound="open">Deathmatch Flags...</button>
-              <button id="startserver-begin" type="button" data-command="forcemenuoff; if $coop == 1 then &quot;match_setup_active 0; deathmatch 0; coop 1&quot; else &quot;match_setup_active 1; deathmatch 1; coop 0; maxplayers $match_setup_maxplayers; maxclients $match_setup_maxplayers&quot;; map $_ui_nextserver force" data-menu-sound="confirm">Begin Game!</button>
+              <button id="startserver-gameflags" type="button" data-command="pushmenu gameflags" data-route-target="gameflags" data-show-if="coop=0" data-menu-sound="open">Deathmatch Flags</button>
+              <button id="startserver-begin" class="ui-button-primary" type="button" data-command="forcemenuoff; if $coop == 1 then &quot;match_setup_active 0; deathmatch 0; coop 1&quot; else &quot;match_setup_active 1; deathmatch 1; coop 0; maxplayers $match_setup_maxplayers; maxclients $match_setup_maxplayers&quot;; map $_ui_nextserver force" data-menu-sound="confirm">Begin Game!</button>
             </nav>
           </div>
 
@@ -149,12 +150,6 @@
                 <label for="startserver-time-limit">Time Limit</label>
                 <input id="startserver-time-limit" type="number" step="1" data-cvar="timelimit" data-integer="true" data-width="3" data-menu-sound-change="change" />
                 <span class="setting-value">0 - no time limit</span>
-              </div>
-              <div class="setting-row" data-control="field" data-cvar="fraglimit" data-show-if="coop=1">
-                <span class="setting-widget-icon" data-widget="number"><img src="../common/icons/widgets/number.svg" /></span>
-                <label for="startserver-frag-limit">Frag Limit</label>
-                <input id="startserver-frag-limit" type="number" step="1" data-cvar="fraglimit" data-integer="true" data-width="3" data-menu-sound-change="change" />
-                <span class="setting-value">0 - no frag limit</span>
               </div>
               <div class="setting-row" data-control="field" data-cvar="maxclients" data-show-if="coop=1">
                 <span class="setting-widget-icon" data-widget="number"><img src="../common/icons/widgets/number.svg" /></span>

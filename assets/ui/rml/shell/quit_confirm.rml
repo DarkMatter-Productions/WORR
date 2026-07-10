@@ -3,17 +3,18 @@
     <title>WORR Quit Confirmation</title>
     <link type="text/rcss" href="../common/theme/base.rcss" />
     <link type="text/rcss" href="../common/theme/shell.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
   <body id="shell-quit-confirm" data-route-id="quit_confirm" data-route-group="shell" data-route-version="1" data-document-status="scaffolded-round2" data-menu-presentation="popup" data-menu-sound-open="alert" data-menu-music="menu">
     <div class="screen shell-screen popup-screen" id="quit-confirm-screen" data-close-command="popmenu">
       <main class="popup-dialog confirmation-dialog" id="quit-confirm-dialog" data-component="common.components.menu_frame" data-confirm-kind="destructive">
         <header class="popup-header" id="quit-confirm-header">
-          <h1>CONFIRM QUIT</h1>
+          <h1>Confirm Quit</h1>
         </header>
         <p class="popup-message" id="quit-confirm-prompt">Exit WORR?</p>
         <footer class="popup-actions" id="quit-confirm-actions">
-          <button class="popup-primary popup-danger" id="quit-confirm-yes" type="button" data-command="quit" data-menu-sound="confirm">YES</button>
-          <button class="popup-secondary" id="quit-confirm-no" type="button" data-command="popmenu" data-menu-sound="cancel">NO</button>
+          <button class="popup-danger" id="quit-confirm-yes" type="button" data-command="quit" data-loc-key="m_yes" data-menu-sound="confirm">Yes</button>
+          <button class="popup-secondary" id="quit-confirm-no" type="button" data-command="popmenu" data-loc-key="m_no" data-menu-sound="cancel">No</button>
         </footer>
       </main>
     </div>

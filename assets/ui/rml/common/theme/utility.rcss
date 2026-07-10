@@ -50,6 +50,14 @@
 	text-align: left;
 }
 
+#ui-list-content button:hover,
+#ui-list-content button:focus
+{
+	background-color: #30291f;
+	border-color: #b99b5b;
+	border-left-color: #ffd967;
+}
+
 #ui-list-actions
 {
 	width: 560px;
@@ -103,13 +111,6 @@
 	transition: background-color border-color 0.12s cubic-out;
 }
 
-.toolbar:hover,
-.utility-toolbar:hover
-{
-	background-color: #211e19;
-	border-color: #8b7c6a;
-}
-
 .toolbar button,
 .toolbar .ui-button,
 .utility-toolbar button,
@@ -141,12 +142,6 @@
 	min-height: 0px;
 	padding-right: 6px;
 	overflow: auto;
-}
-
-#servers-table,
-#demos-table
-{
-	min-height: 238px;
 }
 
 #addressbook-content
@@ -181,15 +176,6 @@
 	margin-bottom: 10px;
 	min-height: 0px;
 	transition: background-color border-color 0.12s cubic-out;
-}
-
-.form-panel:hover,
-.preview-panel:hover,
-.utility-panel:hover
-{
-	background-color: #211e19;
-	border-color: #8b7c6a;
-	border-left-color: #b99b5b;
 }
 
 .form-panel
@@ -409,23 +395,23 @@
 
 #keys-content
 {
-	position: relative;
 	width: 904px;
 	max-width: 100%;
 	min-width: 0px;
-	height: 492px;
+	height: auto;
+	max-height: 100%;
 	overflow: auto;
 }
 
 #legacykeys-content,
 #weapons-content
 {
-	height: 452px;
+	height: auto;
+	max-height: 100%;
 }
 
 #weapons-content
 {
-	position: relative;
 	width: 640px;
 	max-width: 100%;
 	min-width: 0px;
@@ -444,66 +430,50 @@
 
 #keys-content .bind-group
 {
-	position: absolute;
+	position: static;
 	width: 242px;
 	max-width: 242px;
-	margin-right: 10px;
+	margin-right: 0px;
 	margin-bottom: 8px;
 }
 
-#keys-combat
+.bind-column
 {
-	left: 0px;
-	top: 0px;
+	display: flex;
+	flex-direction: column;
+	flex: 0 0 auto;
+	width: 242px;
+	min-width: 242px;
+	margin-right: 50px;
+	min-height: 0px;
 }
 
-#keys-inventory
+.bind-column:last-child
 {
-	left: 0px;
-	top: 156px;
-}
-
-#keys-movement
-{
-	left: 292px;
-	top: 0px;
-}
-
-#keys-interface
-{
-	left: 584px;
-	top: 0px;
+	margin-right: 0px;
 }
 
 #weapons-content .bind-group
 {
+	position: static;
 	width: 300px;
 	max-width: 300px;
-}
-
-#weapons-primary
-{
-	position: absolute;
-	left: 0px;
-	top: 0px;
-}
-
-#weapons-heavy
-{
-	position: absolute;
-	left: 320px;
-	top: 0px;
+	margin-right: 20px;
 }
 
 .bind-group h2
 {
 	margin-bottom: 6px;
-	font-size: 19px;
+	font-size: 18px;
 }
 
 .bind-group button,
 .bind-group .ui-button
 {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
 	width: 236px;
 	min-height: 32px;
 	padding: 5px 10px;
@@ -511,6 +481,41 @@
 	text-align: left;
 	margin-bottom: 4px;
 	transition: background-color border-color color 0.12s cubic-out;
+}
+
+.bind-label
+{
+	display: block;
+	flex: 1 1 auto;
+	min-width: 0px;
+	white-space: normal;
+	word-break: break-word;
+}
+
+.bind-key
+{
+	display: block;
+	flex: 0 0 auto;
+	max-width: 96px;
+	margin-left: 8px;
+	color: #ffd967;
+	font-family: "WORR Mono";
+	font-size: 13px;
+	text-align: right;
+	white-space: normal;
+	word-break: break-word;
+}
+
+.bind-group button.is-capturing
+{
+	background-color: #14262a;
+	border-color: #7ed4d8;
+	color: #7ed4d8;
+}
+
+.bind-group button.is-capturing .bind-key
+{
+	color: #7ed4d8;
 }
 
 #keys-content .bind-group button,
@@ -579,14 +584,55 @@
 	border-bottom-color: #756a5d;
 	white-space: normal;
 	word-break: break-word;
+	transition: background-color color 0.12s cubic-out;
 }
 
-#servers-table th,
-#servers-table td,
-#demos-table th,
-#demos-table td
+/* Column widths leave headroom for the 8px cell padding. */
+
+#servers-table th:nth-child(1),
+#servers-table td:nth-child(1)
 {
-	width: 220px;
+	width: 38%;
+}
+
+#servers-table th:nth-child(2),
+#servers-table td:nth-child(2)
+{
+	width: 26%;
+}
+
+#servers-table th:nth-child(3),
+#servers-table td:nth-child(3),
+#servers-table th:nth-child(4),
+#servers-table td:nth-child(4)
+{
+	width: 13%;
+	text-align: right;
+}
+
+#demos-table th:nth-child(1),
+#demos-table td:nth-child(1)
+{
+	width: 42%;
+}
+
+#demos-table th:nth-child(2),
+#demos-table td:nth-child(2)
+{
+	width: 14%;
+}
+
+#demos-table th:nth-child(3),
+#demos-table td:nth-child(3)
+{
+	width: 22%;
+}
+
+#demos-table th:nth-child(4),
+#demos-table td:nth-child(4)
+{
+	width: 12%;
+	text-align: right;
 }
 
 .data-table tr:hover td,
@@ -596,6 +642,13 @@
 {
 	background-color: #332d23;
 	color: #ffd967;
+}
+
+.data-table tr.placeholder-row:hover td,
+.utility-table tr.placeholder-row:hover td
+{
+	background-color: #14120f;
+	color: #c9beb0;
 }
 
 .data-table th[data-sort-key],
@@ -610,14 +663,15 @@
 .utility-table th[data-sort-state="ascending"],
 .utility-table th[data-sort-state="descending"]
 {
-	background-color: #e5b64f;
-	color: #000000;
+	background-color: #332d23;
+	color: #ffd967;
+	border-bottom-color: #ffd967;
 }
 
 .placeholder-row td,
 .utility-empty-state
 {
-	padding: 12px;
+	padding: 36px 12px;
 	background-color: #14120f;
 	color: #c9beb0;
 	border-color: #443d33;

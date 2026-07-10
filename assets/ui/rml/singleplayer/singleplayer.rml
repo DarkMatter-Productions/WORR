@@ -3,11 +3,13 @@
     <title>WORR Single Player</title>
     <link type="text/rcss" href="../common/theme/base.rcss" />
     <link type="text/rcss" href="../common/theme/singleplayer.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
   <body id="singleplayer-main" data-route-id="singleplayer" data-route-group="singleplayer" data-route-version="1" data-document-status="first-round-scaffold" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen singleplayer-screen" id="singleplayer-screen">
       <header class="menu-header">
         <h1>Single Player</h1>
+        <p>Start a campaign episode or level, or manage saved games.</p>
       </header>
 
       <main class="menu-stack" id="singleplayer-menu-stack" data-component="common.components.menu_frame">
@@ -16,20 +18,20 @@
           <select id="singleplayer-episode" data-model="singleplayer.episodes" data-cvar="_mapdb_episode" data-menu-sound-change="change">
             <option value="">Episode</option>
           </select>
-          <button id="singleplayer-start-episode" type="button" data-command="set _mapdb_type episode; pushmenu skill_select" data-route-target="skill_select" data-menu-sound="open">Start Episode</button>
+          <button id="singleplayer-start-episode" class="ui-button-primary" type="button" data-command="set _mapdb_type episode; pushmenu skill_select" data-route-target="skill_select" data-enable-if="_mapdb_episode!=-1" data-menu-sound="open">Start Episode</button>
         </section>
 
         <section class="selector-section" id="singleplayer-level-section" data-component="common.components.selector_list">
           <label for="singleplayer-level">Level</label>
-          <select id="singleplayer-level" data-model="singleplayer.units" data-cvar="_mapdb_unit" data-menu-sound-change="change">
+          <select id="singleplayer-level" data-model="singleplayer.units" data-cvar="_mapdb_level" data-menu-sound-change="change">
             <option value="">Level</option>
           </select>
-          <button id="singleplayer-start-level" type="button" data-command="set _mapdb_type level; pushmenu skill_select" data-route-target="skill_select" data-menu-sound="open">Start Level</button>
+          <button id="singleplayer-start-level" class="ui-button-primary" type="button" data-command="set _mapdb_type level; pushmenu skill_select" data-route-target="skill_select" data-enable-if="_mapdb_level!=-1" data-menu-sound="open">Start Level</button>
         </section>
 
         <nav class="menu-actions" id="singleplayer-save-load-actions" data-component="common.components.save_slot">
-          <button id="singleplayer-load" type="button" data-command="pushmenu loadgame" data-route-target="loadgame" data-menu-sound="open">Load Game...</button>
-          <button id="singleplayer-save" type="button" data-command="pushmenu savegame" data-route-target="savegame" data-enable-if="ingame;deathmatch=0;coop=0" data-menu-sound="open">Save Game...</button>
+          <button id="singleplayer-load" type="button" data-command="pushmenu loadgame" data-route-target="loadgame" data-menu-sound="open">Load Game</button>
+          <button id="singleplayer-save" type="button" data-command="pushmenu savegame" data-route-target="savegame" data-enable-if="ingame;deathmatch=0;coop=0" data-menu-sound="open">Save Game</button>
         </nav>
       </main>
 

@@ -5,7 +5,7 @@
     <link type="text/rcss" href="../common/theme/session.rcss" />
     <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
-  <body id="session-dm-join" data-route-id="dm_join" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-owner="agent5" data-session-owner="sgame" data-menu-music="menu" data-menu-sound-open="open">
+  <body id="session-dm-join" data-route-id="dm_join" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-session-owner="sgame" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen compact-screen session-screen" id="dm-join-screen" data-close-command="forcemenuoff; worr_dm_join_close">
       <header class="page-header" id="dm-join-header" data-model="session.dm_join" data-owner-boundary="sgame-published-cvars">
         <h1 id="dm-join-title" data-bind="cvars.ui_dm_title">Match Lobby</h1>
@@ -29,15 +29,9 @@
         <button id="dm-join-matchinfo" type="button" data-command="worr_dm_matchinfo" data-menu-sound="open">Match Info</button>
         <button id="dm-join-matchstats" type="button" data-command="worr_matchstats_menu" data-visible-if="ui_dm_show_matchstats!=0" data-menu-sound="open">Player Stats</button>
         <button id="dm-join-admin" type="button" data-command="worr_admin_menu" data-visible-if="ui_dm_show_admin!=0" data-menu-sound="open">Admin</button>
-        <button id="dm-join-settings" type="button" data-loc-key="m_settings" data-command="pushmenu options" data-menu-sound="open">Settings</button>
+        <button id="dm-join-settings" type="button" data-loc-key="m_settings" data-command="pushmenu options" data-route-target="options" data-menu-sound="open">Settings</button>
         <button id="dm-join-leave" type="button" data-loc-key="m_leave_match" data-command="ui.popup" data-route-target="leave_match_confirm" data-menu-sound="alert">Leave Match</button>
       </nav>
-
-      <section class="session-card" id="dm-join-community-links">
-        <p>darkmatter-quake.com</p>
-        <p>Community matches</p>
-        <p>Content and news</p>
-      </section>
 
       <footer class="actions" id="dm-join-actions">
         <button id="dm-join-close" type="button" data-command="forcemenuoff; worr_dm_join_close" data-menu-sound="cancel">Close</button>

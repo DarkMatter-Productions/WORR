@@ -3,6 +3,7 @@
     <title>WORR Accessibility Settings</title>
     <link type="text/rcss" href="../common/theme/base.rcss" />
     <link type="text/rcss" href="../common/theme/settings.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
   </head>
   <body id="settings-accessibility" data-route-id="accessibility" data-route-group="settings" data-route-version="1" data-document-status="scaffolded-round2" data-menu-music="menu" data-menu-sound-open="open">
     <div class="screen settings-screen" id="accessibility-screen">
@@ -17,8 +18,8 @@
             <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
             <label for="accessibility-high-visibility">High-Visibility Text</label>
             <input id="accessibility-high-visibility" type="checkbox" data-cvar="ui_high_visibility_text" />
-            <span class="setting-value">Adds black text backgrounds and forces TrueType.</span>
           </div>
+          <div class="setting-hint">Adds black text backgrounds in the HUD and forces the TrueType typeface.</div>
           <div class="setting-row" data-control="select" data-cvar="ui_text_typeface">
             <span class="setting-widget-icon" data-widget="select"><img src="../common/icons/widgets/select.svg" /></span>
             <label for="accessibility-typeface">Typeface</label>
@@ -27,8 +28,24 @@
               <option value="1">KEX</option>
               <option value="2">TrueType</option>
             </select>
-            <span class="setting-value">High-visibility text always uses TrueType.</span>
           </div>
+          <div class="setting-hint">High-visibility text always uses TrueType.</div>
+        </section>
+
+        <section class="settings-section" id="accessibility-menus-section">
+          <h2>Menus</h2>
+          <div class="setting-row" data-control="toggle" data-cvar="ui_rml_high_visibility">
+            <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
+            <label for="accessibility-menu-contrast">High-Contrast Menus</label>
+            <input id="accessibility-menu-contrast" type="checkbox" data-cvar="ui_rml_high_visibility" />
+          </div>
+          <div class="setting-hint">Draws menus as white-on-black with yellow focus highlights.</div>
+          <div class="setting-row" data-control="toggle" data-cvar="ui_rml_reduced_motion">
+            <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
+            <label for="accessibility-reduce-motion">Reduce Motion</label>
+            <input id="accessibility-reduce-motion" type="checkbox" data-cvar="ui_rml_reduced_motion" />
+          </div>
+          <div class="setting-hint">Disables menu animations and hover fades.</div>
         </section>
       </main>
 

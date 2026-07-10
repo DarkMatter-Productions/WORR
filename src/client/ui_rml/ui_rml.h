@@ -56,6 +56,9 @@ typedef struct {
     bool (*ProbeRoute)(const char *route_id, const char *document_path);
     const char *(*RuntimeName)(void);
     bool (*CanOpenRoutes)(void);
+    // Optional: consume an Escape/Mouse2 back request (keybind capture,
+    // document data-close-command). Returns true when handled.
+    bool (*HandleBackKey)(int key);
 } ui_rml_runtime_interface_t;
 
 typedef enum {
