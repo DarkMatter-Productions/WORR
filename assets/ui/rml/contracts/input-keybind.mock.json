@@ -1,0 +1,108 @@
+{
+  "contract": "worr.rml.input_keybind.mock",
+  "version": 1,
+  "mock": true,
+  "task_ids": ["FR-09-T05", "FR-09-T07", "FR-03-T08", "DV-04-T02"],
+  "route": "utility/keys/mock",
+  "model": "input.keybinds",
+  "component_refs": [
+    "common/components/keybind.rml#worr-keybind-list",
+    "common/components/keybind.rml#worr-keybind-row",
+    "common/components/controls.rml#worr-command-button"
+  ],
+  "source_boundary": {
+    "presentation_owner": "client_rml",
+    "binding_provider": "client_or_cgame_input_bridge",
+    "command_provider": "client_command_bridge"
+  },
+  "capture_policy": {
+    "clear_key": "BACKSPACE",
+    "cancel_key": "ESCAPE",
+    "allow_unbound_actions": true,
+    "conflict_strategy": "confirm_replace",
+    "capture_timeout_seconds": 8
+  },
+  "capture": {
+    "state": "idle",
+    "status_text": "Select a binding slot to change a key.",
+    "active_bind_id": "",
+    "active_slot": ""
+  },
+  "conflict": {
+    "active": false,
+    "bind_id": "",
+    "title": "Key already bound",
+    "detail": "",
+    "accept_label": "Replace",
+    "cancel_label": "Cancel"
+  },
+  "groups": [
+    {
+      "id": "movement",
+      "label": "Movement",
+      "bindings": [
+        {
+          "id": "move_forward",
+          "command": "+forward",
+          "label": "Move forward",
+          "hint": "Hold to walk forward.",
+          "conflict": false,
+          "primary": { "key": "W", "display": "W" },
+          "alternate": { "key": "UPARROW", "display": "Up" }
+        },
+        {
+          "id": "move_back",
+          "command": "+back",
+          "label": "Move back",
+          "hint": "Hold to move backward.",
+          "conflict": false,
+          "primary": { "key": "S", "display": "S" },
+          "alternate": { "key": "DOWNARROW", "display": "Down" }
+        },
+        {
+          "id": "jump",
+          "command": "+moveup",
+          "label": "Jump",
+          "hint": "Jump or swim upward.",
+          "conflict": false,
+          "primary": { "key": "SPACE", "display": "Space" },
+          "alternate": { "key": "", "display": "Unbound" }
+        }
+      ]
+    },
+    {
+      "id": "combat",
+      "label": "Combat",
+      "bindings": [
+        {
+          "id": "attack",
+          "command": "+attack",
+          "label": "Attack",
+          "hint": "Fire the selected weapon.",
+          "conflict": false,
+          "primary": { "key": "MOUSE1", "display": "Mouse 1" },
+          "alternate": { "key": "CTRL", "display": "Ctrl" }
+        },
+        {
+          "id": "weapon_next",
+          "command": "weapnext",
+          "label": "Next weapon",
+          "hint": "Cycle to the next available weapon.",
+          "conflict": false,
+          "primary": { "key": "MWHEELDOWN", "display": "Wheel Down" },
+          "alternate": { "key": "", "display": "Unbound" }
+        }
+      ]
+    }
+  ],
+  "actions": [
+    { "id": "capture_begin", "event": "keybind.capture_begin" },
+    { "id": "capture_cancel", "event": "keybind.cancel_capture" },
+    { "id": "clear_binding", "event": "keybind.clear_binding" },
+    { "id": "accept_conflict", "event": "keybind.accept_conflict" },
+    { "id": "reset_defaults", "label": "Defaults", "event": "keybind.reset_defaults", "command": "bind_defaults" }
+  ],
+  "clear_label": "Clear",
+  "reset_label": "Defaults",
+  "reset_command": "keybind.reset_defaults"
+}

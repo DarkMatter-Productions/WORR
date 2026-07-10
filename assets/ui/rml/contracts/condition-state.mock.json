@@ -1,0 +1,65 @@
+{
+  "contract": "worr.rml.controller.condition_state.mock",
+  "version": 1,
+  "mock": true,
+  "category": "condition_state",
+  "task_ids": ["FR-09-T05", "FR-09-T07", "FR-09-T08", "DV-04-T02"],
+  "routes": ["settings/effects/mock", "multiplayer/session/mock"],
+  "model": "ui.conditions",
+  "component_refs": [
+    "common/components/controls.rml#worr-conditional-region",
+    "common/components/controls.rml#worr-command-button"
+  ],
+  "source_boundary": {
+    "presentation_owner": "client_rml",
+    "state_provider": "client_or_cgame_state_bridge",
+    "condition_owner": "client_rml_controller"
+  },
+  "bridge_contract": {
+    "refresh_event": "condition.refresh",
+    "changed_event": "condition.changed",
+    "result_field": "result",
+    "hidden_class": "is-hidden",
+    "disabled_class": "is-disabled"
+  },
+  "state": {
+    "cvars": {
+      "r_renderer": "rtx",
+      "pt_enable": true
+    },
+    "session": {
+      "connected": true,
+      "ruleset": "deathmatch",
+      "vote_active": true
+    },
+    "selection": {
+      "server_row_id": "local_q2dm1"
+    }
+  },
+  "conditions": [
+    {
+      "id": "rtx_options_visible",
+      "expression": "cvar.r_renderer == 'rtx'",
+      "depends_on": ["cvar.r_renderer"],
+      "result": true,
+      "affects": ["rtx_only_controls"],
+      "false_behavior": "hide"
+    },
+    {
+      "id": "vote_controls_visible",
+      "expression": "session.vote_active == true",
+      "depends_on": ["session.vote_active"],
+      "result": true,
+      "affects": ["vote_yes", "vote_no"],
+      "false_behavior": "hide"
+    },
+    {
+      "id": "connect_enabled",
+      "expression": "selection.server_row_id != ''",
+      "depends_on": ["selection.server_row_id"],
+      "result": true,
+      "affects": ["server.connect_selected"],
+      "false_behavior": "disable"
+    }
+  ]
+}

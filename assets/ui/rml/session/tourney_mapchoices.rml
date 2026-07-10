@@ -1,0 +1,39 @@
+<rml>
+  <head>
+    <title>WORR Tournament Map Choices</title>
+    <link type="text/rcss" href="../common/theme/base.rcss" />
+    <link type="text/rcss" href="../common/theme/session.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
+  </head>
+  <body id="session-tourney-mapchoices" data-route-id="tourney_mapchoices" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-session-owner="sgame" data-open-command="worr_tourney_maps" data-menu-music="menu" data-menu-sound-open="open">
+    <div class="screen compact-screen session-screen" id="tourney-mapchoices-screen">
+      <header class="page-header" id="tourney-mapchoices-header" data-model="session.tournament.mapchoices" data-owner-boundary="sgame-published-cvars">
+        <h1>Tournament Map Choices</h1>
+        <p id="tourney-mapchoices-summary">
+          Review the final map order after picks and bans.
+        </p>
+      </header>
+
+      <main class="session-panel" id="tourney-mapchoices-list" data-model="session.tournament.mapchoices.lines" data-controller="session.fixed_list" data-list-provider="session.tournament.mapchoices.lines">
+        <section class="session-static-report" id="tourney-mapchoices-fallback" data-show-if="!ui_tourney_mapchoice_line_0">
+          <p id="tourney-mapchoices-fallback-0" class="ui-map-name">Map order appears once</p>
+          <p id="tourney-mapchoices-fallback-1" class="ui-map-name">picks and bans finish.</p>
+        </section>
+        <p id="tourney-mapchoice-line-0" class="ui-map-name" data-bind="cvars.ui_tourney_mapchoice_line_0" data-label-cvar="ui_tourney_mapchoice_line_0" data-visible-if="ui_tourney_mapchoice_line_0">Map order appears once</p>
+        <p id="tourney-mapchoice-line-1" class="ui-map-name" data-bind="cvars.ui_tourney_mapchoice_line_1" data-label-cvar="ui_tourney_mapchoice_line_1" data-visible-if="ui_tourney_mapchoice_line_1">picks and bans finish.</p>
+        <p id="tourney-mapchoice-line-2" class="ui-map-name" data-bind="cvars.ui_tourney_mapchoice_line_2" data-label-cvar="ui_tourney_mapchoice_line_2" data-visible-if="ui_tourney_mapchoice_line_2">Map choice line 3</p>
+        <p id="tourney-mapchoice-line-3" class="ui-map-name" data-bind="cvars.ui_tourney_mapchoice_line_3" data-label-cvar="ui_tourney_mapchoice_line_3" data-visible-if="ui_tourney_mapchoice_line_3">Map choice line 4</p>
+        <p id="tourney-mapchoice-line-4" class="ui-map-name" data-bind="cvars.ui_tourney_mapchoice_line_4" data-label-cvar="ui_tourney_mapchoice_line_4" data-visible-if="ui_tourney_mapchoice_line_4">Map choice line 5</p>
+        <p id="tourney-mapchoice-line-5" class="ui-map-name" data-bind="cvars.ui_tourney_mapchoice_line_5" data-label-cvar="ui_tourney_mapchoice_line_5" data-visible-if="ui_tourney_mapchoice_line_5">Map choice line 6</p>
+        <p id="tourney-mapchoice-line-6" class="ui-map-name" data-bind="cvars.ui_tourney_mapchoice_line_6" data-label-cvar="ui_tourney_mapchoice_line_6" data-visible-if="ui_tourney_mapchoice_line_6">Map choice line 7</p>
+        <p id="tourney-mapchoice-line-7" class="ui-map-name" data-bind="cvars.ui_tourney_mapchoice_line_7" data-label-cvar="ui_tourney_mapchoice_line_7" data-visible-if="ui_tourney_mapchoice_line_7">Map choice line 8</p>
+        <p id="tourney-mapchoice-line-8" class="ui-map-name" data-bind="cvars.ui_tourney_mapchoice_line_8" data-label-cvar="ui_tourney_mapchoice_line_8" data-visible-if="ui_tourney_mapchoice_line_8">Map choice line 9</p>
+        <p id="tourney-mapchoice-line-9" class="ui-map-name" data-bind="cvars.ui_tourney_mapchoice_line_9" data-label-cvar="ui_tourney_mapchoice_line_9" data-visible-if="ui_tourney_mapchoice_line_9">Map choice line 10</p>
+      </main>
+
+      <footer class="actions" id="tourney-mapchoices-actions">
+        <button id="tourney-mapchoices-back" type="button" data-command="popmenu" data-menu-sound="cancel">Return</button>
+      </footer>
+    </div>
+  </body>
+</rml>

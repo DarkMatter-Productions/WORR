@@ -1556,34 +1556,1707 @@ Tasks:
   Progress: `docs-dev/plans/rmlui-ui-migration-roadmap.md` now defines the
   current menu inventory, recommended ownership model, migration waves, shared
   component plan, validation gates, and legacy cleanup path.
+  2026-07-02 first parallel implementation round: five agent lanes seeded
+  `assets/ui/rml/` with a core runtime smoke route, shared theme/component
+  contracts, mock data contracts, shell/settings/single-player starter
+  documents, utility/multiplayer/session starter documents, and implementation
+  logs under `docs-dev/rmlui-agent*-round1-2026-07-02.md`. The detailed
+  status tracker in `docs-dev/plans/rmlui-ui-migration-roadmap.md` now marks
+  the relevant FR-09 tasks active while leaving runtime, renderer, build,
+  install-staging, parity, and legacy-removal gates open.
+  2026-07-02 second parallel implementation round: package staging now mirrors
+  and validates authored `assets/ui/rml/` files as loose
+  `.install/<base-game>/ui/rml/` assets, shared RmlUi theme/component contracts
+  now cover utility, session, accessibility, keybind, and image-grid surfaces,
+  and starter document coverage increased to 30 required routes. Runtime,
+  renderer, live data controllers, full parity, and legacy removal remain
+  pending.
+  2026-07-02 third parallel implementation round: all `57` tracked Wave A/B/C
+  migration surfaces now have starter `.rml` documents and are required by the
+  smoke manifest. The smoke checker now parses present RML documents and local
+  imports, and the route-contract audit validates core, shell, and central
+  smoke route manifests. Runtime, renderer, live data controllers, parity
+  cutover, and legacy removal remain pending.
+  2026-07-02 fourth parallel implementation round: a guarded client
+  `ui_rml_enable` runtime-switch scaffold is compiled and wired through the
+  active UI bridge, the smoke manifest now requires `migration_phase`
+  progression metadata, route-contract validation reports migration phases,
+  controller fixtures cover cvar/command/condition/navigation/list-provider
+  bridge targets, and core/shell routes carry ownership metadata. Focused
+  smoke, route-contract, package, JSON, pytest, and touched-object compile
+  checks pass. This does not close Gate G1, G2, G3, or G4 because the real
+  RmlUi dependency, renderer bridge, live controllers, runtime navigation, and
+  parity evidence remain pending.
+  2026-07-02 fifth parallel implementation round: the coordinator accepted a
+  dependency-free runtime document probe, selected `controller_stub` route
+  progression for `main`, `game`, `options`, `video`, and `download_status`,
+  static RML semantics checking, and progress-report tooling. The accepted
+  migration phase baseline is now `starter=52` and `controller_stub=5`.
+  Focused smoke, route-contract, semantics, progress-report, package, pytest,
+  and touched-object compile checks pass. This does not close Gate G1, G2, G3,
+  or G4 because the real RmlUi dependency, renderer bridge, live controllers,
+  runtime navigation, screenshots, parity evidence, and legacy removal remain
+  pending.
+  2026-07-02 sixth parallel implementation round: the coordinator accepted
+  full-route runtime probe registry coverage for all `57` smoke-manifest
+  routes plus `core.runtime_smoke`, controller-contract reference validation,
+  runtime asset path/staged loose-file validation, JSON progress-report output,
+  and a second five-route `controller_stub` promotion batch
+  (`performance`, `accessibility`, `sound`, `screen`, and `input`). The
+  accepted migration phase baseline is now `starter=47` and
+  `controller_stub=10`. Focused smoke, route-contract, semantics, runtime
+  asset, progress-report, package, pytest, and touched-object compile checks
+  pass. This still does not close Gate G1, G2, G3, or G4 because the real
+  RmlUi dependency, renderer bridge, live controllers, runtime navigation,
+  screenshots, parity evidence, and legacy removal remain pending.
+  2026-07-02 seventh parallel implementation round: the coordinator accepted
+  static runtime registry drift checking, `controller_stub` coverage checking,
+  import-aware runtime asset validation, controller-contract progress facts,
+  and a third five-route `controller_stub` promotion batch (`multimonitor`,
+  `railtrail`, `effects`, `crosshair`, and `language`). The accepted migration
+  phase baseline is now `starter=42` and `controller_stub=15`, with `44`
+  shell controller-contract references across `15` routes. Focused smoke,
+  route-contract, semantics, runtime registry, runtime asset/import,
+  controller-stub coverage, progress-report, package, pytest, and
+  touched-object compile checks pass. Gate G1, G2, G3, and G4 remain open for
+  the real RmlUi dependency, renderer bridge, live controllers, runtime
+  navigation, screenshots, parity evidence, and legacy removal.
+  2026-07-02 eighth parallel implementation round: the coordinator accepted
+  menu-entrypoint route validation, `runtime_stub` eligibility validation,
+  JSON runtime-asset reporting, progress phase-progression reporting, and a
+  guarded `runtime_stub` promotion for `main`, `game`, and `download_status`.
+  The accepted migration phase baseline is now `starter=42`,
+  `controller_stub=12`, and `runtime_stub=3`, with `15` advanced routes
+  (`26.3%`). Focused smoke, route-contract, semantics, menu-entrypoint,
+  runtime-stub eligibility, controller-stub coverage, runtime registry,
+  runtime asset/import text and JSON, progress-report, package, pytest, and
+  touched-object compile checks pass. Gate G1, G2, G3, and G4 remain open for
+  the real RmlUi dependency, renderer bridge, live controllers, native runtime
+  navigation, screenshots, parity evidence, and legacy removal.
+  2026-07-02 ninth parallel implementation round: the coordinator accepted
+  static navigation graph validation, controller fixture validation, detailed
+  runtime asset manifest output, a parity checklist manifest/checker, progress
+  reporting over all discovered route metadata files, and a four-route utility
+  `controller_stub` promotion batch (`addressbook`, `keys`, `legacykeys`, and
+  `weapons`). The accepted migration phase baseline is now `starter=38`,
+  `controller_stub=16`, and `runtime_stub=3`, with `19` advanced routes
+  (`33.3%`) and `54` controller-contract references across `19` routes.
+  Focused smoke, route-contract, semantics, menu-entrypoint, runtime-stub
+  eligibility, controller-stub coverage, controller-fixture, navigation graph,
+  parity-manifest, runtime registry, runtime asset/import text/JSON/manifest,
+  progress-report, package, pytest, and touched-object compile checks pass.
+  Gate G1, G2, G3, and G4 remain open for the real RmlUi dependency, renderer
+  bridge, live controllers, native runtime navigation, screenshots, parity
+  evidence, and legacy removal.
+  2026-07-02 tenth parallel implementation round: the coordinator accepted
+  static command inventory validation, static cvar inventory validation,
+  parity-checklist summary output in the progress reporter, a proposed
+  dependency decision/audit record, and a four-route utility/list
+  `controller_stub` promotion batch (`servers`, `demos`, `players`, and
+  `ui_list`). The accepted migration phase baseline is now `starter=34`,
+  `controller_stub=20`, and `runtime_stub=3`, with `23` advanced routes
+  (`40.4%`) and `65` controller-contract references across `23` routes.
+  Focused smoke, route-contract, semantics, command inventory, cvar
+  inventory, menu-entrypoint, runtime-stub eligibility, controller-stub
+  coverage, controller-fixture, navigation graph, parity-manifest, runtime
+  registry, runtime asset/import text/JSON/manifest, progress-report,
+  package, pytest, and touched-object compile checks pass. Gate G1, G2, G3,
+  and G4 remain open for the real RmlUi dependency, renderer bridge, live
+  controllers, native runtime navigation, screenshots, parity evidence, and
+  legacy removal.
+  2026-07-02 eleventh parallel implementation round: the coordinator accepted
+  static data-model/data-binding inventory validation, phase-consistency
+  guardrails, dependency-decision validation, progress-report data-model
+  summaries, and a four-route single-player/save-load `controller_stub`
+  promotion batch (`singleplayer`, `skill_select`, `loadgame`, and
+  `savegame`). The accepted migration phase baseline is now `starter=30`,
+  `controller_stub=24`, and `runtime_stub=3`, with `27` advanced routes
+  (`47.4%`), `75` controller-contract references across `27` routes, and
+  data-model inventory coverage reporting `190` static binding/model refs
+  across `38` routes with hooks. Focused smoke, route-contract, semantics,
+  command/cvar/data-model inventories, phase-consistency, dependency-decision,
+  menu-entrypoint, runtime-stub eligibility, controller-stub coverage,
+  controller-fixture, navigation graph, parity-manifest, runtime registry,
+  runtime asset/import text/JSON/manifest, progress-report, package, pytest,
+  and touched-object compile checks pass. Gate G1, G2, G3, and G4 remain open
+  for the real RmlUi dependency, renderer bridge, live controllers, native
+  runtime navigation, screenshots, parity evidence, and legacy removal.
+  2026-07-02 twelfth parallel implementation round: the coordinator accepted
+  the remaining shell/local-session `controller_stub` promotion batch
+  (`downloads`, `quit_confirm`, `gameflags`, and `startserver`), starter route
+  metadata coverage for the multiplayer hub plus all `25` session/match
+  routes, condition-expression inventory validation, route-metadata sync
+  validation, and progress-report guardrail summaries. The accepted migration
+  phase baseline is now `starter=26`, `controller_stub=28`, and
+  `runtime_stub=3`, with `31` advanced routes (`54.4%`), `87`
+  controller-contract references across `31` routes, `141` static condition
+  refs across `22` routes, and metadata sync coverage matching all `57`
+  central migration routes plus the support-only `core.runtime_smoke` route.
+  Focused smoke, route-contract, semantics, command/cvar/data-model/condition
+  inventories, metadata-sync, phase-consistency, dependency-decision,
+  menu-entrypoint, runtime-stub eligibility, controller-stub coverage,
+  controller-fixture, navigation graph, parity-manifest, runtime registry,
+  runtime asset/import text/JSON/manifest, progress-report, package, pytest,
+  and touched-object compile checks pass. Gate G1, G2, G3, and G4 remain open
+  for the real RmlUi dependency, renderer bridge, live controllers, native
+  runtime navigation, screenshots, parity evidence, and legacy removal.
+  2026-07-02 thirteenth parallel implementation round: the coordinator
+  accepted the first session/vote `controller_stub` promotion batch
+  (`vote_menu`, `callvote_main`, `callvote_ruleset`, `callvote_timelimit`,
+  `callvote_scorelimit`, `callvote_unlagged`, `callvote_random`, and
+  `callvote_map_flags`), event/action inventory validation,
+  accessibility/localization inventory validation, a legacy-removal
+  inventory/checker, and progress-report event/a11y summaries. The accepted
+  migration phase baseline is now `starter=18`, `controller_stub=36`, and
+  `runtime_stub=3`, with `39` advanced routes (`68.4%`), `101`
+  controller-contract references across `39` routes, `465` static event/action
+  refs across all `57` routes, `8` a11y/localization refs across `3` routes,
+  and `6` legacy-removal inventory items still blocked or pending. Focused
+  smoke, route-contract, semantics, command/cvar/data-model/condition/event/
+  a11y inventories, metadata-sync, phase-consistency, dependency-decision,
+  legacy-removal, menu-entrypoint, runtime-stub eligibility,
+  controller-stub coverage, controller-fixture, navigation graph,
+  parity-manifest, runtime registry, runtime asset/import text/JSON/manifest,
+  progress-report, package, pytest, and touched-object compile checks pass.
+  Gate G1, G2, G3, and G4 remain open for the real RmlUi dependency, renderer
+  bridge, live controllers/services, native runtime navigation, screenshots,
+  parity evidence, and legacy removal.
+  2026-07-02 fifteenth parallel implementation round: the coordinator
+  accepted the first dependency-source/build-gate slice. `subprojects/rmlui.wrap`
+  now pins upstream RmlUi `6.2` with SHA-256
+  `814c3ff7b9666280338d8f0dda85979f5daf028d01c85fc8975431d1e2fd8e8b`,
+  `meson_options.txt` exposes a default-disabled `rmlui` feature option, and
+  `meson.build` only emits `UI_RML_HAS_RUNTIME=1` when an optional RmlUi
+  dependency resolves. The client scaffold now exposes dependency-free runtime
+  availability, file-interface, and future runtime-hook boundaries, while
+  `tools/ui_smoke/check_rmlui_dependency_integration.py` validates the current
+  dependency/build state as `optional` with `4/4` integration components
+  present. Packaging/staged asset validation remains green with `197`
+  packaged assets, `103` RmlUi package/loose assets, `73` staged runtime
+  paths, and `16` staged imported assets. Gate G1, G2, G3, and G4 remain open
+  for real RmlUi compile/link, live runtime/controllers/services, native
+  renderer proof, runtime navigation, screenshots, parity evidence, and legacy
+  removal.
+  2026-07-02 sixteenth parallel implementation round: the coordinator
+  accepted the static controller-stub completion slice. The final `12` central
+  starter routes (`admin_commands`, `admin_menu`, `forfeit_confirm`,
+  `leave_match_confirm`, `map_selector`, `match_stats`, `mymap_flags`,
+  `mymap_main`, `tourney_info`, `tourney_mapchoices`,
+  `tourney_replay_confirm`, and `tourney_veto`) are now promoted to
+  `controller_stub`, with RML hook hardening for admin, MyMap, map selector,
+  match stats, and tournament flows. The accepted migration phase baseline is
+  now `starter=0`, `controller_stub=54`, and `runtime_stub=3`, with `57/57`
+  advanced routes (`100.0%`), `149` controller-contract references across all
+  routes, `57/57` controller-binding parity checklist entries complete, and
+  the new controller-stub completion checker passing in strict mode. Legacy
+  removal remains blocked with `6` tracked items, `0` ready/complete items,
+  and a closed parity gate. Gate G1, G2, G3, and G4 remain open for real RmlUi
+  compile/link, live runtime/controllers/services, native renderer proof,
+  runtime navigation, screenshots, input/back behavior, parity evidence, and
+  legacy removal.
+  2026-07-02 fourteenth parallel implementation round: the coordinator
+  accepted the multiplayer/lobby/info `controller_stub` promotion batch
+  (`multiplayer`, `dm_welcome`, `dm_join`, `join`, `dm_hostinfo`, and
+  `dm_matchinfo`), document/body identity inventory, route entrypoint
+  inventory, route metadata shape validation, and progress-report
+  legacy-removal gate summaries. The accepted migration phase baseline is now
+  `starter=12`, `controller_stub=42`, and `runtime_stub=3`, with `45`
+  advanced routes (`78.9%`), `117` controller-contract references across `45`
+  routes, `57` matched document/body IDs, `72` unique entrypoint refs, and
+  `58` route metadata entries passing stricter shape validation. Legacy
+  removal remains blocked with `6` tracked items, `0` ready/complete items,
+  and a closed parity gate. Focused smoke, route-contract, semantics,
+  command/cvar/data-model/condition/event/a11y/document-id/entrypoint
+  inventories, metadata-sync, route-metadata-shape, phase-consistency,
+  dependency-decision, legacy-removal, menu-entrypoint, runtime-stub
+  eligibility, controller-stub coverage, controller-fixture, navigation graph,
+  parity-manifest, runtime registry, runtime asset/import text/JSON/manifest,
+  progress-report, package, pytest, and touched-object compile checks pass.
+  Gate G1, G2, G3, and G4 remain open for the real RmlUi dependency, renderer
+  bridge, live controllers/services, native runtime navigation, screenshots,
+  parity evidence, and legacy removal.
 - [ ] `FR-09-T02` Add RmlUi dependency integration, Meson/build wiring, and
   `.install` asset staging for the new document/theme path.
   Dependency: `FR-09-T01`, `DV-06-T01`. Priority: P0.
+  Progress: `tools/package_assets.py` now mirrors `assets/ui/rml/` loose into
+  `.install/<base-game>/ui/rml/` by default and validates archive/loose hashes
+  for authored RmlUi assets. Focused `tools/test_package_assets.py` coverage
+  passes, and a current authored-asset package validation staged `67` RmlUi
+  package/loose files under `.tmp/rmlui/round2-package-validation`.
+  Round 4 note: dependency-free runtime-switch source wiring is in place and
+  package staging validates the expanded RmlUi asset set, but first-class RmlUi
+  dependency integration remains pending.
+  Round 5 note: runtime document probing is implemented and validated through
+  the client scaffold's `ui_rml_asset_root` and `ui_rml_probe [route_id]`
+  filesystem path, but first-class RmlUi dependency integration and build
+  wiring remain open.
+  Round 6 note: the runtime probe registry now covers all `57` manifest routes
+  plus `core.runtime_smoke`, and runtime asset path checks validate source
+  documents plus staged loose route documents. First-class RmlUi dependency
+  integration and build wiring remain open.
+  Round 7 note: the runtime registry check and import-aware runtime asset check
+  are first-class smoke tools. First-class RmlUi dependency integration and
+  build wiring remain open.
+  Round 8 note: runtime asset validation now has structured JSON output and
+  staged loose-file JSON evidence for the `73` route/import runtime paths.
+  First-class RmlUi dependency integration and build wiring remain open.
+  Round 9 note: runtime asset validation now writes deterministic detailed
+  manifests for source/runtime/staged route and imported asset paths.
+  First-class RmlUi dependency integration and build wiring remain open.
+  Round 10 note: `docs-dev/rmlui-dependency-decision-record-2026-07-02.md`
+  documents the proposed RmlUi dependency/audit path, preferring a Meson
+  subproject or wrap with a reviewed vendored-source fallback. No dependency,
+  Meson wiring, build option, or default runtime switch is added yet.
+  Round 11 note: `tools/ui_smoke/check_rmlui_dependency_decision.py`
+  validates that the dependency decision record remains proposed/not
+  implemented, names the native OpenGL/Vulkan/RTX-vkpt obligations, and does
+  not overclaim Meson/build/dependency wiring. First-class RmlUi dependency
+  integration and build wiring remain open.
+  Round 15 note: `subprojects/rmlui.wrap` now pins upstream RmlUi `6.2`, the
+  default-disabled `rmlui` Meson feature option gates optional dependency
+  probing, and `tools/ui_smoke/check_rmlui_dependency_integration.py` reports
+  the current state as `optional` with `4/4` components present. Real RmlUi
+  compile/link and runtime enablement remain open.
+  Round 17 note: Meson can now fall back to the pinned RmlUi CMake subproject
+  with `RMLUI_FONT_ENGINE=none`, wrap provide aliases, and fallback
+  `rmlui_core` target selection. `.tmp/rmlui/round17-rmlui-enabled3`
+  configured with `-Drmlui=enabled` and linked both `rmlui_core.dll` and
+  `worr_engine_x86_64.dll`; default-disabled build behavior remains preserved,
+  while install refresh and runtime enablement remain open.
+  Round 41 note: the enabled RmlUi build now refreshes `.install` with the
+  runtime DLL dependency and current route assets, and the staged client opens
+  all 57 registered RmlUi routes without a fresh crash dump. Supported build
+  matrix policy and default runtime ownership remain open. VSCode setup/build
+  now forces `builddir-win` to `-Drmlui=enabled`, stages `rmlui_core.dll`, and
+  makes the first launch profile an OpenGL RmlUi menu run; Vulkan and RTX
+  launch profiles remain separate until native RmlUi renderer bridges exist.
 - [ ] `FR-09-T03` Implement the RmlUi runtime bootstrap plus native
   renderer/input/file/system bridges.
   Dependency: `FR-09-T02`. Priority: P0.
+  Round 4 note: guarded runtime-switch scaffolding is compiled and reachable
+  through the active UI bridge. Sample document opening through an actual RmlUi
+  runtime and native renderer draw proof remain pending.
+  Round 5 note: the runtime document probe is accepted for mapped shell/smoke
+  documents. Native renderer integration and real RmlUi runtime proof remain
+  open.
+  Round 6 note: dependency-free runtime probing now covers the full route set.
+  Native renderer integration and real RmlUi runtime proof remain open.
+  Round 7 note: static registry drift validation protects the full-route probe
+  table. Native renderer integration and real RmlUi runtime proof remain open.
+  Round 8 note: `UI_Rml_RouteForMenu` is now checked as a first-class
+  menu-entrypoint contract, and `main`, `game`, and `download_status` are
+  accepted as guarded `runtime_stub` routes because they probe documents then
+  return to the legacy UI. Native renderer integration and real RmlUi runtime
+  proof remain open.
+  Round 10 note: the dependency decision record captures required Gate G1
+  runtime, filesystem, input, font/text, route, and native renderer proof for
+  OpenGL, Vulkan, and RTX/vkpt. Native renderer integration and real RmlUi
+  runtime proof remain open.
+  Round 15 note: the client scaffold exposes runtime availability, a
+  dependency-free file-interface boundary, and a future runtime-hook interface
+  for the selected dependency path. Native renderer integration and real RmlUi
+  runtime proof remain open.
+  Round 17 note: `src/client/ui_rml/ui_rml_runtime.cpp` registers a compiled
+  RmlUi Core adapter behind `UI_RML_HAS_RUNTIME`, proves use of
+  `Rml::GetVersion`, `Rml::Initialise`, and `Rml::Shutdown`, and reports
+  `renderer_unavailable` because no native renderer bridge is registered.
+  Native renderer integration and sample route draw proof remain open.
+  Round 18 note: the compiled adapter now installs WORR-backed RmlUi
+  `SystemInterface` and `FileInterface` implementations before
+  `Rml::Initialise`, routes runtime file probes through `FS_OpenFile`,
+  `FS_Read`, `FS_Seek`, `FS_Tell`, `FS_Length`, and `FS_CloseFile`, and exposes
+  `ui_rml_runtime_probe [route_id]`. Native renderer integration and sample
+  route draw proof remain open.
+  Round 19 note: the client scaffold now declares explicit OpenGL, Vulkan, and
+  RTX/vkpt renderer-family lanes plus an opaque native render-interface hook,
+  and route availability is gated by `UI_Rml_RendererIsAvailable` before the
+  runtime route-open hook can be considered. No renderer backend or sample
+  route draw proof is claimed.
+  Round 20 note: the OpenGL renderer DLL now exports the first
+  renderer-family `Rml::RenderInterface` scaffold and the client registers it
+  after renderer initialization, but `R_RmlUiCanRender()` remains `false`.
+  OpenGL visible draw behavior, Vulkan/RTX-vkpt native bridges, and sample
+  route draw proof remain open.
+  Round 21 note: the OpenGL bridge now owns RmlUi geometry caches, renders via
+  the OpenGL 2D tessellator, uploads generated textures, resolves loaded
+  textures through the renderer image manager, applies scissor state, and
+  reports `R_RmlUiCanRender=true`. Runtime route ownership remains guarded by
+  `CanOpenRoutes=false`; Vulkan/RTX-vkpt native bridges and sample route draw
+  proof remain open. Implementation log:
+  `docs-dev/rmlui-round21-opengl-render-primitives-2026-07-04.md`.
+  Round 22 note: the compiled runtime now opens the guarded
+  `core.runtime_smoke` route through `ui_rml_runtime_open`, creates the
+  `worr_ui` RmlUi context, loads/shows one document, updates and renders it
+  from the client UI draw loop, closes it on Escape or
+  `ui_rml_runtime_close`, and keeps normal menu routes on legacy fallback.
+  Vulkan/RTX-vkpt native bridges, full input/font services, normal menu route
+  ownership, screenshots, and parity proof remain open. Implementation log:
+  `docs-dev/rmlui-round22-guarded-context-route-2026-07-04.md`.
+  Round 23 note: the guarded sample route now receives key, text, mouse
+  button, mouse wheel, and pointer movement events through the RmlUi context;
+  Escape and mouse button 2 close the route; and
+  `ui_rml_runtime_status`/`ui_rml_runtime_capture` expose counters for the
+  next OpenGL evidence pass. Normal menu route ownership, Vulkan/RTX-vkpt
+  native bridges, full input/font services, automated screenshots, and parity
+  proof remain open. Implementation log:
+  `docs-dev/rmlui-round23-input-capture-2026-07-04.md`.
+  Round 24 note: the guarded sample route now has an automated OpenGL TGA
+  runtime capture harness, local `r_screenshot_dir` evidence routing, visible
+  smoke-route RCSS, and a temporary layout-only RmlUi font engine that lets the
+  `RMLUI_FONT_ENGINE=none` build initialize. The accepted capture is
+  nonblank and records 24 updates/renders, but real glyph rendering, normal
+  menu route ownership, Vulkan/RTX-vkpt native bridges, runtime navigation,
+  full input/font services, and parity proof remain open. Implementation log:
+  `docs-dev/rmlui-round24-runtime-capture-harness-2026-07-04.md`.
+  Round 25 note: the guarded sample route now emits actual text geometry
+  through `UI_Rml_SmokeFontEngineInterface`, a minimal 5x7 bitmap glyph path
+  that feeds RmlUi mesh quads into the existing OpenGL bridge. The capture
+  harness now requires the glyph-generation marker and accepted a fresh
+  `rmlui_runtime_smoke_round25.tga` screenshot. This remains a smoke path, not
+  final font/text ownership or normal menu route ownership. Implementation log:
+  `docs-dev/rmlui-round25-smoke-font-glyph-path-2026-07-04.md`.
+  Round 26 note: the guarded sample capture now has route-specific TGA layout
+  assertions. The runtime capture harness records smoke-route color counts,
+  bounding boxes, and panel/text/button relationship checks, and accepted a
+  fresh `rmlui_runtime_smoke_round26.tga` screenshot with `layout_ok=true`.
+  This remains guarded OpenGL sample evidence, not normal route ownership or
+  parity. Implementation log:
+  `docs-dev/rmlui-round26-capture-layout-assertions-2026-07-04.md`.
+  Round 27 note: the same guarded capture now drives synthetic pointer, text,
+  mouse-wheel, and mouse-button-2 back-close input after the screenshot, then
+  requires inactive final status plus input and route close counters. The
+  accepted `rmlui_runtime_smoke_round27.tga` manifest records
+  `synthetic_input_marker_seen=true`, `inactive_status_seen=true`,
+  positive input counters, and route open/close/request counters. This remains
+  guarded OpenGL sample evidence, not broad input parity or normal route
+  ownership. Implementation log:
+  `docs-dev/rmlui-round27-synthetic-input-capture-2026-07-04.md`.
+  Round 28 note: the guarded capture harness now runs a two-viewport OpenGL
+  matrix with explicit `r_geometry` values and exact screenshot-dimension
+  validation. The accepted matrix covers `960x720` and `1280x960`, retaining
+  glyph, layout, synthetic input, back-close, route teardown, and inactive
+  status checks for both viewports. This remains guarded sample evidence, not
+  normal route ownership, responsive widescreen parity, or renderer parity.
+  Implementation log:
+  `docs-dev/rmlui-round28-viewport-matrix-2026-07-04.md`.
+  Round 29 note: the guarded runtime now opens `main`, `game`, and
+  `download_status` through `UI_OpenMenu` when `ui_rml_enable=1`.
+  `ui_rml_runtime_capture_menu` and the route-matrix harness accepted all
+  three routes at `960x720` with active OpenGL status, glyph text evidence,
+  synthetic input, close counters, inactive final status, and fresh
+  screenshots. This remains guarded OpenGL evidence, not default route
+  ownership, final theme/layout parity, controller behavior, runtime
+  navigation, Vulkan/RTX-vkpt renderer parity, or end-user parity.
+  Implementation log:
+  `docs-dev/rmlui-round29-menu-route-capture-2026-07-04.md`.
+  Round 30 note: `tools/ui_smoke/check_rmlui_renderer_matrix.py` now records
+  the renderer-family matrix as `OpenGL=native_guarded`,
+  `Vulkan=blocked_until_native`, and `RTX/vkpt=blocked_until_native`; it
+  rejects Vulkan/RTX-to-OpenGL mapping and premature non-OpenGL RmlUi runtime
+  dependency enablement. This is a guardrail, not native Vulkan/RTX-vkpt draw
+  proof. Implementation log:
+  `docs-dev/rmlui-round30-renderer-matrix-guardrails-2026-07-04.md`.
+  Round 31 note: the guarded capture harness now supports
+  `--renderer-matrix`, combining the OpenGL `main`/`game`/`download_status`
+  route matrix with the renderer-family guardrail in one aggregate manifest.
+  The accepted manifest records `routes=3`, `route_passed=3`,
+  `native_guarded_lanes=1`, `blocked_lanes=2`, and `errors=0`. This still is
+  not native Vulkan/RTX-vkpt draw proof. Implementation log:
+  `docs-dev/rmlui-round31-renderer-matrix-capture-manifest-2026-07-05.md`.
+  Round 32 note: `tools/ui_smoke/check_rmlui_vulkan_bridge_readiness.py`
+  now inventories Vulkan and RTX/vkpt native UI/image/draw foundations while
+  requiring both lanes to remain blocked until renderer-owned RmlUi bridge
+  classes, family exports, runtime dependencies, and non-null native
+  interfaces exist. Accepted counts are `foundation_lanes=2`,
+  `native_bridge_lanes=0`, `blocked_lanes=2`,
+  `missing_bridge_requirements=8`, and `errors=0`. This is readiness
+  evidence, not native Vulkan/RTX-vkpt draw proof. Implementation log:
+  `docs-dev/rmlui-round32-vulkan-rtx-bridge-readiness-2026-07-05.md`.
+  Round 33 note: `check_rmlui_runtime_capture.py --renderer-matrix` now
+  embeds the Vulkan/RTX bridge-readiness audit in the aggregate renderer
+  manifest alongside OpenGL route evidence and the renderer-family guardrail.
+  Accepted counts include `bridge_foundation_lanes=2`,
+  `native_bridge_lanes=0`, `bridge_blocked_lanes=2`,
+  `missing_bridge_requirements=8`, and `errors=0`. This still is not native
+  Vulkan/RTX-vkpt draw proof. Implementation log:
+  `docs-dev/rmlui-round33-bridge-readiness-renderer-manifest-2026-07-05.md`.
+  Round 34 note: bridge-readiness and aggregate renderer manifests now carry
+  named native bridge activation requirements for Vulkan and RTX/vkpt:
+  `activation_requirements=8`, `satisfied_activation_requirements=0`, and
+  `pending_activation_requirements=8`. Partial activation, such as only adding
+  a Vulkan bridge class, remains failed until the full native bridge is wired.
+  This still is not native Vulkan/RTX-vkpt draw proof. Implementation log:
+  `docs-dev/rmlui-round34-native-bridge-activation-checklist-2026-07-05.md`.
+  Round 35 note: bridge-readiness and aggregate renderer manifests now report
+  activation status and next blockers for Vulkan and RTX/vkpt. Accepted counts
+  include `activation_complete_lanes=0`, `partial_activation_lanes=0`, and
+  `inactive_activation_lanes=2`; both non-OpenGL lanes remain
+  `blocked_no_activation`. This still is not native Vulkan/RTX-vkpt draw
+  proof. Implementation log:
+  `docs-dev/rmlui-round35-native-bridge-activation-status-2026-07-05.md`.
+  Round 36 note: bridge-readiness and aggregate renderer manifests now require
+  lane-specific renderer source-set wiring before a non-OpenGL bridge can
+  activate. Accepted counts are now `activation_requirements=10`,
+  `satisfied_activation_requirements=0`, and
+  `pending_activation_requirements=10`; partial class-only activation points
+  next at `native_bridge_source_compiled`. This still is not native
+  Vulkan/RTX-vkpt draw proof. Implementation log:
+  `docs-dev/rmlui-round36-native-bridge-source-set-activation-2026-07-05.md`.
+  Round 37 note: `src/renderer/rmlui_bridge.cpp` is now wired into the Vulkan
+  and RTX/vkpt renderer source sets in inactive mode, satisfying
+  `native_bridge_source_compiled` for both non-OpenGL lanes while leaving
+  native bridge classes, family exports, runtime dependencies, native
+  interface exports, and route-visible capture pending. Accepted counts are
+  `satisfied_activation_requirements=2` and
+  `pending_activation_requirements=8`. This still is not native
+  Vulkan/RTX-vkpt draw proof. Implementation log:
+  `docs-dev/rmlui-round37-inactive-non-gl-bridge-source-wiring-2026-07-05.md`.
+  Round 38 note: inactive Vulkan and RTX/vkpt `Rml::RenderInterface` class
+  stubs are now present in `src/renderer/rmlui_bridge.cpp`, satisfying
+  `native_bridge_class_present` for both non-OpenGL lanes while leaving
+  family exports, runtime dependencies, native interface exports, implemented
+  render methods, and route-visible capture pending. Accepted counts are
+  `satisfied_activation_requirements=4` and
+  `pending_activation_requirements=6`. This still is not native
+  Vulkan/RTX-vkpt draw proof. Implementation log:
+  `docs-dev/rmlui-round38-inactive-non-gl-bridge-class-stubs-2026-07-05.md`.
+  Round 39 note: inactive Vulkan and RTX/vkpt renderer-family exports are now
+  present in `src/renderer/rmlui_bridge.cpp`, satisfying
+  `native_family_export_present` for both non-OpenGL lanes while keeping
+  runtime dependencies, native interface exports, implemented render methods,
+  and route-visible capture pending. Accepted counts are
+  `satisfied_activation_requirements=6` and
+  `pending_activation_requirements=4`, with
+  `next_activation_requirement=runtime_dependency_enabled`. This still is not
+  native Vulkan/RTX-vkpt draw proof. Implementation log:
+  `docs-dev/rmlui-round39-inactive-non-gl-family-exports-2026-07-05.md`.
+  Round 40 note: inactive Vulkan and RTX/vkpt renderer runtime dependencies
+  are now wired in `meson.build`, satisfying `runtime_dependency_enabled` for
+  both non-OpenGL lanes while keeping native interface exports, implemented
+  render methods, and route-visible capture pending. Accepted counts are
+  `satisfied_activation_requirements=8` and
+  `pending_activation_requirements=2`, with
+  `next_activation_requirement=native_interface_export_present`. This still
+  is not native Vulkan/RTX-vkpt draw proof. Implementation log:
+  `docs-dev/rmlui-round40-inactive-non-gl-runtime-dependencies-2026-07-05.md`.
+  Round 41 note: installed OpenGL route loading now closes only the known
+  active RmlUi document during route swaps, fixing the freed-document crash
+  seen while opening menus. Staged validation opened all 57 registered RmlUi
+  routes with no new crash dump and no parser/fallback/error log hits.
+  Vulkan/RTX-vkpt renderer implementations, final input/font services,
+  controller behavior, and parity proof remain open. Implementation log:
+  `docs-dev/rmlui-round41-menu-route-loading-2026-07-06.md`.
+  Round 42 note: active OpenGL RmlUi menus now resize against the renderer
+  virtual UI canvas, receive mouse input in that same coordinate space, convert
+  scissor rectangles back to framebuffer pixels, and draw a software cursor so
+  menu cursor visibility does not depend on the platform cursor during
+  fullscreen/window state changes. Staged capture validation covered `960x720`,
+  `1280x720`, and live Win32 `MoveWindow()` resize events with no fresh crash
+  dump. Implementation log:
+  `docs-dev/rmlui-round42-resize-canvas-cursor-2026-07-06.md`.
+  Round 43 note: the guarded OpenGL RmlUi path now renders text through a
+  SDL3_ttf-backed font engine, refines shared menu layout/copy, keeps long
+  keybind-style utility lists inside the active canvas, and validates final
+  staged all-route loading plus `960x720` keybind screenshot evidence. Live
+  data-model/controller behavior, localization/text shaping parity, and native
+  Vulkan/RTX-vkpt RmlUi rendering remain pending. Implementation log:
+  `docs-dev/rmlui-round43-menu-layout-ttf-refinement-2026-07-06.md`.
+  Round 44 note: the guarded OpenGL RmlUi path now prefers Quake II Rerelease
+  TTF assets for the display, UI, and monospace faces, records rerelease
+  source markers in generated text evidence, and validates the staged full
+  route sweep with `58` unique routes opened and no failure/parser/error hits.
+  Live data-model/controller behavior, localization/text shaping parity, and
+  native Vulkan/RTX-vkpt RmlUi rendering remain pending. Implementation log:
+  `docs-dev/rmlui-round44-q2r-font-menu-refinement-2026-07-06.md`.
+  Round 45 note: long OpenGL RmlUi menu surfaces now reserve viewport-safe
+  scroll regions for settings forms, save/load slot lists, and the in-game
+  action list so Back/Close actions remain visible at `960x720`; the staged
+  full-route sweep still opens `58` unique routes with no failure/parser/error
+  hits. Live data-model/controller behavior, localization/text shaping parity,
+  and native Vulkan/RTX-vkpt RmlUi rendering remain pending. Implementation
+  log: `docs-dev/rmlui-round45-bounded-menu-list-refinement-2026-07-06.md`.
+  Round 46 note: the staged OpenGL RmlUi path now has focused Single Player
+  hub and generic `ui_list` layout refinements on top of the `30`-route
+  representative visual pass; the final staged all-route sweep still opens
+  `58` unique routes with no failure/parser/error hits. Live data-model/
+  controller behavior, localization/text shaping parity, and native
+  Vulkan/RTX-vkpt RmlUi rendering remain pending. Implementation log:
+  `docs-dev/rmlui-round46-singleplayer-utility-list-refinement-2026-07-06.md`.
+  Round 47 note: the staged OpenGL RmlUi path now has focused session-list and
+  keybind containment refinements for `admin_commands`, `callvote_main`,
+  `dm_join`, and `keys`; the final staged all-route sweep still opens `58`
+  unique routes with Quake II Rerelease font-source evidence and no
+  failure/parser/error hits. Live data-model/controller behavior,
+  localization/text shaping parity, and native Vulkan/RTX-vkpt RmlUi rendering
+  remain pending. Implementation log:
+  `docs-dev/rmlui-round47-session-keybind-containment-2026-07-06.md`.
+  Round 48 note: the staged OpenGL RmlUi path now has compact settings toggle
+  controls and focused form containment refinements for `performance`,
+  `sound`, `downloads`, and `startserver`; the final staged all-route sweep
+  still opens `58` unique routes with Quake II Rerelease font-source evidence
+  and no failure/parser/error hits. Live data-model/controller behavior,
+  localization/text shaping parity, and native Vulkan/RTX-vkpt RmlUi rendering
+  remain pending. Implementation log:
+  `docs-dev/rmlui-round48-settings-toggle-form-refinement-2026-07-06.md`.
+  Round 49 note: the staged OpenGL RmlUi path now adds conservative
+  RmlUi-native color/border transitions plus shared header/footer framing
+  across representative shell, settings, session, and utility routes; the
+  final staged all-route sweep still opens `58` unique routes with Quake II
+  Rerelease font-source evidence and no failure/parser/transition/error hits.
+  Live data-model/controller behavior, localization/text shaping parity, and
+  native Vulkan/RTX-vkpt RmlUi rendering remain pending. Implementation log:
+  `docs-dev/rmlui-round49-transition-aesthetic-refinement-2026-07-06.md`.
+  Round 50 note: the staged OpenGL RmlUi path now uses a `960x720` reference
+  canvas for runtime context dimensions, mouse conversion, software cursor
+  drawing, and renderer 2D scale selection, fixing the main-menu
+  fullscreen-style over-scaling and right-edge clipping repro; the final
+  staged all-route sweep still opens `58` unique routes with Quake II
+  Rerelease font-source evidence and no failure/parser/transition/error hits.
+  Live data-model/controller behavior, localization/text shaping parity, and
+  native Vulkan/RTX-vkpt RmlUi rendering remain pending. Implementation log:
+  `docs-dev/rmlui-round50-scaling-positioning-refinement-2026-07-06.md`.
+  Round 51 note: the staged OpenGL RmlUi path now has a shared typed-widget
+  layout for non-main menus: settings rows use stable label/control/value
+  columns, toggles/ranges/selects/combos/image-value selectors/fields/progress
+  rows receive control-specific widths, utility text inputs no longer
+  collapse, and `download_status` imports the settings control contract; the
+  final staged all-route sweep still opens `58` unique routes with Quake II
+  Rerelease font-source evidence and no failure/parser/transition/error hits.
+  Live data-model/controller behavior, localization/text shaping parity, and
+  native Vulkan/RTX-vkpt RmlUi rendering remain pending. Implementation log:
+  `docs-dev/rmlui-round51-widget-layout-refinement-2026-07-06.md`.
+  Round 52 note: the staged OpenGL RmlUi path now uses real shell command
+  buttons and deterministic two-column command grids for Options, Game,
+  Single Player, save/load, multiplayer, and session navigation surfaces on a
+  narrower `604px` menu contract; the final staged all-route sweep still
+  opens `58` unique routes with Quake II Rerelease font-source evidence and
+  no failure/parser/transition/error hits. Live data-model/controller
+  behavior, localization/text shaping parity, and native Vulkan/RTX-vkpt
+  RmlUi rendering remain pending. Implementation log:
+  `docs-dev/rmlui-round52-navigation-layout-refinement-2026-07-06.md`.
+  Round 53 note: the staged OpenGL RmlUi path now polishes the deterministic
+  command grids into spaced action tiles with slimmer heights, rounded
+  corners, dark fills, and hover/focus left accents for shell, single-player,
+  save/load, multiplayer, and session routes; the final staged all-route sweep
+  still opens `58` unique routes with Quake II Rerelease font-source evidence
+  and no failure/parser/transition/error hits. Live data-model/controller
+  behavior, localization/text shaping parity, and native Vulkan/RTX-vkpt
+  RmlUi rendering remain pending. Implementation log:
+  `docs-dev/rmlui-round53-menu-polish-refinement-2026-07-06.md`.
+  Round 54 note: the staged OpenGL RmlUi path now preserves primary and
+  destructive action intent inside the high-specificity shell/session command
+  grids, converts the remaining command-like pseudo-buttons to real buttons,
+  and keeps the final staged all-route sweep at `58` unique routes with Quake
+  II Rerelease font-source evidence and no failure/parser/transition/error
+  hits. Live data-model/controller behavior, localization/text shaping parity,
+  and native Vulkan/RTX-vkpt RmlUi rendering remain pending. Implementation
+  log: `docs-dev/rmlui-round54-action-intent-widget-refinement-2026-07-06.md`.
+  Round 55 note: the staged OpenGL RmlUi path now exposes
+  `ui_rml_runtime_popup`, routes Quit/Forfeit/Leave Match/Replay confirmation
+  pages through popup-style route opens, supports `data-command-cvar` click
+  targets, and keeps the final staged all-route sweep at `58` unique routes
+  with Quake II Rerelease font-source evidence and no
+  failure/parser/transition/error hits. Live data-model/controller behavior,
+  localization/text shaping parity, and native Vulkan/RTX-vkpt RmlUi rendering
+  remain pending. Implementation log:
+  `docs-dev/rmlui-round55-popup-audio-menu-refinement-2026-07-07.md`.
+  Round 56 note: the staged OpenGL RmlUi path now consumes
+  `data-menu-music="menu"` through the existing OGG playback path, adds music
+  intent to high-level hub routes, routes Game menu Quit through the same
+  `quit_confirm` popup path as Main Quit, and keeps the final staged all-route
+  sweep at `58` unique routes with Quake II Rerelease font-source evidence and
+  no failure/parser/transition/error hits. Live data-model/controller
+  behavior, localization/text shaping parity, and native Vulkan/RTX-vkpt
+  RmlUi rendering remain pending. Implementation log:
+  `docs-dev/rmlui-round56-menu-music-popup-parity-2026-07-07.md`.
+  Round 57 note: the staged OpenGL RmlUi path now consumes
+  `data-menu-sound-open`, attaches target-level focus/change audio listeners
+  to interactive controls, keeps high-level hub routes on explicit open-sound
+  and menu-music metadata, and keeps the final staged all-route sweep at `58`
+  unique routes with `14` open-sound cue markers, Quake II Rerelease
+  font-source evidence, and no failure/parser/transition/error hits. Live
+  data-model/controller behavior, localization/text shaping parity, and native
+  Vulkan/RTX-vkpt RmlUi rendering remain pending. Implementation log:
+  `docs-dev/rmlui-round57-open-focus-audio-refinement-2026-07-07.md`.
+  Round 58 note: client-side and cgame-side `pushmenu` producers now prefer
+  registered RmlUi route IDs when `ui_rml_enable` is active, confirmation route
+  IDs use the RmlUi popup route command, and the cgame UI import/export
+  contract now exposes deterministic command insertion through
+  `CGameUI_Import_v5` / `CGameUI_Export_v5`. Staged OpenGL probes prove
+  `pushmenu options` opens the RmlUi Options route, while Quit, Forfeit, Leave
+  Match, and Tournament Replay confirmations open through the popup path with
+  alert sounds and menu music cues. Live data-model/controller behavior,
+  localization/text shaping parity, and native Vulkan/RTX-vkpt RmlUi rendering
+  remain pending. Implementation log:
+  `docs-dev/rmlui-round58-pushmenu-popup-bridge-2026-07-07.md`.
+  Round 59 note: the staged OpenGL RmlUi path now refines the Multiplayer hub
+  against the original pre-RmlUi menu. The page uses shell-grid styling,
+  removes the dead `multiplayer.connect_address` command, restores q2servers,
+  address-book, demos, Start Server setup defaults, Player Setup, and Options
+  as real legacy command strings, and validates `pushmenu multiplayer` with
+  TTF font-source, open-sound, menu-music, active runtime status, and `960x720`
+  visual evidence. Live data-model/controller behavior, localization/text
+  shaping parity, and native Vulkan/RTX-vkpt RmlUi rendering remain pending.
+  Implementation log:
+  `docs-dev/rmlui-round59-multiplayer-hub-parity-refinement-2026-07-07.md`.
+  Round 60 note: the staged OpenGL RmlUi path now refines Video Setup against
+  the original pre-RmlUi settings menu. The page restores three-state
+  borderless mode, Multi-Monitor, anti-aliasing, hardware gamma, anisotropic
+  filtering, texture saturation/intensity, lightmap saturation/brightness, and
+  renderer backend controls with typed widgets in a compact three-column
+  layout, and validates `pushmenu video` with TTF font-source, open-sound,
+  menu-music, active runtime status, and `960x720` visual evidence. Live
+  settings persistence/navigation parity, localization/text shaping parity,
+  and native Vulkan/RTX-vkpt RmlUi rendering remain pending. Implementation
+  log:
+  `docs-dev/rmlui-round60-video-settings-parity-refinement-2026-07-07.md`.
+  Round 61 note: the settings family now consistently requests menu music and
+  open-sound cues on route open, while Screen Setup and Effects Setup use typed
+  action rows for their nested Crosshair/Railgun Trail navigation and compact
+  two-column layouts that keep all rows above Back/Close at `960x720`. Live
+  settings persistence/navigation parity, localization/text shaping parity,
+  and native Vulkan/RTX-vkpt RmlUi rendering remain pending. Implementation
+  log:
+  `docs-dev/rmlui-round61-settings-audio-action-row-refinement-2026-07-07.md`.
+  Round 62 note: the single-player/local-session pages now request the same
+  menu music and open-sound cues as the refined shell/settings pages. Skill
+  Select difficulty choices and Start Server's Begin Game action carry
+  explicit confirm cues, while Start Server uses a three-column static fallback
+  layout that keeps Server, Match Setup, Rules, and footer controls visible at
+  `960x720`. Live condition evaluation, settings persistence/navigation
+  parity, localization/text shaping parity, and native Vulkan/RTX-vkpt RmlUi
+  rendering remain pending. Implementation log:
+  `docs-dev/rmlui-round62-singleplayer-audio-startserver-refinement-2026-07-07.md`.
+  Round 63 note: the staged OpenGL RmlUi path now normalizes the full utility
+  route family. Address Book, Demos, Key Bindings, Legacy Keys, Player Setup,
+  Servers, Session List, and Weapon Bindings all carry menu-music/open-sound
+  metadata, intent-specific action sounds, and `pushmenu` runtime evidence
+  with Quake II Rerelease TTF markers at `960x720`. Address Book, Key
+  Bindings, and Weapon Bindings now have bounded grid layouts that keep their
+  static fallback content above footer actions. Live utility controllers,
+  key-capture behavior, localization/text shaping parity, and native
+  Vulkan/RTX-vkpt RmlUi rendering remain pending. Implementation log:
+  `docs-dev/rmlui-round63-utility-audio-layout-refinement-2026-07-07.md`.
+  Round 64 note: the staged OpenGL RmlUi path now normalizes the
+  session/match route family. Non-popup session pages carry menu-music and
+  open-sound metadata, confirmation pages keep popup/alert treatment, session
+  controls carry intent-specific sounds, the Vote menu uses live `ui_vote_*`
+  cvars plus `worr_vote_*` commands, and representative lobby/callvote/admin/
+  stats/map-choice surfaces have bounded `960x720` evidence. Live
+  session/list controllers, full navigation parity, and native Vulkan/RTX-vkpt
+  RmlUi rendering remain pending. Implementation log:
+  `docs-dev/rmlui-round64-session-audio-layout-refinement-2026-07-07.md`.
+  Round 65 note: shell hub routes now use grouped RmlUi sections for Options,
+  Game, and Multiplayer, authored route buttons across shell/settings/
+  single-player/session/utility carry explicit action sounds, and final
+  `960x720` captures prove Main, Options, Game, Multiplayer, and Single
+  Player stay contained with Quake II Rerelease TTF markers. Live controllers,
+  full navigation parity, and native Vulkan/RTX-vkpt RmlUi rendering remain
+  pending. Implementation log:
+  `docs-dev/rmlui-round65-shell-hub-audio-refinement-2026-07-07.md`.
+  Round 66 note: shared popup styling now gives Quit/Forfeit/Leave/Replay
+  confirmations compact modal framing with side-by-side actions, fixed-width
+  menu panels use looser minimums and contained overflow, and reusable RmlUi
+  component templates declare action/change sounds for future live
+  controllers. Runtime captures cover Quit popup, Options, Video, Key
+  Bindings, and DM Join with Quake II Rerelease TTF markers. True
+  narrow-viewport runtime parity remains pending because the staged Windows
+  launch path still reported a `960x720` RmlUi canvas when smaller geometry
+  was requested. Implementation log:
+  `docs-dev/rmlui-round66-menu-containment-popup-refinement-2026-07-07.md`.
 - [ ] `FR-09-T04` Integrate fonts, localization, theme assets, cursor/audio
   affordances, and accessibility policy into the RmlUi stack.
   Dependency: `FR-09-T03`. Priority: P1.
+  Progress: source theme contracts now include base, utility, session, and
+  accessibility styles plus font/theme staging notes. Final localization,
+  accessibility, text-shaping, and broader input-service parity remain pending.
+  Round 25 note: the first runtime-visible glyph geometry exists for the
+  guarded smoke route through a temporary ASCII bitmap font engine. Final font
+  source, fallback policy, localization text flow, shaping, scaling, and
+  accessibility behavior remain pending.
+  Round 6 note: `performance`, `accessibility`, `sound`, `screen`, and `input`
+  now have `controller_stub` metadata for static cvar/command/navigation
+  evidence. Live runtime font, cursor, audio, input, and accessibility services
+  remain pending.
+  Round 7 note: remaining low-risk settings routes `multimonitor`,
+  `railtrail`, `effects`, `crosshair`, and `language` now have
+  `controller_stub` metadata. Live runtime font, cursor, audio, input, and
+  accessibility services remain pending.
+  Round 13 note: accessibility/localization inventory validation now reports
+  `8` static refs across `3` routes, `6` unique localization keys, and `0`
+  malformed hooks. Live runtime localization, accessibility, font, cursor,
+  audio, and input services remain pending.
+  Round 41 note: linked shell/settings/single-player/session/accessibility
+  route themes now avoid RmlUi-rejected browser CSS features in the installed
+  route-load pass. Final font/text shaping, localization flow, cursor/audio,
+  and live accessibility services remain pending.
+  Round 42 note: the guarded OpenGL RmlUi path now draws its own
+  `/gfx/cursor.png` software cursor after RmlUi rendering, keeping the cursor
+  visible when platform menu/fullscreen state hides the OS cursor. Final text
+  cursor variants, cursor policy, audio, and live accessibility services
+  remain pending.
+  Round 43 note: RmlUi text now uses SDL3_ttf-backed generated textures on the
+  staged OpenGL path, with packaged UI and monospace font faces validated in
+  runtime logs. Localization flow, text shaping policy, audio, and live
+  accessibility services remain pending.
+  Round 44 note: the packaged RmlUi font roles now resolve first to Quake II
+  Rerelease `RussoOne`, `Montserrat`, and `RobotoMono` assets from the normal
+  filesystem search path, with static and runtime guardrails requiring the
+  rerelease font-source marker. Localization flow, text shaping policy, audio,
+  and live accessibility services remain pending.
+  Round 45 note: settings forms now use explicit bounded dimensions and widths
+  under the same Quake II Rerelease font metrics, preventing long settings
+  pages from hiding footer actions while keeping text-source validation intact.
+  Localization flow, text shaping policy, audio, and live accessibility
+  services remain pending.
+  Round 46 note: the Single Player hub selector/action controls and generic
+  Session List rows remain contained under the same Quake II Rerelease TTF
+  metrics, with text-source validation preserved. Localization flow, text
+  shaping policy, audio, and live accessibility services remain pending.
+  Round 48 note: settings-form binary controls now render as compact square
+  toggles under the same Quake II Rerelease font metrics, avoiding full-width
+  checkbox fields on `performance`, `sound`, and `downloads`. Localization
+  flow, text shaping policy, audio, and live accessibility services remain
+  pending.
+  Round 49 note: shared controls, fields, settings toggles, session panels,
+  utility panels, and keybind buttons now have short RmlUi-native transition
+  and hover/focus treatments while preserving the Quake II Rerelease TTF font
+  source markers. Localization flow, text shaping policy, audio, live
+  accessibility services, and a user-facing reduced-motion preference remain
+  pending.
+  Round 50 note: the shared RmlUi viewport now anchors `body` and `.screen`
+  to top/right/bottom/left edges, and the software cursor is drawn in the same
+  scaled RmlUi canvas as route content. Localization flow, text shaping
+  policy, audio, live accessibility services, and a user-facing reduced-motion
+  preference remain pending.
+  Round 51 note: shared controls now extend the current menu visual language
+  to checkbox, range, progress, reusable `.worr-*` controls, utility forms,
+  and generic action footers while preserving the Quake II Rerelease TTF font
+  source markers. Localization flow, text shaping policy, audio, live
+  accessibility services, and a user-facing reduced-motion preference remain
+  pending.
+  Round 52 note: shared settings forms now use the same `604px` menu contract
+  as the refined navigation surfaces, with narrower label/control/value
+  columns and preserved typed widget treatment under the Quake II Rerelease
+  TTF font source markers. Localization flow, text shaping policy, audio,
+  live accessibility services, and a user-facing reduced-motion preference
+  remain pending.
+  Round 53 note: shared settings rows now use denser rounded row frames,
+  smaller section headings, and preserved typed widget sizing under the Quake
+  II Rerelease TTF font source markers. Localization flow, text shaping
+  policy, audio, live accessibility services, and a user-facing reduced-motion
+  preference remain pending.
+  Round 54 note: shared action-intent tokens now distinguish primary,
+  destructive, and secondary buttons with filled hover/focus states under the
+  same Quake II Rerelease TTF font source markers, while Player Setup and Quit
+  Confirm get cleaner panel treatments. Localization flow, text shaping
+  policy, audio, live accessibility services, and a user-facing reduced-motion
+  preference remain pending.
+  Round 55 note: the engine UI bridge now maps RmlUi menu feedback to the
+  legacy menu samples, confirmation documents share compact popup styling, and
+  Sound Settings carries menu music metadata plus a typed `ogg_menu_track`
+  numeric field under the same Quake II Rerelease TTF font source markers.
+  Localization flow, text shaping policy, live accessibility services, and a
+  user-facing reduced-motion preference remain pending.
+  Round 56 note: RmlUi menu music metadata now triggers `OGG_Play()` after a
+  document successfully opens, leaving the existing OGG layer responsible for
+  menu-track versus connected-map track selection. Localization flow, text
+  shaping policy, live accessibility services, and a user-facing reduced-motion
+  preference remain pending.
+  Round 57 note: RmlUi open-sound metadata now drives legacy menu feedback
+  through the engine UI bridge, and RmlUi focus/change events on command/form
+  controls use the legacy move cue with per-element override hooks. Localization
+  flow, text shaping policy, live accessibility services, and a user-facing
+  reduced-motion preference remain pending.
+  Round 60 note: Video Setup now keeps menu-music and open-sound metadata while
+  using a compact settings layout under the Quake II Rerelease TTF font-source
+  markers. Localization flow, text shaping policy, live accessibility
+  services, and a user-facing reduced-motion preference remain pending.
+  Round 61 note: every settings route now carries the same menu-music and
+  open-sound metadata, and the focused Screen/Effects runtime proof records
+  consumed cues plus Quake II Rerelease TTF font-source markers. Localization
+  flow, text shaping policy, live accessibility services, and a user-facing
+  reduced-motion preference remain pending.
+  Round 62 note: single-player/local-session routes now carry menu-music and
+  open-sound metadata too, and focused Skill Select/Start Server runtime
+  evidence records consumed cues plus Quake II Rerelease TTF font-source
+  markers. Localization flow, text shaping policy, live accessibility
+  services, and a user-facing reduced-motion preference remain pending.
+  Round 63 note: utility routes now carry menu-music and open-sound metadata
+  too, and focused Address Book/Demos/Keys/Legacy Keys/Players/Servers/
+  Session List/Weapons runtime evidence records consumed cues plus Quake II
+  Rerelease TTF font-source markers. Localization flow, text shaping policy,
+  live accessibility services, and a user-facing reduced-motion preference
+  remain pending.
+  Round 64 note: session routes now carry menu-music/open-sound metadata too,
+  confirmation routes retain alert popup treatment, and focused session
+  runtime evidence records consumed cues plus Quake II Rerelease TTF
+  font-source markers. Localization flow, text shaping policy, live
+  accessibility services, and a user-facing reduced-motion preference remain
+  pending.
+  Round 65 note: authored shell/settings/single-player/save-load/
+  download-status controls now finish the explicit action-audio sweep, and
+  Single Player/Start Server typed widgets declare change-sound hints while
+  continuing to load Quake II Rerelease TTF faces in staged OpenGL logs.
+  Localization flow, text shaping policy, live accessibility services, and a
+  user-facing reduced-motion preference remain pending.
+  Round 66 note: the shared popup/dialog theme now carries stronger
+  confirmation affordances, fixed menu containers use contained overflow
+  instead of clipping, and reusable component templates now publish explicit
+  audio intent. Localization flow, text shaping policy, live accessibility
+  services, and a user-facing reduced-motion preference remain pending.
 - [ ] `FR-09-T05` Implement reusable data-model and controller bridges for
   cvars, commands, conditions, dynamic labels, and shared list/table flows.
   Dependency: `FR-09-T03`. Priority: P0.
+  Progress: mock contracts and reusable RmlUi component templates now cover
+  cvar controls, command buttons, conditionals, list/table, preview,
+  save/load, keybind capture, and image-grid selectors. C++ controllers remain
+  pending.
+  Round 4 note: controller fixtures sharpen the
+  cvar/command/condition/navigation/list-provider contract before live C++
+  controller work is accepted.
+  Round 5 note: selected `controller_stub` route progression is accepted for
+  `main`, `game`, `options`, `video`, and `download_status`, backed by mock
+  controller contract references. Live C++ controllers remain open.
+  Round 6 note: `controller_stub` coverage expands to `10` routes, and the
+  route-contract checker now validates `controller_contracts` fixture
+  references. Live C++ controllers remain open.
+  Round 7 note: `controller_stub` coverage expands to `15` routes, and the new
+  controller-stub coverage checker validates inferred static RML categories
+  against declared controller contracts. Live C++ controllers remain open.
+  Round 8 note: three menu-entrypoint routes moved from `controller_stub` to
+  guarded `runtime_stub`, leaving `12` `controller_stub` routes plus `3`
+  `runtime_stub` routes. The new runtime-stub eligibility checker validates
+  shell metadata, controller contracts, runtime registry coverage, and legacy
+  fallback behavior. Live C++ controllers remain open.
+  Round 9 note: utility controller-stub coverage adds `addressbook`, `keys`,
+  `legacykeys`, and `weapons`, and fixture validation now checks `54`
+  controller-contract references across `19` metadata-advanced routes. Live
+  C++ controllers remain open.
+  Round 10 note: utility/list controller-stub coverage adds `servers`,
+  `demos`, `players`, and `ui_list`; command and cvar inventory checks now
+  report `289` direct command refs, `15` cvar-command refs, `452` total cvar
+  refs, and `272` unique cvars. Fixture validation now checks `65`
+  controller-contract references across `23` metadata-advanced routes. Live
+  C++ controllers remain open.
+  Round 11 note: data-model inventory validation now reports `190` static
+  binding/model refs, `187` unique model tokens, `30` component refs, `13`
+  controller refs, `33` action-type refs, `31` slot refs, and `38` routes with
+  data-model hooks. Single-player/save-load controller-stub coverage expands
+  the accepted bridge metadata to `24` `controller_stub` routes plus `3`
+  guarded `runtime_stub` routes, with `75` controller-contract references
+  across `27` advanced routes. Live C++ controllers remain open.
+  Round 12 note: condition inventory validation now reports `141` static
+  condition refs across `22` routes, `114` unique expressions, `111` unique
+  condition tokens, and `0` malformed condition attributes. Local-session
+  controller-stub coverage expands accepted bridge metadata to `28`
+  `controller_stub` routes plus `3` guarded `runtime_stub` routes, with `87`
+  controller-contract references across `31` advanced routes. Live C++
+  controllers remain open.
+  Round 13 note: event/action inventory validation now reports `465` static
+  event/action refs across all `57` routes with `0` malformed hooks.
+  Session/vote controller-stub coverage expands accepted bridge metadata to
+  `36` `controller_stub` routes plus `3` guarded `runtime_stub` routes, with
+  `101` controller-contract references across `39` advanced routes. Live C++
+  controllers and event dispatch remain open.
+  Round 14 note: multiplayer/lobby/info controller-stub coverage expands
+  accepted bridge metadata to `42` `controller_stub` routes plus `3` guarded
+  `runtime_stub` routes, with `117` controller-contract references across
+  `45` advanced routes. Route metadata shape validation now verifies advanced
+  route controller-contract refs. Live C++ controllers and event dispatch
+  remain open.
+  Round 16 note: static controller-stub coverage now spans all non-runtime
+  tracked routes: `54` `controller_stub` routes plus `3` guarded
+  `runtime_stub` routes, with `149` controller-contract references across
+  `57` advanced routes. The strict controller-stub completion checker passes
+  with `0` central starter routes. Live C++ controllers and event dispatch
+  remain open.
 - [ ] `FR-09-T06` Translate shell/settings/single-player menus from the current
   JSON definitions into RmlUi documents.
   Dependency: `FR-09-T04`, `FR-09-T05`. Priority: P0.
+  Progress: Agent 4 starter documents now cover `main`, `game`, `options`,
+  `video`, `singleplayer`, `multimonitor`, `performance`, `accessibility`,
+  `sound`, `screen`, `language`, `input`, `downloads`, `download_status`, and
+  `quit_confirm`.
+  Third-round update: Agent 4 source-route starter coverage now also includes
+  `railtrail`, `effects`, `crosshair`, `gameflags`, `startserver`,
+  `skill_select`, `loadgame`, and `savegame`; all Agent 4-owned manifest
+  routes now have starter documents.
+  Round 6 note: `performance`, `accessibility`, `sound`, `screen`, and `input`
+  join the previously accepted shell/settings `controller_stub` routes. Runtime
+  activation and parity remain pending.
+  Round 7 note: `multimonitor`, `railtrail`, `effects`, `crosshair`, and
+  `language` join the accepted shell/settings `controller_stub` route set.
+  Runtime activation and parity remain pending.
+  Round 8 note: `main`, `game`, and `download_status` are promoted to guarded
+  `runtime_stub` status for menu-entrypoint document probing only. Runtime
+  activation, screenshots, and parity remain pending.
+  Round 11 note: `singleplayer` and `skill_select` now have
+  `controller_stub` metadata backed by static single-player episode/unit,
+  command-action, navigation, and condition-state contracts. Runtime
+  activation, screenshots, and parity remain pending.
+  Round 12 note: `downloads`, `quit_confirm`, `gameflags`, and `startserver`
+  now have `controller_stub` metadata backed by static download-option,
+  confirmation, dmflags, local-session cvar, command-action, navigation, and
+  condition-state contracts. Runtime activation, screenshots, and parity
+  remain pending.
+  Round 46 note: the staged `singleplayer` hub now has explicit
+  selector/action widths and `960x720` screenshot evidence with visible
+  Back/Close actions. Live single-player controllers, runtime navigation
+  parity, and settings persistence remain pending.
+  Round 48 note: `performance`, `sound`, `downloads`, and `startserver` now
+  have focused `960x720` screenshots showing compact toggles or shortened
+  scroll regions ending on complete rows above visible Back/Close actions.
+  Live settings persistence, navigation parity, and controller behavior remain
+  pending.
+  Round 49 note: shared shell/settings visual framing now gives these menus
+  clearer header/footer separation, and route-specific Sound/Start Server
+  height adjustments keep the final visible rows complete after the aesthetic
+  pass. Live settings persistence, navigation parity, and controller behavior
+  remain pending.
+  Round 50 note: the main shell menu now fills the active RmlUi viewport and
+  uses an explicit `320px` action-column width, with focused captures at
+  `964x765`, `1280x720`, `1280x960`, and `2048x1152` showing intact main-menu
+  button right edges. Live settings persistence, navigation parity, and
+  controller behavior remain pending.
+  Round 60 note: the Video Setup page now restores the original pre-RmlUi
+  display, texture, gamma/light, and renderer controls in RmlUi, using selects
+  for enumerations, toggles for booleans, ranges for scalar cvars, and a real
+  `pushmenu multimonitor` action. The compact three-column layout has focused
+  `960x720` screenshot evidence with all restored controls above Back/Close.
+  Live settings persistence, navigation parity, and controller behavior remain
+  pending.
+  Round 61 note: Screen Setup and Effects Setup now use compact two-column
+  RmlUi settings layouts, and their nested Crosshair/Railgun Trail navigation
+  is represented as typed `action` rows instead of loose buttons. Focused
+  `960x720` screenshots confirm all rows remain visible above Back/Close.
+  Live settings persistence, navigation parity, and controller behavior remain
+  pending.
+  Round 62 note: Start Server now uses a compact three-column RmlUi layout
+  that preserves the legacy Server, Match Setup, cooperative rule fields, and
+  Deathmatch Flags/Begin Game actions while keeping the static fallback view
+  visible above Back/Close at `960x720`. Live condition evaluation, settings
+  persistence, navigation parity, and controller behavior remain pending.
 - [ ] `FR-09-T07` Translate browser, player-config, save/load, keybind, and
   other rich utility surfaces that need shared controllers or preview support.
   Dependency: `FR-09-T05`. Priority: P0.
+  Progress: starter documents now cover `servers`, `demos`, `players`,
+  `addressbook`, `keys`, `legacykeys`, `weapons`, and `ui_list`; save/load
+  remains metadata/component-contract only.
+  Third-round update: `loadgame` and `savegame` starter documents now exist,
+  so all tracked rich utility/save-load source routes have starter coverage.
+  Round 9 note: `addressbook`, `keys`, `legacykeys`, and `weapons` now have
+  utility route metadata and `controller_stub` status backed by static mock
+  controller contracts. Live utility controllers, key-capture behavior,
+  screenshots, and parity remain pending.
+  Round 10 note: `servers`, `demos`, `players`, and `ui_list` now have
+  utility route metadata and `controller_stub` status backed by static mock
+  controller contracts for list providers, command actions, cvar bindings,
+  preview ownership, and condition state. Live browser/list providers, player
+  preview behavior, screenshots, and parity remain pending.
+  Round 11 note: `loadgame` and `savegame` now have `controller_stub` metadata
+  backed by static save/load list, slot, and command-action contracts. Live
+  save/load controllers, screenshots, and parity remain pending.
+  Round 12 note: `downloads` now joins the accepted static controller-stub set
+  for download-option cvar/command hooks. Live download controller behavior,
+  screenshots, and parity remain pending.
+  Round 43 note: utility fallback copy and keybind/weapon/legacy key list
+  layout are refined for the staged RmlUi path; the `keys` route has `960x720`
+  screenshot evidence showing TTF text and contained columns. Live utility
+  controllers and parity remain pending.
+  Round 44 note: the staged utility/menu evidence now keeps the Options route
+  in a two-column bounded layout under Quake II Rerelease font metrics while
+  preserving visible Back/Close actions. Live utility controllers and parity
+  remain pending.
+  Round 45 note: save/load slot lists now use explicit bounded dimensions and
+  compact repeated-row styling so long slot lists remain scroll-contained above
+  visible Back/Close actions. Live utility/save-load controllers and parity
+  remain pending.
+  Round 46 note: the generic `ui_list` route now bounds its extra-action
+  toolbar and list body so generated list rows scroll above visible Previous,
+  Next, and Return footer controls at `960x720`. Live utility/list providers,
+  scrollbar/focus behavior, and parity remain pending.
+  Round 47 note: the `keys` route now uses a denser bounded keybind grid so
+  the Interface group plus Legacy Keys/Back footer actions remain visible at
+  `960x720`. Live keybind capture, focus behavior, and utility parity remain
+  pending.
+  Round 49 note: utility toolbars, form panels, preview panels, and keybind
+  buttons now share the same restrained hover/transition treatment as the rest
+  of the RmlUi shell, with focused screenshot evidence covering `keys`,
+  `players`, `servers`, and `ui_list`. Live keybind capture, list providers,
+  focus behavior, and utility parity remain pending.
+  Round 63 note: all eight utility routes now open through the RmlUi
+  `pushmenu` bridge with menu music/open-sound metadata and intent-specific
+  action sounds. Address Book uses typed fields for all sixteen legacy
+  address slots in a four-column grid, Key Bindings uses a three-column
+  capture grid with a unique Backpedal id, and Weapon Bindings uses a
+  two-column arsenal layout. Live keybind capture, list providers, player
+  preview behavior, and utility parity remain pending.
+  Round 65 note: the Save/Load route buttons now carry explicit confirm
+  sounds, shell hub buttons that enter player, keybind, weapon, server, demo,
+  and address-book routes declare open sounds, and the grouped Options/Game/
+  Multiplayer hub captures keep utility/browser entry points clear of footer
+  actions. Live keybind capture, list providers, player preview behavior, and
+  utility parity remain pending.
+  Round 66 note: reusable command, cvar-control, save/load, image-grid,
+  list-table, preview, and keybind templates now declare explicit
+  `data-menu-sound` or `data-menu-sound-change` intent, and Key Bindings
+  containment has fresh staged OpenGL evidence. Live keybind capture, list
+  providers, player preview behavior, and utility parity remain pending.
 - [ ] `FR-09-T08` Translate multiplayer/session/match menus and their
   cgame/sgame-driven state flows into RmlUi documents.
   Dependency: `FR-09-T05`. Priority: P0.
+  Progress: starter documents now cover `multiplayer`, `vote_menu`,
+  `callvote_main`, `callvote_ruleset`, `mymap_main`, `mymap_flags`, and
+  `leave_match_confirm`.
+  Third-round update: remaining tracked session/match starter documents now
+  cover `dm_welcome`, `dm_join`, `join`, `dm_hostinfo`, `dm_matchinfo`,
+  `callvote_timelimit`, `callvote_scorelimit`, `callvote_unlagged`,
+  `callvote_random`, `callvote_map_flags`, `forfeit_confirm`, `admin_menu`,
+  `admin_commands`, `tourney_info`, `tourney_mapchoices`, `tourney_veto`,
+  `tourney_replay_confirm`, `map_selector`, and `match_stats`.
+  Round 12 note: starter route metadata now covers `multiplayer` plus all `25`
+  tracked session/match documents, giving Agent 5-owned session flows explicit
+  route ownership, source/current surface, entrypoint, and data-model
+  metadata. Live session controllers, runtime activation, screenshots, and
+  parity remain pending.
+  Round 13 note: `vote_menu`, `callvote_main`, `callvote_ruleset`,
+  `callvote_timelimit`, `callvote_scorelimit`, `callvote_unlagged`,
+  `callvote_random`, and `callvote_map_flags` now have static
+  `controller_stub` metadata for vote/callvote actions, rule toggles, cvars,
+  and navigation. Live vote/callvote controllers, runtime activation,
+  screenshots, and parity remain pending.
+  Round 14 note: `multiplayer`, `dm_welcome`, `dm_join`, `join`,
+  `dm_hostinfo`, and `dm_matchinfo` now have static `controller_stub`
+  metadata for multiplayer hub, lobby, welcome, host-info, and match-info
+  actions/bindings. Live multiplayer/session controllers, runtime activation,
+  screenshots, and parity remain pending.
+  Round 16 note: the final session/match starter batch now has static
+  `controller_stub` metadata: `admin_commands`, `admin_menu`,
+  `forfeit_confirm`, `leave_match_confirm`, `map_selector`, `match_stats`,
+  `mymap_flags`, `mymap_main`, `tourney_info`, `tourney_mapchoices`,
+  `tourney_replay_confirm`, and `tourney_veto`. Live multiplayer/session
+  controllers, runtime activation, screenshots, and parity remain pending.
+  Round 43 note: multiplayer/session visible fallback copy is now
+  player-facing rather than migration/debug oriented, and the refined assets
+  pass final staged all-route OpenGL loading. Live session controllers and
+  match-state parity remain pending.
+  Round 44 note: Admin Commands now renders as a readable bounded command list
+  under the Quake II Rerelease font metrics, and the refined assets still pass
+  final staged all-route OpenGL loading. Live session controllers and
+  match-state parity remain pending.
+  Round 47 note: `admin_commands`, `callvote_main`, and `dm_join` now have
+  bounded staged OpenGL list/content regions with visible Back/Return/Close
+  actions at `960x720`. Live session controllers, real match-state updates,
+  focus/scroll behavior, and parity remain pending.
+  Round 49 note: session panels, status cards, flow steps, player rows, and
+  admin rows now have matching subtle hover/transition feedback, with focused
+  screenshot evidence covering `callvote_main`, `dm_join`, and
+  `admin_commands`. Live session controllers, real match-state updates,
+  focus/scroll behavior, and parity remain pending.
+  Round 59 note: the Multiplayer hub now mirrors the original q2servers,
+  address-book, demos, start-server, player-setup, and options command intent
+  in the RmlUi shell grid, removes the stale custom connect command, and has
+  staged `pushmenu multiplayer` plus `960x720` visual evidence. Live session
+  controllers, real match-state updates, focus/scroll behavior, and parity
+  remain pending.
+  Round 64 note: the session/match routes now preserve more of the original
+  pre-RmlUi command flow in RmlUi: Call Vote, MyMap, Host Info, Match Info,
+  Admin, Forfeit, and Replay picker buttons run their original `worr_*`
+  commands before the pushmenu bridge opens RmlUi routes, and the Vote menu
+  uses live `ui_vote_*` cvars plus `worr_vote_yes/no/close`. Lobby, callvote,
+  Admin Commands, Match Stats, Tournament Map Choices, flags, and popup
+  confirmations have staged `960x720` visual evidence. Live session
+  controllers, real match-state updates, focus/scroll behavior, and parity
+  remain pending.
+  Round 65 note: the Multiplayer and Game shell entry points now present
+  grouped Find/Host/Profile and Session/Browse/Save-And-Exit sections while
+  preserving the original q2servers, address-book, demos, start-server,
+  player-setup, options, save/load, disconnect, and quit command intent.
+  Final `960x720` captures show the groups contained after right-column
+  clipping was corrected. Live session controllers, real match-state updates,
+  focus/scroll behavior, and parity remain pending.
+  Round 66 note: session/lobby fixed panels now use contained scroll overflow,
+  and the DM Join route has fresh staged OpenGL containment evidence while
+  preserving the original session command labels and popup confirmation route
+  for Leave Match. Live session controllers, real match-state updates,
+  focus/scroll behavior, and parity remain pending.
+  Round 73 note: direct `join` and `dm_join` route probes now preserve authored
+  fallback lobby titles and action labels when session cvars exist but are
+  empty, and the lobby command surface uses a bounded two-column command grid
+  with footer controls visible at `960x720`. `callvote_main` keeps the same
+  two-column command intent with looser row pitch, `admin_commands` uses a
+  readable command/usage row format, and `admin_menu` keeps Replay Game on the
+  popup-confirmation route. Live session controllers, real match-state
+  updates, focus/scroll behavior, and parity remain pending.
+  Round 74 note: direct `map_selector`, `tourney_veto`, and generic
+  `ui_list` route probes now keep authored fallback options/panels visible
+  unless live cvars explicitly hide them, while `servers` and `demos` use
+  corrected full-width table layout for empty states. Expected missing
+  data-model log notices are suppressed by default behind
+  `ui_rml_log_missing_data_models`, but live session/list controllers, real
+  match-state updates, focus/scroll behavior, and parity remain pending.
+  Round 75 note: direct `match_stats` and `tourney_mapchoices` probes now show
+  report/list-shaped fallback content when their live line-zero cvars are
+  absent or falsey, while preserving the existing `ui_matchstats_line_*` and
+  `ui_tourney_mapchoice_line_*` live cvar contracts. `download_status` now has
+  a contained idle state and explicit percent meter unit. Live
+  session/tournament/download controllers, real match-state updates,
+  focus/scroll behavior, and parity remain pending.
+  2026-07-10 build-warning note: the inactive Vulkan and RTX/vkpt RmlUi
+  render-interface placeholders are now non-final abstract classes, matching
+  their intentionally incomplete state and eliminating Clang's
+  `-Wabstract-final-class` diagnostics without activating or redirecting either
+  native renderer path. Implementation log:
+  `docs-dev/rmlui-inactive-vulkan-stub-build-warning-cleanup-2026-07-10.md`.
 - [ ] `FR-09-T09` Add migration-specific validation for navigation, scaling,
   localization, and renderer parity.
   Dependency: `FR-09-T06`, `FR-09-T07`, `FR-09-T08`, `DV-03-T07`.
   Priority: P0.
+  Progress: first-round `tools/ui_smoke/check_rmlui_manifest.py` validates the
+  RmlUi smoke manifest with `57` tracked migration surfaces, `10/10`
+  `required_now` starter documents present, and `47` pending documents. This
+  is source-asset validation only; runtime navigation, screenshots, renderer
+  coverage, and parity checks remain pending.
+  Second-round update: the same checker now validates `30/30` required starter
+  documents with `27` pending routes. JSON/RML/import validation and focused
+  package-asset tests pass.
+  Third-round update: `tools/ui_smoke/check_rmlui_manifest.py` now validates
+  `57/57` required starter documents with `0` pending routes, parses present
+  RML documents and local imports, and is covered by focused tests.
+  `tools/ui_smoke/check_rmlui_route_contracts.py` audits the core, shell, and
+  central smoke route manifests and passes against the current source assets.
+  Round 4 note: smoke-transition metadata, controller-fixture coverage, and
+  route-ownership metadata have coordinator-accepted validation. Runtime
+  navigation, screenshot/layout capture, renderer coverage, and parity
+  validation are still open.
+  Round 5 note: static RML semantics checking and progress-report tooling are
+  implemented and validated. Runtime navigation, screenshot/layout capture,
+  renderer coverage, and parity validation remain open.
+  Round 6 note: controller-contract validation, runtime asset path validation,
+  staged loose-file validation, and JSON progress output are implemented and
+  validated. Runtime navigation, screenshot/layout capture, renderer coverage,
+  and parity validation remain open.
+  Round 7 note: runtime registry drift checking, controller-stub coverage
+  checking, import-aware runtime asset validation, and controller-contract
+  progress reporting are implemented and validated. Runtime navigation,
+  screenshot/layout capture, renderer coverage, and parity validation remain
+  open.
+  Round 8 note: menu-entrypoint validation, runtime-stub eligibility checking,
+  runtime asset JSON output, and phase-progression/`routes_by_phase` progress
+  facts are implemented and validated. Runtime navigation, screenshot/layout
+  capture, renderer coverage, and parity validation remain open.
+  Round 9 note: navigation graph validation, controller fixture validation,
+  detailed runtime asset manifest output, parity checklist validation, and
+  all-route-metadata progress reporting are implemented and validated. Runtime
+  navigation, screenshot/layout capture, renderer coverage, and parity
+  validation remain open.
+  Round 10 note: command inventory validation, cvar inventory validation, and
+  parity-checklist progress summaries are implemented and validated. Current
+  reporting shows `57` parity checklist routes, `9` categories, and `0`
+  `parity_ready` routes; progress-report text, markdown, and JSON output also
+  include command/cvar inventory summary counts. Runtime navigation,
+  screenshot/layout capture, renderer coverage, and parity validation remain
+  open.
+  Round 11 note: data-model inventory validation, phase-consistency
+  validation, dependency-decision validation, and progress-report data-model
+  summaries are implemented and validated. Current reporting shows `57/57`
+  documents present, migration phases `starter=30`, `controller_stub=24`,
+  `runtime_stub=3`, `27` advanced routes (`47.4%`), `0` `parity_ready`
+  routes, and `190` static data-model/data-binding references with `0`
+  malformed tokens. Runtime navigation, screenshot/layout capture, renderer
+  coverage, and parity validation remain open.
+  Round 12 note: condition inventory validation, route-metadata sync
+  validation, and progress-report guardrail summaries are implemented and
+  validated. Current reporting shows `57/57` documents present, migration
+  phases `starter=26`, `controller_stub=28`, `runtime_stub=3`, `31` advanced
+  routes (`54.4%`), `0` `parity_ready` routes, `141` static condition refs
+  with `0` malformed condition attributes, and metadata sync coverage for all
+  `57` central migration routes plus one support metadata route. Runtime
+  navigation, screenshot/layout capture, renderer coverage, and parity
+  validation remain open.
+  Round 13 note: event inventory, a11y/localization inventory, and
+  legacy-removal inventory validation are implemented and validated. Current
+  reporting shows `57/57` documents present, migration phases `starter=18`,
+  `controller_stub=36`, `runtime_stub=3`, `39` advanced routes (`68.4%`), `0`
+  `parity_ready` routes, `465` event/action refs, `8` a11y/localization refs,
+  and `6` legacy-removal inventory items still blocked or pending. Runtime
+  navigation, screenshot/layout capture, renderer coverage, and parity
+  validation remain open.
+  Round 14 note: document/body identity inventory, route entrypoint inventory,
+  and route metadata shape validation are implemented and validated. Current
+  reporting shows `57/57` documents present, migration phases `starter=12`,
+  `controller_stub=42`, `runtime_stub=3`, `45` advanced routes (`78.9%`), `0`
+  `parity_ready` routes, `57` matched document/body IDs, `72` unique
+  entrypoint refs, and `58` route metadata entries passing shape validation.
+  Runtime navigation, screenshot/layout capture, renderer coverage, and parity
+  validation remain open.
+  Round 15 note: dependency-integration validation is implemented and
+  validated. Current reporting shows RmlUi dependency/build state `optional`,
+  `4/4` integration components present, `1` source wrap, `2` optional Meson
+  dependency probes, `1` default-disabled Meson option, `1` optional compile
+  define, and runtime compiled `no`. Runtime navigation, screenshot/layout
+  capture, renderer coverage, and parity validation remain open.
+  Round 16 note: controller-stub completion validation is implemented and
+  validated. Current reporting shows `57/57` documents present, migration
+  phases `starter=0`, `controller_stub=54`, `runtime_stub=3`, `57` advanced
+  routes (`100.0%`), `149` controller-contract refs, `57/57`
+  controller-binding checklist entries complete, and `0` `parity_ready`
+  routes. Runtime navigation, screenshot/layout capture, renderer coverage,
+  input/back coverage, and parity validation remain open.
+  Round 17 note: `tools/ui_smoke/check_rmlui_runtime_adapter.py` validates the
+  guarded compiled adapter, conservative route-open guard,
+  `renderer_unavailable` state, RmlUi Core symbol usage, Meson fallback
+  options, and wrap provide aliases. Runtime navigation, screenshot/layout
+  capture, renderer coverage, input/back coverage, and parity validation remain
+  open.
+  Round 18 note: runtime-adapter validation now also checks RmlUi system/file
+  include guards, interface installation before `Rml::Initialise`, WORR
+  filesystem API usage, WORR system/log API usage, and the explicit runtime
+  file-probe command. Runtime navigation, screenshot/layout capture, renderer
+  coverage, input/back coverage, and parity validation remain open.
+  Round 19 note: runtime-adapter validation now also checks the native
+  renderer contract, OpenGL/Vulkan/RTX-vkpt family coverage, renderer route
+  gating, native render-interface requirements, and no Vulkan-to-OpenGL
+  redirection. Runtime navigation, screenshot/layout capture, renderer
+  coverage, input/back coverage, and parity validation remain open.
+  Round 20 note: runtime-adapter validation now also checks renderer API
+  exports, OpenGL-scoped RmlUi renderer dependency wiring, client renderer
+  registration/clear lifecycle, adapter `Rml::SetRenderInterface`
+  installation, OpenGL scaffold method coverage, and `CanRender=false`.
+  Runtime navigation, screenshot/layout capture, visible renderer coverage,
+  input/back coverage, and parity validation remain open.
+  Round 21 note: runtime-adapter validation now also checks OpenGL geometry
+  caching, tessellator draw primitives, generated texture upload,
+  loaded/generated texture lifetime, scissor state handling, and
+  `CanRender=true` while preserving the route-open guard and no
+  Vulkan-to-OpenGL redirection. Runtime navigation, screenshot/layout capture,
+  input/back coverage, and parity validation remain open.
+  Round 22 note: runtime-adapter validation now also checks runtime context
+  lifecycle hooks, RmlUi context/document load/update/render/removal behavior,
+  guarded `core.runtime_smoke` route ownership, runtime open/close commands,
+  and UI bridge draw ordering before legacy UI draw. Runtime navigation,
+  screenshot/layout capture, input/back coverage beyond Escape-close, and
+  parity validation remain open.
+  Round 23 note: runtime-adapter validation now also checks runtime input hook
+  declarations, adapter-side key/text/mouse event delivery into the RmlUi
+  context, UI bridge input ordering before legacy UI callbacks, close/back
+  tokens, and guarded status/capture commands. Runtime navigation,
+  screenshot/layout capture, broad input/back coverage, and parity validation
+  remain open.
+  Round 24 note: `tools/ui_smoke/check_rmlui_runtime_capture.py` now validates
+  the guarded runtime capture path by launching the enabled scratch engine,
+  opening `core.runtime_smoke`, writing a local TGA screenshot, checking
+  guarded OpenGL status/frame/input markers, verifying `960x720` dimensions,
+  and enforcing a nonblank payload. Runtime navigation, broader screenshot
+  layout assertions, broad input/back coverage, and parity validation remain
+  open.
+  Round 25 note: the runtime capture checker now also requires the
+  `RmlUi smoke font engine generated glyph geometry` marker, and focused tests
+  cover missing glyph-marker failure. Broader screenshot layout assertions,
+  synthetic input/back validation, renderer breadth, and parity validation
+  remain open.
+  Round 26 note: the runtime capture checker now parses TGA screenshots and
+  validates layout color counts, bounding boxes, and expected
+  panel/text/button ordering for `core.runtime_smoke`. Synthetic input/back
+  validation, renderer breadth, broader route coverage, and parity validation
+  remain open.
+  Round 27 note: the runtime capture checker now requires
+  `ui_rml_runtime_synthetic_input` evidence after the screenshot, including
+  inactive final status, positive key/text/pointer/button/wheel counters, and
+  route open/close/request/synthetic counters. Renderer breadth, broader route
+  coverage, broad input/navigation parity, and parity validation remain open.
+  Round 28 note: the runtime capture checker now supports geometry-driven
+  capture validation and aggregate viewport matrix manifests. The accepted
+  matrix records `viewports=2`, `passed=2`, `failed=0`, exact dimensions for
+  `960x720` and `1280x960`, and `layout_ok=true` in both cases. Renderer
+  breadth, broader route coverage, responsive widescreen parity, and parity
+  validation remain open.
+  Round 29 note: the runtime capture checker now supports `--route-matrix` for
+  the guarded menu entrypoint routes `main`, `game`, and `download_status`.
+  The accepted matrix records `routes=3`, `passed=3`, `failed=0`, exact
+  `960x720` dimensions, active route-specific OpenGL status, glyph text
+  evidence, synthetic input, close counters, inactive final status, and
+  `layout_required=false` for all three routes. Renderer breadth, route
+  navigation, final route layout parity, and parity validation remain open.
+  Round 30 note: `tools/ui_smoke/check_rmlui_renderer_matrix.py` now adds
+  focused renderer-family matrix validation with one guarded OpenGL lane, two
+  native-pending non-OpenGL lanes, and explicit no Vulkan/RTX-to-OpenGL
+  shortcut enforcement. Live native Vulkan/RTX renderer coverage, route
+  navigation, final route layout parity, and parity validation remain open.
+  Round 31 note: the runtime capture checker now supports
+  `--renderer-matrix`, which aggregates the guarded OpenGL route matrix and
+  renderer-family guardrail into one JSON/text report and manifest. Live
+  native Vulkan/RTX renderer coverage, route navigation, final route layout
+  parity, and parity validation remain open.
+  Round 32 note: bridge-readiness validation now records Vulkan/RTX native
+  renderer foundations and fails premature runtime dependency enablement,
+  premature family claims, OpenGL shortcut routing, and missing Vulkan draw
+  primitives. Live native Vulkan/RTX renderer coverage, route navigation,
+  final route layout parity, and parity validation remain open.
+  Round 33 note: the renderer-matrix capture manifest now embeds the
+  bridge-readiness report and fails if OpenGL route evidence, renderer-family
+  guardrails, or Vulkan/RTX bridge-readiness checks fail. Live native
+  Vulkan/RTX renderer coverage, route navigation, final route layout parity,
+  and parity validation remain open.
+  Round 34 note: bridge-readiness validation now reports named native bridge
+  activation requirements and aggregate renderer manifests expose
+  `bridge_activation_requirements=8`,
+  `bridge_satisfied_activation_requirements=0`, and
+  `bridge_pending_activation_requirements=8`. Live native Vulkan/RTX renderer
+  coverage, route navigation, final route layout parity, and parity validation
+  remain open.
+  Round 35 note: bridge-readiness validation now exposes
+  `activation_status`, pending/satisfied activation ids, and
+  `next_activation_requirement` per lane, with aggregate renderer counts for
+  complete, partial, and inactive activation lanes. Live native Vulkan/RTX
+  renderer coverage, route navigation, final route layout parity, and parity
+  validation remain open.
+  Round 36 note: bridge-readiness validation now includes
+  `native_bridge_source_compiled` in each non-OpenGL lane activation checklist
+  and aggregate renderer manifests report `10` total bridge activation
+  requirements. Live native Vulkan/RTX renderer coverage, route navigation,
+  final route layout parity, and parity validation remain open.
+  Round 37 note: bridge-readiness validation now detects inactive Vulkan and
+  RTX/vkpt source-set wiring for `src/renderer/rmlui_bridge.cpp`. Aggregate
+  renderer manifests report `bridge_satisfied_activation_requirements=2`,
+  `bridge_pending_activation_requirements=8`, and
+  `bridge_partial_activation_lanes=2`; live native Vulkan/RTX renderer
+  coverage, route navigation, final route layout parity, and parity validation
+  remain open.
+  Round 38 note: bridge-readiness validation now accepts inactive Vulkan and
+  RTX/vkpt class stubs only while non-OpenGL family/runtime/interface exports
+  remain blocked. Aggregate renderer manifests report
+  `bridge_satisfied_activation_requirements=4`,
+  `bridge_pending_activation_requirements=6`, and
+  `next_activation_requirement=native_family_export_present`; live native
+  Vulkan/RTX renderer coverage, route navigation, final route layout parity,
+  and parity validation remain open.
+  Round 39 note: bridge-readiness validation now accepts inactive Vulkan and
+  RTX/vkpt family exports only while non-OpenGL runtime/interface exports
+  remain blocked. Aggregate renderer manifests report
+  `bridge_satisfied_activation_requirements=6`,
+  `bridge_pending_activation_requirements=4`, and
+  `next_activation_requirement=runtime_dependency_enabled`; live native
+  Vulkan/RTX renderer coverage, route navigation, final route layout parity,
+  and parity validation remain open.
+  Round 40 note: bridge-readiness validation now accepts inactive Vulkan and
+  RTX/vkpt runtime dependencies only while native interface exports remain
+  unavailable. Aggregate renderer manifests report
+  `bridge_satisfied_activation_requirements=8`,
+  `bridge_pending_activation_requirements=2`, and
+  `next_activation_requirement=native_interface_export_present`; live native
+  Vulkan/RTX renderer coverage, route navigation, final route layout parity,
+  and parity validation remain open.
+  Round 41 note: installed full-route load validation now records `57` opened
+  RmlUi routes from the staged client with no fresh crash dump and no RmlUi
+  parser/fallback/error log hits. This proves document loading and route swaps,
+  not live controller parity, broad input parity, screenshot layout parity, or
+  native Vulkan/RTX renderer parity.
+  Round 44 note: validation now requires Quake II Rerelease font-source
+  markers in the runtime adapter/capture guardrails, and the final staged
+  OpenGL sweep records `58` runtime file probes, `58` unique route IDs opened,
+  `59` total document opens, and `0` failure/parser/error hits. This proves
+  document loading, route swaps, and rerelease TTF source use, not live
+  controller parity, broad input parity, full screenshot layout parity, or
+  native Vulkan/RTX renderer parity.
+  Round 45 note: representative screenshot validation now covers `30`
+  OpenGL RmlUi routes, and the final staged route sweep still records `58`
+  unique route IDs opened, `59` total document opens, and `0`
+  failure/parser/error hits after bounded settings/save-load/in-game menu
+  layout changes. This proves additional layout containment on selected
+  routes, not live controller parity, broad input parity, full screenshot
+  layout parity, or native Vulkan/RTX renderer parity.
+  Round 46 note: the same `30`-route representative OpenGL visual pass drove
+  focused recapture of `singleplayer` and `ui_list`; after the targeted CSS
+  changes, the final staged route sweep still records `58` unique route IDs
+  opened, `59` total document opens, and `0` failure/parser/error hits. This
+  proves additional containment on two selected routes, not live controller
+  parity, broad input parity, full screenshot layout parity, or native
+  Vulkan/RTX renderer parity.
+  Round 47 note: a fresh `30`-route representative OpenGL capture drove
+  focused recaptures for `admin_commands`, `callvote_main`, `dm_join`, and
+  `keys`; after the CSS changes, the final staged route sweep still records
+  `58` unique route IDs opened, `59` total document opens, and `0`
+  failure/parser/error hits with Quake II Rerelease font-source markers. This
+  proves additional containment on selected session/keybind routes, not live
+  controller parity, broad input parity, full screenshot layout parity, or
+  native Vulkan/RTX renderer parity.
+  Round 48 note: a fresh `30`-route representative OpenGL capture drove
+  focused recaptures for `performance`, `sound`, `downloads`, and
+  `startserver`; after compact toggle and form-height CSS changes, the final
+  staged route sweep still records `58` unique route IDs opened, `59` total
+  document opens, and `0` failure/parser/error hits with Quake II Rerelease
+  font-source markers. This proves additional containment on selected
+  settings/local-host routes, not live controller parity, broad input parity,
+  full screenshot layout parity, or native Vulkan/RTX renderer parity.
+  Round 49 note: a focused `14`-route OpenGL aesthetic capture plus Sound and
+  Start Server recaptures validated the transition/framing changes; the final
+  staged route sweep still records `58` unique route IDs opened, `59` total
+  document opens, and `0` failure/parser/transition/error hits with Quake II
+  Rerelease font-source markers. This proves an additional visual refinement
+  layer on selected routes, not live controller parity, broad input parity,
+  full screenshot layout parity, or native Vulkan/RTX renderer parity.
+  Round 50 note: a main-menu scaling matrix at `964x765`, `1280x720`,
+  `1280x960`, and `2048x1152` validated viewport fill and button edge
+  containment after the runtime/context scaling changes; the final staged
+  route sweep still records `58` unique route IDs opened, `59` total document
+  opens, and `0` failure/parser/transition/error hits with Quake II Rerelease
+  font-source markers. This proves the selected scaling/positioning fix, not
+  live controller parity, broad input parity, full screenshot layout parity,
+  or native Vulkan/RTX renderer parity.
+  Round 51 note: representative `960x720` captures now cover the refined
+  typed-widget settings/control surfaces plus utility form recaptures, and the
+  final staged route sweep still records `58` unique route IDs opened,
+  `59` total document opens, and `0`
+  failure/parser/transition/unsupported/error hits with Quake II Rerelease
+  font-source markers. This proves the selected widget/layout refinement, not
+  live controller parity, broad input parity, full screenshot layout parity,
+  or native Vulkan/RTX renderer parity.
+  Round 52 note: representative `960x720` captures now cover the deterministic
+  two-column navigation grids, narrowed shared settings forms, and real shell
+  command buttons; the final staged route sweep still records `58` unique
+  route IDs opened, `59` total document opens, and `0`
+  failure/parser/transition/unsupported/error hits with Quake II Rerelease
+  font-source markers. This proves the selected navigation/layout refinement,
+  not live controller parity, broad input parity, true narrow-viewport capture
+  parity, full screenshot layout parity, or native Vulkan/RTX renderer parity.
+  Round 53 note: representative `960x720` captures now cover the spaced
+  command-tile polish and denser settings rows, and the final staged route
+  sweep still records `58` unique route IDs opened, `59` total document opens,
+  and `0` failure/parser/transition/unsupported/error hits with Quake II
+  Rerelease font-source markers. This proves the selected menu polish
+  refinement, not live controller parity, broad input parity, true
+  narrow-viewport capture parity, full screenshot layout parity, or native
+  Vulkan/RTX renderer parity.
+  Round 54 note: focused `960x720` captures now cover primary/destructive
+  action intent on shell, session, and Player Setup routes after the
+  specificity fix, and the final staged route sweep still records `58` unique
+  route IDs opened, `59` total document opens, and `0`
+  failure/parser/transition/unsupported/error hits with Quake II Rerelease
+  font-source markers. This proves the selected action-intent/widget
+  refinement, not live controller parity, broad input parity, true
+  narrow-viewport capture parity, full screenshot layout parity, or native
+  Vulkan/RTX renderer parity.
+  Round 55 note: focused `960x720` captures now cover popup confirmations and
+  the two-column Sound Settings page, popup-command validation records `2`
+  popup route markers with `0` bad lines, and the final staged route sweep
+  still records `58` unique route IDs opened, `59` total document opens, `58`
+  runtime status samples, and `0` failure/parser/transition/unsupported/error
+  hits with Quake II Rerelease font-source markers. This proves the selected
+  popup/audio/menu-layout refinement, not live controller parity, broad input
+  parity, true narrow-viewport capture parity, full screenshot layout parity,
+  or native Vulkan/RTX renderer parity.
+  Round 56 note: focused `960x720` captures now cover Game, Main, Quit
+  Confirm, and Sound Settings after Game Quit was moved to the popup route,
+  popup-command validation records `2` popup route markers with `0` bad lines,
+  and the final staged route sweep still records `58` unique route IDs opened,
+  `59` total document opens, `58` runtime status samples, `14` menu music cue
+  markers, and `0` failure/parser/transition/unsupported/error hits with Quake
+  II Rerelease font-source markers. This proves the selected menu-music and
+  popup-parity refinement, not live controller parity, broad input parity,
+  true narrow-viewport capture parity, full screenshot layout parity, or
+  native Vulkan/RTX renderer parity.
+  Round 57 note: focused captures now cover Main, Game, Download Status, and
+  Quit Confirm after open-sound and focus/change audio wiring, popup validation
+  records `2` `quit_confirm` popup route requests with `0` bad lines, and the
+  final staged route sweep still records `58` unique route IDs opened, `59`
+  total document opens, `58` runtime status samples, `14` menu music cue
+  markers, `14` menu open-sound cue markers, and `0`
+  failure/parser/transition/unsupported/error hits with Quake II Rerelease
+  font-source markers. This proves the selected open/focus audio refinement,
+  not live controller parity, broad input parity, true narrow-viewport capture
+  parity, full screenshot layout parity, or native Vulkan/RTX renderer parity.
+  Round 58 note: deterministic staged OpenGL probes now cover legacy
+  `pushmenu` entrypoints for Options and the four confirmation routes. Options
+  routes through `ui_rml_runtime_open`; Quit, Forfeit, Leave Match, and
+  Tournament Replay confirmations route through `ui_rml_runtime_popup`, open
+  their RmlUi documents, consume alert/open sound metadata, consume menu music
+  metadata, and report active runtime status. This proves selected
+  menu-entrypoint bridge parity, not live controller parity, broad input
+  parity, true narrow-viewport capture parity, full screenshot layout parity,
+  or native Vulkan/RTX renderer parity.
+  Round 59 note: deterministic staged OpenGL probes now cover the refined
+  Multiplayer hub from `pushmenu multiplayer`. The route opens through
+  `ui_rml_runtime_open`, reports active runtime status, consumes open-sound and
+  menu-music metadata, records Quake II Rerelease TTF markers, and has
+  `960x720` screenshot evidence for the two-column shell grid with no
+  missing-model warnings. This proves selected Multiplayer hub command/layout
+  parity, not live controller parity, broad input parity, true narrow-viewport
+  capture parity, full screenshot layout parity, or native Vulkan/RTX renderer
+  parity.
+  Round 60 note: deterministic staged OpenGL probes now cover the refined
+  Video Setup route from `pushmenu video`. The route opens through
+  `ui_rml_runtime_open`, reports active runtime status, consumes open-sound and
+  menu-music metadata, records Quake II Rerelease TTF markers, and has
+  `960x720` screenshot evidence for the three-column settings layout. This
+  proves selected Video Setup content/widget/layout parity, not live settings
+  persistence, broad input parity, true narrow-viewport capture parity, full
+  screenshot layout parity, or native Vulkan/RTX renderer parity.
+  Round 61 note: deterministic staged OpenGL probes now cover the refined
+  Screen Setup and Effects Setup routes from `pushmenu screen` and
+  `pushmenu effects`. Both routes open through `ui_rml_runtime_open`, report
+  active runtime status, consume open-sound and menu-music metadata, record
+  Quake II Rerelease TTF markers, and have `960x720` screenshot evidence for
+  their two-column settings layouts. This proves selected settings-family
+  audio/action-row/layout parity, not live settings persistence, broad input
+  parity, true narrow-viewport capture parity, full screenshot layout parity,
+  or native Vulkan/RTX renderer parity.
+  Round 62 note: deterministic staged OpenGL probes now cover the refined
+  Skill Select and Start Server routes from `pushmenu skill_select` and
+  `pushmenu startserver`. Both routes open through `ui_rml_runtime_open`,
+  report active runtime status, consume open-sound and menu-music metadata,
+  record Quake II Rerelease TTF markers, and have `960x720` screenshot
+  evidence. This proves selected single-player/local-session audio and
+  Start Server layout parity, not live condition evaluation, broad input
+  parity, true narrow-viewport capture parity, full screenshot layout parity,
+  or native Vulkan/RTX renderer parity.
+  Round 63 note: deterministic staged OpenGL probes now cover every utility
+  route from `pushmenu addressbook`, `pushmenu demos`, `pushmenu keys`,
+  `pushmenu legacykeys`, `pushmenu players`, `pushmenu servers`,
+  `pushmenu ui_list`, and `pushmenu weapons`. Each route opens through
+  `ui_rml_runtime_open`, reports active runtime status, consumes open-sound
+  and menu-music metadata, records Quake II Rerelease TTF markers, and has
+  `960x720` screenshot evidence. This proves selected utility audio/layout
+  parity, not live list/keybind/player-preview controllers, broad input
+  parity, true narrow-viewport capture parity, full screenshot layout parity,
+  or native Vulkan/RTX renderer parity.
+  Round 64 note: deterministic staged OpenGL probes now cover representative
+  session routes from `pushmenu dm_join`, `pushmenu callvote_main`,
+  `pushmenu admin_commands`, `pushmenu match_stats`, and popup
+  `pushmenu forfeit_confirm`, plus additional session route captures for
+  join, vote, map selector, flags, random callvote ranges, and tournament map
+  choices. The final captures report active runtime status, consume
+  open/alert sound plus menu-music metadata, record Quake II Rerelease TTF
+  markers, and show bounded `960x720` layouts. This proves selected
+  session-family audio/layout/popup parity, not live session controllers,
+  broad input parity, true narrow-viewport capture parity, full screenshot
+  layout parity, or native Vulkan/RTX renderer parity.
+  Round 65 note: deterministic staged OpenGL probes now cover Main, Options,
+  Game, Multiplayer, and Single Player after the shell hub grouping and
+  action-audio sweep. The final captures report active runtime status,
+  consume open-sound plus menu-music metadata, record Quake II Rerelease TTF
+  markers, and show corrected `960x720` hub layouts. This proves selected
+  shell hub/audio/layout parity, not live controllers, broad input parity,
+  true narrow-viewport capture parity, full screenshot layout parity, or
+  native Vulkan/RTX renderer parity.
+  Round 66 note: deterministic staged OpenGL probes now cover the refined
+  Quit popup plus Options, Video, Key Bindings, and DM Join after the
+  containment/template-audio sweep. Static validation also requires every
+  RmlUi button, including shared templates, to declare sound intent. This
+  proves selected containment/popup/audio-template parity, not live
+  controllers, broad input parity, true narrow-viewport capture parity, full
+  screenshot layout parity, or native Vulkan/RTX renderer parity.
+  Round 67 note: deterministic staged OpenGL probes now cover runtime cvar
+  form binding, cvar-backed text/labels, visibility/enabled condition
+  evaluation, and typed settings widget value badges. Video, Sound, Start
+  Server, DM Join, and Quit popup evidence proves selected cvar/condition
+  widget behavior with open/alert sound, menu music, and Quake II Rerelease
+  TTF markers, not live list/session controllers, broad input parity, true
+  narrow-viewport capture parity, full screenshot layout parity, or native
+  Vulkan/RTX renderer parity.
+  Round 68 note: deterministic staged OpenGL probes now cover RmlUi-native
+  meter/value badges for range and progress-style controls, plus Crosshair's
+  two-column Crosshair/Hit Feedback containment. Video, Sound, Crosshair, and
+  Quit popup evidence proves selected meter-widget, layout, popup, menu
+  audio, and Quake II Rerelease TTF behavior, not live list/session
+  controllers, broad input parity, true SVG vector asset support, true
+  narrow-viewport capture parity, full screenshot layout parity, or native
+  Vulkan/RTX renderer parity.
+  Round 69 note: deterministic staged OpenGL probes now cover first-party SVG
+  UX icon generation and iconized high-level menu surfaces. Main, Game,
+  Options, Multiplayer, Single Player, and Quit popup evidence proves the
+  OpenGL RmlUi texture path can rasterize WORR's supported SVG subset and keep
+  command icons contained with Quake II Rerelease TTF markers, not full SVG
+  specification/plugin parity, dynamic SVG tinting, broad input parity, true
+  narrow-viewport capture parity, full screenshot layout parity, or native
+  Vulkan/RTX renderer parity.
+  Round 70 note: deterministic staged OpenGL probes now cover widget-specific
+  SVG assets and removal of the previous command-menu pictograms. Video,
+  Sound, Start Server, Player Setup, Address Book, Download Status, and Main
+  evidence proves the supported SVG subset works for compact widget markers
+  while Main command buttons are plain text again, not dynamic SVG state skins,
+  broad input parity, true narrow-viewport capture parity, full screenshot
+  layout parity, or native Vulkan/RTX renderer parity.
+  Round 71 note: deterministic staged OpenGL probes now cover stateful SVG
+  widget skins for real control surfaces. Video, Sound, Start Server,
+  Download Status, and Quit popup captures prove button, text-box, combo,
+  select, checkbox, range, progress, arrow-box, scrollbar, and popup-frame
+  skin loading, and the final all-route sweep remains clean. This proves
+  selected stateful widget-surface rendering, not route-wide automated pixel
+  assertions for every state, broad input parity, true narrow-viewport capture
+  parity, full screenshot layout parity, or native Vulkan/RTX renderer parity.
+  Round 72 note: staged OpenGL probes now cover menu coverage and containment
+  refinements across Main, Options, Video, Sound, Start Server, Player Setup,
+  Address Book, Keys, Call Vote, Admin Commands, Download Status, and Quit
+  popup. The pass removes decorative text/select skin interference, hides the
+  old widget pictograms, converts range controls away from visible stepper
+  arrows, fixes direct Call Vote and Admin Commands fallback coverage, and keeps
+  the all-route sweep clean. It still does not establish live controller parity,
+  broad input parity, true narrow-viewport capture parity, full screenshot
+  layout parity, or native Vulkan/RTX renderer parity.
+  Round 73 note: staged OpenGL probes now cover direct-route fallback text for
+  session labels/titles, two-column `callvote_main` and lobby command grids,
+  admin command-reference rows, save/load slot containment, and the Start
+  Server map fallback. The final all-route sweep opened `59` documents across
+  `58` registered route IDs, recorded `58` runtime status samples, and found
+  `0` parser/CSS/texture/runtime error lines after excluding expected missing
+  data-model notices. This proves selected menu coverage/fallback behavior, not
+  live controller parity, broad input parity, true narrow-viewport capture
+  parity, full screenshot layout parity, or native Vulkan/RTX renderer parity.
+  Round 74 note: staged OpenGL probes now cover utility table empty-state
+  layout, generic session list fallback visibility, map-selector fallback
+  visibility, and tournament-veto inactive fallback containment. The final
+  all-route sweep opened `59` documents across `58` registered route IDs,
+  recorded `58` runtime status samples, found `0` missing data-model notice
+  lines at default settings, and found `0` parser/CSS/texture/runtime error
+  lines. This proves cleaner route-sweep signal and selected fallback/layout
+  behavior, not live controller parity, broad input parity, true
+  narrow-viewport capture parity, full screenshot layout parity, or native
+  Vulkan/RTX renderer parity.
+  Round 75 note: staged OpenGL probes now cover direct fallback content for
+  `match_stats` and `tourney_mapchoices`, plus the `download_status` idle
+  state and explicit percent meter. Static condition inventory validation now
+  accepts leading `!cvar` expressions to match the compiled runtime evaluator.
+  The final all-route sweep opened `59` documents across `58` registered route
+  IDs, recorded `58` runtime status samples, found `0` missing data-model
+  notice lines at default settings, and found `0` parser/CSS/texture/runtime
+  error lines. This proves selected report/list fallback behavior and a
+  condition-grammar validation fix, not live controller parity, broad input
+  parity, true narrow-viewport capture parity, full screenshot layout parity,
+  or native Vulkan/RTX renderer parity.
 - [ ] `FR-09-T10` Remove legacy JSON menu loading/widgets, close migration
   bridge fallbacks, and update staging/docs for the final RmlUi path.
   Dependency: `FR-09-T09`. Priority: P1.
+  Round 4 note: no legacy JSON removal or fallback cutover is claimed; this
+  task remains blocked on the later validation gates.
+  Round 9 note: the parity checklist now blocks `parity_ready` claims without
+  completed evidence categories. No legacy JSON removal or fallback cutover is
+  claimed.
+  Round 10 note: progress reporting now surfaces parity checklist pending and
+  complete counts, but no legacy JSON removal, fallback cutover, or
+  `parity_ready` promotion is claimed.
+  Round 11 note: phase-consistency validation now blocks unsupported
+  `parity_ready` overclaims against incomplete checklist evidence. No legacy
+  JSON removal, fallback cutover, or `parity_ready` promotion is claimed.
+  Round 12 note: metadata-sync validation now requires all central advanced
+  routes to have matching feature metadata, and condition inventory keeps
+  visibility/enabled-expression debt visible. No legacy JSON removal, fallback
+  cutover, or `parity_ready` promotion is claimed.
+  Round 13 note: legacy-removal inventory/checking is implemented as a
+  guardrail, with `6` tracked items, `4` blocked, `2` pending, `0` ready, and
+  `0` complete. No legacy JSON removal, fallback cutover, or `parity_ready`
+  promotion is claimed.
+  Round 14 note: progress reporting now includes the legacy-removal inventory
+  and parity-gate state. The gate remains closed with `0` `parity_ready`
+  routes, `0` ready/complete legacy-removal items, and required parity evidence
+  still incomplete. No legacy JSON removal, fallback cutover, or
+  `parity_ready` promotion is claimed.
+  Round 16 note: controller-bindings parity evidence is complete for all `57`
+  routes, but the parity gate remains closed because runtime navigation,
+  renderer, screenshot/layout, input/back, and non-runtime legacy-fallback
+  evidence are still pending. No legacy JSON removal, fallback cutover, or
+  `parity_ready` promotion is claimed.
 
 ## Development Roadmap (Task-Based Project)
 
@@ -1715,6 +3388,201 @@ Tasks:
   navigation checks, screenshot/layout capture, and renderer-specific menu
   coverage.
   Dependency: `DV-02-T03`. Priority: P0.
+  Progress: RmlUi Round 1-3 work added manifest and route-contract source
+  checkers for the migration surface. Round 4 adds validated
+  `migration_phase` metadata and package/source checks, but runtime navigation,
+  screenshot/layout capture, and renderer-specific coverage remain pending.
+  Round 5 note: static RML semantics checking and progress-report tooling are
+  implemented and validated; runtime navigation, screenshot capture, and
+  renderer-specific coverage remain pending.
+  Round 6 note: controller-contract validation, runtime asset checks, staged
+  loose-file checks, and JSON progress output are implemented and validated;
+  runtime navigation, screenshot capture, and renderer-specific coverage remain
+  pending.
+  Round 7 note: runtime registry, controller-stub coverage, imported runtime
+  asset, and controller-contract progress checks are implemented and validated;
+  runtime navigation, screenshot capture, and renderer-specific coverage remain
+  pending.
+  Round 8 note: menu-entrypoint and runtime-stub eligibility checks, runtime
+  asset JSON output, and phase-progression progress facts are implemented and
+  validated; native runtime navigation, screenshot capture, and
+  renderer-specific coverage remain pending.
+  Round 9 note: navigation graph, controller fixture, runtime asset manifest,
+  parity checklist, and all-route-metadata progress checks are implemented and
+  validated; native runtime navigation, screenshot capture, and
+  renderer-specific coverage remain pending.
+  Round 10 note: command inventory, cvar inventory, and parity-checklist
+  progress summaries are implemented and validated; progress-report output now
+  carries command/cvar inventory counts alongside route phase, controller, and
+  parity facts. Native runtime navigation, screenshot capture, and
+  renderer-specific coverage remain pending.
+  Round 11 note: data-model inventory, phase-consistency, and
+  dependency-decision checks are implemented and validated; progress-report
+  output now carries data-model inventory counts alongside route phase,
+  controller, parity, command, and cvar facts. Native runtime navigation,
+  screenshot capture, and renderer-specific coverage remain pending.
+  Round 12 note: condition inventory and metadata-sync checks are implemented
+  and validated; progress-report output now carries condition and metadata
+  guardrail counts alongside route phase, controller, parity, command, cvar,
+  and data-model facts. Native runtime navigation, screenshot capture, and
+  renderer-specific coverage remain pending.
+  Round 13 note: event inventory, a11y/localization inventory, and
+  legacy-removal checks are implemented and validated; progress-report output
+  now carries event and a11y counts alongside route phase, controller, parity,
+  command, cvar, data-model, condition, and metadata facts. Native runtime
+  navigation, screenshot capture, and renderer-specific coverage remain
+  pending.
+  Round 14 note: document/body identity, entrypoint, and route metadata shape
+  checks are implemented and validated; progress-report output now carries the
+  legacy-removal gate state alongside route phase, controller, parity,
+  command, cvar, data-model, condition, metadata, event, and a11y facts.
+  Native runtime navigation, screenshot capture, and renderer-specific coverage
+  remain pending.
+  Round 15 note: dependency-integration checking is implemented and validated;
+  it records the current RmlUi source/build state as optional and catches
+  missing wrap/option/probe/compile-define scaffolding. Native runtime
+  navigation, screenshot capture, and renderer-specific coverage remain
+  pending.
+  Round 16 note: controller-stub completion checking is implemented and
+  validated; strict mode now proves the central manifest has `0` starter
+  routes, `54` controller-stub routes, and `3` guarded runtime-stub routes.
+  Native runtime navigation, screenshot capture, input/back behavior, and
+  renderer-specific coverage remain pending.
+  Round 17 note: runtime-adapter checking is implemented and validated; it
+  proves the compiled RmlUi Core adapter stays guarded, refuses route opening
+  until a renderer bridge exists, and keeps the dependency fallback explicit.
+  Native runtime navigation, screenshot capture, input/back behavior, and
+  renderer-specific coverage remain pending.
+  Round 18 note: the same checker now covers the RmlUi Core system/file bridge
+  and runtime file-probe hook, proving file loads go through WORR filesystem
+  symbols rather than RmlUi's default C file backend. Native runtime
+  navigation, screenshot capture, input/back behavior, and renderer-specific
+  coverage remain pending.
+  Round 19 note: the same checker now covers the native renderer bridge
+  contract, including renderer-family lanes, route gating on native renderer
+  availability, opaque native render-interface requirements, and a static guard
+  against Vulkan-to-OpenGL redirection. Native runtime navigation, screenshot
+  capture, input/back behavior, and renderer-specific coverage remain pending.
+  Round 20 note: the same checker now covers the OpenGL render-interface
+  scaffold, renderer API exports, OpenGL-scoped RmlUi dependency wiring,
+  client renderer lifecycle registration/clear, `Rml::SetRenderInterface`
+  installation, and the `CanRender=false` guard. Native runtime navigation,
+  screenshot capture, input/back behavior, and visible renderer-specific
+  coverage remain pending.
+  Round 21 note: the same checker now covers the OpenGL primitive bridge:
+  geometry caching, tessellator drawing, generated and loaded texture
+  handling, scissor state, and `CanRender=true`. Native runtime navigation,
+  screenshot capture, input/back behavior, and route-visible renderer-specific
+  coverage remain pending.
+  Round 22 note: the same checker now covers the guarded sample context path:
+  runtime lifecycle hooks, `Rml::CreateContext`, document load/show,
+  update/render, context removal, explicit runtime open/close commands, and
+  UI bridge draw interception before legacy UI draw. Native runtime
+  navigation, screenshot capture, broad input/back behavior, and
+  route-visible renderer-specific coverage remain pending.
+  Round 23 note: the same checker now covers the guarded sample input/capture
+  path: RmlUi key/text/mouse hook declarations, adapter event dispatch,
+  UI bridge input interception before legacy callbacks, Escape/mouse-button-2
+  close tokens, and status/capture commands. Native runtime navigation,
+  automated screenshot capture, broad input/back behavior, and route-visible
+  renderer-specific coverage remain pending.
+  Round 24 note: the guarded capture harness is implemented and validated for
+  the OpenGL `core.runtime_smoke` route. It writes local TGA evidence under
+  `.install/basew/screenshots`, copies screenshot/log artifacts to
+  `.tmp/rmlui/runtime-capture`, writes a JSON manifest, and validates route
+  status, frame counters, screenshot dimensions, and nonblank payload. Native
+  runtime navigation, broader screenshot/layout assertions, broad input/back
+  behavior, and route-visible renderer-specific coverage remain pending.
+  Round 25 note: the same guarded capture harness now proves text-geometry
+  generation by requiring the smoke font glyph marker and validating the
+  refreshed Round 25 TGA/log evidence. Native runtime navigation, broader
+  layout assertions, broad input/back behavior, and route-visible
+  renderer-specific coverage remain pending.
+  Round 26 note: the guarded capture harness now includes first visual layout
+  assertions for the smoke route and fails nonblank screenshots with the wrong
+  color/region structure. Native runtime navigation, synthetic input/back
+  behavior, broader route coverage, and renderer-specific coverage remain
+  pending.
+  Round 27 note: the guarded capture harness now includes first automated
+  synthetic input/back-close validation for the smoke route and fails visual
+  evidence that lacks input counters, close counters, or inactive final status.
+  Native runtime navigation, broad input/navigation parity, broader route
+  coverage, and renderer-specific coverage remain pending.
+  Round 28 note: the guarded capture harness now includes exact-geometry
+  validation and a default two-viewport OpenGL matrix for the smoke route.
+  Native runtime navigation, responsive widescreen parity, broad input/
+  navigation parity, broader route coverage, and renderer-specific coverage
+  remain pending.
+  Round 29 note: the guarded capture harness now includes a route matrix for
+  `main`, `game`, and `download_status`, opened through `UI_OpenMenu` and
+  checked for fresh `960x720` screenshots, route-specific OpenGL status, glyph
+  text evidence, synthetic input, route close counters, and inactive final
+  status. Native runtime navigation, broad input/navigation parity, final
+  route layout assertions, and renderer-specific coverage remain pending.
+  Round 30 note: the UI smoke suite now includes
+  `check_rmlui_renderer_matrix.py` and focused pytest coverage for the current
+  renderer-family matrix: OpenGL native guarded, Vulkan blocked until native,
+  and RTX/vkpt blocked until native. It also fails non-OpenGL runtime
+  dependency enablement and Vulkan/RTX-to-OpenGL mapping. Native runtime
+  navigation, broad input/navigation parity, final route layout assertions,
+  and live renderer-specific coverage remain pending.
+  Round 31 note: `check_rmlui_runtime_capture.py --renderer-matrix` now writes
+  an aggregate report and manifest that combines guarded OpenGL route captures
+  with the renderer-family matrix guardrail. Native runtime navigation, broad
+  input/navigation parity, final route layout assertions, and live
+  renderer-specific coverage remain pending.
+  Round 32 note: `check_rmlui_vulkan_bridge_readiness.py` adds a static
+  bridge-readiness audit for native Vulkan/RTX foundations and blocked-lane
+  requirements. Native runtime navigation, broad input/navigation parity,
+  final route layout assertions, and live renderer-specific coverage remain
+  pending.
+  Round 33 note: `check_rmlui_runtime_capture.py --renderer-matrix` now
+  carries that bridge-readiness audit in the aggregate manifest and has a
+  focused failure test for missing Vulkan foundation primitives. Native
+  runtime navigation, broad input/navigation parity, final route layout
+  assertions, and live renderer-specific coverage remain pending.
+  Round 34 note: `check_rmlui_vulkan_bridge_readiness.py` now exposes
+  per-lane activation requirements and fails partial native bridge claims until
+  class, family export, runtime dependency, and non-null interface requirements
+  are satisfied together. Native runtime navigation, broad input/navigation
+  parity, final route layout assertions, and live renderer-specific coverage
+  remain pending.
+  Round 35 note: `check_rmlui_vulkan_bridge_readiness.py` now reports
+  activation stages as `blocked_no_activation`,
+  `partial_activation_blocked`, or `activation_complete` and records the next
+  pending activation requirement for each lane. Native runtime navigation,
+  broad input/navigation parity, final route layout assertions, and live
+  renderer-specific coverage remain pending.
+  Round 36 note: `check_rmlui_vulkan_bridge_readiness.py` now requires
+  lane-specific Meson source-set wiring for `src/renderer/rmlui_bridge.cpp`
+  before native bridge activation can proceed. Native runtime navigation,
+  broad input/navigation parity, final route layout assertions, and live
+  renderer-specific coverage remain pending.
+  Round 37 note: the same bridge-readiness checker now accepts the inactive
+  Vulkan and RTX/vkpt source-set wiring in `meson.build`, records both lanes
+  as `partial_activation_blocked`, and keeps the next blocker at
+  `native_bridge_class_present`. Native runtime navigation, broad input/
+  navigation parity, final route layout assertions, and live
+  renderer-specific coverage remain pending.
+  Round 38 note: the same checker now treats the Vulkan and RTX/vkpt class
+  stubs as accepted inactive partial activation, records both lanes with
+  `next_activation_requirement=native_family_export_present`, and still fails
+  premature family/runtime/interface exports. Native runtime navigation, broad
+  input/navigation parity, final route layout assertions, and live
+  renderer-specific coverage remain pending.
+  Round 39 note: the same checker now treats inactive Vulkan and RTX/vkpt
+  family exports as accepted partial activation, records both lanes with
+  `next_activation_requirement=runtime_dependency_enabled`, and still fails
+  premature runtime/interface exports or OpenGL redirects. Native runtime
+  navigation, broad input/navigation parity, final route layout assertions,
+  and live renderer-specific coverage remain pending.
+  Round 40 note: the same checker now treats Vulkan and RTX/vkpt runtime
+  dependency wiring as accepted inactive partial activation, records both lanes
+  with `next_activation_requirement=native_interface_export_present`, and
+  still fails premature native interface exports, OpenGL redirects, or partial
+  dependency wiring. Native runtime navigation, broad input/navigation parity,
+  final route layout assertions, and live renderer-specific coverage remain
+  pending.
 
 ## Epic DV-04: Architecture and Code Quality
 Objective: reduce maintenance overhead and complete key modernization tracks.
@@ -1730,6 +3598,60 @@ Tasks:
 - [ ] `DV-04-T02` Complete client/cgame ownership map for duplicated behavior paths.
   Dependency: none. Priority: P1.
   Progress: First-person viewweapon pose calculation now has a cgame-local `cg_view.cpp` helper used by both the weapon entity and local beam starts, reducing drift between duplicated cgame view paths.
+  RmlUi Round 4 note: runtime-switch, controller-contract, and route-ownership
+  scaffolding is validated as active ownership cleanup for `FR-09`; live bridge
+  simplification and final ownership validation remain pending.
+  RmlUi Round 5 note: selected `controller_stub` route progression is accepted
+  for five shell/settings routes and refines the ownership map, but live bridge
+  simplification remains pending.
+  RmlUi Round 6 note: selected `controller_stub` progression now covers `10`
+  shell/settings routes and the client probe registry covers every manifest
+  route, but live bridge simplification remains pending.
+  RmlUi Round 7 note: selected `controller_stub` progression now covers `15`
+  shell/settings routes and controller-stub coverage is checked against static
+  RML attributes, but live bridge simplification remains pending.
+  RmlUi Round 8 note: selected progression now covers `12` `controller_stub`
+  routes plus `3` guarded menu-entrypoint `runtime_stub` routes, with
+  runtime-stub eligibility checked against shell metadata, controller
+  contracts, runtime registry entries, and legacy fallback behavior. Live
+  bridge simplification remains pending.
+  RmlUi Round 9 note: selected progression now covers `16` `controller_stub`
+  routes plus `3` guarded menu-entrypoint `runtime_stub` routes, including the
+  utility routes `addressbook`, `keys`, `legacykeys`, and `weapons`. Live
+  bridge simplification remains pending.
+  RmlUi Round 10 note: selected progression now covers `20`
+  `controller_stub` routes plus `3` guarded menu-entrypoint `runtime_stub`
+  routes, including utility/list routes `servers`, `demos`, `players`, and
+  `ui_list`. Live bridge simplification remains pending.
+  RmlUi Round 11 note: selected progression now covers `24`
+  `controller_stub` routes plus `3` guarded menu-entrypoint `runtime_stub`
+  routes, including single-player/save-load routes `singleplayer`,
+  `skill_select`, `loadgame`, and `savegame`. Live bridge simplification
+  remains pending.
+  RmlUi Round 12 note: selected progression now covers `28`
+  `controller_stub` routes plus `3` guarded menu-entrypoint `runtime_stub`
+  routes, including local-session routes `downloads`, `quit_confirm`,
+  `gameflags`, and `startserver`; metadata sync also confirms all `57`
+  central migration routes have matching feature route metadata. Live bridge
+  simplification remains pending.
+  RmlUi Round 13 note: selected progression now covers `36`
+  `controller_stub` routes plus `3` guarded menu-entrypoint `runtime_stub`
+  routes, including session/vote routes `vote_menu`, `callvote_main`,
+  `callvote_ruleset`, `callvote_timelimit`, `callvote_scorelimit`,
+  `callvote_unlagged`, `callvote_random`, and `callvote_map_flags`. Live
+  bridge simplification remains pending.
+  RmlUi Round 14 note: selected progression now covers `42`
+  `controller_stub` routes plus `3` guarded menu-entrypoint `runtime_stub`
+  routes, including multiplayer/lobby/info routes `multiplayer`,
+  `dm_welcome`, `dm_join`, `join`, `dm_hostinfo`, and `dm_matchinfo`. Route
+  metadata shape validation now keeps ownership metadata and advanced-route
+  controller-contract references explicit. Live bridge simplification remains
+  pending.
+  RmlUi Round 16 note: selected progression now covers all non-runtime
+  tracked routes with `54` `controller_stub` routes plus `3` guarded
+  menu-entrypoint `runtime_stub` routes. Controller-stub completion validation
+  keeps the ownership map from regressing to hidden starter surfaces. Live
+  bridge simplification remains pending.
 - [ ] `DV-04-T03` Add static analysis and warning-as-error policy for first-party code in CI.
   Dependency: `DV-02-T01`. Priority: P1.
   Progress: First-party string-safety cleanup replaced direct `strcpy()` / `strcat()` usage in command argument assembly, macro keyword expansion, config fallback probing, filesystem write-mode construction, Windows service command construction, and normalization test setup; prompt completion now exposes corrected `com_completion_threshold` naming with legacy fallback.
@@ -1871,8 +3793,170 @@ Exit Criteria:
 Tasks:
 - [ ] `DV-06-T01` Audit duplicate vendored versions and define active baseline per dependency.
   Dependency: none. Priority: P0.
+  RmlUi Round 10 note:
+  `docs-dev/rmlui-dependency-decision-record-2026-07-02.md` documents the
+  proposed audit scope and dependency integration direction for RmlUi. Exact
+  upstream source, version/commit, license/provenance review, local patch
+  policy, and accepted build integration remain pending.
+  RmlUi Round 11 note:
+  `tools/ui_smoke/check_rmlui_dependency_decision.py` now validates that the
+  decision record remains proposed/not implemented, preserves no-go wording for
+  Meson/build/dependency/runtime changes, and names native renderer/Gate G1
+  obligations. Exact upstream source, version/commit, license/provenance
+  review, local patch policy, and accepted build integration remain pending.
+  RmlUi Round 15 note:
+  `subprojects/rmlui.wrap` now records upstream RmlUi `6.2`, archive URL
+  `https://github.com/mikke89/RmlUi/archive/refs/tags/6.2.tar.gz`, SHA-256
+  `814c3ff7b9666280338d8f0dda85979f5daf028d01c85fc8975431d1e2fd8e8b`, and
+  CMake-method source acquisition. The dependency-source audit records MIT
+  license/provenance notes, while final notices, local patch policy, and
+  accepted compile/link integration remain pending.
+  RmlUi Round 17 note:
+  the pinned source now has wrap provide aliases, explicit CMake fallback
+  options, and enabled scratch compile/link evidence for `rmlui_core.dll` plus
+  `worr_engine_x86_64.dll`. Final notice/update policy, local patch policy,
+  supported-matrix acceptance, and renderer/runtime enablement remain pending.
+  RmlUi Round 18 note:
+  the compiled RmlUi Core adapter now supplies WORR-backed system and file
+  interfaces, with validation proving the bridge references WORR filesystem,
+  time, and log APIs. Final notice/update policy, local patch policy,
+  supported-matrix acceptance, and renderer/runtime enablement remain pending.
+  RmlUi Round 19 note:
+  the RmlUi dependency boundary now includes explicit native renderer-family
+  lanes and an opaque render-interface hook, with validation guarding against
+  Vulkan-to-OpenGL redirection. Final notice/update policy, local patch policy,
+  supported-matrix acceptance, and renderer/runtime enablement remain pending.
+  RmlUi Round 20 note:
+  the RmlUi dependency boundary now includes OpenGL-scoped renderer C++/RmlUi
+  dependency wiring for the first `Rml::RenderInterface` scaffold, while
+  Vulkan and RTX/vkpt exports remain unavailable rather than redirected.
+  Final notice/update policy, local patch policy, supported-matrix
+  acceptance, and renderer/runtime enablement remain pending.
+  RmlUi Round 21 note:
+  the same OpenGL-scoped dependency path now links an implemented primitive
+  bridge for geometry, texture upload/lifetime, tessellator drawing, and
+  scissor state without enabling route ownership or changing Vulkan/RTX-vkpt
+  exports. Final notice/update policy, local patch policy, supported-matrix
+  acceptance, and renderer/runtime enablement remain pending.
+  RmlUi Round 22 note:
+  the compiled runtime now uses the OpenGL-scoped render interface to open and
+  draw only the guarded `core.runtime_smoke` document from a RmlUi context,
+  while normal routes and non-OpenGL renderers remain guarded. Final
+  notice/update policy, local patch policy, supported-matrix acceptance, and
+  renderer/runtime enablement remain pending.
+  RmlUi Round 23 note:
+  the same guarded OpenGL-scoped path now carries key, text, mouse-button,
+  mouse-wheel, and pointer movement events into the RmlUi context and exposes
+  status/capture counters for manual evidence collection, while normal routes
+  and non-OpenGL renderers remain guarded. Final notice/update policy, local
+  patch policy, supported-matrix acceptance, and renderer/runtime enablement
+  remain pending.
+  RmlUi Round 24 note:
+  the guarded OpenGL-scoped path now installs a temporary layout-only RmlUi
+  font engine and records automated runtime capture evidence. The null font
+  engine is a bootstrap dependency decision only; final font/text ownership,
+  local patch policy, supported-matrix acceptance, and renderer/runtime
+  enablement remain pending.
+  RmlUi Round 25 note:
+  the guarded OpenGL-scoped path now replaces that null adapter with a smoke
+  bitmap glyph path and validates glyph-generation evidence in the runtime
+  capture harness. The smoke glyph table is temporary; final font/text
+  ownership, local patch policy, supported-matrix acceptance, and
+  renderer/runtime enablement remain pending.
+  RmlUi Round 29 note:
+  the guarded OpenGL-scoped path now includes route-matrix evidence for
+  `main`, `game`, and `download_status` opened through `UI_OpenMenu`.
+  This remains opt-in and OpenGL-only; final font/text ownership, local patch
+  policy, supported-matrix acceptance, native Vulkan/RTX-vkpt renderer
+  enablement, and default runtime ownership remain pending.
+  RmlUi Round 30 note:
+  the dependency boundary now includes renderer-family matrix guardrails that
+  keep OpenGL as the only current guarded native lane and require Vulkan and
+  RTX/vkpt to remain unavailable until native bridges exist. The checker also
+  rejects Vulkan/RTX-to-OpenGL routing and premature non-OpenGL RmlUi runtime
+  dependency enablement. Final notice/update policy, local patch policy,
+  supported-matrix acceptance, native Vulkan/RTX-vkpt renderer enablement, and
+  default runtime ownership remain pending.
+  RmlUi Round 31 note:
+  the runtime capture harness now emits aggregate renderer-matrix manifests
+  that pair OpenGL route evidence with the renderer-family dependency
+  guardrail. Final notice/update policy, local patch policy,
+  supported-matrix acceptance, native Vulkan/RTX-vkpt renderer enablement, and
+  default runtime ownership remain pending.
+  RmlUi Round 32 note:
+  the dependency boundary now includes a Vulkan/RTX bridge-readiness audit
+  that records available native renderer foundations while keeping both
+  non-OpenGL RmlUi dependencies blocked until native bridges exist. Final
+  notice/update policy, local patch policy, supported-matrix acceptance,
+  native Vulkan/RTX-vkpt renderer enablement, and default runtime ownership
+  remain pending.
+  RmlUi Round 33 note:
+  aggregate renderer manifests now include the bridge-readiness dependency
+  boundary so OpenGL evidence, renderer-family guards, and native-pending
+  Vulkan/RTX requirements are reviewed together. Final notice/update policy,
+  local patch policy, supported-matrix acceptance, native Vulkan/RTX-vkpt
+  renderer enablement, and default runtime ownership remain pending.
+  RmlUi Round 34 note:
+  native bridge activation requirements are now structured in the
+  bridge-readiness and aggregate renderer manifests, with `8` requirements,
+  `0` satisfied, and `8` pending across Vulkan and RTX/vkpt. Final
+  notice/update policy, local patch policy, supported-matrix acceptance,
+  native Vulkan/RTX-vkpt renderer enablement, and default runtime ownership
+  remain pending.
+  RmlUi Round 35 note:
+  native bridge activation status is now structured in the bridge-readiness
+  and aggregate renderer manifests, with `0` complete lanes, `0` partial
+  lanes, and `2` inactive activation lanes across Vulkan and RTX/vkpt. Final
+  notice/update policy, local patch policy, supported-matrix acceptance,
+  native Vulkan/RTX-vkpt renderer enablement, and default runtime ownership
+  remain pending.
+  RmlUi Round 36 note:
+  native bridge source-set activation is now part of the dependency boundary,
+  with `10` total activation requirements and `10` pending requirements across
+  Vulkan and RTX/vkpt. Final notice/update policy, local patch policy,
+  supported-matrix acceptance, native Vulkan/RTX-vkpt renderer enablement, and
+  default runtime ownership remain pending.
+  RmlUi Round 37 note:
+  inactive non-OpenGL bridge source wiring is now part of the dependency
+  boundary: both Vulkan and RTX/vkpt renderer source sets include
+  `src/renderer/rmlui_bridge.cpp`, while their RmlUi runtime dependencies stay
+  disabled. Final notice/update policy, local patch policy, supported-matrix
+  acceptance, native Vulkan/RTX-vkpt renderer enablement, and default runtime
+  ownership remain pending.
+  RmlUi Round 38 note:
+  inactive non-OpenGL bridge class stubs are now part of the dependency
+  boundary: Vulkan and RTX/vkpt class names exist in the shared bridge source,
+  while family exports, runtime dependencies, and native interface exports
+  remain unavailable. Final notice/update policy, local patch policy,
+  supported-matrix acceptance, native Vulkan/RTX-vkpt renderer enablement, and
+  default runtime ownership remain pending.
+  RmlUi Round 39 note:
+  inactive non-OpenGL family exports are now part of the dependency boundary:
+  Vulkan and RTX/vkpt renderer DLLs can report distinct RmlUi family lanes,
+  while runtime dependencies and native interface exports remain unavailable.
+  Final notice/update policy, local patch policy, supported-matrix acceptance,
+  native Vulkan/RTX-vkpt renderer enablement, and default runtime ownership
+  remain pending.
+  RmlUi Round 40 note:
+  inactive non-OpenGL runtime dependencies are now part of the dependency
+  boundary: Vulkan and RTX/vkpt renderer DLLs receive the RmlUi runtime
+  dependency and `UI_RML_HAS_RUNTIME` definition, while native interface
+  exports remain unavailable. Final notice/update policy, local patch policy,
+  supported-matrix acceptance, native Vulkan/RTX-vkpt renderer enablement, and
+  default runtime ownership remain pending.
+  RmlUi Round 41 note:
+  staged OpenGL menu-route loading now uses the compiled RmlUi dependency and
+  refreshed `.install` payload to open all 57 registered RmlUi routes without
+  a fresh crash dump. Final notice/update policy, local patch policy,
+  supported-matrix acceptance, native Vulkan/RTX-vkpt renderer enablement, and
+  default runtime ownership remain pending.
 - [ ] `DV-06-T02` Remove or archive superseded dependency trees not needed for reproducible builds.
   Dependency: `DV-06-T01`. Priority: P1.
+  2026-07-02 cleanup note: removed ignored local stale unpacked source trees
+  and matching stale packagecache artifacts for superseded cairo, curl, fmt,
+  glib, HarfBuzz, JsonCpp, libjpeg-turbo, libpng, OpenAL Soft, and zlib-ng
+  versions. Implementation log:
+  `docs-dev/dependency-stale-subproject-cleanup-2026-07-02.md`.
 - [ ] `DV-06-T03` Add dependency update checklist including security notes and regression tests.
   Dependency: `DV-06-T01`. Priority: P1.
 - [ ] `DV-06-T04` Add monthly dependency maintenance review cadence and owner.
@@ -1896,6 +3980,449 @@ Tasks:
 - [ ] `DV-07-T04` Add user-doc parity pass whenever user-visible cvars/features are changed.
   Dependency: none. Priority: P1.
   Progress: `docs-user/client.asciidoc` documents `cg_weapon_bob`, its disabled/Quake 3/Doom 3 values, and the legacy `cg_weaponBob` alias. Bot user docs now also cover practical setup/debug cvars, packaged botfile locations, current AAS/map readiness limits, available-reference validation, and the item timer controls `bot_allow_item_timers` / `bot_item_timer_fuzz_ms`. `docs-user/competitive-server-tools.md` adds operator parity for the competitive server cvars and commands under `FR-07-T05`, including the `basew/matches/catalog.json` match logging index added under `FR-07-T03`.
+  RmlUi Round 4 note: user-visible parity is still pending. No end-user RmlUi
+  documentation pass is claimed until runtime/controller behavior is exposed to
+  players, beyond the current guarded scaffold.
+  RmlUi Round 5 note: semantics and progress-report tooling are accepted for
+  developer-side regression reporting. No end-user parity documentation is
+  claimed until runtime/controller behavior and player-visible parity evidence
+  are accepted.
+  RmlUi Round 6 note: controller-contract validation, runtime asset checks,
+  staged loose-file checks, and JSON progress reporting improve developer-side
+  regression tracking. No end-user parity documentation is claimed until
+  runtime/controller behavior and player-visible parity evidence are accepted.
+  RmlUi Round 7 note: runtime registry, controller-stub coverage, imported
+  runtime asset, and controller-contract progress checks improve
+  developer-side regression tracking. No end-user parity documentation is
+  claimed until runtime/controller behavior and player-visible parity evidence
+  are accepted.
+  RmlUi Round 8 note: menu-entrypoint validation, runtime-stub eligibility,
+  runtime asset JSON, and phase-progression progress facts improve
+  developer-side regression tracking. No end-user parity documentation is
+  claimed until runtime/controller behavior and player-visible parity evidence
+  are accepted.
+  RmlUi Round 9 note: navigation graph validation, controller fixture checks,
+  detailed runtime asset manifests, parity checklist validation, and all-route
+  metadata progress facts improve developer-side regression tracking. No
+  end-user parity documentation is claimed until runtime/controller behavior
+  and player-visible parity evidence are accepted.
+  RmlUi Round 10 note: command/cvar inventory checks and parity-checklist
+  progress summaries improve developer-side regression tracking, and the
+  progress reporter now exposes those command/cvar counts in text, markdown,
+  and JSON. No end-user parity documentation is claimed until
+  runtime/controller behavior and player-visible parity evidence are accepted.
+  RmlUi Round 11 note: data-model inventory, phase-consistency, and
+  dependency-decision checks improve developer-side regression tracking, and
+  the progress reporter now exposes data-model counts in text, markdown, and
+  JSON. No end-user parity documentation is claimed until runtime/controller
+  behavior and player-visible parity evidence are accepted.
+  RmlUi Round 12 note: condition inventory and metadata-sync checks improve
+  developer-side regression tracking, and the progress reporter now exposes
+  condition/metadata counts in text, markdown, and JSON. No end-user parity
+  documentation is claimed until runtime/controller behavior and
+  player-visible parity evidence are accepted.
+  RmlUi Round 13 note: event inventory, a11y/localization inventory, and
+  legacy-removal guardrails improve developer-side regression tracking, and
+  the progress reporter now exposes event/a11y counts in text, markdown, and
+  JSON. No end-user parity documentation is claimed until runtime/controller
+  behavior and player-visible parity evidence are accepted.
+  RmlUi Round 14 note: document/body identity, entrypoint, route metadata
+  shape, and legacy-removal progress summaries improve developer-side
+  regression tracking. No end-user parity documentation is claimed until
+  runtime/controller behavior and player-visible parity evidence are accepted.
+  RmlUi Round 15 note: dependency-integration validation and default-disabled
+  build-gate evidence improve developer-side regression tracking. No end-user
+  parity documentation is claimed until runtime/controller behavior and
+  player-visible parity evidence are accepted.
+  RmlUi Round 16 note: controller-stub completion validation and all-route
+  controller-binding checklist coverage improve developer-side regression
+  tracking. No end-user parity documentation is claimed until
+  runtime/controller behavior and player-visible parity evidence are accepted.
+  RmlUi Round 17 note: compiled-runtime adapter validation improves
+  developer-side regression tracking for the optional dependency path. No
+  end-user parity documentation is claimed until route rendering,
+  runtime/controller behavior, and player-visible parity evidence are accepted.
+  RmlUi Round 18 note: system/file bridge validation improves developer-side
+  regression tracking for runtime asset loading. No end-user parity
+  documentation is claimed until route rendering, runtime/controller behavior,
+  and player-visible parity evidence are accepted.
+  RmlUi Round 19 note: renderer-contract validation improves developer-side
+  regression tracking for future native renderer integration. No end-user
+  parity documentation is claimed until route rendering, runtime/controller
+  behavior, and player-visible parity evidence are accepted.
+  RmlUi Round 20 note: OpenGL render-interface scaffold validation improves
+  developer-side regression tracking for the first native renderer-family
+  lane, but no end-user parity documentation is claimed until visible route
+  rendering, runtime/controller behavior, and player-visible parity evidence
+  are accepted.
+  RmlUi Round 21 note: OpenGL primitive bridge validation improves
+  developer-side regression tracking for the first renderer-backed geometry,
+  texture, and scissor path, but no end-user parity documentation is claimed
+  until visible route rendering, runtime/controller behavior, and
+  player-visible parity evidence are accepted.
+  RmlUi Round 22 note: guarded context-route validation improves
+  developer-side regression tracking for the first RmlUi document load,
+  update, and render path, but no end-user parity documentation is claimed
+  until normal route ownership, runtime/controller behavior, and
+  player-visible parity evidence are accepted.
+  RmlUi Round 23 note: guarded input/capture validation improves
+  developer-side regression tracking for the first RmlUi key/text/mouse event
+  bridge and manual capture counters, but no end-user parity documentation is
+  claimed until normal route ownership, automated screenshot evidence,
+  runtime/controller behavior, and player-visible parity evidence are
+  accepted.
+  RmlUi Round 24 note: guarded screenshot evidence now exists for the internal
+  `core.runtime_smoke` route, but it is developer-only, OpenGL-only, and uses
+  a layout-only null font engine. No end-user parity documentation is claimed
+  until normal route ownership, real text rendering, runtime/controller
+  behavior, and player-visible parity evidence are accepted.
+  RmlUi Round 25 note: the guarded developer-only OpenGL screenshot now
+  includes smoke glyph geometry, but it still does not establish normal route
+  ownership, full font/text behavior, runtime/controller behavior, or
+  player-visible parity evidence. No end-user documentation is claimed.
+  RmlUi Round 26 note: the guarded developer-only OpenGL screenshot now also
+  carries layout assertion evidence for the smoke route. It still does not
+  establish normal route ownership, full font/text behavior,
+  runtime/controller behavior, renderer parity, or player-visible parity
+  evidence. No end-user documentation is claimed.
+  RmlUi Round 27 note: the guarded developer-only OpenGL capture now also
+  carries synthetic input/back-close counter evidence for the smoke route. It
+  still does not establish normal route ownership, broad input/navigation
+  parity, runtime/controller behavior, renderer parity, or player-visible
+  parity evidence. No end-user documentation is claimed.
+  RmlUi Round 28 note: the guarded developer-only OpenGL capture now also
+  carries two-viewport matrix evidence for the smoke route. It still does not
+  establish normal route ownership, responsive widescreen parity,
+  runtime/controller behavior, renderer parity, or player-visible parity
+  evidence. No end-user documentation is claimed.
+  RmlUi Round 29 note: the guarded developer-only OpenGL capture now also
+  carries menu-route matrix evidence for `main`, `game`, and
+  `download_status`. It still does not establish default route ownership,
+  final theme/layout parity, runtime/controller behavior, renderer parity, or
+  player-visible parity evidence. No end-user documentation is claimed.
+  RmlUi Round 30 note: renderer-family matrix guardrails now protect the
+  developer-only migration path by recording OpenGL as the sole guarded native
+  lane and keeping Vulkan/RTX-vkpt blocked until native bridges exist. It
+  still does not establish native renderer parity, default route ownership,
+  runtime/controller behavior, or player-visible parity evidence. No end-user
+  documentation is claimed.
+  RmlUi Round 31 note: aggregate renderer-matrix manifests now combine the
+  guarded OpenGL route evidence with blocked Vulkan/RTX-vkpt lane facts for
+  developer-side review. It still does not establish native renderer parity,
+  default route ownership, runtime/controller behavior, or player-visible
+  parity evidence. No end-user documentation is claimed.
+  RmlUi Round 32 note: Vulkan/RTX bridge-readiness evidence now records the
+  native renderer foundations and missing bridge requirements for the
+  non-OpenGL lanes. It still does not establish native renderer parity,
+  default route ownership, runtime/controller behavior, or player-visible
+  parity evidence. No end-user documentation is claimed.
+  RmlUi Round 33 note: aggregate renderer manifests now carry bridge-readiness
+  evidence next to guarded OpenGL route evidence. It still does not establish
+  native renderer parity, default route ownership, runtime/controller behavior,
+  or player-visible parity evidence. No end-user documentation is claimed.
+  RmlUi Round 34 note: bridge-readiness and aggregate renderer manifests now
+  carry native bridge activation checklist counts. It still does not establish
+  native renderer parity, default route ownership, runtime/controller behavior,
+  or player-visible parity evidence. No end-user documentation is claimed.
+  RmlUi Round 35 note: bridge-readiness and aggregate renderer manifests now
+  carry native bridge activation status and next-blocker fields. It still does
+  not establish native renderer parity, default route ownership,
+  runtime/controller behavior, or player-visible parity evidence. No end-user
+  documentation is claimed.
+  RmlUi Round 36 note: bridge-readiness and aggregate renderer manifests now
+  require native bridge source-set activation before any non-OpenGL lane can
+  be promoted. It still does not establish native renderer parity, default
+  route ownership, runtime/controller behavior, or player-visible parity
+  evidence. No end-user documentation is claimed.
+  RmlUi Round 37 note: inactive Vulkan and RTX/vkpt source-set wiring is now
+  recorded in bridge-readiness and aggregate renderer manifests, with both
+  lanes still blocked before native bridge class implementation. It still does
+  not establish native renderer parity, default route ownership,
+  runtime/controller behavior, or player-visible parity evidence. No end-user
+  documentation is claimed.
+  RmlUi Round 38 note: inactive Vulkan and RTX/vkpt bridge class stubs are now
+  recorded in bridge-readiness and aggregate renderer manifests, with both
+  lanes still blocked before native family/runtime/interface exports. It still
+  does not establish native renderer parity, default route ownership,
+  runtime/controller behavior, or player-visible parity evidence. No end-user
+  documentation is claimed.
+  RmlUi Round 39 note: inactive Vulkan and RTX/vkpt family exports are now
+  recorded in bridge-readiness and aggregate renderer manifests, with both
+  lanes still blocked before runtime dependency and native interface exports.
+  It still does not establish native renderer parity, default route ownership,
+  runtime/controller behavior, or player-visible parity evidence. No end-user
+  documentation is claimed.
+  RmlUi Round 40 note: inactive Vulkan and RTX/vkpt runtime dependency wiring
+  is now recorded in bridge-readiness and aggregate renderer manifests, with
+  both lanes still blocked before native interface exports. It still does not
+  establish native renderer parity, default route ownership, runtime/controller
+  behavior, or player-visible parity evidence. No end-user documentation is
+  claimed.
+  RmlUi Round 41 note: installed OpenGL route-load validation now opens all 57
+  registered routes from the staged client without a fresh crash dump or
+  parser/fallback/error log hits. It still does not establish native
+  Vulkan/RTX renderer parity, final route ownership, runtime/controller
+  behavior, screenshot layout parity, or end-user documentation.
+  RmlUi Round 42 note: OpenGL RmlUi resize-canvas validation now keeps active
+  route dimensions, mouse coordinates, scissor rectangles, and software cursor
+  drawing aligned with the renderer virtual UI canvas across staged viewport
+  captures and live Win32 resize events. It still does not establish native
+  Vulkan/RTX renderer parity, final route ownership, runtime/controller
+  behavior, screenshot layout parity, or end-user documentation.
+  RmlUi Round 43 note: staged OpenGL route validation now includes TTF-backed
+  RmlUi text generation, refined player-facing menu copy, contained keybind
+  long-list layout, and a `960x720` keybind screenshot. It still does not
+  establish native Vulkan/RTX renderer parity, final route ownership, live
+  runtime/controller behavior, full screenshot layout parity, or end-user
+  documentation.
+  RmlUi Round 44 note: staged OpenGL route validation now requires Quake II
+  Rerelease font-source markers, proves the display/UI/monospace RmlUi faces
+  load from rerelease font paths, opens `58` unique route IDs with no
+  failure/parser/error hits, and carries screenshot evidence for the refined
+  Options, Admin Commands, Start Server, and Deathmatch Flags layouts. It
+  still does not establish native Vulkan/RTX renderer parity, final route
+  ownership, live runtime/controller behavior, full screenshot layout parity,
+  or end-user documentation.
+  RmlUi Round 45 note: staged OpenGL visual validation now includes `30`
+  representative route captures and specific bounded-list screenshots for
+  in-game actions, long settings forms, and save/load slots, while the final
+  all-route sweep remains clean. It still does not establish native Vulkan/RTX
+  renderer parity, final route ownership, live runtime/controller behavior,
+  full screenshot layout parity, or end-user documentation.
+  RmlUi Round 46 note: staged OpenGL validation now adds focused
+  Single Player hub and generic Session List screenshots with visible footer
+  actions, and the final all-route sweep remains clean. It still does not
+  establish native Vulkan/RTX renderer parity, final route ownership, live
+  runtime/controller behavior, full screenshot layout parity, or end-user
+  documentation.
+  RmlUi Round 47 note: staged OpenGL validation now adds focused Admin
+  Commands, Call Vote, Match Lobby, and Key Bindings screenshots with visible
+  footer actions, and the final all-route sweep remains clean. It still does
+  not establish native Vulkan/RTX renderer parity, final route ownership, live
+  runtime/controller behavior, full screenshot layout parity, or end-user
+  documentation.
+  RmlUi Round 48 note: staged OpenGL validation now adds focused Performance,
+  Sound, Download Options, and Start Server screenshots with compact toggles or
+  shortened form regions above visible footer actions, and the final all-route
+  sweep remains clean. It still does not establish native Vulkan/RTX renderer
+  parity, final route ownership, live runtime/controller behavior, full
+  screenshot layout parity, or end-user documentation.
+  RmlUi Round 49 note: staged OpenGL validation now adds focused aesthetic
+  evidence for conservative transitions, hover/focus treatments, shell
+  framing, and final Sound/Start Server containment; the final all-route sweep
+  remains clean. It still does not establish native Vulkan/RTX renderer
+  parity, final route ownership, live runtime/controller behavior, full
+  screenshot layout parity, or end-user documentation.
+  RmlUi Round 50 note: staged OpenGL validation now adds focused main-menu
+  scaling evidence across windowed, widescreen, tall, and fullscreen-style
+  sizes, and the final all-route sweep remains clean. It still does not
+  establish native Vulkan/RTX renderer parity, final route ownership, live
+  runtime/controller behavior, full screenshot layout parity, or end-user
+  documentation.
+  RmlUi Round 51 note: staged OpenGL validation now adds focused typed-widget
+  and utility form evidence for the non-main menu layout refinement, and the
+  final all-route sweep remains clean. It still does not establish native
+  Vulkan/RTX renderer parity, final route ownership, live runtime/controller
+  behavior, full screenshot layout parity, or end-user documentation.
+  RmlUi Round 52 note: staged OpenGL validation now adds focused navigation
+  grid evidence for shell, single-player, save/load, multiplayer/session, and
+  shared settings routes, and the final all-route sweep remains clean. It
+  still does not establish native Vulkan/RTX renderer parity, final route
+  ownership, live runtime/controller behavior, true narrow-viewport capture
+  parity, full screenshot layout parity, or end-user documentation.
+  RmlUi Round 53 note: staged OpenGL validation now adds focused visual polish
+  evidence for spaced command tiles and denser settings rows, and the final
+  all-route sweep remains clean. It still does not establish native Vulkan/RTX
+  renderer parity, final route ownership, live runtime/controller behavior,
+  true narrow-viewport capture parity, full screenshot layout parity, or
+  end-user documentation.
+  RmlUi Round 54 note: staged OpenGL validation now adds focused
+  action-intent/widget evidence for real command buttons, primary/destructive
+  states, and refined utility/confirmation panels, and the final all-route
+  sweep remains clean. It still does not establish native Vulkan/RTX renderer
+  parity, final route ownership, live runtime/controller behavior, true
+  narrow-viewport capture parity, full screenshot layout parity, or end-user
+  documentation.
+  RmlUi Round 55 note: staged OpenGL validation now adds popup-command
+  evidence, confirmation-popup captures, restored menu feedback sound plumbing,
+  and a final Sound Settings capture for the two-column music/effects layout;
+  the final all-route sweep remains clean. It still does not establish native
+  Vulkan/RTX renderer parity, final route ownership, live runtime/controller
+  behavior, true narrow-viewport capture parity, full screenshot layout parity,
+  or end-user documentation.
+  RmlUi Round 56 note: staged OpenGL validation now adds consumed menu-music
+  cue evidence, focused Game/Main Quit popup parity evidence, and a capture
+  sheet for Game, Main, Quit Confirm, and Sound Settings; the final all-route
+  sweep remains clean. It still does not establish native Vulkan/RTX renderer
+  parity, final route ownership, live runtime/controller behavior, true
+  narrow-viewport capture parity, full screenshot layout parity, or end-user
+  documentation.
+  RmlUi Round 57 note: staged OpenGL validation now adds consumed open-sound
+  cue evidence, target-level focus/change audio wiring, focused popup audio
+  flow evidence, and visual captures for Main, Game, Download Status, and Quit
+  Confirm; the final all-route sweep remains clean. It still does not establish
+  native Vulkan/RTX renderer parity, final route ownership, live
+  runtime/controller behavior, true narrow-viewport capture parity, full
+  screenshot layout parity, or end-user documentation.
+  RmlUi Round 58 note: staged OpenGL validation now adds deterministic
+  `pushmenu` bridge evidence for one normal route and four confirmation popup
+  routes, including popup-command selection, active runtime status, menu music
+  cues, and alert/open sound cues. It still does not establish native
+  Vulkan/RTX renderer parity, final route ownership, live runtime/controller
+  behavior, true narrow-viewport capture parity, full screenshot layout
+  parity, or end-user documentation.
+  RmlUi Round 59 note: staged OpenGL validation now adds focused Multiplayer
+  hub parity evidence. The hub restores q2servers/address-book/demos/start
+  server/player/options command intent, removes the stale custom connect
+  command, validates `pushmenu multiplayer`, and carries `960x720` screenshot
+  evidence for the two-column shell grid. It still does not establish native
+  Vulkan/RTX renderer parity, final route ownership, live runtime/controller
+  behavior, true narrow-viewport capture parity, full screenshot layout
+  parity, or end-user documentation.
+  RmlUi Round 60 note: staged OpenGL validation now adds focused Video Setup
+  parity evidence. The page restores the legacy display, texture, gamma/light,
+  and renderer controls with typed widgets, validates `pushmenu video`, and
+  carries `960x720` screenshot evidence for a three-column layout contained
+  above Back/Close. It still does not establish native Vulkan/RTX renderer
+  parity, final route ownership, live runtime/controller behavior, true
+  narrow-viewport capture parity, full screenshot layout parity, or end-user
+  documentation.
+  RmlUi Round 61 note: staged OpenGL validation now adds focused settings
+  family audio/action-row evidence. Settings routes consistently carry
+  menu-music/open-sound metadata, Screen/Effects nested navigation uses typed
+  action rows, and `960x720` captures prove both two-column pages remain above
+  Back/Close. It still does not establish native Vulkan/RTX renderer parity,
+  final route ownership, live runtime/controller behavior, true narrow-viewport
+  capture parity, full screenshot layout parity, or end-user documentation.
+  RmlUi Round 62 note: staged OpenGL validation now adds focused
+  single-player/local-session audio and Start Server layout evidence. The
+  single-player route family carries menu-music/open-sound metadata, decisive
+  Skill Select/Start Server actions carry explicit sound cues, and `960x720`
+  captures prove Start Server's three-column static fallback layout remains
+  above Back/Close. It still does not establish native Vulkan/RTX renderer
+  parity, final route ownership, live runtime/controller behavior, true
+  narrow-viewport capture parity, full screenshot layout parity, or end-user
+  documentation.
+  RmlUi Round 63 note: staged OpenGL validation now adds full utility-family
+  audio/layout evidence. All eight utility routes carry menu-music/open-sound
+  metadata, intent-specific action sounds, and `pushmenu` runtime evidence,
+  while `960x720` captures prove the Address Book, Key Bindings, and Weapon
+  Bindings grids remain above footer actions. It still does not establish
+  native Vulkan/RTX renderer parity, final route ownership, live
+  runtime/controller behavior, true narrow-viewport capture parity, full
+  screenshot layout parity, or end-user documentation.
+  RmlUi Round 64 note: staged OpenGL validation now adds session-family
+  audio/layout/popup evidence. Session routes carry menu-music/open-sound
+  metadata, dynamic session buttons preserve original `worr_*` command
+  publication before RmlUi pushmenu routing, confirmation routes retain popup
+  presentation, and `960x720` captures prove the lobby, Call Vote, Admin
+  Commands, Match Stats, Tournament Map Choices, and Forfeit confirmation stay
+  contained. It still does not establish native Vulkan/RTX renderer parity,
+  final route ownership, live runtime/controller behavior, true narrow-viewport
+  capture parity, full screenshot layout parity, or end-user documentation.
+  RmlUi Round 65 note: staged OpenGL validation now adds grouped shell-hub and
+  cross-family action-audio evidence. Options, Game, and Multiplayer use
+  grouped hub sections, authored route buttons declare explicit action sounds,
+  Quit confirmations continue through popup routes, and final `960x720`
+  captures prove Main, Options, Game, Multiplayer, and Single Player stay
+  contained after right-column clipping was corrected. It still does not
+  establish native Vulkan/RTX renderer parity, final route ownership, live
+  runtime/controller behavior, true narrow-viewport capture parity, full
+  screenshot layout parity, or end-user documentation.
+  RmlUi Round 66 note: staged OpenGL validation now adds popup/containment and
+  reusable-template audio evidence. Confirmation popups share modal framing,
+  fixed menu panels prefer contained overflow over clipping, and representative
+  Options, Video, Key Bindings, DM Join, and Quit popup captures stay usable
+  at the current staged canvas. It still does not establish native Vulkan/RTX
+  renderer parity, final route ownership, live runtime/controller behavior,
+  true narrow-viewport capture parity, full screenshot layout parity, or
+  end-user documentation.
+  RmlUi Round 67 note: staged OpenGL validation now adds compiled-runtime cvar
+  binding and condition evaluation evidence. `data-cvar` form controls,
+  `data-bind-cvar`, `data-label-cvar`, `data-bind="cvars.*"`, and
+  `data-visible-if`/`data-enable-if` are exercised through Video, Sound, Start
+  Server, DM Join, and Quit popup captures; settings value badges and the DM
+  Join command grid now reflect live cvar state. It still does not establish
+  native Vulkan/RTX renderer parity, final route ownership, full live
+  data-model/controller behavior, true narrow-viewport capture parity, full
+  screenshot layout parity, or end-user documentation.
+  RmlUi Round 68 note: staged OpenGL validation now adds meter-widget and
+  Crosshair containment evidence. `data-meter-cvar` meter fills update from
+  live cvars on Video, Sound, Screen, Crosshair, Rail Trail, and Download
+  Status surfaces, while the Crosshair page keeps its original Crosshair and
+  Hit Feedback controls visible in two columns. SVG widget art is deferred
+  until the RmlUi texture path has active SVG rasterization. It still does not
+  establish native Vulkan/RTX renderer parity, final route ownership, full
+  live data-model/controller behavior, true narrow-viewport capture parity,
+  full screenshot layout parity, or end-user documentation.
+  RmlUi Round 69 note: staged OpenGL validation now adds first-party SVG UX
+  asset evidence. The OpenGL RmlUi bridge rasterizes the supported local SVG
+  subset for high-level menu icons, and Main, Game, Options, Multiplayer,
+  Single Player, and Quit popup captures show icons contained in shared
+  command-button styling. It still does not establish full SVG
+  specification/plugin parity, native Vulkan/RTX renderer parity, final route
+  ownership, full live data-model/controller behavior, true narrow-viewport
+  capture parity, full screenshot layout parity, or end-user documentation.
+  RmlUi Round 70 note: staged OpenGL validation now redirects SVG asset usage
+  from high-level command pictograms to widget markers. The old `common/icons/ux`
+  command asset set was removed, the new `common/icons/widgets` library covers
+  authored control types, and Video, Sound, Start Server, Player Setup,
+  Address Book, Download Status, and Main captures prove widget-marker loading
+  plus plain Main menu commands. It still does not establish dynamic SVG
+  state skins, full SVG specification/plugin parity, native Vulkan/RTX
+  renderer parity, final route ownership, full live data-model/controller
+  behavior, true narrow-viewport capture parity, full screenshot layout
+  parity, or end-user documentation.
+  RmlUi Round 71 note: staged OpenGL validation now adds a `55`-asset
+  stateful SVG widget-skin library for buttons, primary/destructive buttons,
+  text boxes, combo/drop-down boxes, checkboxes, range controls, progress
+  controls, scrollbars, arrow boxes, and popup frames. Focused Video, Sound,
+  Start Server, Download Status, and Quit popup captures plus the clean
+  all-route sweep prove the skins load through the current OpenGL SVG texture
+  path. It still does not establish route-wide automated pixel assertions for
+  every state, native Vulkan/RTX renderer parity, final route ownership, full
+  live data-model/controller behavior, true narrow-viewport capture parity,
+  full screenshot layout parity, or end-user documentation.
+  RmlUi Round 72 note: staged OpenGL validation now adds menu coverage-gap
+  fixes and refined widget containment. Focused captures cover shell hubs,
+  dense settings, utility pages, session fallback routes, download status, and
+  the Quit popup; the final all-route sweep again reports `58` registered route
+  IDs, `59` document opens, `58` status samples, and `0` bad parser/texture
+  lines. It still does not establish native Vulkan/RTX renderer parity, final
+  route ownership, full live data-model/controller behavior, true
+  narrow-viewport capture parity, full screenshot layout parity, or end-user
+  documentation.
+  RmlUi Round 73 note: staged OpenGL validation now adds direct fallback text
+  and command-grid evidence for the session/lobby family. `join`/`dm_join`
+  keep authored labels when empty cvars exist, `callvote_main` and DM Join
+  retain two-column command surfaces, Admin Commands has a readable command/
+  usage row format, Start Server no longer exposes `$$com_maplist` as visible
+  fallback text, and the all-route sweep again reports `58` registered route
+  IDs, `59` document opens, `58` status samples, and `0` parser/CSS/texture/
+  runtime error lines after excluding expected missing data-model notices. It
+  still does not establish native Vulkan/RTX renderer parity, final route
+  ownership, full live data-model/controller behavior, true narrow-viewport
+  capture parity, full screenshot layout parity, or end-user documentation.
+  RmlUi Round 74 note: staged OpenGL validation now adds utility table
+  empty-state fixes, direct `ui_list`/`map_selector`/`tourney_veto` fallback
+  evidence, and default suppression of expected controller-stub missing
+  data-model notices through `ui_rml_log_missing_data_models`. The all-route
+  sweep reports `58` registered route IDs, `59` document opens, `58` status
+  samples, `0` missing data-model notice lines at default settings, and `0`
+  parser/CSS/texture/runtime error lines. It still does not establish native
+  Vulkan/RTX renderer parity, final route ownership, full live
+  data-model/controller behavior, true narrow-viewport capture parity, full
+  screenshot layout parity, or end-user documentation.
+  RmlUi Round 75 note: staged OpenGL validation now adds direct report/list
+  fallback evidence for Match Stats and Tournament Map Choices, a Download
+  Status idle/progress-unit capture, and static condition-inventory support
+  for runtime-compatible `!cvar` expressions. The all-route sweep again
+  reports `58` registered route IDs, `59` document opens, `58` status samples,
+  `0` missing data-model notice lines at default settings, and `0`
+  parser/CSS/texture/runtime error lines. It still does not establish native
+  Vulkan/RTX renderer parity, final route ownership, full live
+  data-model/controller behavior, true narrow-viewport capture parity, full
+  screenshot layout parity, or end-user documentation.
 - [x] `DV-07-T05` Keep the canonical shadowmapping replacement baseline synchronized with implementation status.
   Dependency: `FR-02-T09`. Priority: P1.
 - [ ] `DV-07-T06` Maintain imported-source credits and provenance ledgers for the Q3A BotLib and `TTimo/bspc` AAS work.

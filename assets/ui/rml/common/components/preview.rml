@@ -1,0 +1,21 @@
+<!-- Shared preview surface contract for player, model, skin, and selector pages. -->
+<templates>
+  <template name="worr-preview-panel">
+    <div class="worr-preview" data-contract-id="{{id}}" data-preview-kind="{{kind}}">
+      <div class="worr-preview-surface" data-preview-surface="{{surface}}" data-preview-resource="{{resource}}">
+        <div class="worr-preview-placeholder">{{placeholder}}</div>
+      </div>
+
+      <div class="worr-preview-meta">
+        <div class="worr-preview-title">{{title}}</div>
+        <div class="worr-preview-detail">{{detail}}</div>
+      </div>
+
+      <div class="worr-preview-actions">
+        <button data-for="action : actions" class="worr-preview-action" data-command="{{action.command}}" data-event-click="command.dispatch" data-menu-sound="confirm">
+          {{action.label}}
+        </button>
+      </div>
+    </div>
+  </template>
+</templates>

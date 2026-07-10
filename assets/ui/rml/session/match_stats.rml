@@ -1,0 +1,55 @@
+<rml>
+  <head>
+    <title>WORR Match Stats</title>
+    <link type="text/rcss" href="../common/theme/base.rcss" />
+    <link type="text/rcss" href="../common/theme/session.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
+  </head>
+  <body id="session-match-stats" data-route-id="match_stats" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-session-owner="sgame" data-open-command="worr_matchstats_menu" data-menu-music="menu" data-menu-sound-open="open">
+    <div class="screen compact-screen session-screen" id="match-stats-screen" data-close-command="popmenu; worr_matchstats_close">
+      <header class="page-header" id="match-stats-header">
+        <h1>Match Stats</h1>
+        <p id="match-stats-summary">
+          Review the player stat lines from the current match.
+        </p>
+      </header>
+
+      <main class="session-panel" id="match-stats-lines" data-model="session.match_stats.lines" data-controller="session.fixed_list" data-list-provider="session.match_stats.lines" data-owner-boundary="sgame-published-cvars">
+        <section class="session-static-report" id="match-stats-fallback" data-show-if="!ui_matchstats_line_0">
+          <p id="match-stats-fallback-title">Player Stats for Match</p>
+          <p id="match-stats-fallback-player">Player name</p>
+          <p id="match-stats-fallback-rule" class="ui-monospace-wrap">--------------------------</p>
+          <p id="match-stats-fallback-kills">kills</p>
+          <p id="match-stats-fallback-deaths">deaths</p>
+          <p id="match-stats-fallback-kd">k/d ratio</p>
+          <p id="match-stats-fallback-damage-dealt">dmg dealt</p>
+          <p id="match-stats-fallback-damage-received">dmg received</p>
+          <p id="match-stats-fallback-damage-ratio">dmg ratio</p>
+          <p id="match-stats-fallback-shots">shots fired</p>
+          <p id="match-stats-fallback-hits">shots on target</p>
+          <p id="match-stats-fallback-accuracy">total accuracy</p>
+        </section>
+        <p id="match-stats-line-0" data-bind="cvars.ui_matchstats_line_0" data-bind-cvar="ui_matchstats_line_0" data-visible-if="ui_matchstats_line_0">Player Stats for Match</p>
+        <p id="match-stats-line-1" data-bind="cvars.ui_matchstats_line_1" data-bind-cvar="ui_matchstats_line_1" data-visible-if="ui_matchstats_line_1">Player name</p>
+        <p id="match-stats-line-2" class="ui-monospace-wrap" data-bind="cvars.ui_matchstats_line_2" data-bind-cvar="ui_matchstats_line_2" data-visible-if="ui_matchstats_line_2">--------------------------</p>
+        <p id="match-stats-line-3" data-bind="cvars.ui_matchstats_line_3" data-bind-cvar="ui_matchstats_line_3" data-visible-if="ui_matchstats_line_3">kills</p>
+        <p id="match-stats-line-4" data-bind="cvars.ui_matchstats_line_4" data-bind-cvar="ui_matchstats_line_4" data-visible-if="ui_matchstats_line_4">deaths</p>
+        <p id="match-stats-line-5" data-bind="cvars.ui_matchstats_line_5" data-bind-cvar="ui_matchstats_line_5" data-visible-if="ui_matchstats_line_5">k/d ratio</p>
+        <p id="match-stats-line-6" data-bind="cvars.ui_matchstats_line_6" data-bind-cvar="ui_matchstats_line_6" data-visible-if="ui_matchstats_line_6">dmg dealt</p>
+        <p id="match-stats-line-7" data-bind="cvars.ui_matchstats_line_7" data-bind-cvar="ui_matchstats_line_7" data-visible-if="ui_matchstats_line_7">dmg received</p>
+        <p id="match-stats-line-8" data-bind="cvars.ui_matchstats_line_8" data-bind-cvar="ui_matchstats_line_8" data-visible-if="ui_matchstats_line_8">dmg ratio</p>
+        <p id="match-stats-line-9" data-bind="cvars.ui_matchstats_line_9" data-bind-cvar="ui_matchstats_line_9" data-visible-if="ui_matchstats_line_9">shots fired</p>
+        <p id="match-stats-line-10" data-bind="cvars.ui_matchstats_line_10" data-bind-cvar="ui_matchstats_line_10" data-visible-if="ui_matchstats_line_10">shots on target</p>
+        <p id="match-stats-line-11" data-bind="cvars.ui_matchstats_line_11" data-bind-cvar="ui_matchstats_line_11" data-visible-if="ui_matchstats_line_11">total accuracy</p>
+        <p id="match-stats-line-12" data-bind="cvars.ui_matchstats_line_12" data-bind-cvar="ui_matchstats_line_12" data-visible-if="ui_matchstats_line_12">stat line 13</p>
+        <p id="match-stats-line-13" data-bind="cvars.ui_matchstats_line_13" data-bind-cvar="ui_matchstats_line_13" data-visible-if="ui_matchstats_line_13">stat line 14</p>
+        <p id="match-stats-line-14" data-bind="cvars.ui_matchstats_line_14" data-bind-cvar="ui_matchstats_line_14" data-visible-if="ui_matchstats_line_14">stat line 15</p>
+        <p id="match-stats-line-15" data-bind="cvars.ui_matchstats_line_15" data-bind-cvar="ui_matchstats_line_15" data-visible-if="ui_matchstats_line_15">stat line 16</p>
+      </main>
+
+      <footer class="actions" id="match-stats-actions">
+        <button id="match-stats-return" type="button" data-command="popmenu; worr_matchstats_close" data-menu-sound="cancel">Return</button>
+      </footer>
+    </div>
+  </body>
+</rml>

@@ -1,0 +1,27 @@
+<!-- Shared list/table fragments for servers, demos, and ui_list style pages. -->
+<templates>
+  <template name="worr-data-table">
+    <div class="worr-table" data-model="{{model}}" data-contract-id="{{id}}">
+      <div class="worr-table-toolbar">
+        <button class="worr-table-action" data-for="action : actions" data-command="{{action.command}}" data-event-click="command.dispatch" data-menu-sound="confirm">
+          {{action.label}}
+        </button>
+      </div>
+
+      <table class="worr-table-grid">
+        <thead>
+          <tr>
+            <th data-for="column : columns" data-sort-key="{{column.key}}">{{column.label}}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr data-for="row : rows" data-row-id="{{row.id}}" data-event-click="list.select">
+            <td data-for="cell : row.cells">{{cell}}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="worr-table-status">{{status_text}}</div>
+    </div>
+  </template>
+</templates>

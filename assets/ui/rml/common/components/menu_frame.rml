@@ -1,0 +1,9 @@
+<!-- Starter menu frame template imported by shell/settings documents. -->
+<templates>
+  <template name="worr-menu-frame">
+    <div class="worr-menu-frame" data-contract-id="{{id}}">
+      <div class="worr-menu-frame-title">{{title}}</div>
+      <div class="worr-menu-frame-body">{{content}}</div>
+    </div>
+  </template>
+</templates>

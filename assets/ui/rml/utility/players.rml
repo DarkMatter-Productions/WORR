@@ -1,0 +1,75 @@
+<rml>
+  <head>
+    <title>WORR Player Setup</title>
+    <link type="text/rcss" href="../common/theme/base.rcss" />
+    <link type="text/rcss" href="../common/theme/utility.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
+  </head>
+  <body id="utility-players" data-route-id="players" data-route-group="utility" data-route-version="1" data-document-status="round2-scaffold" data-menu-music="menu" data-menu-sound-open="open">
+    <div class="screen" id="players-screen">
+      <header class="page-header">
+        <h1>Player Setup</h1>
+        <p id="players-summary">
+          Configure your name, model, skin, and weapon hand.
+        </p>
+      </header>
+
+      <section class="content two-column" id="players-content" data-model="player_config">
+        <div class="form-panel" id="players-form">
+          <h2>Identity</h2>
+          <div class="utility-field" data-control="field">
+            <span class="setting-widget-icon" data-widget="field"><img src="../common/icons/widgets/field.svg" /></span>
+            <label for="players-name">Name</label>
+            <input id="players-name" type="text" maxlength="15" data-cvar="name" data-menu-sound-change="change" />
+          </div>
+
+          <h2>Appearance</h2>
+          <div class="utility-field" data-control="select">
+            <span class="setting-widget-icon" data-widget="select"><img src="../common/icons/widgets/select.svg" /></span>
+            <label for="players-model">Model</label>
+            <select id="players-model" data-menu-sound-change="change">
+              <option value="">Choose Model</option>
+            </select>
+          </div>
+
+          <div class="utility-field" data-control="select">
+            <span class="setting-widget-icon" data-widget="select"><img src="../common/icons/widgets/select.svg" /></span>
+            <label for="players-skin">Skin</label>
+            <select id="players-skin" data-menu-sound-change="change">
+              <option value="">Choose Skin</option>
+            </select>
+          </div>
+
+          <div class="utility-field" data-control="select">
+            <span class="setting-widget-icon" data-widget="select"><img src="../common/icons/widgets/select.svg" /></span>
+            <label for="players-dogtag">Dogtag</label>
+            <select id="players-dogtag" data-cvar="dogtag" data-source-dir="tags" data-menu-sound-change="change">
+              <option value="default">default</option>
+            </select>
+          </div>
+
+          <div class="utility-field" data-control="select">
+            <span class="setting-widget-icon" data-widget="select"><img src="../common/icons/widgets/select.svg" /></span>
+            <label for="players-hand">Weapon Hand</label>
+            <select id="players-hand" data-cvar="hand" data-integer="true" data-menu-sound-change="change">
+              <option value="0">Right</option>
+              <option value="1">Left</option>
+              <option value="2">Center</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="preview-panel" id="players-preview" data-component="player_preview" data-model="player_config.preview">
+          <h2>Preview</h2>
+          <div id="players-preview-surface" class="preview-surface">
+            <span id="players-preview-placeholder">Player preview</span>
+          </div>
+        </div>
+      </section>
+
+      <footer class="actions" id="players-actions">
+        <button id="players-back" type="button" data-command="ui.back" data-menu-sound="cancel">Back</button>
+      </footer>
+    </div>
+  </body>
+</rml>

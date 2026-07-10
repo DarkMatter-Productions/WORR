@@ -1,0 +1,43 @@
+{
+  "contract": "worr.rml.utility_list.mock",
+  "version": 1,
+  "mock": true,
+  "task_ids": ["FR-09-T05", "FR-09-T07"],
+  "route": "servers/mock",
+  "model": "utility.servers",
+  "component_refs": [
+    "common/components/list-table.rml#worr-data-table",
+    "common/components/controls.rml#worr-command-button"
+  ],
+  "table": {
+    "id": "server_browser",
+    "sort": { "key": "ping", "direction": "asc" },
+    "columns": [
+      { "key": "name", "label": "Server", "width": 260 },
+      { "key": "map", "label": "Map", "width": 120 },
+      { "key": "players", "label": "Players", "width": 80 },
+      { "key": "ping", "label": "Ping", "width": 70 }
+    ],
+    "rows": [
+      {
+        "id": "local_q2dm1",
+        "cells": ["Local WORR Test", "q2dm1", "1/8", "4"],
+        "commands": ["server.connect.local_q2dm1"]
+      },
+      {
+        "id": "lan_q2dm8",
+        "cells": ["LAN Skirmish", "q2dm8", "5/16", "18"],
+        "commands": ["server.connect.lan_q2dm8"]
+      }
+    ],
+    "status_text": "2 mock servers"
+  },
+  "actions": [
+    { "id": "refresh", "label": "Refresh", "event": "servers.refresh" },
+    { "id": "connect", "label": "Connect", "event": "servers.connect_selected", "requires_selection": true }
+  ],
+  "empty_state": {
+    "label": "No servers found",
+    "command": "servers.refresh"
+  }
+}

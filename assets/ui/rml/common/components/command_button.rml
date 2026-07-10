@@ -1,0 +1,6 @@
+<!-- Starter command button template. Live command dispatch is an Agent 3 follow-up. -->
+<templates>
+  <template name="worr-command-button">
+    <button class="worr-command-button" type="button" data-command="{{command}}" data-event-click="command.dispatch" data-menu-sound="confirm">{{label}}</button>
+  </template>
+</templates>

@@ -1,0 +1,443 @@
+{
+  "schema": "worr.rml.agent5.routes.v1",
+  "description": "Agent 5 utility route/status metadata for RmlUi utility and tooling surfaces.",
+  "owner": "agent5-rich-tools-session-validation",
+  "roadmap": "docs-dev/plans/rmlui-ui-migration-roadmap.md",
+  "ownership_contract": "assets/ui/rml/contracts/route-ownership.schema.json",
+  "tasks": [
+    "FR-09-T05",
+    "FR-09-T07",
+    "FR-09-T09",
+    "FR-03-T08",
+    "DV-04-T02"
+  ],
+  "planned_shared_imports": [
+    "../common/theme/base.rcss",
+    "../common/components/controls.rml",
+    "../common/components/command_button.rml"
+  ],
+  "status_values": {
+    "scaffolded_round2": "Second-round starter RML document exists in Agent 5-owned assets and preserves representative command, keybind, and cvar metadata from worr.json."
+  },
+  "migration_phase_values": {
+    "starter": "Source RML document and static route metadata exist; runtime, controller, and parity evidence are pending.",
+    "controller_stub": "Controller/data-model stub metadata exists, but live runtime validation is pending.",
+    "runtime_stub": "Runtime smoke/open path exists for this route, but parity evidence is pending.",
+    "parity_pending": "Route opens through RmlUi with live bridge coverage; parity evidence is still incomplete.",
+    "parity_ready": "Route has accepted parity evidence and is ready for cutover consideration."
+  },
+  "routes": [
+    {
+      "id": "addressbook",
+      "wave": "A",
+      "group": "utility",
+      "document": "utility/addressbook.rml",
+      "document_id": "utility-addressbook",
+      "status": "scaffolded_round2",
+      "source_menu": "src/game/cgame/ui/worr.json:addressbook",
+      "legacy_surface": "src/game/cgame/ui/worr.json menu addressbook",
+      "current_surface": "RmlUi utility address book",
+      "source_owner": "cgame_ui_json",
+      "migration_phase": "controller_stub",
+      "task_ids": [
+        "FR-09-T05",
+        "FR-09-T07",
+        "FR-09-T09",
+        "FR-03-T08",
+        "DV-04-T02"
+      ],
+      "controller_scope": "utility.addressbook",
+      "entry_points": [
+        "pushmenu addressbook"
+      ],
+      "data_models": [
+        "utility.addressbook"
+      ],
+      "controller_contracts": [
+        {
+          "category": "cvar_binding",
+          "contract": "worr.rml.controller.cvar_binding.mock",
+          "fixture": "cvar-binding.mock.json",
+          "model": "utility.addressbook.cvars",
+          "status": "mock_fixture",
+          "notes": "Address fields declare static data-cvar attributes for adr0 through adr15."
+        },
+        {
+          "category": "command_action",
+          "contract": "worr.rml.controller.command_action.mock",
+          "fixture": "command-action.mock.json",
+          "model": "ui.commands",
+          "status": "mock_fixture",
+          "notes": "Browse and back buttons expose data-command hooks for later command dispatch wiring."
+        },
+        {
+          "category": "navigation",
+          "contract": "worr.rml.controller.navigation.mock",
+          "fixture": "navigation.mock.json",
+          "model": "ui.navigation",
+          "status": "mock_fixture",
+          "notes": "Browse declares data-route-target=\"servers\" while back maps to the shared navigation contract."
+        }
+      ],
+      "notes": "Controller-stub readiness metadata only; no live address book controller behavior, runtime open path, screenshots, or parity is claimed."
+    },
+    {
+      "id": "keys",
+      "wave": "A",
+      "group": "utility",
+      "document": "utility/keys.rml",
+      "document_id": "utility-keys",
+      "status": "scaffolded_round2",
+      "source_menu": "src/game/cgame/ui/worr.json:keys",
+      "legacy_surface": "src/game/cgame/ui/worr.json menu keys",
+      "current_surface": "RmlUi utility key bindings",
+      "source_owner": "cgame_ui_json",
+      "migration_phase": "controller_stub",
+      "task_ids": [
+        "FR-09-T05",
+        "FR-09-T07",
+        "FR-09-T09",
+        "FR-03-T08",
+        "DV-04-T02"
+      ],
+      "controller_scope": "utility.keybinds",
+      "entry_points": [
+        "pushmenu keys"
+      ],
+      "data_models": [
+        "utility.keybinds"
+      ],
+      "controller_contracts": [
+        {
+          "category": "keybind",
+          "contract": "worr.rml.input_keybind.mock",
+          "fixture": "input-keybind.mock.json",
+          "model": "utility.keybinds",
+          "status": "mock_fixture",
+          "notes": "Binding rows declare data-bind-command and data-event-click=\"keybind.capture\" hooks for later key-capture wiring."
+        },
+        {
+          "category": "command_action",
+          "contract": "worr.rml.controller.command_action.mock",
+          "fixture": "command-action.mock.json",
+          "model": "ui.commands",
+          "status": "mock_fixture",
+          "notes": "Legacy Keys and back buttons expose data-command hooks for later command dispatch wiring."
+        },
+        {
+          "category": "navigation",
+          "contract": "worr.rml.controller.navigation.mock",
+          "fixture": "navigation.mock.json",
+          "model": "ui.navigation",
+          "status": "mock_fixture",
+          "notes": "Legacy Keys declares data-route-target=\"legacykeys\" while back maps to the shared navigation contract."
+        }
+      ],
+      "notes": "Controller-stub readiness metadata only; no live key-capture controller behavior, runtime open path, screenshots, or parity is claimed."
+    },
+    {
+      "id": "legacykeys",
+      "wave": "A",
+      "group": "utility",
+      "document": "utility/legacykeys.rml",
+      "document_id": "utility-legacykeys",
+      "status": "scaffolded_round2",
+      "source_menu": "src/game/cgame/ui/worr.json:legacykeys",
+      "legacy_surface": "src/game/cgame/ui/worr.json menu legacykeys",
+      "current_surface": "RmlUi utility legacy key bindings",
+      "source_owner": "cgame_ui_json",
+      "migration_phase": "controller_stub",
+      "task_ids": [
+        "FR-09-T05",
+        "FR-09-T07",
+        "FR-09-T09",
+        "FR-03-T08",
+        "DV-04-T02"
+      ],
+      "controller_scope": "utility.legacy_keybinds",
+      "entry_points": [
+        "pushmenu legacykeys"
+      ],
+      "data_models": [
+        "utility.legacy_keybinds"
+      ],
+      "controller_contracts": [
+        {
+          "category": "keybind",
+          "contract": "worr.rml.input_keybind.mock",
+          "fixture": "input-keybind.mock.json",
+          "model": "utility.legacy_keybinds",
+          "status": "mock_fixture",
+          "notes": "Legacy binding rows declare data-bind-command and data-event-click=\"keybind.capture\" hooks for later key-capture wiring."
+        },
+        {
+          "category": "command_action",
+          "contract": "worr.rml.controller.command_action.mock",
+          "fixture": "command-action.mock.json",
+          "model": "ui.commands",
+          "status": "mock_fixture",
+          "notes": "Back exposes the ui.back data-command hook for later command dispatch wiring."
+        }
+      ],
+      "notes": "Controller-stub readiness metadata only; no live key-capture controller behavior, runtime open path, screenshots, or parity is claimed."
+    },
+    {
+      "id": "weapons",
+      "wave": "A",
+      "group": "utility",
+      "document": "utility/weapons.rml",
+      "document_id": "utility-weapons",
+      "status": "scaffolded_round2",
+      "source_menu": "src/game/cgame/ui/worr.json:weapons",
+      "legacy_surface": "src/game/cgame/ui/worr.json menu weapons",
+      "current_surface": "RmlUi utility weapon bindings",
+      "source_owner": "cgame_ui_json",
+      "migration_phase": "controller_stub",
+      "task_ids": [
+        "FR-09-T05",
+        "FR-09-T07",
+        "FR-09-T09",
+        "FR-03-T08",
+        "DV-04-T02"
+      ],
+      "controller_scope": "utility.weapon_binds",
+      "entry_points": [
+        "pushmenu weapons"
+      ],
+      "data_models": [
+        "utility.weapon_binds"
+      ],
+      "controller_contracts": [
+        {
+          "category": "keybind",
+          "contract": "worr.rml.input_keybind.mock",
+          "fixture": "input-keybind.mock.json",
+          "model": "utility.weapon_binds",
+          "status": "mock_fixture",
+          "notes": "Weapon binding rows declare data-bind-command and data-event-click=\"keybind.capture\" hooks for later key-capture wiring."
+        },
+        {
+          "category": "command_action",
+          "contract": "worr.rml.controller.command_action.mock",
+          "fixture": "command-action.mock.json",
+          "model": "ui.commands",
+          "status": "mock_fixture",
+          "notes": "Back exposes the ui.back data-command hook for later command dispatch wiring."
+        }
+      ],
+      "notes": "Controller-stub readiness metadata only; no live key-capture controller behavior, runtime open path, screenshots, or parity is claimed."
+    },
+    {
+      "id": "servers",
+      "wave": "B",
+      "group": "utility",
+      "document": "utility/servers.rml",
+      "document_id": "utility-servers",
+      "status": "scaffolded_round2",
+      "source_menu": "src/game/cgame/ui/worr.json:servers",
+      "legacy_surface": "src/game/cgame/ui/worr.json menu servers",
+      "current_surface": "RmlUi server browser",
+      "source_owner": "cgame_ui_json",
+      "migration_phase": "controller_stub",
+      "task_ids": [
+        "FR-09-T05",
+        "FR-09-T07",
+        "FR-09-T09",
+        "FR-03-T08",
+        "DV-04-T02"
+      ],
+      "controller_scope": "utility.servers",
+      "entry_points": [
+        "pushmenu servers"
+      ],
+      "data_models": [
+        "server_browser",
+        "server_browser.servers"
+      ],
+      "controller_contracts": [
+        {
+          "category": "command_action",
+          "contract": "worr.rml.controller.command_action.mock",
+          "fixture": "command-action.mock.json",
+          "model": "ui.commands",
+          "status": "mock_fixture",
+          "notes": "Refresh, connect, favorites, and back controls expose data-command hooks for later command dispatch wiring."
+        },
+        {
+          "category": "list_provider",
+          "contract": "worr.rml.controller.list_provider.mock",
+          "fixture": "list-provider.mock.json",
+          "model": "utility.servers",
+          "status": "mock_fixture",
+          "notes": "The server table declares server_browser data models for later sorting, refresh, selection, connect, and status rows."
+        }
+      ],
+      "notes": "Controller-stub readiness metadata only; no live server browser list provider, runtime open path, screenshots, or parity is claimed."
+    },
+    {
+      "id": "demos",
+      "wave": "B",
+      "group": "utility",
+      "document": "utility/demos.rml",
+      "document_id": "utility-demos",
+      "status": "scaffolded_round2",
+      "source_menu": "src/game/cgame/ui/worr.json:demos",
+      "legacy_surface": "src/game/cgame/ui/worr.json menu demos",
+      "current_surface": "RmlUi demo browser",
+      "source_owner": "cgame_ui_json",
+      "migration_phase": "controller_stub",
+      "task_ids": [
+        "FR-09-T05",
+        "FR-09-T07",
+        "FR-09-T09",
+        "FR-03-T08",
+        "DV-04-T02"
+      ],
+      "controller_scope": "utility.demos",
+      "entry_points": [
+        "pushmenu demos"
+      ],
+      "data_models": [
+        "demo_browser",
+        "demo_browser.entries"
+      ],
+      "controller_contracts": [
+        {
+          "category": "command_action",
+          "contract": "worr.rml.controller.command_action.mock",
+          "fixture": "command-action.mock.json",
+          "model": "ui.commands",
+          "status": "mock_fixture",
+          "notes": "Parent-directory, refresh, play, and back controls expose data-command hooks for later command dispatch wiring."
+        },
+        {
+          "category": "list_provider",
+          "contract": "worr.rml.controller.list_provider.mock",
+          "fixture": "list-provider.mock.json",
+          "model": "utility.demos",
+          "status": "mock_fixture",
+          "notes": "The demo table declares demo_browser data models for later directory navigation, sorting, playback, and status rows."
+        }
+      ],
+      "notes": "Controller-stub readiness metadata only; no live demo browser list provider, runtime open path, screenshots, or parity is claimed."
+    },
+    {
+      "id": "players",
+      "wave": "B",
+      "group": "utility",
+      "document": "utility/players.rml",
+      "document_id": "utility-players",
+      "status": "scaffolded_round2",
+      "source_menu": "src/game/cgame/ui/worr.json:players",
+      "legacy_surface": "src/game/cgame/ui/worr.json menu players",
+      "current_surface": "RmlUi player setup",
+      "source_owner": "cgame_ui_json",
+      "migration_phase": "controller_stub",
+      "task_ids": [
+        "FR-09-T05",
+        "FR-09-T07",
+        "FR-09-T09",
+        "FR-03-T08",
+        "DV-04-T02"
+      ],
+      "controller_scope": "utility.players",
+      "entry_points": [
+        "pushmenu players"
+      ],
+      "data_models": [
+        "player_config",
+        "player_config.preview"
+      ],
+      "controller_contracts": [
+        {
+          "category": "cvar_binding",
+          "contract": "worr.rml.controller.cvar_binding.mock",
+          "fixture": "cvar-binding.mock.json",
+          "model": "utility.players.cvars",
+          "status": "mock_fixture",
+          "notes": "Name, model, skin, and weapon-hand controls declare data-bind/data-options hooks for later player cvar/data binding."
+        },
+        {
+          "category": "command_action",
+          "contract": "worr.rml.controller.command_action.mock",
+          "fixture": "command-action.mock.json",
+          "model": "ui.commands",
+          "status": "mock_fixture",
+          "notes": "Apply, reset, and back controls expose data-command hooks for later command dispatch wiring."
+        },
+        {
+          "category": "preview",
+          "contract": "worr.rml.preview.mock",
+          "fixture": "preview.mock.json",
+          "model": "player.preview",
+          "status": "mock_fixture",
+          "notes": "The player preview panel declares the player_config.preview model for later engine preview surface ownership."
+        }
+      ],
+      "notes": "Controller-stub readiness metadata only; no live player setup controller, preview controller, runtime open path, screenshots, or parity is claimed."
+    },
+    {
+      "id": "ui_list",
+      "wave": "B",
+      "group": "utility",
+      "document": "utility/ui_list.rml",
+      "document_id": "utility-ui-list",
+      "status": "scaffolded_round2",
+      "source_menu": "src/game/cgame/ui/worr.json:ui_list",
+      "legacy_surface": "code-driven ui_list menu",
+      "current_surface": "RmlUi generic session list",
+      "source_owner": "cgame_ui_json",
+      "migration_phase": "controller_stub",
+      "task_ids": [
+        "FR-09-T05",
+        "FR-09-T07",
+        "FR-09-T09",
+        "FR-03-T08",
+        "DV-04-T02"
+      ],
+      "controller_scope": "utility.ui_list",
+      "entry_points": [
+        "pushmenu ui_list"
+      ],
+      "data_models": [
+        "session.ui_list",
+        "session.ui_list.items"
+      ],
+      "controller_contracts": [
+        {
+          "category": "cvar_binding",
+          "contract": "worr.rml.controller.cvar_binding.mock",
+          "fixture": "cvar-binding.mock.json",
+          "model": "utility.ui_list.cvars",
+          "status": "mock_fixture",
+          "notes": "Title, subtitle, caption, extra action, item, and page labels bind to the existing ui_list cvar publication surface."
+        },
+        {
+          "category": "command_action",
+          "contract": "worr.rml.controller.command_action.mock",
+          "fixture": "command-action.mock.json",
+          "model": "ui.commands",
+          "status": "mock_fixture",
+          "notes": "Extra action, item, pagination, and return controls expose data-command or data-command-cvar hooks for later dispatch wiring."
+        },
+        {
+          "category": "condition_state",
+          "contract": "worr.rml.controller.condition_state.mock",
+          "fixture": "condition-state.mock.json",
+          "model": "ui.conditions",
+          "status": "mock_fixture",
+          "notes": "Visibility flags for subtitle, header, extra actions, item rows, and paging controls declare data-visible-if hooks."
+        },
+        {
+          "category": "list_provider",
+          "contract": "worr.rml.controller.list_provider.mock",
+          "fixture": "list-provider.mock.json",
+          "model": "utility.ui_list",
+          "status": "mock_fixture",
+          "notes": "The fixed session list declares session.ui_list item models for later cvar-published list provider wiring."
+        }
+      ],
+      "notes": "Controller-stub readiness metadata only; no live ui_list controller, runtime open path, screenshots, or parity is claimed."
+    }
+  ]
+}

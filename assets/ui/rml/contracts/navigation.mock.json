@@ -1,0 +1,65 @@
+{
+  "contract": "worr.rml.controller.navigation.mock",
+  "version": 1,
+  "mock": true,
+  "category": "navigation",
+  "task_ids": ["FR-09-T05", "FR-09-T07", "FR-09-T08", "DV-04-T02"],
+  "route": "shell/options/mock",
+  "model": "ui.navigation",
+  "component_refs": [
+    "common/components/menu_frame.rml#worr-menu-frame",
+    "common/components/controls.rml#worr-command-button"
+  ],
+  "source_boundary": {
+    "presentation_owner": "client_rml",
+    "route_stack_provider": "client_rml_navigation_bridge",
+    "command_provider": "client_command_bridge"
+  },
+  "bridge_contract": {
+    "push_event": "navigation.push",
+    "back_event": "navigation.back",
+    "replace_event": "navigation.replace",
+    "close_event": "navigation.close",
+    "route_field": "route",
+    "fallback_command": "popmenu"
+  },
+  "stack": {
+    "active_route": "options",
+    "can_go_back": true,
+    "entries": [
+      { "route": "main", "document": "shell/main.rml", "title": "Main" },
+      { "route": "options", "document": "shell/options.rml", "title": "Options" }
+    ]
+  },
+  "actions": [
+    {
+      "id": "ui.back",
+      "label": "Back",
+      "kind": "back",
+      "event": "navigation.back",
+      "command": "popmenu",
+      "enabled_if": "navigation.can_go_back"
+    },
+    {
+      "id": "route.video",
+      "label": "Video",
+      "kind": "push_route",
+      "event": "navigation.push",
+      "route": "video",
+      "document": "settings/video.rml",
+      "command": "pushmenu video"
+    },
+    {
+      "id": "ui.close",
+      "label": "Close",
+      "kind": "close",
+      "event": "navigation.close",
+      "command": "popmenu"
+    }
+  ],
+  "policy": {
+    "empty_back_stack_action": "close",
+    "preserve_focus_on_back": true,
+    "allow_external_command_fallback": true
+  }
+}

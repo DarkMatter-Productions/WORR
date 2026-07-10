@@ -225,5 +225,7 @@ void MapDB_Shutdown(void)
 
 	memset(&mapdb, 0, sizeof(mapdb));
 
-    Z_LeakTest(TAG_MAPDB);
+	// No Z_LeakTest here: the engine and the cgame module each hold their
+	// own map database in the shared zone, so a per-tag leak test from one
+	// side false-positives on the other side's live allocations.
 }

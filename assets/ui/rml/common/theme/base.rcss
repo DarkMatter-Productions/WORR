@@ -1,0 +1,1320 @@
+/*
+ * WORR RmlUi base theme.
+ *
+ * Keep this file in RmlUi-native RCSS. RmlUi 6.2 does not accept browser CSS
+ * custom properties or var() expansion, so shared route styles use literal
+ * colors and spacing until a runtime token preprocessor exists.
+ */
+
+body
+{
+	position: absolute;
+	top: 0px;
+	right: 0px;
+	bottom: 0px;
+	left: 0px;
+	margin: 0px;
+	padding: 0px;
+	background-color: #12110f;
+	color: #f3eee4;
+	font-family: "WORR UI";
+	font-size: 16px;
+	line-height: 1.24;
+	overflow: hidden;
+}
+
+div,
+header,
+main,
+footer,
+nav,
+section
+{
+	display: block;
+}
+
+h1,
+.ui-title
+{
+	display: block;
+	margin: 0px 0px 12px 0px;
+	color: #f3eee4;
+	font-family: "WORR Display";
+	font-size: 30px;
+	line-height: 1.1;
+	font-weight: bold;
+}
+
+h2,
+.ui-heading
+{
+	display: block;
+	margin: 0px 0px 8px 0px;
+	color: #f3eee4;
+	font-family: "WORR Display";
+	font-size: 21px;
+	line-height: 1.15;
+	font-weight: bold;
+}
+
+p,
+.ui-copy
+{
+	display: block;
+	margin: 0px 0px 8px 0px;
+	color: #f3eee4;
+}
+
+ul,
+ol
+{
+	margin: 0px 0px 12px 0px;
+	padding-left: 24px;
+}
+
+li
+{
+	margin-bottom: 4px;
+}
+
+.ui-muted,
+.label
+{
+	color: #c9beb0;
+	font-weight: bold;
+}
+
+.value
+{
+	color: #f3eee4;
+}
+
+.ui-warning
+{
+	color: #ffd967;
+}
+
+.ui-danger
+{
+	color: #ee6758;
+}
+
+.ui-success
+{
+	color: #83d18f;
+}
+
+.ui-info
+{
+	color: #7ed4d8;
+}
+
+@keyframes route-enter
+{
+	from
+	{
+		opacity: 0;
+		transform: translateY(8px);
+	}
+	to
+	{
+		opacity: 1;
+		transform: translateY(0px);
+	}
+}
+
+.ui-route,
+.screen
+{
+	position: absolute;
+	top: 0px;
+	right: 0px;
+	bottom: 0px;
+	left: 0px;
+	width: auto;
+	height: auto;
+	min-height: 0px;
+	padding: 18px;
+	background-color: #12110f;
+	color: #f3eee4;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	animation: 0.18s cubic-out route-enter;
+}
+
+.ui-reduced-motion .ui-route,
+.ui-reduced-motion .screen,
+.ui-a11y-reduced-motion .ui-route,
+.ui-a11y-reduced-motion .screen
+{
+	animation: none;
+}
+
+/* Short-canvas fallback: reclaim vertical space from fixed chrome. */
+@media (max-height: 640px)
+{
+	.ui-route,
+	.screen
+	{
+		padding: 10px;
+	}
+
+	.page-header,
+	.menu-header
+	{
+		margin-bottom: 6px;
+		padding-bottom: 6px;
+	}
+
+	.menu-footer
+	{
+		margin-top: 6px;
+		padding-top: 6px;
+	}
+}
+
+.compact-screen
+{
+	padding: 14px;
+}
+
+.page-header,
+.menu-header
+{
+	flex: 0 0 auto;
+	margin-bottom: 8px;
+	padding-bottom: 8px;
+	border-bottom-width: 1px;
+	border-bottom-color: #332d23;
+}
+
+.page-header p,
+.menu-header p
+{
+	margin-bottom: 0px;
+}
+
+.status-message
+{
+	padding: 8px 10px;
+	background-color: #14120f;
+	color: #c9beb0;
+	border-width: 1px;
+	border-color: #443d33;
+	border-left-width: 4px;
+	border-left-color: #4b4235;
+	border-radius: 3px;
+	margin-bottom: 8px;
+	white-space: normal;
+	word-break: break-word;
+}
+
+.page-header p.status-message,
+.menu-header p.status-message
+{
+	margin-bottom: 8px;
+}
+
+.menu-footer
+{
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	flex: 0 0 auto;
+	margin-top: 8px;
+	padding-top: 8px;
+	border-top-width: 1px;
+	border-top-color: #332d23;
+}
+
+.menu-footer button,
+.menu-footer .ui-button
+{
+	margin-right: 8px;
+	margin-bottom: 8px;
+	white-space: nowrap;
+}
+
+.actions button,
+.actions .ui-button
+{
+	white-space: nowrap;
+}
+
+.ui-panel,
+.contract
+{
+	padding: 16px;
+	background-color: #1b1916;
+	border-width: 2px;
+	border-color: #756a5d;
+	border-radius: 6px;
+}
+
+.ui-row
+{
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+}
+
+.ui-stack
+{
+	display: flex;
+	flex-direction: column;
+}
+
+.ui-cluster,
+.actions
+{
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	align-items: center;
+	flex: 0 0 auto;
+}
+
+.actions
+{
+	margin-top: 8px;
+	padding-top: 8px;
+	border-top-width: 1px;
+	border-top-color: #332d23;
+}
+
+.popup-screen
+{
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: 18px;
+	background-color: #080706;
+}
+
+.popup-dialog
+{
+	width: 420px;
+	max-width: 420px;
+	padding: 18px;
+	background-color: #16130f;
+	border-width: 1px;
+	border-color: #5f5548;
+	border-left-width: 4px;
+	border-left-color: #ee6758;
+	border-radius: 6px;
+	decorator: image(../skins/widgets/popup-frame.svg);
+	transition: background-color border-color color 0.12s cubic-out;
+}
+
+.confirmation-dialog
+{
+	border-top-width: 2px;
+	border-top-color: #b99b5b;
+}
+
+.popup-header
+{
+	margin-bottom: 10px;
+	padding-bottom: 8px;
+	border-bottom-width: 1px;
+	border-bottom-color: #332d23;
+}
+
+.popup-header h1
+{
+	margin-bottom: 0px;
+	font-size: 24px;
+	color: #f3eee4;
+	line-height: 1.05;
+	text-transform: uppercase;
+}
+
+.popup-kicker
+{
+	margin-bottom: 6px;
+	color: #c9beb0;
+	font-weight: bold;
+}
+
+.popup-message
+{
+	min-height: 42px;
+	margin-bottom: 16px;
+	color: #f3eee4;
+	font-size: 18px;
+	line-height: 1.2;
+	white-space: normal;
+	word-break: break-word;
+}
+
+.popup-actions
+{
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	padding-top: 12px;
+	border-top-width: 1px;
+	border-top-color: #332d23;
+}
+
+.popup-actions button,
+.popup-actions .ui-button
+{
+	width: 150px;
+	min-width: 150px;
+	min-height: 38px;
+	margin-right: 8px;
+	margin-bottom: 0px;
+}
+
+.popup-primary
+{
+	background-color: #1f271d;
+	border-color: #5f8765;
+	border-left-width: 4px;
+	border-left-color: #83d18f;
+	decorator: image(../skins/widgets/button-primary.svg);
+}
+
+.popup-primary:hover
+{
+	background-color: #263322;
+	border-color: #83d18f;
+	border-left-color: #a6e3ad;
+	color: #83d18f;
+	decorator: image(../skins/widgets/button-primary-hover.svg);
+}
+
+.popup-primary:focus
+{
+	background-color: #263322;
+	border-color: #ffd967;
+	border-left-color: #a6e3ad;
+	color: #83d18f;
+	decorator: image(../skins/widgets/button-primary-hover.svg);
+}
+
+.popup-primary:active
+{
+	background-color: #2c4028;
+	border-color: #a6e3ad;
+	border-left-color: #a6e3ad;
+	color: #a6e3ad;
+	decorator: image(../skins/widgets/button-primary-hover.svg);
+}
+
+.popup-danger
+{
+	background-color: #281b18;
+	border-color: #895047;
+	border-left-width: 4px;
+	border-left-color: #ee6758;
+	decorator: image(../skins/widgets/button-danger.svg);
+}
+
+.popup-danger:hover
+{
+	background-color: #321f1b;
+	border-color: #ee6758;
+	border-left-color: #ff9285;
+	color: #ee6758;
+	decorator: image(../skins/widgets/button-danger-hover.svg);
+}
+
+.popup-danger:focus
+{
+	background-color: #321f1b;
+	border-color: #ffd967;
+	border-left-color: #ff9285;
+	color: #ee6758;
+	decorator: image(../skins/widgets/button-danger-hover.svg);
+}
+
+.popup-danger:active
+{
+	background-color: #402420;
+	border-color: #ff9285;
+	border-left-color: #ff9285;
+	color: #ff9285;
+	decorator: image(../skins/widgets/button-danger-hover.svg);
+}
+
+.popup-secondary
+{
+	background-color: #1b1916;
+	border-color: #5f5548;
+	color: #c9beb0;
+	decorator: image(../skins/widgets/button-normal.svg);
+}
+
+.popup-secondary:hover
+{
+	background-color: #27231d;
+	border-color: #b99b5b;
+	color: #ffd967;
+	decorator: image(../skins/widgets/button-hover.svg);
+}
+
+.popup-secondary:focus
+{
+	background-color: #27231d;
+	border-color: #ffd967;
+	color: #ffd967;
+	decorator: image(../skins/widgets/button-focus.svg);
+}
+
+.popup-secondary:active
+{
+	background-color: #3f3626;
+	border-color: #ffd967;
+	color: #ffd967;
+	decorator: image(../skins/widgets/button-active.svg);
+}
+
+button,
+.ui-button,
+input,
+select,
+textarea,
+.ui-focusable
+{
+	tab-index: auto;
+	nav: auto;
+	focus: auto;
+}
+
+button,
+.ui-button
+{
+	display: block;
+	min-height: 36px;
+	min-width: 96px;
+	max-width: 100%;
+	padding: 6px 12px;
+	background-color: #27231d;
+	color: #f3eee4;
+	border-width: 2px;
+	border-color: #756a5d;
+	border-radius: 3px;
+	decorator: image(../skins/widgets/button-normal.svg);
+	text-align: center;
+	font-family: "WORR Display";
+	font-size: 16px;
+	line-height: 1.1;
+	white-space: normal;
+	word-break: break-word;
+	transition: background-color border-color color 0.12s cubic-out;
+}
+
+button:hover,
+.ui-button:hover
+{
+	background-color: #332d23;
+	border-color: #b99b5b;
+	color: #ffd967;
+	decorator: image(../skins/widgets/button-hover.svg);
+}
+
+button:active,
+.ui-button:active
+{
+	background-color: #3f3626;
+	border-color: #ffd967;
+	color: #ffd967;
+	decorator: image(../skins/widgets/button-active.svg);
+}
+
+button:focus,
+.ui-button:focus,
+input:focus,
+select:focus,
+textarea:focus,
+.ui-focusable:focus
+{
+	background-color: #332d23;
+	border-color: #ffd967;
+	color: #ffd967;
+	decorator: image(../skins/widgets/input-focus.svg);
+}
+
+button:focus,
+.ui-button:focus
+{
+	decorator: image(../skins/widgets/button-focus.svg);
+}
+
+button[data-command="ui.back"],
+button[data-command="ui.close"],
+button[data-command^="popmenu"],
+button[data-command^="forcemenuoff"],
+button.ui-button-back,
+.ui-button[data-command="ui.back"],
+.ui-button[data-command="ui.close"],
+.ui-button[data-command^="popmenu"],
+.ui-button.ui-button-back
+{
+	background-color: #1b1916;
+	border-color: #5f5548;
+	color: #c9beb0;
+	decorator: image(../skins/widgets/button-normal.svg);
+}
+
+button[data-command="ui.back"]:hover,
+button[data-command="ui.close"]:hover,
+button[data-command^="popmenu"]:hover,
+button[data-command^="forcemenuoff"]:hover,
+button.ui-button-back:hover,
+.ui-button[data-command="ui.back"]:hover,
+.ui-button[data-command="ui.close"]:hover,
+.ui-button[data-command^="popmenu"]:hover,
+.ui-button.ui-button-back:hover
+{
+	background-color: #27231d;
+	border-color: #b99b5b;
+	color: #ffd967;
+	decorator: image(../skins/widgets/button-hover.svg);
+}
+
+button[data-command="ui.back"]:focus,
+button[data-command="ui.close"]:focus,
+button[data-command^="popmenu"]:focus,
+button[data-command^="forcemenuoff"]:focus,
+button.ui-button-back:focus,
+.ui-button[data-command="ui.back"]:focus,
+.ui-button[data-command="ui.close"]:focus,
+.ui-button[data-command^="popmenu"]:focus,
+.ui-button.ui-button-back:focus
+{
+	background-color: #27231d;
+	border-color: #ffd967;
+	color: #ffd967;
+	decorator: image(../skins/widgets/button-focus.svg);
+}
+
+button[data-command="ui.back"]:active,
+button[data-command="ui.close"]:active,
+button[data-command^="popmenu"]:active,
+button[data-command^="forcemenuoff"]:active,
+button.ui-button-back:active,
+.ui-button[data-command="ui.back"]:active,
+.ui-button[data-command="ui.close"]:active,
+.ui-button[data-command^="popmenu"]:active,
+.ui-button.ui-button-back:active
+{
+	background-color: #3f3626;
+	border-color: #ffd967;
+	color: #ffd967;
+	decorator: image(../skins/widgets/button-active.svg);
+}
+
+button.ui-button-primary,
+.ui-button.ui-button-primary
+{
+	background-color: #1f271d;
+	border-color: #5f8765;
+	border-left-width: 4px;
+	border-left-color: #83d18f;
+	decorator: image(../skins/widgets/button-primary.svg);
+}
+
+button.ui-button-primary:hover,
+.ui-button.ui-button-primary:hover
+{
+	background-color: #263322;
+	border-color: #83d18f;
+	border-left-color: #a6e3ad;
+	color: #83d18f;
+	decorator: image(../skins/widgets/button-primary-hover.svg);
+}
+
+button.ui-button-primary:focus,
+.ui-button.ui-button-primary:focus
+{
+	background-color: #263322;
+	border-color: #ffd967;
+	border-left-color: #a6e3ad;
+	color: #83d18f;
+	decorator: image(../skins/widgets/button-primary-hover.svg);
+}
+
+button.ui-button-primary:active,
+.ui-button.ui-button-primary:active
+{
+	background-color: #2c4028;
+	border-color: #a6e3ad;
+	border-left-color: #a6e3ad;
+	color: #a6e3ad;
+	decorator: image(../skins/widgets/button-primary-hover.svg);
+}
+
+button.ui-button-danger,
+.ui-button.ui-button-danger
+{
+	background-color: #281b18;
+	border-color: #895047;
+	border-left-width: 4px;
+	border-left-color: #ee6758;
+	decorator: image(../skins/widgets/button-danger.svg);
+}
+
+button.ui-button-danger:hover,
+.ui-button.ui-button-danger:hover
+{
+	background-color: #321f1b;
+	border-color: #ee6758;
+	border-left-color: #ff9285;
+	color: #ee6758;
+	decorator: image(../skins/widgets/button-danger-hover.svg);
+}
+
+button.ui-button-danger:focus,
+.ui-button.ui-button-danger:focus
+{
+	background-color: #321f1b;
+	border-color: #ffd967;
+	border-left-color: #ff9285;
+	color: #ee6758;
+	decorator: image(../skins/widgets/button-danger-hover.svg);
+}
+
+button.ui-button-danger:active,
+.ui-button.ui-button-danger:active
+{
+	background-color: #402420;
+	border-color: #ff9285;
+	border-left-color: #ff9285;
+	color: #ff9285;
+	decorator: image(../skins/widgets/button-danger-hover.svg);
+}
+
+input,
+select,
+textarea,
+.ui-field
+{
+	min-height: 36px;
+	max-width: 100%;
+	padding: 6px 10px;
+	background-color: #1b1916;
+	color: #f3eee4;
+	border-width: 2px;
+	border-color: #756a5d;
+	border-radius: 3px;
+	decorator: image(../skins/widgets/input-normal.svg);
+	font-family: "WORR UI";
+	font-size: 16px;
+	line-height: 1.2;
+	white-space: normal;
+	word-break: break-word;
+	transition: background-color border-color color 0.12s cubic-out;
+}
+
+input[type="checkbox"],
+.worr-toggle
+{
+	width: 32px;
+	min-width: 32px;
+	height: 28px;
+	min-height: 28px;
+	padding: 0px;
+	background-color: #171511;
+	border-color: #756a5d;
+	decorator: image(../skins/widgets/checkbox-off.svg);
+}
+
+input[type="range"],
+.worr-slider
+{
+	min-height: 28px;
+	padding: 0px;
+	background-color: #171511;
+	border-color: #5f5548;
+	decorator: image(../skins/widgets/range-track.svg);
+}
+
+progress,
+.worr-progress
+{
+	min-height: 28px;
+	padding: 0px;
+	background-color: #171511;
+	border-width: 2px;
+	border-color: #756a5d;
+	border-radius: 3px;
+	decorator: image(../skins/widgets/progress-track.svg);
+	transition: background-color border-color 0.12s cubic-out;
+}
+
+input:hover,
+select:hover,
+textarea:hover,
+.ui-field:hover
+{
+	background-color: #211e19;
+	border-color: #b99b5b;
+	decorator: image(../skins/widgets/input-hover.svg);
+}
+
+select
+{
+	decorator: image(../skins/widgets/select-normal.svg);
+}
+
+select:hover
+{
+	decorator: image(../skins/widgets/select-hover.svg);
+}
+
+select:focus
+{
+	decorator: image(../skins/widgets/select-focus.svg);
+}
+
+select selectvalue
+{
+	margin-right: 36px;
+}
+
+select selectarrow
+{
+	width: 30px;
+	min-width: 30px;
+	decorator: image(../skins/widgets/arrowbox-normal.svg);
+}
+
+select:hover selectarrow,
+select:focus selectarrow
+{
+	decorator: image(../skins/widgets/arrowbox-hover.svg);
+}
+
+select:active selectarrow,
+select selectarrow:checked
+{
+	decorator: image(../skins/widgets/arrowbox-hover.svg);
+}
+
+select selectbox
+{
+	padding: 4px;
+	background-color: #16130f;
+	border-width: 1px;
+	border-color: #5f5548;
+	decorator: image(../skins/widgets/dropdown-panel.svg);
+}
+
+select selectbox option
+{
+	padding: 4px 8px;
+	background-color: #16130f;
+	color: #f3eee4;
+	transition: background-color color 0.12s cubic-out;
+}
+
+select selectbox option:hover,
+select selectbox option:checked
+{
+	background-color: #332d23;
+	color: #ffd967;
+	decorator: image(../skins/widgets/dropdown-option-hover.svg);
+}
+
+select selectbox option:active
+{
+	background-color: #3f3626;
+	color: #ffd967;
+	decorator: image(../skins/widgets/dropdown-option-hover.svg);
+}
+
+input[type="checkbox"]:hover,
+.worr-toggle:hover
+{
+	decorator: image(../skins/widgets/checkbox-off-hover.svg);
+}
+
+input[type="checkbox"]:focus,
+.worr-toggle:focus
+{
+	border-color: #ffd967;
+	decorator: image(../skins/widgets/checkbox-off-focus.svg);
+}
+
+input[type="checkbox"]:checked,
+.worr-toggle:checked
+{
+	decorator: image(../skins/widgets/checkbox-on.svg);
+}
+
+input[type="checkbox"]:checked:hover,
+.worr-toggle:checked:hover
+{
+	decorator: image(../skins/widgets/checkbox-on-hover.svg);
+}
+
+input[type="checkbox"]:checked:focus,
+.worr-toggle:checked:focus
+{
+	border-color: #ffd967;
+	decorator: image(../skins/widgets/checkbox-on-focus.svg);
+}
+
+input[type="range"]:hover,
+.worr-slider:hover
+{
+	decorator: image(../skins/widgets/range-track-hover.svg);
+}
+
+input[type="range"]:focus,
+.worr-slider:focus
+{
+	border-color: #ffd967;
+	decorator: image(../skins/widgets/range-track-focus.svg);
+}
+
+input[type="range"] slidertrack,
+.worr-slider slidertrack
+{
+	height: 22px;
+	margin-top: 3px;
+	decorator: image(../skins/widgets/range-track.svg);
+}
+
+input[type="range"]:hover slidertrack,
+.worr-slider:hover slidertrack
+{
+	decorator: image(../skins/widgets/range-track-hover.svg);
+}
+
+input[type="range"]:focus slidertrack,
+.worr-slider:focus slidertrack
+{
+	decorator: image(../skins/widgets/range-track-focus.svg);
+}
+
+input[type="range"] sliderprogress,
+.worr-slider sliderprogress
+{
+	height: 7px;
+	margin-top: 8px;
+	background-color: #426f72;
+}
+
+input[type="range"] sliderbar,
+.worr-slider sliderbar
+{
+	width: 24px;
+	height: 28px;
+	margin-left: -7px;
+	margin-right: -7px;
+	margin-top: -3px;
+	decorator: image(../skins/widgets/range-thumb.svg);
+}
+
+input[type="range"] sliderbar:hover,
+input[type="range"] sliderbar:active,
+.worr-slider sliderbar:hover,
+.worr-slider sliderbar:active
+{
+	decorator: image(../skins/widgets/range-thumb-hover.svg);
+}
+
+input[type="range"]:disabled,
+input[type="range"][disabled],
+.worr-slider:disabled,
+.worr-slider[disabled]
+{
+	decorator: image(../skins/widgets/range-track-disabled.svg);
+}
+
+input[type="range"]:disabled slidertrack,
+input[type="range"][disabled] slidertrack,
+.worr-slider:disabled slidertrack,
+.worr-slider[disabled] slidertrack
+{
+	decorator: image(../skins/widgets/range-track-disabled.svg);
+}
+
+input[type="range"]:disabled sliderbar,
+input[type="range"][disabled] sliderbar,
+.worr-slider:disabled sliderbar,
+.worr-slider[disabled] sliderbar
+{
+	decorator: image(../skins/widgets/range-thumb-disabled.svg);
+}
+
+input[type="range"] sliderarrowdec,
+input[type="range"] sliderarrowinc,
+.worr-slider sliderarrowdec,
+.worr-slider sliderarrowinc
+{
+	display: none;
+	width: 0px;
+	height: 0px;
+	min-width: 0px;
+	min-height: 0px;
+}
+
+input[type="range"] sliderarrowdec:hover,
+input[type="range"] sliderarrowinc:hover,
+.worr-slider sliderarrowdec:hover,
+.worr-slider sliderarrowinc:hover
+{
+	decorator: image(../skins/widgets/arrowbox-hover.svg);
+}
+
+progress fill,
+.worr-progress fill
+{
+	background-color: #426f72;
+	decorator: image(../skins/widgets/progress-fill.svg);
+}
+
+progress:hover,
+.worr-progress:hover
+{
+	background-color: #211e19;
+	border-color: #b99b5b;
+	decorator: image(../skins/widgets/progress-track-hover.svg);
+}
+
+progress:disabled,
+progress[disabled],
+.worr-progress:disabled,
+.worr-progress[disabled]
+{
+	decorator: image(../skins/widgets/progress-track-disabled.svg);
+}
+
+progress:disabled fill,
+progress[disabled] fill,
+.worr-progress:disabled fill,
+.worr-progress[disabled] fill
+{
+	decorator: image(../skins/widgets/progress-fill-disabled.svg);
+}
+
+scrollbarvertical slidertrack,
+scrollbarhorizontal slidertrack
+{
+	background-color: #12110f;
+	decorator: image(../skins/widgets/scroll-track.svg);
+}
+
+scrollbarvertical
+{
+	width: 12px;
+	min-width: 12px;
+}
+
+scrollbarhorizontal
+{
+	display: none;
+	height: 0px;
+	min-height: 0px;
+}
+
+scrollbarvertical slidertrack
+{
+	width: 12px;
+	min-width: 12px;
+}
+
+scrollbarhorizontal slidertrack
+{
+	height: 12px;
+	min-height: 12px;
+}
+
+scrollbarvertical sliderbar,
+scrollbarhorizontal sliderbar
+{
+	background-color: #756a5d;
+	decorator: image(../skins/widgets/scroll-thumb.svg);
+	transition: background-color 0.12s cubic-out;
+}
+
+scrollbarvertical sliderbar
+{
+	width: 12px;
+	min-width: 12px;
+	min-height: 24px;
+}
+
+scrollbarhorizontal sliderbar
+{
+	height: 12px;
+	min-height: 12px;
+	min-width: 24px;
+}
+
+scrollbarvertical sliderbar:hover,
+scrollbarhorizontal sliderbar:hover
+{
+	background-color: #8d8375;
+	decorator: image(../skins/widgets/scroll-thumb-hover.svg);
+}
+
+scrollbarvertical:disabled sliderbar,
+scrollbarhorizontal:disabled sliderbar
+{
+	decorator: image(../skins/widgets/scroll-thumb-disabled.svg);
+}
+
+scrollbarvertical sliderarrowdec,
+scrollbarvertical sliderarrowinc,
+scrollbarhorizontal sliderarrowdec,
+scrollbarhorizontal sliderarrowinc
+{
+	display: none;
+	width: 0px;
+	height: 0px;
+	min-width: 0px;
+	min-height: 0px;
+}
+
+textarea
+{
+	min-height: 96px;
+}
+
+[disabled],
+.is-disabled
+{
+	color: #8d8375;
+	border-color: #756a5d;
+}
+
+button:disabled,
+.ui-button:disabled,
+button[disabled],
+.ui-button[disabled]
+{
+	decorator: image(../skins/widgets/button-disabled.svg);
+}
+
+input:disabled,
+textarea:disabled,
+input[disabled],
+textarea[disabled],
+.ui-field.is-disabled
+{
+	decorator: image(../skins/widgets/input-disabled.svg);
+}
+
+select:disabled,
+select[disabled]
+{
+	decorator: image(../skins/widgets/select-disabled.svg);
+}
+
+input[type="checkbox"]:disabled,
+input[type="checkbox"][disabled],
+.worr-toggle:disabled,
+.worr-toggle[disabled]
+{
+	decorator: image(../skins/widgets/checkbox-disabled.svg);
+}
+
+input[type="checkbox"]:checked:disabled,
+input[type="checkbox"]:checked[disabled],
+.worr-toggle:checked:disabled,
+.worr-toggle:checked[disabled]
+{
+	decorator: image(../skins/widgets/checkbox-on-disabled.svg);
+}
+
+.ui-scroll
+{
+	min-height: 0px;
+	overflow: auto;
+}
+
+.content,
+.settings-form,
+.menu-stack,
+.menu-actions,
+.menu-list,
+.bind-group,
+.save-slot-list,
+.selector-section,
+.session-flow,
+.session-panel,
+.session-main,
+.session-player-list,
+.session-admin-list,
+.utility-content
+{
+	min-height: 0px;
+	overflow: auto;
+}
+
+.actions button,
+.actions .ui-button
+{
+	margin-right: 8px;
+	margin-bottom: 8px;
+}
+
+.ui-readable-backplate
+{
+	padding: 4px 8px;
+	background-color: #000000;
+	color: #f3eee4;
+	border-radius: 3px;
+}
+
+.ui-code,
+.ui-monospace-wrap,
+.ui-command-line
+{
+	font-family: "WORR Mono";
+}
+
+body.ui-high-visibility,
+.ui-high-visibility
+{
+	background-color: #000000;
+	color: #ffffff;
+}
+
+.ui-high-visibility .ui-panel,
+.ui-high-visibility button,
+.ui-high-visibility .ui-button,
+.ui-high-visibility input,
+.ui-high-visibility select,
+.ui-high-visibility textarea,
+.ui-high-visibility .ui-field,
+.ui-high-visibility .ui-focusable,
+.ui-high-visibility .popup-dialog,
+.ui-high-visibility .status-message,
+.ui-high-visibility progress
+{
+	border-color: #ffffff;
+	background-color: #000000;
+	color: #ffffff;
+	decorator: none;
+}
+
+.ui-high-visibility button:hover,
+.ui-high-visibility .ui-button:hover,
+.ui-high-visibility input:hover,
+.ui-high-visibility select:hover,
+.ui-high-visibility textarea:hover
+{
+	background-color: #202000;
+	border-color: #ffff00;
+	color: #ffff00;
+	decorator: none;
+}
+
+.ui-high-visibility button:focus,
+.ui-high-visibility .ui-button:focus,
+.ui-high-visibility input:focus,
+.ui-high-visibility select:focus,
+.ui-high-visibility textarea:focus,
+.ui-high-visibility .ui-focusable:focus
+{
+	background-color: #202000;
+	border-color: #ffff00;
+	color: #ffff00;
+	decorator: none;
+}
+
+.ui-high-visibility button:active,
+.ui-high-visibility .ui-button:active
+{
+	background-color: #ffff00;
+	border-color: #ffffff;
+	color: #000000;
+	decorator: none;
+}
+
+.ui-high-visibility input[type="checkbox"],
+.ui-high-visibility .worr-toggle
+{
+	background-color: #000000;
+	border-color: #ffffff;
+	decorator: none;
+}
+
+.ui-high-visibility input[type="checkbox"]:checked,
+.ui-high-visibility .worr-toggle:checked
+{
+	background-color: #ffff00;
+	decorator: none;
+}
+
+.ui-high-visibility input[type="range"] slidertrack,
+.ui-high-visibility .worr-slider slidertrack
+{
+	background-color: #000000;
+	border-width: 1px;
+	border-color: #ffffff;
+	decorator: none;
+}
+
+.ui-high-visibility input[type="range"] sliderbar,
+.ui-high-visibility .worr-slider sliderbar
+{
+	background-color: #ffffff;
+	decorator: none;
+}
+
+.ui-high-visibility input[type="range"] sliderprogress,
+.ui-high-visibility .worr-slider sliderprogress
+{
+	background-color: #ffff00;
+}
+
+.ui-high-visibility progress fill,
+.ui-high-visibility .worr-progress fill
+{
+	background-color: #ffff00;
+	decorator: none;
+}
+
+.ui-high-visibility select selectarrow
+{
+	decorator: none;
+	background-color: #000000;
+	border-left-width: 1px;
+	border-left-color: #ffffff;
+}
+
+.ui-high-visibility select selectbox
+{
+	background-color: #000000;
+	border-color: #ffffff;
+	decorator: none;
+}
+
+.ui-high-visibility select selectbox option
+{
+	background-color: #000000;
+	color: #ffffff;
+	decorator: none;
+}
+
+.ui-high-visibility select selectbox option:hover,
+.ui-high-visibility select selectbox option:checked
+{
+	background-color: #202000;
+	color: #ffff00;
+	decorator: none;
+}
+
+.ui-high-visibility scrollbarvertical slidertrack,
+.ui-high-visibility scrollbarhorizontal slidertrack
+{
+	background-color: #000000;
+	decorator: none;
+}
+
+.ui-high-visibility scrollbarvertical sliderbar,
+.ui-high-visibility scrollbarhorizontal sliderbar
+{
+	background-color: #ffffff;
+	decorator: none;
+}

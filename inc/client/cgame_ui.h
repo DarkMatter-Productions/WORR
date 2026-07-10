@@ -52,6 +52,7 @@ typedef struct cgame_ui_import_s {
     unsigned (*Sys_Milliseconds)(void);
 
     void (*AddCommandString)(const char *text);
+    void (*InsertCommandString)(const char *text);
     int (*Cmd_Argc)(void);
     char *(*Cmd_Argv)(int arg);
     size_t (*Cmd_ArgvBuffer)(int arg, char *buf, size_t size);

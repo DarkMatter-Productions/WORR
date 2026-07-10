@@ -1,0 +1,8 @@
+<!-- Compatibility import for save slot pages; detailed contracts live in save-load.rml. -->
+<templates>
+  <template name="worr-save-slot-anchor">
+    <div class="worr-save-slot-anchor" data-model="{{model}}" data-contract-id="{{id}}">
+      {{label}}
+    </div>
+  </template>
+</templates>

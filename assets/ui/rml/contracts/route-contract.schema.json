@@ -1,0 +1,216 @@
+{
+  "$schema": "worr.hand_authored_json_schema_subset.v1",
+  "$id": "worr.rml.route_contract.v1",
+  "title": "WORR RmlUi Route Manifest Contract",
+  "description": "Small JSON-schema-like contract for route manifests. It uses a hand-authored subset so future tools can validate it without an external dependency.",
+  "version": 1,
+  "task_ids": ["FR-09-T01", "FR-09-T05", "FR-09-T07", "FR-09-T08", "FR-09-T09", "FR-03-T08", "DV-04-T02"],
+  "validator_profile": {
+    "required_keywords": ["type", "required", "properties", "items"],
+    "optional_keywords": ["enum", "pattern", "minLength", "additionalProperties", "$ref", "description"],
+    "external_dependency_required": false
+  },
+  "audit_contract": {
+    "description": "Dependency-free audit profile used by tools/ui_smoke/check_rmlui_route_contracts.py. Feature route manifests store document paths relative to assets/ui/rml; the smoke manifest stores document paths relative to the repository root.",
+    "required_route_fields_source": "#/$defs/route/required",
+    "document_path_rules": {
+      "repo_relative": true,
+      "separator": "/",
+      "allow_parent_traversal": false,
+      "required_suffix": ".rml",
+      "required_now_must_exist": true
+    },
+    "manifests": [
+      {
+        "name": "core",
+        "path": "assets/ui/rml/core/routes.json",
+        "document_base": "assets/ui/rml",
+        "schema": "worr.rml.routes.v1"
+      },
+      {
+        "name": "shell",
+        "path": "assets/ui/rml/shell/routes.json",
+        "document_base": "assets/ui/rml",
+        "schema": "worr.rml.agent4.routes.v1"
+      },
+      {
+        "name": "smoke",
+        "path": "tools/ui_smoke/rmlui_manifest.json",
+        "document_base": ".",
+        "schema": "worr.rmlui.smoke_manifest.v1"
+      }
+    ]
+  },
+  "controller_categories": {
+    "description": "Permissive live-bridge contract categories used by mock fixtures before C++ controllers are wired.",
+    "values": [
+      {
+        "id": "cvar_binding",
+        "fixture": "assets/ui/rml/contracts/cvar-binding.mock.json",
+        "purpose": "Read, display, dirty-track, and write cvar values through a narrow bridge."
+      },
+      {
+        "id": "command_action",
+        "fixture": "assets/ui/rml/contracts/command-action.mock.json",
+        "purpose": "Dispatch command-button events with optional enabled, selection, and confirmation state."
+      },
+      {
+        "id": "condition_state",
+        "fixture": "assets/ui/rml/contracts/condition-state.mock.json",
+        "purpose": "Resolve conditional visibility and disabled states from cvars, route state, and session state."
+      },
+      {
+        "id": "navigation",
+        "fixture": "assets/ui/rml/contracts/navigation.mock.json",
+        "purpose": "Push, replace, close, and back out of RmlUi routes while preserving command fallback."
+      },
+      {
+        "id": "list_provider",
+        "fixture": "assets/ui/rml/contracts/list-provider.mock.json",
+        "purpose": "Populate table/list components with refresh, sort, selection, and activation metadata."
+      }
+    ]
+  },
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema", "routes"],
+  "properties": {
+    "schema": { "type": "string", "minLength": 1 },
+    "description": { "type": "string" },
+    "created": { "type": "string" },
+    "owner": { "type": "string", "minLength": 1, "pattern": "^[a-z0-9_.-]+$" },
+    "roadmap": { "type": "string" },
+    "tasks": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "planned_shared_imports": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "status_values": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "routes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/route" }
+    }
+  },
+  "$defs": {
+    "route": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "document"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "wave": { "type": "string", "enum": ["A", "B", "C"] },
+        "group": { "type": "string" },
+        "owner": { "type": "string", "minLength": 1, "pattern": "^[a-z0-9_.-]+$" },
+        "document": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_./-]+\\.rml$",
+          "description": "Forward-slash relative RML path resolved through the manifest audit document_base. Absolute paths and parent traversal are invalid."
+        },
+        "document_id": { "type": "string" },
+        "status": { "type": "string", "minLength": 1, "pattern": "^[a-z0-9_.-]+$" },
+        "migration_phase": {
+          "type": "string",
+          "enum": ["starter", "controller_stub", "runtime_stub", "parity_pending", "parity_ready"]
+        },
+        "required_now": { "type": "boolean" },
+        "source_menu": { "type": "string" },
+        "purpose": { "type": "string" },
+        "notes": { "type": "string" },
+        "entry_points": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "tasks": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "data_models": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "controller_contracts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/controller_contract_ref" }
+        },
+        "component_refs": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "runtime": { "$ref": "#/$defs/runtime" },
+        "commands": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/command" }
+        },
+        "conditions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/condition" }
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "requires_native_renderer": { "type": "boolean" },
+        "requires_data_model": { "type": "boolean" },
+        "requires_build_integration": { "type": "boolean" },
+        "mock_safe": { "type": "boolean" }
+      }
+    },
+    "controller_contract_ref": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["category", "contract"],
+      "properties": {
+        "category": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-z0-9_.-]+$"
+        },
+        "contract": { "type": "string", "minLength": 1 },
+        "fixture": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_./-]+\\.json$"
+        },
+        "model": { "type": "string" },
+        "status": { "type": "string" },
+        "notes": { "type": "string" }
+      }
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string" },
+        "event": { "type": "string" },
+        "command": { "type": "string" },
+        "source_attribute": { "type": "string" },
+        "status": { "type": "string" },
+        "enabled_if": { "type": "string" },
+        "requires_selection": { "type": "boolean" }
+      }
+    },
+    "condition": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "expression"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "expression": { "type": "string", "minLength": 1 },
+        "affects": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}

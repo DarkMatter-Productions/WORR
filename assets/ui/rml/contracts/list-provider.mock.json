@@ -1,0 +1,69 @@
+{
+  "contract": "worr.rml.controller.list_provider.mock",
+  "version": 1,
+  "mock": true,
+  "category": "list_provider",
+  "task_ids": ["FR-09-T05", "FR-09-T07", "FR-09-T08", "DV-04-T02"],
+  "route": "servers/mock",
+  "model": "utility.servers",
+  "component_refs": [
+    "common/components/list-table.rml#worr-data-table",
+    "common/components/controls.rml#worr-command-button"
+  ],
+  "source_boundary": {
+    "presentation_owner": "client_rml",
+    "data_provider": "client_or_cgame_list_bridge",
+    "command_provider": "client_command_bridge"
+  },
+  "provider": {
+    "id": "server_browser",
+    "fetch_event": "list.refresh",
+    "select_event": "list.select",
+    "activate_event": "list.activate",
+    "row_key": "id",
+    "status_text": "2 mock servers",
+    "loading": false
+  },
+  "query": {
+    "filter": "",
+    "sort": { "key": "ping", "direction": "asc" },
+    "page": { "offset": 0, "limit": 32, "total": 2 }
+  },
+  "columns": [
+    { "key": "name", "label": "Server", "type": "string", "sortable": true, "width": 260 },
+    { "key": "map", "label": "Map", "type": "string", "sortable": true, "width": 120 },
+    { "key": "players", "label": "Players", "type": "string", "sortable": true, "width": 80 },
+    { "key": "ping", "label": "Ping", "type": "integer", "sortable": true, "width": 70 }
+  ],
+  "rows": [
+    {
+      "id": "local_q2dm1",
+      "values": { "name": "Local WORR Test", "map": "q2dm1", "players": "1/8", "ping": 4 },
+      "cells": ["Local WORR Test", "q2dm1", "1/8", "4"],
+      "selected": true,
+      "disabled": false,
+      "commands": ["servers.connect_selected"]
+    },
+    {
+      "id": "lan_q2dm8",
+      "values": { "name": "LAN Skirmish", "map": "q2dm8", "players": "5/16", "ping": 18 },
+      "cells": ["LAN Skirmish", "q2dm8", "5/16", "18"],
+      "selected": false,
+      "disabled": false,
+      "commands": ["servers.connect_selected"]
+    }
+  ],
+  "selection": {
+    "mode": "single",
+    "selected_row_id": "local_q2dm1",
+    "required_for": ["servers.connect_selected"]
+  },
+  "actions": [
+    { "id": "refresh", "label": "Refresh", "event": "list.refresh" },
+    { "id": "connect", "label": "Connect", "event": "servers.connect_selected", "requires_selection": true }
+  ],
+  "empty_state": {
+    "label": "No rows",
+    "action": "list.refresh"
+  }
+}

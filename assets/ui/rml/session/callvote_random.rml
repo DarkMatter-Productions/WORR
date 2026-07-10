@@ -1,0 +1,42 @@
+<rml>
+  <head>
+    <title>WORR Callvote Random</title>
+    <link type="text/rcss" href="../common/theme/base.rcss" />
+    <link type="text/rcss" href="../common/theme/session.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
+  </head>
+  <body id="session-callvote-random" data-route-id="callvote_random" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-session-owner="sgame" data-menu-music="menu" data-menu-sound-open="open">
+    <div class="screen compact-screen session-screen" id="callvote-random-screen">
+      <header class="page-header">
+        <h1>Callvote: Random</h1>
+      </header>
+
+      <nav class="menu-list" id="callvote-random-menu" data-model="session.callvote.random" data-owner-boundary="sgame-published-cvars">
+        <button id="callvote-random-2" type="button" data-command="worr_callvote_random 2" data-menu-sound="confirm">1-2</button>
+        <button id="callvote-random-7" type="button" data-command="worr_callvote_random 7" data-menu-sound="confirm">1-7</button>
+        <button id="callvote-random-12" type="button" data-command="worr_callvote_random 12" data-menu-sound="confirm">1-12</button>
+        <button id="callvote-random-17" type="button" data-command="worr_callvote_random 17" data-menu-sound="confirm">1-17</button>
+        <button id="callvote-random-22" type="button" data-command="worr_callvote_random 22" data-menu-sound="confirm">1-22</button>
+        <button id="callvote-random-27" type="button" data-command="worr_callvote_random 27" data-menu-sound="confirm">1-27</button>
+        <button id="callvote-random-32" type="button" data-command="worr_callvote_random 32" data-menu-sound="confirm">1-32</button>
+        <button id="callvote-random-37" type="button" data-command="worr_callvote_random 37" data-menu-sound="confirm">1-37</button>
+        <button id="callvote-random-42" type="button" data-command="worr_callvote_random 42" data-menu-sound="confirm">1-42</button>
+        <button id="callvote-random-47" type="button" data-command="worr_callvote_random 47" data-menu-sound="confirm">1-47</button>
+        <button id="callvote-random-52" type="button" data-command="worr_callvote_random 52" data-menu-sound="confirm">1-52</button>
+        <button id="callvote-random-57" type="button" data-command="worr_callvote_random 57" data-menu-sound="confirm">1-57</button>
+        <button id="callvote-random-62" type="button" data-command="worr_callvote_random 62" data-menu-sound="confirm">1-62</button>
+        <button id="callvote-random-67" type="button" data-command="worr_callvote_random 67" data-menu-sound="confirm">1-67</button>
+        <button id="callvote-random-72" type="button" data-command="worr_callvote_random 72" data-menu-sound="confirm">1-72</button>
+        <button id="callvote-random-77" type="button" data-command="worr_callvote_random 77" data-menu-sound="confirm">1-77</button>
+        <button id="callvote-random-82" type="button" data-command="worr_callvote_random 82" data-menu-sound="confirm">1-82</button>
+        <button id="callvote-random-87" type="button" data-command="worr_callvote_random 87" data-menu-sound="confirm">1-87</button>
+        <button id="callvote-random-92" type="button" data-command="worr_callvote_random 92" data-menu-sound="confirm">1-92</button>
+        <button id="callvote-random-97" type="button" data-command="worr_callvote_random 97" data-menu-sound="confirm">1-97</button>
+      </nav>
+
+      <footer class="actions" id="callvote-random-actions">
+        <button id="callvote-random-return" type="button" data-command="popmenu" data-menu-sound="cancel">Return</button>
+      </footer>
+    </div>
+  </body>
+</rml>

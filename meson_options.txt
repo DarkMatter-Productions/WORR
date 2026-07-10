@@ -28,6 +28,11 @@ option('client-ui',
   value: true,
   description: 'Enable menu-based user interface')
 
+option('rmlui',
+  type: 'feature',
+  value: 'auto',
+  description: 'RmlUi menu runtime support')
+
 option('default-game',
   type: 'string',
   value: '',

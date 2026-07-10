@@ -7,7 +7,7 @@
             "command": "cmd",
             "args": [
                 "/c",
-                "if exist builddir-win\\meson-private\\coredata.dat (tools\\meson_setup.cmd setup --native-file meson.native.ini --reconfigure builddir-win -Dbase-game=basew -Ddefault-game=basew) else (tools\\meson_setup.cmd setup --native-file meson.native.ini builddir-win -Dbase-game=basew -Ddefault-game=basew)"
+                "if exist builddir-win\\meson-private\\coredata.dat (tools\\meson_setup.cmd setup --native-file meson.native.ini --reconfigure builddir-win -Dbase-game=basew -Ddefault-game=basew -Drmlui=enabled) else (tools\\meson_setup.cmd setup --native-file meson.native.ini builddir-win -Dbase-game=basew -Ddefault-game=basew -Drmlui=enabled)"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"
@@ -56,7 +56,9 @@
                 "--install-dir",
                 ".install",
                 "--base-game",
-                "basew"
+                "basew",
+                "--platform-id",
+                "windows-x86_64"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"
@@ -76,6 +78,7 @@
         {
             "label": "meson: build (fast)",
             "dependsOn": [
+                "meson: setup",
                 "meson: compile (fast)",
                 "install: refresh (.install)"
             ],

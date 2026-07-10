@@ -1,0 +1,89 @@
+{
+  "contract": "worr.rml.settings.mock",
+  "version": 1,
+  "mock": true,
+  "task_ids": ["FR-09-T05", "FR-03-T08", "DV-04-T02"],
+  "route": "settings/video/mock",
+  "model": "settings.video",
+  "component_refs": [
+    "common/components/controls.rml#worr-cvar-toggle",
+    "common/components/controls.rml#worr-cvar-slider",
+    "common/components/controls.rml#worr-cvar-select",
+    "common/components/controls.rml#worr-command-button",
+    "common/components/controls.rml#worr-conditional-region"
+  ],
+  "source_boundary": {
+    "presentation_owner": "client_rml",
+    "cvar_provider": "client_or_cgame_bridge",
+    "command_provider": "client_command_bridge"
+  },
+  "cvars": [
+    {
+      "id": "fullscreen",
+      "type": "bool",
+      "cvar": "r_fullscreen",
+      "label": "Fullscreen",
+      "value": true,
+      "requires_restart": true
+    },
+    {
+      "id": "gamma",
+      "type": "float",
+      "cvar": "r_gamma",
+      "label": "Gamma",
+      "value": 1.0,
+      "min": 0.5,
+      "max": 1.5,
+      "step": 0.05,
+      "display": "{value:.2f}"
+    },
+    {
+      "id": "renderer",
+      "type": "enum",
+      "cvar": "r_renderer",
+      "label": "Renderer",
+      "value": "vk",
+      "requires_restart": true,
+      "options": [
+        { "value": "gl", "label": "OpenGL" },
+        { "value": "vk", "label": "Vulkan" },
+        { "value": "rtx", "label": "Vulkan RTX" }
+      ]
+    },
+    {
+      "id": "player_name",
+      "type": "string",
+      "cvar": "name",
+      "label": "Player name",
+      "value": "WORRPlayer",
+      "max_length": 32
+    }
+  ],
+  "commands": [
+    {
+      "id": "apply_settings",
+      "event": "settings.apply",
+      "label": "Apply",
+      "console_command": "vid_restart",
+      "enabled_if": "settings_dirty"
+    },
+    {
+      "id": "reset_settings",
+      "event": "settings.reset_defaults",
+      "label": "Defaults",
+      "console_command": "exec default.cfg"
+    }
+  ],
+  "conditions": [
+    {
+      "id": "rtx_options_visible",
+      "expression": "cvar.r_renderer == 'rtx'",
+      "affects": ["rtx_only_controls"]
+    },
+    {
+      "id": "settings_dirty",
+      "expression": "dirty_cvars.count > 0",
+      "affects": ["apply_settings"]
+    }
+  ]
+}

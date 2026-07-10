@@ -137,6 +137,8 @@ client_src = [
   'src/client/entities.cpp',
   'src/client/font.cpp',
   'src/client/ui_font.cpp',
+  'src/client/ui_rml/ui_rml.cpp',
+  'src/client/ui_rml/ui_rml_runtime.cpp',
   'src/client/input.cpp',
   'src/client/keys.cpp',
   'src/client/locs.cpp',
@@ -203,6 +205,7 @@ ui_src = [
 
 renderer_src = [
   'src/renderer/dds.c',
+  'src/renderer/rmlui_bridge.cpp',
   'src/renderer/shadow_frontend.c',
   'src/renderer/ui_scale.c',
   'src/renderer/view_setup.c',
@@ -236,6 +239,7 @@ renderer_src = [
 
 renderer_vk_rtx_src = [
   'src/renderer/dds.c',
+  'src/renderer/rmlui_bridge.cpp',
   'src/renderer/shadow_frontend.c',
   'src/renderer/ui_scale.c',
   'src/renderer/view_setup.c',
@@ -285,6 +289,7 @@ renderer_vk_rtx_src = [
 
 renderer_vk_src = [
   'src/renderer/dds.c',
+  'src/renderer/rmlui_bridge.cpp',
   'src/renderer/shadow_frontend.c',
   'src/renderer/ui_scale.c',
   'src/renderer/view_setup.c',
@@ -963,6 +968,48 @@ endif
 if harfbuzz.found()
   client_deps += harfbuzz
 endif
+
+rmlui_runtime = false
+rmlui_opt = get_option('rmlui')
+if rmlui_opt.allowed()
+  rmlui_dep = dependency('RmlUi',
+    method:   'cmake',
+    modules:  ['RmlUi::Core'],
+    required: false,
+    allow_fallback: false,
+  )
+  if not rmlui_dep.found()
+    rmlui_dep = dependency('rmlui',
+      required: false,
+      allow_fallback: false,
+    )
+  endif
+  if not rmlui_dep.found()
+    rmlui_cmake = import('cmake')
+    rmlui_cmake_options = rmlui_cmake.subproject_options()
+    rmlui_cmake_options.add_cmake_defines({
+      'RMLUI_FONT_ENGINE': 'none',
+      'RMLUI_LUA_BINDINGS': false,
+      'RMLUI_SAMPLES': false,
+      'RMLUI_TESTS': false,
+    })
+    rmlui_subproject = rmlui_cmake.subproject(
+      'rmlui',
+      options:  rmlui_cmake_options,
+      required: rmlui_opt,
+    )
+    if rmlui_subproject.found()
+      rmlui_dep = rmlui_subproject.dependency('rmlui_core')
+    endif
+  endif
+  if rmlui_dep.found()
+    client_deps += rmlui_dep
+    client_cpp_args += '-DUI_RML_HAS_RUNTIME=1'
+    rmlui_runtime = true
+  elif rmlui_opt.enabled()
+    error('RmlUi dependency was requested, but neither CMake package RmlUi::Core nor pkg-config dependency rmlui was found')
+  endif
+endif
 server_deps = []
 game_deps = [fmt_dep, jsoncpp_dep]
 
@@ -1340,18 +1387,39 @@ if get_option('external-renderers')
   renderer_deps += khr_headers_dep
 
   renderer_c_args = ['-DUSE_CLIENT=1', '-DRENDERER_DLL'] + engine_c_args
+  renderer_cpp_args = [
+    '-DHAVE_CONFIG_H',
+    '-DQ2PROTO_CONFIG_H="common/q2proto_config.h"',
+    '-DUSE_CLIENT=1',
+    '-DRENDERER_DLL',
+  ]
+  if win32
+    renderer_cpp_args += '-D_USE_MATH_DEFINES'
+  else
+    renderer_cpp_args += '-D_GNU_SOURCE'
+  endif
+  renderer_cpp_args += engine_args
   renderer_gl_c_args = renderer_c_args + ['-DUSE_REF=REF_GL']
+  renderer_gl_cpp_args = renderer_cpp_args + ['-DUSE_REF=REF_GL']
   renderer_vk_rtx_c_args = renderer_c_args + ['-DUSE_REF=REF_VKPT', '-DRENDERER_VULKAN', '-DRENDERER_VULKAN_RTX=1']
+  renderer_vk_rtx_cpp_args = renderer_cpp_args + ['-DUSE_REF=REF_VKPT', '-DRENDERER_VULKAN', '-DRENDERER_VULKAN_RTX=1']
   renderer_vk_c_args = renderer_c_args + ['-DUSE_REF=REF_VKPT', '-DRENDERER_VULKAN', '-DRENDERER_VULKAN_LEGACY=1']
+  renderer_vk_cpp_args = renderer_cpp_args + ['-DUSE_REF=REF_VKPT', '-DRENDERER_VULKAN', '-DRENDERER_VULKAN_LEGACY=1']
 
   renderer_gl_lib_src = renderer_src + ['src/renderer/renderer_api.c']
   renderer_gl_lib_name = meson.project_name() + '_opengl_' + cpu
+  renderer_gl_deps = renderer_deps
+  if rmlui_runtime
+    renderer_gl_deps += rmlui_dep
+    renderer_gl_cpp_args += '-DUI_RML_HAS_RUNTIME=1'
+  endif
   renderer_gl_lib = shared_library(renderer_gl_lib_name, renderer_gl_lib_src,
-    dependencies:          renderer_deps,
+    dependencies:          renderer_gl_deps,
     include_directories:   ['inc', 'q2proto/inc'],
     gnu_symbol_visibility: 'hidden',
     link_args:             dll_link_args,
     c_args:                renderer_gl_c_args,
+    cpp_args:              renderer_gl_cpp_args,
     name_prefix:           '',
     install:               true,
     install_dir:           libdir,
@@ -1359,18 +1427,26 @@ if get_option('external-renderers')
 
   if vulkan.found()
     renderer_vk_deps = renderer_deps + [vulkan]
+    renderer_vk_rtx_deps = renderer_deps + [vulkan]
     if sdl3.found()
       renderer_vk_deps += sdl3
+    endif
+    if rmlui_runtime
+      renderer_vk_deps += rmlui_dep
+      renderer_vk_cpp_args += '-DUI_RML_HAS_RUNTIME=1'
+      renderer_vk_rtx_deps += rmlui_dep
+      renderer_vk_rtx_cpp_args += '-DUI_RML_HAS_RUNTIME=1'
     endif
 
     renderer_vk_rtx_lib_src = renderer_vk_rtx_src + ['src/renderer/renderer_api.c']
     renderer_vk_rtx_lib_name = meson.project_name() + '_rtx_' + cpu
     renderer_vk_rtx_lib = shared_library(renderer_vk_rtx_lib_name, renderer_vk_rtx_lib_src,
-      dependencies:          renderer_deps + [vulkan],
+      dependencies:          renderer_vk_rtx_deps,
       include_directories:   ['inc', 'q2proto/inc', 'src/rend_vk/refresh/stb', 'src/rend_rtx/third_party'],
       gnu_symbol_visibility: 'hidden',
       link_args:             dll_link_args,
       c_args:                renderer_vk_rtx_c_args,
+      cpp_args:              renderer_vk_rtx_cpp_args,
       name_prefix:           '',
       install:               true,
       install_dir:           libdir,
@@ -1384,6 +1460,7 @@ if get_option('external-renderers')
       gnu_symbol_visibility: 'hidden',
       link_args:             dll_link_args,
       c_args:                renderer_vk_c_args,
+      cpp_args:              renderer_vk_cpp_args,
       name_prefix:           '',
       install:               true,
       install_dir:           libdir,
@@ -1739,6 +1816,7 @@ summary({
   'mvd-server'         : config.get('USE_MVD_SERVER', 0) != 0,
   'openal'             : config.get('USE_OPENAL', 0) != 0,
   'packetdup-hack'     : config.get('USE_PACKETDUP', 0) != 0,
+  'rmlui'              : rmlui_runtime,
   'save-games'         : config.get('USE_SAVEGAMES', 0) != 0,
   'sdl3'               : config.get('USE_SDL', '') != '',
   'software-sound'     : config.get('USE_SNDDMA', 0) != 0,

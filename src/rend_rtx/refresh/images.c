@@ -506,6 +506,7 @@ static cvar_t *r_screenshot_quality;
 static cvar_t *r_screenshot_async;
 static cvar_t* r_screenshot_compression;
 static cvar_t* r_screenshot_message;
+static cvar_t *r_screenshot_dir;
 static cvar_t *r_screenshot_template;
 static cvar_t *r_screenshot_format_legacy;
 static cvar_t *r_screenshot_quality_legacy;
@@ -622,6 +623,51 @@ static int parse_template(cvar_t *var, char *buffer, size_t size)
     return 3;
 }
 
+static int copy_screenshot_dir(char *buffer, size_t size)
+{
+    size_t len = Q_strlcpy(buffer, r_screenshot_dir->string, size);
+    if (len >= size) {
+        return Q_ERR(ENAMETOOLONG);
+    }
+
+    for (char *s = buffer; *s; s++) {
+        if (*s == '\\') {
+            *s = '/';
+        }
+    }
+
+    while (len > 1 && buffer[len - 1] == '/') {
+        buffer[--len] = 0;
+    }
+
+    if (!buffer[0]) {
+        return Q_ERR(EINVAL);
+    }
+
+    return Q_ERR_SUCCESS;
+}
+
+static int format_screenshot_path(char *buffer, size_t size, const char *name, const char *ext)
+{
+    if (r_screenshot_dir->string[0]) {
+        char dir[MAX_OSPATH];
+        int ret = copy_screenshot_dir(dir, sizeof(dir));
+        if (ret < 0) {
+            return ret;
+        }
+
+        if (Q_snprintf(buffer, size, "%s/%s%s", dir, name, ext) >= size) {
+            return Q_ERR(ENAMETOOLONG);
+        }
+    } else {
+        if (Q_snprintf(buffer, size, "%s/screenshots/%s%s", fs_gamedir, name, ext) >= size) {
+            return Q_ERR(ENAMETOOLONG);
+        }
+    }
+
+    return Q_ERR_SUCCESS;
+}
+
 static int create_screenshot(char *buffer, size_t size, FILE **f,
                              const char *name, const char *ext)
 {
@@ -634,8 +680,8 @@ static int create_screenshot(char *buffer, size_t size, FILE **f,
             return Q_ERR(ENAMETOOLONG);
         }
         FS_CleanupPath(temp);
-        if (Q_snprintf(buffer, size, "%s/screenshots/%s%s", fs_gamedir, temp, ext) >= size) {
-            return Q_ERR(ENAMETOOLONG);
+        if ((ret = format_screenshot_path(buffer, size, temp, ext)) < 0) {
+            return ret;
         }
         if ((ret = FS_CreatePath(buffer)) < 0) {
             return ret;
@@ -649,8 +695,8 @@ static int create_screenshot(char *buffer, size_t size, FILE **f,
     width = parse_template(r_screenshot_template, temp, sizeof(temp));
 
     // create the directory
-    if (Q_snprintf(buffer, size, "%s/screenshots/%s", fs_gamedir, temp) >= size) {
-        return Q_ERR(ENAMETOOLONG);
+    if ((ret = format_screenshot_path(buffer, size, temp, "")) < 0) {
+        return ret;
     }
     if ((ret = FS_CreatePath(buffer)) < 0) {
         return ret;
@@ -662,9 +708,16 @@ static int create_screenshot(char *buffer, size_t size, FILE **f,
 
     // find a file name to save it to
     for (i = 0; i < count; i++) {
-        if (Q_snprintf(buffer, size, "%s/screenshots/%s%0*d%s", fs_gamedir, temp, width, i, ext) >= size) {
+        char numbered[MAX_OSPATH];
+
+        if (Q_snprintf(numbered, sizeof(numbered), "%s%0*d", temp, width, i) >= sizeof(numbered)) {
             return Q_ERR(ENAMETOOLONG);
         }
+
+        if ((ret = format_screenshot_path(buffer, size, numbered, ext)) < 0) {
+            return ret;
+        }
+
         if ((*f = Q_fopen(buffer, "wxb"))) {
             return 0;
         }
@@ -2167,6 +2220,7 @@ void IMG_Init(void)
     r_screenshot_message = Cvar_Get("r_screenshot_message", "0", CVAR_ARCHIVE);
     r_screenshot_message_legacy = Cvar_Get("gl_screenshot_message", r_screenshot_message->string,
                                            CVAR_ARCHIVE | CVAR_NOARCHIVE);
+    r_screenshot_dir = Cvar_Get("r_screenshot_dir", "", CVAR_NOARCHIVE);
     r_screenshot_template = Cvar_Get("r_screenshot_template", "quakeXXX", 0);
     r_screenshot_template_legacy = Cvar_Get("gl_screenshot_template", r_screenshot_template->string,
                                             CVAR_NOARCHIVE);

@@ -1,0 +1,51 @@
+<rml>
+  <head>
+    <title>WORR Options Menu</title>
+    <link type="text/rcss" href="../common/theme/base.rcss" />
+    <link type="text/rcss" href="../common/theme/shell.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
+  </head>
+  <body id="shell-options" data-route-id="options" data-route-group="shell" data-route-version="1" data-document-status="first-round-scaffold" data-menu-music="menu" data-menu-sound-open="open">
+    <div class="screen shell-screen" id="options-screen">
+      <div class="menu-header">
+        <h1>Options</h1>
+        <p>Configure controls, display, audio, and network options.</p>
+      </div>
+
+      <div class="menu-stack" id="options-menu-stack" data-component="common.components.menu_frame">
+        <div class="menu-actions hub-actions" id="options-menu-actions">
+          <section class="hub-section" id="options-player-section">
+            <h2>Player &amp; Input</h2>
+            <button id="options-player" type="button" data-command="pushmenu players" data-route-target="players" data-menu-sound="open">Player Setup</button>
+            <button id="options-input" type="button" data-command="pushmenu input" data-route-target="input" data-menu-sound="open">Input Setup</button>
+            <button id="options-keys" type="button" data-command="pushmenu keys" data-route-target="keys" data-menu-sound="open">Key Bindings</button>
+            <button id="options-weapons" type="button" data-command="pushmenu weapons" data-route-target="weapons" data-menu-sound="open">Weapon Bindings</button>
+          </section>
+
+          <section class="hub-section" id="options-display-section">
+            <h2>Display &amp; Feel</h2>
+            <button id="options-video" type="button" data-command="pushmenu video" data-route-target="video" data-menu-sound="open">Video Setup</button>
+            <button id="options-effects" type="button" data-command="pushmenu effects" data-route-target="effects" data-menu-sound="open">Effects Setup</button>
+            <button id="options-multimonitor" type="button" data-command="pushmenu multimonitor" data-route-target="multimonitor" data-menu-sound="open">Multi-Monitor</button>
+            <button id="options-performance" type="button" data-command="pushmenu performance" data-route-target="performance" data-menu-sound="open">Performance</button>
+            <button id="options-accessibility" type="button" data-command="pushmenu accessibility" data-route-target="accessibility" data-menu-sound="open">Accessibility</button>
+            <button id="options-screen-setup" type="button" data-command="pushmenu screen" data-route-target="screen" data-menu-sound="open">Screen Setup</button>
+          </section>
+
+          <section class="hub-section" id="options-system-section">
+            <h2>System</h2>
+            <button id="options-sound" type="button" data-command="pushmenu sound" data-route-target="sound" data-menu-sound="open">Sound Setup</button>
+            <button id="options-language" type="button" data-command="pushmenu language" data-route-target="language" data-menu-sound="open">Language</button>
+            <button id="options-downloads" type="button" data-command="pushmenu downloads" data-route-target="downloads" data-menu-sound="open">Download Options</button>
+            <button id="options-addressbook" type="button" data-command="pushmenu addressbook" data-route-target="addressbook" data-menu-sound="open">Address Book</button>
+          </section>
+        </div>
+      </div>
+
+      <div class="menu-footer" id="options-menu-footer">
+        <button id="options-back" type="button" data-command="ui.back" data-menu-sound="cancel">Back</button>
+        <button id="options-close" type="button" data-command="ui.close" data-menu-sound="cancel">Close</button>
+      </div>
+    </div>
+  </body>
+</rml>

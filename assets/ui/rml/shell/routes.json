@@ -1,0 +1,1213 @@
+{
+  "schema": "worr.rml.agent4.routes.v1",
+  "description": "Agent 4 first-round route/status metadata for shell, settings, and single-player RmlUi content.",
+  "owner": "agent4-shell-settings-singleplayer",
+  "roadmap": "docs-dev/plans/rmlui-ui-migration-roadmap.md",
+  "ownership_contract": "assets/ui/rml/contracts/route-ownership.schema.json",
+  "tasks": [
+    "FR-09-T06",
+    "FR-09-T07",
+    "FR-09-T04",
+    "FR-09-T09"
+  ],
+  "planned_shared_imports": [
+    "../common/theme/base.rcss",
+    "../common/theme/shell.rcss",
+    "../common/theme/settings.rcss",
+    "../common/theme/singleplayer.rcss",
+    "../common/components/menu_frame.rml",
+    "../common/components/command_button.rml",
+    "../common/components/cvar_controls.rml",
+    "../common/components/selector_list.rml",
+    "../common/components/save_slot.rml"
+  ],
+  "status_values": {
+    "scaffolded_first_round": "Starter RML document exists in Agent 4-owned assets and imports planned shared theme/component paths.",
+    "scaffolded_round2": "Second-round starter RML document exists in Agent 4-owned assets and preserves representative command/cvar bindings from worr.json.",
+    "scaffolded_round3": "Third-round starter RML document exists in Agent 4-owned assets and preserves remaining shell/settings/single-player cvar, command, and slot metadata from worr.json.",
+    "planned_route_metadata_only": "Owned by Agent 4 and listed for smoke/parity planning, but no starter document was requested in this round."
+  },
+  "migration_phase_values": {
+    "starter": "Source RML document and static route metadata exist; runtime, controller, and parity evidence are pending.",
+    "controller_stub": "Controller/data-model stub metadata exists, but live runtime validation is pending.",
+    "runtime_stub": "Runtime smoke/open path exists for this route, but parity evidence is pending.",
+    "parity_pending": "Route opens through RmlUi with live bridge coverage; parity evidence is still incomplete.",
+    "parity_ready": "Route has accepted parity evidence and is ready for cutover consideration."
+  },
+  "routes": [
+    {
+      "id": "main",
+      "wave": "A",
+      "group": "shell",
+      "document": "shell/main.rml",
+      "document_id": "shell-main",
+      "status": "scaffolded_first_round",
+      "source_menu": "src/game/cgame/ui/worr.json:main",
+      "legacy_surface": "src/game/cgame/ui/worr.json menu main",
+      "current_surface": "RmlUi shell main menu",
+      "source_owner": "cgame_ui_json",
+      "migration_phase": "runtime_stub",
+      "task_ids": [
+        "FR-09-T01",
+        "FR-09-T06",
+        "FR-03-T08"
+      ],
+      "controller_scope": "shell.navigation",
+      "entry_points": [
+        "pushmenu main",
+        "main menu fallback"
+      ],
+      "data_models": [],
+      "controller_contracts": [
+        {
+          "category": "navigation",
+          "contract": "worr.rml.controller.navigation.mock",
+          "fixture": "navigation.mock.json",
+          "model": "ui.navigation",
+          "status": "mock_fixture",
+          "notes": "Route-target buttons provide static navigation evidence only."
+        },
+        {
+          "category": "command_action",
+          "contract": "worr.rml.controller.command_action.mock",
+          "fixture": "command-action.mock.json",
+          "model": "ui.commands",
+          "status": "mock_fixture",
+          "notes": "Menu buttons expose data-command hooks for later command dispatch wiring."
+        }
+      ],
+      "notes": "Guarded engine menu-open document probe through UI_Rml_OpenMenu; UI_Rml_OpenMenu falls back to the legacy UI, so this is not a real RmlUi render/parity claim. Existing mock navigation and command controller contracts remain preserved; multiplayer route remains Agent 5-owned."
+    },
+    {
+      "id": "game",
+      "wave": "A",
+      "group": "shell",
+      "document": "shell/game.rml",
+      "document_id": "shell-game",
+      "status": "scaffolded_first_round",
+      "source_menu": "src/game/cgame/ui/worr.json:game",
+      "legacy_surface": "src/game/cgame/ui/worr.json menu game",
+      "current_surface": "RmlUi shell in-game menu",
+      "source_owner": "cgame_ui_json",
+      "migration_phase": "runtime_stub",
+      "task_ids": [
+        "FR-09-T01",
+        "FR-09-T06",
+        "FR-03-T08"
+      ],
+      "controller_scope": "shell.in_game",
+      "entry_points": [
+        "pushmenu game",
+        "escape in active game"
+      ],
+      "data_models": [],
+      "controller_contracts": [
+        {
+          "category": "navigation",
+          "contract": "worr.rml.controller.navigation.mock",
+          "fixture": "navigation.mock.json",
+          "model": "ui.navigation",
+          "status": "mock_fixture",
+          "notes": "Route-target buttons provide static navigation evidence only."
+        },
+        {
+          "category": "command_action",
+          "contract": "worr.rml.controller.command_action.mock",
+          "fixture": "command-action.mock.json",
+          "model": "ui.commands",
+          "status": "mock_fixture",
+          "notes": "In-game menu commands expose data-command hooks for later command dispatch wiring."
+        },
+        {
+          "category": "condition_state",
+          "contract": "worr.rml.controller.condition_state.mock",
+          "fixture": "condition-state.mock.json",
+          "model": "shell.in_game.conditions",
+          "status": "mock_fixture",
+          "notes": "Save/load and deathmatch controls already declare static data-show-if and data-enable-if expressions."
+        }
+      ],
+      "notes": "Guarded engine menu-open document probe through UI_Rml_OpenMenu; UI_Rml_OpenMenu falls back to the legacy UI, so this is not a real RmlUi render/parity claim. Existing mock navigation, command, and condition controller contracts remain preserved; Agent 5 utility route handoff attributes remain static."
+    },
+    {
+      "id": "options",
+      "wave": "A",
+      "group": "shell",
+      "document": "shell/options.rml",
+      "document_id": "shell-options",
+      "status": "scaffolded_first_round",
+      "source_menu": "src/game/cgame/ui/worr.json:options",
+      "legacy_surface": "src/game/cgame/ui/worr.json menu options",
+      "current_surface": "RmlUi shell options hub",
+      "source_owner": "cgame_ui_json",
+      "migration_phase": "controller_stub",
+      "task_ids": [
+        "FR-09-T01",
+        "FR-09-T06",
+        "FR-03-T08"
+      ],
+      "controller_scope": "shell.options",
+      "entry_points": [
+        "pushmenu options"
+      ],
+      "data_models": [],
+      "controller_contracts": [
+        {
+          "category": "navigation",
+          "contract": "worr.rml.controller.navigation.mock",
+          "fixture": "navigation.mock.json",
+          "model": "ui.navigation",
+          "status": "mock_fixture",
+          "notes": "Options hub buttons provide static route-target navigation evidence only."
+        },
+        {
+          "category": "command_action",
+          "contract": "worr.rml.controller.command_action.mock",
+          "fixture": "command-action.mock.json",
+          "model": "ui.commands",
+          "status": "mock_fixture",
+          "notes": "Options hub buttons expose data-command hooks for later command dispatch wiring."
+        }
+      ],
+      "notes": "Options hub references mock navigation and command controller contracts while retaining Agent 5 ownership markers for player/keybind/weapon/addressbook routes."
+    },
+    {
+      "id": "video",
+      "wave": "A",
+      "group": "settings",
+      "document": "settings/video.rml",
+      "document_id": "settings-video",
+      "status": "scaffolded_first_round",
+      "source_menu": "src/game/cgame/ui/worr.json:video",
+      "legacy_surface": "src/game/cgame/ui/worr.json menu video",
+      "current_surface": "RmlUi settings video",
+      "source_owner": "cgame_ui_json",
+      "migration_phase": "controller_stub",
+      "task_ids": [
+        "FR-09-T01",
+        "FR-09-T06",
+        "FR-03-T08"
+      ],
+      "controller_scope": "settings.video",
+      "entry_points": [
+        "pushmenu video"
+      ],
+      "data_models": [
+        "settings.video"
+      ],
+      "controller_contracts": [
+        {
+          "category": "cvar_binding",
+          "contract": "worr.rml.controller.cvar_binding.mock",
+          "fixture": "cvar-binding.mock.json",
+          "model": "settings.video.cvars",
+          "status": "mock_fixture",
+          "notes": "Video controls declare static data-cvar and data-bind-cvar attributes."
+        },
+        {
+          "category": "command_action",
+          "contract": "worr.rml.controller.command_action.mock",
+          "fixture": "command-action.mock.json",
+          "model": "ui.commands",
+          "status": "mock_fixture",
+          "notes": "Footer buttons expose data-command hooks for later command dispatch wiring."
+        },
+        {
+          "category": "navigation",
+          "contract": "worr.rml.controller.navigation.mock",
+          "fixture": "navigation.mock.json",
+          "model": "ui.navigation",
+          "status": "mock_fixture",
+          "notes": "Back and close controls map to the shared navigation contract."
+        }
+      ],
+      "notes": "First settings page seed now references mock cvar, command, and navigation controller contracts; live settings parity remains pending."
+    },
+    {
+      "id": "multimonitor",
+      "wave": "A",
+      "group": "settings",
+      "document": "settings/multimonitor.rml",
+      "document_id": "settings-multimonitor",
+      "source_menu": "src/game/cgame/ui/worr.json:multimonitor",
+      "legacy_surface": "src/game/cgame/ui/worr.json menu multimonitor",
+      "current_surface": "RmlUi settings multi-monitor",
+      "source_owner": "cgame_ui_json",
+      "migration_phase": "controller_stub",
+      "task_ids": [
+        "FR-09-T01",
+        "FR-09-T06",
+        "FR-03-T08"
+      ],
+      "controller_scope": "settings.display",
+      "entry_points": [
+        "pushmenu multimonitor"
+      ],
+      "data_models": [
+        "settings.multimonitor"
+      ],
+      "controller_contracts": [
+        {
+          "category": "cvar_binding",
+          "contract": "worr.rml.controller.cvar_binding.mock",
+          "fixture": "cvar-binding.mock.json",
+          "model": "settings.multimonitor.cvars",
+          "status": "mock_fixture",
+          "notes": "Multi-monitor controls declare static data-cvar attributes for monitor mode, display selection, and borderless behavior."
+        },
+        {
+          "category": "condition_state",
+          "contract": "worr.rml.controller.condition_state.mock",
+          "fixture": "condition-state.mock.json",
+          "model": "settings.multimonitor.conditions",
+          "status": "mock_fixture",
+          "notes": "The display field declares data-enable-if=\"r_monitor_mode=1\" for later conditional-state wiring."
+        },
+        {
+          "category": "command_action",
+          "contract": "worr.rml.controller.command_action.mock",
+          "fixture": "command-action.mock.json",
+          "model": "ui.commands",
+          "status": "mock_fixture",
+          "notes": "Footer buttons expose ui.back and ui.close data-command hooks for later command dispatch wiring."
+        },
+        {
+          "category": "navigation",
+          "contract": "worr.rml.controller.navigation.mock",
+          "fixture": "navigation.mock.json",
+          "model": "ui.navigation",
+          "status": "mock_fixture",
+          "notes": "Back and close controls map to the shared navigation contract."
+        }
+      ],
+      "status": "scaffolded_round2",
+      "notes": "Second-round settings scaffold now references mock cvar, condition, command, and navigation controller contracts; live settings parity remains pending."
+    },
+    {
+      "id": "performance",
+      "wave": "A",
+      "group": "settings",
+      "document": "settings/performance.rml",
+      "document_id": "settings-performance",
+      "source_menu": "src/game/cgame/ui/worr.json:performance",
+      "legacy_surface": "src/game/cgame/ui/worr.json menu performance",
+      "current_surface": "RmlUi settings performance",
+      "source_owner": "cgame_ui_json",
+      "migration_phase": "controller_stub",
+      "task_ids": [
+        "FR-09-T01",
+        "FR-09-T06",
+        "FR-03-T08"
+      ],
+      "controller_scope": "settings.performance",
+      "entry_points": [
+        "pushmenu performance"
+      ],
+      "data_models": [
+        "settings.performance"
+      ],
+      "controller_contracts": [
+        {
+          "category": "cvar_binding",
+          "contract": "worr.rml.controller.cvar_binding.mock",
+          "fixture": "cvar-binding.mock.json",
+          "model": "settings.performance.cvars",
+          "status": "mock_fixture",
+          "notes": "Performance controls declare static data-cvar attributes for fps caps and client behavior toggles."
+        },
+        {
+          "category": "command_action",
+          "contract": "worr.rml.controller.command_action.mock",
+          "fixture": "command-action.mock.json",
+          "model": "ui.commands",
+          "status": "mock_fixture",
+          "notes": "Footer buttons expose ui.back and ui.close data-command hooks for later command dispatch wiring."
+        },
+        {
+          "category": "navigation",
+          "contract": "worr.rml.controller.navigation.mock",
+          "fixture": "navigation.mock.json",
+          "model": "ui.navigation",
+          "status": "mock_fixture",
+          "notes": "Back and close controls map to the shared navigation contract."
+        }
+      ],
+      "status": "scaffolded_round2",
+      "notes": "Second-round settings scaffold now references mock cvar, command, and navigation controller contracts; live settings parity remains pending."
+    },
+    {
+      "id": "accessibility",
+      "wave": "A",
+      "group": "settings",
+      "document": "settings/accessibility.rml",
+      "document_id": "settings-accessibility",
+      "source_menu": "src/game/cgame/ui/worr.json:accessibility",
+      "legacy_surface": "src/game/cgame/ui/worr.json menu accessibility",
+      "current_surface": "RmlUi settings accessibility",
+      "source_owner": "cgame_ui_json",
+      "migration_phase": "controller_stub",
+      "task_ids": [
+        "FR-09-T01",
+        "FR-09-T06",
+        "FR-03-T08"
+      ],
+      "controller_scope": "settings.accessibility",
+      "entry_points": [
+        "pushmenu accessibility"
+      ],
+      "data_models": [
+        "settings.accessibility"
+      ],
+      "controller_contracts": [
+        {
+          "category": "cvar_binding",
+          "contract": "worr.rml.controller.cvar_binding.mock",
+          "fixture": "cvar-binding.mock.json",
+          "model": "settings.accessibility.cvars",
+          "status": "mock_fixture",
+          "notes": "Accessibility controls declare static data-cvar attributes for high-visibility text and typeface selection."
+        },
+        {
+          "category": "command_action",
+          "contract": "worr.rml.controller.command_action.mock",
+          "fixture": "command-action.mock.json",
+          "model": "ui.commands",
+          "status": "mock_fixture",
+          "notes": "Footer buttons expose ui.back and ui.close data-command hooks for later command dispatch wiring."
+        },
+        {
+          "category": "navigation",
+          "contract": "worr.rml.controller.navigation.mock",
+          "fixture": "navigation.mock.json",
+          "model": "ui.navigation",
+          "status": "mock_fixture",
+          "notes": "Back and close controls map to the shared navigation contract."
+        }
+      ],
+      "status": "scaffolded_round2",
+      "notes": "Second-round settings scaffold now references mock cvar, command, and navigation controller contracts; accessibility token consumption remains pending."
+    },
+    {
+      "id": "sound",
+      "wave": "A",
+      "group": "settings",
+      "document": "settings/sound.rml",
+      "document_id": "settings-sound",
+      "source_menu": "src/game/cgame/ui/worr.json:sound",
+      "legacy_surface": "src/game/cgame/ui/worr.json menu sound",
+      "current_surface": "RmlUi settings sound",
+      "source_owner": "cgame_ui_json",
+      "migration_phase": "controller_stub",
+      "task_ids": [
+        "FR-09-T01",
+        "FR-09-T06",
+        "FR-03-T08"
+      ],
+      "controller_scope": "settings.audio",
+      "entry_points": [
+        "pushmenu sound"
+      ],
+      "data_models": [
+        "settings.sound"
+      ],
+      "controller_contracts": [
+        {
+          "category": "cvar_binding",
+          "contract": "worr.rml.controller.cvar_binding.mock",
+          "fixture": "cvar-binding.mock.json",
+          "model": "settings.sound.cvars",
+          "status": "mock_fixture",
+          "notes": "Sound controls declare static data-cvar and data-bind-cvar attributes for engine, volume, music, ambient, and chat settings."
+        },
+        {
+          "category": "command_action",
+          "contract": "worr.rml.controller.command_action.mock",
+          "fixture": "command-action.mock.json",
+          "model": "ui.commands",
+          "status": "mock_fixture",
+          "notes": "Footer buttons expose ui.back and ui.close data-command hooks for later command dispatch wiring."
+        },
+        {
+          "category": "navigation",
+          "contract": "worr.rml.controller.navigation.mock",
+          "fixture": "navigation.mock.json",
+          "model": "ui.navigation",
+          "status": "mock_fixture",
+          "notes": "Back and close controls map to the shared navigation contract."
+        }
+      ],
+      "status": "scaffolded_round2",
+      "notes": "Second-round settings scaffold now references mock cvar, command, and navigation controller contracts; live settings parity remains pending."
+    },
+    {
+      "id": "railtrail",
+      "wave": "A",
+      "group": "settings",
+      "document": "settings/railtrail.rml",
+      "document_id": "settings-railtrail",
+      "status": "scaffolded_round3",
+      "source_menu": "src/game/cgame/ui/worr.json:railtrail",
+      "legacy_surface": "src/game/cgame/ui/worr.json menu railtrail",
+      "current_surface": "RmlUi settings railgun trail",
+      "source_owner": "cgame_ui_json",
+      "migration_phase": "controller_stub",
+      "task_ids": [
+        "FR-09-T01",
+        "FR-09-T06",
+        "FR-03-T08"
+      ],
+      "controller_scope": "settings.railtrail",
+      "entry_points": [
+        "pushmenu railtrail"
+      ],
+      "data_models": [
+        "settings.railtrail"
+      ],
+      "controller_contracts": [
+        {
+          "category": "cvar_binding",
+          "contract": "worr.rml.controller.cvar_binding.mock",
+          "fixture": "cvar-binding.mock.json",
+          "model": "settings.railtrail.cvars",
+          "status": "mock_fixture",
+          "notes": "Railgun trail controls declare static data-cvar and data-bind-cvar attributes for type, timing, width/radius, and rail color settings."
+        },
+        {
+          "category": "command_action",
+          "contract": "worr.rml.controller.command_action.mock",
+          "fixture": "command-action.mock.json",
+          "model": "ui.commands",
+          "status": "mock_fixture",
+          "notes": "Footer buttons expose ui.back and ui.close data-command hooks for later command dispatch wiring."
+        },
+        {
+          "category": "navigation",
+          "contract": "worr.rml.controller.navigation.mock",
+          "fixture": "navigation.mock.json",
+          "model": "ui.navigation",
+          "status": "mock_fixture",
+          "notes": "Back and close controls map to the shared navigation contract."
+        }
+      ],
+      "notes": "Round 3 settings scaffold now references mock cvar, command, and navigation controller contracts; live settings parity remains pending."
+    },
+    {
+      "id": "effects",
+      "wave": "A",
+      "group": "settings",
+      "document": "settings/effects.rml",
+      "document_id": "settings-effects",
+      "status": "scaffolded_round3",
+      "source_menu": "src/game/cgame/ui/worr.json:effects",
+      "legacy_surface": "src/game/cgame/ui/worr.json menu effects",
+      "current_surface": "RmlUi settings effects",
+      "source_owner": "cgame_ui_json",
+      "migration_phase": "controller_stub",
+      "task_ids": [
+        "FR-09-T01",
+        "FR-09-T06",
+        "FR-03-T08"
+      ],
+      "controller_scope": "settings.effects",
+      "entry_points": [
+        "pushmenu effects"
+      ],
+      "data_models": [
+        "settings.effects"
+      ],
+      "controller_contracts": [
+        {
+          "category": "cvar_binding",
+          "contract": "worr.rml.controller.cvar_binding.mock",
+          "fixture": "cvar-binding.mock.json",
+          "model": "settings.effects.cvars",
+          "status": "mock_fixture",
+          "notes": "Effects controls declare static data-cvar attributes for dynamic lighting, cel-shading, shadow, blend, warp, weapon bob, and bitfield explosion settings."
+        },
+        {
+          "category": "command_action",
+          "contract": "worr.rml.controller.command_action.mock",
+          "fixture": "command-action.mock.json",
+          "model": "ui.commands",
+          "status": "mock_fixture",
+          "notes": "The railtrail setup button and footer buttons expose data-command hooks for later command dispatch wiring."
+        },
+        {
+          "category": "navigation",
+          "contract": "worr.rml.controller.navigation.mock",
+          "fixture": "navigation.mock.json",
+          "model": "ui.navigation",
+          "status": "mock_fixture",
+          "notes": "The railtrail setup button declares data-route-target=\"railtrail\" while back and close controls map to shared navigation."
+        }
+      ],
+      "notes": "Round 3 settings scaffold now references mock cvar, command, and navigation controller contracts; live settings parity remains pending."
+    },
+    {
+      "id": "crosshair",
+      "wave": "A",
+      "group": "settings",
+      "document": "settings/crosshair.rml",
+      "document_id": "settings-crosshair",
+      "status": "scaffolded_round3",
+      "source_menu": "src/game/cgame/ui/worr.json:crosshair",
+      "legacy_surface": "src/game/cgame/ui/worr.json menu crosshair",
+      "current_surface": "RmlUi settings crosshair",
+      "source_owner": "cgame_ui_json",
+      "migration_phase": "controller_stub",
+      "task_ids": [
+        "FR-09-T01",
+        "FR-09-T06",
+        "FR-03-T08"
+      ],
+      "controller_scope": "settings.crosshair",
+      "entry_points": [
+        "pushmenu crosshair"
+      ],
+      "data_models": [
+        "settings.crosshair"
+      ],
+      "controller_contracts": [
+        {
+          "category": "cvar_binding",
+          "contract": "worr.rml.controller.cvar_binding.mock",
+          "fixture": "cvar-binding.mock.json",
+          "model": "settings.crosshair.cvars",
+          "status": "mock_fixture",
+          "notes": "Crosshair controls declare static data-cvar and data-bind-cvar attributes, including the imagevalues selector anchor and hit feedback settings."
+        },
+        {
+          "category": "command_action",
+          "contract": "worr.rml.controller.command_action.mock",
+          "fixture": "command-action.mock.json",
+          "model": "ui.commands",
+          "status": "mock_fixture",
+          "notes": "Footer buttons expose ui.back and ui.close data-command hooks for later command dispatch wiring."
+        },
+        {
+          "category": "navigation",
+          "contract": "worr.rml.controller.navigation.mock",
+          "fixture": "navigation.mock.json",
+          "model": "ui.navigation",
+          "status": "mock_fixture",
+          "notes": "Back and close controls map to the shared navigation contract."
+        }
+      ],
+      "notes": "Round 3 settings scaffold now references mock cvar, command, and navigation controller contracts; image-grid runtime population remains pending."
+    },
+    {
+      "id": "screen",
+      "wave": "A",
+      "group": "settings",
+      "document": "settings/screen.rml",
+      "document_id": "settings-screen",
+      "source_menu": "src/game/cgame/ui/worr.json:screen",
+      "legacy_surface": "src/game/cgame/ui/worr.json menu screen",
+      "current_surface": "RmlUi settings screen",
+      "source_owner": "cgame_ui_json",
+      "migration_phase": "controller_stub",
+      "task_ids": [
+        "FR-09-T01",
+        "FR-09-T06",
+        "FR-03-T08"
+      ],
+      "controller_scope": "settings.screen",
+      "entry_points": [
+        "pushmenu screen"
+      ],
+      "data_models": [
+        "settings.screen"
+      ],
+      "controller_contracts": [
+        {
+          "category": "cvar_binding",
+          "contract": "worr.rml.controller.cvar_binding.mock",
+          "fixture": "cvar-binding.mock.json",
+          "model": "settings.screen.cvars",
+          "status": "mock_fixture",
+          "notes": "Screen controls declare static data-cvar and data-bind-cvar attributes for HUD, console, and menu scale settings."
+        },
+        {
+          "category": "command_action",
+          "contract": "worr.rml.controller.command_action.mock",
+          "fixture": "command-action.mock.json",
+          "model": "ui.commands",
+          "status": "mock_fixture",
+          "notes": "Crosshair setup and footer buttons expose data-command hooks for later command dispatch wiring."
+        },
+        {
+          "category": "navigation",
+          "contract": "worr.rml.controller.navigation.mock",
+          "fixture": "navigation.mock.json",
+          "model": "ui.navigation",
+          "status": "mock_fixture",
+          "notes": "Crosshair setup declares data-route-target=\"crosshair\" while back and close controls map to shared navigation."
+        }
+      ],
+      "status": "scaffolded_round2",
+      "notes": "Second-round settings scaffold now references mock cvar, command, and navigation controller contracts; crosshair remains a separate starter route."
+    },
+    {
+      "id": "language",
+      "wave": "A",
+      "group": "settings",
+      "document": "settings/language.rml",
+      "document_id": "settings-language",
+      "source_menu": "src/game/cgame/ui/worr.json:language",
+      "legacy_surface": "src/game/cgame/ui/worr.json menu language",
+      "current_surface": "RmlUi settings language",
+      "source_owner": "cgame_ui_json",
+      "migration_phase": "controller_stub",
+      "task_ids": [
+        "FR-09-T01",
+        "FR-09-T06",
+        "FR-03-T08"
+      ],
+      "controller_scope": "settings.localization",
+      "entry_points": [
+        "pushmenu language"
+      ],
+      "data_models": [
+        "settings.language"
+      ],
+      "controller_contracts": [
+        {
+          "category": "cvar_binding",
+          "contract": "worr.rml.controller.cvar_binding.mock",
+          "fixture": "cvar-binding.mock.json",
+          "model": "settings.language.cvars",
+          "status": "mock_fixture",
+          "notes": "Language controls declare static data-cvar attributes for loc_language selection."
+        },
+        {
+          "category": "command_action",
+          "contract": "worr.rml.controller.command_action.mock",
+          "fixture": "command-action.mock.json",
+          "model": "ui.commands",
+          "status": "mock_fixture",
+          "notes": "Footer buttons expose ui.back and ui.close data-command hooks for later command dispatch wiring."
+        },
+        {
+          "category": "navigation",
+          "contract": "worr.rml.controller.navigation.mock",
+          "fixture": "navigation.mock.json",
+          "model": "ui.navigation",
+          "status": "mock_fixture",
+          "notes": "Back and close controls map to the shared navigation contract."
+        }
+      ],
+      "status": "scaffolded_round2",
+      "notes": "Second-round settings scaffold now references mock cvar, command, and navigation controller contracts; localization length stress remains a later validation item."
+    },
+    {
+      "id": "downloads",
+      "wave": "A",
+      "group": "shell",
+      "document": "shell/downloads.rml",
+      "document_id": "shell-downloads",
+      "source_menu": "src/game/cgame/ui/worr.json:downloads",
+      "legacy_surface": "src/game/cgame/ui/worr.json menu downloads",
+      "current_surface": "RmlUi shell download options",
+      "source_owner": "cgame_ui_json",
+      "migration_phase": "controller_stub",
+      "task_ids": [
+        "FR-09-T01",
+        "FR-09-T06",
+        "FR-09-T07",
+        "FR-03-T08"
+      ],
+      "controller_scope": "shell.downloads",
+      "entry_points": [
+        "pushmenu downloads"
+      ],
+      "data_models": [
+        "shell.downloads"
+      ],
+      "controller_contracts": [
+        {
+          "category": "cvar_binding",
+          "contract": "worr.rml.controller.cvar_binding.mock",
+          "fixture": "cvar-binding.mock.json",
+          "model": "shell.downloads.cvars",
+          "status": "mock_fixture",
+          "notes": "Download permission controls declare static data-cvar attributes for allow_download and category-specific download toggles."
+        },
+        {
+          "category": "command_action",
+          "contract": "worr.rml.controller.command_action.mock",
+          "fixture": "command-action.mock.json",
+          "model": "ui.commands",
+          "status": "mock_fixture",
+          "notes": "Back and close controls expose ui.back and ui.close data-command hooks for later command dispatch wiring."
+        },
+        {
+          "category": "navigation",
+          "contract": "worr.rml.controller.navigation.mock",
+          "fixture": "navigation.mock.json",
+          "model": "ui.navigation",
+          "status": "mock_fixture",
+          "notes": "Back and close controls map to the shared navigation contract."
+        }
+      ],
+      "status": "scaffolded_round2",
+      "notes": "Controller-stub readiness metadata only; no live download controller, runtime open path, screenshots, or parity is claimed."
+    },
+    {
+      "id": "download_status",
+      "wave": "A",
+      "group": "shell",
+      "document": "shell/download_status.rml",
+      "document_id": "shell-download-status",
+      "source_menu": "download auto-open/auto-close behavior",
+      "legacy_surface": "src/game/cgame/ui/worr.json menu download_status plus client download auto-open",
+      "current_surface": "RmlUi shell download status",
+      "source_owner": "client_download_state",
+      "migration_phase": "runtime_stub",
+      "task_ids": [
+        "FR-09-T01",
+        "FR-09-T06",
+        "FR-09-T07",
+        "FR-03-T08"
+      ],
+      "controller_scope": "shell.download_status",
+      "entry_points": [
+        "download_status"
+      ],
+      "data_models": [
+        "shell.download_status"
+      ],
+      "controller_contracts": [
+        {
+          "category": "cvar_binding",
+          "contract": "worr.rml.controller.cvar_binding.mock",
+          "fixture": "cvar-binding.mock.json",
+          "model": "shell.download_status.cvars",
+          "status": "mock_fixture",
+          "notes": "Download status fields declare ui_download_* cvar labels, progress, and value binding."
+        },
+        {
+          "category": "condition_state",
+          "contract": "worr.rml.controller.condition_state.mock",
+          "fixture": "condition-state.mock.json",
+          "model": "shell.download_status.conditions",
+          "status": "mock_fixture",
+          "notes": "Status text and queue fields already declare static data-show-if expressions."
+        },
+        {
+          "category": "command_action",
+          "contract": "worr.rml.controller.command_action.mock",
+          "fixture": "command-action.mock.json",
+          "model": "ui.commands",
+          "status": "mock_fixture",
+          "notes": "Cancel exposes the download_cancel data-command hook; auto-open behavior remains runtime-pending."
+        }
+      ],
+      "status": "scaffolded_round2",
+      "notes": "Guarded engine menu-open document probe through UI_Rml_OpenMenu; UI_Rml_OpenMenu falls back to the legacy UI, so this is not a real RmlUi render/parity claim. Existing mock cvar, condition, and command controller contracts remain preserved for the download status scaffold."
+    },
+    {
+      "id": "input",
+      "wave": "A",
+      "group": "settings",
+      "document": "settings/input.rml",
+      "document_id": "settings-input",
+      "source_menu": "src/game/cgame/ui/worr.json:input",
+      "legacy_surface": "src/game/cgame/ui/worr.json menu input",
+      "current_surface": "RmlUi settings input",
+      "source_owner": "cgame_ui_json",
+      "migration_phase": "controller_stub",
+      "task_ids": [
+        "FR-09-T01",
+        "FR-09-T06",
+        "FR-03-T08"
+      ],
+      "controller_scope": "settings.input",
+      "entry_points": [
+        "pushmenu input"
+      ],
+      "data_models": [
+        "settings.input"
+      ],
+      "controller_contracts": [
+        {
+          "category": "cvar_binding",
+          "contract": "worr.rml.controller.cvar_binding.mock",
+          "fixture": "cvar-binding.mock.json",
+          "model": "settings.input.cvars",
+          "status": "mock_fixture",
+          "notes": "Input controls declare static data-cvar attributes for mouse sensitivity, filtering, freelook, and always-run settings."
+        },
+        {
+          "category": "command_action",
+          "contract": "worr.rml.controller.command_action.mock",
+          "fixture": "command-action.mock.json",
+          "model": "ui.commands",
+          "status": "mock_fixture",
+          "notes": "Footer buttons expose ui.back and ui.close data-command hooks for later command dispatch wiring."
+        },
+        {
+          "category": "navigation",
+          "contract": "worr.rml.controller.navigation.mock",
+          "fixture": "navigation.mock.json",
+          "model": "ui.navigation",
+          "status": "mock_fixture",
+          "notes": "Back and close controls map to the shared navigation contract."
+        }
+      ],
+      "status": "scaffolded_round2",
+      "notes": "Second-round settings scaffold now references mock cvar, command, and navigation controller contracts; key binding pages remain Agent 5-owned."
+    },
+    {
+      "id": "quit_confirm",
+      "wave": "A",
+      "group": "shell",
+      "document": "shell/quit_confirm.rml",
+      "document_id": "shell-quit-confirm",
+      "source_menu": "src/game/cgame/ui/worr.json:quit_confirm",
+      "legacy_surface": "src/game/cgame/ui/worr.json menu quit_confirm",
+      "current_surface": "RmlUi shell quit confirmation",
+      "source_owner": "cgame_ui_json",
+      "migration_phase": "controller_stub",
+      "task_ids": [
+        "FR-09-T01",
+        "FR-09-T06",
+        "FR-03-T08"
+      ],
+      "controller_scope": "shell.confirmation",
+      "entry_points": [
+        "pushmenu quit_confirm"
+      ],
+      "data_models": [],
+      "controller_contracts": [
+        {
+          "category": "command_action",
+          "contract": "worr.rml.controller.command_action.mock",
+          "fixture": "command-action.mock.json",
+          "model": "ui.commands",
+          "status": "mock_fixture",
+          "notes": "Confirmation buttons expose quit and popmenu data-command hooks for later command dispatch wiring."
+        },
+        {
+          "category": "navigation",
+          "contract": "worr.rml.controller.navigation.mock",
+          "fixture": "navigation.mock.json",
+          "model": "ui.navigation",
+          "status": "mock_fixture",
+          "notes": "The No action maps to the legacy popmenu close path in the shared navigation contract."
+        }
+      ],
+      "status": "scaffolded_round2",
+      "notes": "Controller-stub readiness metadata only; no live quit confirmation controller, runtime open path, screenshots, or parity is claimed."
+    },
+    {
+      "id": "gameflags",
+      "wave": "B",
+      "group": "singleplayer",
+      "document": "singleplayer/gameflags.rml",
+      "document_id": "singleplayer-gameflags",
+      "status": "scaffolded_round3",
+      "source_menu": "src/game/cgame/ui/worr.json:gameflags",
+      "legacy_surface": "src/game/cgame/ui/worr.json menu gameflags",
+      "current_surface": "RmlUi single-player deathmatch flags",
+      "source_owner": "cgame_ui_json",
+      "migration_phase": "controller_stub",
+      "task_ids": [
+        "FR-09-T01",
+        "FR-09-T06",
+        "FR-09-T08",
+        "FR-03-T08"
+      ],
+      "controller_scope": "singleplayer.gameflags",
+      "entry_points": [
+        "pushmenu gameflags"
+      ],
+      "data_models": [
+        "singleplayer.gameflags"
+      ],
+      "controller_contracts": [
+        {
+          "category": "cvar_binding",
+          "contract": "worr.rml.controller.cvar_binding.mock",
+          "fixture": "cvar-binding.mock.json",
+          "model": "singleplayer.gameflags.cvars",
+          "status": "mock_fixture",
+          "notes": "Deathmatch flag controls declare static dmflags data-cvar, data-bit, and data-negate metadata for later bitfield binding."
+        },
+        {
+          "category": "command_action",
+          "contract": "worr.rml.controller.command_action.mock",
+          "fixture": "command-action.mock.json",
+          "model": "ui.commands",
+          "status": "mock_fixture",
+          "notes": "Back and close controls expose ui.back and ui.close data-command hooks for later command dispatch wiring."
+        },
+        {
+          "category": "navigation",
+          "contract": "worr.rml.controller.navigation.mock",
+          "fixture": "navigation.mock.json",
+          "model": "ui.navigation",
+          "status": "mock_fixture",
+          "notes": "Back and close controls map to the shared navigation contract."
+        }
+      ],
+      "notes": "Controller-stub readiness metadata only; no live gameflags controller, runtime open path, screenshots, or parity is claimed."
+    },
+    {
+      "id": "startserver",
+      "wave": "B",
+      "group": "singleplayer",
+      "document": "singleplayer/startserver.rml",
+      "document_id": "singleplayer-startserver",
+      "status": "scaffolded_round3",
+      "source_menu": "src/game/cgame/ui/worr.json:startserver",
+      "legacy_surface": "src/game/cgame/ui/worr.json menu startserver",
+      "current_surface": "RmlUi single-player start server",
+      "source_owner": "cgame_ui_json",
+      "migration_phase": "controller_stub",
+      "task_ids": [
+        "FR-09-T01",
+        "FR-09-T06",
+        "FR-09-T08",
+        "FR-03-T08"
+      ],
+      "controller_scope": "singleplayer.start_server",
+      "entry_points": [
+        "pushmenu startserver"
+      ],
+      "data_models": [
+        "singleplayer.startserver"
+      ],
+      "controller_contracts": [
+        {
+          "category": "cvar_binding",
+          "contract": "worr.rml.controller.cvar_binding.mock",
+          "fixture": "cvar-binding.mock.json",
+          "model": "singleplayer.startserver.cvars",
+          "status": "mock_fixture",
+          "notes": "Start-server controls declare static data-cvar attributes for initial map, rules, host name, match setup, co-op limits, and client counts."
+        },
+        {
+          "category": "condition_state",
+          "contract": "worr.rml.controller.condition_state.mock",
+          "fixture": "condition-state.mock.json",
+          "model": "singleplayer.startserver.conditions",
+          "status": "mock_fixture",
+          "notes": "Match, co-op, and tournament controls declare static data-show-if expressions for later condition-state wiring."
+        },
+        {
+          "category": "command_action",
+          "contract": "worr.rml.controller.command_action.mock",
+          "fixture": "command-action.mock.json",
+          "model": "ui.commands",
+          "status": "mock_fixture",
+          "notes": "Gameflags, begin-game, back, and close controls expose data-command hooks for later command dispatch wiring."
+        },
+        {
+          "category": "navigation",
+          "contract": "worr.rml.controller.navigation.mock",
+          "fixture": "navigation.mock.json",
+          "model": "ui.navigation",
+          "status": "mock_fixture",
+          "notes": "The Deathmatch Flags button declares data-route-target=\"gameflags\" while back and close controls map to shared navigation."
+        }
+      ],
+      "notes": "Controller-stub readiness metadata only; no live start-server controller, gameflags controller, runtime open path, screenshots, or parity is claimed."
+    },
+    {
+      "id": "singleplayer",
+      "wave": "B",
+      "group": "singleplayer",
+      "document": "singleplayer/singleplayer.rml",
+      "document_id": "singleplayer-main",
+      "status": "scaffolded_first_round",
+      "source_menu": "src/game/cgame/ui/worr.json:singleplayer",
+      "legacy_surface": "src/game/cgame/ui/worr.json menu singleplayer",
+      "current_surface": "RmlUi single-player campaign hub",
+      "source_owner": "cgame_ui_json",
+      "migration_phase": "controller_stub",
+      "task_ids": [
+        "FR-09-T01",
+        "FR-09-T06",
+        "FR-03-T08"
+      ],
+      "controller_scope": "singleplayer.mapdb",
+      "entry_points": [
+        "pushmenu singleplayer"
+      ],
+      "data_models": [
+        "singleplayer.episodes",
+        "singleplayer.units"
+      ],
+      "controller_contracts": [
+        {
+          "category": "navigation",
+          "contract": "worr.rml.controller.navigation.mock",
+          "fixture": "navigation.mock.json",
+          "model": "ui.navigation",
+          "status": "mock_fixture",
+          "notes": "Episode, level, load, and save controls declare static route-target hooks for later navigation wiring."
+        },
+        {
+          "category": "command_action",
+          "contract": "worr.rml.controller.command_action.mock",
+          "fixture": "command-action.mock.json",
+          "model": "ui.commands",
+          "status": "mock_fixture",
+          "notes": "Campaign, load, save, back, and close controls expose data-command hooks for later command dispatch wiring."
+        },
+        {
+          "category": "cvar_binding",
+          "contract": "worr.rml.controller.cvar_binding.mock",
+          "fixture": "cvar-binding.mock.json",
+          "model": "singleplayer.mapdb.cvars",
+          "status": "mock_fixture",
+          "notes": "Episode and unit selectors declare static data-cvar hooks for later map database selection binding."
+        },
+        {
+          "category": "condition_state",
+          "contract": "worr.rml.controller.condition_state.mock",
+          "fixture": "condition-state.mock.json",
+          "model": "singleplayer.mapdb.conditions",
+          "status": "mock_fixture",
+          "notes": "The save-game entry declares a static data-enable-if expression for later in-game save gating."
+        },
+        {
+          "category": "list_provider",
+          "contract": "worr.rml.controller.list_provider.mock",
+          "fixture": "list-provider.mock.json",
+          "model": "singleplayer.mapdb",
+          "status": "mock_fixture",
+          "notes": "Episode and unit data models mark the future map database list-provider boundary."
+        }
+      ],
+      "notes": "Controller-stub readiness metadata only; no live campaign controller, save/load controller, runtime open path, screenshots, or parity is claimed."
+    },
+    {
+      "id": "skill_select",
+      "wave": "B",
+      "group": "singleplayer",
+      "document": "singleplayer/skill_select.rml",
+      "document_id": "singleplayer-skill-select",
+      "status": "scaffolded_round3",
+      "source_menu": "src/game/cgame/ui/worr.json:skill_select",
+      "legacy_surface": "src/game/cgame/ui/worr.json menu skill_select",
+      "current_surface": "RmlUi single-player skill select",
+      "source_owner": "cgame_ui_json",
+      "migration_phase": "controller_stub",
+      "task_ids": [
+        "FR-09-T01",
+        "FR-09-T06",
+        "FR-03-T08"
+      ],
+      "controller_scope": "singleplayer.skill",
+      "entry_points": [
+        "pushmenu skill_select"
+      ],
+      "data_models": [
+        "singleplayer.skill_select"
+      ],
+      "controller_contracts": [
+        {
+          "category": "command_action",
+          "contract": "worr.rml.controller.command_action.mock",
+          "fixture": "command-action.mock.json",
+          "model": "ui.commands",
+          "status": "mock_fixture",
+          "notes": "Skill, back, and close controls expose data-command hooks for later command dispatch wiring."
+        }
+      ],
+      "notes": "Controller-stub readiness metadata only; no live skill/campaign launch controller, runtime open path, screenshots, or parity is claimed."
+    },
+    {
+      "id": "loadgame",
+      "wave": "B",
+      "group": "singleplayer",
+      "document": "singleplayer/loadgame.rml",
+      "document_id": "singleplayer-loadgame",
+      "status": "scaffolded_round3",
+      "source_menu": "src/game/cgame/ui/worr.json:loadgame",
+      "legacy_surface": "src/game/cgame/ui/worr.json menu loadgame",
+      "current_surface": "RmlUi single-player load game",
+      "source_owner": "cgame_ui_json",
+      "migration_phase": "controller_stub",
+      "task_ids": [
+        "FR-09-T01",
+        "FR-09-T06",
+        "FR-09-T07",
+        "FR-03-T08"
+      ],
+      "controller_scope": "singleplayer.loadgame",
+      "entry_points": [
+        "pushmenu loadgame",
+        "menu_loadgame"
+      ],
+      "data_models": [
+        "singleplayer.loadgame_slots"
+      ],
+      "controller_contracts": [
+        {
+          "category": "command_action",
+          "contract": "worr.rml.controller.command_action.mock",
+          "fixture": "command-action.mock.json",
+          "model": "ui.commands",
+          "status": "mock_fixture",
+          "notes": "Load-slot, back, and close controls expose data-command hooks for later command dispatch wiring."
+        },
+        {
+          "category": "save_load",
+          "contract": "worr.rml.save_load.mock",
+          "fixture": "save-load.mock.json",
+          "model": "save_load.slots",
+          "status": "mock_fixture",
+          "notes": "Static save-slot metadata marks the future load-game slot provider boundary."
+        }
+      ],
+      "notes": "Controller-stub readiness metadata only; no live load-game controller, save-slot provider, runtime open path, screenshots, or parity is claimed."
+    },
+    {
+      "id": "savegame",
+      "wave": "B",
+      "group": "singleplayer",
+      "document": "singleplayer/savegame.rml",
+      "document_id": "singleplayer-savegame",
+      "status": "scaffolded_round3",
+      "source_menu": "src/game/cgame/ui/worr.json:savegame",
+      "legacy_surface": "src/game/cgame/ui/worr.json menu savegame",
+      "current_surface": "RmlUi single-player save game",
+      "source_owner": "cgame_ui_json",
+      "migration_phase": "controller_stub",
+      "task_ids": [
+        "FR-09-T01",
+        "FR-09-T06",
+        "FR-09-T07",
+        "FR-03-T08"
+      ],
+      "controller_scope": "singleplayer.savegame",
+      "entry_points": [
+        "pushmenu savegame"
+      ],
+      "data_models": [
+        "singleplayer.savegame_slots"
+      ],
+      "controller_contracts": [
+        {
+          "category": "command_action",
+          "contract": "worr.rml.controller.command_action.mock",
+          "fixture": "command-action.mock.json",
+          "model": "ui.commands",
+          "status": "mock_fixture",
+          "notes": "Save-slot, back, and close controls expose data-command hooks for later command dispatch wiring."
+        },
+        {
+          "category": "save_load",
+          "contract": "worr.rml.save_load.mock",
+          "fixture": "save-load.mock.json",
+          "model": "save_load.slots",
+          "status": "mock_fixture",
+          "notes": "Static save-slot metadata marks the future save-game slot provider boundary."
+        }
+      ],
+      "notes": "Controller-stub readiness metadata only; no live save-game controller, save-slot provider, runtime open path, screenshots, or parity is claimed."
+    }
+  ]
+}

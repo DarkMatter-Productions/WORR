@@ -1,0 +1,57 @@
+{
+  "schema": "worr.rml.routes.v1",
+  "description": "Core RmlUi route metadata for early runtime bootstrap and packaging work.",
+  "ownership_contract": "assets/ui/rml/contracts/route-ownership.schema.json",
+  "migration_phase_values": {
+    "starter": "Source RML document and static route metadata exist; runtime, controller, and parity evidence are pending.",
+    "controller_stub": "Controller/data-model stub metadata exists, but live runtime validation is pending.",
+    "runtime_stub": "Runtime smoke/open path exists for this route, but parity evidence is pending.",
+    "parity_pending": "Route opens through RmlUi with live bridge coverage; parity evidence is still incomplete.",
+    "parity_ready": "Route has accepted parity evidence and is ready for cutover consideration."
+  },
+  "routes": [
+    {
+      "id": "core.runtime_smoke",
+      "document": "core/runtime_smoke.rml",
+      "document_id": "core-runtime-smoke",
+      "owner": "agent1-platform-runtime",
+      "tasks": [
+        "FR-09-T01",
+        "FR-09-T02",
+        "FR-09-T03"
+      ],
+      "legacy_surface": "none: new RmlUi runtime smoke route",
+      "current_surface": "RmlUi runtime smoke route",
+      "source_owner": "agent1_platform_runtime",
+      "migration_phase": "starter",
+      "task_ids": [
+        "FR-09-T01",
+        "FR-03-T08"
+      ],
+      "controller_scope": "runtime.bootstrap",
+      "purpose": "Load-only smoke route for validating runtime ownership, source asset layout, and later install staging.",
+      "entry_points": [
+        "runtime_smoke"
+      ],
+      "runtime": {
+        "requires_native_renderer": true,
+        "requires_data_model": false,
+        "requires_build_integration": false,
+        "mock_safe": true
+      },
+      "commands": [
+        {
+          "id": "ui.back",
+          "source_attribute": "data-command",
+          "status": "placeholder"
+        },
+        {
+          "id": "ui.close",
+          "source_attribute": "data-command",
+          "status": "placeholder"
+        }
+      ],
+      "data_models": []
+    }
+  ]
+}

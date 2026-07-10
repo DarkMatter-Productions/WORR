@@ -1,0 +1,5 @@
+<svg width="128" height="28" viewBox="0 0 128 28">
+  <rect x="1" y="1" width="126" height="26" fill="#111a1b" stroke="#578f94" stroke-width="2"/>
+  <rect x="5" y="6" width="74" height="16" fill="#426f72"/>
+  <rect x="5" y="6" width="74" height="1" fill="#7ed4d8" opacity="0.46"/>
+</svg>

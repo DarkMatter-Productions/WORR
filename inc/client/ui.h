@@ -33,6 +33,13 @@ typedef enum {
     UIMENU_DOWNLOAD
 } uiMenu_t;
 
+typedef enum {
+    UI_FEEDBACK_OPEN,
+    UI_FEEDBACK_MOVE,
+    UI_FEEDBACK_CLOSE,
+    UI_FEEDBACK_ALERT
+} uiFeedbackSound_t;
+
 #if USE_UI
 void        UI_Init(void);
 void        UI_Shutdown(void);
@@ -46,6 +53,7 @@ void        UI_StatusEvent(const serverStatus_t *status);
 void        UI_ErrorEvent(const netadr_t *from);
 void        UI_MouseEvent(int x, int y);
 bool        UI_IsTransparent(void);
+void        UI_StartFeedbackSound(uiFeedbackSound_t sound);
 #else
 #define     UI_Init()               (void)0
 #define     UI_Shutdown()           (void)0
@@ -59,6 +67,7 @@ bool        UI_IsTransparent(void);
 #define     UI_ErrorEvent(from)     (void)0
 #define     UI_MouseEvent(x, y)     (void)0
 #define     UI_IsTransparent()      true
+#define     UI_StartFeedbackSound(sound) (void)0
 #endif
 
 #ifdef __cplusplus

@@ -1,0 +1,41 @@
+{
+  "contract": "worr.rml.save_load.mock",
+  "version": 1,
+  "mock": true,
+  "task_ids": ["FR-09-T05", "FR-09-T07"],
+  "routes": ["loadgame/mock", "savegame/mock"],
+  "model": "save_load.slots",
+  "component_refs": [
+    "common/components/save-load.rml#worr-save-slot-list",
+    "common/components/controls.rml#worr-command-button"
+  ],
+  "slot_policy": {
+    "max_slots": 12,
+    "empty_slots_are_selectable_for_save": true,
+    "empty_slots_are_selectable_for_load": false
+  },
+  "slots": [
+    {
+      "id": 0,
+      "label": "Slot 0",
+      "status": "occupied",
+      "map": "base1",
+      "timestamp": "2026-07-02 13:40",
+      "primary_command": "save_load.load_slot",
+      "secondary_command": "save_load.overwrite_slot"
+    },
+    {
+      "id": 1,
+      "label": "Slot 1",
+      "status": "empty",
+      "map": "",
+      "timestamp": "",
+      "primary_command": "save_load.save_slot"
+    }
+  ],
+  "actions": [
+    { "id": "load_selected", "label": "Load", "event": "save_load.load_selected", "requires_status": "occupied" },
+    { "id": "save_selected", "label": "Save", "event": "save_load.save_selected" },
+    { "id": "delete_selected", "label": "Delete", "event": "save_load.delete_selected", "requires_status": "occupied" }
+  ]
+}

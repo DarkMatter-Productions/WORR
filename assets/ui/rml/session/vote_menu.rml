@@ -1,0 +1,34 @@
+<rml>
+  <head>
+    <title>WORR Vote</title>
+    <link type="text/rcss" href="../common/theme/base.rcss" />
+    <link type="text/rcss" href="../common/theme/session.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
+  </head>
+  <body id="session-vote-menu" data-route-id="vote_menu" data-route-group="session" data-route-version="1" data-document-status="starter" data-menu-music="menu" data-menu-sound-open="open">
+    <div class="screen compact-screen session-screen" id="vote-menu-screen" data-close-command="popmenu; worr_vote_close">
+      <header class="page-header" id="vote-menu-header" data-model="session.vote" data-owner-boundary="sgame-published-cvars">
+        <h1>Vote</h1>
+        <p id="vote-menu-summary">
+          Cast your vote before the timer runs out.
+        </p>
+      </header>
+
+      <section class="session-vote-prompt" id="vote-menu-content" data-model="session.vote" data-owner-boundary="sgame-published-cvars">
+        <p id="vote-menu-empty" class="session-pending" data-show-if="!ui_vote_line_0">No vote is in progress. Use Call a Vote to start one.</p>
+        <p id="vote-menu-line-0" data-bind="cvars.ui_vote_line_0" data-bind-cvar="ui_vote_line_0" data-visible-if="ui_vote_line_0">Vote in progress</p>
+        <p id="vote-menu-line-1" data-bind="cvars.ui_vote_line_1" data-bind-cvar="ui_vote_line_1" data-visible-if="ui_vote_line_1">Review the current proposal.</p>
+        <p id="vote-menu-line-2" data-bind="cvars.ui_vote_line_2" data-bind-cvar="ui_vote_line_2" data-visible-if="ui_vote_line_2">Choose yes or no.</p>
+        <p id="vote-menu-ready-label" class="session-badge is-warning" data-bind="cvars.ui_vote_ready_label" data-bind-cvar="ui_vote_ready_label" data-visible-if="ui_vote_can_vote=0">Vote opens soon</p>
+        <p id="vote-menu-ready-countdown" class="session-countdown" data-bind="cvars.ui_vote_ready_countdown" data-bind-cvar="ui_vote_ready_countdown" data-visible-if="ui_vote_can_vote=0">--</p>
+        <p id="vote-menu-time-left" class="session-countdown" data-bind="cvars.ui_vote_time_left" data-bind-cvar="ui_vote_time_left" data-visible-if="ui_vote_time_left">Time left</p>
+      </section>
+
+      <footer class="actions" id="vote-menu-actions">
+        <button id="vote-menu-yes" class="ui-button-primary" type="button" data-command="worr_vote_yes" data-loc-key="m_yes" data-visible-if="ui_vote_can_vote!=0" data-menu-sound="confirm">Yes</button>
+        <button id="vote-menu-no" type="button" data-command="worr_vote_no" data-loc-key="m_no" data-visible-if="ui_vote_can_vote!=0" data-menu-sound="confirm">No</button>
+        <button id="vote-menu-close" type="button" data-command="popmenu; worr_vote_close" data-menu-sound="cancel">Close</button>
+      </footer>
+    </div>
+  </body>
+</rml>

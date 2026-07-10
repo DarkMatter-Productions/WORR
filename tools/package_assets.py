@@ -20,6 +20,8 @@ BOTFILE_SUPPORT_MEMBERS = (
 BOTFILE_PROFILE_SUFFIXES = ('_c.c', '_i.c', '_t.c', '_w.c')
 BOTFILE_CHARACTER_SUFFIX = '_c.c'
 BOTFILE_SCRIPT_SUFFIX = '_s.c'
+DEFAULT_LOOSE_ASSET_PATHS = ('botfiles', 'ui/rml')
+RMLUI_LOOSE_ASSET_ROOT = 'ui/rml'
 Q2AAS_TOOL_BINARY_STEMS = ('worr_q2aas', 'q2aas', 'bspc')
 Q2AAS_TOOL_BINARY_EXTENSIONS = ('', '.exe', '.pdb', '.dll', '.so', '.dylib')
 
@@ -182,6 +184,24 @@ def botfile_archive_member_requirements(assets_dir: pathlib.Path) -> list[str]:
     ]
 
 
+def rmlui_release_members(assets_dir: pathlib.Path) -> list[str]:
+    rel = path_from_member(RMLUI_LOOSE_ASSET_ROOT)
+    source = assets_dir / rel
+    if not source.exists():
+        return []
+    if not source.is_dir():
+        raise SystemExit(f'RmlUi loose asset root must be a directory: {source}')
+
+    members = sorted(
+        path.relative_to(assets_dir).as_posix()
+        for path in source.rglob('*')
+        if path.is_file()
+    )
+    if not members:
+        raise SystemExit(f'RmlUi loose asset root contains no files: {source}')
+    return members
+
+
 def archive_member_hashes(archive_path: pathlib.Path) -> dict[str, str]:
     try:
         with zipfile.ZipFile(archive_path) as archive:
@@ -239,6 +259,45 @@ def validate_botfile_payload(
         raise SystemExit(f'Invalid packaged botfile payload:\n  - {details}')
 
 
+def validate_rmlui_payload(
+    assets_dir: pathlib.Path,
+    output_dir: pathlib.Path,
+    archive_path: pathlib.Path,
+    members: list[str],
+) -> None:
+    archive_hashes = archive_member_hashes(archive_path)
+    failures: list[str] = []
+
+    for member in members:
+        source = assets_dir / path_from_member(member)
+        expected_hash = sha256_file(source)
+
+        archive_hash = archive_hashes.get(member)
+        if archive_hash is None:
+            failures.append(f'missing archive member: {member}')
+        elif archive_hash.lower() != expected_hash.lower():
+            failures.append(
+                f'archive member hash mismatch for {member}: '
+                f'expected {expected_hash}, got {archive_hash}'
+            )
+
+        loose_path = output_dir / path_from_member(member)
+        if not loose_path.is_file():
+            failures.append(f'missing loose RmlUi asset mirror: {loose_path}')
+            continue
+
+        loose_hash = sha256_file(loose_path)
+        if loose_hash.lower() != expected_hash.lower():
+            failures.append(
+                f'loose RmlUi asset hash mismatch for {loose_path}: '
+                f'expected {expected_hash}, got {loose_hash}'
+            )
+
+    if failures:
+        details = '\n  - '.join(failures)
+        raise SystemExit(f'Invalid packaged RmlUi asset payload:\n  - {details}')
+
+
 def mirror_loose_asset(assets_dir: pathlib.Path, output_dir: pathlib.Path, rel: pathlib.Path) -> bool:
     source = assets_dir / rel
     dest = output_dir / rel
@@ -270,7 +329,7 @@ def main() -> int:
     parser.add_argument(
         '--loose-dir',
         action='append',
-        default=['botfiles'],
+        default=list(DEFAULT_LOOSE_ASSET_PATHS),
         help='Asset directory/file to mirror loose beside the archive; repeatable, relative to --assets-dir',
     )
     args = parser.parse_args()
@@ -292,6 +351,7 @@ def main() -> int:
         raise SystemExit(f'No files found in assets directory: {assets_dir}')
     validate_no_q2aas_tool_binaries(files, assets_dir)
     botfile_members = botfile_release_members(assets_dir)
+    rmlui_members = rmlui_release_members(assets_dir)
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -306,10 +366,14 @@ def main() -> int:
             mirrored.append(rel.as_posix())
 
     validate_botfile_payload(assets_dir, output_dir, archive_path, botfile_members)
+    if rmlui_members:
+        validate_rmlui_payload(assets_dir, output_dir, archive_path, rmlui_members)
 
     print(f'Wrote {archive_path}')
     print(f'Packed {len(files)} files from {assets_dir}')
     print(f'Validated botfile release payload: {len(botfile_members)} package/loose file(s)')
+    if rmlui_members:
+        print(f'Validated RmlUi asset payload: {len(rmlui_members)} package/loose file(s)')
     if mirrored:
         print(f'Mirrored loose asset paths: {", ".join(mirrored)}')
     return 0

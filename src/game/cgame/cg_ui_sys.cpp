@@ -297,6 +297,16 @@ void Cbuf_AddText(cmdbuf_t *buf, const char *text)
         uii->AddCommandString(text);
 }
 
+void Cbuf_InsertText(cmdbuf_t *buf, const char *text)
+{
+    (void)buf;
+    if (uii && uii->InsertCommandString) {
+        uii->InsertCommandString(text);
+    } else {
+        Cbuf_AddText(buf, text);
+    }
+}
+
 int Cmd_Argc(void)
 {
     return uii ? uii->Cmd_Argc() : 0;

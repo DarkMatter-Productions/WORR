@@ -1,0 +1,31 @@
+<rml>
+  <head>
+    <title>WORR Match Info</title>
+    <link type="text/rcss" href="../common/theme/base.rcss" />
+    <link type="text/rcss" href="../common/theme/session.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
+  </head>
+  <body id="session-dm-matchinfo" data-route-id="dm_matchinfo" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-session-owner="sgame" data-menu-music="menu" data-menu-sound-open="open">
+    <div class="screen compact-screen session-screen" id="dm-matchinfo-screen">
+      <header class="page-header">
+        <h1>Match Info</h1>
+      </header>
+
+      <section class="session-match-summary" id="dm-matchinfo-content" data-model="session.dm_matchinfo" data-owner-boundary="sgame-published-cvars">
+        <p id="dm-matchinfo-empty" class="session-pending" data-show-if="!ui_matchinfo_gametype">Match details are not available yet.</p>
+        <p id="dm-matchinfo-gametype" data-bind="cvars.ui_matchinfo_gametype" data-visible-if="ui_matchinfo_gametype">Gametype</p>
+        <p id="dm-matchinfo-map" class="ui-map-name" data-bind="cvars.ui_matchinfo_map" data-visible-if="ui_matchinfo_map">Map</p>
+        <p id="dm-matchinfo-mapname" class="ui-map-name" data-bind="cvars.ui_matchinfo_mapname" data-visible-if="ui_matchinfo_mapname">Map name</p>
+        <p id="dm-matchinfo-author1" data-bind="cvars.ui_matchinfo_author1" data-visible-if="ui_matchinfo_author1">Author</p>
+        <p id="dm-matchinfo-author2" data-bind="cvars.ui_matchinfo_author2" data-visible-if="ui_matchinfo_author2">Additional author</p>
+        <p id="dm-matchinfo-ruleset" data-bind="cvars.ui_matchinfo_ruleset" data-visible-if="ui_matchinfo_ruleset">Ruleset</p>
+        <p id="dm-matchinfo-scorelimit" data-bind="cvars.ui_matchinfo_scorelimit" data-visible-if="ui_matchinfo_scorelimit">Score limit</p>
+        <p id="dm-matchinfo-timelimit" data-bind="cvars.ui_matchinfo_timelimit" data-visible-if="ui_matchinfo_timelimit">Time limit</p>
+      </section>
+
+      <footer class="actions" id="dm-matchinfo-actions">
+        <button id="dm-matchinfo-return" type="button" data-command="popmenu" data-menu-sound="cancel">Return</button>
+      </footer>
+    </div>
+  </body>
+</rml>

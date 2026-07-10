@@ -1,0 +1,98 @@
+<rml>
+  <head>
+    <title>WORR Crosshair Settings</title>
+    <link type="text/rcss" href="../common/theme/base.rcss" />
+    <link type="text/rcss" href="../common/theme/settings.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
+  </head>
+  <body id="settings-crosshair" data-route-id="crosshair" data-route-group="settings" data-route-version="1" data-document-status="scaffolded-round3" data-menu-music="menu" data-menu-sound-open="open">
+    <div class="screen settings-screen" id="crosshair-screen">
+      <header class="menu-header">
+        <h1>Crosshair Setup</h1>
+      </header>
+
+      <main class="settings-form form-compact cols-2" id="crosshair-settings-form">
+        <div class="settings-columns" id="crosshair-settings-columns">
+          <div class="settings-column" id="crosshair-primary-column">
+            <section class="settings-section" id="crosshair-picker-section" data-component="common.components.image_grid">
+              <h2>Crosshair</h2>
+              <div class="setting-row image-grid-anchor" id="crosshair-type-control" data-control="imagevalues" data-cvar="crosshair" data-path="pics" data-filter="ch*" data-numeric="true" data-value-prefix="ch" data-image-width="16" data-image-height="16">
+                <span class="setting-widget-icon" data-widget="imagevalues"><img src="../common/icons/widgets/imagevalues.svg" /></span>
+                <label for="crosshair-type">Crosshair Type</label>
+                <select id="crosshair-type" data-cvar="crosshair" data-source-menu-type="imagevalues">
+                  <option value="0">Default</option>
+                </select>
+              </div>
+              <div class="setting-row" data-control="range" data-cvar="cl_crosshair_size">
+                <span class="setting-widget-icon" data-widget="range"><img src="../common/icons/widgets/range.svg" /></span>
+                <label for="crosshair-size">Crosshair Size</label>
+                <input id="crosshair-size" type="range" min="4" max="64" step="1" data-cvar="cl_crosshair_size" />
+                <span class="setting-value setting-meter"><span class="setting-meter-fill" data-meter-cvar="cl_crosshair_size" data-meter-min="4" data-meter-max="64"></span><span class="setting-meter-text" data-bind-cvar="cl_crosshair_size"></span></span>
+              </div>
+              <div class="setting-row" data-control="range" data-cvar="cl_crosshair_brightness">
+                <span class="setting-widget-icon" data-widget="range"><img src="../common/icons/widgets/range.svg" /></span>
+                <label for="crosshair-brightness">Crosshair Brightness</label>
+                <input id="crosshair-brightness" type="range" min="0" max="1" step="0.05" data-cvar="cl_crosshair_brightness" />
+                <span class="setting-value setting-meter"><span class="setting-meter-fill" data-meter-cvar="cl_crosshair_brightness" data-meter-min="0" data-meter-max="1"></span><span class="setting-meter-text" data-bind-cvar="cl_crosshair_brightness"></span></span>
+              </div>
+              <div class="setting-row" data-control="range" data-cvar="cl_crosshair_color">
+                <span class="setting-widget-icon" data-widget="range"><img src="../common/icons/widgets/range.svg" /></span>
+                <label for="crosshair-color">Crosshair Color</label>
+                <input id="crosshair-color" type="range" min="1" max="26" step="1" data-cvar="cl_crosshair_color" />
+                <span class="setting-value setting-meter"><span class="setting-meter-fill" data-meter-cvar="cl_crosshair_color" data-meter-min="1" data-meter-max="26"></span><span class="setting-meter-text" data-bind-cvar="cl_crosshair_color"></span></span>
+              </div>
+              <div class="setting-row" data-control="toggle" data-cvar="cl_crosshair_health">
+                <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
+                <label for="crosshair-health-color">Color By Health</label>
+                <input id="crosshair-health-color" type="checkbox" data-cvar="cl_crosshair_health" />
+              </div>
+            </section>
+          </div>
+
+          <div class="settings-column" id="crosshair-hit-column">
+            <section class="settings-section" id="crosshair-hit-section" data-component="common.components.cvar_controls">
+              <h2>Hit Feedback</h2>
+              <div class="setting-row" data-control="select" data-cvar="cl_crosshair_hit_style">
+                <span class="setting-widget-icon" data-widget="select"><img src="../common/icons/widgets/select.svg" /></span>
+                <label for="crosshair-hit-style">Hit Style</label>
+                <select id="crosshair-hit-style" data-cvar="cl_crosshair_hit_style" data-source-menu-type="values">
+                  <option value="0">Off</option>
+                  <option value="1">Damage Color</option>
+                  <option value="2">Hit Color</option>
+                  <option value="3">Pulse (Large)</option>
+                  <option value="4">Damage + Pulse</option>
+                  <option value="5">Hit Color + Pulse</option>
+                  <option value="6">Pulse (Small)</option>
+                  <option value="7">Damage + Small Pulse</option>
+                  <option value="8">Hit Color + Small Pulse</option>
+                </select>
+              </div>
+              <div class="setting-row" data-control="range" data-cvar="cl_crosshair_hit_color">
+                <span class="setting-widget-icon" data-widget="range"><img src="../common/icons/widgets/range.svg" /></span>
+                <label for="crosshair-hit-color">Hit Color</label>
+                <input id="crosshair-hit-color" type="range" min="1" max="26" step="1" data-cvar="cl_crosshair_hit_color" />
+                <span class="setting-value setting-meter"><span class="setting-meter-fill" data-meter-cvar="cl_crosshair_hit_color" data-meter-min="1" data-meter-max="26"></span><span class="setting-meter-text" data-bind-cvar="cl_crosshair_hit_color"></span></span>
+              </div>
+              <div class="setting-row" data-control="range" data-cvar="cl_crosshair_hit_time">
+                <span class="setting-widget-icon" data-widget="range"><img src="../common/icons/widgets/range.svg" /></span>
+                <label for="crosshair-hit-time">Hit Time (ms)</label>
+                <input id="crosshair-hit-time" type="range" min="0" max="1000" step="10" data-cvar="cl_crosshair_hit_time" />
+                <span class="setting-value setting-meter"><span class="setting-meter-fill" data-meter-cvar="cl_crosshair_hit_time" data-meter-min="0" data-meter-max="1000"></span><span class="setting-meter-text" data-bind-cvar="cl_crosshair_hit_time"></span></span>
+              </div>
+              <div class="setting-row" data-control="toggle" data-cvar="cl_crosshair_pulse">
+                <span class="setting-widget-icon" data-widget="toggle"><img src="../common/icons/widgets/toggle.svg" /></span>
+                <label for="crosshair-pickup-pulse">Pickup Pulse</label>
+                <input id="crosshair-pickup-pulse" type="checkbox" data-cvar="cl_crosshair_pulse" />
+              </div>
+            </section>
+          </div>
+        </div>
+      </main>
+
+      <footer class="menu-footer" id="crosshair-menu-footer">
+        <button id="crosshair-back" type="button" data-command="ui.back" data-menu-sound="cancel">Back</button>
+        <button id="crosshair-close" type="button" data-command="ui.close" data-menu-sound="cancel">Close</button>
+      </footer>
+    </div>
+  </body>
+</rml>

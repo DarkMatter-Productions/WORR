@@ -24,6 +24,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "client.h"
 #include "client/font.h"
 #include "client/ui_font.h"
+#include "ui_rml/ui_rml.h"
 #include "common/async.h"
 #include "system/system.h"
 #if USE_EXTERNAL_RENDERERS
@@ -84,6 +85,87 @@ static cvar_t *r_renderer;
 #define MODE_GEOMETRY   1
 #define MODE_FULLSCREEN 2
 #define MODE_MODELIST   4
+
+#if UI_RML_HAS_RUNTIME
+static ui_rml_renderer_family_t RmlUi_RendererFamilyFromRenderer(renderer_rmlui_family_t family)
+{
+    switch (family) {
+    case R_RENDERER_RMLUI_FAMILY_OPENGL:
+        return UI_RML_RENDERER_FAMILY_OPENGL;
+    case R_RENDERER_RMLUI_FAMILY_VULKAN:
+        return UI_RML_RENDERER_FAMILY_VULKAN;
+    case R_RENDERER_RMLUI_FAMILY_RTX_VKPT:
+        return UI_RML_RENDERER_FAMILY_RTX_VKPT;
+    case R_RENDERER_RMLUI_FAMILY_NONE:
+    default:
+        return UI_RML_RENDERER_FAMILY_NONE;
+    }
+}
+
+static renderer_rmlui_family_t RmlUi_RendererFamilyExport(void)
+{
+#if USE_EXTERNAL_RENDERERS
+    if (re.RmlUiRendererFamily) {
+        return re.RmlUiRendererFamily();
+    }
+
+    return R_RENDERER_RMLUI_FAMILY_NONE;
+#else
+    return R_RmlUiRendererFamily();
+#endif
+}
+
+static const char *RmlUi_RendererNameExport(void)
+{
+#if USE_EXTERNAL_RENDERERS
+    if (re.RmlUiRendererName) {
+        return re.RmlUiRendererName();
+    }
+
+    return "unregistered";
+#else
+    return R_RmlUiRendererName();
+#endif
+}
+
+static bool RmlUi_CanRenderExport(void)
+{
+#if USE_EXTERNAL_RENDERERS
+    return re.RmlUiCanRender && re.RmlUiCanRender();
+#else
+    return R_RmlUiCanRender();
+#endif
+}
+
+static void *RmlUi_NativeRenderInterfaceExport(void)
+{
+#if USE_EXTERNAL_RENDERERS
+    if (re.RmlUiNativeRenderInterface) {
+        return re.RmlUiNativeRenderInterface();
+    }
+
+    return NULL;
+#else
+    return R_RmlUiNativeRenderInterface();
+#endif
+}
+
+static void RmlUi_RegisterRendererBridge(void)
+{
+    ui_rml_renderer_interface_t renderer = {};
+
+    renderer.family = RmlUi_RendererFamilyFromRenderer(RmlUi_RendererFamilyExport());
+    if (renderer.family == UI_RML_RENDERER_FAMILY_NONE) {
+        UI_Rml_ClearRendererInterface();
+        return;
+    }
+
+    renderer.RendererName = RmlUi_RendererNameExport;
+    renderer.CanRender = RmlUi_CanRenderExport;
+    renderer.NativeRenderInterface = RmlUi_NativeRenderInterfaceExport;
+    UI_Rml_SetRendererInterface(&renderer);
+}
+#endif
 
 static int  mode_changed;
 
@@ -1159,6 +1241,10 @@ void CL_InitRenderer(void)
 
     cls.ref_initialized = true;
 
+#if UI_RML_HAS_RUNTIME
+    RmlUi_RegisterRendererBridge();
+#endif
+
     mode_changed = 0;
 
     // Initialize the rest of graphics subsystems
@@ -1194,6 +1280,9 @@ void CL_ShutdownRenderer(void)
     V_Shutdown();
     SCR_Shutdown();
     UI_Shutdown();
+#if UI_RML_HAS_RUNTIME
+    UI_Rml_ClearRendererInterface();
+#endif
     UI_FontShutdown();
     Con_RendererShutdown();
     Font_Shutdown();

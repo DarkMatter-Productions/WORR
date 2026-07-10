@@ -1,0 +1,41 @@
+{
+  "contract": "worr.rml.preview.mock",
+  "version": 1,
+  "mock": true,
+  "task_ids": ["FR-09-T05", "FR-09-T07", "FR-03-T08"],
+  "route": "players/preview/mock",
+  "model": "player.preview",
+  "component_refs": [
+    "common/components/preview.rml#worr-preview-panel",
+    "common/components/controls.rml#worr-cvar-select",
+    "common/components/controls.rml#worr-command-button"
+  ],
+  "preview_surface": {
+    "id": "player_model",
+    "kind": "engine_texture",
+    "owner": "client_rml_preview_bridge",
+    "resource": "preview://player_model",
+    "fallback_text": "Player preview pending renderer bridge",
+    "size": { "width": 320, "height": 220 }
+  },
+  "selection": {
+    "model": "male",
+    "skin": "grunt",
+    "animation": "stand",
+    "rotation_degrees": 35
+  },
+  "cvars": [
+    {
+      "id": "preview_spin",
+      "type": "bool",
+      "cvar": "ui_player_preview_spin",
+      "label": "Spin preview",
+      "value": true
+    }
+  ],
+  "actions": [
+    { "id": "previous_skin", "label": "Previous", "event": "preview.skin_previous" },
+    { "id": "next_skin", "label": "Next", "event": "preview.skin_next" },
+    { "id": "apply_player", "label": "Apply", "event": "preview.apply_player" }
+  ]
+}

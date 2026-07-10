@@ -384,6 +384,18 @@ bool    R_SupportsPerPixelLighting(void);
 
 r_opengl_config_t R_GetGLConfig(void);
 
+typedef enum {
+    R_RENDERER_RMLUI_FAMILY_NONE,
+    R_RENDERER_RMLUI_FAMILY_OPENGL,
+    R_RENDERER_RMLUI_FAMILY_VULKAN,
+    R_RENDERER_RMLUI_FAMILY_RTX_VKPT
+} renderer_rmlui_family_t;
+
+renderer_rmlui_family_t R_RmlUiRendererFamily(void);
+const char *R_RmlUiRendererName(void);
+bool R_RmlUiCanRender(void);
+void *R_RmlUiNativeRenderInterface(void);
+
 typedef struct renderer_export_s {
     bool (*Init)(bool total);
     void (*Shutdown)(bool total);
@@ -438,6 +450,10 @@ typedef struct renderer_export_s {
     void (*ExpireDebugObjects)(void);
     bool (*SupportsPerPixelLighting)(void);
     r_opengl_config_t (*GetGLConfig)(void);
+    renderer_rmlui_family_t (*RmlUiRendererFamily)(void);
+    const char *(*RmlUiRendererName)(void);
+    bool (*RmlUiCanRender)(void);
+    void *(*RmlUiNativeRenderInterface)(void);
 
     void (*ClearDebugLines)(void);
     void (*AddDebugLine)(const vec3_t start, const vec3_t end, color_t color, uint32_t time,

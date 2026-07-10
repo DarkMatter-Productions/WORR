@@ -1,0 +1,9 @@
+[wrap-file]
+directory = RmlUi-6.2
+source_url = https://github.com/mikke89/RmlUi/archive/refs/tags/6.2.tar.gz
+source_filename = RmlUi-6.2.tar.gz
+source_hash = 814c3ff7b9666280338d8f0dda85979f5daf028d01c85fc8975431d1e2fd8e8b
+method = cmake
+
+[provide]
+dependency_names = RmlUi, rmlui

@@ -11,6 +11,10 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "renderer/renderer.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct {
     float base_scale;
     float virtual_width;
@@ -29,3 +33,7 @@ void R_UIScalePixelRectToVirtual(int x, int y, int w, int h, float base_scale,
 bool R_UIScaleClipToPixels(const clipRect_t *clip, float base_scale, float draw_scale,
                            int framebuffer_width, int framebuffer_height,
                            clipRect_t *out_clip);
+
+#ifdef __cplusplus
+}
+#endif

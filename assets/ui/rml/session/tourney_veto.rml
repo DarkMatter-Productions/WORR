@@ -1,0 +1,57 @@
+<rml>
+  <head>
+    <title>WORR Tournament Veto</title>
+    <link type="text/rcss" href="../common/theme/base.rcss" />
+    <link type="text/rcss" href="../common/theme/session.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
+  </head>
+  <body id="session-tourney-veto" data-route-id="tourney_veto" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-session-owner="sgame" data-menu-music="menu" data-menu-sound-open="open">
+    <div class="screen compact-screen session-screen" id="tourney-veto-screen">
+      <header class="page-header" id="tourney-veto-header">
+        <h1>Tournament Veto</h1>
+        <p id="tourney-veto-summary">
+          Track the active side, pick or ban maps, and watch remaining choices.
+        </p>
+      </header>
+
+      <main class="session-flow" id="tourney-veto-content" data-model="session.tournament.veto" data-owner-boundary="sgame-published-cvars" data-list-provider="session.tournament.veto.maps">
+        <section class="session-flow-step is-danger" id="tourney-veto-inactive-panel" data-visible-if="ui_tourney_veto_show_inactive!=0">
+          <h2>Inactive</h2>
+          <p id="tourney-veto-inactive" data-bind="cvars.ui_tourney_veto_inactive" data-label-cvar="ui_tourney_veto_inactive">
+            Veto is not active.
+          </p>
+        </section>
+
+        <section class="session-flow-step is-active" id="tourney-veto-turn-panel" data-visible-if="ui_tourney_veto_turn">
+          <h2>Current Turn</h2>
+          <p id="tourney-veto-turn" data-bind="cvars.ui_tourney_veto_turn" data-label-cvar="ui_tourney_veto_turn">Waiting for turn details.</p>
+        </section>
+
+        <section class="session-flow-step" id="tourney-veto-wait-panel" data-visible-if="ui_tourney_veto_show_wait=1">
+          <h2>Waiting</h2>
+          <p id="tourney-veto-wait-0" data-bind="cvars.ui_tourney_veto_wait_0" data-label-cvar="ui_tourney_veto_wait_0">Waiting for the active</p>
+          <p id="tourney-veto-wait-1" data-bind="cvars.ui_tourney_veto_wait_1" data-label-cvar="ui_tourney_veto_wait_1">side to make a choice.</p>
+        </section>
+
+        <section class="session-panel" id="tourney-veto-action-panel" data-visible-if="ui_tourney_veto_can_pick=1" data-controller="session.tournament_veto">
+          <h2>Action</h2>
+          <div class="session-command-strip" id="tourney-veto-command-strip">
+            <button id="tourney-veto-pick" type="button" data-command="worr_tourney_pick" data-visible-if="ui_tourney_veto_can_pick=1" data-menu-sound="confirm">Pick</button>
+            <button id="tourney-veto-ban" type="button" data-command="worr_tourney_ban" data-visible-if="ui_tourney_veto_can_ban=1" data-menu-sound="confirm">Ban</button>
+            <span id="tourney-veto-ban-locked" class="session-badge is-warning" data-visible-if="ui_tourney_veto_can_pick=1;ui_tourney_veto_can_ban=0">Ban locked</span>
+          </div>
+          <dl class="session-stat-grid" id="tourney-veto-state">
+            <dt>Picks</dt>
+            <dd id="tourney-veto-picks-needed" data-bind="cvars.ui_tourney_veto_picks_needed" data-label-cvar="ui_tourney_veto_picks_needed">Picks needed</dd>
+            <dt>Maps</dt>
+            <dd id="tourney-veto-maps-remaining" data-bind="cvars.ui_tourney_veto_maps_remaining" data-label-cvar="ui_tourney_veto_maps_remaining">Maps remaining</dd>
+          </dl>
+        </section>
+      </main>
+
+      <footer class="actions" id="tourney-veto-actions">
+        <button id="tourney-veto-back" type="button" data-command="popmenu" data-menu-sound="cancel">Return</button>
+      </footer>
+    </div>
+  </body>
+</rml>

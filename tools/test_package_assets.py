@@ -59,6 +59,21 @@ def write_botfile_fixture(assets_dir: pathlib.Path, bot_name: str = "smoke", *, 
         )
 
 
+def write_rmlui_fixture(assets_dir: pathlib.Path) -> list[str]:
+    members = [
+        "ui/rml/common/theme/base.rcss",
+        "ui/rml/core/routes.json",
+        "ui/rml/core/runtime_smoke.rml",
+    ]
+    write_text_asset(assets_dir / path_from_member(members[0]), "body { color: #fff; }\n")
+    write_text_asset(assets_dir / path_from_member(members[1]), '{"schema":"worr.rml.routes.v1","routes":[]}\n')
+    write_text_asset(
+        assets_dir / path_from_member(members[2]),
+        "<rml>\n<head><title>Smoke</title></head>\n<body>Smoke</body>\n</rml>\n",
+    )
+    return members
+
+
 def sha256_file(path: pathlib.Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -117,20 +132,47 @@ class PackageAssetsTest(unittest.TestCase):
                 self.assertIn("botfiles/bots/smoke_c.c", archive.namelist())
                 self.assertIn("botfiles/scripts/smoke_s.c", archive.namelist())
 
+    def test_rmlui_assets_are_packaged_and_mirrored_loose_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            assets_dir = root / "assets"
+            install_dir = root / "install"
+            write_botfile_fixture(assets_dir)
+            rmlui_members = write_rmlui_fixture(assets_dir)
+
+            result = self.run_package_assets(assets_dir, install_dir)
+
+            archive_path = install_dir / "basew" / "pak0.pkz"
+            self.assertIn("Validated RmlUi asset payload: 3 package/loose file(s)", result.stdout)
+            self.assertIn("Mirrored loose asset paths: botfiles, ui/rml", result.stdout)
+            with zipfile.ZipFile(archive_path) as archive:
+                archive_members = set(archive.namelist())
+
+            for member in rmlui_members:
+                source_path = assets_dir / path_from_member(member)
+                loose_path = install_dir / "basew" / path_from_member(member)
+                self.assertIn(member, archive_members)
+                self.assertTrue(loose_path.is_file(), member)
+                self.assertEqual(source_path.read_bytes(), loose_path.read_bytes())
+
     def test_loose_mirror_removes_stale_files(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
             assets_dir = root / "assets"
             install_dir = root / "install"
             write_botfile_fixture(assets_dir)
+            write_rmlui_fixture(assets_dir)
 
             self.run_package_assets(assets_dir, install_dir)
             stale_path = install_dir / "basew" / "botfiles" / "bots" / "stale.c"
             stale_path.write_text("{\nname Stale\n}\n", encoding="ascii")
+            stale_rml_path = install_dir / "basew" / "ui" / "rml" / "core" / "stale.rml"
+            stale_rml_path.write_text("<rml>stale</rml>\n", encoding="ascii")
 
             self.run_package_assets(assets_dir, install_dir)
 
             self.assertFalse(stale_path.exists())
+            self.assertFalse(stale_rml_path.exists())
 
     def test_authored_botfiles_are_packaged_and_mirrored_loose(self) -> None:
         expected_members = self.authored_botfile_members()

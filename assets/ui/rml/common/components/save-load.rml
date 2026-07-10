@@ -1,0 +1,12 @@
+<!-- Shared save/load slot fragments for loadgame and savegame documents. -->
+<templates>
+  <template name="worr-save-slot-list">
+    <div class="worr-save-slots" data-model="{{model}}" data-contract-id="{{id}}">
+      <button class="worr-save-slot" data-for="slot : slots" data-slot-id="{{slot.id}}" data-command="{{slot.primary_command}}" data-event-click="command.dispatch" data-menu-sound="confirm">
+        <div class="worr-save-slot-name">{{slot.label}}</div>
+        <div class="worr-save-slot-meta">{{slot.map}} - {{slot.timestamp}}</div>
+        <div class="worr-save-slot-status">{{slot.status}}</div>
+      </button>
+    </div>
+  </template>
+</templates>

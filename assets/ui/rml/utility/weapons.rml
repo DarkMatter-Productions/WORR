@@ -1,0 +1,42 @@
+<rml>
+  <head>
+    <title>WORR Weapon Bindings</title>
+    <link type="text/rcss" href="../common/theme/base.rcss" />
+    <link type="text/rcss" href="../common/theme/utility.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
+  </head>
+  <body id="utility-weapons" data-route-id="weapons" data-route-group="utility" data-route-version="1" data-document-status="round2-scaffold" data-menu-music="menu" data-menu-sound-open="open">
+    <div class="screen" id="weapons-screen">
+      <header class="page-header">
+        <h1>Weapon Bindings</h1>
+        <p id="weapons-summary">
+          Assign quick-select keys for each weapon and grenade slot.
+        </p>
+      </header>
+
+      <section class="content" id="weapons-content" data-model="utility.weapon_binds" data-controller="keybind.capture" data-action-type="capture">
+        <div class="bind-group" id="weapons-primary" data-bind-group="weapons-primary">
+          <h2>Main Arsenal</h2>
+          <button id="weapons-blaster" type="button" data-bind-command="use Blaster" data-event-click="keybind.capture" data-menu-sound="change"><span class="bind-label">Blaster</span><span class="bind-key"></span></button>
+          <button id="weapons-shotgun" type="button" data-bind-command="use Shotgun" data-event-click="keybind.capture" data-menu-sound="change"><span class="bind-label">Shotgun</span><span class="bind-key"></span></button>
+          <button id="weapons-super-shotgun" type="button" data-bind-command="use Super Shotgun" data-event-click="keybind.capture" data-menu-sound="change"><span class="bind-label">Super Shotgun</span><span class="bind-key"></span></button>
+          <button id="weapons-machinegun" type="button" data-bind-command="use Machinegun" data-event-click="keybind.capture" data-menu-sound="change"><span class="bind-label">Machinegun</span><span class="bind-key"></span></button>
+          <button id="weapons-chaingun" type="button" data-bind-command="use Chaingun" data-event-click="keybind.capture" data-menu-sound="change"><span class="bind-label">Chaingun</span><span class="bind-key"></span></button>
+          <button id="weapons-grenade-launcher" type="button" data-bind-command="use Grenade Launcher" data-event-click="keybind.capture" data-menu-sound="change"><span class="bind-label">Grenade Launcher</span><span class="bind-key"></span></button>
+        </div>
+        <div class="bind-group" id="weapons-heavy" data-bind-group="weapons-heavy">
+          <h2>Heavy Weapons</h2>
+          <button id="weapons-rocket-launcher" type="button" data-bind-command="use Rocket Launcher" data-event-click="keybind.capture" data-menu-sound="change"><span class="bind-label">Rocket Launcher</span><span class="bind-key"></span></button>
+          <button id="weapons-hyperblaster" type="button" data-bind-command="use HyperBlaster" data-event-click="keybind.capture" data-menu-sound="change"><span class="bind-label">HyperBlaster</span><span class="bind-key"></span></button>
+          <button id="weapons-railgun" type="button" data-bind-command="use Railgun" data-event-click="keybind.capture" data-menu-sound="change"><span class="bind-label">Railgun</span><span class="bind-key"></span></button>
+          <button id="weapons-bfg10k" type="button" data-bind-command="use BFG10K" data-event-click="keybind.capture" data-menu-sound="change"><span class="bind-label">BFG10K</span><span class="bind-key"></span></button>
+          <button id="weapons-grenades" type="button" data-bind-command="use Grenades" data-event-click="keybind.capture" data-menu-sound="change"><span class="bind-label">Grenades</span><span class="bind-key"></span></button>
+        </div>
+      </section>
+
+      <footer class="actions" id="weapons-actions">
+        <button id="weapons-back" type="button" data-command="ui.back" data-menu-sound="cancel">Back</button>
+      </footer>
+    </div>
+  </body>
+</rml>

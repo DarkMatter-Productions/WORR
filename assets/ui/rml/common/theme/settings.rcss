@@ -1,0 +1,715 @@
+/*
+ * Shared settings layout and typed control treatment for RmlUi menu pages.
+ *
+ * Density/width tiers:
+ * - .settings-form                   single-column default (604px)
+ * - .settings-form.form-compact      denser rows/headings for multi-column pages
+ * - .settings-form.cols-2            two-column layout (780px)
+ * - .settings-form.cols-3            three-column layout (924px)
+ */
+
+.settings-screen
+{
+	display: flex;
+	flex-direction: column;
+	min-height: 0px;
+}
+
+.settings-form
+{
+	display: flex;
+	flex-direction: column;
+	flex: 1 1 auto;
+	width: 604px;
+	max-width: 100%;
+	height: auto;
+	min-height: 0px;
+	min-width: 0px;
+	margin-bottom: 12px;
+	padding-right: 8px;
+	overflow: auto;
+}
+
+.settings-section
+{
+	display: flex;
+	flex-direction: column;
+	width: 592px;
+	margin-bottom: 12px;
+	padding-bottom: 8px;
+	border-bottom-width: 1px;
+	border-bottom-color: #332d23;
+}
+
+.settings-section h2
+{
+	margin-bottom: 6px;
+	color: #ffd967;
+	font-size: 18px;
+}
+
+.setting-row
+{
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	width: 584px;
+	min-height: 38px;
+	margin-bottom: 6px;
+	padding: 5px 8px;
+	background-color: #171511;
+	border-width: 1px;
+	border-color: #242019;
+	border-left-width: 3px;
+	border-left-color: #332d23;
+	border-radius: 5px;
+	transition: background-color border-color color 0.12s cubic-out;
+}
+
+.setting-row:hover
+{
+	background-color: #211e19;
+	border-left-color: #b99b5b;
+}
+
+.setting-widget-icon
+{
+	display: block;
+	flex: 0 0 auto;
+	width: 16px;
+	height: 16px;
+	min-width: 16px;
+	min-height: 16px;
+	margin-right: 8px;
+	opacity: 0.88;
+	transition: opacity 0.12s cubic-out;
+}
+
+.setting-widget-icon img
+{
+	display: block;
+	width: 16px;
+	height: 16px;
+	min-width: 16px;
+	min-height: 16px;
+}
+
+.setting-row:hover .setting-widget-icon
+{
+	opacity: 1.0;
+}
+
+.setting-row[data-control="select"],
+.setting-row[data-control="combo"],
+.setting-row[data-control="imagevalues"]
+{
+	border-left-color: #8d7447;
+}
+
+.setting-row[data-control="range"]
+{
+	border-left-color: #426f72;
+}
+
+.setting-row[data-control="toggle"]
+{
+	border-left-color: #4c6f4f;
+}
+
+.setting-row[data-control="field"]
+{
+	border-left-color: #77644d;
+}
+
+.setting-row[data-control="action"]
+{
+	border-left-color: #7b5f37;
+}
+
+.setting-row[data-control="progress"]
+{
+	border-left-color: #578f94;
+}
+
+.setting-row[data-control="select"]:hover,
+.setting-row[data-control="combo"]:hover,
+.setting-row[data-control="imagevalues"]:hover
+{
+	border-left-color: #ffd967;
+}
+
+.setting-row[data-control="range"]:hover,
+.setting-row[data-control="progress"]:hover
+{
+	border-left-color: #7ed4d8;
+}
+
+.setting-row[data-control="toggle"]:hover
+{
+	border-left-color: #83d18f;
+}
+
+.setting-row[data-control="field"]:hover
+{
+	border-left-color: #e8cf9a;
+}
+
+.setting-row[data-control="action"]:hover
+{
+	border-left-color: #ffd967;
+}
+
+.setting-row label
+{
+	display: block;
+	width: 160px;
+	margin-right: 12px;
+	color: #c9beb0;
+	font-weight: bold;
+	white-space: normal;
+	word-break: break-word;
+	transition: color 0.12s cubic-out;
+}
+
+.setting-row:hover label
+{
+	color: #f3eee4;
+}
+
+.setting-hint
+{
+	display: block;
+	width: 560px;
+	max-width: 100%;
+	margin: -2px 0px 8px 11px;
+	color: #8f8577;
+	font-size: 13px;
+	white-space: normal;
+	word-break: break-word;
+}
+
+.setting-row input,
+.setting-row select
+{
+	width: 288px;
+}
+
+.setting-row[data-control="field"] input
+{
+	width: 220px;
+	decorator: image(../skins/widgets/textbox-normal.svg);
+}
+
+.setting-row[data-control="field"] input:hover
+{
+	decorator: image(../skins/widgets/textbox-hover.svg);
+}
+
+.setting-row[data-control="field"] input:focus
+{
+	decorator: image(../skins/widgets/textbox-focus.svg);
+}
+
+.setting-row[data-control="field"] input:disabled,
+.setting-row[data-control="field"] input[disabled]
+{
+	decorator: image(../skins/widgets/textbox-disabled.svg);
+}
+
+.setting-row[data-control="field"] input[type="number"]
+{
+	width: 150px;
+}
+
+.setting-row[data-control="select"] select,
+.setting-row[data-control="combo"] select,
+.setting-row[data-control="imagevalues"] select
+{
+	width: 288px;
+}
+
+.setting-row[data-control="combo"] select,
+.setting-row[data-control="imagevalues"] select
+{
+	decorator: image(../skins/widgets/combo-normal.svg);
+}
+
+.setting-row[data-control="combo"] select:hover,
+.setting-row[data-control="imagevalues"] select:hover
+{
+	decorator: image(../skins/widgets/combo-hover.svg);
+}
+
+.setting-row[data-control="combo"] select:focus,
+.setting-row[data-control="imagevalues"] select:focus
+{
+	decorator: image(../skins/widgets/combo-focus.svg);
+}
+
+.setting-row[data-control="combo"] select:disabled,
+.setting-row[data-control="combo"] select[disabled],
+.setting-row[data-control="imagevalues"] select:disabled,
+.setting-row[data-control="imagevalues"] select[disabled]
+{
+	decorator: image(../skins/widgets/combo-disabled.svg);
+}
+
+.setting-row[data-control="range"] input,
+.setting-row .worr-slider
+{
+	width: 260px;
+	background-color: #111a1b;
+	border-left-width: 4px;
+	border-left-color: #578f94;
+	border-right-color: #293f41;
+}
+
+.setting-row[data-control="range"] .setting-value
+{
+	width: 84px;
+}
+
+.setting-row[data-control="toggle"] label
+{
+	width: 500px;
+}
+
+.setting-row[data-control="toggle"] input
+{
+	width: 36px;
+	min-width: 36px;
+	height: 28px;
+	min-height: 28px;
+	padding: 0px;
+}
+
+.setting-row[data-control="toggle"] input:checked
+{
+	background-color: #1f3324;
+	border-color: #83d18f;
+}
+
+.setting-row[data-control="toggle"] input:hover
+{
+	background-color: #332d23;
+	border-color: #b99b5b;
+}
+
+.setting-row[data-control="toggle"] input:focus
+{
+	background-color: #332d23;
+	border-color: #ffd967;
+}
+
+.setting-row[data-control="toggle"] input:checked:hover
+{
+	background-color: #294830;
+	border-color: #c7f0a1;
+}
+
+.setting-row[data-control="toggle"] input:checked:focus
+{
+	background-color: #294830;
+	border-color: #ffd967;
+}
+
+.setting-row[data-control="progress"] progress
+{
+	width: 288px;
+	height: 28px;
+}
+
+.setting-row[data-control="progress"] .setting-value
+{
+	width: 84px;
+}
+
+.setting-row[data-control="action"] button
+{
+	width: 144px;
+	min-width: 144px;
+	height: 30px;
+	padding: 5px 14px;
+}
+
+/* Compact density for multi-column pages. */
+
+.settings-form.form-compact
+{
+	height: auto;
+	flex: 1 1 auto;
+	padding-right: 0px;
+	overflow: auto;
+}
+
+.form-compact .settings-columns
+{
+	display: flex;
+	flex-direction: row;
+	min-height: 0px;
+}
+
+.form-compact .settings-column
+{
+	display: flex;
+	flex-direction: column;
+	min-height: 0px;
+	margin-right: 12px;
+}
+
+.form-compact .settings-column:last-child
+{
+	margin-right: 0px;
+}
+
+.form-compact .settings-section
+{
+	margin-bottom: 10px;
+	padding-bottom: 6px;
+}
+
+.form-compact .settings-section h2
+{
+	margin-bottom: 5px;
+	font-size: 17px;
+}
+
+.form-compact .setting-row
+{
+	min-height: 34px;
+	margin-bottom: 5px;
+	padding: 4px 6px;
+}
+
+.form-compact .setting-widget-icon
+{
+	width: 14px;
+	height: 14px;
+	min-width: 14px;
+	min-height: 14px;
+	margin-right: 6px;
+}
+
+.form-compact .setting-widget-icon img
+{
+	width: 14px;
+	height: 14px;
+	min-width: 14px;
+	min-height: 14px;
+}
+
+.form-compact .setting-row[data-control="toggle"] input
+{
+	width: 32px;
+	min-width: 32px;
+	height: 26px;
+	min-height: 26px;
+}
+
+/* Two-column width tier (780px). */
+
+.settings-form.cols-2
+{
+	width: 780px;
+	max-width: 100%;
+}
+
+.cols-2 .settings-columns
+{
+	width: 780px;
+}
+
+.cols-2 .settings-column
+{
+	width: 382px;
+}
+
+.cols-2 .settings-section
+{
+	width: 370px;
+}
+
+.cols-2 .setting-row
+{
+	width: 358px;
+}
+
+.cols-2 .setting-row label
+{
+	width: 124px;
+	margin-right: 8px;
+}
+
+.cols-2 .setting-row input,
+.cols-2 .setting-row select,
+.cols-2 .setting-row[data-control="select"] select,
+.cols-2 .setting-row[data-control="combo"] select,
+.cols-2 .setting-row[data-control="imagevalues"] select
+{
+	width: 146px;
+}
+
+.cols-2 .setting-row[data-control="range"] input,
+.cols-2 .setting-row .worr-slider
+{
+	width: 146px;
+}
+
+.cols-2 .setting-row[data-control="range"] .setting-value
+{
+	width: 54px;
+}
+
+.cols-2 .setting-row[data-control="field"] input
+{
+	width: 110px;
+}
+
+.cols-2 .setting-row[data-control="field"] input[type="number"]
+{
+	width: 74px;
+}
+
+.cols-2 .setting-row[data-control="field"] .setting-value
+{
+	width: 66px;
+}
+
+.cols-2 .setting-row[data-control="toggle"] label
+{
+	width: 276px;
+}
+
+.cols-2 .setting-row[data-control="action"] button
+{
+	width: 146px;
+	min-width: 146px;
+	height: 28px;
+	padding: 4px 10px;
+}
+
+/* Three-column width tier (924px). */
+
+.settings-form.cols-3
+{
+	width: 924px;
+	max-width: 100%;
+}
+
+.cols-3 .settings-columns
+{
+	width: 924px;
+}
+
+.cols-3 .settings-column
+{
+	width: 300px;
+}
+
+.cols-3 .settings-section
+{
+	width: 288px;
+}
+
+.cols-3 .setting-row
+{
+	width: 276px;
+}
+
+.cols-3 .setting-row label
+{
+	width: 112px;
+	margin-right: 4px;
+}
+
+.cols-3 .setting-row input,
+.cols-3 .setting-row select,
+.cols-3 .setting-row[data-control="select"] select,
+.cols-3 .setting-row[data-control="combo"] select,
+.cols-3 .setting-row[data-control="imagevalues"] select
+{
+	width: 110px;
+}
+
+.cols-3 .setting-row[data-control="range"] input,
+.cols-3 .setting-row .worr-slider
+{
+	width: 104px;
+}
+
+.cols-3 .setting-row[data-control="range"] .setting-value
+{
+	width: 38px;
+}
+
+.cols-3 .setting-row[data-control="field"] input
+{
+	width: 110px;
+}
+
+.cols-3 .setting-row[data-control="field"] input[type="number"]
+{
+	width: 74px;
+}
+
+.cols-3 .setting-row[data-control="field"] .setting-value
+{
+	width: 66px;
+}
+
+.cols-3 .setting-row[data-control="toggle"] label
+{
+	width: 220px;
+}
+
+.cols-3 .setting-row[data-control="action"] button
+{
+	width: 110px;
+	min-width: 110px;
+	height: 28px;
+	padding: 4px 10px;
+}
+
+/* Narrow-canvas fallback: stack the column layouts vertically instead of
+   clipping. The canvas never drops below 960 units wide under the shipped
+   scale math, so this guards nonstandard contexts and future scale modes. */
+@media (max-width: 940px)
+{
+	.form-compact .settings-columns,
+	.cols-2 .settings-columns,
+	.cols-3 .settings-columns
+	{
+		flex-direction: column;
+		width: auto;
+	}
+
+	.cols-2 .settings-column,
+	.cols-3 .settings-column
+	{
+		width: auto;
+		margin-right: 0px;
+	}
+
+	.settings-form.cols-2,
+	.settings-form.cols-3
+	{
+		width: auto;
+	}
+}
+
+/* Short-canvas fallback (e.g. Menu Scale magnification on 16:9): tighten
+   the fixed chrome so more of the scrolling content stays visible. */
+@media (max-height: 640px)
+{
+	.form-compact .settings-section
+	{
+		margin-bottom: 6px;
+		padding-bottom: 4px;
+	}
+}
+
+/* Page-specific exceptions. */
+
+#downloads-settings-form
+{
+	flex: 1 1 auto;
+	height: auto;
+}
+
+#crosshair-settings-form .setting-row label
+{
+	width: 104px;
+}
+
+#crosshair-settings-form .setting-row input,
+#crosshair-settings-form .setting-row select
+{
+	width: 170px;
+}
+
+#crosshair-settings-form .setting-row[data-control="select"] select,
+#crosshair-settings-form .setting-row[data-control="combo"] select,
+#crosshair-settings-form .setting-row[data-control="imagevalues"] select
+{
+	width: 190px;
+}
+
+#crosshair-settings-form .setting-row[data-control="range"] input,
+#crosshair-settings-form .setting-row .worr-slider
+{
+	width: 150px;
+}
+
+/* Value readouts and meters. */
+
+.setting-value
+{
+	display: block;
+	width: 86px;
+	min-height: 21px;
+	margin-left: 10px;
+	padding: 3px 0px;
+	background-color: #100f0d;
+	color: #c9beb0;
+	border-width: 1px;
+	border-color: #443d33;
+	border-radius: 3px;
+	font-size: 14px;
+	line-height: 1.1;
+	text-align: center;
+	white-space: normal;
+	word-break: break-word;
+	transition: color background-color border-color 0.12s cubic-out;
+}
+
+.setting-value.setting-meter
+{
+	position: relative;
+	min-height: 21px;
+	padding: 0px;
+	overflow: hidden;
+	background-color: #0c1314;
+	border-color: #31474a;
+}
+
+.setting-meter-fill
+{
+	position: absolute;
+	top: 0px;
+	bottom: 0px;
+	left: 0px;
+	display: block;
+	width: 0%;
+	height: 100%;
+	background-color: #244f53;
+	border-right-width: 1px;
+	border-right-color: #7ed4d8;
+	transition: width 0.15s cubic-out;
+}
+
+.setting-meter-text
+{
+	position: relative;
+	display: block;
+	width: 100%;
+	padding: 3px 0px;
+	color: #d9eee8;
+	text-align: center;
+	transition: color 0.12s cubic-out;
+}
+
+.setting-row:hover .setting-value
+{
+	color: #ffd967;
+}
+
+.setting-row:hover .setting-meter-fill
+{
+	background-color: #2f6267;
+	border-right-color: #a6edf0;
+}
+
+.setting-row:hover .setting-meter-text
+{
+	color: #ffffff;
+}

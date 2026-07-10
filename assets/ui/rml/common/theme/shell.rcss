@@ -1,0 +1,284 @@
+/*
+ * Shell-specific RmlUi menu styles.
+ *
+ * The shell hubs (Options, Game, Multiplayer) lay out as wrapping flex
+ * sections via .hub-actions/.hub-section; the Main menu is a centered
+ * single-column stack.
+ */
+
+.shell-screen
+{
+	display: flex;
+	flex-direction: column;
+	min-height: 0px;
+}
+
+.menu-header
+{
+	margin-bottom: 12px;
+}
+
+.menu-stack
+{
+	display: flex;
+	flex-direction: column;
+	flex: 1 1 auto;
+	min-height: 0px;
+	min-width: 0px;
+	margin-bottom: 16px;
+	overflow: auto;
+}
+
+.menu-actions
+{
+	display: block;
+	min-height: 0px;
+	width: 604px;
+	max-width: 604px;
+	overflow: auto;
+}
+
+.menu-actions button,
+.menu-actions .ui-button
+{
+	margin-bottom: 6px;
+}
+
+#main-menu-stack
+{
+	justify-content: center;
+	align-items: center;
+}
+
+#main-logo
+{
+	display: block;
+	width: 220px;
+	max-width: 100%;
+	margin-bottom: 20px;
+}
+
+#main-player-name
+{
+	margin-top: 16px;
+	margin-bottom: 0px;
+	font-size: 14px;
+	color: #c9beb0;
+}
+
+#main-player-name .label
+{
+	margin-right: 6px;
+}
+
+#main-version
+{
+	display: flex;
+	flex-direction: column;
+	flex: 1 1 auto;
+	align-items: flex-end;
+	justify-content: center;
+	min-width: 0px;
+}
+
+#main-version-title
+{
+	margin-bottom: 2px;
+	color: #8f9f7a;
+	font-size: 12px;
+	font-weight: bold;
+	text-align: right;
+}
+
+#main-version-value
+{
+	margin-bottom: 0px;
+	color: #7f7f7f;
+	font-size: 11px;
+	text-align: right;
+	white-space: normal;
+	word-break: break-word;
+}
+
+#main-menu-actions
+{
+	width: 268px;
+	max-width: 268px;
+	min-width: 0px;
+}
+
+#main-menu-actions button,
+#main-menu-actions .ui-button
+{
+	width: 236px;
+	min-width: 236px;
+}
+
+.menu-footer
+{
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	flex: 0 0 auto;
+	margin-top: 16px;
+}
+
+.menu-footer .ui-button
+{
+	margin-right: 8px;
+	margin-bottom: 8px;
+}
+
+/* Hub layout: wrapping columns of grouped actions. */
+
+.menu-actions.hub-actions
+{
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	align-items: flex-start;
+	flex: 1 1 auto;
+	width: 888px;
+	min-width: 0px;
+	max-width: 100%;
+	height: auto;
+	min-height: 0px;
+	padding-right: 0px;
+	overflow: auto;
+}
+
+.hub-actions .hub-section
+{
+	display: flex;
+	flex-direction: column;
+	width: 252px;
+	min-width: 252px;
+	min-height: 0px;
+	margin-right: 12px;
+	margin-bottom: 12px;
+	padding: 10px;
+	background-color: #171511;
+	border-width: 1px;
+	border-color: #332d23;
+	border-left-width: 3px;
+	border-left-color: #4b4235;
+	border-radius: 5px;
+}
+
+.hub-actions .hub-section h2
+{
+	margin-bottom: 8px;
+	font-size: 17px;
+	color: #ffd967;
+}
+
+.hub-actions .hub-section button,
+.hub-actions .hub-section .ui-button
+{
+	position: static;
+	display: block;
+	width: 220px;
+	min-width: 220px;
+	height: 34px;
+	min-height: 34px;
+	margin-right: 0px;
+	margin-bottom: 7px;
+	padding: 5px 12px;
+	background-color: #211e19;
+	border-color: #756a5d;
+	border-left-width: 4px;
+	border-left-color: #4b4235;
+	border-radius: 5px;
+	text-align: left;
+}
+
+.hub-actions .hub-section button:hover,
+.hub-actions .hub-section .ui-button:hover
+{
+	background-color: #30291f;
+	border-color: #b99b5b;
+	border-left-color: #ffd967;
+}
+
+.hub-actions .hub-section button:focus,
+.hub-actions .hub-section .ui-button:focus
+{
+	background-color: #30291f;
+	border-color: #ffd967;
+	border-left-color: #ffd967;
+}
+
+.hub-actions .hub-section button:active,
+.hub-actions .hub-section .ui-button:active
+{
+	background-color: #3f3626;
+	border-color: #ffd967;
+	border-left-color: #ffd967;
+	color: #ffd967;
+}
+
+/* Primary/danger variants keep their palette inside hub sections. */
+
+.hub-actions .hub-section button.ui-button-primary
+{
+	background-color: #1f271d;
+	border-color: #5f8765;
+	border-left-width: 4px;
+	border-left-color: #83d18f;
+}
+
+.hub-actions .hub-section button.ui-button-primary:hover
+{
+	background-color: #263322;
+	border-color: #83d18f;
+	border-left-color: #a6e3ad;
+	color: #83d18f;
+}
+
+.hub-actions .hub-section button.ui-button-primary:focus
+{
+	background-color: #263322;
+	border-color: #ffd967;
+	border-left-color: #a6e3ad;
+	color: #83d18f;
+}
+
+.hub-actions .hub-section button.ui-button-primary:active
+{
+	background-color: #2c4028;
+	border-color: #a6e3ad;
+	border-left-color: #a6e3ad;
+	color: #a6e3ad;
+}
+
+.hub-actions .hub-section button.ui-button-danger
+{
+	background-color: #281b18;
+	border-color: #895047;
+	border-left-width: 4px;
+	border-left-color: #ee6758;
+}
+
+.hub-actions .hub-section button.ui-button-danger:hover
+{
+	background-color: #321f1b;
+	border-color: #ee6758;
+	border-left-color: #ff9285;
+	color: #ee6758;
+}
+
+.hub-actions .hub-section button.ui-button-danger:focus
+{
+	background-color: #321f1b;
+	border-color: #ffd967;
+	border-left-color: #ff9285;
+	color: #ee6758;
+}
+
+.hub-actions .hub-section button.ui-button-danger:active
+{
+	background-color: #402420;
+	border-color: #ff9285;
+	border-left-color: #ff9285;
+	color: #ff9285;
+}

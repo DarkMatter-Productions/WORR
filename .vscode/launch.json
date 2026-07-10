@@ -2,6 +2,43 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "WORR (OpenGL RmlUi)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}\\.install\\worr_x86_64.exe",
+            "args": [
+                "+set",
+                "basedir",
+                "${workspaceFolder}\\.install",
+                "+set",
+                "r_renderer",
+                "opengl",
+                "+set",
+                "ui_rml_enable",
+                "1",
+                "+set",
+                "logfile",
+                "1",
+                "+set",
+                "logfile_name",
+                "vscode_opengl_rmlui_launch",
+                "+set",
+                "logfile_flush",
+                "1",
+                "+set",
+                "developer",
+                "1",
+                "+set",
+                "deathmatch",
+                "1",
+                "+set",
+                "cheats",
+                "1"
+            ],
+            "cwd": "${workspaceFolder}\\.install",
+            "console": "integratedTerminal"
+        },
+        {
             "name": "WORR (Vulkan)",
             "type": "cppvsdbg",
             "request": "launch",
@@ -63,28 +100,6 @@
                 "1",
                 "+map",
                 "q2dm1"
-            ],
-            "cwd": "${workspaceFolder}\\.install",
-            "console": "integratedTerminal"
-        },
-        {
-            "name": "WORR (OpenGL)",
-            "type": "cppvsdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}\\.install\\worr_x86_64.exe",
-            "args": [
-                "+set",
-                "basedir",
-                "${workspaceFolder}\\.install",
-                "+set",
-                "r_renderer",
-                "opengl",
-                "+set",
-                "deathmatch",
-                "1",
-                "+set",
-                "cheats",
-                "1"
             ],
             "cwd": "${workspaceFolder}\\.install",
             "console": "integratedTerminal"
@@ -157,8 +172,7 @@
                 "base1"
             ],
             "cwd": "${workspaceFolder}\\.install",
-            "console": "integratedTerminal",
-            "preLaunchTask": "bot debug: build"
+            "console": "integratedTerminal"
         }
     ]
 }

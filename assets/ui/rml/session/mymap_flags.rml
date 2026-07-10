@@ -1,0 +1,35 @@
+<rml>
+  <head>
+    <title>WORR MyMap Flags</title>
+    <link type="text/rcss" href="../common/theme/base.rcss" />
+    <link type="text/rcss" href="../common/theme/session.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
+  </head>
+  <body id="session-mymap-flags" data-route-id="mymap_flags" data-route-group="session" data-route-version="1" data-document-status="round2-scaffold" data-session-owner="sgame" data-menu-music="menu" data-menu-sound-open="open">
+    <div class="screen compact-screen session-screen" id="mymap-flags-screen">
+      <header class="page-header">
+        <h1>MyMap Flags</h1>
+        <p id="mymap-flags-summary">
+          Toggle which item and damage rules apply to your map request.
+        </p>
+      </header>
+
+      <section class="content" id="mymap-flags-content" data-model="session.mymap.flags" data-owner-boundary="sgame-published-cvars">
+        <button id="mymap-flag-pu" type="button" data-label-cvar="ui_mymap_flag_pu" data-command="worr_mymap_flag pu" data-menu-sound="change">Powerups</button>
+        <button id="mymap-flag-pa" type="button" data-label-cvar="ui_mymap_flag_pa" data-command="worr_mymap_flag pa" data-menu-sound="change">Power Armor</button>
+        <button id="mymap-flag-ar" type="button" data-label-cvar="ui_mymap_flag_ar" data-command="worr_mymap_flag ar" data-menu-sound="change">Armor</button>
+        <button id="mymap-flag-am" type="button" data-label-cvar="ui_mymap_flag_am" data-command="worr_mymap_flag am" data-menu-sound="change">Ammo</button>
+        <button id="mymap-flag-ht" type="button" data-label-cvar="ui_mymap_flag_ht" data-command="worr_mymap_flag ht" data-menu-sound="change">Health</button>
+        <button id="mymap-flag-bfg" type="button" data-label-cvar="ui_mymap_flag_bfg" data-command="worr_mymap_flag bfg" data-menu-sound="change">BFG10K</button>
+        <button id="mymap-flag-pb" type="button" data-label-cvar="ui_mymap_flag_pb" data-command="worr_mymap_flag pb" data-menu-sound="change">Plasma Beam</button>
+        <button id="mymap-flag-fd" type="button" data-label-cvar="ui_mymap_flag_fd" data-command="worr_mymap_flag fd" data-menu-sound="change">Falling Damage</button>
+        <button id="mymap-flag-sd" type="button" data-label-cvar="ui_mymap_flag_sd" data-command="worr_mymap_flag sd" data-menu-sound="change">Self Damage</button>
+        <button id="mymap-flag-ws" type="button" data-label-cvar="ui_mymap_flag_ws" data-command="worr_mymap_flag ws" data-menu-sound="change">Weapons Stay</button>
+      </section>
+
+      <footer class="actions" id="mymap-flags-actions">
+        <button id="mymap-flags-back" type="button" data-command="popmenu" data-menu-sound="cancel">Return</button>
+      </footer>
+    </div>
+  </body>
+</rml>

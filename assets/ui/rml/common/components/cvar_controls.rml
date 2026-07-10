@@ -1,0 +1,8 @@
+<!-- Compatibility import for cvar controls; detailed contracts live in controls.rml. -->
+<templates>
+  <template name="worr-cvar-control-anchor">
+    <div class="worr-cvar-control-anchor" data-cvar="{{cvar}}" data-control="{{control}}">
+      {{label}}
+    </div>
+  </template>
+</templates>

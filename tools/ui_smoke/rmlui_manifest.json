@@ -1,0 +1,531 @@
+{
+  "schema": "worr.rmlui.smoke_manifest.v1",
+  "description": "RmlUi Wave A/B/C route manifest for early document-load smoke and ownership tracking.",
+  "created": "2026-07-02",
+  "roadmap": "docs-dev/plans/rmlui-ui-migration-roadmap.md",
+  "migration_phase_required": true,
+  "tasks": [
+    "FR-09-T07",
+    "FR-09-T08",
+    "FR-09-T09",
+    "FR-09-T10",
+    "FR-07-T01",
+    "FR-07-T02",
+    "DV-03-T07"
+  ],
+  "routes": [
+    {
+      "id": "main",
+      "wave": "A",
+      "owner": "agent4-shell-settings-singleplayer",
+      "document": "assets/ui/rml/shell/main.rml",
+      "required_now": true,
+      "status": "starter",
+      "migration_phase": "runtime_stub"
+    },
+    {
+      "id": "game",
+      "wave": "A",
+      "owner": "agent4-shell-settings-singleplayer",
+      "document": "assets/ui/rml/shell/game.rml",
+      "required_now": true,
+      "status": "starter",
+      "migration_phase": "runtime_stub"
+    },
+    {
+      "id": "options",
+      "wave": "A",
+      "owner": "agent4-shell-settings-singleplayer",
+      "document": "assets/ui/rml/shell/options.rml",
+      "required_now": true,
+      "status": "starter",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "video",
+      "wave": "A",
+      "owner": "agent4-shell-settings-singleplayer",
+      "document": "assets/ui/rml/settings/video.rml",
+      "required_now": true,
+      "status": "starter",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "multimonitor",
+      "wave": "A",
+      "owner": "agent4-shell-settings-singleplayer",
+      "document": "assets/ui/rml/settings/multimonitor.rml",
+      "required_now": true,
+      "status": "starter_round2",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "performance",
+      "wave": "A",
+      "owner": "agent4-shell-settings-singleplayer",
+      "document": "assets/ui/rml/settings/performance.rml",
+      "required_now": true,
+      "status": "starter_round2",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "accessibility",
+      "wave": "A",
+      "owner": "agent4-shell-settings-singleplayer",
+      "document": "assets/ui/rml/settings/accessibility.rml",
+      "required_now": true,
+      "status": "starter_round2",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "sound",
+      "wave": "A",
+      "owner": "agent4-shell-settings-singleplayer",
+      "document": "assets/ui/rml/settings/sound.rml",
+      "required_now": true,
+      "status": "starter_round2",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "railtrail",
+      "wave": "A",
+      "owner": "agent4-shell-settings-singleplayer",
+      "document": "assets/ui/rml/settings/railtrail.rml",
+      "required_now": true,
+      "status": "starter_round3",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "effects",
+      "wave": "A",
+      "owner": "agent4-shell-settings-singleplayer",
+      "document": "assets/ui/rml/settings/effects.rml",
+      "required_now": true,
+      "status": "starter_round3",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "crosshair",
+      "wave": "A",
+      "owner": "agent4-shell-settings-singleplayer",
+      "document": "assets/ui/rml/settings/crosshair.rml",
+      "required_now": true,
+      "status": "starter_round3",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "screen",
+      "wave": "A",
+      "owner": "agent4-shell-settings-singleplayer",
+      "document": "assets/ui/rml/settings/screen.rml",
+      "required_now": true,
+      "status": "starter_round2",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "language",
+      "wave": "A",
+      "owner": "agent4-shell-settings-singleplayer",
+      "document": "assets/ui/rml/settings/language.rml",
+      "required_now": true,
+      "status": "starter_round2",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "downloads",
+      "wave": "A",
+      "owner": "agent4-shell-settings-singleplayer",
+      "document": "assets/ui/rml/shell/downloads.rml",
+      "required_now": true,
+      "status": "starter_round2",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "download_status",
+      "wave": "A",
+      "owner": "agent4-shell-settings-singleplayer",
+      "document": "assets/ui/rml/shell/download_status.rml",
+      "required_now": true,
+      "status": "starter_round2",
+      "migration_phase": "runtime_stub"
+    },
+    {
+      "id": "addressbook",
+      "wave": "A",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/utility/addressbook.rml",
+      "required_now": true,
+      "status": "starter_round2",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "input",
+      "wave": "A",
+      "owner": "agent4-shell-settings-singleplayer",
+      "document": "assets/ui/rml/settings/input.rml",
+      "required_now": true,
+      "status": "starter_round2",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "keys",
+      "wave": "A",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/utility/keys.rml",
+      "required_now": true,
+      "status": "starter_round2",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "legacykeys",
+      "wave": "A",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/utility/legacykeys.rml",
+      "required_now": true,
+      "status": "starter_round2",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "weapons",
+      "wave": "A",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/utility/weapons.rml",
+      "required_now": true,
+      "status": "starter_round2",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "quit_confirm",
+      "wave": "A",
+      "owner": "agent4-shell-settings-singleplayer",
+      "document": "assets/ui/rml/shell/quit_confirm.rml",
+      "required_now": true,
+      "status": "starter_round2",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "gameflags",
+      "wave": "B",
+      "owner": "agent4-shell-settings-singleplayer",
+      "document": "assets/ui/rml/singleplayer/gameflags.rml",
+      "required_now": true,
+      "status": "starter_round3",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "startserver",
+      "wave": "B",
+      "owner": "agent4-shell-settings-singleplayer",
+      "document": "assets/ui/rml/singleplayer/startserver.rml",
+      "required_now": true,
+      "status": "starter_round3",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "multiplayer",
+      "wave": "B",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/multiplayer/multiplayer.rml",
+      "required_now": true,
+      "status": "starter",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "singleplayer",
+      "wave": "B",
+      "owner": "agent4-shell-settings-singleplayer",
+      "document": "assets/ui/rml/singleplayer/singleplayer.rml",
+      "required_now": true,
+      "status": "starter",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "skill_select",
+      "wave": "B",
+      "owner": "agent4-shell-settings-singleplayer",
+      "document": "assets/ui/rml/singleplayer/skill_select.rml",
+      "required_now": true,
+      "status": "starter_round3",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "loadgame",
+      "wave": "B",
+      "owner": "agent4-shell-settings-singleplayer",
+      "document": "assets/ui/rml/singleplayer/loadgame.rml",
+      "required_now": true,
+      "status": "starter_round3",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "savegame",
+      "wave": "B",
+      "owner": "agent4-shell-settings-singleplayer",
+      "document": "assets/ui/rml/singleplayer/savegame.rml",
+      "required_now": true,
+      "status": "starter_round3",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "servers",
+      "wave": "B",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/utility/servers.rml",
+      "required_now": true,
+      "status": "starter",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "demos",
+      "wave": "B",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/utility/demos.rml",
+      "required_now": true,
+      "status": "starter",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "players",
+      "wave": "B",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/utility/players.rml",
+      "required_now": true,
+      "status": "starter",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "ui_list",
+      "wave": "B",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/utility/ui_list.rml",
+      "required_now": true,
+      "status": "starter_round2",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "dm_welcome",
+      "wave": "C",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/session/dm_welcome.rml",
+      "required_now": true,
+      "status": "starter_round3",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "dm_join",
+      "wave": "C",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/session/dm_join.rml",
+      "required_now": true,
+      "status": "starter_round3",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "join",
+      "wave": "C",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/session/join.rml",
+      "required_now": true,
+      "status": "starter_round3",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "dm_hostinfo",
+      "wave": "C",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/session/dm_hostinfo.rml",
+      "required_now": true,
+      "status": "starter_round3",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "dm_matchinfo",
+      "wave": "C",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/session/dm_matchinfo.rml",
+      "required_now": true,
+      "status": "starter_round3",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "callvote_main",
+      "wave": "C",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/session/callvote_main.rml",
+      "required_now": true,
+      "status": "starter_round2",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "callvote_ruleset",
+      "wave": "C",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/session/callvote_ruleset.rml",
+      "required_now": true,
+      "status": "starter_round2",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "callvote_timelimit",
+      "wave": "C",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/session/callvote_timelimit.rml",
+      "required_now": true,
+      "status": "starter_round3",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "callvote_scorelimit",
+      "wave": "C",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/session/callvote_scorelimit.rml",
+      "required_now": true,
+      "status": "starter_round3",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "callvote_unlagged",
+      "wave": "C",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/session/callvote_unlagged.rml",
+      "required_now": true,
+      "status": "starter_round3",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "callvote_random",
+      "wave": "C",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/session/callvote_random.rml",
+      "required_now": true,
+      "status": "starter_round3",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "callvote_map_flags",
+      "wave": "C",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/session/callvote_map_flags.rml",
+      "required_now": true,
+      "status": "starter_round3",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "mymap_main",
+      "wave": "C",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/session/mymap_main.rml",
+      "required_now": true,
+      "status": "starter_round2",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "mymap_flags",
+      "wave": "C",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/session/mymap_flags.rml",
+      "required_now": true,
+      "status": "starter_round2",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "forfeit_confirm",
+      "wave": "C",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/session/forfeit_confirm.rml",
+      "required_now": true,
+      "status": "starter_round3",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "leave_match_confirm",
+      "wave": "C",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/session/leave_match_confirm.rml",
+      "required_now": true,
+      "status": "starter_round2",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "admin_menu",
+      "wave": "C",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/session/admin_menu.rml",
+      "required_now": true,
+      "status": "starter_round3",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "admin_commands",
+      "wave": "C",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/session/admin_commands.rml",
+      "required_now": true,
+      "status": "starter_round3",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "tourney_info",
+      "wave": "C",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/session/tourney_info.rml",
+      "required_now": true,
+      "status": "starter_round3",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "tourney_mapchoices",
+      "wave": "C",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/session/tourney_mapchoices.rml",
+      "required_now": true,
+      "status": "starter_round3",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "tourney_veto",
+      "wave": "C",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/session/tourney_veto.rml",
+      "required_now": true,
+      "status": "starter_round3",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "tourney_replay_confirm",
+      "wave": "C",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/session/tourney_replay_confirm.rml",
+      "required_now": true,
+      "status": "starter_round3",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "vote_menu",
+      "wave": "C",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/session/vote_menu.rml",
+      "required_now": true,
+      "status": "starter",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "map_selector",
+      "wave": "C",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/session/map_selector.rml",
+      "required_now": true,
+      "status": "starter_round3",
+      "migration_phase": "controller_stub"
+    },
+    {
+      "id": "match_stats",
+      "wave": "C",
+      "owner": "agent5-rich-tools-session-validation",
+      "document": "assets/ui/rml/session/match_stats.rml",
+      "required_now": true,
+      "status": "starter_round3",
+      "migration_phase": "controller_stub"
+    }
+  ]
+}

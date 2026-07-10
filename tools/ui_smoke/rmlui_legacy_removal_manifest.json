@@ -1,0 +1,252 @@
+{
+  "schema": "worr.rmlui.legacy_removal_manifest.v1",
+  "description": "Planning-only inventory for final legacy JSON/menu removal after RmlUi parity gates pass. This manifest blocks deletion until parity evidence is complete.",
+  "created": "2026-07-02",
+  "roadmap": "docs-dev/plans/rmlui-ui-migration-roadmap.md",
+  "parity_manifest": "tools/ui_smoke/rmlui_parity_manifest.json",
+  "smoke_manifest": "tools/ui_smoke/rmlui_manifest.json",
+  "required_task_ids": [
+    "FR-09-T09",
+    "FR-09-T10",
+    "DV-03-T07",
+    "DV-07-T04"
+  ],
+  "allowed_statuses": [
+    "blocked",
+    "pending",
+    "ready",
+    "complete"
+  ],
+  "cutover_gate": {
+    "parity_ready_routes_required": true,
+    "required_evidence_categories": [
+      "document_load",
+      "navigation",
+      "controller_bindings",
+      "renderer_open_gl",
+      "renderer_vulkan",
+      "renderer_rtx_vkpt",
+      "screenshot_layout",
+      "input_escape_back",
+      "legacy_fallback"
+    ],
+    "notes": "No item may move to ready or complete until the parity manifest has parity_ready route coverage and all required evidence categories are complete."
+  },
+  "items": [
+    {
+      "id": "current_json_menu_surfaces",
+      "category": "json_menu_surfaces",
+      "status": "blocked",
+      "task_ids": [
+        "FR-09-T09",
+        "FR-09-T10",
+        "DV-04-T02"
+      ],
+      "targets": [
+        {
+          "kind": "json_menu_definition",
+          "path": "src/game/cgame/ui/worr.json",
+          "notes": "Primary current JSON menu definition; roadmap baseline reports 56 named menus across the active JSON menu footprint."
+        },
+        {
+          "kind": "json_menu_definition",
+          "path": "src/game/cgame/ui/worr-multiplayer.json",
+          "notes": "Multiplayer/session JSON menu definition that must remain until RmlUi parity is accepted."
+        },
+        {
+          "kind": "json_loader",
+          "path": "src/game/cgame/ui/ui_json.cpp",
+          "notes": "Current JSON menu loader/parser surface; revisit only after RmlUi documents and controllers replace all current JSON menu behavior."
+        },
+        {
+          "kind": "legacy_menu_reference",
+          "path": "src/client/ui/worr.menu",
+          "notes": "Legacy reference content retained for behavior audit before final cleanup."
+        }
+      ],
+      "blockers": [
+        "Gate G3/G4 parity evidence is not complete.",
+        "The parity manifest currently has no parity_ready route coverage.",
+        "Live renderer, screenshot/layout, input, and legacy fallback evidence is still pending."
+      ]
+    },
+    {
+      "id": "rich_legacy_widget_pages",
+      "category": "json_menu_surfaces",
+      "status": "blocked",
+      "task_ids": [
+        "FR-09-T07",
+        "FR-09-T09",
+        "FR-09-T10",
+        "DV-04-T02"
+      ],
+      "targets": [
+        {
+          "kind": "cgame_page_class",
+          "path": "src/game/cgame/ui/ui_page_servers.cpp",
+          "notes": "Server browser behavior must be replaced by a live RmlUi controller before removal."
+        },
+        {
+          "kind": "cgame_page_class",
+          "path": "src/game/cgame/ui/ui_page_demos.cpp",
+          "notes": "Demo browser behavior must be replaced by a live RmlUi controller before removal."
+        },
+        {
+          "kind": "cgame_page_class",
+          "path": "src/game/cgame/ui/ui_page_player.cpp",
+          "notes": "Player model/skin/weapon preview behavior must be replaced by a live RmlUi controller before removal."
+        },
+        {
+          "kind": "cgame_list_controller",
+          "path": "src/game/cgame/ui/ui_list.cpp",
+          "notes": "Shared list/feed behavior must either move behind explicit RmlUi controllers or remain intentionally retained."
+        }
+      ],
+      "blockers": [
+        "Agent 5 rich utility and multiplayer/session flows are not parity-ready.",
+        "Controller-backed browser/list smoke evidence is still pending."
+      ]
+    },
+    {
+      "id": "legacy_ui_bridge_runtime_fallback",
+      "category": "legacy_bridge_runtime_fallback",
+      "status": "blocked",
+      "task_ids": [
+        "FR-09-T03",
+        "FR-09-T09",
+        "FR-09-T10",
+        "DV-03-T07",
+        "DV-04-T02",
+        "DV-07-T04"
+      ],
+      "targets": [
+        {
+          "kind": "runtime_bridge",
+          "path": "src/client/ui_bridge.cpp",
+          "function": "UI_Rml_OpenMenu",
+          "notes": "Guarded RmlUi open path currently preserves legacy fallback; do not remove fallback until runtime parity is accepted."
+        },
+        {
+          "kind": "runtime_probe",
+          "path": "src/client/ui_rml/ui_rml.cpp",
+          "notes": "Current runtime probe/scaffold must be replaced by first-class runtime behavior before fallback cutover."
+        },
+        {
+          "kind": "runtime_header",
+          "path": "src/client/ui_rml/ui_rml.h",
+          "notes": "Public RmlUi runtime bridge declarations need final ownership review before legacy bridge cleanup."
+        }
+      ],
+      "blockers": [
+        "Gate G1 native runtime integration is not complete.",
+        "The legacy UI remains authoritative when RmlUi cannot open a route.",
+        "No live RmlUi controller/runtime navigation cutover has been accepted."
+      ]
+    },
+    {
+      "id": "package_staging_cleanup",
+      "category": "package_staging_cleanup",
+      "status": "pending",
+      "task_ids": [
+        "FR-09-T02",
+        "FR-09-T09",
+        "FR-09-T10"
+      ],
+      "targets": [
+        {
+          "kind": "asset_packaging",
+          "path": "tools/package_assets.py",
+          "notes": "Packaging currently stages both new RmlUi assets and existing assets; final cleanup must be gated by parity and install validation."
+        },
+        {
+          "kind": "install_staging",
+          "path": ".install/",
+          "notes": "Local distributable staging root must be refreshed after any final asset removal."
+        },
+        {
+          "kind": "temporary_validation",
+          "path": ".tmp/rmlui/",
+          "notes": "Round-specific validation artifacts remain scratch-only and are not final cutover output."
+        }
+      ],
+      "blockers": [
+        "RmlUi package/staging acceptance exists only for scaffold assets.",
+        "Legacy asset deletion has not been validated against packaged installs."
+      ]
+    },
+    {
+      "id": "user_and_developer_docs_update",
+      "category": "docs_update",
+      "status": "pending",
+      "task_ids": [
+        "FR-09-T09",
+        "FR-09-T10",
+        "DV-07-T04"
+      ],
+      "targets": [
+        {
+          "kind": "developer_docs",
+          "path": "docs-dev/plans/rmlui-ui-migration-roadmap.md",
+          "notes": "Developer roadmap must record final deletion/archive rationale and accepted parity evidence."
+        },
+        {
+          "kind": "developer_docs",
+          "path": "docs-dev/proposals/swot-feature-development-roadmap-2026-02-27.md",
+          "notes": "Canonical strategic roadmap must reflect completion or intentional archive status."
+        },
+        {
+          "kind": "user_docs",
+          "path": "docs-user/",
+          "notes": "End-user docs need practical workflow updates if any menu behavior or visible wording changes."
+        }
+      ],
+      "blockers": [
+        "No final RmlUi cutover has occurred.",
+        "No user-visible RmlUi behavior changes have been accepted for documentation."
+      ]
+    },
+    {
+      "id": "renderer_input_smoke_evidence",
+      "category": "renderer_input_smoke_evidence",
+      "status": "blocked",
+      "task_ids": [
+        "FR-09-T03",
+        "FR-09-T09",
+        "FR-09-T10",
+        "DV-03-T07",
+        "DV-07-T04"
+      ],
+      "targets": [
+        {
+          "kind": "renderer_smoke",
+          "evidence": "renderer_open_gl",
+          "notes": "OpenGL-native live route evidence is required before removal."
+        },
+        {
+          "kind": "renderer_smoke",
+          "evidence": "renderer_vulkan",
+          "notes": "Vulkan-native live route evidence is required before removal; Vulkan must not fall back to OpenGL."
+        },
+        {
+          "kind": "renderer_smoke",
+          "evidence": "renderer_rtx_vkpt",
+          "notes": "RTX/vkpt live route evidence is required before removal."
+        },
+        {
+          "kind": "layout_smoke",
+          "evidence": "screenshot_layout",
+          "notes": "Screenshot/layout parity evidence is required before removal."
+        },
+        {
+          "kind": "input_smoke",
+          "evidence": "input_escape_back",
+          "notes": "Escape/Back behavior must be verified before removing legacy fallback."
+        }
+      ],
+      "blockers": [
+        "Renderer-specific parity evidence is pending for every tracked route.",
+        "Screenshot/layout and Escape/Back parity evidence is pending for every tracked route."
+      ]
+    }
+  ]
+}

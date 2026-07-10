@@ -1,0 +1,55 @@
+{
+  "contract": "worr.rml.session_multiplayer.mock",
+  "version": 1,
+  "mock": true,
+  "task_ids": ["FR-09-T05", "FR-09-T07", "FR-03-T08", "DV-04-T02"],
+  "route": "multiplayer/session/mock",
+  "model": "session.match",
+  "component_refs": [
+    "common/components/controls.rml#worr-command-button",
+    "common/components/controls.rml#worr-conditional-region",
+    "common/components/list-table.rml#worr-data-table"
+  ],
+  "source_boundary": {
+    "presentation_owner": "client_rml",
+    "match_state_provider": "cgame_or_sgame_bridge",
+    "command_provider": "client_command_bridge"
+  },
+  "session": {
+    "server_name": "Local WORR Match",
+    "map": "q2dm1",
+    "ruleset": "deathmatch",
+    "state": "warmup",
+    "player_name": "WORRPlayer"
+  },
+  "players": {
+    "columns": [
+      { "key": "name", "label": "Player" },
+      { "key": "team", "label": "Team" },
+      { "key": "score", "label": "Score" },
+      { "key": "ping", "label": "Ping" }
+    ],
+    "rows": [
+      { "id": "self", "cells": ["WORRPlayer", "Red", "0", "0"] },
+      { "id": "bot_1", "cells": ["GruntBot", "Blue", "0", "1"] }
+    ]
+  },
+  "vote": {
+    "active": true,
+    "prompt": "Change map to q2dm8?",
+    "yes_votes": 1,
+    "no_votes": 0,
+    "time_remaining_seconds": 18
+  },
+  "commands": [
+    { "id": "join", "label": "Join", "event": "session.join", "enabled_if": "can_join" },
+    { "id": "vote_yes", "label": "Vote Yes", "event": "session.vote_yes", "enabled_if": "vote_active" },
+    { "id": "vote_no", "label": "Vote No", "event": "session.vote_no", "enabled_if": "vote_active" },
+    { "id": "disconnect", "label": "Disconnect", "event": "session.disconnect" }
+  ],
+  "conditions": [
+    { "id": "can_join", "expression": "session.state in ['warmup', 'intermission']" },
+    { "id": "vote_active", "expression": "vote.active == true" },
+    { "id": "show_tournament_controls", "expression": "session.ruleset == 'tournament'" }
+  ]
+}

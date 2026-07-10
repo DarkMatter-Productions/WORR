@@ -1,0 +1,99 @@
+/*
+  Shared control starter styles for WORR RmlUi.
+  Keep selectors generic so content pages can import this file without copying.
+*/
+
+.worr-control
+{
+  display: block;
+  margin-bottom: 12px;
+  padding: 8px 0px;
+}
+
+.worr-control-row
+{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.worr-control-label
+{
+  display: block;
+  color: #c9beb0;
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.worr-control-value
+{
+  color: #ffd967;
+  font-size: 14px;
+}
+
+.worr-control-hint
+{
+  margin-top: 4px;
+  color: #c9beb0;
+  font-size: 13px;
+}
+
+/*
+  .worr-toggle/.worr-slider/.worr-select widget skinning is owned by
+  common/theme/base.rcss; only layout defaults live here.
+*/
+.worr-toggle,
+.worr-slider,
+.worr-select
+{
+  margin-top: 6px;
+}
+
+.worr-command-button
+{
+  min-width: 160px;
+  padding: 8px 12px;
+  color: #f3eee4;
+  background-color: #27231d;
+  border-width: 2px;
+  border-color: #756a5d;
+  decorator: image(../skins/widgets/button-normal.svg);
+  transition: background-color border-color color 0.12s cubic-out;
+}
+
+.worr-command-button:hover
+{
+  background-color: #332d23;
+  border-color: #b99b5b;
+  color: #ffd967;
+  decorator: image(../skins/widgets/button-hover.svg);
+}
+
+.worr-command-button:focus
+{
+  background-color: #332d23;
+  border-color: #ffd967;
+  color: #ffd967;
+  decorator: image(../skins/widgets/button-focus.svg);
+}
+
+.worr-command-button:active
+{
+  background-color: #3f3626;
+  border-color: #ffd967;
+  color: #ffd967;
+  decorator: image(../skins/widgets/button-active.svg);
+}
+
+.worr-command-button:disabled
+{
+  color: #8d8375;
+  background-color: #1b1916;
+  border-color: #756a5d;
+  decorator: image(../skins/widgets/button-disabled.svg);
+}
+
+.worr-conditional-region
+{
+  display: block;
+}

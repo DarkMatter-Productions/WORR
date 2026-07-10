@@ -1,0 +1,425 @@
+{
+  "schema": "worr.rmlui.parity_manifest.v1",
+  "description": "RmlUi parity evidence checklist for Gate G3/G4 route progression. This is status scaffolding only; it does not claim end-user parity.",
+  "created": "2026-07-02",
+  "roadmap": "docs-dev/plans/rmlui-ui-migration-roadmap.md",
+  "source_manifest": "tools/ui_smoke/rmlui_manifest.json",
+  "tasks": [
+    "FR-09-T09",
+    "FR-09-T10",
+    "DV-03-T07",
+    "DV-07-T04"
+  ],
+  "evidence_categories": [
+    {
+      "id": "document_load",
+      "kind": "source_static",
+      "description": "Route document exists and is covered by the smoke manifest/document-load checks."
+    },
+    {
+      "id": "navigation",
+      "kind": "source_static",
+      "description": "Route navigation behavior has explicit checklist evidence."
+    },
+    {
+      "id": "controller_bindings",
+      "kind": "source_static",
+      "description": "Route has controller contract or binding evidence sufficient for migration tracking."
+    },
+    {
+      "id": "renderer_open_gl",
+      "kind": "runtime_parity",
+      "description": "Route has been opened and verified through the OpenGL renderer path."
+    },
+    {
+      "id": "renderer_vulkan",
+      "kind": "runtime_parity",
+      "description": "Route has been opened and verified through the native Vulkan renderer path."
+    },
+    {
+      "id": "renderer_rtx_vkpt",
+      "kind": "runtime_parity",
+      "description": "Route has been opened and verified through the native Vulkan RTX/vkpt renderer path."
+    },
+    {
+      "id": "screenshot_layout",
+      "kind": "runtime_parity",
+      "description": "Route has screenshot/layout evidence against the legacy UI target."
+    },
+    {
+      "id": "input_escape_back",
+      "kind": "runtime_parity",
+      "description": "Route has Escape/Back input behavior evidence."
+    },
+    {
+      "id": "legacy_fallback",
+      "kind": "fallback_static",
+      "description": "Route has guarded fallback evidence proving legacy UI remains authoritative when RmlUi is not ready."
+    }
+  ],
+  "phase_defaults": {
+    "starter": {
+      "document_load": {
+        "status": "complete",
+        "evidence": "check_rmlui_manifest document presence"
+      },
+      "navigation": {
+        "status": "pending",
+        "evidence": "requires route-specific navigation evidence"
+      },
+      "controller_bindings": {
+        "status": "pending",
+        "evidence": "requires controller contract or binding evidence"
+      },
+      "renderer_open_gl": {
+        "status": "pending",
+        "evidence": "requires live OpenGL renderer proof"
+      },
+      "renderer_vulkan": {
+        "status": "pending",
+        "evidence": "requires live native Vulkan renderer proof"
+      },
+      "renderer_rtx_vkpt": {
+        "status": "pending",
+        "evidence": "requires live native Vulkan RTX/vkpt proof"
+      },
+      "screenshot_layout": {
+        "status": "pending",
+        "evidence": "requires screenshot/layout parity proof"
+      },
+      "input_escape_back": {
+        "status": "pending",
+        "evidence": "requires input behavior proof"
+      },
+      "legacy_fallback": {
+        "status": "pending",
+        "evidence": "requires guarded fallback proof"
+      }
+    },
+    "controller_stub": {
+      "document_load": {
+        "status": "complete",
+        "evidence": "check_rmlui_manifest document presence"
+      },
+      "navigation": {
+        "status": "pending",
+        "evidence": "requires route-specific navigation evidence"
+      },
+      "controller_bindings": {
+        "status": "complete",
+        "evidence": "controller_stub route metadata includes controller contracts"
+      },
+      "renderer_open_gl": {
+        "status": "pending",
+        "evidence": "requires live OpenGL renderer proof"
+      },
+      "renderer_vulkan": {
+        "status": "pending",
+        "evidence": "requires live native Vulkan renderer proof"
+      },
+      "renderer_rtx_vkpt": {
+        "status": "pending",
+        "evidence": "requires live native Vulkan RTX/vkpt proof"
+      },
+      "screenshot_layout": {
+        "status": "pending",
+        "evidence": "requires screenshot/layout parity proof"
+      },
+      "input_escape_back": {
+        "status": "pending",
+        "evidence": "requires input behavior proof"
+      },
+      "legacy_fallback": {
+        "status": "pending",
+        "evidence": "requires guarded fallback proof"
+      }
+    },
+    "runtime_stub": {
+      "document_load": {
+        "status": "complete",
+        "evidence": "check_rmlui_manifest document presence"
+      },
+      "navigation": {
+        "status": "pending",
+        "evidence": "requires route-specific navigation evidence"
+      },
+      "controller_bindings": {
+        "status": "complete",
+        "evidence": "runtime_stub route metadata preserves controller contracts"
+      },
+      "renderer_open_gl": {
+        "status": "pending",
+        "evidence": "requires live OpenGL renderer proof"
+      },
+      "renderer_vulkan": {
+        "status": "pending",
+        "evidence": "requires live native Vulkan renderer proof"
+      },
+      "renderer_rtx_vkpt": {
+        "status": "pending",
+        "evidence": "requires live native Vulkan RTX/vkpt proof"
+      },
+      "screenshot_layout": {
+        "status": "pending",
+        "evidence": "requires screenshot/layout parity proof"
+      },
+      "input_escape_back": {
+        "status": "pending",
+        "evidence": "requires input behavior proof"
+      },
+      "legacy_fallback": {
+        "status": "complete",
+        "evidence": "check_rmlui_runtime_stub_eligibility guarded probe/fallback"
+      }
+    },
+    "parity_pending": {
+      "document_load": {
+        "status": "complete",
+        "evidence": "check_rmlui_manifest document presence"
+      },
+      "navigation": {
+        "status": "pending",
+        "evidence": "requires route-specific navigation evidence"
+      },
+      "controller_bindings": {
+        "status": "pending",
+        "evidence": "requires route-specific controller evidence"
+      },
+      "renderer_open_gl": {
+        "status": "pending",
+        "evidence": "requires live OpenGL renderer proof"
+      },
+      "renderer_vulkan": {
+        "status": "pending",
+        "evidence": "requires live native Vulkan renderer proof"
+      },
+      "renderer_rtx_vkpt": {
+        "status": "pending",
+        "evidence": "requires live native Vulkan RTX/vkpt proof"
+      },
+      "screenshot_layout": {
+        "status": "pending",
+        "evidence": "requires screenshot/layout parity proof"
+      },
+      "input_escape_back": {
+        "status": "pending",
+        "evidence": "requires input behavior proof"
+      },
+      "legacy_fallback": {
+        "status": "pending",
+        "evidence": "requires route-specific fallback evidence"
+      }
+    },
+    "parity_ready": {
+      "document_load": {
+        "status": "pending",
+        "evidence": "parity_ready requires explicit route evidence"
+      },
+      "navigation": {
+        "status": "pending",
+        "evidence": "parity_ready requires explicit route evidence"
+      },
+      "controller_bindings": {
+        "status": "pending",
+        "evidence": "parity_ready requires explicit route evidence"
+      },
+      "renderer_open_gl": {
+        "status": "pending",
+        "evidence": "parity_ready requires explicit route evidence"
+      },
+      "renderer_vulkan": {
+        "status": "pending",
+        "evidence": "parity_ready requires explicit route evidence"
+      },
+      "renderer_rtx_vkpt": {
+        "status": "pending",
+        "evidence": "parity_ready requires explicit route evidence"
+      },
+      "screenshot_layout": {
+        "status": "pending",
+        "evidence": "parity_ready requires explicit route evidence"
+      },
+      "input_escape_back": {
+        "status": "pending",
+        "evidence": "parity_ready requires explicit route evidence"
+      },
+      "legacy_fallback": {
+        "status": "pending",
+        "evidence": "parity_ready requires explicit route evidence"
+      }
+    }
+  },
+  "routes": [
+    {
+      "id": "main"
+    },
+    {
+      "id": "game"
+    },
+    {
+      "id": "options"
+    },
+    {
+      "id": "video"
+    },
+    {
+      "id": "multimonitor"
+    },
+    {
+      "id": "performance"
+    },
+    {
+      "id": "accessibility"
+    },
+    {
+      "id": "sound"
+    },
+    {
+      "id": "railtrail"
+    },
+    {
+      "id": "effects"
+    },
+    {
+      "id": "crosshair"
+    },
+    {
+      "id": "screen"
+    },
+    {
+      "id": "language"
+    },
+    {
+      "id": "downloads"
+    },
+    {
+      "id": "download_status"
+    },
+    {
+      "id": "addressbook"
+    },
+    {
+      "id": "input"
+    },
+    {
+      "id": "keys"
+    },
+    {
+      "id": "legacykeys"
+    },
+    {
+      "id": "weapons"
+    },
+    {
+      "id": "quit_confirm"
+    },
+    {
+      "id": "gameflags"
+    },
+    {
+      "id": "startserver"
+    },
+    {
+      "id": "multiplayer"
+    },
+    {
+      "id": "singleplayer"
+    },
+    {
+      "id": "skill_select"
+    },
+    {
+      "id": "loadgame"
+    },
+    {
+      "id": "savegame"
+    },
+    {
+      "id": "servers"
+    },
+    {
+      "id": "demos"
+    },
+    {
+      "id": "players"
+    },
+    {
+      "id": "ui_list"
+    },
+    {
+      "id": "dm_welcome"
+    },
+    {
+      "id": "dm_join"
+    },
+    {
+      "id": "join"
+    },
+    {
+      "id": "dm_hostinfo"
+    },
+    {
+      "id": "dm_matchinfo"
+    },
+    {
+      "id": "callvote_main"
+    },
+    {
+      "id": "callvote_ruleset"
+    },
+    {
+      "id": "callvote_timelimit"
+    },
+    {
+      "id": "callvote_scorelimit"
+    },
+    {
+      "id": "callvote_unlagged"
+    },
+    {
+      "id": "callvote_random"
+    },
+    {
+      "id": "callvote_map_flags"
+    },
+    {
+      "id": "mymap_main"
+    },
+    {
+      "id": "mymap_flags"
+    },
+    {
+      "id": "forfeit_confirm"
+    },
+    {
+      "id": "leave_match_confirm"
+    },
+    {
+      "id": "admin_menu"
+    },
+    {
+      "id": "admin_commands"
+    },
+    {
+      "id": "tourney_info"
+    },
+    {
+      "id": "tourney_mapchoices"
+    },
+    {
+      "id": "tourney_veto"
+    },
+    {
+      "id": "tourney_replay_confirm"
+    },
+    {
+      "id": "vote_menu"
+    },
+    {
+      "id": "map_selector"
+    },
+    {
+      "id": "match_stats"
+    }
+  ]
+}

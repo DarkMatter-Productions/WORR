@@ -1,0 +1,111 @@
+<rml>
+  <head>
+    <title>WORR Address Book</title>
+    <link type="text/rcss" href="../common/theme/base.rcss" />
+    <link type="text/rcss" href="../common/theme/utility.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
+  </head>
+  <body id="utility-addressbook" data-route-id="addressbook" data-route-group="utility" data-route-version="1" data-document-status="round2-scaffold" data-menu-music="menu" data-menu-sound-open="open">
+    <div class="screen" id="addressbook-screen">
+      <header class="page-header">
+        <h1>Address Book</h1>
+        <p id="addressbook-summary">
+          Save favorite server addresses for quick browsing and direct joins.
+        </p>
+      </header>
+
+      <section class="content" id="addressbook-content" data-model="utility.addressbook" data-controller="cvar.fields">
+        <div class="form-panel utility-wide-panel" id="addressbook-fields">
+          <h2>Favorite Servers</h2>
+          <div class="utility-field-grid" id="addressbook-field-grid">
+            <div class="utility-field" data-control="field" data-cvar="adr0">
+              <span class="setting-widget-icon" data-widget="field"><img src="../common/icons/widgets/field.svg" /></span>
+              <label for="addressbook-adr0">Address 1</label>
+              <input id="addressbook-adr0" type="text" maxlength="32" data-cvar="adr0" data-menu-sound-change="change" />
+            </div>
+            <div class="utility-field" data-control="field" data-cvar="adr1">
+              <span class="setting-widget-icon" data-widget="field"><img src="../common/icons/widgets/field.svg" /></span>
+              <label for="addressbook-adr1">Address 2</label>
+              <input id="addressbook-adr1" type="text" maxlength="32" data-cvar="adr1" data-menu-sound-change="change" />
+            </div>
+            <div class="utility-field" data-control="field" data-cvar="adr2">
+              <span class="setting-widget-icon" data-widget="field"><img src="../common/icons/widgets/field.svg" /></span>
+              <label for="addressbook-adr2">Address 3</label>
+              <input id="addressbook-adr2" type="text" maxlength="32" data-cvar="adr2" data-menu-sound-change="change" />
+            </div>
+            <div class="utility-field" data-control="field" data-cvar="adr3">
+              <span class="setting-widget-icon" data-widget="field"><img src="../common/icons/widgets/field.svg" /></span>
+              <label for="addressbook-adr3">Address 4</label>
+              <input id="addressbook-adr3" type="text" maxlength="32" data-cvar="adr3" data-menu-sound-change="change" />
+            </div>
+            <div class="utility-field" data-control="field" data-cvar="adr4">
+              <span class="setting-widget-icon" data-widget="field"><img src="../common/icons/widgets/field.svg" /></span>
+              <label for="addressbook-adr4">Address 5</label>
+              <input id="addressbook-adr4" type="text" maxlength="32" data-cvar="adr4" data-menu-sound-change="change" />
+            </div>
+            <div class="utility-field" data-control="field" data-cvar="adr5">
+              <span class="setting-widget-icon" data-widget="field"><img src="../common/icons/widgets/field.svg" /></span>
+              <label for="addressbook-adr5">Address 6</label>
+              <input id="addressbook-adr5" type="text" maxlength="32" data-cvar="adr5" data-menu-sound-change="change" />
+            </div>
+            <div class="utility-field" data-control="field" data-cvar="adr6">
+              <span class="setting-widget-icon" data-widget="field"><img src="../common/icons/widgets/field.svg" /></span>
+              <label for="addressbook-adr6">Address 7</label>
+              <input id="addressbook-adr6" type="text" maxlength="32" data-cvar="adr6" data-menu-sound-change="change" />
+            </div>
+            <div class="utility-field" data-control="field" data-cvar="adr7">
+              <span class="setting-widget-icon" data-widget="field"><img src="../common/icons/widgets/field.svg" /></span>
+              <label for="addressbook-adr7">Address 8</label>
+              <input id="addressbook-adr7" type="text" maxlength="32" data-cvar="adr7" data-menu-sound-change="change" />
+            </div>
+            <div class="utility-field" data-control="field" data-cvar="adr8">
+              <span class="setting-widget-icon" data-widget="field"><img src="../common/icons/widgets/field.svg" /></span>
+              <label for="addressbook-adr8">Address 9</label>
+              <input id="addressbook-adr8" type="text" maxlength="32" data-cvar="adr8" data-menu-sound-change="change" />
+            </div>
+            <div class="utility-field" data-control="field" data-cvar="adr9">
+              <span class="setting-widget-icon" data-widget="field"><img src="../common/icons/widgets/field.svg" /></span>
+              <label for="addressbook-adr9">Address 10</label>
+              <input id="addressbook-adr9" type="text" maxlength="32" data-cvar="adr9" data-menu-sound-change="change" />
+            </div>
+            <div class="utility-field" data-control="field" data-cvar="adr10">
+              <span class="setting-widget-icon" data-widget="field"><img src="../common/icons/widgets/field.svg" /></span>
+              <label for="addressbook-adr10">Address 11</label>
+              <input id="addressbook-adr10" type="text" maxlength="32" data-cvar="adr10" data-menu-sound-change="change" />
+            </div>
+            <div class="utility-field" data-control="field" data-cvar="adr11">
+              <span class="setting-widget-icon" data-widget="field"><img src="../common/icons/widgets/field.svg" /></span>
+              <label for="addressbook-adr11">Address 12</label>
+              <input id="addressbook-adr11" type="text" maxlength="32" data-cvar="adr11" data-menu-sound-change="change" />
+            </div>
+            <div class="utility-field" data-control="field" data-cvar="adr12">
+              <span class="setting-widget-icon" data-widget="field"><img src="../common/icons/widgets/field.svg" /></span>
+              <label for="addressbook-adr12">Address 13</label>
+              <input id="addressbook-adr12" type="text" maxlength="32" data-cvar="adr12" data-menu-sound-change="change" />
+            </div>
+            <div class="utility-field" data-control="field" data-cvar="adr13">
+              <span class="setting-widget-icon" data-widget="field"><img src="../common/icons/widgets/field.svg" /></span>
+              <label for="addressbook-adr13">Address 14</label>
+              <input id="addressbook-adr13" type="text" maxlength="32" data-cvar="adr13" data-menu-sound-change="change" />
+            </div>
+            <div class="utility-field" data-control="field" data-cvar="adr14">
+              <span class="setting-widget-icon" data-widget="field"><img src="../common/icons/widgets/field.svg" /></span>
+              <label for="addressbook-adr14">Address 15</label>
+              <input id="addressbook-adr14" type="text" maxlength="32" data-cvar="adr14" data-menu-sound-change="change" />
+            </div>
+            <div class="utility-field" data-control="field" data-cvar="adr15">
+              <span class="setting-widget-icon" data-widget="field"><img src="../common/icons/widgets/field.svg" /></span>
+              <label for="addressbook-adr15">Address 16</label>
+              <input id="addressbook-adr15" type="text" maxlength="32" data-cvar="adr15" data-menu-sound-change="change" />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <footer class="actions" id="addressbook-actions">
+        <button id="addressbook-browse" type="button" data-command="pushmenu servers &quot;favorites://&quot; &quot;file:///servers.lst&quot; &quot;broadcast://&quot;" data-route-target="servers" data-menu-sound="open">Browse</button>
+        <button id="addressbook-back" type="button" data-command="ui.back" data-menu-sound="cancel">Back</button>
+      </footer>
+    </div>
+  </body>
+</rml>

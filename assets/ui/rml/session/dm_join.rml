@@ -1,0 +1,41 @@
+<rml>
+  <head>
+    <title>WORR Deathmatch Join</title>
+    <link type="text/rcss" href="../common/theme/base.rcss" />
+    <link type="text/rcss" href="../common/theme/session.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
+  </head>
+  <body id="session-dm-join" data-route-id="dm_join" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-session-owner="sgame" data-menu-music="menu" data-menu-sound-open="open">
+    <div class="screen compact-screen session-screen" id="dm-join-screen" data-close-command="forcemenuoff; worr_dm_join_close">
+      <header class="page-header" id="dm-join-header" data-model="session.dm_join" data-owner-boundary="sgame-published-cvars">
+        <h1 id="dm-join-title" data-bind="cvars.ui_dm_title">Match Lobby</h1>
+        <p id="dm-join-subtitle" data-bind="cvars.ui_dm_subtitle" data-visible-if="ui_dm_subtitle">Gametype | map</p>
+      </header>
+
+      <section class="session-panel" id="dm-join-team-actions" data-model="session.dm_join.teams" data-owner-boundary="sgame-published-cvars">
+        <button id="dm-join-red" type="button" data-label-cvar="ui_dm_join_red" data-command="forcemenuoff; team red" data-visible-if="ui_dm_show_join!=0;ui_dm_teamplay!=0" data-menu-sound="confirm">Join Red</button>
+        <button id="dm-join-blue" type="button" data-label-cvar="ui_dm_join_blue" data-command="forcemenuoff; team blue" data-visible-if="ui_dm_show_join!=0;ui_dm_teamplay!=0" data-menu-sound="confirm">Join Blue</button>
+        <button id="dm-join-free" type="button" data-label-cvar="ui_dm_join_free" data-command="forcemenuoff; team free" data-visible-if="ui_dm_show_join!=0;ui_dm_teamplay=0" data-menu-sound="confirm">Join Match</button>
+        <button id="dm-join-spectate" type="button" data-command="forcemenuoff; team spectator" data-visible-if="ui_dm_show_spectate!=0" data-menu-sound="confirm">Spectate</button>
+      </section>
+
+      <nav class="menu-list" id="dm-join-session-menu" data-model="session.dm_join.menu" data-owner-boundary="sgame-published-cvars">
+        <button id="dm-join-info" type="button" data-command="worr_tourney_info" data-visible-if="ui_dm_show_tourney_info!=0" data-menu-sound="open">Information</button>
+        <button id="dm-join-maps" type="button" data-command="worr_tourney_maps" data-visible-if="ui_dm_show_tourney_maps!=0" data-menu-sound="open">Map Choices</button>
+        <button id="dm-join-callvote" type="button" data-command="worr_callvote_menu" data-visible-if="ui_dm_show_callvote!=0" data-menu-sound="open">Call a Vote</button>
+        <button id="dm-join-mymap" type="button" data-command="worr_mymap_menu" data-visible-if="ui_dm_show_mymap!=0" data-menu-sound="open">MyMap</button>
+        <button id="dm-join-hostinfo" type="button" data-command="worr_dm_hostinfo" data-menu-sound="open">Host Info</button>
+        <button id="dm-join-forfeit" type="button" data-command="worr_forfeit_menu" data-visible-if="ui_dm_show_forfeit!=0" data-menu-sound="alert">Forfeit</button>
+        <button id="dm-join-matchinfo" type="button" data-command="worr_dm_matchinfo" data-menu-sound="open">Match Info</button>
+        <button id="dm-join-matchstats" type="button" data-command="worr_matchstats_menu" data-visible-if="ui_dm_show_matchstats!=0" data-menu-sound="open">Player Stats</button>
+        <button id="dm-join-admin" type="button" data-command="worr_admin_menu" data-visible-if="ui_dm_show_admin!=0" data-menu-sound="open">Admin</button>
+        <button id="dm-join-settings" type="button" data-loc-key="m_settings" data-command="pushmenu options" data-route-target="options" data-menu-sound="open">Settings</button>
+        <button id="dm-join-leave" type="button" data-loc-key="m_leave_match" data-command="ui.popup" data-route-target="leave_match_confirm" data-menu-sound="alert">Leave Match</button>
+      </nav>
+
+      <footer class="actions" id="dm-join-actions">
+        <button id="dm-join-close" type="button" data-command="forcemenuoff; worr_dm_join_close" data-menu-sound="cancel">Close</button>
+      </footer>
+    </div>
+  </body>
+</rml>

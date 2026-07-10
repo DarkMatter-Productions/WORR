@@ -1,0 +1,47 @@
+<rml>
+  <head>
+    <title>WORR Server Browser</title>
+    <link type="text/rcss" href="../common/theme/base.rcss" />
+    <link type="text/rcss" href="../common/theme/utility.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
+  </head>
+  <body id="utility-servers" data-route-id="servers" data-route-group="utility" data-route-version="1" data-document-status="round2-scaffold" data-menu-music="menu" data-menu-sound-open="open">
+    <div class="screen" id="servers-screen">
+      <header class="page-header">
+        <h1>Servers</h1>
+        <p id="servers-summary">
+          Multiplayer server directory.
+        </p>
+      </header>
+
+      <section class="toolbar" id="servers-toolbar" data-model="server_browser">
+        <button id="servers-refresh" type="button" disabled="disabled" data-menu-sound="none">Refresh</button>
+        <button id="servers-connect" type="button" disabled="disabled" data-menu-sound="none">Connect</button>
+        <button id="servers-favorites" type="button" disabled="disabled" data-menu-sound="none">Favorites</button>
+        <button id="servers-back" type="button" data-command="ui.back" data-menu-sound="cancel">Back</button>
+      </section>
+
+      <section class="content" id="servers-content">
+        <table id="servers-table" class="data-table" data-model="server_browser.servers" data-controller="shared.table">
+          <thead>
+            <tr>
+              <th data-sort-key="hostname">Server</th>
+              <th data-sort-key="map">Map</th>
+              <th data-sort-key="players">Players</th>
+              <th data-sort-key="ping">Ping</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="placeholder-row">
+              <td colspan="4">No servers found.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <footer class="status-bar" id="servers-status" data-bind="server_browser.status">
+        The server browser is not wired up in the new UI yet.
+      </footer>
+    </div>
+  </body>
+</rml>

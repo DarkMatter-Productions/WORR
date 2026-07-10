@@ -1,0 +1,164 @@
+<rml>
+  <head>
+    <title>WORR Admin Commands</title>
+    <link type="text/rcss" href="../common/theme/base.rcss" />
+    <link type="text/rcss" href="../common/theme/session.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
+  </head>
+  <body id="session-admin-commands" data-route-id="admin_commands" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-session-owner="sgame" data-menu-music="menu" data-menu-sound-open="open">
+    <div class="screen compact-screen session-screen" id="admin-commands-screen">
+      <header class="page-header">
+        <h1>Admin Commands</h1>
+        <p>Commands need /admin login. Use console for args.</p>
+      </header>
+
+      <section class="session-admin-list" id="admin-commands-list" data-owner-boundary="sgame-command-reference">
+        <div class="session-admin-row" id="admin-command-add-admin" data-admin-command="add_admin">
+          <span class="session-admin-label">add_admin</span>
+          <span>Adds player to admin.txt</span>
+          <span class="ui-command-line">usage: add_admin &lt;client&gt;</span>
+        </div>
+        <div class="session-admin-row" id="admin-command-add-ban" data-admin-command="add_ban">
+          <span class="session-admin-label">add_ban</span>
+          <span>Bans player by social ID</span>
+          <span class="ui-command-line">usage: add_ban &lt;client&gt;</span>
+        </div>
+        <div class="session-admin-row" id="admin-command-arena" data-admin-command="arena">
+          <span class="session-admin-label">arena</span>
+          <span>Force specific arena</span>
+          <span class="ui-command-line">usage: arena &lt;num&gt;</span>
+        </div>
+        <div class="session-admin-row" id="admin-command-balance" data-admin-command="balance">
+          <span class="session-admin-label">balance</span>
+          <span>Force teams to balance</span>
+          <span class="ui-command-line">usage: balance</span>
+        </div>
+        <div class="session-admin-row" id="admin-command-boot" data-admin-command="boot">
+          <span class="session-admin-label">boot</span>
+          <span>Kick player; host/admin safe</span>
+          <span class="ui-command-line">usage: boot &lt;client&gt;</span>
+        </div>
+        <div class="session-admin-row" id="admin-command-end-match" data-admin-command="end_match">
+          <span class="session-admin-label">end_match</span>
+          <span>End current match now</span>
+          <span class="ui-command-line">usage: end_match</span>
+        </div>
+        <div class="session-admin-row" id="admin-command-force-vote" data-admin-command="force_vote">
+          <span class="session-admin-label">force_vote</span>
+          <span>Force pending vote result</span>
+          <span class="ui-command-line">usage: force_vote &lt;y|n&gt;</span>
+        </div>
+        <div class="session-admin-row" id="admin-command-gametype" data-admin-command="gametype">
+          <span class="session-admin-label">gametype</span>
+          <span>Set current gametype</span>
+          <span class="ui-command-line">usage: gametype &lt;name&gt;</span>
+        </div>
+        <div class="session-admin-row" id="admin-command-load-admins" data-admin-command="load_admins">
+          <span class="session-admin-label">load_admins</span>
+          <span>Reload admin.txt</span>
+          <span class="ui-command-line">usage: load_admins</span>
+        </div>
+        <div class="session-admin-row" id="admin-command-load-bans" data-admin-command="load_bans">
+          <span class="session-admin-label">load_bans</span>
+          <span>Reload ban list</span>
+          <span class="ui-command-line">usage: load_bans</span>
+        </div>
+        <div class="session-admin-row" id="admin-command-load-motd" data-admin-command="load_motd">
+          <span class="session-admin-label">load_motd</span>
+          <span>Reload MOTD file</span>
+          <span class="ui-command-line">usage: load_motd</span>
+        </div>
+        <div class="session-admin-row" id="admin-command-load-mappool" data-admin-command="load_mappool">
+          <span class="session-admin-label">load_mappool</span>
+          <span>Reload map pool + cycle</span>
+          <span class="ui-command-line">usage: load_mappool</span>
+        </div>
+        <div class="session-admin-row" id="admin-command-load-mapcycle" data-admin-command="load_mapcycle">
+          <span class="session-admin-label">load_mapcycle</span>
+          <span>Reload map cycle</span>
+          <span class="ui-command-line">usage: load_mapcycle</span>
+        </div>
+        <div class="session-admin-row" id="admin-command-lock-team" data-admin-command="lock_team">
+          <span class="session-admin-label">lock_team</span>
+          <span>Lock red or blue team</span>
+          <span class="ui-command-line">usage: lock_team &lt;red|blue&gt;</span>
+        </div>
+        <div class="session-admin-row" id="admin-command-map-restart" data-admin-command="map_restart">
+          <span class="session-admin-label">map_restart</span>
+          <span>Restart the current map</span>
+          <span class="ui-command-line">usage: map_restart</span>
+        </div>
+        <div class="session-admin-row" id="admin-command-next-map" data-admin-command="next_map">
+          <span class="session-admin-label">next_map</span>
+          <span>Skip to the next map</span>
+          <span class="ui-command-line">usage: next_map</span>
+        </div>
+        <div class="session-admin-row" id="admin-command-ready-all" data-admin-command="ready_all">
+          <span class="session-admin-label">ready_all</span>
+          <span>Force all players ready</span>
+          <span class="ui-command-line">usage: ready_all</span>
+        </div>
+        <div class="session-admin-row" id="admin-command-remove-admin" data-admin-command="remove_admin">
+          <span class="session-admin-label">remove_admin</span>
+          <span>Remove admin entry</span>
+          <span class="ui-command-line">usage: remove_admin &lt;id&gt;</span>
+        </div>
+        <div class="session-admin-row" id="admin-command-remove-ban" data-admin-command="remove_ban">
+          <span class="session-admin-label">remove_ban</span>
+          <span>Unban from ban.txt</span>
+          <span class="ui-command-line">usage: remove_ban &lt;id&gt;</span>
+        </div>
+        <div class="session-admin-row" id="admin-command-reset-match" data-admin-command="reset_match">
+          <span class="session-admin-label">reset_match</span>
+          <span>Reset match in progress</span>
+          <span class="ui-command-line">usage: reset_match</span>
+        </div>
+        <div class="session-admin-row" id="admin-command-replay" data-admin-command="replay">
+          <span class="session-admin-label">replay</span>
+          <span>Replay a tournament game</span>
+          <span class="ui-command-line">usage: replay &lt;game#&gt; [confirm]</span>
+        </div>
+        <div class="session-admin-row" id="admin-command-ruleset" data-admin-command="ruleset">
+          <span class="session-admin-label">ruleset</span>
+          <span>Select ruleset (q1/2/3a)</span>
+          <span class="ui-command-line">usage: ruleset &lt;type&gt;</span>
+        </div>
+        <div class="session-admin-row" id="admin-command-set-map" data-admin-command="set_map">
+          <span class="session-admin-label">set_map</span>
+          <span>Change to another pool map</span>
+          <span class="ui-command-line">usage: set_map &lt;map&gt;</span>
+        </div>
+        <div class="session-admin-row" id="admin-command-set-team" data-admin-command="set_team">
+          <span class="session-admin-label">set_team</span>
+          <span>Force a client onto team</span>
+          <span class="ui-command-line">usage: set_team &lt;client&gt;</span>
+          <span class="ui-command-line">&lt;team&gt;</span>
+        </div>
+        <div class="session-admin-row" id="admin-command-shuffle" data-admin-command="shuffle">
+          <span class="session-admin-label">shuffle</span>
+          <span>Shuffle current teams</span>
+          <span class="ui-command-line">usage: shuffle</span>
+        </div>
+        <div class="session-admin-row" id="admin-command-start-match" data-admin-command="start_match">
+          <span class="session-admin-label">start_match</span>
+          <span>Force match start</span>
+          <span class="ui-command-line">usage: start_match</span>
+        </div>
+        <div class="session-admin-row" id="admin-command-unlock-team" data-admin-command="unlock_team">
+          <span class="session-admin-label">unlock_team</span>
+          <span>Unlock red or blue team</span>
+          <span class="ui-command-line">usage: unlock_team &lt;team&gt;</span>
+        </div>
+        <div class="session-admin-row" id="admin-command-unready-all" data-admin-command="unready_all">
+          <span class="session-admin-label">unready_all</span>
+          <span>Force all players unready</span>
+          <span class="ui-command-line">usage: unready_all</span>
+        </div>
+      </section>
+
+      <footer class="actions" id="admin-commands-actions">
+        <button id="admin-commands-back" type="button" data-command="popmenu" data-menu-sound="cancel">Return</button>
+      </footer>
+    </div>
+  </body>
+</rml>

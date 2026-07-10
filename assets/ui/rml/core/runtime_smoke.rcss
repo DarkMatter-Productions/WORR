@@ -1,0 +1,96 @@
+/*
+ * Guarded runtime-smoke styling for native RmlUi capture evidence.
+ *
+ * This file intentionally avoids claiming final theme or font parity. It gives
+ * the early OpenGL smoke route stable visible geometry while the full WORR
+ * font service remains pending.
+ */
+
+body
+{
+	margin: 0px;
+	padding: 0px;
+	background-color: #12110f;
+	color: #f3eee4;
+	font-family: "WORR UI";
+	font-size: 18px;
+	line-height: 1.25;
+}
+
+#runtime-smoke-screen
+{
+	display: block;
+	width: 100%;
+	min-height: 100%;
+	padding: 56px;
+	background-color: #12110f;
+	border-width: 8px;
+	border-color: #3f372a;
+}
+
+h1
+{
+	display: block;
+	margin: 0px 0px 18px 0px;
+	color: #ffd967;
+	font-size: 36px;
+}
+
+p
+{
+	display: block;
+	width: 760px;
+	margin: 0px 0px 24px 0px;
+	color: #f3eee4;
+}
+
+#runtime-smoke-contract
+{
+	display: block;
+	width: 760px;
+	margin: 0px 0px 24px 0px;
+	padding: 20px;
+	background-color: #27231d;
+	border-width: 2px;
+	border-color: #b99b5b;
+}
+
+#runtime-smoke-contract h2
+{
+	display: block;
+	margin: 0px 0px 12px 0px;
+	color: #e5b64f;
+	font-size: 24px;
+}
+
+#runtime-smoke-contract ul
+{
+	display: block;
+	margin: 0px;
+	padding-left: 24px;
+}
+
+#runtime-smoke-contract li
+{
+	display: block;
+	margin-bottom: 8px;
+}
+
+#runtime-smoke-actions
+{
+	display: block;
+	margin-top: 10px;
+}
+
+#runtime-smoke-actions button,
+#runtime-smoke-actions .ui-button
+{
+	display: inline-block;
+	min-width: 140px;
+	margin-right: 12px;
+	padding: 12px 18px;
+	background-color: #e5b64f;
+	border-width: 2px;
+	border-color: #ffd967;
+	color: #12110f;
+}

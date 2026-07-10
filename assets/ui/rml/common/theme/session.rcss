@@ -1,0 +1,805 @@
+/*
+ * WORR RmlUi session-page theme contract.
+ *
+ * Import after common/theme/base.rcss. These rules scaffold vote, match, and
+ * admin flows without assuming a finished data bridge or renderer backend.
+ */
+
+.session-screen,
+#vote-menu-screen,
+#multiplayer-screen
+{
+	display: flex;
+	flex-direction: column;
+	min-height: 0px;
+}
+
+.session-layout
+{
+	display: flex;
+	flex-direction: row;
+	align-items: stretch;
+	flex: 1 1 auto;
+	min-height: 0px;
+	overflow: hidden;
+}
+
+.session-main
+{
+	display: flex;
+	flex-direction: column;
+	flex: 1 1 auto;
+	min-width: 0px;
+	min-height: 0px;
+	overflow: auto;
+}
+
+.session-side
+{
+	display: flex;
+	flex-direction: column;
+	width: 260px;
+	min-width: 220px;
+	max-width: 300px;
+	min-height: 0px;
+	margin-left: 16px;
+	overflow: auto;
+}
+
+.session-panel,
+.status-panel,
+.session-card
+{
+	display: flex;
+	flex-direction: column;
+	padding: 16px;
+	background-color: #1b1916;
+	border-width: 2px;
+	border-color: #756a5d;
+	border-radius: 6px;
+	margin-bottom: 12px;
+	min-height: 0px;
+	transition: background-color border-color 0.12s cubic-out;
+}
+
+.status-panel p
+{
+	margin-bottom: 0px;
+	color: #c9beb0;
+}
+
+.menu-list,
+.session-command-list
+{
+	display: flex;
+	flex-direction: column;
+	flex: 1 1 auto;
+	min-height: 0px;
+	max-width: 604px;
+	overflow: auto;
+}
+
+#multiplayer-session-status
+{
+	width: 568px;
+	max-width: 568px;
+}
+
+#callvote-main-menu
+{
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	align-content: flex-start;
+	flex: 0 0 auto;
+	width: 632px;
+	min-width: 0px;
+	max-width: 100%;
+	height: auto;
+	max-height: 430px;
+	padding-right: 6px;
+	margin-bottom: 8px;
+	overflow: auto;
+}
+
+#callvote-main-menu button
+{
+	position: static;
+	display: block;
+	box-sizing: border-box;
+	width: 304px;
+	min-width: 304px;
+	max-width: 304px;
+	height: auto;
+	min-height: 42px;
+	padding: 7px 12px;
+	background-color: #211e19;
+	border-left-width: 4px;
+	border-left-color: #4b4235;
+	border-radius: 5px;
+	font-size: 16px;
+	text-align: left;
+	margin-right: 12px;
+	margin-bottom: 10px;
+}
+
+#dm-join-team-actions,
+#join-team-actions
+{
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	align-content: flex-start;
+	flex: 0 0 auto;
+	width: 632px;
+	min-width: 0px;
+	max-width: 100%;
+	height: auto;
+	min-height: 0px;
+	max-height: 126px;
+	/* Chrome-less container: collapses invisibly when every conditional
+	   team action is hidden. */
+	padding: 0px;
+	margin-bottom: 2px;
+	background-color: transparent;
+	border-width: 0px;
+	overflow: auto;
+}
+
+#dm-join-team-actions button,
+#join-team-actions button
+{
+	position: static;
+	display: block;
+	box-sizing: border-box;
+	width: 304px;
+	min-width: 304px;
+	max-width: 304px;
+	height: auto;
+	min-height: 42px;
+	padding: 7px 12px;
+	background-color: #211e19;
+	border-left-width: 4px;
+	border-left-color: #4b4235;
+	border-radius: 5px;
+	text-align: left;
+	margin-right: 12px;
+	margin-bottom: 10px;
+}
+
+#dm-join-session-menu,
+#join-session-menu
+{
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	align-content: flex-start;
+	flex: 0 0 auto;
+	width: 632px;
+	min-width: 0px;
+	max-width: 100%;
+	height: auto;
+	min-height: 0px;
+	max-height: 360px;
+	padding: 0px 0px 0px 0px;
+	margin-bottom: 8px;
+	overflow: auto;
+}
+
+#dm-join-session-menu button,
+#join-session-menu button
+{
+	position: static;
+	display: block;
+	box-sizing: border-box;
+	width: 304px;
+	min-width: 304px;
+	max-width: 304px;
+	height: auto;
+	min-height: 42px;
+	padding: 7px 12px;
+	background-color: #211e19;
+	border-left-width: 4px;
+	border-left-color: #4b4235;
+	border-radius: 5px;
+	font-size: 16px;
+	text-align: left;
+	margin-right: 12px;
+	margin-bottom: 10px;
+}
+
+#callvote-main-menu button:hover,
+#callvote-main-menu button:focus,
+#dm-join-team-actions button:hover,
+#dm-join-team-actions button:focus,
+#join-team-actions button:hover,
+#join-team-actions button:focus,
+#dm-join-session-menu button:hover,
+#dm-join-session-menu button:focus,
+#join-session-menu button:hover,
+#join-session-menu button:focus,
+#callvote-random-menu button:hover,
+#callvote-random-menu button:focus,
+#callvote-scorelimit-menu button:hover,
+#callvote-scorelimit-menu button:focus,
+#callvote-timelimit-menu button:hover,
+#callvote-timelimit-menu button:focus,
+#callvote-unlagged-menu button:hover,
+#callvote-unlagged-menu button:focus,
+#callvote-ruleset-menu button:hover,
+#callvote-ruleset-menu button:focus,
+#callvote-map-flags-content button:hover,
+#callvote-map-flags-content button:focus,
+#mymap-flags-content button:hover,
+#mymap-flags-content button:focus,
+#map-selector-options button:hover,
+#map-selector-options button:focus
+{
+	background-color: #30291f;
+	border-color: #b99b5b;
+	border-left-color: #ffd967;
+}
+
+.menu-list button,
+.session-command-list button
+{
+	width: 100%;
+	text-align: left;
+	margin-bottom: 6px;
+}
+
+.session-command-strip
+{
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	margin-bottom: 8px;
+}
+
+.session-flow
+{
+	display: flex;
+	flex-direction: column;
+	flex: 1 1 auto;
+	min-height: 0px;
+	overflow: auto;
+}
+
+.session-flow-step
+{
+	display: flex;
+	flex-direction: column;
+	padding: 12px;
+	background-color: #27231d;
+	border-left-width: 4px;
+	border-left-color: #756a5d;
+	border-radius: 3px;
+	margin-bottom: 8px;
+	transition: background-color border-color color 0.12s cubic-out;
+}
+
+.session-flow-step:hover
+{
+	background-color: #30291f;
+	border-left-color: #b99b5b;
+}
+
+.session-flow-step.is-active
+{
+	background-color: #332d23;
+	border-left-color: #ffd967;
+}
+
+.session-flow-step.is-complete
+{
+	border-left-color: #83d18f;
+}
+
+.session-flow-step.is-blocked,
+.session-flow-step.is-danger
+{
+	border-left-color: #ee6758;
+}
+
+.vote-status,
+.session-stat-grid
+{
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	margin: 0px;
+	padding: 12px;
+	background-color: #1b1916;
+	border-width: 2px;
+	border-color: #756a5d;
+	border-radius: 3px;
+	margin-bottom: 12px;
+}
+
+.vote-status dt,
+.session-stat-grid dt,
+.session-stat-label
+{
+	width: 160px;
+	margin: 0px;
+	color: #c9beb0;
+	font-weight: bold;
+	white-space: normal;
+	word-break: break-word;
+}
+
+.vote-status dd,
+.session-stat-grid dd,
+.session-stat-value
+{
+	flex: 1 1 220px;
+	margin: 0px;
+	color: #f3eee4;
+	white-space: normal;
+	word-break: break-word;
+}
+
+.vote-status .is-winning,
+.session-stat-value.is-winning
+{
+	color: #83d18f;
+}
+
+.vote-status .is-losing,
+.session-stat-value.is-losing
+{
+	color: #ee6758;
+}
+
+.session-vote-prompt,
+.session-match-summary,
+.session-admin-summary
+{
+	display: flex;
+	flex-direction: column;
+	padding: 16px;
+	background-color: #27231d;
+	border-width: 2px;
+	border-color: #b99b5b;
+	border-radius: 6px;
+	margin-bottom: 12px;
+}
+
+.session-vote-prompt h2,
+.session-match-summary h2,
+.session-admin-summary h2
+{
+	margin-bottom: 0px;
+}
+
+.session-countdown
+{
+	display: inline-block;
+	min-width: 64px;
+	padding: 4px 8px;
+	background-color: #000000;
+	color: #ffd967;
+	border-width: 2px;
+	border-color: #b99b5b;
+	border-radius: 3px;
+	text-align: center;
+	font-family: "WORR Mono";
+}
+
+.session-player-list,
+.session-admin-list
+{
+	display: flex;
+	flex-direction: column;
+	min-height: 0px;
+	overflow: auto;
+}
+
+.session-player-row,
+.session-admin-row
+{
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	flex: 0 0 auto;
+	min-height: 36px;
+	padding: 8px;
+	background-color: #1b1916;
+	border-width: 1px;
+	border-color: #756a5d;
+	border-radius: 3px;
+	margin-bottom: 4px;
+	transition: background-color border-color color 0.12s cubic-out;
+}
+
+.session-player-row:hover,
+.session-admin-row:hover
+{
+	background-color: #211e19;
+	border-color: #b99b5b;
+}
+
+.session-player-row.is-selected,
+.session-admin-row.is-selected
+{
+	background-color: #332d23;
+	border-color: #ffd967;
+	color: #ffd967;
+}
+
+.session-player-name,
+.session-admin-label
+{
+	flex: 1 1 auto;
+	min-width: 0px;
+	white-space: normal;
+	word-break: break-word;
+}
+
+#admin-commands-screen .page-header
+{
+	margin-bottom: 8px;
+}
+
+#admin-commands-screen .page-header h1
+{
+	margin-bottom: 2px;
+}
+
+#admin-commands-list
+{
+	flex: 1 1 auto;
+	width: 632px;
+	min-width: 0px;
+	max-width: 100%;
+	height: auto;
+	min-height: 0px;
+	padding-right: 6px;
+	margin-bottom: 8px;
+	overflow: auto;
+}
+
+#admin-commands-list .session-admin-row
+{
+	align-items: flex-start;
+	flex-wrap: wrap;
+	width: 584px;
+	min-height: 44px;
+	padding: 7px 9px;
+}
+
+#admin-commands-list .session-admin-row span
+{
+	display: block;
+	flex: 0 0 auto;
+	width: 394px;
+	white-space: normal;
+	word-break: break-word;
+}
+
+#admin-commands-list .session-admin-row .session-admin-label
+{
+	width: 132px;
+	margin-right: 14px;
+	color: #ffd967;
+	font-family: "WORR Mono";
+	font-size: 14px;
+}
+
+#admin-commands-list .session-admin-row .ui-command-line
+{
+	width: 394px;
+	margin-left: 146px;
+	margin-top: 3px;
+	font-size: 12px;
+	color: #c9beb0;
+	white-space: normal;
+	word-break: break-word;
+}
+
+#admin-menu-actions,
+#callvote-random-menu,
+#callvote-scorelimit-menu,
+#callvote-timelimit-menu,
+#callvote-unlagged-menu,
+#callvote-ruleset-menu,
+#mymap-main-content,
+#map-selector-options,
+#match-stats-lines,
+#tourney-mapchoices-list,
+#dm-hostinfo-content,
+#dm-matchinfo-content,
+#dm-welcome-content
+{
+	flex: 1 1 auto;
+	min-height: 0px;
+	overflow: auto;
+}
+
+#match-stats-lines,
+#tourney-mapchoices-list
+{
+	flex: 0 1 auto;
+}
+
+#callvote-random-menu,
+#callvote-scorelimit-menu,
+#callvote-timelimit-menu,
+#callvote-ruleset-menu
+{
+	width: 620px;
+	min-width: 0px;
+	max-width: 100%;
+	padding-right: 0px;
+}
+
+#callvote-random-menu button,
+#callvote-scorelimit-menu button,
+#callvote-timelimit-menu button,
+#callvote-ruleset-menu button
+{
+	width: 572px;
+	min-width: 0px;
+	max-width: 604px;
+	margin-right: 0px;
+	margin-bottom: 8px;
+	border-left-width: 4px;
+	border-left-color: #4b4235;
+}
+
+#callvote-map-flags-content,
+#mymap-flags-content
+{
+	flex: 1 1 auto;
+	width: 620px;
+	min-width: 0px;
+	min-height: 0px;
+	max-width: 100%;
+	padding-right: 0px;
+	overflow: auto;
+}
+
+#callvote-map-flags-content button,
+#mymap-flags-content button
+{
+	width: 572px;
+	min-width: 0px;
+	max-width: 604px;
+	margin-right: 0px;
+	margin-bottom: 8px;
+	border-left-width: 4px;
+	border-left-color: #4b4235;
+	text-align: left;
+}
+
+#map-selector-options
+{
+	padding-right: 6px;
+}
+
+#map-selector-options button
+{
+	min-height: 54px;
+	margin-bottom: 8px;
+	padding: 10px 12px;
+	border-left-width: 4px;
+	border-left-color: #4b4235;
+	text-align: left;
+}
+
+#map-selector-status .status-panel
+{
+	padding: 12px;
+	margin-bottom: 8px;
+}
+
+#map-selector-bar
+{
+	padding: 6px 8px;
+	background-color: #14120f;
+	border-width: 1px;
+	border-color: #443d33;
+	border-radius: 3px;
+	color: #ffd967;
+}
+
+#tourney-veto-content
+{
+	width: 620px;
+	max-width: 100%;
+}
+
+#tourney-veto-inactive-panel
+{
+	min-height: 74px;
+}
+
+#match-stats-lines,
+#tourney-mapchoices-list
+{
+	width: auto;
+	min-width: 0px;
+	max-width: 100%;
+	padding: 10px;
+	background-color: #171511;
+	border-left-width: 3px;
+	border-left-color: #4b4235;
+}
+
+.session-static-report
+{
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	min-height: 0px;
+}
+
+#match-stats-lines p,
+#tourney-mapchoices-list p
+{
+	width: auto;
+	max-width: 100%;
+	min-width: 0px;
+	padding: 5px 8px;
+	background-color: #211e19;
+	border-left-width: 1px;
+	border-left-color: #332d23;
+	border-radius: 3px;
+	margin-bottom: 4px;
+	font-size: 15px;
+	line-height: 1.1;
+	white-space: normal;
+	word-break: break-word;
+}
+
+#match-stats-line-0,
+#tourney-mapchoice-line-0,
+#match-stats-fallback-title,
+#tourney-mapchoices-fallback-0
+{
+	border-left-width: 4px;
+	border-left-color: #b99b5b;
+	color: #ffd967;
+	font-weight: bold;
+}
+
+.session-badge
+{
+	display: inline-block;
+	min-width: 72px;
+	padding: 4px 8px;
+	background-color: #27231d;
+	color: #c9beb0;
+	border-width: 1px;
+	border-color: #756a5d;
+	border-radius: 3px;
+	text-align: center;
+}
+
+.session-badge.is-live
+{
+	color: #83d18f;
+	border-color: #83d18f;
+}
+
+.session-badge.is-warning
+{
+	color: #ffd967;
+	border-color: #ffd967;
+}
+
+.session-badge.is-danger
+{
+	color: #ee6758;
+	border-color: #ee6758;
+}
+
+.session-admin-actions
+{
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	margin-top: 8px;
+}
+
+.session-pending
+{
+	color: #c9beb0;
+	font-style: italic;
+}
+
+.session-error
+{
+	color: #ee6758;
+}
+
+.actions
+{
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+}
+
+.ui-high-visibility .session-panel,
+.ui-high-visibility .status-panel,
+.ui-high-visibility .session-card,
+.ui-high-visibility .vote-status,
+.ui-high-visibility .session-stat-grid,
+.ui-high-visibility .session-vote-prompt,
+.ui-high-visibility .session-match-summary,
+.ui-high-visibility .session-admin-summary,
+.ui-high-visibility .session-player-row,
+.ui-high-visibility .session-admin-row
+{
+	background-color: #000000;
+	border-color: #ffffff;
+	color: #ffffff;
+}
+
+.ui-high-visibility .session-flow-step.is-active,
+.ui-high-visibility .session-player-row.is-selected,
+.ui-high-visibility .session-admin-row.is-selected
+{
+	background-color: #202000;
+	border-color: #ffd967;
+	color: #ffd967;
+}
+
+#dm-join-session-menu #dm-join-leave,
+#join-session-menu #join-leave,
+#leave-match-yes,
+#forfeit-confirm-yes
+{
+	background-color: #281b18;
+	border-color: #895047;
+	border-left-width: 4px;
+	border-left-color: #ee6758;
+}
+
+#dm-join-session-menu #dm-join-forfeit,
+#join-session-menu #join-forfeit
+{
+	background-color: #281b18;
+	border-color: #895047;
+	border-left-width: 4px;
+	border-left-color: #ee6758;
+}
+
+#dm-join-session-menu #dm-join-leave:hover,
+#join-session-menu #join-leave:hover,
+#dm-join-session-menu #dm-join-forfeit:hover,
+#join-session-menu #join-forfeit:hover,
+#leave-match-yes:hover,
+#forfeit-confirm-yes:hover
+{
+	background-color: #321f1b;
+	border-color: #ee6758;
+	border-left-color: #ff9285;
+	color: #ee6758;
+}
+
+#dm-join-session-menu #dm-join-leave:focus,
+#join-session-menu #join-leave:focus,
+#dm-join-session-menu #dm-join-forfeit:focus,
+#join-session-menu #join-forfeit:focus,
+#leave-match-yes:focus,
+#forfeit-confirm-yes:focus
+{
+	background-color: #321f1b;
+	border-color: #ffd967;
+	border-left-color: #ff9285;
+	color: #ee6758;
+}
+
+#dm-join-session-menu #dm-join-leave:active,
+#join-session-menu #join-leave:active,
+#dm-join-session-menu #dm-join-forfeit:active,
+#join-session-menu #join-forfeit:active,
+#leave-match-yes:active,
+#forfeit-confirm-yes:active
+{
+	background-color: #402420;
+	border-color: #ff9285;
+	border-left-color: #ff9285;
+	color: #ff9285;
+}

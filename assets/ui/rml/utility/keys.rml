@@ -1,0 +1,66 @@
+<rml>
+  <head>
+    <title>WORR Key Bindings</title>
+    <link type="text/rcss" href="../common/theme/base.rcss" />
+    <link type="text/rcss" href="../common/theme/utility.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
+  </head>
+  <body id="utility-keys" data-route-id="keys" data-route-group="utility" data-route-version="1" data-document-status="round2-scaffold" data-menu-music="menu" data-menu-sound-open="open">
+    <div class="screen" id="keys-screen">
+      <header class="page-header">
+        <h1>Key Bindings</h1>
+        <p id="keys-summary">
+          Set movement, combat, inventory, and interface controls.
+        </p>
+      </header>
+
+      <section class="content" id="keys-content" data-model="utility.keybinds" data-controller="keybind.capture" data-action-type="capture">
+        <div class="bind-column" id="keys-column-1">
+        <section class="bind-group" id="keys-combat" data-bind-group="combat">
+          <h2>Combat</h2>
+          <button id="keys-attack" type="button" data-bind-command="+attack" data-event-click="keybind.capture" data-menu-sound="change"><span class="bind-label">Attack</span><span class="bind-key"></span></button>
+          <button id="keys-next-weapon" type="button" data-bind-command="weapnext" data-event-click="keybind.capture" data-menu-sound="change"><span class="bind-label">Next Weapon</span><span class="bind-key"></span></button>
+          <button id="keys-previous-weapon" type="button" data-bind-command="weapprev" data-event-click="keybind.capture" data-menu-sound="change"><span class="bind-label">Previous Weapon</span><span class="bind-key"></span></button>
+        </section>
+
+        <section class="bind-group" id="keys-inventory" data-bind-group="inventory">
+          <h2>Inventory</h2>
+          <button id="keys-inven" type="button" data-bind-command="inven" data-event-click="keybind.capture" data-menu-sound="change"><span class="bind-label">Inventory</span><span class="bind-key"></span></button>
+          <button id="keys-invuse" type="button" data-bind-command="invuse" data-event-click="keybind.capture" data-menu-sound="change"><span class="bind-label">Use Item</span><span class="bind-key"></span></button>
+          <button id="keys-invdrop" type="button" data-bind-command="invdrop" data-event-click="keybind.capture" data-menu-sound="change"><span class="bind-label">Drop Item</span><span class="bind-key"></span></button>
+          <button id="keys-invprev" type="button" data-bind-command="invprev" data-event-click="keybind.capture" data-menu-sound="change"><span class="bind-label">Prev Item</span><span class="bind-key"></span></button>
+          <button id="keys-invnext" type="button" data-bind-command="invnext" data-event-click="keybind.capture" data-menu-sound="change"><span class="bind-label">Next Item</span><span class="bind-key"></span></button>
+        </section>
+        </div>
+
+        <div class="bind-column" id="keys-column-2">
+        <section class="bind-group" id="keys-movement" data-bind-group="movement">
+          <h2>Movement</h2>
+          <button id="keys-forward" type="button" data-bind-command="+forward" data-event-click="keybind.capture" data-menu-sound="change"><span class="bind-label">Walk Forward</span><span class="bind-key"></span></button>
+          <button id="keys-backpedal" type="button" data-bind-command="+back" data-event-click="keybind.capture" data-menu-sound="change"><span class="bind-label">Backpedal</span><span class="bind-key"></span></button>
+          <button id="keys-run" type="button" data-bind-command="+speed" data-event-click="keybind.capture" data-menu-sound="change"><span class="bind-label">Run</span><span class="bind-key"></span></button>
+          <button id="keys-step-left" type="button" data-bind-command="+moveleft" data-event-click="keybind.capture" data-menu-sound="change"><span class="bind-label">Step Left</span><span class="bind-key"></span></button>
+          <button id="keys-step-right" type="button" data-bind-command="+moveright" data-event-click="keybind.capture" data-menu-sound="change"><span class="bind-label">Step Right</span><span class="bind-key"></span></button>
+          <button id="keys-jump" type="button" data-bind-command="+moveup" data-event-click="keybind.capture" data-menu-sound="change"><span class="bind-label">Up / Jump</span><span class="bind-key"></span></button>
+          <button id="keys-crouch" type="button" data-bind-command="+movedown" data-event-click="keybind.capture" data-menu-sound="change"><span class="bind-label">Down / Crouch</span><span class="bind-key"></span></button>
+        </section>
+        </div>
+
+        <div class="bind-column" id="keys-column-3">
+        <section class="bind-group" id="keys-interface" data-bind-group="interface">
+          <h2>Interface</h2>
+          <button id="keys-help" type="button" data-bind-command="help" data-event-click="keybind.capture" data-menu-sound="change"><span class="bind-label">Help Computer</span><span class="bind-key"></span></button>
+          <button id="keys-pause" type="button" data-bind-command="pause" data-event-click="keybind.capture" data-menu-sound="change"><span class="bind-label">Pause Game</span><span class="bind-key"></span></button>
+          <button id="keys-score" type="button" data-bind-command="score" data-event-click="keybind.capture" data-menu-sound="change"><span class="bind-label">Scoreboard</span><span class="bind-key"></span></button>
+          <button id="keys-chat" type="button" data-bind-command="messagemode" data-event-click="keybind.capture" data-menu-sound="change"><span class="bind-label">Chat</span><span class="bind-key"></span></button>
+        </section>
+        </div>
+      </section>
+
+      <footer class="actions" id="keys-actions">
+        <button id="keys-legacy" type="button" data-command="pushmenu legacykeys" data-route-target="legacykeys" data-menu-sound="open">Legacy Keys</button>
+        <button id="keys-back" type="button" data-command="ui.back" data-menu-sound="cancel">Back</button>
+      </footer>
+    </div>
+  </body>
+</rml>

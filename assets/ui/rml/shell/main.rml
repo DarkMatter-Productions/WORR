@@ -1,0 +1,34 @@
+<rml>
+  <head>
+    <title>WORR Main Menu</title>
+    <link type="text/rcss" href="../common/theme/base.rcss" />
+    <link type="text/rcss" href="../common/theme/shell.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
+  </head>
+  <body id="shell-main" data-route-id="main" data-route-group="shell" data-route-version="1" data-document-status="first-round-scaffold" data-menu-music="menu" data-menu-sound-open="open">
+    <div class="screen shell-screen" id="main-screen">
+      <div class="menu-header">
+        <h1>WORR</h1>
+      </div>
+
+      <div class="menu-stack" id="main-menu-stack" data-component="common.components.menu_frame">
+        <img id="main-logo" src="/art/logo.png" />
+        <div class="menu-actions" id="main-menu-actions">
+          <button id="main-singleplayer" type="button" data-command="pushmenu singleplayer" data-route-target="singleplayer" data-menu-sound="open">Single Player</button>
+          <button id="main-multiplayer" type="button" data-command="pushmenu multiplayer" data-route-target="multiplayer" data-menu-sound="open">Multiplayer</button>
+          <button id="main-options" type="button" data-command="pushmenu options" data-route-target="options" data-menu-sound="open">Options</button>
+          <button id="main-quit" class="ui-button-danger" type="button" data-command="ui.popup" data-route-target="quit_confirm" data-menu-sound="alert">Quit</button>
+        </div>
+        <p id="main-player-name"><span class="label">Player:</span> <span class="value" data-bind-cvar="name">Player</span></p>
+      </div>
+
+      <div class="menu-footer" id="main-menu-footer">
+        <button id="main-close" type="button" data-command="ui.close" data-menu-sound="cancel">Close</button>
+        <div id="main-version">
+          <p id="main-version-title">DEVELOPMENT VERSION</p>
+          <p id="main-version-value" data-bind-cvar="version">WORR</p>
+        </div>
+      </div>
+    </div>
+  </body>
+</rml>

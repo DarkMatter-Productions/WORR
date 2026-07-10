@@ -1,0 +1,11 @@
+<!-- Starter selector-list template for episode, unit, and option lists. -->
+<templates>
+  <template name="worr-selector-list">
+    <div class="worr-selector-list" data-model="{{model}}" data-contract-id="{{id}}">
+      <label for="{{id}}-select">{{label}}</label>
+      <select id="{{id}}-select" data-model="{{model}}">
+        <option data-for="option : options" value="{{option.value}}">{{option.label}}</option>
+      </select>
+    </div>
+  </template>
+</templates>

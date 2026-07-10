@@ -1,0 +1,31 @@
+<rml>
+  <head>
+    <title>WORR RmlUi Runtime Smoke</title>
+    <link type="text/rcss" href="runtime_smoke.rcss" />
+  </head>
+  <body id="core-runtime-smoke" data-route-id="core.runtime_smoke" data-route-version="1">
+    <div class="screen" id="runtime-smoke-screen">
+      <h1>WORR RmlUi Runtime Smoke</h1>
+      <p id="runtime-smoke-summary">
+        This starter document verifies that the future RmlUi runtime can load a
+        core route, create a document, and expose close and back command
+        targets.
+      </p>
+
+      <div class="contract" id="runtime-smoke-contract">
+        <h2>Contract Seed</h2>
+        <ul>
+          <li><span class="label">Route:</span> <span class="value">core.runtime_smoke</span></li>
+          <li><span class="label">Document:</span> <span class="value">core/runtime_smoke.rml</span></li>
+          <li><span class="label">Owner:</span> <span class="value">Agent 1 platform runtime</span></li>
+          <li><span class="label">Data model:</span> <span class="value">none required for first load smoke</span></li>
+        </ul>
+      </div>
+
+      <div class="actions" id="runtime-smoke-actions">
+        <button id="runtime-smoke-back" type="button" data-command="ui.back" data-menu-sound="cancel">Back</button>
+        <button id="runtime-smoke-close" type="button" data-command="ui.close" data-menu-sound="cancel">Close</button>
+      </div>
+    </div>
+  </body>
+</rml>

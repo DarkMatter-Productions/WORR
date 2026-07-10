@@ -1,0 +1,138 @@
+/*
+  Shared image-grid selector styles for WORR RmlUi.
+  Content pages can import this for crosshair and other visual selectors.
+*/
+
+.worr-image-grid-selector {
+  display: block;
+  width: 100%;
+}
+
+.worr-image-grid-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.worr-image-grid-title {
+  color: #f3eee4;
+  font-size: 18px;
+}
+
+.worr-image-grid-value {
+  color: #ffd967;
+  font-size: 14px;
+}
+
+.worr-image-grid-hint {
+  margin-top: 4px;
+  margin-bottom: 10px;
+  color: #c9beb0;
+  font-size: 13px;
+}
+
+.worr-image-grid-items {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.worr-image-grid-item {
+  width: 112px;
+  min-height: 124px;
+  padding: 6px;
+  margin-right: 8px;
+  margin-bottom: 8px;
+  color: #f3eee4;
+  background-color: #1b1916;
+  border-width: 1px;
+  border-color: #756a5d;
+  transition: background-color border-color color 0.12s cubic-out;
+}
+
+.worr-image-grid-item:hover {
+  background-color: #332d23;
+}
+
+.worr-image-grid-item:focus {
+  background-color: #332d23;
+  border-color: #ffd967;
+}
+
+.worr-image-grid-item-selected {
+  background-color: #332d23;
+  border-color: #ffd967;
+}
+
+.worr-image-grid-thumb {
+  width: 96px;
+  height: 72px;
+  background-color: #080706;
+  border-width: 1px;
+  border-color: #332d23;
+  overflow: hidden;
+}
+
+.worr-image-grid-image {
+  width: 96px;
+  height: 72px;
+}
+
+.worr-image-grid-fallback {
+  margin-top: 25px;
+  text-align: center;
+  color: #c9beb0;
+  font-size: 12px;
+}
+
+.worr-image-grid-label {
+  margin-top: 6px;
+  min-height: 28px;
+  text-align: center;
+  color: #f3eee4;
+  font-size: 13px;
+}
+
+.worr-image-grid-selected {
+  margin-top: 10px;
+}
+
+.worr-image-grid-selected-label {
+  color: #f3eee4;
+  font-size: 15px;
+}
+
+.worr-image-grid-selected-detail {
+  margin-top: 2px;
+  color: #c9beb0;
+  font-size: 13px;
+}
+
+.worr-image-grid-actions {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.worr-image-grid-action {
+  min-width: 112px;
+  padding: 6px 10px;
+  margin-right: 8px;
+  margin-bottom: 8px;
+  color: #f3eee4;
+  background-color: #27231d;
+  border-width: 1px;
+  border-color: #756a5d;
+  transition: background-color border-color color 0.12s cubic-out;
+}
+
+.worr-image-grid-action:hover {
+  background-color: #332d23;
+  border-color: #b99b5b;
+  color: #ffd967;
+}
+
+.worr-image-grid-action:focus {
+  background-color: #332d23;
+  border-color: #ffd967;
+  color: #ffd967;
+}

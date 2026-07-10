@@ -1,0 +1,59 @@
+{
+  "contract": "worr.rml.controller.command_action.mock",
+  "version": 1,
+  "mock": true,
+  "category": "command_action",
+  "task_ids": ["FR-09-T05", "FR-09-T07", "FR-09-T08", "DV-04-T02"],
+  "routes": ["shell/options/mock", "settings/video/mock", "multiplayer/session/mock"],
+  "model": "ui.commands",
+  "component_refs": [
+    "common/components/controls.rml#worr-command-button",
+    "common/components/command_button.rml#worr-command-button"
+  ],
+  "source_boundary": {
+    "presentation_owner": "client_rml",
+    "command_provider": "client_command_bridge",
+    "state_provider": "client_or_cgame_bridge"
+  },
+  "bridge_contract": {
+    "dispatch_event": "command.dispatch",
+    "completed_event": "command.completed",
+    "failed_event": "command.failed",
+    "source_attribute": "data-command",
+    "payload_field": "payload"
+  },
+  "commands": [
+    {
+      "id": "settings.apply",
+      "label": "Apply",
+      "event": "command.dispatch",
+      "command": "vid_restart",
+      "enabled_if": "dirty_cvars.count > 0",
+      "requires_selection": false,
+      "confirm": false
+    },
+    {
+      "id": "ui.back",
+      "label": "Back",
+      "event": "command.dispatch",
+      "command": "popmenu",
+      "enabled_if": "navigation.can_go_back",
+      "requires_selection": false,
+      "confirm": false
+    },
+    {
+      "id": "session.disconnect",
+      "label": "Disconnect",
+      "event": "command.dispatch",
+      "command": "disconnect",
+      "enabled_if": "session.connected",
+      "requires_selection": false,
+      "confirm": true
+    }
+  ],
+  "result": {
+    "state": "idle",
+    "last_command": "",
+    "message": ""
+  }
+}

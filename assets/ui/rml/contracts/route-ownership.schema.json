@@ -1,0 +1,106 @@
+{
+  "$schema": "worr.hand_authored_json_schema_subset.v1",
+  "$id": "worr.rml.route_ownership.v1",
+  "title": "WORR RmlUi Route Ownership Metadata",
+  "description": "Supplemental route metadata contract for mapping RmlUi route IDs to legacy/current menu surfaces, source ownership, migration phase, task IDs, and controller scope.",
+  "version": 1,
+  "task_ids": [
+    "FR-09-T01",
+    "FR-09-T06",
+    "FR-09-T07",
+    "FR-09-T08",
+    "FR-03-T08"
+  ],
+  "phase_values": {
+    "starter": "The source RML document and static route metadata exist, but runtime opening, live controllers, and parity evidence are still pending.",
+    "controller_stub": "The route has an explicit controller/data-model stub ready for bridge work, but it has not been validated against the live RmlUi runtime.",
+    "runtime_stub": "The route can be opened by the RmlUi runtime path for smoke validation, but functional parity is not yet proven.",
+    "parity_pending": "The route opens through RmlUi and has live bridge coverage, but legacy/current parity evidence is still incomplete.",
+    "parity_ready": "The route has accepted parity evidence and is ready for cutover consideration."
+  },
+  "field_notes": {
+    "legacy_surface": "Human-readable source menu/surface name from the current JSON, code-driven, or legacy menu path. Runtime-only routes may use 'none'.",
+    "current_surface": "Human-readable RmlUi route surface name without changing the canonical route id or document path.",
+    "source_owner": "Lowercase token naming the current owner/provider of the source behavior.",
+    "migration_phase": "One of the shared phase_values keys.",
+    "task_ids": "Project task IDs that explain why this route is tracked.",
+    "controller_scope": "Lowercase token naming the intended controller/data bridge scope."
+  },
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema",
+    "routes"
+  ],
+  "properties": {
+    "ownership_contract": {
+      "type": "string"
+    },
+    "routes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/route_ownership"
+      }
+    }
+  },
+  "$defs": {
+    "route_ownership": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "document",
+        "legacy_surface",
+        "current_surface",
+        "source_owner",
+        "migration_phase",
+        "task_ids",
+        "controller_scope"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "document": {
+          "type": "string",
+          "minLength": 1
+        },
+        "legacy_surface": {
+          "type": "string",
+          "minLength": 1
+        },
+        "current_surface": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_owner": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-z0-9_.-]+$"
+        },
+        "migration_phase": {
+          "type": "string",
+          "enum": [
+            "starter",
+            "controller_stub",
+            "runtime_stub",
+            "parity_pending",
+            "parity_ready"
+          ]
+        },
+        "task_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "controller_scope": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-z0-9_.-]+$"
+        }
+      }
+    }
+  }
+}

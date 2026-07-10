@@ -1,0 +1,34 @@
+<rml>
+  <head>
+    <title>WORR MyMap</title>
+    <link type="text/rcss" href="../common/theme/base.rcss" />
+    <link type="text/rcss" href="../common/theme/session.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
+  </head>
+  <body id="session-mymap-main" data-route-id="mymap_main" data-route-group="session" data-route-version="1" data-document-status="round2-scaffold" data-session-owner="sgame" data-menu-music="menu" data-menu-sound-open="open">
+    <div class="screen compact-screen session-screen" id="mymap-main-screen">
+      <header class="page-header">
+        <h1>MyMap</h1>
+        <p id="mymap-main-summary">
+          Pick a preferred map and adjust any map request flags.
+        </p>
+      </header>
+
+      <section class="content" id="mymap-main-content" data-model="session.mymap" data-owner-boundary="sgame-published-cvars">
+        <p id="mymap-status" class="status-message" data-bind="cvars.ui_mymap_status" data-bind-cvar="ui_mymap_status" data-visible-if="ui_mymap_status">
+          No MyMap request is active.
+        </p>
+        <p id="mymap-flags-summary" data-bind="cvars.ui_mymap_flags_summary" data-bind-cvar="ui_mymap_flags_summary" data-visible-if="ui_mymap_flags_summary">
+          Flags: Default
+        </p>
+      </section>
+
+      <footer class="actions" id="mymap-main-actions">
+        <button id="mymap-select" type="button" data-command="worr_mymap_select" data-enable-if="ui_mymap_can_select=1" data-menu-sound="confirm">Select Map</button>
+        <button id="mymap-flags" type="button" data-command="worr_mymap_flags" data-enable-if="ui_mymap_can_flags=1" data-menu-sound="open">Flags</button>
+        <button id="mymap-clear" type="button" data-command="worr_mymap_clear" data-enable-if="ui_mymap_has_flags=1" data-menu-sound="change">Clear Flags</button>
+        <button id="mymap-back" type="button" data-command="popmenu" data-menu-sound="cancel">Return</button>
+      </footer>
+    </div>
+  </body>
+</rml>

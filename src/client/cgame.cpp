@@ -29,6 +29,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 static cvar_t   *cl_alpha;
 
 static void CG_AddCommandString(const char *string);
+static void CG_InsertCommandString(const char *string);
 static const char* CG_Localize(const char *base, const char **args, size_t num_args);
 
 static bool CGX_IsExtendedServer(void)
@@ -308,6 +309,7 @@ static cgame_ui_import_t cg_ui_import = {
     .Sys_Milliseconds = Sys_Milliseconds,
 
     .AddCommandString = CG_AddCommandString,
+    .InsertCommandString = CG_InsertCommandString,
     .Cmd_Argc = Cmd_Argc,
     .Cmd_Argv = Cmd_Argv,
     .Cmd_ArgvBuffer = Cmd_ArgvBuffer,
@@ -493,6 +495,13 @@ static void CG_AddCommandString(const char *string)
     if (!strcmp(string, "menu_loadgame\n"))
         string = "pushmenu loadgame\n";
     Cbuf_AddText(&cmd_buffer, string);
+}
+
+static void CG_InsertCommandString(const char *string)
+{
+    if (!strcmp(string, "menu_loadgame\n"))
+        string = "pushmenu loadgame\n";
+    Cbuf_InsertText(&cmd_buffer, string);
 }
 
 static qhandle_t CG_R_RegisterSkin(const char *name)

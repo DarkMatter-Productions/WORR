@@ -1,0 +1,27 @@
+<rml>
+  <head>
+    <title>WORR Deathmatch Welcome</title>
+    <link type="text/rcss" href="../common/theme/base.rcss" />
+    <link type="text/rcss" href="../common/theme/session.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
+  </head>
+  <body id="session-dm-welcome" data-route-id="dm_welcome" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-session-owner="sgame" data-menu-music="menu" data-menu-sound-open="open">
+    <div class="screen compact-screen session-screen" id="dm-welcome-screen" data-close-command="forcemenuoff; worr_welcome_continue">
+      <header class="page-header" id="dm-welcome-header" data-model="session.dm_welcome" data-owner-boundary="sgame-published-cvars">
+        <p class="session-badge" id="dm-welcome-prefix">Welcome to</p>
+        <h1 id="dm-welcome-title" data-bind="cvars.ui_welcome_title">WORR</h1>
+      </header>
+
+      <section class="session-panel" id="dm-welcome-content" data-model="session.dm_welcome" data-owner-boundary="sgame-published-cvars">
+        <h2 id="dm-welcome-hostname" data-bind="cvars.ui_welcome_hostname" data-visible-if="ui_welcome_hostname">Server Name</h2>
+        <p id="dm-welcome-motd" class="ui-localized-copy" data-bind="cvars.ui_welcome_motd" data-visible-if="ui_welcome_motd">
+          No message of the day.
+        </p>
+      </section>
+
+      <footer class="actions" id="dm-welcome-actions">
+        <button id="dm-welcome-continue" type="button" data-command="forcemenuoff; worr_welcome_continue" data-menu-sound="confirm">Continue</button>
+      </footer>
+    </div>
+  </body>
+</rml>

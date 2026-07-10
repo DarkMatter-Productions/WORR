@@ -1,0 +1,224 @@
+/*
+ * WORR RmlUi accessibility hook contract.
+ *
+ * Import last so test and user-preference classes can override page themes.
+ * Runtime support is still pending; these classes define the contract for the
+ * future bridge and for smoke documents that exercise accessibility states.
+ */
+
+body.ui-a11y-large-text,
+.ui-a11y-large-text
+{
+	font-size: 21px;
+	line-height: 1.35;
+}
+
+.ui-a11y-large-text button,
+.ui-a11y-large-text .ui-button,
+.ui-a11y-large-text input,
+.ui-a11y-large-text select,
+.ui-a11y-large-text textarea,
+.ui-a11y-large-text .ui-field
+{
+	min-height: 48px;
+	font-size: 21px;
+	line-height: 1.2;
+}
+
+body.ui-high-visibility,
+.ui-high-visibility,
+body.ui-a11y-high-visibility,
+.ui-a11y-high-visibility
+{
+	background-color: #000000;
+	color: #ffffff;
+}
+
+.ui-a11y-high-visibility .ui-readable-backplate,
+.ui-high-visibility .ui-readable-backplate
+{
+	background-color: #000000;
+	color: #ffffff;
+	border-width: 2px;
+	border-color: #ffffff;
+}
+
+body.ui-reduced-motion,
+.ui-reduced-motion,
+body.ui-a11y-reduced-motion,
+.ui-a11y-reduced-motion
+{
+	color: #f3eee4;
+}
+
+.ui-reduced-motion *,
+.ui-a11y-reduced-motion *
+{
+	animation: none;
+	transition: none;
+}
+
+.ui-motion-safe
+{
+}
+
+.ui-reduced-motion .ui-motion-safe,
+.ui-a11y-reduced-motion .ui-motion-safe
+{
+}
+
+.ui-long-string,
+.ui-a11y-long-string,
+.ui-localized-copy,
+.ui-player-name,
+.ui-server-name,
+.ui-map-name,
+.ui-path,
+.ui-command-line
+{
+	max-width: 100%;
+	white-space: normal;
+	word-break: break-word;
+}
+
+.ui-path,
+.ui-command-line,
+.ui-monospace-wrap
+{
+	font-family: "WORR Mono";
+	word-break: break-all;
+}
+
+.ui-no-truncate,
+.ui-a11y-no-truncate
+{
+	overflow: visible;
+	white-space: normal;
+	text-overflow: clip;
+	word-break: break-word;
+}
+
+.ui-safe-label
+{
+	min-width: 0px;
+	max-width: 100%;
+	white-space: normal;
+	word-break: break-word;
+}
+
+.ui-readable-preview,
+.ui-preview-readable,
+.ui-a11y-readable-overlay
+{
+	padding: 8px;
+	background-color: #000000;
+	color: #f3eee4;
+	border-width: 2px;
+	border-color: #756a5d;
+	border-radius: 3px;
+	white-space: normal;
+	word-break: break-word;
+}
+
+.ui-focus-ring,
+.ui-focus-test,
+.ui-a11y-focus-test
+{
+	border-width: 2px;
+	border-color: #ffd967;
+	background-color: #332d23;
+	color: #ffd967;
+}
+
+.ui-focus-test *,
+.ui-a11y-focus-test *
+{
+	tab-index: auto;
+	nav: auto;
+	focus: auto;
+}
+
+.ui-force-focus-visible,
+.ui-a11y-force-focus-visible
+{
+	background-color: #332d23;
+	border-width: 2px;
+	border-color: #ffd967;
+	color: #ffd967;
+}
+
+.ui-focus-debug,
+.ui-a11y-focus-debug
+{
+	border-width: 2px;
+	border-color: #7ed4d8;
+}
+
+.ui-focus-debug:focus,
+.ui-focus-debug:focus-visible,
+.ui-a11y-focus-debug:focus,
+.ui-a11y-focus-debug:focus-visible
+{
+	border-width: 4px;
+	border-color: #ffd967;
+	background-color: #332d23;
+	color: #ffd967;
+}
+
+.ui-input-target,
+.ui-a11y-input-target
+{
+	min-width: 44px;
+	min-height: 44px;
+}
+
+.ui-a11y-hidden
+{
+	display: none;
+}
+
+.ui-a11y-visible
+{
+	display: block;
+}
+
+.ui-a11y-status
+{
+	min-height: 34px;
+	padding: 8px 12px;
+	background-color: #1b1916;
+	color: #f3eee4;
+	border-width: 2px;
+	border-color: #756a5d;
+	border-radius: 3px;
+	white-space: normal;
+	word-break: break-word;
+}
+
+.ui-a11y-status.is-assertive
+{
+	color: #ffd967;
+	border-color: #ffd967;
+}
+
+.ui-high-visibility .ui-focus-debug,
+.ui-a11y-high-visibility .ui-focus-debug,
+.ui-high-visibility .ui-a11y-focus-debug,
+.ui-a11y-high-visibility .ui-a11y-focus-debug
+{
+	border-color: #00ffff;
+}
+
+.ui-high-visibility .ui-focus-debug:focus,
+.ui-high-visibility .ui-focus-debug:focus-visible,
+.ui-a11y-high-visibility .ui-focus-debug:focus,
+.ui-a11y-high-visibility .ui-focus-debug:focus-visible,
+.ui-high-visibility .ui-a11y-focus-debug:focus,
+.ui-high-visibility .ui-a11y-focus-debug:focus-visible,
+.ui-a11y-high-visibility .ui-a11y-focus-debug:focus,
+.ui-a11y-high-visibility .ui-a11y-focus-debug:focus-visible
+{
+	border-color: #ffff00;
+	background-color: #202000;
+	color: #ffff00;
+}

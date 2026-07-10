@@ -1,0 +1,211 @@
+/*
+ * Single-player starter rules for episode/unit/save-load menu scaffolds.
+ */
+
+.singleplayer-screen
+{
+	display: flex;
+	flex-direction: column;
+	min-height: 0px;
+}
+
+#gameflags-settings-form
+{
+	width: 604px;
+	flex: 1 1 auto;
+	height: auto;
+	overflow: auto;
+}
+
+#gameflags-settings-form .setting-row
+{
+	width: 584px;
+}
+
+#gameflags-settings-form .settings-section
+{
+	width: 592px;
+}
+
+#gameflags-settings-form input
+{
+	width: 36px;
+}
+
+#startserver-actions button
+{
+	width: 248px;
+	min-width: 248px;
+	height: 34px;
+	min-height: 34px;
+	margin-bottom: 6px;
+}
+
+.selector-section
+{
+	display: inline-block;
+	vertical-align: top;
+	width: 272px;
+	max-width: 272px;
+	min-height: 132px;
+	margin-right: 8px;
+	margin-bottom: 10px;
+	padding: 10px 12px;
+	background-color: #171511;
+	border-width: 1px;
+	border-color: #332d23;
+	border-left-width: 3px;
+	border-left-color: #332d23;
+	border-radius: 5px;
+	transition: background-color border-color 0.12s cubic-out;
+}
+
+.selector-section label
+{
+	display: block;
+	width: 248px;
+	margin-bottom: 5px;
+	color: #c9beb0;
+	font-weight: bold;
+}
+
+.selector-section input,
+.selector-section select,
+.selector-section button
+{
+	width: 224px;
+	margin-bottom: 8px;
+}
+
+#singleplayer-menu-stack
+{
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	align-content: flex-start;
+	flex: 0 0 auto;
+	width: 604px;
+	min-width: 0px;
+	max-width: 100%;
+	height: auto;
+	max-height: 100%;
+	padding-right: 8px;
+	overflow: auto;
+}
+
+#singleplayer-save-load-actions
+{
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	width: 604px;
+	min-width: 0px;
+	max-width: 100%;
+	height: auto;
+	overflow: auto;
+}
+
+#singleplayer-save-load-actions button
+{
+	position: static;
+	box-sizing: border-box;
+	width: 288px;
+	min-width: 288px;
+	height: 34px;
+	min-height: 34px;
+	padding: 6px 12px;
+	margin-right: 16px;
+	margin-bottom: 8px;
+	background-color: #211e19;
+	border-left-width: 4px;
+	border-left-color: #4b4235;
+	border-radius: 5px;
+	text-align: left;
+}
+
+#singleplayer-save-load-actions button:hover,
+#singleplayer-save-load-actions button:focus
+{
+	background-color: #30291f;
+	border-color: #b99b5b;
+	border-left-color: #ffd967;
+}
+
+#skill-select-actions
+{
+	flex: 0 0 auto;
+	width: 360px;
+	max-width: 360px;
+}
+
+#skill-select-actions button
+{
+	flex: 0 0 auto;
+	width: 330px;
+	min-width: 330px;
+	min-height: 42px;
+	margin-bottom: 8px;
+}
+
+.save-slot-list
+{
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	position: static;
+	flex: 1 1 auto;
+	width: 604px;
+	height: 474px;
+	min-height: 0px;
+	max-width: 604px;
+	padding-right: 8px;
+	overflow: auto;
+}
+
+#loadgame-slot-list
+{
+	height: 414px;
+}
+
+#savegame-slot-list
+{
+	height: 336px;
+}
+
+.save-slot
+{
+	position: static;
+	flex: 0 0 auto;
+	width: 272px;
+	min-width: 272px;
+	height: auto;
+	min-height: 34px;
+	padding: 7px 12px;
+	background-color: #211e19;
+	border-left-width: 4px;
+	border-left-color: #4b4235;
+	border-radius: 5px;
+	font-size: 15px;
+	line-height: 1.1;
+	text-align: left;
+	margin-right: 8px;
+	margin-bottom: 8px;
+}
+
+.save-slot-autosave
+{
+	flex: 0 0 auto;
+	width: 568px;
+	min-width: 568px;
+	height: auto;
+	min-height: 36px;
+	color: #ffd967;
+}
+
+.menu-separator
+{
+	position: static;
+	flex: 0 0 auto;
+	height: 8px;
+	width: 568px;
+}

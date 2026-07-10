@@ -1,0 +1,49 @@
+<rml>
+  <head>
+    <title>WORR Tournament Info</title>
+    <link type="text/rcss" href="../common/theme/base.rcss" />
+    <link type="text/rcss" href="../common/theme/session.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
+  </head>
+  <body id="session-tourney-info" data-route-id="tourney_info" data-route-group="session" data-route-version="1" data-document-status="round3-scaffold" data-session-owner="sgame" data-open-command="worr_tourney_info" data-menu-music="menu" data-menu-sound-open="open">
+    <div class="screen compact-screen session-screen" id="tourney-info-screen">
+      <header class="page-header" id="tourney-info-header">
+        <h1>Tournament Info</h1>
+        <p id="tourney-info-summary">
+          Check format, roster, and veto guidance for the tournament.
+        </p>
+      </header>
+
+      <main class="session-flow" id="tourney-info-content" data-model="session.tournament.info" data-owner-boundary="sgame-published-state">
+        <section class="session-flow-step is-active" id="tourney-info-format">
+          <h2>Format</h2>
+          <p>Tournament format runs a match as a best-of set of games.</p>
+        </section>
+
+        <section class="session-flow-step" id="tourney-info-rosters">
+          <h2>Rosters</h2>
+          <p>Rosters are locked to the listed participants.</p>
+        </section>
+
+        <section class="session-flow-step" id="tourney-info-veto">
+          <h2>Veto</h2>
+          <p>
+            When everyone is ready, home picks or bans first. The decider game
+            is picked at random from what remains.
+          </p>
+        </section>
+
+        <section class="status-panel" id="tourney-info-status">
+          <h2>Live Updates</h2>
+          <p>
+            Use <span id="tourney-info-status-command" class="ui-command-line" data-command-ref="tourney_status" data-command="tourney_status">tourney_status</span> for current server status.
+          </p>
+        </section>
+      </main>
+
+      <footer class="actions" id="tourney-info-actions">
+        <button id="tourney-info-back" type="button" data-command="popmenu" data-menu-sound="cancel">Return</button>
+      </footer>
+    </div>
+  </body>
+</rml>

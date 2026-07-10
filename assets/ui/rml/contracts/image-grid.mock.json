@@ -1,0 +1,77 @@
+{
+  "contract": "worr.rml.image_grid.mock",
+  "version": 1,
+  "mock": true,
+  "task_ids": ["FR-09-T05", "FR-09-T07", "FR-03-T08", "DV-04-T02"],
+  "route": "settings/crosshair/mock",
+  "model": "settings.crosshair.image_grid",
+  "component_refs": [
+    "common/components/image-grid.rml#worr-image-grid-selector",
+    "common/components/image-grid.rml#worr-image-grid-item",
+    "common/components/controls.rml#worr-command-button"
+  ],
+  "source_boundary": {
+    "presentation_owner": "client_rml",
+    "image_provider": "client_or_cgame_asset_bridge",
+    "cvar_provider": "client_or_cgame_bridge",
+    "command_provider": "client_command_bridge"
+  },
+  "selector": {
+    "id": "crosshair_grid",
+    "label": "Crosshair",
+    "hint": "Pick the crosshair image used by the HUD.",
+    "cvar": "crosshair",
+    "value": "3",
+    "display_value": "Crosshair 3",
+    "columns": 4,
+    "selection_event": "image_grid.select",
+    "apply_event": "cvar.set"
+  },
+  "selected": {
+    "id": "crosshair_3",
+    "label": "Crosshair 3",
+    "detail": "Bound to cvar crosshair = 3."
+  },
+  "items": [
+    {
+      "id": "crosshair_1",
+      "value": "1",
+      "label": "Crosshair 1",
+      "image": "ui://crosshair/1",
+      "fallback": "1",
+      "selected": false,
+      "state_class": ""
+    },
+    {
+      "id": "crosshair_2",
+      "value": "2",
+      "label": "Crosshair 2",
+      "image": "ui://crosshair/2",
+      "fallback": "2",
+      "selected": false,
+      "state_class": ""
+    },
+    {
+      "id": "crosshair_3",
+      "value": "3",
+      "label": "Crosshair 3",
+      "image": "ui://crosshair/3",
+      "fallback": "3",
+      "selected": true,
+      "state_class": "worr-image-grid-item-selected"
+    },
+    {
+      "id": "crosshair_4",
+      "value": "4",
+      "label": "Crosshair 4",
+      "image": "ui://crosshair/4",
+      "fallback": "4",
+      "selected": false,
+      "state_class": ""
+    }
+  ],
+  "actions": [
+    { "id": "apply_crosshair", "label": "Apply", "event": "cvar.set", "command": "crosshair.apply" },
+    { "id": "reset_crosshair", "label": "Default", "event": "image_grid.reset", "command": "crosshair.default" }
+  ]
+}

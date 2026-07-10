@@ -1,0 +1,55 @@
+<rml>
+  <head>
+    <title>WORR Language Settings</title>
+    <link type="text/rcss" href="../common/theme/base.rcss" />
+    <link type="text/rcss" href="../common/theme/settings.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
+  </head>
+  <body id="settings-language" data-route-id="language" data-route-group="settings" data-route-version="1" data-document-status="scaffolded-round2" data-menu-music="menu" data-menu-sound-open="open">
+    <div class="screen settings-screen" id="language-screen">
+      <header class="menu-header">
+        <h1>Language</h1>
+      </header>
+
+      <main class="settings-form" id="language-settings-form" data-component="common.components.cvar_controls">
+        <section class="settings-section" id="language-locale-section">
+          <h2>Localization</h2>
+          <div class="setting-row" data-control="select" data-cvar="loc_language">
+            <span class="setting-widget-icon" data-widget="select"><img src="../common/icons/widgets/select.svg" /></span>
+            <label for="language-selection">Language</label>
+            <select id="language-selection" data-cvar="loc_language">
+              <option value="auto">Auto (System)</option>
+              <option value="english">English</option>
+              <option value="french">French</option>
+              <option value="german">German</option>
+              <option value="italian">Italian</option>
+              <option value="spanish">Spanish</option>
+              <option value="russian">Russian</option>
+              <option value="arabic">Arabic</option>
+              <option value="bulgarian">Bulgarian</option>
+              <option value="czech">Czech</option>
+              <option value="danish">Danish</option>
+              <option value="dutch">Dutch</option>
+              <option value="finnish">Finnish</option>
+              <option value="norwegian">Norwegian</option>
+              <option value="polish">Polish</option>
+              <option value="portuguese-br">Portuguese (Brazil)</option>
+              <option value="portuguese-pt">Portuguese (Portugal)</option>
+              <option value="swedish">Swedish</option>
+              <option value="turkish">Turkish</option>
+              <option value="chinese-traditional">Chinese (Traditional)</option>
+              <option value="chinese-simplified">Chinese (Simplified)</option>
+              <option value="japanese">Japanese</option>
+              <option value="korean">Korean</option>
+            </select>
+          </div>
+        </section>
+      </main>
+
+      <footer class="menu-footer" id="language-menu-footer">
+        <button id="language-back" type="button" data-command="ui.back" data-menu-sound="cancel">Back</button>
+        <button id="language-close" type="button" data-command="ui.close" data-menu-sound="cancel">Close</button>
+      </footer>
+    </div>
+  </body>
+</rml>

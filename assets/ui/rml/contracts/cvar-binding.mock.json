@@ -1,0 +1,80 @@
+{
+  "contract": "worr.rml.controller.cvar_binding.mock",
+  "version": 1,
+  "mock": true,
+  "category": "cvar_binding",
+  "task_ids": ["FR-09-T05", "FR-09-T07", "FR-09-T08", "DV-04-T02"],
+  "route": "settings/video/mock",
+  "model": "settings.video.cvars",
+  "component_refs": [
+    "common/components/controls.rml#worr-cvar-toggle",
+    "common/components/controls.rml#worr-cvar-slider",
+    "common/components/controls.rml#worr-cvar-select"
+  ],
+  "source_boundary": {
+    "presentation_owner": "client_rml",
+    "read_provider": "client_cvar_bridge",
+    "write_provider": "client_command_bridge",
+    "engine_owner": "client_or_cgame_cvar"
+  },
+  "bridge_contract": {
+    "read_event": "cvar.read",
+    "write_event": "cvar.set",
+    "changed_event": "cvar.changed",
+    "value_field": "value",
+    "dirty_field": "dirty",
+    "write_policy": "set_by_name"
+  },
+  "bindings": [
+    {
+      "id": "fullscreen",
+      "type": "bool",
+      "control": "toggle",
+      "cvar": "r_fullscreen",
+      "label": "Fullscreen",
+      "value": true,
+      "default_value": false,
+      "archive": true,
+      "requires_restart": true,
+      "dirty": false
+    },
+    {
+      "id": "gamma",
+      "type": "float",
+      "control": "slider",
+      "cvar": "r_gamma",
+      "label": "Gamma",
+      "value": 1.0,
+      "default_value": 1.0,
+      "min": 0.5,
+      "max": 1.5,
+      "step": 0.05,
+      "display_value": "1.00",
+      "archive": true,
+      "requires_restart": false,
+      "dirty": false
+    },
+    {
+      "id": "renderer",
+      "type": "enum",
+      "control": "select",
+      "cvar": "r_renderer",
+      "label": "Renderer",
+      "value": "vk",
+      "default_value": "vk",
+      "archive": true,
+      "requires_restart": true,
+      "dirty": false,
+      "options": [
+        { "value": "gl", "label": "OpenGL" },
+        { "value": "vk", "label": "Vulkan" },
+        { "value": "rtx", "label": "Vulkan RTX" }
+      ]
+    }
+  ],
+  "states": {
+    "dirty_count": 0,
+    "requires_restart_count": 0,
+    "status_text": "Video settings match the current cvar state."
+  }
+}

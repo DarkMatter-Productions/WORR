@@ -1,0 +1,40 @@
+<rml>
+  <head>
+    <title>WORR Load Game</title>
+    <link type="text/rcss" href="../common/theme/base.rcss" />
+    <link type="text/rcss" href="../common/theme/singleplayer.rcss" />
+    <link type="text/rcss" href="../common/theme/accessibility.rcss" />
+  </head>
+  <body id="singleplayer-loadgame" data-route-id="loadgame" data-route-group="singleplayer" data-route-version="1" data-document-status="scaffolded-round3" data-banner="m_banner_load_game" data-menu-music="menu" data-menu-sound-open="open">
+    <div class="screen singleplayer-screen" id="loadgame-screen">
+      <header class="menu-header">
+        <h1>Load Game</h1>
+      </header>
+
+      <main class="save-slot-list" id="loadgame-slot-list" data-component="common.components.save_load" data-model="singleplayer.loadgame_slots" data-action-type="loadgame">
+        <button class="save-slot save-slot-autosave" id="loadgame-save0" type="button" data-action-type="loadgame" data-slot="save0" data-legacy-menu-command="loadgame save0" data-command="load &quot;save0&quot;" data-menu-sound="confirm">Autosave</button>
+        <div class="menu-separator" id="loadgame-autosave-separator" data-source-menu-type="blank"></div>
+        <button class="save-slot" id="loadgame-save1" type="button" data-action-type="loadgame" data-slot="save1" data-legacy-menu-command="loadgame save1" data-command="load &quot;save1&quot;" data-menu-sound="confirm">Save 1</button>
+        <button class="save-slot" id="loadgame-save2" type="button" data-action-type="loadgame" data-slot="save2" data-legacy-menu-command="loadgame save2" data-command="load &quot;save2&quot;" data-menu-sound="confirm">Save 2</button>
+        <button class="save-slot" id="loadgame-save3" type="button" data-action-type="loadgame" data-slot="save3" data-legacy-menu-command="loadgame save3" data-command="load &quot;save3&quot;" data-menu-sound="confirm">Save 3</button>
+        <button class="save-slot" id="loadgame-save4" type="button" data-action-type="loadgame" data-slot="save4" data-legacy-menu-command="loadgame save4" data-command="load &quot;save4&quot;" data-menu-sound="confirm">Save 4</button>
+        <button class="save-slot" id="loadgame-save5" type="button" data-action-type="loadgame" data-slot="save5" data-legacy-menu-command="loadgame save5" data-command="load &quot;save5&quot;" data-menu-sound="confirm">Save 5</button>
+        <button class="save-slot" id="loadgame-save6" type="button" data-action-type="loadgame" data-slot="save6" data-legacy-menu-command="loadgame save6" data-command="load &quot;save6&quot;" data-menu-sound="confirm">Save 6</button>
+        <button class="save-slot" id="loadgame-save7" type="button" data-action-type="loadgame" data-slot="save7" data-legacy-menu-command="loadgame save7" data-command="load &quot;save7&quot;" data-menu-sound="confirm">Save 7</button>
+        <button class="save-slot" id="loadgame-save8" type="button" data-action-type="loadgame" data-slot="save8" data-legacy-menu-command="loadgame save8" data-command="load &quot;save8&quot;" data-menu-sound="confirm">Save 8</button>
+        <button class="save-slot" id="loadgame-save9" type="button" data-action-type="loadgame" data-slot="save9" data-legacy-menu-command="loadgame save9" data-command="load &quot;save9&quot;" data-menu-sound="confirm">Save 9</button>
+        <button class="save-slot" id="loadgame-save10" type="button" data-action-type="loadgame" data-slot="save10" data-legacy-menu-command="loadgame save10" data-command="load &quot;save10&quot;" data-menu-sound="confirm">Save 10</button>
+        <button class="save-slot" id="loadgame-save11" type="button" data-action-type="loadgame" data-slot="save11" data-legacy-menu-command="loadgame save11" data-command="load &quot;save11&quot;" data-menu-sound="confirm">Save 11</button>
+        <button class="save-slot" id="loadgame-save12" type="button" data-action-type="loadgame" data-slot="save12" data-legacy-menu-command="loadgame save12" data-command="load &quot;save12&quot;" data-menu-sound="confirm">Save 12</button>
+        <button class="save-slot" id="loadgame-save13" type="button" data-action-type="loadgame" data-slot="save13" data-legacy-menu-command="loadgame save13" data-command="load &quot;save13&quot;" data-menu-sound="confirm">Save 13</button>
+        <button class="save-slot" id="loadgame-save14" type="button" data-action-type="loadgame" data-slot="save14" data-legacy-menu-command="loadgame save14" data-command="load &quot;save14&quot;" data-menu-sound="confirm">Save 14</button>
+        <button class="save-slot" id="loadgame-save15" type="button" data-action-type="loadgame" data-slot="save15" data-legacy-menu-command="loadgame save15" data-command="load &quot;save15&quot;" data-menu-sound="confirm">Save 15</button>
+      </main>
+
+      <footer class="menu-footer" id="loadgame-menu-footer">
+        <button id="loadgame-back" type="button" data-command="ui.back" data-menu-sound="cancel">Back</button>
+        <button id="loadgame-close" type="button" data-command="ui.close" data-menu-sound="cancel">Close</button>
+      </footer>
+    </div>
+  </body>
+</rml>

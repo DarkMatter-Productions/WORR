@@ -1,0 +1,147 @@
+/*
+  Shared keybind capture styles for WORR RmlUi.
+  The selectors are presentation-only; capture behavior belongs to controllers.
+*/
+
+.worr-keybind-list {
+  display: block;
+  width: 100%;
+}
+
+.worr-keybind-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.worr-keybind-title {
+  color: #f3eee4;
+  font-size: 18px;
+}
+
+.worr-keybind-toolbar-action,
+.worr-keybind-conflict-action {
+  min-width: 120px;
+  padding: 6px 10px;
+  color: #f8f2e6;
+  background-color: #27231d;
+  border-width: 2px;
+  border-color: #756a5d;
+  decorator: image(../skins/widgets/button-normal.svg);
+}
+
+.worr-keybind-status {
+  min-height: 22px;
+  margin-bottom: 8px;
+  color: #ffd967;
+  font-size: 13px;
+}
+
+.worr-keybind-group {
+  display: block;
+  margin-top: 12px;
+}
+
+.worr-keybind-group-title {
+  padding-bottom: 4px;
+  color: #ffd967;
+  font-size: 15px;
+  border-bottom-width: 1px;
+  border-bottom-color: #332d23;
+}
+
+.worr-keybind-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+  padding: 6px 0;
+  border-bottom-width: 1px;
+  border-bottom-color: #332d23;
+}
+
+.worr-keybind-label-block {
+  display: block;
+  width: 42%;
+}
+
+.worr-keybind-label {
+  color: #f3eee4;
+  font-size: 15px;
+}
+
+.worr-keybind-hint {
+  margin-top: 2px;
+  color: #c9beb0;
+  font-size: 12px;
+}
+
+.worr-keybind-slots {
+  display: flex;
+  justify-content: flex-end;
+  width: 56%;
+}
+
+.worr-keybind-slot {
+  width: 120px;
+  padding: 6px 8px;
+  margin-left: 6px;
+  text-align: center;
+  color: #f8f2e6;
+  background-color: #1b1916;
+  border-width: 2px;
+  border-color: #756a5d;
+  decorator: image(../skins/widgets/textbox-normal.svg);
+}
+
+.worr-keybind-slot:hover,
+.worr-keybind-clear:hover,
+.worr-keybind-toolbar-action:hover,
+.worr-keybind-conflict-action:hover {
+  background-color: #332d23;
+  border-color: #b99b5b;
+  color: #ffd967;
+  decorator: image(../skins/widgets/button-hover.svg);
+}
+
+.worr-keybind-slot:focus,
+.worr-keybind-clear:focus,
+.worr-keybind-toolbar-action:focus,
+.worr-keybind-conflict-action:focus {
+  background-color: #332d23;
+  border-color: #ffd967;
+  color: #ffd967;
+  decorator: image(../skins/widgets/button-focus.svg);
+}
+
+.worr-keybind-clear {
+  width: 76px;
+  padding: 6px 8px;
+  margin-left: 6px;
+  text-align: center;
+  color: #c9beb0;
+  background-color: #1b1916;
+  border-width: 2px;
+  border-color: #5f5548;
+  decorator: image(../skins/widgets/button-normal.svg);
+}
+
+.worr-keybind-conflict {
+  margin-top: 12px;
+  padding: 10px;
+  background-color: #281b18;
+  border-width: 2px;
+  border-color: #895047;
+}
+
+.worr-keybind-conflict-title {
+  color: #ee6758;
+  font-size: 15px;
+}
+
+.worr-keybind-conflict-detail {
+  margin: 4px 0 8px;
+  color: #c9beb0;
+  font-size: 13px;
+}

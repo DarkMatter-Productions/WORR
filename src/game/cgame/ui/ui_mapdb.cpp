@@ -90,12 +90,19 @@ void UI_MapDB_Init()
     mapdb_level = Cvar_Get("_mapdb_level", "-1", 0);
     mapdb_type = Cvar_Get("_mapdb_type", "episode", 0);
 
+    // The cgame module carries its own copy of the map database; parse it
+    // here or _mapdb_run only ever sees an empty database and rejects
+    // every episode/level selection.
+    MapDB_Shutdown();
+    MapDB_Init();
+
     Cmd_AddCommand("_mapdb_run", MapDB_Run_f);
 }
 
 void UI_MapDB_Shutdown()
 {
     Cmd_RemoveCommand("_mapdb_run");
+    MapDB_Shutdown();
 }
 
 } // namespace ui
