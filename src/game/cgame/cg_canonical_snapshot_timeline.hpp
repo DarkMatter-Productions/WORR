@@ -29,6 +29,22 @@ constexpr std::uint32_t CG_CANONICAL_SNAPSHOT_TIMELINE_ENTITY_CAPACITY = 512u;
 constexpr std::uint32_t CG_CANONICAL_SNAPSHOT_TIMELINE_AREA_CAPACITY = 32u;
 constexpr std::uint32_t CG_CANONICAL_SNAPSHOT_TIMELINE_EVENT_CAPACITY =
     CG_CANONICAL_SNAPSHOT_TIMELINE_ENTITY_CAPACITY;
+constexpr std::uint32_t CG_CANONICAL_PREDICTION_SNAPSHOT_VERSION = 1u;
+
+/*
+ * One transactional, value-only prediction copy.  The records are the
+ * canonical snapshot/player ABIs themselves rather than a parallel state
+ * schema; the wrapper only binds them to one generation-checked timeline ref.
+ */
+struct cg_canonical_prediction_snapshot_v1 {
+    std::uint32_t struct_size;
+    std::uint32_t schema_version;
+    std::uint32_t active_epoch;
+    std::uint32_t reserved0;
+    worr_snapshot_timeline_ref_v1 ref;
+    worr_snapshot_v2 snapshot;
+    worr_snapshot_player_v2 player;
+};
 
 struct cg_canonical_snapshot_timeline_diagnostics_v1 {
     std::uint32_t struct_size;
@@ -46,7 +62,7 @@ struct cg_canonical_snapshot_timeline_diagnostics_v1 {
     worr_snapshot_timeline_clock_state_v1 clock;
 };
 
-const worr_cgame_snapshot_timeline_export_v1 *
+const worr_cgame_snapshot_timeline_export_v2 *
 CG_GetCanonicalSnapshotTimelineAPI();
 
 /* Safe to call before the engine discovers the extension. */
@@ -75,6 +91,10 @@ worr_snapshot_timeline_result_v1 CG_CanonicalSnapshotTimelineCopySnapshot(
 worr_snapshot_timeline_result_v1 CG_CanonicalSnapshotTimelineCopyPlayer(
     worr_snapshot_timeline_ref_v1 ref,
     worr_snapshot_player_v2 *player_out);
+worr_snapshot_timeline_result_v1
+CG_CanonicalSnapshotTimelineCopyPredictionSnapshot(
+    std::uint32_t snapshot_sequence,
+    cg_canonical_prediction_snapshot_v1 *snapshot_out);
 worr_snapshot_timeline_result_v1 CG_CanonicalSnapshotTimelineEventCursorBegin(
     worr_snapshot_timeline_event_cursor_v1 *cursor_out);
 worr_snapshot_timeline_result_v1 CG_CanonicalSnapshotTimelineEventNext(

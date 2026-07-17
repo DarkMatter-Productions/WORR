@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "task_id": "FR-01-T12",
+  "scenes": [
+    {
+      "id": "player_rim_occluded_bloom_emission",
+      "config": "renderer_parity/fr01_model_rim_occluded_bloom_emission.cfg",
+      "capture": "fr01_model_rim_occluded_bloom_emission.tga",
+      "crop": [400, 280, 280, 400],
+      "metrics": {
+        "pixel_threshold": 0,
+        "max_mean_absolute_rgb": [0, 0, 0],
+        "max_pixels_over_threshold_percent": 0
+      },
+      "probes": [
+        {
+          "name": "occluded_green_rim_and_bloom_absent",
+          "min_color": [0, 15, 0],
+          "max_color": [60, 255, 60],
+          "min_pixels_per_backend": 0,
+          "max_pixels_per_backend": 0,
+          "max_backend_count_delta_percent": 0,
+          "min_backend_intersection_over_union": 1
+        }
+      ]
+    }
+  ]
+}

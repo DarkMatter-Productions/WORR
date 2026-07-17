@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "task_id": "FR-01-T12",
+  "scenes": [
+    {
+      "id": "viewweapon_shell_bloom_after_refraction",
+      "config": "renderer_parity/fr01_viewweapon_shell_bloom_refraction.cfg",
+      "capture": "fr01_viewweapon_shell_bloom_refraction.tga",
+      "crop": [160, 120, 320, 400],
+      "metrics": {
+        "pixel_threshold": 1,
+        "max_mean_absolute_rgb": [0.6, 0.2, 0.6],
+        "max_pixels_over_threshold_percent": 0
+      }
+    }
+  ]
+}

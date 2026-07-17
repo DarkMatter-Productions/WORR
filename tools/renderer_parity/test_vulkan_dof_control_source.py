@@ -43,13 +43,20 @@ class VulkanDofControlSourceTests(unittest.TestCase):
     def test_native_blur_and_composite_match_the_opengl_shape(self) -> None:
         self.assertIn("VK_PostProcess_RecordDof", VK_POST)
         self.assertIn("VK_BLOOM_MODE_COPY", VK_POST)
-        self.assertIn("for (int i = 0; i < 8; i++)", VK_POST)
+        self.assertIn("for (int i = 0; i < 4; i++)", VK_POST)
         self.assertIn("VK_PostProcess_RecordDofComposite", VK_POST)
+        self.assertIn("const int blur_downscale = Cvar_ClampInteger(", VK_POST)
+        self.assertIn("base_height / 2160.0f * 4.0f / (float)blur_downscale", VK_POST)
         self.assertIn("linearize_depth", DOF_SHADER)
         self.assertIn("focus_dist <= 0.0", DOF_SHADER)
         self.assertIn("blur_range <= 0.0", DOF_SHADER)
+
+    def test_menu_rectangle_converts_top_origin_ui_pixels_for_vulkan(self) -> None:
+        self.assertIn("cgame supplies top-origin pixels", VK_POST)
+        self.assertIn("1.0f - bottom / output_height", VK_POST)
+        self.assertIn("1.0f - top / output_height", VK_POST)
         self.assertIn("depth_sampler", DOF_SHADER)
-        self.assertIn("push_data.rect", DOF_SHADER)
+        self.assertIn("vec4 rect;", DOF_SHADER)
 
     def test_dof_runs_after_scene_copy_and_before_final_composite(self) -> None:
         final_postprocess = VK_MAIN.index("if (final_postprocess) {")

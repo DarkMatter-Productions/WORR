@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "task_id": "FR-01-T15",
+  "scenes": [
+    {
+      "id": "native_bloom_debug_preview",
+      "config": "renderer_parity/fr01_bloom_debug.cfg",
+      "capture": "fr01_bloom_debug.tga",
+      "metrics": {
+        "pixel_threshold": 0,
+        "max_mean_absolute_rgb": [0.001, 0.001, 0.002],
+        "max_pixels_over_threshold_percent": 0.5
+      }
+    }
+  ]
+}

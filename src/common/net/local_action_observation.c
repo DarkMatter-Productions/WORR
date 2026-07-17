@@ -17,7 +17,9 @@ the Free Software Foundation; either version 2 of the License, or
      WORR_LOCAL_ACTION_OBSERVATION_FIRE_BUFFERED |                       \
      WORR_LOCAL_ACTION_OBSERVATION_WEAPON_THUNK |                        \
      WORR_LOCAL_ACTION_OBSERVATION_PLAYER_ALIVE |                        \
-     WORR_LOCAL_ACTION_OBSERVATION_PLAYER_ELIGIBLE)
+     WORR_LOCAL_ACTION_OBSERVATION_PLAYER_ELIGIBLE |                     \
+     WORR_LOCAL_ACTION_OBSERVATION_OFFHAND_HOOK_HELD |                   \
+     WORR_LOCAL_ACTION_OBSERVATION_OFFHAND_HOOK_ACTIVE)
 
 static uint64_t hash_begin(void)
 {

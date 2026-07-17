@@ -24,8 +24,21 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+try:
+    from tools.networking.headless_process import (
+        creation_flags as _headless_creation_flags,
+        start_headless_process,
+        terminate_process_tree,
+    )
+except ModuleNotFoundError:
+    from headless_process import (
+        creation_flags as _headless_creation_flags,
+        start_headless_process,
+        terminate_process_tree,
+    )
 
-SCHEMA = "worr.networking.canonical-weapon-damage-runtime.v7"
+
+SCHEMA = "worr.networking.canonical-weapon-damage-runtime.v28"
 MAP_NAME = "worr_fr10_rewind_mover"
 GATE_MODES = {
     "railgun": {
@@ -33,6 +46,17 @@ GATE_MODES = {
         "status_cvar": "sg_worr_rewind_canonical_rail_damage_status",
         "weapon_policy": 5,
         "expected_damage": 80,
+    },
+    "railgun-mover-occlusion": {
+        "arm_command": "worr_rewind_canonical_rail_mover_occlusion_arm",
+        "status_cvar": "sg_worr_rewind_canonical_rail_mover_occlusion_status",
+        "weapon_policy": 5,
+        "expected_damage": 80,
+        # The real Railgun query must terminate on the sealed historical
+        # rotating BSP after its live collider has moved out of the lane.
+        # Damage behind that occluder is therefore required to remain zero.
+        "require_damage": False,
+        "require_historical_mover_occlusion": True,
     },
     "machinegun": {
         "arm_command": "worr_rewind_canonical_machinegun_damage_arm",
@@ -57,6 +81,299 @@ GATE_MODES = {
         "status_cvar": "sg_worr_rewind_canonical_disruptor_damage_status",
         "weapon_policy": 6,
         "expected_damage": 45,
+        "require_projectile_forward": True,
+    },
+    "rocket": {
+        "arm_command": "worr_rewind_canonical_rocket_damage_arm",
+        "status_cvar": "sg_worr_rewind_canonical_rocket_damage_status",
+        "weapon_policy": 9,
+        "expected_damage": 100,
+        "require_projectile_forward": True,
+        # Rocket impact and splash remain current authority. Unlike Disruptor
+        # convergence, this mode deliberately has no historical hit proof.
+        "current_authority_projectile": True,
+    },
+    "bfg": {
+        "arm_command": "worr_rewind_canonical_bfg_damage_arm",
+        "status_cvar": "sg_worr_rewind_canonical_bfg_damage_status",
+        "weapon_policy": 18,
+        "expected_damage": 200,
+        "require_projectile_forward": True,
+        "current_authority_projectile": True,
+        "require_damage": False,
+    },
+    "ion-ripper": {
+        "arm_command": "worr_rewind_canonical_ion_ripper_damage_arm",
+        "status_cvar": "sg_worr_rewind_canonical_ion_ripper_damage_status",
+        "weapon_policy": 19,
+        "expected_damage": 10,
+        # The ordinary callback emits fifteen randomized bolts. Every bolt
+        # must complete its own bounded current-world spawn sweep; collision,
+        # ricochet, damage, and lifetime remain production-owned.
+        "require_projectile_forward": True,
+        "current_authority_projectile": True,
+        "require_damage": False,
+        "expected_projectile_forward_launches": 15,
+    },
+    "tesla-mine": {
+        "arm_command": "worr_rewind_canonical_tesla_mine_damage_arm",
+        "status_cvar": "sg_worr_rewind_canonical_tesla_mine_damage_status",
+        "weapon_policy": 20,
+        "expected_damage": 3,
+        # Tesla's ordinary held-release callback creates the bouncing mine.
+        # The gate accepts only its clear release-command gravity advance;
+        # landing, activation, targeting, effects, damage, and lifetime stay
+        # current-world production authority.
+        "require_projectile_forward": True,
+        "current_authority_projectile": True,
+        "require_damage": False,
+        "release_held_attack_after_seconds": 1.3,
+        "release_held_attack_after_attack_received": True,
+        "release_held_attack_flush": False,
+    },
+    "trap": {
+        "arm_command": "worr_rewind_canonical_trap_damage_arm",
+        "status_cvar": "sg_worr_rewind_canonical_trap_damage_status",
+        "weapon_policy": 21,
+        "expected_damage": 20,
+        # Trap's normal held-release callback creates the bouncing deployable.
+        # The gate accepts only its clear release-command gravity advance;
+        # landing, capture, destruction, and lifetime stay current-world
+        # production authority.
+        "require_projectile_forward": True,
+        "current_authority_projectile": True,
+        "require_damage": False,
+        "release_held_attack_after_seconds": 1.3,
+        "release_held_attack_after_attack_received": True,
+        "release_held_attack_flush": False,
+    },
+    "grapple": {
+        "arm_command": "worr_rewind_canonical_grapple_damage_arm",
+        "status_cvar": "sg_worr_rewind_canonical_grapple_damage_status",
+        "weapon_policy": 22,
+        "expected_damage": 1,
+        # The normal Grapple callback creates the hook and performs ordinary
+        # muzzle clearance. The gate proves only a later clear current-world
+        # hook advance; touch, attachment, pull, damage, and reset stay
+        # production authority.
+        "require_projectile_forward": True,
+        "current_authority_projectile": True,
+        "require_damage": False,
+    },
+    "offhand-hook": {
+        "arm_command": "worr_rewind_canonical_offhand_hook_arm",
+        "status_cvar": "sg_worr_rewind_canonical_offhand_hook_status",
+        "weapon_policy": 24,
+        "expected_damage": 1,
+        # The headless client turns +hook into BUTTON_HOOK. Its active,
+        # authenticated command mapping may advance only the just-created hook
+        # through a clear current world; touch, attachment, pull, damage,
+        # reset, and the legacy hook string remain production authority.
+        "input_command": "+hook",
+        "enable_offhand_hook": True,
+        "require_projectile_forward": True,
+        "current_authority_projectile": True,
+        "require_damage": False,
+    },
+    "proball-throw": {
+        "arm_command": "worr_rewind_canonical_proball_throw_arm",
+        "status_cvar": "sg_worr_rewind_canonical_proball_throw_status",
+        "weapon_policy": 23,
+        "expected_damage": 1,
+        # The fixture grants possession before the real Chainfist-held attack.
+        # Its later ordinary release command may advance only the new ball
+        # through the clear current world; possession, touch, pickup, goals,
+        # scoring, teams, and resets remain production authority.
+        "require_projectile_forward": True,
+        "current_authority_projectile": True,
+        "require_damage": False,
+        "release_held_attack_after_seconds": 1.3,
+        "release_held_attack_after_attack_received": True,
+        "release_held_attack_flush": False,
+        "gametype": 17,
+        "team_game": True,
+    },
+    "grenade-launcher": {
+        "arm_command": "worr_rewind_canonical_grenade_launcher_damage_arm",
+        "status_cvar": "sg_worr_rewind_canonical_grenade_launcher_damage_status",
+        "weapon_policy": 15,
+        "expected_damage": 60,
+        "minimum_damage": 57,
+        # The first bounded gravity path is accepted only when every
+        # current-world segment is clear. A present-world damageable impact
+        # blocker then triggers the normal explosion and off-axis RadiusDamage.
+        # Bounce, fuse, and all future deployable behavior stay production-owned.
+        "require_projectile_forward": True,
+        "current_authority_projectile": True,
+        "require_current_authority_splash": True,
+        "require_reduced_splash": True,
+    },
+    "hand-grenade": {
+        "arm_command": "worr_rewind_canonical_hand_grenade_damage_arm",
+        "status_cvar": "sg_worr_rewind_canonical_hand_grenade_damage_status",
+        "weapon_policy": 16,
+        "expected_damage": 60,
+        "minimum_damage": 57,
+        # The real throw must be caused by a later no-attack release command,
+        # never by the earlier prime/hold. The bounded gravity path remains
+        # current-world-only; normal touch, bounce, fuse, splash, and damage
+        # stay production-owned and are not scripted by this gate.
+        "require_projectile_forward": True,
+        "current_authority_projectile": True,
+        "require_damage": False,
+        # Ten normal 100 ms prime frames precede the hold frame. Start this
+        # margin only after the server has admitted the real prime command;
+        # a fixed wall-clock delay can otherwise release before an async
+        # headless client has delivered that initial command.
+        "release_held_attack_after_seconds": 1.3,
+        "release_held_attack_after_attack_received": True,
+        # The client emits an immediate normal packet for an attack key-up.
+        # No movement edge, physical input path, or mouse capture is used.
+        "release_held_attack_flush": False,
+    },
+    "hand-grenade-splash": {
+        "arm_command": "worr_rewind_canonical_hand_grenade_splash_arm",
+        "status_cvar": "sg_worr_rewind_canonical_hand_grenade_damage_status",
+        "weapon_policy": 16,
+        "expected_damage": 60,
+        "minimum_damage": 45,
+        "require_projectile_forward": True,
+        "current_authority_projectile": True,
+        "require_current_authority_splash": True,
+        "require_reduced_splash": True,
+        "release_held_attack_after_seconds": 1.3,
+        "release_held_attack_after_attack_received": True,
+        "release_held_attack_flush": False,
+    },
+    "prox-launcher": {
+        "arm_command": "worr_rewind_canonical_prox_launcher_damage_arm",
+        "status_cvar": "sg_worr_rewind_canonical_prox_launcher_damage_status",
+        "weapon_policy": 17,
+        "expected_damage": 90,
+        # A proximity mine uses bounded current-world gravity advance only
+        # before normal Bounce landing. Its arm/trigger/explosion lifecycle
+        # is production authority and deliberately not fabricated here.
+        "require_projectile_forward": True,
+        "current_authority_projectile": True,
+        "require_damage": False,
+    },
+    "prox-launcher-lifecycle": {
+        "arm_command": "worr_rewind_canonical_prox_launcher_lifecycle_arm",
+        "status_cvar": "sg_worr_rewind_canonical_prox_launcher_damage_status",
+        "weapon_policy": 17,
+        "expected_damage": 61,
+        # The mine may advance only through its initial clear current-world
+        # gravity path. Normal land/arm/trigger/explosion/RadiusDamage then
+        # must complete against the fixture's staged live target.
+        "require_projectile_forward": True,
+        "current_authority_projectile": True,
+        "require_prox_lifecycle": True,
+    },
+    "rocket-splash": {
+        "arm_command": "worr_rewind_canonical_rocket_splash_damage_arm",
+        "status_cvar": "sg_worr_rewind_canonical_rocket_splash_damage_status",
+        "weapon_policy": 9,
+        "expected_damage": 58,
+        "require_projectile_forward": True,
+        "current_authority_projectile": True,
+        "require_current_authority_splash": True,
+        "require_reduced_splash": True,
+    },
+    "plasma-gun": {
+        "arm_command": "worr_rewind_canonical_plasma_gun_damage_arm",
+        "status_cvar": "sg_worr_rewind_canonical_plasma_gun_damage_status",
+        "weapon_policy": 10,
+        "expected_damage": 20,
+        # Plasma Gun's direct and small-radius paths remain current authority.
+        # This mode proves the normal direct hit only; radius coverage stays
+        # independently scoped.
+        "require_projectile_forward": True,
+        "current_authority_projectile": True,
+    },
+    "plasma-gun-splash": {
+        "arm_command": "worr_rewind_canonical_plasma_gun_splash_damage_arm",
+        "status_cvar": "sg_worr_rewind_canonical_plasma_gun_splash_damage_status",
+        "weapon_policy": 10,
+        "expected_damage": 7,
+        # The real Plasma Gun must complete normal current-world flight to the
+        # small fixture blocker, then let RadiusDamage reach the off-axis
+        # target; no historical impact can satisfy this mode.
+        "require_projectile_forward": True,
+        "current_authority_projectile": True,
+        "require_current_authority_splash": True,
+        "require_reduced_splash": True,
+    },
+    "blaster": {
+        "arm_command": "worr_rewind_canonical_blaster_damage_arm",
+        "status_cvar": "sg_worr_rewind_canonical_blaster_damage_status",
+        "weapon_policy": 11,
+        "expected_damage": 15,
+        # The shared Blaster/HyperBlaster bolt path keeps direct/radius
+        # authority in the current world; this direct-hit seam does not claim
+        # the optional Q3 HyperBlaster radius branch.
+        "require_projectile_forward": True,
+        "current_authority_projectile": True,
+    },
+    "hyperblaster": {
+        "arm_command": "worr_rewind_canonical_hyperblaster_damage_arm",
+        "status_cvar": "sg_worr_rewind_canonical_hyperblaster_damage_status",
+        "weapon_policy": 11,
+        "expected_damage": 15,
+        # The production repeating 6–11 gun-frame cadence must receive a
+        # later ordinary held command before its first shared bolt callback.
+        "require_projectile_forward": True,
+        "current_authority_projectile": True,
+        "refresh_held_attack": True,
+    },
+    "chainfist": {
+        "arm_command": "worr_rewind_canonical_chainfist_damage_arm",
+        "status_cvar": "sg_worr_rewind_canonical_chainfist_damage_status",
+        "weapon_policy": 12,
+        "expected_damage": 15,
+        # The only historical fact is player reach/FOV eligibility. Live
+        # displacement, CanDamage, and Damage retain final authority.
+        "require_hybrid_melee": True,
+    },
+    "etf-rifle": {
+        "arm_command": "worr_rewind_canonical_etf_rifle_damage_arm",
+        "status_cvar": "sg_worr_rewind_canonical_etf_rifle_damage_status",
+        "weapon_policy": 13,
+        "expected_damage": 10,
+        # Flechette contact and damage remain entirely current-world.
+        "require_projectile_forward": True,
+        "current_authority_projectile": True,
+        # ETF's production callback requires a subsequent real held-command
+        # edge after Weapon_Repeating has entered its firing state.
+        "refresh_held_attack": True,
+    },
+    "phalanx": {
+        "arm_command": "worr_rewind_canonical_phalanx_damage_arm",
+        "status_cvar": "sg_worr_rewind_canonical_phalanx_damage_status",
+        "weapon_policy": 14,
+        "expected_damage": 80,
+        # Direct contact and RadiusDamage remain current-world authority after
+        # a bounded authenticated spawn advance.
+        "require_projectile_forward": True,
+        "current_authority_projectile": True,
+        # Weapon_Generic enters Phalanx's first fire frame from the received
+        # attack and reaches its normal 7/8 barrel frames on later ordinary
+        # held-command edges.
+        "refresh_held_attack": True,
+    },
+    "phalanx-splash": {
+        "arm_command": "worr_rewind_canonical_phalanx_splash_damage_arm",
+        "status_cvar": "sg_worr_rewind_canonical_phalanx_splash_damage_status",
+        "weapon_policy": 14,
+        "expected_damage": 93,
+        # The shell must strike the present-world fixture blocker. Normal
+        # phalanx_touch/RadiusDamage owns the off-axis target splash result.
+        "require_projectile_forward": True,
+        "current_authority_projectile": True,
+        "require_current_authority_splash": True,
+        "require_reduced_splash": True,
+        # Weapon_Generic reaches the barrel callback on a later real held
+        # command edge; the runner remains headless and input-free.
+        "refresh_held_attack": True,
     },
     "plasma-beam": {
         "arm_command": "worr_rewind_canonical_plasma_beam_damage_arm",
@@ -186,6 +503,30 @@ STATUS_FIELDS = (
     "thunderbolt_discharge_observed",
     "sustained_hold_required",
     "sustained_hold_interrupted",
+    "projectile_forward_required",
+    "projectile_forward_authenticated",
+    "projectile_forward_advanced",
+    "projectile_forward_clamped",
+    "projectile_forward_blocked",
+    "projectile_forward_age_us",
+    "projectile_forward_advanced_age_us",
+    "projectile_forward_launches",
+    "projectile_forward_expected_launches",
+    "melee_selection_required",
+    "melee_selection_authenticated",
+    "melee_historical_eligible",
+    "melee_current_displacement_accepted",
+    "melee_current_displacement_units",
+    "prox_lifecycle_required",
+    "prox_mine_landed",
+    "prox_mine_triggered",
+    "prox_mine_exploded",
+    "historical_mover_occlusion_required",
+    "historical_mover_relocated",
+    "historical_mover_baseline_clear",
+    "historical_mover_occlusion_observed",
+    "historical_mover_target_undamaged",
+    "historical_mover_history_count",
 )
 STATUS_RE = re.compile(
     rf'{re.escape(STATUS_CVAR)}\s+"(?P<value>(?:pending|pass|fail):[0-9:]+)"'
@@ -212,11 +553,12 @@ def write_json_atomic(path: Path, payload: dict[str, object]) -> None:
 
 
 def creation_flags() -> int:
-    return getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+    return _headless_creation_flags()
 
 
 def build_server_command(
     dedicated_exe: Path, port: int, runtime_home: Path | None = None, lag_debug: int = 2,
+    game_type: int = 1, enable_offhand_hook: bool = False,
 ) -> list[str]:
     """Build a dedicated-only fixture host; it never launches a renderer."""
     command = [
@@ -231,6 +573,7 @@ def build_server_command(
         # stdin-free and avoids frame-count races during asset negotiation.
         "+set", "rcon_password", RCON_PASSWORD,
         "+set", "deathmatch", "1",
+        "+set", "g_gametype", str(game_type),
         "+set", "maxclients", "2",
         "+set", "g_owner_auto_join", "1",
         "+set", "match_auto_join", "1",
@@ -242,6 +585,10 @@ def build_server_command(
         "+set", "g_warmup_countdown", "0",
         "+set", "match_start_no_humans", "1",
         "+set", "g_lag_compensation", "1",
+        # A current-world projectile policy may advance only the bounded age
+        # of a server-authenticated command mapping; it never rewinds contact.
+        "+set", "sg_lag_compensation_projectile_forward_ms", "100",
+        "+set", "sg_lag_compensation_melee_max_displacement", "64",
         # Match the deterministic upstream impairment below. This is a real
         # server policy cvar, so the canonical command resolves against a
         # retained earlier authoritative target pose rather than "now".
@@ -250,6 +597,12 @@ def build_server_command(
         "+set", "sv_fps", "62",
         "+map", MAP_NAME,
     ]
+    if enable_offhand_hook:
+        map_index = command.index("+map")
+        command[map_index:map_index] = [
+            "+set", "g_allow_grapple", "1",
+            "+set", "g_grapple_offhand", "1",
+        ]
     if runtime_home is not None:
         command[1:1] = ["+set", "fs_homepath", str(runtime_home)]
     return command
@@ -338,12 +691,19 @@ def validate_status(
         "history_ready",
         "canonical_scope",
         "attack_received",
-        "damage_applied",
     )
-    if not mode.get("current_authority_discharge", False):
+    if mode.get("require_damage", True):
+        required += ("damage_applied",)
+    if (not mode.get("current_authority_discharge", False) and
+            not mode.get("current_authority_projectile", False)):
         required += (
             "weapon_callback",
             "canonical_historical_hit",
+            "current_geometry_unchanged",
+        )
+    elif mode.get("current_authority_projectile", False):
+        required += (
+            "weapon_callback",
             "current_geometry_unchanged",
         )
     for name in required:
@@ -352,6 +712,7 @@ def validate_status(
     if not isinstance(status["target_history_captures"], int) or status["target_history_captures"] < 6:
         raise RuntimeError("canonical rail probe did not retain the pre-fire target history")
     if (not mode.get("current_authority_discharge", False) and
+            not mode.get("current_authority_projectile", False) and
             (not isinstance(status["applied_age_us"], int) or
              status["applied_age_us"] <= 0)):
         raise RuntimeError("canonical rail probe did not select an earlier authoritative instant")
@@ -362,9 +723,20 @@ def validate_status(
     if (not mode.get("current_authority_discharge", False) and
             status["observation_weapon_policy"] != mode["weapon_policy"]):
         raise RuntimeError("canonical hitscan probe observed the wrong weapon policy")
-    if (status["expected_damage"] != mode["expected_damage"] or
-            status["observed_damage"] != mode["expected_damage"]):
-        raise RuntimeError("canonical hitscan probe did not apply exact expected damage")
+    if (mode.get("current_authority_projectile", False) and
+            status["canonical_historical_hit"] != 0):
+        raise RuntimeError(
+            "canonical current-world projectile probe incorrectly claimed a historical impact"
+        )
+    if (mode.get("require_reduced_splash", False) and
+            status["observed_damage"] >= 100):
+        raise RuntimeError("canonical rocket splash probe did not retain reduced splash damage")
+    if mode.get("require_damage", True):
+        minimum_damage = int(mode.get("minimum_damage", mode["expected_damage"]))
+        maximum_damage = int(mode["expected_damage"])
+        if (status["expected_damage"] != maximum_damage or
+                not minimum_damage <= status["observed_damage"] <= maximum_damage):
+            raise RuntimeError("canonical hitscan probe did not apply exact expected damage")
     if mode.get("require_water_retrace", False):
         if status["water_retrace_required"] != 1 or status["water_retrace_observed"] != 1:
             raise RuntimeError("canonical hitscan probe did not prove water retrace")
@@ -377,6 +749,60 @@ def validate_status(
         if (status["sustained_hold_required"] != 1 or
                 status["sustained_hold_interrupted"] != 0):
             raise RuntimeError("canonical hitscan probe did not retain the sustained held attack")
+    if mode.get("require_projectile_forward", False):
+        if (status["projectile_forward_required"] != 1 or
+                status["projectile_forward_authenticated"] != 1 or
+                status["projectile_forward_advanced"] != 1 or
+                status["projectile_forward_blocked"] != 0 or
+                status["projectile_forward_advanced_age_us"] <= 0 or
+                status["projectile_forward_advanced_age_us"] >
+                status["projectile_forward_age_us"]):
+            raise RuntimeError(
+                "canonical projectile probe did not prove bounded current-world forward")
+        expected_launches = int(mode.get("expected_projectile_forward_launches", 0))
+        if expected_launches and (
+            status["projectile_forward_launches"] != expected_launches or
+            status["projectile_forward_expected_launches"] != expected_launches
+        ):
+            raise RuntimeError(
+                "canonical projectile burst did not complete every normal launch"
+            )
+    if mode.get("require_hybrid_melee", False):
+        if (status["melee_selection_required"] != 1 or
+                status["melee_selection_authenticated"] != 1 or
+                status["melee_historical_eligible"] != 1 or
+                status["melee_current_displacement_accepted"] != 1 or
+                status["melee_current_displacement_units"] <= 0 or
+                status["melee_current_displacement_units"] > 64):
+            raise RuntimeError(
+                "canonical Chainfist probe did not prove bounded hybrid melee")
+    if mode.get("require_prox_lifecycle", False):
+        if (status["prox_lifecycle_required"] != 1 or
+                status["prox_mine_landed"] != 1 or
+                status["prox_mine_triggered"] != 1 or
+                status["prox_mine_exploded"] != 1):
+            raise RuntimeError(
+                "canonical Proximity Launcher probe did not prove its normal lifecycle")
+    if mode.get("require_historical_mover_occlusion", False):
+        for name in (
+            "historical_mover_occlusion_required",
+            "historical_mover_relocated",
+            "historical_mover_baseline_clear",
+            "historical_mover_occlusion_observed",
+            "historical_mover_target_undamaged",
+        ):
+            if status[name] != 1:
+                raise RuntimeError(
+                    f"canonical Railgun mover probe did not prove {name}"
+                )
+        if status["historical_mover_history_count"] < 6:
+            raise RuntimeError(
+                "canonical Railgun mover probe did not retain mover history"
+            )
+        if status["damage_applied"] != 0 or status["observed_damage"] != 0:
+            raise RuntimeError(
+                "canonical Railgun mover probe damaged through historical occlusion"
+            )
     return status
 
 
@@ -415,6 +841,28 @@ def determinism_signature(status: dict[str, int | str]) -> tuple[int | str, ...]
         "thunderbolt_discharge_observed",
         "sustained_hold_required",
         "sustained_hold_interrupted",
+        "projectile_forward_required",
+        "projectile_forward_authenticated",
+        "projectile_forward_advanced",
+        "projectile_forward_clamped",
+        "projectile_forward_blocked",
+        "projectile_forward_launches",
+        "projectile_forward_expected_launches",
+        "melee_selection_required",
+        "melee_selection_authenticated",
+        "melee_historical_eligible",
+        "melee_current_displacement_accepted",
+        "melee_current_displacement_units",
+        "prox_lifecycle_required",
+        "prox_mine_landed",
+        "prox_mine_triggered",
+        "prox_mine_exploded",
+        "historical_mover_occlusion_required",
+        "historical_mover_relocated",
+        "historical_mover_baseline_clear",
+        "historical_mover_occlusion_observed",
+        "historical_mover_target_undamaged",
+        "historical_mover_history_count",
     ))
 
 
@@ -450,20 +898,32 @@ def rcon_command(port: int, command: str, timeout: float) -> str:
     """Execute one localhost-only rcon command and return its redirected output."""
     packet = b"\xff\xff\xff\xffrcon " + RCON_PASSWORD.encode("ascii")
     packet += b" " + command.encode("ascii") + b"\n"
-    responses: list[bytes] = []
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as connection:
-        connection.settimeout(min(timeout, 0.25))
-        connection.sendto(packet, ("127.0.0.1", port))
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            try:
-                response, _ = connection.recvfrom(65535)
-            except socket.timeout:
-                break
-            responses.append(response)
-    if not responses:
-        raise RuntimeError(f"localhost rcon command did not reply: {command!r}")
-    return b"".join(responses).decode("utf-8", errors="replace")
+    # Rcon is localhost-only and stateless. A bounded resend absorbs transient
+    # Windows UDP reset/no-reply noise without changing any gameplay input
+    # semantics; the command payload itself remains the same normal fixture
+    # command on either delivery.
+    for attempt in range(2):
+        responses: list[bytes] = []
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as connection:
+            connection.settimeout(min(timeout, 0.25))
+            connection.sendto(packet, ("127.0.0.1", port))
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                try:
+                    response, _ = connection.recvfrom(65535)
+                except socket.timeout:
+                    break
+                except ConnectionResetError:
+                    # Windows can surface an unrelated local UDP ICMP reset on
+                    # an ephemeral rcon socket while the dedicated process is
+                    # still alive. Keep receiving through this attempt.
+                    continue
+                responses.append(response)
+        if responses:
+            return b"".join(responses).decode("utf-8", errors="replace")
+        if attempt == 0:
+            continue
+    raise RuntimeError(f"localhost rcon command did not reply: {command!r}")
 
 
 def wait_for_status(
@@ -474,27 +934,82 @@ def wait_for_status(
     deadline = time.monotonic() + timeout
     responses: list[str] = []
     release_sent = False
+    throw_release_sent = False
+    throw_release_flush_sent = False
+    # Avoid creating a burst of short-lived Windows UDP sockets while still
+    # supplying the later ordinary commands needed by Generic/repeating weapon
+    # frames. The first refresh is deliberately later than the initial
+    # impaired attack's server arrival.
+    next_held_refresh = time.monotonic() + 0.15
+    held_refresh_cutoff = time.monotonic() + float(
+        mode.get("refresh_held_attack_until_seconds", float("inf"))
+    )
+    throw_release_delay = float(mode.get("release_held_attack_after_seconds", 0.0))
+    throw_release_at = (
+        None if mode.get("release_held_attack_after_attack_received", False)
+        else time.monotonic() + throw_release_delay
+    )
+    throw_release_flush_at = 0.0
     while time.monotonic() < deadline:
+        # Held throws are primed by the first ordinary +attack and released by
+        # a later ordinary no-attack command. This is a client-side key-up
+        # only: it does not construct server input, invoke a weapon callback,
+        # initialize physical input, or capture the mouse.
+        if (throw_release_at is not None and
+                not throw_release_sent and
+                time.monotonic() >= throw_release_at):
+            if shooter_user_id is None:
+                raise RuntimeError("held-throw mode requires a shooter user id")
+            responses.append(rcon_command(
+                port,
+                (f'stuff {shooter_user_id} "-attack; +moveup"'
+                 if mode.get("release_held_attack_flush", False)
+                 else f'stuff {shooter_user_id} "-attack"'),
+                min(1.0, timeout),
+            ))
+            throw_release_sent = True
+            throw_release_flush_at = time.monotonic() + 0.05
+        if (mode.get("release_held_attack_flush", False) and
+                throw_release_sent and not throw_release_flush_sent and
+                time.monotonic() >= throw_release_flush_at):
+            if shooter_user_id is None:
+                raise RuntimeError("held-throw mode requires a shooter user id")
+            responses.append(rcon_command(
+                port, f'stuff {shooter_user_id} "-moveup"', min(1.0, timeout),
+            ))
+            throw_release_flush_sent = True
         # A repeated console +attack is a duplicate key-down and need not emit
         # a fresh client command. Cadence modes therefore submit a client-side
-        # release/press edge while pending, so every refresh forces another
-        # ordinary BUTTON_ATTACK user command. This never calls a server weapon
-        # path or constructs server-side input.
-        if mode.get("refresh_held_attack", False) and not release_sent:
+        # release/press edge while pending. The zero-net movement edge asks the
+        # client to flush that ordinary BUTTON_ATTACK user command promptly;
+        # neither it nor the final command moves the player. This never calls a
+        # server weapon path or constructs server-side input.
+        if (mode.get("refresh_held_attack", False) and not release_sent and
+                time.monotonic() >= next_held_refresh and
+                time.monotonic() < held_refresh_cutoff):
             if shooter_user_id is None:
                 raise RuntimeError("held canonical weapon mode requires a shooter user id")
             responses.append(rcon_command(
-                port, f'stuff {shooter_user_id} "-attack; +attack"', min(1.0, timeout),
+                port,
+                f'stuff {shooter_user_id} "-attack; +attack; +moveup; -moveup"',
+                min(1.0, timeout),
             ))
+            next_held_refresh = time.monotonic() + 0.25
         response = rcon_command(port, f"cvarlist {mode['status_cvar']}", min(1.0, timeout))
         responses.append(response)
         try:
             status = parse_status(response, str(mode["status_cvar"]))
         except RuntimeError:
-            time.sleep(0.10)
+            time.sleep(0.20)
             continue
         if status["status"] != "pending":
             return status, responses
+        if (mode.get("release_held_attack_after_attack_received", False) and
+                throw_release_at is None and status["attack_received"] == 1):
+            # This consumes the fixture's observed normal command admission,
+            # not a synthetic server input. The later key-up remains an
+            # ordinary command executed by the headless client.
+            throw_release_at = time.monotonic() + throw_release_delay
         if (mode.get("release_after_expected_damage", False) and
                 not release_sent and
                 status["observed_damage"] == mode["expected_damage"]):
@@ -510,7 +1025,7 @@ def wait_for_status(
                 min(1.0, timeout),
             ))
             release_sent = True
-        time.sleep(0.10)
+        time.sleep(0.20)
     last_response = responses[-1] if responses else "<no response>"
     raise RuntimeError(
         "timed out waiting for canonical rail fixture completion; "
@@ -546,15 +1061,7 @@ def wait_for_client_user_ids(port: int, timeout: float) -> tuple[int, int, list[
 
 
 def terminate(process: subprocess.Popen[str] | None) -> bool:
-    if process is None or process.poll() is not None:
-        return False
-    process.terminate()
-    try:
-        process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait(timeout=5)
-    return True
+    return terminate_process_tree(process)
 
 
 def run_once(
@@ -578,19 +1085,19 @@ def run_once(
             shooter_err = files.enter_context(paths["shooter.stderr"].open("w", encoding="utf-8"))
             target_out = files.enter_context(paths["target.stdout"].open("w", encoding="utf-8"))
             target_err = files.enter_context(paths["target.stderr"].open("w", encoding="utf-8"))
-            server = subprocess.Popen(
+            server = start_headless_process(
                 server_command, cwd=working_dir, stdin=subprocess.DEVNULL,
                 stdout=server_out, stderr=server_err, text=True,
                 creationflags=creation_flags(),
             )
             wait_for_marker(server, paths["server.stdout"], f"SpawnServer: {MAP_NAME}", timeout)
-            shooter = subprocess.Popen(
+            shooter = start_headless_process(
                 shooter_command, cwd=working_dir, stdin=subprocess.DEVNULL,
                 stdout=shooter_out, stderr=shooter_err, text=True,
                 creationflags=creation_flags(),
             )
             wait_for_marker(server, paths["server.stdout"], "Going from cs_primed to cs_spawned", timeout)
-            target = subprocess.Popen(
+            target = start_headless_process(
                 target_command, cwd=working_dir, stdin=subprocess.DEVNULL,
                 stdout=target_out, stderr=target_err, text=True,
                 creationflags=creation_flags(),
@@ -599,12 +1106,22 @@ def run_once(
                 server, paths["server.stdout"], "Going from cs_primed to cs_spawned", 2, timeout
             )
             port = int(server_command[server_command.index("net_port") + 1])
-            # Resolve the ordinary welcome-menu choice before arming. This is
-            # a real client string command; it only joins the FFA match and
-            # cannot create user-command authority or weapon state.
-            rcon_log.append(rcon_command(port, 'stuffall "cmd team free"', timeout))
             shooter_user_id, target_user_id, client_statuses = wait_for_client_user_ids(port, timeout)
             rcon_log.extend(client_statuses)
+            # Resolve the ordinary welcome-menu choice before arming. These
+            # are real client string commands and cannot create user-command
+            # authority or weapon state. ProBall needs two normal team joins;
+            # every other mode remains in FFA.
+            if mode.get("team_game", False):
+                rcon_log.append(rcon_command(
+                    port, f'stuff {shooter_user_id} "cmd team red"', timeout,
+                ))
+                rcon_log.append(rcon_command(
+                    port, f'stuff {target_user_id} "cmd team blue"', timeout,
+                ))
+                time.sleep(0.25)
+            else:
+                rcon_log.append(rcon_command(port, 'stuffall "cmd team free"', timeout))
             # This arms only the fixture. It never manufactures a command
             # context or invokes the selected hitscan weapon callback.
             rcon_log.append(rcon_command(port, f"sv {mode['arm_command']}", timeout))
@@ -614,8 +1131,11 @@ def run_once(
             # received snapshot, which cannot be reconstructed after arming.
             time.sleep(1.2)
             # The action goes only to the admitted shooter. Its client turns
-            # the payload into a normal BUTTON_ATTACK user command.
-            rcon_log.append(rcon_command(port, f'stuff {shooter_user_id} "+attack"', timeout))
+            # the configured payload into a normal authenticated user command.
+            input_command = str(mode.get("input_command", "+attack"))
+            rcon_log.append(rcon_command(
+                port, f'stuff {shooter_user_id} "{input_command}"', timeout,
+            ))
             status, status_responses = wait_for_status(
                 port, timeout, mode, shooter_user_id,
             )
@@ -691,6 +1211,8 @@ def main() -> int:
         runtime_home.mkdir(parents=True, exist_ok=False)
     server_command = build_server_command(
         dedicated_exe, args.port, server_home, args.lag_debug,
+        int(mode.get("gametype", 1)),
+        bool(mode.get("enable_offhand_hook", False)),
     )
     shooter_command = build_client_command(
         client_exe, args.port, SHOOTER_NAME, shooter_home,

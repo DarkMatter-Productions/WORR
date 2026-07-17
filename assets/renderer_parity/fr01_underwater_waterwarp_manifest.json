@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "task_id": "FR-01-T10",
+  "scenes": [
+    {
+      "id": "underwater_fullscreen_waterwarp",
+      "config": "renderer_parity/fr01_underwater_waterwarp.cfg",
+      "capture": "fr01_underwater_waterwarp.tga",
+      "crop": [160, 120, 640, 480],
+      "metrics": {
+        "pixel_threshold": 2,
+        "max_mean_absolute_rgb": [0.1, 0.6, 0.9],
+        "max_pixels_over_threshold_percent": 0
+      }
+    },
+    {
+      "id": "underwater_waterwarp_disabled_control",
+      "config": "renderer_parity/fr01_underwater_waterwarp_disabled.cfg",
+      "capture": "fr01_underwater_waterwarp_disabled.tga",
+      "crop": [160, 120, 640, 480],
+      "metrics": {
+        "pixel_threshold": 2,
+        "max_mean_absolute_rgb": [0.1, 0.6, 0.9],
+        "max_pixels_over_threshold_percent": 0
+      }
+    }
+  ]
+}

@@ -70,7 +70,11 @@ fallback.
 
 This is intentionally a baseline, not a claim that the renderer has dynamic
 resolution scaling or a complete cross-renderer performance budget. Those
-remain `FR-01-T15` work, and gameplay DOF remains open under `FR-01-T12`.
+remain `FR-01-T15` work. Strict fixed-focus, centre-depth/automatic-range,
+wide explicit-range, and compact-menu rectangle-state gameplay-DOF receivers
+are now covered under `FR-01-T12`; isolated rectangle clipping and broader
+dynamic-scene coverage remain open. See
+`vulkan-dof-visual-parity-2026-07-16.md`.
 
 ## Headless verification
 

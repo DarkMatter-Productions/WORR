@@ -14,6 +14,8 @@ the Free Software Foundation; either version 2 of the License, or
 #include <stdint.h>
 #include <float.h>
 
+#include "shared/local_interaction_abi.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -63,6 +65,9 @@ typedef enum worr_event_type_v1_e {
     WORR_EVENT_TYPE_GAMEPLAY_CUE = 6,
     WORR_EVENT_TYPE_STATE_CHANGE = 7,
     WORR_EVENT_TYPE_LEGACY_BRIDGE = 8,
+    /* Private per-peer authority control record.  It is deliberately not a
+     * world/presentation event and uses absent entity references. */
+    WORR_EVENT_TYPE_AUTHORITY_RECEIPT = 9,
 } worr_event_type_v1;
 
 typedef enum worr_event_delivery_class_v1_e {
@@ -97,6 +102,7 @@ typedef enum worr_event_payload_kind_v1_e {
     WORR_EVENT_PAYLOAD_LEGACY_TEMP_V1 = 8,
     WORR_EVENT_PAYLOAD_MUZZLE_V1 = 9,
     WORR_EVENT_PAYLOAD_SPATIAL_AUDIO_V1 = 10,
+    WORR_EVENT_PAYLOAD_LOCAL_INTERACTION_AUTHORITY_V1 = 11,
 } worr_event_payload_kind_v1;
 
 /* Stable legacy entity-event wire values. */
@@ -472,11 +478,19 @@ WORR_EVENT_STATIC_ASSERT(sizeof(worr_event_payload_muzzle_v1) == 8,
                          "muzzle payload v1 layout changed");
 WORR_EVENT_STATIC_ASSERT(sizeof(worr_event_payload_spatial_audio_v1) == 40,
                          "spatial audio payload v1 layout changed");
+WORR_EVENT_STATIC_ASSERT(
+    sizeof(worr_local_interaction_authority_receipt_v1) <=
+        WORR_EVENT_PAYLOAD_CAPACITY,
+    "local interaction authority receipt exceeds event payload capacity");
 WORR_EVENT_STATIC_ASSERT(WORR_EVENT_PAYLOAD_LEGACY_ENTITY_V1 == 7 &&
                              WORR_EVENT_PAYLOAD_LEGACY_TEMP_V1 == 8 &&
                              WORR_EVENT_PAYLOAD_MUZZLE_V1 == 9 &&
-                             WORR_EVENT_PAYLOAD_SPATIAL_AUDIO_V1 == 10,
+                             WORR_EVENT_PAYLOAD_SPATIAL_AUDIO_V1 == 10 &&
+                             WORR_EVENT_PAYLOAD_LOCAL_INTERACTION_AUTHORITY_V1 ==
+                                 11,
                          "event payload catalog IDs changed");
+WORR_EVENT_STATIC_ASSERT(WORR_EVENT_TYPE_AUTHORITY_RECEIPT == 9,
+                         "event type catalog IDs changed");
 WORR_EVENT_STATIC_ASSERT(WORR_EVENT_LEGACY_TEMP_BOSSTPORT == 22 &&
                              WORR_EVENT_LEGACY_TEMP_BLUEHYPERBLASTER_BROKEN ==
                                  27 &&

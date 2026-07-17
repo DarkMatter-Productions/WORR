@@ -24,6 +24,8 @@ void VK_World_SetSky(const char *name, float rotate, bool autorotate, const vec3
 void VK_World_RenderFrame(const refdef_t *fd);
 void VK_World_Record(VkCommandBuffer cmd, const VkExtent2D *extent);
 void VK_World_RecordOpaque(VkCommandBuffer cmd, const VkExtent2D *extent);
+void VK_World_RecordBloomEmission(VkCommandBuffer cmd, const VkExtent2D *extent);
+bool VK_World_HasBloomEmission(void);
 void VK_World_RecordAlpha(VkCommandBuffer cmd, const VkExtent2D *extent,
                           VkDescriptorSet scene_descriptor_set);
 bool VK_World_UsesRefraction(void);

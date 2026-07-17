@@ -24,13 +24,8 @@ float linearize_depth(float depth) {
 void main() {
     vec2 output_size = max(vec2(textureSize(scene_sampler, 0)), vec2(1.0));
     vec2 tc = gl_FragCoord.xy / output_size;
-    vec4 scene = texture(scene_sampler, tc);
 
-    if (tc.x < push_data.rect.x || tc.y < push_data.rect.y ||
-        tc.x >= push_data.rect.z || tc.y >= push_data.rect.w) {
-        out_color = scene;
-        return;
-    }
+    vec4 scene = texture(scene_sampler, tc);
 
     float focus_dist = push_data.params.x;
     if (focus_dist <= 0.0) {

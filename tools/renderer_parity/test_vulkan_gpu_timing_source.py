@@ -10,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 VK_DEBUG = (ROOT / "src/rend_vk/vk_debug.c").read_text(encoding="utf-8")
 VK_MAIN = (ROOT / "src/rend_vk/vk_main.c").read_text(encoding="utf-8")
+VK_POST = (ROOT / "src/rend_vk/vk_postprocess.c").read_text(encoding="utf-8")
 
 
 class VulkanGpuTimingSourceTests(unittest.TestCase):
@@ -40,22 +41,35 @@ class VulkanGpuTimingSourceTests(unittest.TestCase):
     def test_phases_bracket_native_upload_shadow_scene_and_composition(self) -> None:
         self.assertIn("VK_DEBUG_GPU_PHASE_UPLOAD", VK_MAIN)
         self.assertIn("VK_DEBUG_GPU_PHASE_SHADOW", VK_MAIN)
+        self.assertIn("VK_DEBUG_GPU_PHASE_OPAQUE_WORLD", VK_MAIN)
+        self.assertIn("VK_DEBUG_GPU_PHASE_OPAQUE_ENTITY", VK_MAIN)
         self.assertIn("VK_DEBUG_GPU_PHASE_SCENE", VK_MAIN)
         self.assertIn("VK_DEBUG_GPU_PHASE_POSTPROCESS", VK_MAIN)
         self.assertIn("VK_Debug_MarkGpuPhase", VK_DEBUG)
         self.assertIn("last_gpu_upload_ms", VK_DEBUG)
         self.assertIn("last_gpu_shadow_ms", VK_DEBUG)
+        self.assertIn("last_gpu_opaque_world_ms", VK_DEBUG)
+        self.assertIn("last_gpu_opaque_entity_ms", VK_DEBUG)
         self.assertIn("last_gpu_scene_ms", VK_DEBUG)
         self.assertIn("last_gpu_postprocess_ms", VK_DEBUG)
 
         upload = VK_MAIN.index("VK_Debug_MarkGpuPhase(cmd, VK_DEBUG_GPU_PHASE_UPLOAD)")
         shadow = VK_MAIN.index("VK_Debug_MarkGpuPhase(cmd, VK_DEBUG_GPU_PHASE_SHADOW)")
+        world = VK_MAIN.index(
+            "VK_Debug_MarkGpuPhase(cmd, VK_DEBUG_GPU_PHASE_OPAQUE_WORLD)"
+        )
+        entity = VK_MAIN.index(
+            "VK_Debug_MarkGpuPhase(cmd, VK_DEBUG_GPU_PHASE_OPAQUE_ENTITY)"
+        )
         scene = VK_MAIN.index("VK_Debug_MarkGpuPhase(cmd, VK_DEBUG_GPU_PHASE_SCENE)")
         post = VK_MAIN.index(
             "VK_Debug_MarkGpuPhase(cmd, VK_DEBUG_GPU_PHASE_POSTPROCESS)"
         )
         screenshot = VK_MAIN.index("VK_Screenshot_RecordCopy(cmd, image_index)")
         self.assertLess(upload, shadow)
+        self.assertLess(shadow, world)
+        self.assertLess(world, entity)
+        self.assertLess(entity, scene)
         self.assertLess(shadow, scene)
         self.assertLess(scene, post)
         self.assertLess(post, screenshot)
@@ -76,10 +90,17 @@ class VulkanGpuTimingSourceTests(unittest.TestCase):
         self.assertIn('SCR_StatKeyValue("GPU frame ms"', VK_DEBUG)
         self.assertIn('SCR_StatKeyValue("GPU phases ms"', VK_DEBUG)
         self.assertIn("gpu_ms=%.3f", VK_DEBUG)
+        self.assertIn("gpu_frame_ms=%.3f", VK_DEBUG)
         self.assertIn("gpu_upload_ms=%.3f", VK_DEBUG)
         self.assertIn("gpu_shadow_ms=%.3f", VK_DEBUG)
+        self.assertIn("gpu_opaque_world_ms=%.3f", VK_DEBUG)
+        self.assertIn("gpu_opaque_entity_ms=%.3f", VK_DEBUG)
         self.assertIn("gpu_scene_ms=%.3f", VK_DEBUG)
         self.assertIn("gpu_post_ms=%.3f", VK_DEBUG)
+        self.assertIn("world_fast_lit_draws=%u", VK_DEBUG)
+        self.assertIn("entity_fast_lit_draws=%u", VK_DEBUG)
+        self.assertIn("VK_Debug_RecordFastLitDraw", VK_DEBUG)
+        self.assertIn("gpu_frame_valid=%d", VK_DEBUG)
         self.assertIn("gpu_timing=%d", VK_DEBUG)
         self.assertIn("VK_DEBUG_MISSING_GPU_TIMING", VK_DEBUG)
 
@@ -88,6 +109,18 @@ class VulkanGpuTimingSourceTests(unittest.TestCase):
         self.assertIn("QueryPerformanceCounter", VK_MAIN)
         self.assertIn("vk_frame_begin_us", VK_MAIN)
         self.assertIn("/\n                      1000.0f", VK_MAIN)
+
+    def test_stats_count_native_fullscreen_postprocess_submission(self) -> None:
+        self.assertIn("VK_DEBUG_DOMAIN_POSTPROCESS", VK_DEBUG)
+        self.assertIn("post_draws=%llu", VK_DEBUG)
+        self.assertIn("post_uploads=%llu", VK_DEBUG)
+        self.assertIn('#include "vk_debug.h"', VK_POST)
+        self.assertEqual(
+            5,
+            VK_POST.count(
+                "VK_Debug_RecordDraw(VK_DEBUG_DOMAIN_POSTPROCESS, 3, 0);"
+            ),
+        )
 
 
 if __name__ == "__main__":

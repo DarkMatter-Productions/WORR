@@ -8,12 +8,15 @@
 #include "client.h"
 #include "client/cgame_event_runtime.h"
 #include "client/native_readiness_pilot.h"
+#include "client/snapshot_shadow.h"
 #include "server/native_shadow.h"
 
 #include "common/net/legacy_entity_event_candidate.h"
 #include "common/net/legacy_temp_event_candidate.h"
 #include "common/net/native_carrier.h"
 #include "common/net/native_readiness_sideband.h"
+#include "cg_event_runtime.hpp"
+#include "cg_local_interaction.hpp"
 
 #include <array>
 #include <cstdint>
@@ -35,6 +38,7 @@ constexpr uint32_t kApplicationCeiling = 1024;
 
 cvar_t shadow_cvar{};
 cvar_t event_shadow_cvar{};
+cvar_t snapshot_shadow_cvar{};
 cvar_t probe_hold_cvar{};
 std::array<byte, 1024> reliable_storage{};
 
@@ -63,6 +67,153 @@ struct fake_event_runtime_t {
 };
 
 fake_event_runtime_t fake_event_runtime{};
+
+constexpr uint32_t kInteractionPredecessorLegacySequence = 116;
+constexpr uint32_t kInteractionRequestLegacySequence = 117;
+constexpr uint32_t kInteractionPostRequestLegacySequence = 118;
+std::array<worr_cgame_command_record_entry_v1, 3>
+    interaction_command_records{};
+
+worr_command_record_v1 interaction_command_record(
+    uint32_t sequence, bool hook_held)
+{
+    worr_command_record_v1 record{};
+    record.struct_size = sizeof(record);
+    record.schema_version = WORR_COMMAND_ABI_VERSION;
+    record.command_id = {91, sequence};
+    record.sample_time_us = static_cast<uint64_t>(sequence) * 16000u;
+    record.movement_model_revision = WORR_PREDICTION_MODEL_REVISION;
+    record.command.struct_size = sizeof(record.command);
+    record.command.schema_version = WORR_PREDICTION_ABI_VERSION;
+    record.command.duration_ms = 16;
+    if (hook_held)
+        record.command.buttons = WORR_LOCAL_INTERACTION_HOOK_BUTTON;
+    record.render_watermark.struct_size = sizeof(record.render_watermark);
+    record.render_watermark.schema_version = WORR_COMMAND_ABI_VERSION;
+    CHECK(Worr_CommandRecordCanonicalizeV1(
+        &record, WORR_COMMAND_MAX_NEGOTIATED_DURATION_MS));
+    return record;
+}
+
+uint32_t resolve_interaction_command_range(
+    uint32_t first_legacy_sequence, uint32_t command_count,
+    worr_cgame_command_record_range_v1 *range_out)
+{
+    worr_cgame_command_record_range_v1 output{};
+    if (!range_out)
+        return WORR_CGAME_COMMAND_RECORD_INVALID_ARGUMENT;
+
+    output.struct_size = sizeof(output);
+    output.api_version = WORR_CGAME_COMMAND_RECORD_API_VERSION;
+    output.flags = WORR_CGAME_COMMAND_RECORD_CANONICAL;
+    output.first_legacy_sequence = first_legacy_sequence;
+    if (command_count == 1 &&
+        first_legacy_sequence >= kInteractionPredecessorLegacySequence &&
+        first_legacy_sequence <= kInteractionPostRequestLegacySequence) {
+        output.command_count = 1;
+        output.commands[0] = interaction_command_records[
+            first_legacy_sequence - kInteractionPredecessorLegacySequence];
+        output.result = WORR_CGAME_COMMAND_RECORD_OK;
+    } else {
+        output.result = WORR_CGAME_COMMAND_RECORD_HISTORY_MISSING;
+    }
+    *range_out = output;
+    return output.result;
+}
+
+const worr_cgame_command_record_import_v1 interaction_command_import{
+    sizeof(interaction_command_import),
+    WORR_CGAME_COMMAND_RECORD_API_VERSION,
+    resolve_interaction_command_range,
+};
+
+worr_local_interaction_authority_receipt_v1
+configure_interaction_prediction(bool hook_active_after)
+{
+    worr_local_interaction_state_v1 state_before{};
+    worr_local_interaction_intent_v1 intent{};
+    worr_local_interaction_transaction_v1 authoritative{};
+    worr_local_interaction_authority_receipt_v1 receipt{};
+
+    interaction_command_records = {};
+    interaction_command_records[0].legacy_sequence =
+        kInteractionPredecessorLegacySequence;
+    interaction_command_records[0].command =
+        interaction_command_record(16, false);
+    interaction_command_records[1].legacy_sequence =
+        kInteractionRequestLegacySequence;
+    interaction_command_records[1].command =
+        interaction_command_record(17, true);
+    interaction_command_records[2].legacy_sequence =
+        kInteractionPostRequestLegacySequence;
+    interaction_command_records[2].command =
+        interaction_command_record(18, true);
+    CHECK(Worr_CommandRecordValidateV1(
+        &interaction_command_records[0].command,
+        WORR_COMMAND_MAX_NEGOTIATED_DURATION_MS));
+    CHECK(Worr_CommandRecordValidateV1(
+        &interaction_command_records[1].command,
+        WORR_COMMAND_MAX_NEGOTIATED_DURATION_MS));
+    CHECK(Worr_CommandRecordValidateV1(
+        &interaction_command_records[2].command,
+        WORR_COMMAND_MAX_NEGOTIATED_DURATION_MS));
+
+    intent.struct_size = sizeof(intent);
+    intent.schema_version = WORR_LOCAL_INTERACTION_ABI_VERSION;
+    intent.flags = WORR_LOCAL_INTERACTION_INTENT_HOOK_HELD;
+    CHECK(Worr_LocalInteractionRebaseBeforeCommandV1(
+        &interaction_command_records[1].command, false, false,
+        &state_before));
+    CHECK(Worr_LocalInteractionBuildAuthoritativeHookV1(
+        &state_before, &interaction_command_records[1].command, &intent,
+        hook_active_after, &authoritative));
+    CHECK(Worr_LocalInteractionAuthorityReceiptBuildV1(&authoritative,
+                                                        &receipt));
+    return receipt;
+}
+
+void install_configured_interaction_import()
+{
+    CG_LocalInteractionSetImport(&interaction_command_import);
+}
+
+void predict_configured_interaction()
+{
+    worr_cgame_prediction_input_range_v1 range{};
+    range.struct_size = sizeof(range);
+    range.api_version = WORR_CGAME_PREDICTION_INPUT_API_VERSION;
+    range.result = WORR_CGAME_PREDICTION_INPUT_OK;
+    range.source = WORR_CGAME_PREDICTION_INPUT_SOURCE_CANONICAL_CURSOR;
+    range.flags = WORR_CGAME_PREDICTION_INPUT_CANONICAL;
+    range.authoritative_legacy_sequence =
+        kInteractionPredecessorLegacySequence;
+    range.current_legacy_sequence = kInteractionRequestLegacySequence;
+    range.command_count = 1;
+    range.commands[0].legacy_sequence = kInteractionRequestLegacySequence;
+    range.commands[0].command_id =
+        interaction_command_records[1].command.command_id;
+    range.commands[0].command = interaction_command_records[1].command.command;
+    CG_LocalInteractionPredict(range);
+}
+
+void predict_past_configured_interaction()
+{
+    worr_cgame_prediction_input_range_v1 range{};
+    range.struct_size = sizeof(range);
+    range.api_version = WORR_CGAME_PREDICTION_INPUT_API_VERSION;
+    range.result = WORR_CGAME_PREDICTION_INPUT_OK;
+    range.source = WORR_CGAME_PREDICTION_INPUT_SOURCE_CANONICAL_CURSOR;
+    range.flags = WORR_CGAME_PREDICTION_INPUT_CANONICAL;
+    range.authoritative_legacy_sequence = kInteractionRequestLegacySequence;
+    range.current_legacy_sequence = kInteractionPostRequestLegacySequence;
+    range.command_count = 1;
+    range.commands[0].legacy_sequence =
+        kInteractionPostRequestLegacySequence;
+    range.commands[0].command_id =
+        interaction_command_records[2].command.command_id;
+    range.commands[0].command = interaction_command_records[2].command.command;
+    CG_LocalInteractionPredict(range);
+}
 
 worr_cgame_event_runtime_result_v1 fake_reset_authority(
     uint32_t stream_epoch, uint32_t first_sequence)
@@ -220,7 +371,12 @@ void feed_record_to_client(const worr_native_readiness_record_v1 &record)
 
 worr_native_readiness_record_v1 decode_client_record(size_t offset)
 {
-    CHECK(cls.netchan.message.cursize >= offset + 65u);
+    constexpr size_t kClcSettingWireBytes = 5u;
+    constexpr size_t kReadinessRecordWireBytes =
+        WORR_NATIVE_READINESS_SIDEBAND_PAIR_COUNT *
+        kClcSettingWireBytes;
+    CHECK(cls.netchan.message.cursize >=
+          offset + kReadinessRecordWireBytes);
     worr_native_readiness_sideband_parser_v1 parser{};
     CHECK(Worr_NativeReadinessSidebandParserInitV1(&parser));
     CHECK(Worr_NativeReadinessSidebandPacketBeginV1(&parser) ==
@@ -228,7 +384,7 @@ worr_native_readiness_record_v1 decode_client_record(size_t offset)
     const byte *wire = cls.netchan.message.data + offset;
     for (uint32_t index = 0;
          index < WORR_NATIVE_READINESS_SIDEBAND_PAIR_COUNT; ++index) {
-        const byte *field = wire + index * 5u;
+        const byte *field = wire + index * kClcSettingWireBytes;
         CHECK(field[0] == static_cast<byte>(clc_setting));
         const auto setting_index = static_cast<int16_t>(
             static_cast<uint16_t>(field[1]) |
@@ -298,18 +454,21 @@ worr_native_readiness_record_v1 activate_epoch(
         &fixture.server, official_epoch, kPublicCapabilities,
         kPublicCapabilities, now, &challenge));
     CHECK(challenge.negotiated_capabilities ==
-          kPrivateEventCapabilities);
+              kPrivateEventCapabilities &&
+          challenge.snapshot_epoch == 0);
 
     const size_t ready_offset = cls.netchan.message.cursize;
     feed_record_to_client(challenge);
     const auto client_ready = decode_client_record(ready_offset);
     CHECK(client_ready.record_kind ==
-          WORR_NATIVE_READINESS_RECORD_CLIENT_READY);
+              WORR_NATIVE_READINESS_RECORD_CLIENT_READY &&
+          client_ready.snapshot_epoch == 0);
 
     worr_native_readiness_record_v1 server_active{};
     CHECK(feed_record_to_server(
               fixture, client_ready, now + 1u, &server_active) ==
           SV_NATIVE_SHADOW_OBSERVE_SERVER_ACTIVE_READY);
+    CHECK(server_active.snapshot_epoch == 0);
     CHECK(SV_NativeShadowServerActiveQueuedV1(&fixture.server));
 
     const size_t confirm_offset = cls.netchan.message.cursize;
@@ -317,15 +476,17 @@ worr_native_readiness_record_v1 activate_epoch(
     feed_record_to_client(server_active);
     const auto active_confirm = decode_client_record(confirm_offset);
     CHECK(active_confirm.record_kind ==
-          WORR_NATIVE_READINESS_RECORD_CLIENT_ACTIVE_CONFIRM);
+              WORR_NATIVE_READINESS_RECORD_CLIENT_ACTIVE_CONFIRM &&
+          active_confirm.snapshot_epoch == 0);
     CHECK(feed_record_to_server(
               fixture, active_confirm, now + 2u) ==
           SV_NATIVE_SHADOW_OBSERVE_CLIENT_ACTIVE_CONFIRMED);
     return challenge;
 }
 
-void reset_fixture(fixture_t &fixture, uint32_t now,
-                   uint32_t official_epoch)
+void reset_fixture_with_consumer(
+    fixture_t &fixture, uint32_t now, uint32_t official_epoch,
+    const worr_cgame_event_runtime_export_v1 *event_consumer)
 {
     if (fixture.server_live)
         SV_NativeShadowPeerDestroyV1(&fixture.server);
@@ -355,13 +516,21 @@ void reset_fixture(fixture_t &fixture, uint32_t now,
     CL_NativeReadinessPilotRegisterCvar();
     shadow_cvar.integer = 1;
     event_shadow_cvar.integer = 1;
-    CHECK(CL_CGameEventRuntimeSetConsumer(&fake_event_export));
+    CHECK(event_consumer != nullptr);
+    CHECK(CL_CGameEventRuntimeSetConsumer(event_consumer));
     CHECK(CL_NativeReadinessPilotBeginConnection(&cls.netchan));
     CHECK(SV_NativeShadowPeerInitModeV1(
         &fixture.server, &fixture.server_channel, now,
         SV_NATIVE_SHADOW_MODE_EVENT));
     fixture.server_live = true;
     (void)activate_epoch(fixture, official_epoch, now + 1u);
+}
+
+void reset_fixture(fixture_t &fixture, uint32_t now,
+                   uint32_t official_epoch)
+{
+    reset_fixture_with_consumer(fixture, now, official_epoch,
+                                &fake_event_export);
 }
 
 wire_packet_t prepare_packet(netchan_t &channel, uint32_t now)
@@ -569,6 +738,32 @@ worr_event_record_v1 temp_candidate(uint32_t tick)
     return candidate;
 }
 
+worr_event_record_v1 authority_receipt_candidate(
+    const worr_local_interaction_authority_receipt_v1 &receipt)
+{
+    worr_event_record_v1 candidate{};
+    CHECK(Worr_LocalInteractionAuthorityReceiptValidateV1(&receipt));
+
+    candidate.struct_size = sizeof(candidate);
+    candidate.schema_version = WORR_EVENT_ABI_VERSION;
+    candidate.model_revision = WORR_EVENT_MODEL_REVISION;
+    candidate.flags = WORR_EVENT_FLAG_CRITICAL;
+    candidate.source_tick = 700;
+    candidate.source_time_us = UINT64_C(7000000);
+    candidate.source_entity = {WORR_EVENT_NO_ENTITY, 0};
+    candidate.subject_entity = {WORR_EVENT_NO_ENTITY, 0};
+    candidate.event_type = WORR_EVENT_TYPE_AUTHORITY_RECEIPT;
+    candidate.delivery_class = WORR_EVENT_DELIVERY_RELIABLE_ORDERED;
+    candidate.prediction_class = WORR_EVENT_PREDICTION_AUTHORITATIVE_ONLY;
+    candidate.payload_kind =
+        WORR_EVENT_PAYLOAD_LOCAL_INTERACTION_AUTHORITY_V1;
+    candidate.payload_size = sizeof(receipt);
+    std::memcpy(candidate.payload, &receipt, sizeof(receipt));
+    CHECK(Worr_EventRecordCandidateValidateV1(
+        &candidate, WORR_EVENT_STREAM_MAX_ENTITIES_V1));
+    return candidate;
+}
+
 sv_native_shadow_event_status_v1 event_status(fixture_t &fixture,
                                                uint32_t now)
 {
@@ -583,6 +778,356 @@ cl_native_readiness_pilot_test_state_t client_state()
     cl_native_readiness_pilot_test_state_t state{};
     CHECK(CL_NativeReadinessPilotGetTestState(&state));
     return state;
+}
+
+void test_private_authority_receipt_reconciles_over_native_virtual_link(
+    bool hook_active_after, bool receipt_before_prediction,
+    bool inject_conflicting_receipt)
+{
+    fixture_t fixture{};
+    const uint32_t official_epoch =
+        701u + (hook_active_after ? 1u : 0u) +
+        (receipt_before_prediction ? 2u : 0u);
+    const uint32_t descriptor_time =
+        8010u + (hook_active_after ? 1000u : 0u) +
+        (receipt_before_prediction ? 2000u : 0u);
+    reset_fixture_with_consumer(fixture, 8000, official_epoch,
+                                CG_GetEventRuntimeAPI());
+    CG_EventRuntimeSetAuditEnabled(false);
+
+    const auto authority_receipt =
+        configure_interaction_prediction(hook_active_after);
+    const auto candidate = authority_receipt_candidate(authority_receipt);
+    CHECK(SV_NativeShadowQueueEventCandidatesV1(
+        &fixture.server, &candidate, 1, descriptor_time));
+
+    /* The real cgame export accepts the transport descriptor before any
+     * control record is admitted. This remains an in-process virtual link:
+     * no socket, window, or client input subsystem is involved. */
+    auto descriptor = prepare_packet(fixture.server_channel, descriptor_time);
+    const auto descriptor_ref = data_record_ref(descriptor);
+    CHECK(descriptor_ref.record_class ==
+          WORR_NATIVE_RECORD_EVENT_STREAM_DESCRIPTOR_V1);
+    const uint32_t stream_epoch = descriptor_ref.object_epoch;
+    const uint32_t first_sequence = descriptor_ref.object_sequence;
+    accept_packet(fixture.server_channel, descriptor);
+    CHECK(deliver_to_client(fixture, descriptor, descriptor_time) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    auto descriptor_ack = prepare_packet(cls.netchan, descriptor_time + 1u);
+    accept_packet(cls.netchan, descriptor_ack);
+    CHECK(deliver_to_server(fixture, descriptor_ack, descriptor_time + 1u) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+
+    auto status = event_status(fixture, descriptor_time + 1u);
+    CHECK(status.descriptor_acked == 1 && status.candidates_promoted == 1 &&
+          status.retained_count == 1);
+    /* Import installation resets the interaction cache by contract, so it
+     * must precede either prediction or authority receipt arrival. */
+    install_configured_interaction_import();
+    cg_local_interaction_shadow_status_v1 interaction{};
+    if (!receipt_before_prediction) {
+        predict_configured_interaction();
+        CG_LocalInteractionGetStatus(&interaction);
+        CHECK(interaction.prediction_passes == 1 &&
+              interaction.transactions == 1 &&
+              interaction.pending_requests == 1 &&
+              interaction.authority_receipts == 0 &&
+              interaction.requires_resync == 0);
+    }
+    cg_event_runtime_status_v1 cgame_before_receipt{};
+    CHECK(CG_EventRuntimeGetStatus(&cgame_before_receipt));
+    CHECK(cgame_before_receipt.authority_epoch == stream_epoch);
+    CHECK(cgame_before_receipt.authority_count == 0);
+    CHECK(cgame_before_receipt.receipt.highest_contiguous ==
+          first_sequence - 1u);
+
+    auto receipt_event =
+        prepare_packet(fixture.server_channel, descriptor_time + 2u);
+    const auto receipt_ref = data_record_ref(receipt_event);
+    CHECK(receipt_ref.record_class == WORR_NATIVE_RECORD_EVENT_V1 &&
+          receipt_ref.object_epoch == stream_epoch &&
+          receipt_ref.object_sequence == first_sequence);
+    accept_packet(fixture.server_channel, receipt_event);
+    CHECK(deliver_to_client(fixture, receipt_event, descriptor_time + 2u) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+
+    if (receipt_before_prediction) {
+        CG_LocalInteractionGetStatus(&interaction);
+        CHECK(interaction.authority_receipts == 1 &&
+              interaction.authority_unmatched == 1 &&
+              interaction.corrections_confirmed == 0 &&
+              interaction.corrections_rejected == 0 &&
+              interaction.requires_resync == 0);
+        predict_configured_interaction();
+    }
+    CG_LocalInteractionGetStatus(&interaction);
+    CHECK(interaction.authority_receipts == 1 &&
+          interaction.authority_unmatched ==
+              (receipt_before_prediction ? 1u : 0u) &&
+          interaction.authority_duplicates == 0 &&
+          interaction.corrections_confirmed ==
+              (hook_active_after ? 1u : 0u) &&
+          interaction.corrections_rejected ==
+              (hook_active_after ? 0u : 1u) &&
+          interaction.requires_resync == 0);
+    cg_event_runtime_status_v1 cgame_status{};
+    CHECK(CG_EventRuntimeGetStatus(&cgame_status));
+    CHECK(cgame_status.authority_epoch == stream_epoch);
+    CHECK(cgame_status.authority_count == 1);
+    CHECK(cgame_status.authoritative_records ==
+          cgame_before_receipt.authoritative_records + 1u);
+    CHECK(cgame_status.authoritative_presentations == 0);
+    CHECK(cgame_status.receipt.highest_contiguous == first_sequence);
+
+    std::uint32_t advanced = UINT32_MAX;
+    const auto terminal_skips = cgame_status.authoritative_terminal_skips;
+    CHECK(CG_EventRuntimeAdvanceAudit(UINT64_C(7000000), 700, 1, &advanced) ==
+          CG_EVENT_RUNTIME_OK);
+    CHECK(advanced == 0);
+    CHECK(CG_EventRuntimeGetStatus(&cgame_status));
+    CHECK(cgame_status.authoritative_terminal_skips == terminal_skips + 1u &&
+          cgame_status.authoritative_presentations == 0 &&
+          cgame_status.authority_requires_resync == 0);
+
+    /* Drop the exact event receipt, then deliver the server retry twice. The
+     * native admission owner rearms the ACK without reinserting the control
+     * record, so cgame reconciliation remains exactly-once. */
+    auto lost_receipt_ack = prepare_packet(cls.netchan, descriptor_time + 2u);
+    accept_packet(cls.netchan, lost_receipt_ack);
+    const uint32_t retry_time =
+        descriptor_time + 2u + SV_NATIVE_SHADOW_EVENT_RESEND_MS;
+    CHECK(SV_NativeShadowOutputDueV1(&fixture.server, retry_time));
+    auto retry = prepare_packet(fixture.server_channel, retry_time);
+    accept_packet(fixture.server_channel, retry);
+    CHECK(deliver_to_client(fixture, retry, retry_time) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    CHECK(deliver_to_client(fixture, retry, retry_time + 1u) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    CG_LocalInteractionGetStatus(&interaction);
+    CHECK(interaction.authority_receipts == 1 &&
+          interaction.authority_unmatched ==
+              (receipt_before_prediction ? 1u : 0u) &&
+          interaction.authority_duplicates == 0 &&
+          interaction.corrections_confirmed ==
+              (hook_active_after ? 1u : 0u) &&
+          interaction.corrections_rejected ==
+              (hook_active_after ? 0u : 1u) &&
+          interaction.requires_resync == 0);
+
+    auto final_ack = prepare_packet(cls.netchan, retry_time + 1u);
+    accept_packet(cls.netchan, final_ack);
+    CHECK(deliver_to_server(fixture, final_ack, retry_time + 1u) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    status = event_status(fixture, retry_time + 1u);
+    CHECK(status.retained_count == 0 && status.events_acknowledged == 1 &&
+          status.retries >= 1);
+
+    if (inject_conflicting_receipt) {
+        auto conflicting_receipt = authority_receipt;
+        conflicting_receipt.state_hash ^= UINT64_C(1);
+        CHECK(Worr_LocalInteractionAuthorityReceiptValidateV1(
+            &conflicting_receipt));
+        const auto conflicting_candidate =
+            authority_receipt_candidate(conflicting_receipt);
+        const uint32_t conflict_time = retry_time + 2u;
+        CHECK(SV_NativeShadowQueueEventCandidatesV1(
+            &fixture.server, &conflicting_candidate, 1, conflict_time));
+        CHECK(SV_NativeShadowOutputDueV1(&fixture.server, conflict_time));
+        auto conflict_packet =
+            prepare_packet(fixture.server_channel, conflict_time);
+        const auto conflict_ref = data_record_ref(conflict_packet);
+        CHECK(conflict_ref.record_class == WORR_NATIVE_RECORD_EVENT_V1 &&
+              conflict_ref.object_epoch == stream_epoch &&
+              conflict_ref.object_sequence == first_sequence + 1u);
+        accept_packet(fixture.server_channel, conflict_packet);
+
+        /* A distinct receipt for an already reconciled command must never be
+         * committed or acknowledged. Native admission scrubs cgame authority,
+         * leaves the new server record retained, and drains this transport
+         * until a fresh descriptor/epoch restores a trusted baseline. */
+        CHECK(deliver_to_client(fixture, conflict_packet, conflict_time) ==
+              NETCHAN_APP_RX_REJECT);
+        CHECK(CL_CGameEventRuntimeRequiresResync());
+        CHECK(client_state().mode == 3u);
+        status = event_status(fixture, conflict_time);
+        CHECK(status.retained_count == 1 && status.events_acknowledged == 1);
+
+        /* The failed epoch cannot be revived. A fresh negotiated map epoch
+         * cancels its retained conflict, then only a fresh descriptor may
+         * clear the engine resync latch and establish new cgame authority. */
+        CL_NativeReadinessPilotQuiesceMap();
+        CL_NativeReadinessPilotServerDataReset();
+        const uint32_t recovery_time = conflict_time + 10u;
+        const auto recovery_challenge = activate_epoch(
+            fixture, official_epoch + 100u, recovery_time);
+        CHECK(recovery_challenge.transport_epoch != 0);
+        CHECK(CL_CGameEventRuntimeRequiresResync());
+        CHECK(fixture.server.cancelled_event_records >= 1);
+
+        /* SERVER_ACTIVE creates a fresh descriptor gate.  It must be
+         * delivered and acknowledged before this epoch can promote data. */
+        auto recovery_descriptor = prepare_packet(
+            fixture.server_channel, recovery_time + 1u);
+        const auto recovery_descriptor_ref =
+            data_record_ref(recovery_descriptor);
+        CHECK(recovery_descriptor_ref.record_class ==
+              WORR_NATIVE_RECORD_EVENT_STREAM_DESCRIPTOR_V1 &&
+              recovery_descriptor_ref.object_epoch != stream_epoch);
+        const uint32_t recovery_stream_epoch =
+            recovery_descriptor_ref.object_epoch;
+        const uint32_t recovery_first_sequence =
+            recovery_descriptor_ref.object_sequence;
+        accept_packet(fixture.server_channel, recovery_descriptor);
+        CHECK(deliver_to_client(
+                  fixture, recovery_descriptor, recovery_time + 1u) ==
+              NETCHAN_APP_RX_EXPOSE_LEGACY);
+        CHECK(!CL_CGameEventRuntimeRequiresResync());
+        auto recovery_descriptor_ack = prepare_packet(
+            cls.netchan, recovery_time + 2u);
+        accept_packet(cls.netchan, recovery_descriptor_ack);
+        CHECK(deliver_to_server(
+                  fixture, recovery_descriptor_ack, recovery_time + 2u) ==
+              NETCHAN_APP_RX_EXPOSE_LEGACY);
+        status = event_status(fixture, recovery_time + 2u);
+        CHECK(status.descriptor_acked == 1 && status.candidates_promoted == 0 &&
+              status.retained_count == 0);
+
+        CHECK(SV_NativeShadowQueueEventCandidatesV1(
+            &fixture.server, &candidate, 1, recovery_time + 3u));
+        status = event_status(fixture, recovery_time + 3u);
+        CHECK(status.candidates_promoted == 1 && status.retained_count == 1);
+
+        install_configured_interaction_import();
+        predict_configured_interaction();
+        CG_LocalInteractionGetStatus(&interaction);
+        CHECK(interaction.prediction_passes == 1 &&
+              interaction.pending_requests == 1 &&
+              interaction.requires_resync == 0);
+        auto recovery_event = prepare_packet(
+            fixture.server_channel, recovery_time + 4u);
+        const auto recovery_event_ref = data_record_ref(recovery_event);
+        CHECK(recovery_event_ref.record_class == WORR_NATIVE_RECORD_EVENT_V1 &&
+              recovery_event_ref.object_epoch == recovery_stream_epoch &&
+              recovery_event_ref.object_sequence == recovery_first_sequence);
+        accept_packet(fixture.server_channel, recovery_event);
+        CHECK(deliver_to_client(fixture, recovery_event, recovery_time + 4u) ==
+              NETCHAN_APP_RX_EXPOSE_LEGACY);
+        CG_LocalInteractionGetStatus(&interaction);
+        CHECK(interaction.authority_receipts == 1 &&
+              interaction.corrections_rejected == 1 &&
+              interaction.requires_resync == 0);
+
+        auto recovery_final_ack = prepare_packet(cls.netchan, recovery_time + 5u);
+        accept_packet(cls.netchan, recovery_final_ack);
+        CHECK(deliver_to_server(
+                  fixture, recovery_final_ack, recovery_time + 5u) ==
+              NETCHAN_APP_RX_EXPOSE_LEGACY);
+        status = event_status(fixture, recovery_time + 5u);
+        CHECK(status.retained_count == 0 && status.events_acknowledged == 1);
+    }
+
+    SV_NativeShadowPeerDestroyV1(&fixture.server);
+    fixture.server_live = false;
+    CL_NativeReadinessPilotBeforeNetchanClose(&cls.netchan);
+    CHECK(CL_CGameEventRuntimeSetConsumer(nullptr));
+    CG_LocalInteractionSetImport(nullptr);
+}
+
+void test_private_authority_receipt_rejection_over_native_virtual_link()
+{
+    test_private_authority_receipt_reconciles_over_native_virtual_link(false,
+                                                                        false,
+                                                                        false);
+}
+
+void test_private_authority_receipt_confirmation_over_native_virtual_link()
+{
+    test_private_authority_receipt_reconciles_over_native_virtual_link(true,
+                                                                        false,
+                                                                        false);
+}
+
+void test_private_authority_receipt_first_reconciliation_over_native_virtual_link()
+{
+    test_private_authority_receipt_reconciles_over_native_virtual_link(false,
+                                                                        true,
+                                                                        false);
+    test_private_authority_receipt_reconciles_over_native_virtual_link(true,
+                                                                        true,
+                                                                        false);
+}
+
+void test_private_authority_receipt_conflict_forces_native_resync()
+{
+    test_private_authority_receipt_reconciles_over_native_virtual_link(false,
+                                                                        false,
+                                                                        true);
+}
+
+void test_receipt_history_loss_forces_native_resync()
+{
+    fixture_t fixture{};
+    constexpr uint32_t official_epoch = 705;
+    constexpr uint32_t descriptor_time = 12010;
+    reset_fixture_with_consumer(fixture, 12000, official_epoch,
+                                CG_GetEventRuntimeAPI());
+    CG_EventRuntimeSetAuditEnabled(false);
+
+    const auto receipt = configure_interaction_prediction(false);
+    const auto candidate = authority_receipt_candidate(receipt);
+    CHECK(SV_NativeShadowQueueEventCandidatesV1(
+        &fixture.server, &candidate, 1, descriptor_time));
+    auto descriptor = prepare_packet(fixture.server_channel, descriptor_time);
+    const auto descriptor_ref = data_record_ref(descriptor);
+    CHECK(descriptor_ref.record_class ==
+          WORR_NATIVE_RECORD_EVENT_STREAM_DESCRIPTOR_V1);
+    accept_packet(fixture.server_channel, descriptor);
+    CHECK(deliver_to_client(fixture, descriptor, descriptor_time) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    auto descriptor_ack = prepare_packet(cls.netchan, descriptor_time + 1u);
+    accept_packet(cls.netchan, descriptor_ack);
+    CHECK(deliver_to_server(fixture, descriptor_ack, descriptor_time + 1u) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+
+    install_configured_interaction_import();
+    auto receipt_event = prepare_packet(
+        fixture.server_channel, descriptor_time + 2u);
+    const auto receipt_ref = data_record_ref(receipt_event);
+    CHECK(receipt_ref.record_class == WORR_NATIVE_RECORD_EVENT_V1);
+    accept_packet(fixture.server_channel, receipt_event);
+    CHECK(deliver_to_client(fixture, receipt_event, descriptor_time + 2u) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    cg_local_interaction_shadow_status_v1 interaction{};
+    CG_LocalInteractionGetStatus(&interaction);
+    CHECK(interaction.authority_receipts == 1 &&
+          interaction.authority_unmatched == 1 &&
+          interaction.requires_resync == 0);
+
+    /* A receipt-first arrival remains admissible only while the exact
+     * canonical command can still be predicted. Advancing past that command
+     * is a history loss, so it must fail closed before the queued ACK is
+     * transmitted to the server. */
+    predict_past_configured_interaction();
+    CG_LocalInteractionGetStatus(&interaction);
+    CHECK(interaction.authority_expirations == 1 &&
+          interaction.requires_resync == 1);
+    cg_event_runtime_status_v1 cgame_status{};
+    CHECK(CG_EventRuntimeGetStatus(&cgame_status));
+    CHECK(cgame_status.authority_requires_resync == 1 &&
+          cgame_status.authority_degraded == 1);
+
+    worr_cgame_event_runtime_status_v1 owner_status{};
+    CHECK(!CL_CGameEventRuntimeGetStatus(&owner_status));
+    CHECK(CL_CGameEventRuntimeRequiresResync());
+    const auto server_status = event_status(fixture, descriptor_time + 3u);
+    CHECK(server_status.retained_count == 1 &&
+          server_status.events_acknowledged == 0);
+
+    SV_NativeShadowPeerDestroyV1(&fixture.server);
+    fixture.server_live = false;
+    CL_NativeReadinessPilotBeforeNetchanClose(&cls.netchan);
+    CHECK(CL_CGameEventRuntimeSetConsumer(nullptr));
+    CG_LocalInteractionSetImport(nullptr);
 }
 
 void test_bidirectional_loss_reorder_duplicate_and_ack_loss()
@@ -1152,6 +1697,10 @@ extern "C" cvar_t *Cvar_Get(const char *name, const char *, int)
         return &event_shadow_cvar;
     }
     if (name &&
+        std::strcmp(name, "cl_worr_native_snapshot_shadow") == 0) {
+        return &snapshot_shadow_cvar;
+    }
+    if (name &&
         std::strcmp(name, "cl_worr_native_shadow_probe_hold") == 0) {
         return &probe_hold_cvar;
     }
@@ -1237,12 +1786,44 @@ extern "C" q2proto_error_t q2proto_client_write(
     return Q2P_ERR_SUCCESS;
 }
 
+extern "C" bool CL_SnapshotShadowBindNativeEpoch(uint32_t)
+{
+    return false;
+}
+
+extern "C" bool CL_SnapshotShadowLatest(
+    worr_snapshot_projection_view_v2 *,
+    worr_snapshot_projection_hashes_v2 *,
+    worr_snapshot_ref_v2 *)
+{
+    return false;
+}
+
+extern "C" cl_snapshot_shadow_native_expectation_result_v1
+CL_SnapshotShadowGetNativeExpectation(
+    worr_snapshot_id_v2,
+    worr_native_snapshot_expectation_v1 *)
+{
+    return CL_SNAPSHOT_SHADOW_NATIVE_EXPECTATION_INVALID;
+}
+
+extern "C" bool CL_SnapshotShadowGetNativeConsumerV1(
+    worr_native_snapshot_consumer_v1 *)
+{
+    return false;
+}
+
 int main()
 {
     test_bidirectional_loss_reorder_duplicate_and_ack_loss();
     test_multiple_events_selective_receipt_under_semantic_reordering();
     test_corruption_is_directional_and_fail_closed();
     test_epoch_cancellation_strips_old_ack_and_data();
+    test_private_authority_receipt_rejection_over_native_virtual_link();
+    test_private_authority_receipt_confirmation_over_native_virtual_link();
+    test_private_authority_receipt_first_reconciliation_over_native_virtual_link();
+    test_receipt_history_loss_forces_native_resync();
+    test_private_authority_receipt_conflict_forces_native_resync();
     diagnose_exhausted_ack_credit_lifecycle_gap();
     std::printf(
         "native_event_virtual_link_test: ok "

@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "task_id": "FR-02-T13",
+  "scenes": [
+    {
+      "id": "hdr_auto_exposure_fixed_view",
+      "config": "renderer_parity/fr01_hdr_auto_exposure.cfg",
+      "capture": "fr01_hdr_auto_exposure.tga",
+      "crop": [100, 100, 250, 200],
+      "metrics": {
+        "pixel_threshold": 5,
+        "max_mean_absolute_rgb": [2, 4, 5],
+        "max_pixels_over_threshold_percent": 0
+      }
+    }
+  ]
+}

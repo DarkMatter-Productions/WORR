@@ -32,9 +32,11 @@ class VulkanLiquidRefractionSourceTests(unittest.TestCase):
 
     def test_liquid_pass_loads_color_and_depth_after_the_copy(self) -> None:
         self.assertIn("VK_ATTACHMENT_LOAD_OP_LOAD", VK_MAIN)
-        self.assertIn("ctx->liquid_render_pass", VK_MAIN)
+        # The load pass now targets either the LDR swapchain scene or the
+        # native float scene, so its name describes that shared ownership.
+        self.assertIn("ctx->scene_load_render_pass", VK_MAIN)
         copy_index = VK_MAIN.index("VK_SceneCopy_Record(cmd, image_index)")
-        alpha_index = VK_MAIN.index("VK_World_RecordAlpha(cmd, &ctx->swapchain.extent,")
+        alpha_index = VK_MAIN.index("VK_World_RecordAlpha(cmd, &ctx->scene_extent,")
         self.assertLess(copy_index, alpha_index)
         self.assertIn("VK_ATTACHMENT_STORE_OP_STORE", VK_MAIN)
         self.assertIn("liquid_render_pass_info.pDependencies = dependencies", VK_MAIN)
@@ -60,7 +62,9 @@ class VulkanLiquidRefractionSourceTests(unittest.TestCase):
         self.assertIn("VK_PostProcess_RecordFinal", VK_MAIN)
         self.assertIn("vkCmdDraw(cmd, 3, 1, 0, 0)", VK_POSTPROCESS)
         self.assertIn("gl_FragCoord.xy", POSTPROCESS_SHADER)
-        self.assertIn("sin(tc.yx * 4.0 + push_data.time)", POSTPROCESS_SHADER)
+        self.assertIn("vec2 warp_tc = vec2(tc.x, 1.0 - tc.y)", POSTPROCESS_SHADER)
+        self.assertIn("warp_tc.yx * 31.41592653589793 + push_data.time", POSTPROCESS_SHADER)
+        self.assertIn("tc += warp_offset * vec2(1.0, -1.0)", POSTPROCESS_SHADER)
         self.assertNotIn('#include "rend_gl', VK_POSTPROCESS)
 
     def test_entity_alpha_phases_straddle_transparent_world_liquid(self) -> None:
@@ -69,10 +73,10 @@ class VulkanLiquidRefractionSourceTests(unittest.TestCase):
         self.assertIn('Cvar_Get("vk_draworder", "1", 0)', VK_ENTITY)
         self.assertIn("void VK_Entity_RecordBeforeLiquid", VK_ENTITY)
         self.assertIn("void VK_Entity_RecordAfterLiquid", VK_ENTITY)
-        before_index = VK_MAIN.index("VK_Entity_RecordBeforeLiquid(cmd, &ctx->swapchain.extent)")
+        before_index = VK_MAIN.index("VK_Entity_RecordBeforeLiquid(cmd, &ctx->scene_extent)")
         copy_index = VK_MAIN.index("VK_SceneCopy_Record(cmd, image_index)")
-        alpha_index = VK_MAIN.index("VK_World_RecordAlpha(cmd, &ctx->swapchain.extent,")
-        after_index = VK_MAIN.index("VK_Entity_RecordAfterLiquid(cmd, &ctx->swapchain.extent)")
+        alpha_index = VK_MAIN.index("VK_World_RecordAlpha(cmd, &ctx->scene_extent,")
+        after_index = VK_MAIN.index("VK_Entity_RecordAfterLiquid(cmd, &ctx->scene_extent)")
         self.assertLess(before_index, copy_index)
         self.assertLess(copy_index, alpha_index)
         self.assertLess(alpha_index, after_index)

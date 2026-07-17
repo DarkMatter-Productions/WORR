@@ -325,6 +325,67 @@ void apply_fog(inout vec3 diffuse, bool sky) {
     }
 }
 
+#ifdef VK_WORLD_STATIC_FAST_LIT
+// Selected only for ordinary opaque lightmapped world batches while no sun or
+// dynamic receiver lighting is active.  Keep the lightmap/intensity/fog
+// equation byte-for-byte analogous to the general receiver path without
+// material, warp, fullbright, and shadow control flow.
+void main() {
+    vec4 base = texture(tex_sampler, in_uv);
+    vec4 lm = texture(lm_sampler, in_lm_uv);
+    vec3 lighting = max((lm.rgb + vec3(shadow_dlight_count.z)) *
+                        max(shadow_dlight_count.y, 0.0), vec3(0.0));
+    vec4 color = base * vec4(lighting, lm.a) * in_color;
+    if ((in_flags & VK_WORLD_VERTEX_INTENSITY) != 0u) {
+        color.rgb *= max(shadow_moment_tuning.z, 1.0);
+    }
+#ifndef VK_WORLD_STATIC_FAST_LIT_NO_FOG
+    apply_fog(color.rgb, false);
+#endif
+    out_color = color;
+}
+#elif defined(VK_WORLD_STATIC_FAST_LIT_GLOWMAP)
+// The glow-map companion for the static-light receiver.  Authored glow maps
+// raise the lightmap toward white even when bloom output is disabled, so this
+// remains a distinct receiver class instead of treating it as texture-replace.
+// It preserves that material equation while omitting unavailable sun/dlight
+// receiver work.
+void main() {
+    vec4 base = texture(tex_sampler, in_uv);
+    vec4 lm = texture(lm_sampler, in_lm_uv);
+    float glow_scale = shadow_glowmap_tuning.x;
+    if ((in_flags & VK_WORLD_VERTEX_INTENSITY) != 0u) {
+        glow_scale *= max(shadow_moment_tuning.z, 1.0);
+    }
+    lm.rgb = mix(lm.rgb, vec3(1.0), texture(glow_sampler, in_uv).a * glow_scale);
+    vec3 lighting = max((lm.rgb + vec3(shadow_dlight_count.z)) *
+                        max(shadow_dlight_count.y, 0.0), vec3(0.0));
+    vec4 color = base * vec4(lighting, lm.a) * in_color;
+    if ((in_flags & VK_WORLD_VERTEX_INTENSITY) != 0u) {
+        color.rgb *= max(shadow_moment_tuning.z, 1.0);
+    }
+#ifndef VK_WORLD_STATIC_FAST_LIT_GLOWMAP_NO_FOG
+    apply_fog(color.rgb, false);
+#endif
+    out_color = color;
+}
+#elif defined(VK_WORLD_TEXTURE_REPLACE)
+// Mirrors the OpenGL GLS_TEXTURE_REPLACE opaque-wall path.  Non-lightmapped
+// opaque BSP faces bypass the receiver lighting equation entirely: the base
+// texture is authoritative, with only the shared intensity and fog effects.
+// This is deliberately independent of sun/dlight state because OpenGL does
+// not light texture-replace walls with either source.
+void main() {
+    vec4 color = texture(tex_sampler, in_uv);
+    if ((in_flags & VK_WORLD_VERTEX_INTENSITY) != 0u) {
+        color.rgb *= max(shadow_moment_tuning.z, 1.0);
+    }
+#ifndef VK_WORLD_TEXTURE_REPLACE_NO_FOG
+    apply_fog(color.rgb, false);
+#endif
+    out_color = color;
+}
+#else
 void main() {
     vec2 uv = in_uv;
 #ifdef VK_WORLD_ANIMATED
@@ -337,9 +398,47 @@ void main() {
     }
 #endif
     vec4 base = texture(tex_sampler, uv);
-    if ((in_flags & VK_WORLD_VERTEX_ALPHATEST) != 0u && base.a < 0.01) {
+    if ((in_flags & VK_WORLD_VERTEX_ALPHATEST) != 0u && base.a <= 0.666) {
         discard;
     }
+
+#ifdef VK_WORLD_BLOOM_EXTRACT
+    // OpenGL's bloom MRT stores authored wall emission separately from the
+    // ordinary scene: diffuse RGB multiplied by the glow-map alpha, before
+    // lightmaps, dynamic lighting, modulation, or scene thresholding.  Keep
+    // that contract in a bloom-only native pass so the standard scene pass
+    // never pays for another color attachment.
+    float glow_alpha = 0.0;
+    if ((in_flags & VK_WORLD_VERTEX_GLOWMAP) != 0u) {
+        glow_alpha = texture(glow_sampler, uv).a;
+        if ((in_flags & VK_WORLD_VERTEX_INTENSITY) != 0u) {
+            glow_alpha *= max(shadow_moment_tuning.z, 1.0);
+        }
+    }
+    vec3 emission = base.rgb * glow_alpha;
+    uint fog_flags = uint(shadow_fog_params.w + 0.5);
+    float frag_depth = gl_FragCoord.z / max(gl_FragCoord.w, 1e-6);
+    if ((fog_flags & VK_FOG_GLOBAL) != 0u) {
+        float d = shadow_fog_color_density.a * frag_depth;
+        emission *= exp(-(d * d));
+    }
+    if ((fog_flags & VK_FOG_HEIGHT) != 0u) {
+        float dir_z = normalize(in_world_pos - view_origin.xyz).z;
+        float s = sign(dir_z);
+        dir_z += 0.00001 * (1.0 - s * s);
+        float eye = view_origin.z - shadow_heightfog_start.w;
+        float pos = in_world_pos.z - shadow_heightfog_start.w;
+        float density =
+            (exp(-shadow_fog_params.y * eye) -
+             exp(-shadow_fog_params.y * pos)) /
+            (shadow_fog_params.y * dir_z);
+        float extinction = 1.0 - clamp(exp(-density), 0.0, 1.0);
+        float fog = (1.0 - exp(-(shadow_fog_params.x * frag_depth))) * extinction;
+        emission *= 1.0 - fog;
+    }
+    out_color = vec4(emission, base.a);
+    return;
+#endif
 
     vec4 lm = texture(lm_sampler, in_lm_uv);
     if ((in_flags & (VK_WORLD_VERTEX_LIGHTMAPPED |
@@ -405,3 +504,4 @@ void main() {
 #endif
     out_color = color;
 }
+#endif

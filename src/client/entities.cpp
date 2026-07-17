@@ -19,6 +19,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "client.h"
 #include "client/cgame_event_shadow_runtime.h"
+#include "client/native_readiness_pilot.h"
 #include "client/snapshot_recovery.h"
 #include "client/snapshot_shadow.h"
 
@@ -717,8 +718,24 @@ void CL_DeltaFrame(void)
     const bool controlled_entity_valid =
         cl.frame.clientNum >= 0 &&
         cl.frame.clientNum + 1 < cl.csr.max_edicts;
+    const bool native_snapshot_timeline =
+        CL_NativeReadinessPilotOwnsSnapshotTimeline();
     bool canonical_ok;
-    if (controlled_entity_valid) {
+    if (native_snapshot_timeline) {
+        canonical_ok = CL_SnapshotShadowAcceptFrameEx(
+            canonical_server_time_us,
+            controlled_entity_valid
+                ? static_cast<uint32_t>(cl.frame.clientNum + 1)
+                : CL_SNAPSHOT_SHADOW_NO_CONTROLLED_ENTITY,
+            static_cast<int32_t>(cl.frame.ps.pmove.pm_type),
+            static_cast<uint16_t>(cl.frame.ps.pmove.pm_flags),
+            cl.frame.ps.team_id,
+            CL_SNAPSHOT_SHADOW_ACCEPT_COMPARE_LEGACY);
+        if (canonical_ok)
+            CL_NativeReadinessPilotSnapshotExpectationReady();
+        else
+            CL_NativeReadinessPilotSnapshotExpectationFailed();
+    } else if (controlled_entity_valid) {
         canonical_ok = CL_SnapshotShadowAcceptFrame(
             canonical_server_time_us,
             static_cast<uint32_t>(cl.frame.clientNum + 1),

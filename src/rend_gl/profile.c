@@ -22,6 +22,11 @@ typedef struct {
     bool pending[GL_GPU_PROFILE_COUNT][GL_GPU_TIMER_LATENCY];
     unsigned frame[GL_GPU_PROFILE_COUNT][GL_GPU_TIMER_LATENCY];
     uint64_t last_ns[GL_GPU_PROFILE_COUNT];
+    GLuint frame_queries[GL_GPU_TIMER_LATENCY][2];
+    bool frame_pending[GL_GPU_TIMER_LATENCY];
+    bool frame_started[GL_GPU_TIMER_LATENCY];
+    unsigned frame_timer_frame[GL_GPU_TIMER_LATENCY];
+    uint64_t last_frame_ns;
     bool initialized;
     bool active;
     glGpuProfileScope_t active_scope;
@@ -36,6 +41,7 @@ static cvar_t *gl_profile_log;
 
 static uint64_t gl_profile_cpu_us[GL_CPU_PROFILE_COUNT];
 static uint32_t gl_profile_gpu_available_mask;
+static bool gl_profile_gpu_frame_available;
 static int gl_profile_gpu_missed;
 static unsigned gl_profile_frame_number;
 static glGpuProfileState_t gl_gpu_profile;
@@ -71,6 +77,11 @@ static bool GL_ProfileGpuEnabled(void)
            qglBeginQuery && qglGetQueryObjectuiv && qglGetQueryObjectui64v;
 }
 
+static bool GL_ProfileGpuFrameEnabled(void)
+{
+    return GL_ProfileGpuEnabled() && qglQueryCounter;
+}
+
 void GL_ProfileInit(void)
 {
     gl_cpu_timers = Cvar_Get("gl_cpu_timers", "0", 0);
@@ -88,6 +99,9 @@ void GL_ProfileInit(void)
     for (int i = 0; i < GL_GPU_PROFILE_COUNT; i++)
         qglGenQueries(GL_GPU_TIMER_LATENCY, gl_gpu_profile.queries[i]);
 
+    qglGenQueries(GL_GPU_TIMER_LATENCY * 2,
+                  &gl_gpu_profile.frame_queries[0][0]);
+
     gl_gpu_profile.initialized = true;
     gl_gpu_profile.active = false;
 }
@@ -97,6 +111,8 @@ void GL_ProfileShutdown(void)
     if (gl_gpu_profile.initialized && qglDeleteQueries) {
         for (int i = 0; i < GL_GPU_PROFILE_COUNT; i++)
             qglDeleteQueries(GL_GPU_TIMER_LATENCY, gl_gpu_profile.queries[i]);
+        qglDeleteQueries(GL_GPU_TIMER_LATENCY * 2,
+                          &gl_gpu_profile.frame_queries[0][0]);
     }
 
     memset(&gl_gpu_profile, 0, sizeof(gl_gpu_profile));
@@ -131,6 +147,35 @@ static void GL_ProfilePollGpuQueries(void)
             gl_profile_gpu_available_mask |= BIT(scope);
         }
     }
+    for (int slot = 0; slot < GL_GPU_TIMER_LATENCY; slot++) {
+        if (!gl_gpu_profile.frame_pending[slot])
+            continue;
+
+        if (gl_profile_frame_number - gl_gpu_profile.frame_timer_frame[slot] < 2)
+            continue;
+
+        GLuint available[2] = {0, 0};
+        qglGetQueryObjectuiv(gl_gpu_profile.frame_queries[slot][0],
+                             GL_QUERY_RESULT_AVAILABLE, &available[0]);
+        qglGetQueryObjectuiv(gl_gpu_profile.frame_queries[slot][1],
+                             GL_QUERY_RESULT_AVAILABLE, &available[1]);
+        if (!available[0] || !available[1])
+            continue;
+
+        GLuint64 timestamps[2] = {0, 0};
+        qglGetQueryObjectui64v(gl_gpu_profile.frame_queries[slot][0],
+                               GL_QUERY_RESULT, &timestamps[0]);
+        qglGetQueryObjectui64v(gl_gpu_profile.frame_queries[slot][1],
+                               GL_QUERY_RESULT, &timestamps[1]);
+        gl_gpu_profile.frame_pending[slot] = false;
+        if (timestamps[1] < timestamps[0]) {
+            gl_profile_gpu_missed++;
+            continue;
+        }
+
+        gl_gpu_profile.last_frame_ns = timestamps[1] - timestamps[0];
+        gl_profile_gpu_frame_available = true;
+    }
 }
 
 void GL_ProfileBeginFrame(void)
@@ -138,6 +183,7 @@ void GL_ProfileBeginFrame(void)
     gl_profile_frame_number++;
     memset(gl_profile_cpu_us, 0, sizeof(gl_profile_cpu_us));
     gl_profile_gpu_available_mask = 0;
+    gl_profile_gpu_frame_available = false;
     gl_profile_gpu_missed = 0;
     GL_ProfilePollGpuQueries();
 }
@@ -152,6 +198,9 @@ static int GL_ProfilePendingGpuQueries(void)
     for (int scope = 0; scope < GL_GPU_PROFILE_COUNT; scope++)
         for (int slot = 0; slot < GL_GPU_TIMER_LATENCY; slot++)
             pending += gl_gpu_profile.pending[scope][slot] ? 1 : 0;
+
+    for (int slot = 0; slot < GL_GPU_TIMER_LATENCY; slot++)
+        pending += gl_gpu_profile.frame_pending[slot] ? 1 : 0;
 
     return pending;
 }
@@ -173,7 +222,9 @@ static void GL_ProfileCaptureTelemetry(void)
            sizeof(gl_telemetry.cpu_us));
     memcpy(gl_telemetry.gpu_ns, gl_gpu_profile.last_ns,
            sizeof(gl_telemetry.gpu_ns));
+    gl_telemetry.gpu_frame_ns = gl_gpu_profile.last_frame_ns;
     gl_telemetry.gpu_available_mask = gl_profile_gpu_available_mask;
+    gl_telemetry.gpu_frame_valid = gl_profile_gpu_frame_available;
     gl_telemetry.gpu_pending = GL_ProfilePendingGpuQueries();
     gl_telemetry.gpu_missed = gl_profile_gpu_missed;
 }
@@ -249,9 +300,11 @@ static void GL_ProfileLogTelemetry(void)
                gl_telemetry.ppl_used);
 
     if (gl_gpu_timers && gl_gpu_timers->integer) {
-        Com_Printf("GL profile gpu_ms world=%.3f lightmap=%.3f effects=%.3f "
+        Com_Printf("GL profile gpu_frame_ms=%.3f gpu_frame_valid=%d "
+                   "gpu_ms world=%.3f lightmap=%.3f effects=%.3f "
                    "transparent=%.3f postfx=%.3f pending=%d missed=%d "
                    "available_mask=0x%x\n",
+                   GL_ProfileGpuFrameMilliseconds(), gl_telemetry.gpu_frame_valid,
                    GL_ProfileGpuMilliseconds(GL_GPU_PROFILE_WORLD_OPAQUE),
                    GL_ProfileGpuMilliseconds(GL_GPU_PROFILE_LIGHTMAP_UPDATE),
                    GL_ProfileGpuMilliseconds(GL_GPU_PROFILE_EFFECTS),
@@ -271,6 +324,37 @@ void GL_ProfileEndFrame(void)
     GL_ProfilePollGpuQueries();
     GL_ProfileCaptureTelemetry();
     GL_ProfileLogTelemetry();
+}
+
+void GL_ProfileGpuFrameBegin(void)
+{
+    if (!GL_ProfileGpuFrameEnabled())
+        return;
+
+    int slot = gl_profile_frame_number % GL_GPU_TIMER_LATENCY;
+    if (gl_gpu_profile.frame_pending[slot] ||
+        gl_gpu_profile.frame_started[slot]) {
+        gl_profile_gpu_missed++;
+        return;
+    }
+
+    qglQueryCounter(gl_gpu_profile.frame_queries[slot][0], GL_TIMESTAMP);
+    gl_gpu_profile.frame_started[slot] = true;
+}
+
+void GL_ProfileGpuFrameEnd(void)
+{
+    if (!GL_ProfileGpuFrameEnabled())
+        return;
+
+    int slot = gl_profile_frame_number % GL_GPU_TIMER_LATENCY;
+    if (!gl_gpu_profile.frame_started[slot])
+        return;
+
+    qglQueryCounter(gl_gpu_profile.frame_queries[slot][1], GL_TIMESTAMP);
+    gl_gpu_profile.frame_pending[slot] = true;
+    gl_gpu_profile.frame_timer_frame[slot] = gl_profile_frame_number;
+    gl_gpu_profile.frame_started[slot] = false;
 }
 
 glCpuProfileGuard_t GL_ProfileCpuBegin(glCpuProfileScope_t scope)
@@ -372,4 +456,8 @@ float GL_ProfileGpuMilliseconds(glGpuProfileScope_t scope)
     if ((unsigned)scope >= GL_GPU_PROFILE_COUNT)
         return 0.0f;
     return GL_ProfileNsToMs(gl_telemetry.gpu_ns[scope]);
+}
+float GL_ProfileGpuFrameMilliseconds(void)
+{
+    return GL_ProfileNsToMs(gl_telemetry.gpu_frame_ns);
 }

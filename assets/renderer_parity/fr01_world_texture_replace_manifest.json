@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "task_id": "FR-01-T15",
+  "scenes": [
+    {
+      "id": "static_world_texture_replace_no_fog",
+      "config": "renderer_parity/fr01_world_texture_replace.cfg",
+      "capture": "fr01_world_texture_replace.tga",
+      "crop": [200, 140, 560, 420],
+      "metrics": {
+        "pixel_threshold": 8,
+        "max_mean_absolute_rgb": [2, 2, 2],
+        "max_pixels_over_threshold_percent": 0.5
+      }
+    },
+    {
+      "id": "static_world_texture_replace_global_fog",
+      "config": "renderer_parity/fr01_world_texture_replace_fog.cfg",
+      "capture": "fr01_world_texture_replace_fog.tga",
+      "crop": [200, 140, 560, 420],
+      "metrics": {
+        "pixel_threshold": 8,
+        "max_mean_absolute_rgb": [2, 2, 2],
+        "max_pixels_over_threshold_percent": 0.5
+      }
+    }
+  ]
+}

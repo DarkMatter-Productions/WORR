@@ -19,6 +19,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "server.h"
 #include "server/command_context.h"
+#include "server/local_interaction_authority.h"
 #include "server/rewind_collision.h"
 #include "game3_proxy/game3_proxy.h"
 #include "common/loc.h"
@@ -1179,6 +1180,9 @@ static void *PF_GetExtension(const char *name)
 
     if (!strcmp(name, WORR_COMMAND_CONTEXT_IMPORT_V1))
         return (void *)SV_CommandContextImportV1();
+
+    if (!strcmp(name, WORR_LOCAL_INTERACTION_AUTHORITY_IMPORT_V1))
+        return (void *)SV_LocalInteractionAuthorityImportV1();
 
     if (!strcmp(name, WORR_REWIND_COLLISION_IMPORT_V1))
         return (void *)SV_RewindCollisionImportV1();

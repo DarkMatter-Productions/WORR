@@ -8,6 +8,7 @@ the Free Software Foundation; either version 2 of the License, or
 */
 
 #include "cg_event_runtime.hpp"
+#include "cg_local_interaction.hpp"
 
 #include <array>
 #include <cstring>
@@ -183,6 +184,46 @@ bool prediction_key_equal(worr_event_prediction_key_v1 left,
            left.command_sequence == right.command_sequence &&
            left.emitter_ordinal == right.emitter_ordinal &&
            left.lane == right.lane;
+}
+
+bool is_local_interaction_authority_receipt(
+    const worr_event_record_v1 &record)
+{
+    return record.event_type == WORR_EVENT_TYPE_AUTHORITY_RECEIPT &&
+           record.payload_kind ==
+               WORR_EVENT_PAYLOAD_LOCAL_INTERACTION_AUTHORITY_V1 &&
+           record.payload_size ==
+               sizeof(worr_local_interaction_authority_receipt_v1);
+}
+
+bool local_interaction_receipt_accepted(
+    cg_local_interaction_receipt_result_v1 result)
+{
+    switch (result) {
+    case cg_local_interaction_receipt_result_v1::accepted_unmatched:
+    case cg_local_interaction_receipt_result_v1::duplicate:
+    case cg_local_interaction_receipt_result_v1::hook_confirmed:
+    case cg_local_interaction_receipt_result_v1::hook_rejected:
+        return true;
+    case cg_local_interaction_receipt_result_v1::diverged:
+    case cg_local_interaction_receipt_result_v1::invalid:
+    case cg_local_interaction_receipt_result_v1::conflict:
+    case cg_local_interaction_receipt_result_v1::capacity:
+    case cg_local_interaction_receipt_result_v1::requires_resync:
+        return false;
+    }
+    return false;
+}
+
+void latch_local_interaction_resync()
+{
+    if (!runtime.authority_initialized ||
+        runtime.status.authority_requires_resync != 0 ||
+        !CG_LocalInteractionRequiresResync()) {
+        return;
+    }
+    runtime.status.authority_requires_resync = 1;
+    mark_authority_degraded(runtime);
 }
 
 bool prediction_key_at_or_before_cursor(
@@ -728,7 +769,11 @@ cg_event_runtime_result_v1 insert_authority(runtime_state_t &state,
     binding->occupied = true;
     if (prediction && prediction->presented)
         binding->state |= AUTHORITY_SIDE_EFFECT_PRESENTED;
-    if (journal_result == WORR_EVENT_JOURNAL_DROPPED_STALE) {
+    if (is_local_interaction_authority_receipt(record)) {
+        /* Authority receipts carry reconciliation evidence only. They are
+         * never snapshot-fenced or presented by the generic event runtime. */
+        binding->state |= AUTHORITY_SKIP;
+    } else if (journal_result == WORR_EVENT_JOURNAL_DROPPED_STALE) {
         binding->state |= AUTHORITY_SKIP;
         increment_saturated(
             state.status.authoritative_stale_or_coalesced);
@@ -1266,6 +1311,10 @@ CG_EventRuntimeResetAuthority(std::uint32_t stream_epoch,
 {
     if ((stream_epoch == 0) != (first_sequence == 0))
         return CG_EVENT_RUNTIME_INVALID_ARGUMENT;
+    /* The private authority carrier shares this epoch boundary. Retaining a
+     * receipt across native epoch cancellation could pair it with recycled
+     * command identity, so the local evidence cache is always scrubbed. */
+    CG_LocalInteractionReset();
     const auto resets = runtime.status.authority_resets;
     for (auto &entry : runtime.authority)
         entry = {};
@@ -1340,8 +1389,11 @@ void CG_EventRuntimeSetAuditEnabled(bool enabled)
     if ((runtime.status.audit_enabled != 0) == enabled)
         return;
 
-    /* A toggle starts a clean legacy-audit window. Authority reference
-     * fences and lifecycle state are correctness data, not diagnostics. */
+    /*
+     * A toggle starts a clean legacy comparison window. The exact snapshot
+     * receipt and chronology remain intact; only optional legacy body/join
+     * diagnostics are discarded.
+     */
     clear_legacy_references(runtime);
     for (auto &entry : runtime.legacy_bodies)
         entry = {};
@@ -1354,6 +1406,11 @@ bool CG_EventRuntimeAuditEnabled()
     return runtime.status.audit_enabled != 0;
 }
 
+void CG_EventRuntimeSynchronizeLocalInteractionHealth()
+{
+    latch_local_interaction_resync();
+}
+
 cg_event_runtime_result_v1 CG_EventRuntimeSubmitAuthoritativeBatch(
     const worr_event_record_v1 *records, std::uint32_t count)
 {
@@ -1362,6 +1419,7 @@ cg_event_runtime_result_v1 CG_EventRuntimeSubmitAuthoritativeBatch(
         return CG_EVENT_RUNTIME_INVALID_ARGUMENT;
     if (!runtime.authority_initialized)
         return CG_EVENT_RUNTIME_UNINITIALIZED;
+    latch_local_interaction_resync();
     if (runtime.status.authority_requires_resync != 0)
         return CG_EVENT_RUNTIME_NOT_READY;
     if (transaction_active)
@@ -1407,6 +1465,19 @@ cg_event_runtime_result_v1 CG_EventRuntimeSubmitAuthoritativeBatch(
             aggregate = result;
     }
     commit_staging();
+    for (std::uint32_t index = 0; index < count; ++index) {
+        const auto &record = records[index];
+        if (!is_local_interaction_authority_receipt(record))
+            continue;
+        worr_local_interaction_authority_receipt_v1 receipt{};
+        std::memcpy(&receipt, record.payload, sizeof(receipt));
+        if (!local_interaction_receipt_accepted(
+                CG_LocalInteractionSubmitAuthorityReceipt(&receipt))) {
+            runtime.status.authority_requires_resync = 1;
+            mark_authority_degraded(runtime);
+            aggregate = CG_EVENT_RUNTIME_DEGRADED;
+        }
+    }
     if (aggregate == CG_EVENT_RUNTIME_DEGRADED)
         mark_authority_degraded(runtime);
     runtime.status.receipt = runtime.journal.receipt;
@@ -1422,6 +1493,7 @@ cg_event_runtime_result_v1 CG_EventRuntimeSubmitPredictedBatch(
         return CG_EVENT_RUNTIME_INVALID_ARGUMENT;
     if (!runtime.authority_initialized)
         return CG_EVENT_RUNTIME_UNINITIALIZED;
+    latch_local_interaction_resync();
     if (runtime.status.authority_requires_resync != 0)
         return CG_EVENT_RUNTIME_NOT_READY;
     if (transaction_active)
@@ -1579,15 +1651,16 @@ cg_event_runtime_result_v1 CG_EventRuntimeObserveSnapshot(
     const bool observe_authority = runtime.authority_initialized &&
                                    runtime.status.authority_requires_resync == 0;
     const bool observe_legacy = CG_EventRuntimeAuditEnabled();
-    if (!observe_authority && !observe_legacy)
-        return CG_EVENT_RUNTIME_EMPTY;
+    std::uint64_t computed_event_hash = 0;
     if (!snapshot ||
         (event_ref_count != 0 && !event_refs) ||
         snapshot->struct_size != sizeof(*snapshot) ||
         snapshot->schema_version != WORR_SNAPSHOT_ABI_VERSION ||
         snapshot->event_range.count != event_ref_count ||
         !Worr_SnapshotIdValidV2(snapshot->snapshot_id, false) ||
-        !Worr_SnapshotEventRefsValidateV2(event_refs, event_ref_count)) {
+        !Worr_SnapshotEventRefsHashV2(
+            event_refs, event_ref_count, &computed_event_hash) ||
+        snapshot->event_hash != computed_event_hash) {
         increment_saturated(runtime.status.snapshot_rejections);
         mark_degraded(runtime);
         if (observe_authority)
@@ -1598,6 +1671,18 @@ cg_event_runtime_result_v1 CG_EventRuntimeObserveSnapshot(
         return CG_EVENT_RUNTIME_UNINITIALIZED;
     if (snapshot->snapshot_id.epoch != runtime.status.snapshot_epoch)
         return CG_EVENT_RUNTIME_WRONG_EPOCH;
+    /*
+     * A snapshot event range has one provenance for the complete range.
+     * Legacy-inferred references are always correctness-validated even when
+     * comparison audit is disabled. Authority references, however, cannot be
+     * acknowledged without the matching live authority lifecycle.
+     */
+    if (event_ref_count != 0 &&
+        event_refs[0].provenance ==
+            WORR_SNAPSHOT_EVENT_PROVENANCE_AUTHORITY &&
+        !observe_authority) {
+        return CG_EVENT_RUNTIME_NOT_READY;
+    }
     if (runtime.has_last_snapshot) {
         if (snapshot_id_equal(snapshot->snapshot_id,
                               runtime.last_snapshot_id)) {
@@ -1633,8 +1718,15 @@ cg_event_runtime_result_v1 CG_EventRuntimeObserveSnapshot(
         const bool authority_reference =
             event_refs[index].provenance ==
             WORR_SNAPSHOT_EVENT_PROVENANCE_AUTHORITY;
-        if ((authority_reference && !observe_authority) ||
-            (!authority_reference && !observe_legacy)) {
+        if (!authority_reference && !observe_legacy) {
+            /*
+             * Structural/order/hash validation above is the correctness
+             * fence. Materialized legacy joins exist only for the optional
+             * body-comparison audit, so audit-off operation records the
+             * observation without consuming fixed reference-table capacity.
+             */
+            increment_saturated(staging.status.references_observed);
+            aggregate = CG_EVENT_RUNTIME_OK;
             continue;
         }
         const auto result = insert_reference(
@@ -1796,6 +1888,7 @@ cg_event_runtime_result_v1 CG_EventRuntimeAdvanceAudit(
         return CG_EVENT_RUNTIME_REENTRANT;
 
     *advanced_out = 0;
+    latch_local_interaction_resync();
     increment_saturated(runtime.status.advance_calls);
     runtime.status.last_render_time_us = render_time_us;
     runtime.status.last_now_tick = now_tick;
@@ -1875,6 +1968,7 @@ bool CG_EventRuntimeGetStatus(cg_event_runtime_status_v1 *status_out)
 {
     if (!status_out)
         return false;
+    latch_local_interaction_resync();
     auto status = runtime.status;
     status.struct_size = sizeof(status);
     status.schema_version = CG_EVENT_RUNTIME_VERSION;
@@ -1882,6 +1976,17 @@ bool CG_EventRuntimeGetStatus(cg_event_runtime_status_v1 *status_out)
         status.receipt = runtime.journal.receipt;
     *status_out = status;
     return true;
+}
+
+bool CG_EventRuntimeSnapshotFenceHealthy(std::uint32_t snapshot_epoch)
+{
+    cg_event_runtime_status_v1 status{};
+
+    return snapshot_epoch != 0 &&
+           CG_EventRuntimeGetStatus(&status) &&
+           status.snapshot_epoch == snapshot_epoch &&
+           status.authority_requires_resync == 0 &&
+           status.authority_degraded == 0;
 }
 
 namespace {

@@ -129,7 +129,7 @@ static bool prediction_lane_known(uint32_t lane)
 static bool event_type_known(uint16_t type)
 {
     return type >= WORR_EVENT_TYPE_DAMAGE &&
-           type <= WORR_EVENT_TYPE_LEGACY_BRIDGE;
+           type <= WORR_EVENT_TYPE_AUTHORITY_RECEIPT;
 }
 
 static bool delivery_class_known(uint8_t delivery_class)
@@ -167,6 +167,8 @@ static uint16_t payload_size_for_kind(uint16_t kind)
         return (uint16_t)sizeof(worr_event_payload_muzzle_v1);
     case WORR_EVENT_PAYLOAD_SPATIAL_AUDIO_V1:
         return (uint16_t)sizeof(worr_event_payload_spatial_audio_v1);
+    case WORR_EVENT_PAYLOAD_LOCAL_INTERACTION_AUTHORITY_V1:
+        return (uint16_t)sizeof(worr_local_interaction_authority_receipt_v1);
     default:
         return UINT16_MAX;
     }
@@ -203,6 +205,9 @@ static bool payload_matches_event_type(uint16_t event_type,
                payload_kind == WORR_EVENT_PAYLOAD_MUZZLE_V1;
     case WORR_EVENT_TYPE_LEGACY_BRIDGE:
         return payload_kind == WORR_EVENT_PAYLOAD_U32X4;
+    case WORR_EVENT_TYPE_AUTHORITY_RECEIPT:
+        return payload_kind ==
+               WORR_EVENT_PAYLOAD_LOCAL_INTERACTION_AUTHORITY_V1;
     default:
         return false;
     }
@@ -718,6 +723,11 @@ static bool validate_payload(const worr_event_record_v1 *record,
         memcpy(&payload, record->payload, sizeof(payload));
         return validate_spatial_audio_payload(&payload, max_entities);
     }
+    case WORR_EVENT_PAYLOAD_LOCAL_INTERACTION_AUTHORITY_V1: {
+        worr_local_interaction_authority_receipt_v1 payload;
+        memcpy(&payload, record->payload, sizeof(payload));
+        return Worr_LocalInteractionAuthorityReceiptValidateV1(&payload);
+    }
     default:
         return false;
     }
@@ -729,6 +739,8 @@ static bool record_validate(const worr_event_record_v1 *record,
 {
     const bool authoritative =
         record && (record->flags & WORR_EVENT_FLAG_HAS_AUTHORITY_ID) != 0;
+    const bool authority_receipt =
+        record && record->event_type == WORR_EVENT_TYPE_AUTHORITY_RECEIPT;
     const bool expiring =
         record && (record->delivery_class == WORR_EVENT_DELIVERY_COSMETIC ||
                    record->delivery_class == WORR_EVENT_DELIVERY_TRANSIENT);
@@ -746,10 +758,28 @@ static bool record_validate(const worr_event_record_v1 *record,
     }
 
     if (!Worr_EventEntityRefValidV1(record->source_entity, max_entities,
-                                    false) ||
+                                    authority_receipt) ||
         !Worr_EventEntityRefValidV1(record->subject_entity, max_entities,
                                     true)) {
         return false;
+    }
+
+    if (authority_receipt) {
+        const uint32_t expected_flags =
+            WORR_EVENT_FLAG_CRITICAL |
+            (authoritative ? WORR_EVENT_FLAG_HAS_AUTHORITY_ID : 0u);
+        if (record->flags != expected_flags ||
+            record->source_entity.index != WORR_EVENT_NO_ENTITY ||
+            record->source_entity.generation != 0 ||
+            record->subject_entity.index != WORR_EVENT_NO_ENTITY ||
+            record->subject_entity.generation != 0 ||
+            record->source_ordinal != 0 ||
+            record->delivery_class != WORR_EVENT_DELIVERY_RELIABLE_ORDERED ||
+            record->prediction_class !=
+                WORR_EVENT_PREDICTION_AUTHORITATIVE_ONLY ||
+            record->expiry_tick != 0) {
+            return false;
+        }
     }
 
     if (authoritative) {
@@ -945,6 +975,21 @@ static uint64_t hash_payload(uint64_t hash,
         hash = hash_float(hash, payload.time_offset);
         return hash_float(hash, payload.pitch);
     }
+    case WORR_EVENT_PAYLOAD_LOCAL_INTERACTION_AUTHORITY_V1: {
+        worr_local_interaction_authority_receipt_v1 payload;
+        memcpy(&payload, record->payload, sizeof(payload));
+        hash = hash_u32(hash, payload.struct_size);
+        hash = hash_u32(hash, payload.schema_version);
+        hash = hash_u32(hash, payload.command_id.epoch);
+        hash = hash_u32(hash, payload.command_id.sequence);
+        hash = hash_u64(hash, payload.command_hash);
+        hash = hash_u64(hash, payload.state_hash);
+        hash = hash_u64(hash, payload.transaction_hash);
+        hash = hash_u32(hash, payload.action_sequence);
+        hash = hash_u32(hash, payload.state_flags);
+        hash = hash_u32(hash, payload.outcome_flags);
+        return hash_u32(hash, payload.reserved0);
+    }
     default:
         return 0;
     }
@@ -1128,6 +1173,23 @@ static bool payload_semantically_equal(const worr_event_record_v1 *left,
                float_semantically_equal(a.attenuation, b.attenuation) &&
                float_semantically_equal(a.time_offset, b.time_offset) &&
                float_semantically_equal(a.pitch, b.pitch);
+    }
+    case WORR_EVENT_PAYLOAD_LOCAL_INTERACTION_AUTHORITY_V1: {
+        worr_local_interaction_authority_receipt_v1 a;
+        worr_local_interaction_authority_receipt_v1 b;
+        memcpy(&a, left->payload, sizeof(a));
+        memcpy(&b, right->payload, sizeof(b));
+        return a.struct_size == b.struct_size &&
+               a.schema_version == b.schema_version &&
+               a.command_id.epoch == b.command_id.epoch &&
+               a.command_id.sequence == b.command_id.sequence &&
+               a.command_hash == b.command_hash &&
+               a.state_hash == b.state_hash &&
+               a.transaction_hash == b.transaction_hash &&
+               a.action_sequence == b.action_sequence &&
+               a.state_flags == b.state_flags &&
+               a.outcome_flags == b.outcome_flags &&
+               a.reserved0 == b.reserved0;
     }
     default:
         return false;

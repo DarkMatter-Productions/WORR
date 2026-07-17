@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "task_id": "FR-01-T12",
+  "scenes": [
+    {
+      "id": "horizontal_lut_texel_coordinate_fixed_view",
+      "config": "renderer_parity/fr01_color_lut.cfg",
+      "capture": "fr01_color_lut.tga",
+      "crop": [100, 100, 250, 200],
+      "metrics": {
+        "pixel_threshold": 8,
+        "max_mean_absolute_rgb": [1, 1, 1],
+        "max_pixels_over_threshold_percent": 0
+      },
+      "probes": [
+        {
+          "name": "horizontal_lut_non_identity_output",
+          "color": [24, 40, 72],
+          "tolerance": 0,
+          "min_pixels_per_backend": 50000,
+          "max_backend_count_delta_percent": 0,
+          "min_backend_intersection_over_union": 1
+        }
+      ]
+    },
+    {
+      "id": "vertical_lut_texel_coordinate_fixed_view",
+      "config": "renderer_parity/fr01_color_lut_vertical.cfg",
+      "capture": "fr01_color_lut_vertical.tga",
+      "crop": [100, 100, 250, 200],
+      "metrics": {
+        "pixel_threshold": 8,
+        "max_mean_absolute_rgb": [1, 1, 1],
+        "max_pixels_over_threshold_percent": 0
+      },
+      "probes": [
+        {
+          "name": "vertical_lut_non_identity_output",
+          "color": [24, 40, 72],
+          "tolerance": 0,
+          "min_pixels_per_backend": 50000,
+          "max_backend_count_delta_percent": 0,
+          "min_backend_intersection_over_union": 1
+        }
+      ]
+    }
+  ]
+}

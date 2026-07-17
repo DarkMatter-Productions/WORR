@@ -13,6 +13,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <stddef.h>
 #include <stdint.h>
 
+#include "shared/command_abi.h"
 #include "shared/snapshot_abi.h"
 
 #ifdef __cplusplus
@@ -102,6 +103,82 @@ typedef struct worr_cgame_prediction_input_import_v1_s {
         worr_cgame_prediction_input_range_v1 *range_out);
 } worr_cgame_prediction_input_import_v1;
 
+/*
+ * V2 lets cgame resolve replay from the exact consumed-command cursor carried
+ * by an immutable canonical snapshot.  V1 remains the legacy/current-frame
+ * convenience import; V2 never falls back to packet acknowledgement.
+ */
+#define WORR_CGAME_PREDICTION_INPUT_IMPORT_V2 \
+    "WORR_CGAME_PREDICTION_INPUT_IMPORT_V2"
+#define WORR_CGAME_PREDICTION_INPUT_API_VERSION_V2 2u
+
+enum {
+    WORR_CGAME_PREDICTION_INPUT_REQUEST_CANONICAL_REQUIRED =
+        UINT32_C(1) << 0,
+};
+
+typedef struct worr_cgame_prediction_input_request_v2_s {
+    uint32_t struct_size;
+    uint32_t api_version;
+    uint32_t flags;
+    uint32_t reserved0;
+    worr_snapshot_consumed_command_v2 consumed_command;
+} worr_cgame_prediction_input_request_v2;
+
+typedef struct worr_cgame_prediction_input_import_v2_s {
+    uint32_t struct_size;
+    uint32_t api_version;
+    uint32_t (*ResolveInputRangeForCursor)(
+        const worr_cgame_prediction_input_request_v2 *request,
+        worr_cgame_prediction_input_range_v1 *range_out);
+} worr_cgame_prediction_input_import_v2;
+
+/*
+ * Full canonical command records are exposed through a separate extension so
+ * movement prediction V1 remains stable.  Only records finalized by the
+ * engine's command-identity owner are returned; packet acknowledgement and
+ * render timing are never reconstructed by cgame.
+ */
+#define WORR_CGAME_COMMAND_RECORD_IMPORT_V1 \
+    "WORR_CGAME_COMMAND_RECORD_IMPORT_V1"
+#define WORR_CGAME_COMMAND_RECORD_API_VERSION 1u
+
+typedef enum worr_cgame_command_record_result_v1_e {
+    WORR_CGAME_COMMAND_RECORD_OK = 0,
+    WORR_CGAME_COMMAND_RECORD_INVALID_ARGUMENT = 1,
+    WORR_CGAME_COMMAND_RECORD_HISTORY_MISSING = 2,
+    WORR_CGAME_COMMAND_RECORD_RANGE_EXHAUSTED = 3,
+} worr_cgame_command_record_result_v1;
+
+enum {
+    WORR_CGAME_COMMAND_RECORD_CANONICAL = UINT32_C(1) << 0,
+};
+
+typedef struct worr_cgame_command_record_entry_v1_s {
+    uint32_t legacy_sequence;
+    uint32_t reserved0;
+    worr_command_record_v1 command;
+} worr_cgame_command_record_entry_v1;
+
+typedef struct worr_cgame_command_record_range_v1_s {
+    uint32_t struct_size;
+    uint32_t api_version;
+    uint32_t result;
+    uint32_t flags;
+    uint32_t first_legacy_sequence;
+    uint32_t command_count;
+    worr_cgame_command_record_entry_v1
+        commands[WORR_CGAME_PREDICTION_INPUT_CAPACITY];
+} worr_cgame_command_record_range_v1;
+
+typedef struct worr_cgame_command_record_import_v1_s {
+    uint32_t struct_size;
+    uint32_t api_version;
+    uint32_t (*ResolveCanonicalCommandRange)(
+        uint32_t first_legacy_sequence, uint32_t command_count,
+        worr_cgame_command_record_range_v1 *range_out);
+} worr_cgame_command_record_import_v1;
+
 #ifdef __cplusplus
 }
 #endif
@@ -138,5 +215,31 @@ WORR_CGAME_PREDICTION_STATIC_ASSERT(
 WORR_CGAME_PREDICTION_STATIC_ASSERT(
     offsetof(worr_cgame_prediction_input_import_v1, ResolveInputRange) == 8,
     "cgame prediction input import header changed");
+WORR_CGAME_PREDICTION_STATIC_ASSERT(
+    sizeof(worr_cgame_prediction_input_request_v2) == 32,
+    "cgame prediction input request v2 layout changed");
+WORR_CGAME_PREDICTION_STATIC_ASSERT(
+    offsetof(worr_cgame_prediction_input_request_v2, consumed_command) == 16,
+    "cgame prediction input request cursor offset changed");
+WORR_CGAME_PREDICTION_STATIC_ASSERT(
+    offsetof(worr_cgame_prediction_input_import_v2,
+             ResolveInputRangeForCursor) == 8,
+    "cgame prediction input import v2 header changed");
+WORR_CGAME_PREDICTION_STATIC_ASSERT(
+    sizeof(worr_cgame_command_record_entry_v1) == 112,
+    "cgame command record entry v1 layout changed");
+WORR_CGAME_PREDICTION_STATIC_ASSERT(
+    offsetof(worr_cgame_command_record_entry_v1, command) == 8,
+    "cgame command record entry command offset changed");
+WORR_CGAME_PREDICTION_STATIC_ASSERT(
+    sizeof(worr_cgame_command_record_range_v1) == 14360,
+    "cgame command record range v1 layout changed");
+WORR_CGAME_PREDICTION_STATIC_ASSERT(
+    offsetof(worr_cgame_command_record_range_v1, commands) == 24,
+    "cgame command record range commands offset changed");
+WORR_CGAME_PREDICTION_STATIC_ASSERT(
+    offsetof(worr_cgame_command_record_import_v1,
+             ResolveCanonicalCommandRange) == 8,
+    "cgame command record import header changed");
 
 #undef WORR_CGAME_PREDICTION_STATIC_ASSERT

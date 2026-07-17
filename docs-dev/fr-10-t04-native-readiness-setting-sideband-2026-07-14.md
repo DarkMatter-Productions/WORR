@@ -8,6 +8,11 @@ Status: Readiness-record carrier implemented, tested, and now registered by the
 default-off production adapters linked below. Native capability remains
 excluded from public offer/support masks.
 
+> 2026-07-16 supersession: the readiness record now independently binds
+> `snapshot_epoch`. The current carrier uses 15 pairs over `-31980..-31966`;
+> one client record is 75 bytes and one server record is 135 bytes. The
+> 13-pair sizes below remain historical evidence for the earlier schema.
+
 ## Purpose
 
 The endpoint-readiness state machine needs a reliable bootstrap path that both

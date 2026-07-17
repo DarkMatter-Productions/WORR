@@ -14,6 +14,19 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+try:
+    from tools.networking.headless_process import (
+        creation_flags as _headless_creation_flags,
+        start_headless_process,
+        terminate_process_tree,
+    )
+except ModuleNotFoundError:
+    from headless_process import (
+        creation_flags as _headless_creation_flags,
+        start_headless_process,
+        terminate_process_tree,
+    )
+
 
 SCHEMA = "worr.networking.rewind-rail-damage-runtime.v2"
 MAP_NAME = "worr_fr10_rewind_mover"
@@ -64,7 +77,7 @@ def write_json_atomic(path: Path, payload: dict[str, object]) -> None:
 
 
 def creation_flags() -> int:
-    return getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+    return _headless_creation_flags()
 
 
 def build_command(dedicated_exe: Path) -> list[str]:
@@ -175,15 +188,7 @@ def wait_for_marker(
 
 
 def terminate(process: subprocess.Popen[str] | None) -> bool:
-    if process is None or process.poll() is not None:
-        return False
-    process.terminate()
-    try:
-        process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait(timeout=5)
-    return True
+    return terminate_process_tree(process)
 
 
 def run_once(
@@ -197,7 +202,7 @@ def run_once(
         with stdout_path.open("w", encoding="utf-8") as stdout, stderr_path.open(
             "w", encoding="utf-8"
         ) as stderr:
-            process = subprocess.Popen(
+            process = start_headless_process(
                 command,
                 cwd=working_dir,
                 stdin=subprocess.DEVNULL,

@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "task_id": "FR-01-T12",
+  "scenes": [{
+    "id": "hdr_underwater_unwarped_fixed_half_resolution",
+    "config": "renderer_parity/fr01_hdr_underwater_unwarped.cfg",
+    "capture": "fr01_hdr_underwater_unwarped.tga",
+    "launch_cvars": {
+      "r_resolutionscale": "1",
+      "r_resolutionscale_fixedscale_w": "0.5",
+      "r_resolutionscale_fixedscale_h": "0.5"
+    },
+    "crop": [160, 120, 640, 480],
+    "metrics": {
+      "pixel_threshold": 2,
+      "max_mean_absolute_rgb": [0.14, 0.6, 0.9],
+      "max_pixels_over_threshold_percent": 0
+    }
+  }]
+}

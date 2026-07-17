@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "task_id": "FR-01-T12",
+  "scenes": [
+    {
+      "id": "hdr_wall_glowmap_bloom_emission",
+      "config": "renderer_parity/fr01_hdr_bloom_emission.cfg",
+      "capture": "fr01_hdr_bloom_emission.tga",
+      "crop": [100, 100, 250, 200],
+      "metrics": {
+        "pixel_threshold": 2,
+        "max_mean_absolute_rgb": [1.0, 1.0, 1.0],
+        "max_pixels_over_threshold_percent": 0
+      }
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "task_id": "FR-01-T12",
+  "scenes": [
+    {
+      "id": "static_aces_tonemap_fixed_view",
+      "config": "renderer_parity/fr01_hdr_static.cfg",
+      "capture": "fr01_hdr_static.tga",
+      "crop": [100, 100, 250, 200],
+      "metrics": {
+        "pixel_threshold": 0,
+        "max_mean_absolute_rgb": [0, 0, 0],
+        "max_pixels_over_threshold_percent": 0
+      },
+      "probes": [
+        {
+          "name": "static_hdr_tonemapped_backdrop",
+          "color": [18, 38, 96],
+          "tolerance": 0,
+          "min_pixels_per_backend": 50000,
+          "max_backend_count_delta_percent": 0,
+          "min_backend_intersection_over_union": 1
+        }
+      ]
+    },
+    {
+      "id": "static_hdr_disabled_control_fixed_view",
+      "config": "renderer_parity/fr01_hdr_static_off.cfg",
+      "capture": "fr01_hdr_static_off.tga",
+      "crop": [100, 100, 250, 200],
+      "metrics": {
+        "pixel_threshold": 0,
+        "max_mean_absolute_rgb": [0, 0, 0],
+        "max_pixels_over_threshold_percent": 0
+      },
+      "probes": [
+        {
+          "name": "static_hdr_disabled_backdrop",
+          "color": [24, 40, 72],
+          "tolerance": 0,
+          "min_pixels_per_backend": 50000,
+          "max_backend_count_delta_percent": 0,
+          "min_backend_intersection_over_union": 1
+        }
+      ]
+    }
+  ]
+}

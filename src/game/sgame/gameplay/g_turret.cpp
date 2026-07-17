@@ -113,7 +113,8 @@ static void turret_breach_fire(gentity_t* self) {
 		damage = (int)frandom(100, 150);
 	speed = 550 + 50 * skill->integer;
 	gentity_t* rocket = fire_rocket(self->teamMaster->owner->activator ? self->teamMaster->owner->activator : self->teamMaster->owner, start, f, damage, speed, 150, damage);
-	rocket->s.scale = self->teamMaster->splashRadius;
+	if (rocket)
+		rocket->s.scale = self->teamMaster->splashRadius;
 
 	gi.positionedSound(start, self, CHAN_WEAPON, gi.soundIndex("chick/chkatck2.wav"), 1, ATTN_NORM, 0);
 }

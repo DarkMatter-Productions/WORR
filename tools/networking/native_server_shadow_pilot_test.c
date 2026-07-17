@@ -77,8 +77,9 @@ static void make_client_ready(
 {
     worr_native_readiness_state_v1 client;
 
-    CHECK(Worr_NativeReadinessClientInitV1(
+    CHECK(Worr_NativeReadinessClientInitBoundV1(
               &client, challenge->transport_epoch,
+              challenge->snapshot_epoch,
               challenge->negotiated_capabilities, now_tick,
               SV_NATIVE_SHADOW_TIMEOUT_MS) == WORR_NATIVE_READINESS_OK);
     CHECK(Worr_NativeReadinessClientObserveChallengeV1(
@@ -257,6 +258,111 @@ static worr_event_record_v1 make_event_candidate(
         source_entity, raw_event, MAX_EDICTS, &candidate,
         &semantic_hash));
     return candidate;
+}
+
+enum {
+    SNAPSHOT_TEST_MAX_ENTITIES = 128,
+    SNAPSHOT_TEST_ENTITY_COUNT = 48,
+    SNAPSHOT_TEST_SLOT_CAPACITY = 2,
+    SNAPSHOT_TEST_ENTITIES_PER_SLOT = 64,
+    SNAPSHOT_TEST_AREA_BYTES_PER_SLOT = 8,
+};
+
+typedef struct snapshot_frame_fixture_s {
+    q2proto_svc_frame_t frame;
+    q2proto_svc_frame_entity_delta_t
+        deltas[SNAPSHOT_TEST_ENTITY_COUNT + 1];
+    byte area[4];
+} snapshot_frame_fixture;
+
+static sv_snapshot_shadow_config_v1 make_snapshot_shadow_config(
+    uint32_t snapshot_epoch)
+{
+    sv_snapshot_shadow_config_v1 config;
+
+    memset(&config, 0, sizeof(config));
+    config.struct_size = sizeof(config);
+    config.schema_version = SV_SNAPSHOT_SHADOW_VERSION;
+    config.snapshot_epoch = snapshot_epoch;
+    config.max_entities = SNAPSHOT_TEST_MAX_ENTITIES;
+    config.max_models = 64;
+    config.max_sounds = 64;
+    config.slot_capacity = SNAPSHOT_TEST_SLOT_CAPACITY;
+    config.entities_per_slot = SNAPSHOT_TEST_ENTITIES_PER_SLOT;
+    config.area_bytes_per_slot = SNAPSHOT_TEST_AREA_BYTES_PER_SLOT;
+    config.beam_renderfx_mask = UINT32_C(1) << 7;
+    config.legacy_renderfx_allowed_mask =
+        (UINT32_C(1) << 19) - 1u;
+    config.legacy_beam_clear_mask = UINT32_C(1) << 9;
+    config.extended_entity_state = 1;
+    return config;
+}
+
+static void init_snapshot_frame(snapshot_frame_fixture *fixture,
+                                int32_t wire_snapshot_number)
+{
+    uint32_t index;
+
+    CHECK(fixture != NULL);
+    memset(fixture, 0, sizeof(*fixture));
+    fixture->area[0] = 1;
+    fixture->area[1] = 2;
+    fixture->area[2] = 3;
+    fixture->area[3] = 4;
+    fixture->frame.serverframe = wire_snapshot_number;
+    fixture->frame.deltaframe = -1;
+    fixture->frame.areabits_len = sizeof(fixture->area);
+    fixture->frame.areabits = fixture->area;
+    fixture->frame.playerstate.delta_bits =
+        Q2P_PSD_PM_GRAVITY | Q2P_PSD_FOV;
+    fixture->frame.playerstate.pm_gravity = 800;
+    fixture->frame.playerstate.fov = 100;
+    for (index = 0; index < SNAPSHOT_TEST_ENTITY_COUNT; ++index) {
+        q2proto_svc_frame_entity_delta_t *delta =
+            &fixture->deltas[index];
+
+        delta->newnum = (uint16_t)(index + 1u);
+        delta->entity_delta.delta_bits =
+            Q2P_ESD_MODELINDEX | Q2P_ESD_FRAME;
+        delta->entity_delta.modelindex =
+            (uint16_t)((index % 8u) + 1u);
+        delta->entity_delta.frame =
+            (uint16_t)(index + 1u);
+    }
+    /* The final zero entity is the required end-of-frame sentinel. */
+    fixture->deltas[SNAPSHOT_TEST_ENTITY_COUNT].newnum = 0;
+}
+
+static sv_snapshot_shadow_ref_v1 commit_snapshot_frame(
+    sv_snapshot_shadow_peer_v1 *shadow,
+    snapshot_frame_fixture *fixture,
+    uint32_t server_tick,
+    uint64_t server_time_us)
+{
+    sv_snapshot_shadow_frame_v1 input;
+    sv_snapshot_shadow_ref_v1 ref;
+    uint32_t index;
+
+    CHECK(shadow != NULL && fixture != NULL);
+    memset(&input, 0, sizeof(input));
+    input.struct_size = sizeof(input);
+    input.schema_version = SV_SNAPSHOT_SHADOW_VERSION;
+    input.wire_frame = &fixture->frame;
+    input.authoritative_server_tick = server_tick;
+    input.authoritative_tick_delta = 0;
+    input.authoritative_server_time_us = server_time_us;
+    input.controlled_entity_index = 1;
+    CHECK(SV_SnapshotShadowBeginFrameV1(shadow, &input) ==
+          SV_SNAPSHOT_SHADOW_OK);
+    for (index = 0; index <= SNAPSHOT_TEST_ENTITY_COUNT; ++index) {
+        CHECK(SV_SnapshotShadowCaptureEntityDeltaV1(
+                  shadow, &fixture->deltas[index]) ==
+              SV_SNAPSHOT_SHADOW_OK);
+    }
+    memset(&ref, 0, sizeof(ref));
+    CHECK(SV_SnapshotShadowCommitFrameV1(shadow, &ref) ==
+          SV_SNAPSHOT_SHADOW_OK);
+    return ref;
 }
 
 static worr_command_record_v1 make_legacy_record(
@@ -1680,7 +1786,7 @@ static void test_svc_append_capacity_and_wire(void)
                   sizeof(short_queue_data)));
 
     /* The reliable destination needs the entire eventual message, not merely
-     * the newly appended 117-byte record. */
+     * the newly appended count-derived readiness record. */
     memset(exact_message_data, 0x73, sizeof(exact_message_data));
     memset(exact_queue_data, 0x84, sizeof(exact_queue_data));
     init_write_buffer(&exact_message, exact_message_data,
@@ -1709,7 +1815,7 @@ static void test_svc_append_capacity_and_wire(void)
                   sizeof(exact_queue_data)));
 
     /* Exact source and destination capacity succeeds.  Only the current
-     * message cursor and its final 117 bytes may change. */
+     * message cursor and its final count-derived record may change. */
     memset(exact_message_data, 0x95, sizeof(exact_message_data));
     memset(exact_queue_data, 0xa6, sizeof(exact_queue_data));
     for (offset = 0; offset < SEED_BYTES; ++offset)
@@ -2422,9 +2528,302 @@ static void test_event_mode_mixed_tx_ack_release_and_retirement(void)
     SV_NativeShadowPeerDestroyV1(&peer);
 }
 
+static uint16_t send_snapshot_burst(
+    netchan_t *chan,
+    sv_native_shadow_peer_v1 *peer,
+    uint32_t snapshot_epoch,
+    uint32_t snapshot_sequence,
+    uint32_t *message_sequence_io)
+{
+    netchan_app_tx_prepare_output_v1_t tx_output;
+    worr_native_envelope_frame_info_v1 frame;
+    byte packet[WORR_NATIVE_CARRIER_MAX_PACKET_BYTES];
+    uint16_t expected_fragment_count = 0;
+    uint16_t fragment_index = 0;
+
+    CHECK(chan != NULL && peer != NULL &&
+          message_sequence_io != NULL);
+    do {
+        memset(packet, 0, sizeof(packet));
+        CHECK(prepare_application(
+                  chan, peer, NULL, 0, packet, sizeof(packet),
+                  &tx_output) ==
+              NETCHAN_APP_TX_PREPARE_PREPARED);
+        memset(&frame, 0, sizeof(frame));
+        decode_single_data_frame(
+            packet, tx_output.application_bytes, &frame);
+        CHECK(frame.record.record_class ==
+                  WORR_NATIVE_RECORD_SNAPSHOT_V1 &&
+              frame.record.object_epoch == snapshot_epoch &&
+              frame.record.object_sequence == snapshot_sequence &&
+              frame.fragment_index == fragment_index);
+        if (fragment_index == 0) {
+            CHECK(frame.fragment_count > 1);
+            expected_fragment_count = frame.fragment_count;
+            if (*message_sequence_io == 0)
+                *message_sequence_io = frame.message_sequence;
+        }
+        CHECK(frame.fragment_count == expected_fragment_count &&
+              frame.message_sequence == *message_sequence_io);
+        complete_application(
+            chan, peer, &tx_output,
+            NETCHAN_APP_TX_COMPLETION_ACCEPTED, packet);
+        ++fragment_index;
+    } while (fragment_index < expected_fragment_count);
+    return expected_fragment_count;
+}
+
+static void test_snapshot_mode_fail_closed_bindings(void)
+{
+    netchan_t missing_epoch_chan;
+    netchan_t wrong_mode_chan;
+    sv_native_shadow_peer_v1 missing_epoch_peer;
+    sv_native_shadow_peer_v1 wrong_mode_peer;
+    worr_native_readiness_record_v1 challenge;
+
+    init_chan(&missing_epoch_chan);
+    CHECK(SV_NativeShadowPeerInitModeV1(
+        &missing_epoch_peer, &missing_epoch_chan, 12000,
+        SV_NATIVE_SHADOW_MODE_SNAPSHOT));
+    CHECK(missing_epoch_peer.snapshot_state != NULL &&
+          missing_epoch_peer.event_state == NULL);
+    CHECK(!SV_NativeShadowBeginEpochV1(
+        &missing_epoch_peer, 400,
+        WORR_NET_CAP_LEGACY_STAGE_MASK,
+        WORR_NET_CAP_LEGACY_STAGE_MASK, 12000, &challenge));
+    CHECK(!SV_NativeShadowPeerEnabledV1(&missing_epoch_peer) &&
+          missing_epoch_peer.last_failure ==
+              SV_NATIVE_SHADOW_FAILURE_OFFICIAL_BINDING);
+    SV_NativeShadowPeerDestroyV1(&missing_epoch_peer);
+
+    init_chan(&wrong_mode_chan);
+    CHECK(SV_NativeShadowPeerInitModeV1(
+        &wrong_mode_peer, &wrong_mode_chan, 12010,
+        SV_NATIVE_SHADOW_MODE_COMMAND));
+    CHECK(!SV_NativeShadowBeginEpochBoundV1(
+        &wrong_mode_peer, 401,
+        WORR_NET_CAP_LEGACY_STAGE_MASK,
+        WORR_NET_CAP_LEGACY_STAGE_MASK, 77, 12010,
+        &challenge));
+    CHECK(!SV_NativeShadowPeerEnabledV1(&wrong_mode_peer) &&
+          wrong_mode_peer.last_failure ==
+              SV_NATIVE_SHADOW_FAILURE_OFFICIAL_BINDING);
+    SV_NativeShadowPeerDestroyV1(&wrong_mode_peer);
+}
+
+static void test_snapshot_mode_multifragment_retry_ack(void)
+{
+    enum {
+        SNAPSHOT_EPOCH = 77,
+        OFFICIAL_EPOCH = 402,
+        RAW_TIME_MS = 12100,
+    };
+    netchan_t chan;
+    sv_native_shadow_peer_v1 peer;
+    worr_native_readiness_state_v1 client;
+    worr_native_readiness_record_v1 challenge;
+    worr_native_readiness_record_v1 client_ready;
+    worr_native_readiness_record_v1 server_active;
+    worr_native_readiness_record_v1 active_confirm;
+    sv_snapshot_shadow_config_v1 shadow_config;
+    sv_snapshot_shadow_config_v1 wrong_shadow_config;
+    sv_snapshot_shadow_peer_v1 *shadow;
+    sv_snapshot_shadow_peer_v1 *wrong_shadow;
+    snapshot_frame_fixture frame_fixture;
+    snapshot_frame_fixture wrong_frame_fixture;
+    sv_snapshot_shadow_ref_v1 snapshot_ref;
+    sv_snapshot_shadow_ref_v1 wrong_snapshot_ref;
+    sv_snapshot_shadow_sent_v1 sent;
+    sv_native_shadow_snapshot_status_v1 status;
+    netchan_app_tx_prepare_output_v1_t tx_output;
+    netchan_app_rx_output_v1_t rx_output;
+    worr_native_envelope_frame_info_v1 retry_frame;
+    byte packet[WORR_NATIVE_CARRIER_MAX_PACKET_BYTES];
+    byte packet_before[WORR_NATIVE_CARRIER_MAX_PACKET_BYTES];
+    byte ack_packet[WORR_NATIVE_CARRIER_MAX_PACKET_BYTES];
+    size_t ack_packet_bytes = 0;
+    uint32_t message_sequence = 0;
+    uint16_t first_fragment_count;
+    uint16_t retry_fragment_count;
+
+    init_chan(&chan);
+    CHECK(SV_NativeShadowPeerInitModeV1(
+        &peer, &chan, RAW_TIME_MS,
+        SV_NATIVE_SHADOW_MODE_SNAPSHOT));
+    CHECK(peer.snapshot_state != NULL && peer.event_state == NULL);
+    CHECK(SV_NativeShadowBeginEpochBoundV1(
+        &peer, OFFICIAL_EPOCH,
+        WORR_NET_CAP_LEGACY_STAGE_MASK,
+        WORR_NET_CAP_LEGACY_STAGE_MASK, SNAPSHOT_EPOCH,
+        RAW_TIME_MS, &challenge));
+    CHECK(challenge.negotiated_capabilities ==
+              WORR_NET_CAP_NATIVE_SNAPSHOT_PRIVATE_MASK &&
+          challenge.snapshot_epoch == SNAPSHOT_EPOCH);
+    CHECK(Worr_NativeReadinessClientInitBoundV1(
+              &client, challenge.transport_epoch, SNAPSHOT_EPOCH,
+              challenge.negotiated_capabilities, peer.clock_ticks,
+              SV_NATIVE_SHADOW_TIMEOUT_MS) ==
+          WORR_NATIVE_READINESS_OK);
+    CHECK(Worr_NativeReadinessClientObserveChallengeV1(
+              &client, &challenge, peer.clock_ticks,
+              &client_ready) == WORR_NATIVE_READINESS_OK);
+    feed_ready(
+        &peer, RAW_TIME_MS + 1u, &client_ready, &server_active);
+    CHECK(server_active.snapshot_epoch == SNAPSHOT_EPOCH &&
+          peer.readiness.phase ==
+              WORR_NATIVE_READINESS_PHASE_SERVER_WAIT_CLIENT_ACTIVE_CONFIRM);
+    CHECK(SV_NativeShadowServerActiveQueuedV1(&peer));
+    CHECK(peer.lifecycle == SV_NATIVE_SHADOW_LIFECYCLE_ACTIVE &&
+          peer.transport_initialized == 1);
+    CHECK(SV_NativeShadowGetSnapshotStatusV1(
+        &peer, RAW_TIME_MS + 1u, &status));
+    CHECK(status.mode == SV_NATIVE_SHADOW_MODE_SNAPSHOT &&
+          status.sender_initialized == 1 &&
+          status.snapshot_epoch == SNAPSHOT_EPOCH &&
+          status.tx_open == 0 && status.output_due == 0 &&
+          status.retained_count == 0);
+
+    shadow_config = make_snapshot_shadow_config(SNAPSHOT_EPOCH);
+    shadow = SV_SnapshotShadowCreateV1(&shadow_config);
+    CHECK(shadow != NULL);
+    init_snapshot_frame(&frame_fixture, 500);
+    snapshot_ref = commit_snapshot_frame(
+        shadow, &frame_fixture, 5000, UINT64_C(50000000));
+    memset(&sent, 0, sizeof(sent));
+    CHECK(SV_SnapshotShadowGetSentV1(
+              shadow, snapshot_ref, &sent) ==
+          SV_SNAPSHOT_SHADOW_OK);
+    CHECK(sent.snapshot.snapshot_id.epoch == SNAPSHOT_EPOCH);
+    CHECK(SV_NativeShadowQueueSnapshotV1(
+        &peer, shadow, snapshot_ref, RAW_TIME_MS + 2u));
+    CHECK(SV_NativeShadowGetSnapshotStatusV1(
+        &peer, RAW_TIME_MS + 2u, &status));
+    CHECK(status.snapshot_epoch == SNAPSHOT_EPOCH &&
+          status.snapshots_queued == 1 &&
+          status.retained_count == 1 &&
+          status.active_snapshot.epoch == SNAPSHOT_EPOCH &&
+          status.active_snapshot.sequence ==
+              sent.snapshot.snapshot_id.sequence &&
+          status.active_payload_bytes > 0 &&
+          status.tx_open == 0 && status.output_due == 0);
+
+    memset(packet, 0x41, sizeof(packet));
+    memcpy(packet_before, packet, sizeof(packet));
+    CHECK(prepare_application(
+              &chan, &peer, NULL, 0, packet, sizeof(packet),
+              &tx_output) == NETCHAN_APP_TX_PREPARE_BYPASS);
+    CHECK(memcmp(packet, packet_before, sizeof(packet)) == 0);
+
+    CHECK(Worr_NativeReadinessClientObserveServerActiveWithConfirmV1(
+              &client, &server_active, peer.clock_ticks,
+              &active_confirm) == WORR_NATIVE_READINESS_OK);
+    CHECK(active_confirm.snapshot_epoch == SNAPSHOT_EPOCH);
+    feed_active_confirm(
+        &peer, RAW_TIME_MS + 3u, &active_confirm);
+    CHECK(peer.readiness.phase ==
+              WORR_NATIVE_READINESS_PHASE_SERVER_ACTIVE &&
+          peer.client_active_confirm_records == 1);
+    CHECK(SV_NativeShadowOutputDueV1(
+        &peer, RAW_TIME_MS + 3u));
+    CHECK(SV_NativeShadowGetSnapshotStatusV1(
+        &peer, RAW_TIME_MS + 3u, &status));
+    CHECK(status.active_confirms == 1 && status.tx_open == 1 &&
+          status.output_due == 1 && status.retained_count == 1);
+
+    first_fragment_count = send_snapshot_burst(
+        &chan, &peer, SNAPSHOT_EPOCH,
+        sent.snapshot.snapshot_id.sequence, &message_sequence);
+    CHECK(first_fragment_count > 1 && message_sequence != 0);
+    CHECK(SV_NativeShadowGetSnapshotStatusV1(
+        &peer, RAW_TIME_MS + 3u, &status));
+    CHECK(status.retained_count == 1 &&
+          status.packets_confirmed == first_fragment_count &&
+          status.first_sends == 1 && status.retries == 0);
+
+    CHECK(SV_NativeShadowOutputDueV1(
+        &peer, RAW_TIME_MS + 3u +
+                   SV_NATIVE_SHADOW_SNAPSHOT_RESEND_MS));
+    memset(packet, 0, sizeof(packet));
+    CHECK(prepare_application(
+              &chan, &peer, NULL, 0, packet, sizeof(packet),
+              &tx_output) == NETCHAN_APP_TX_PREPARE_PREPARED);
+    memset(&retry_frame, 0, sizeof(retry_frame));
+    decode_single_data_frame(
+        packet, tx_output.application_bytes, &retry_frame);
+    CHECK(retry_frame.message_sequence == message_sequence &&
+          retry_frame.fragment_index == 0 &&
+          retry_frame.fragment_count == first_fragment_count);
+    complete_application(
+        &chan, &peer, &tx_output,
+        NETCHAN_APP_TX_COMPLETION_NOT_ACCEPTED, packet);
+    CHECK(SV_NativeShadowGetSnapshotStatusV1(
+        &peer, RAW_TIME_MS + 3u +
+                   SV_NATIVE_SHADOW_SNAPSHOT_RESEND_MS,
+        &status));
+    CHECK(status.retained_count == 1 &&
+          status.packets_rejected == 1 &&
+          status.retries == 0);
+
+    retry_fragment_count = send_snapshot_burst(
+        &chan, &peer, SNAPSHOT_EPOCH,
+        sent.snapshot.snapshot_id.sequence, &message_sequence);
+    CHECK(retry_fragment_count == first_fragment_count);
+    CHECK(SV_NativeShadowGetSnapshotStatusV1(
+        &peer, RAW_TIME_MS + 3u +
+                   SV_NATIVE_SHADOW_SNAPSHOT_RESEND_MS,
+        &status));
+    CHECK(status.retained_count == 1 &&
+          status.packets_confirmed ==
+              (uint64_t)first_fragment_count +
+                  retry_fragment_count &&
+          status.packets_rejected == 1 &&
+          status.first_sends == 1 && status.retries == 1);
+
+    encode_ack_range_carrier(
+        challenge.transport_epoch, message_sequence,
+        message_sequence, ack_packet, sizeof(ack_packet),
+        &ack_packet_bytes);
+    CHECK(receive_application(
+              &chan, &peer, ack_packet, ack_packet_bytes,
+              &rx_output) == NETCHAN_APP_RX_EXPOSE_LEGACY);
+    CHECK(rx_output.legacy_bytes == 0);
+    CHECK(SV_NativeShadowGetSnapshotStatusV1(
+        &peer, RAW_TIME_MS + 3u +
+                   SV_NATIVE_SHADOW_SNAPSHOT_RESEND_MS,
+        &status));
+    CHECK(status.retained_count == 0 &&
+          status.active_payload_bytes == 0 &&
+          status.acknowledgements_applied == 1 &&
+          status.payloads_released == 1 &&
+          status.output_due == 0);
+
+    wrong_shadow_config =
+        make_snapshot_shadow_config(SNAPSHOT_EPOCH + 1u);
+    wrong_shadow =
+        SV_SnapshotShadowCreateV1(&wrong_shadow_config);
+    CHECK(wrong_shadow != NULL);
+    init_snapshot_frame(&wrong_frame_fixture, 501);
+    wrong_snapshot_ref = commit_snapshot_frame(
+        wrong_shadow, &wrong_frame_fixture, 5001,
+        UINT64_C(50010000));
+    CHECK(!SV_NativeShadowQueueSnapshotV1(
+        &peer, wrong_shadow, wrong_snapshot_ref,
+        RAW_TIME_MS + 4u +
+            SV_NATIVE_SHADOW_SNAPSHOT_RESEND_MS));
+    CHECK(peer.lifecycle == SV_NATIVE_SHADOW_LIFECYCLE_DRAIN &&
+          peer.last_failure ==
+              SV_NATIVE_SHADOW_FAILURE_SNAPSHOT_PROJECTION &&
+          !SV_NativeShadowPeerEnabledV1(&peer));
+
+    SV_SnapshotShadowDestroyV1(wrong_shadow);
+    SV_SnapshotShadowDestroyV1(shadow);
+    SV_NativeShadowPeerDestroyV1(&peer);
+}
+
 int main(void)
 {
-    CHECK(SV_NATIVE_SHADOW_SVC_WIRE_BYTES == 117u);
+    CHECK(SV_NATIVE_SHADOW_SVC_WIRE_BYTES ==
+          WORR_NATIVE_READINESS_SIDEBAND_PAIR_COUNT * 9u);
     test_hooks_and_handshake();
     test_post_bootstrap_queue_idle_gate();
     test_challenge_queue_deadline();
@@ -2448,6 +2847,8 @@ int main(void)
     test_nonmutating_ack_status_and_async_telemetry();
     test_event_wait_confirm_accepts_command_rx();
     test_event_mode_mixed_tx_ack_release_and_retirement();
+    test_snapshot_mode_fail_closed_bindings();
+    test_snapshot_mode_multifragment_retry_ack();
     puts("native_server_shadow_pilot_test: ok");
     return EXIT_SUCCESS;
 }

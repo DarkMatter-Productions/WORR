@@ -375,13 +375,15 @@ static bool receipt_capture_exact(worr_native_carrier_ack_ledger_v1 *ledger,
 static worr_native_rx_result_v1 carrier_session_commit_retained(
     worr_native_rx_session_v1 *session, worr_native_rx_slot_v1 *slots,
     uint16_t slot_capacity, uint32_t slot_index, uint32_t message_sequence,
-    worr_native_carrier_ack_ledger_v1 *ledger, bool allow_semantic) {
+    worr_native_carrier_ack_ledger_v1 *ledger,
+    uint8_t required_semantic_class) {
   worr_native_rx_session_v1 staged_session;
   worr_native_rx_slot_v1 staged_slots[WORR_NATIVE_SESSION_MAX_RX_SLOTS];
   worr_native_carrier_ack_ledger_v1 staged_ledger;
   worr_native_ack_range_v1 acknowledgement;
   worr_native_rx_result_v1 committed;
   const size_t slots_bytes = (size_t)slot_capacity * sizeof(*slots);
+  uint8_t record_class = 0;
   bool semantic_slot = false;
 
   if (session == NULL || slots == NULL || ledger == NULL ||
@@ -408,17 +410,30 @@ static worr_native_rx_result_v1 carrier_session_commit_retained(
   if (slot_index < slot_capacity &&
       slots[slot_index].reassembly.message_sequence == message_sequence &&
       (slots[slot_index].state_flags & WORR_NATIVE_RX_SLOT_COMPLETE) != 0) {
+    record_class =
+        slots[slot_index].reassembly.record.record_class;
     semantic_slot =
-        slots[slot_index].reassembly.record.record_class ==
-            WORR_NATIVE_RECORD_EVENT_V1 ||
-        slots[slot_index].reassembly.record.record_class ==
-            WORR_NATIVE_RECORD_EVENT_STREAM_DESCRIPTOR_V1;
+        record_class == WORR_NATIVE_RECORD_SNAPSHOT_V1 ||
+        record_class == WORR_NATIVE_RECORD_EVENT_V1 ||
+        record_class == WORR_NATIVE_RECORD_EVENT_STREAM_DESCRIPTOR_V1;
   }
-  if (!allow_semantic && semantic_slot) {
+  if (required_semantic_class == 0 && semantic_slot) {
     return WORR_NATIVE_RX_SEMANTIC_ADMISSION_REQUIRED;
   }
-  if (allow_semantic && !semantic_slot)
+  if (required_semantic_class == WORR_NATIVE_RECORD_EVENT_V1 &&
+      record_class != WORR_NATIVE_RECORD_EVENT_V1 &&
+      record_class != WORR_NATIVE_RECORD_EVENT_STREAM_DESCRIPTOR_V1) {
     return WORR_NATIVE_RX_INVALID_STATE;
+  }
+  if (required_semantic_class == WORR_NATIVE_RECORD_SNAPSHOT_V1 &&
+      record_class != WORR_NATIVE_RECORD_SNAPSHOT_V1) {
+    return WORR_NATIVE_RX_INVALID_STATE;
+  }
+  if (required_semantic_class != 0 &&
+      required_semantic_class != WORR_NATIVE_RECORD_EVENT_V1 &&
+      required_semantic_class != WORR_NATIVE_RECORD_SNAPSHOT_V1) {
+    return WORR_NATIVE_RX_INVALID_STATE;
+  }
 
   staged_session = *session;
   memcpy(staged_slots, slots, slots_bytes);
@@ -452,7 +467,7 @@ worr_native_rx_result_v1 Worr_NativeCarrierSessionCommitRetainedV1(
     worr_native_carrier_ack_ledger_v1 *ledger) {
   return carrier_session_commit_retained(
       session, slots, slot_capacity, slot_index, message_sequence, ledger,
-      false);
+      0);
 }
 
 worr_native_rx_result_v1 Worr_NativeCarrierSessionCommitRetainedInternalV1(
@@ -461,7 +476,16 @@ worr_native_rx_result_v1 Worr_NativeCarrierSessionCommitRetainedInternalV1(
     worr_native_carrier_ack_ledger_v1 *ledger) {
   return carrier_session_commit_retained(
       session, slots, slot_capacity, slot_index, message_sequence, ledger,
-      true);
+      WORR_NATIVE_RECORD_EVENT_V1);
+}
+
+worr_native_rx_result_v1 Worr_NativeCarrierSessionCommitSnapshotInternalV1(
+    worr_native_rx_session_v1 *session, worr_native_rx_slot_v1 *slots,
+    uint16_t slot_capacity, uint32_t slot_index, uint32_t message_sequence,
+    worr_native_carrier_ack_ledger_v1 *ledger) {
+  return carrier_session_commit_retained(
+      session, slots, slot_capacity, slot_index, message_sequence, ledger,
+      WORR_NATIVE_RECORD_SNAPSHOT_V1);
 }
 
 static bool
@@ -509,7 +533,8 @@ Worr_NativeCarrierAckRefreshObservedRepeatInternalV1(
       !rx_authority_find(session,
                          repeat_acknowledgement->first_message_sequence,
                          &record_class) ||
-      (record_class != WORR_NATIVE_RECORD_EVENT_V1 &&
+      (record_class != WORR_NATIVE_RECORD_SNAPSHOT_V1 &&
+       record_class != WORR_NATIVE_RECORD_EVENT_V1 &&
        record_class != WORR_NATIVE_RECORD_EVENT_STREAM_DESCRIPTOR_V1)) {
     return ledger->transport_epoch != session->transport_epoch
                ? WORR_NATIVE_CARRIER_ACK_WRONG_EPOCH
@@ -548,7 +573,9 @@ Worr_NativeCarrierAckRetireSemanticReceiptsInternalV1(
   staged = *ledger;
   for (index = 0; index < WORR_NATIVE_CARRIER_ACK_RECEIPT_CAPACITY; ++index) {
     if (!receipt_occupied(&staged.receipts[index]) ||
-        (staged.receipts[index].record_class != WORR_NATIVE_RECORD_EVENT_V1 &&
+        (staged.receipts[index].record_class !=
+             WORR_NATIVE_RECORD_SNAPSHOT_V1 &&
+         staged.receipts[index].record_class != WORR_NATIVE_RECORD_EVENT_V1 &&
          staged.receipts[index].record_class !=
              WORR_NATIVE_RECORD_EVENT_STREAM_DESCRIPTOR_V1)) {
       continue;
@@ -656,7 +683,8 @@ Worr_NativeCarrierSessionAcceptDataRetainedV1(
             &record_class)) {
       return WORR_NATIVE_CARRIER_SESSION_INVALID_STATE;
     }
-    if (record_class == WORR_NATIVE_RECORD_EVENT_V1 ||
+    if (record_class == WORR_NATIVE_RECORD_SNAPSHOT_V1 ||
+        record_class == WORR_NATIVE_RECORD_EVENT_V1 ||
         record_class ==
             WORR_NATIVE_RECORD_EVENT_STREAM_DESCRIPTOR_V1) {
       return WORR_NATIVE_CARRIER_SESSION_SEMANTIC_REVALIDATION_REQUIRED;

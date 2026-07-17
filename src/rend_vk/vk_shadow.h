@@ -14,6 +14,8 @@ bool VK_Shadow_Init(vk_context_t *ctx);
 void VK_Shadow_Shutdown(vk_context_t *ctx);
 VkDescriptorSetLayout VK_Shadow_GetDescriptorSetLayout(void);
 VkDescriptorSet VK_Shadow_GetDescriptorSet(void);
+bool VK_Shadow_HasActiveReceiverLighting(void);
+bool VK_Shadow_HasActiveSurfaceFog(void);
 void VK_Shadow_UpdateDlights(const refdef_t *fd);
 
 void VK_Shadow_BeginFrame(void *userdata,

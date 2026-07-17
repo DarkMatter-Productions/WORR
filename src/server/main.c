@@ -65,6 +65,7 @@ cvar_t  *sv_novis;
 cvar_t  *sv_shadow_strict_replication;
 static cvar_t *sv_worr_native_shadow;
 static cvar_t *sv_worr_native_event_shadow;
+static cvar_t *sv_worr_native_snapshot_shadow;
 
 cvar_t  *sv_maxclients;
 cvar_t  *sv_reserved_slots;
@@ -7092,18 +7093,32 @@ static void SVC_DirectConnect(void)
          newcl->protocol == PROTOCOL_VERSION_RERELEASE) &&
         newcl->worr_capabilities_offered ==
             WORR_NET_CAP_LEGACY_STAGE_MASK) {
-        sv_native_shadow_peer_v1 *pilot = SV_Mallocz(sizeof(*pilot));
-        const sv_native_shadow_mode_v1 native_shadow_mode =
+        const bool event_mode =
             sv_worr_native_event_shadow &&
-                    sv_worr_native_event_shadow->integer != 0
-                ? SV_NATIVE_SHADOW_MODE_EVENT
-                : SV_NATIVE_SHADOW_MODE_COMMAND;
-        if (SV_NativeShadowPeerInitModeV1(
-                pilot, &newcl->netchan, svs.realtime,
-                native_shadow_mode)) {
-            newcl->worr_native_shadow = pilot;
-        } else {
-            Z_Free(pilot);
+            sv_worr_native_event_shadow->integer != 0;
+        const bool snapshot_mode =
+            sv_worr_native_snapshot_shadow &&
+            sv_worr_native_snapshot_shadow->integer != 0;
+
+        /* This slice deliberately has one server-originated DATA owner.
+         * A combined event+snapshot sender will be negotiated separately;
+         * enabling both current pilots is an ambiguous configuration and
+         * therefore leaves the private protocol entirely disabled. */
+        if (!(event_mode && snapshot_mode)) {
+            sv_native_shadow_peer_v1 *pilot =
+                SV_Mallocz(sizeof(*pilot));
+            const sv_native_shadow_mode_v1 native_shadow_mode =
+                snapshot_mode
+                    ? SV_NATIVE_SHADOW_MODE_SNAPSHOT
+                    : (event_mode ? SV_NATIVE_SHADOW_MODE_EVENT
+                                  : SV_NATIVE_SHADOW_MODE_COMMAND);
+            if (SV_NativeShadowPeerInitModeV1(
+                    pilot, &newcl->netchan, svs.realtime,
+                    native_shadow_mode)) {
+                newcl->worr_native_shadow = pilot;
+            } else {
+                Z_Free(pilot);
+            }
         }
     }
 
@@ -8251,6 +8266,8 @@ void SV_Init(void)
     sv_worr_native_shadow = Cvar_Get("sv_worr_native_shadow", "0", 0);
     sv_worr_native_event_shadow = Cvar_Get(
         "sv_worr_native_event_shadow", "0", 0);
+    sv_worr_native_snapshot_shadow = Cvar_Get(
+        "sv_worr_native_snapshot_shadow", "0", 0);
     sv_downloadserver = Cvar_Get("sv_downloadserver", "", 0);
     sv_redirect_address = Cvar_Get("sv_redirect_address", "", 0);
 

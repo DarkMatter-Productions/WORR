@@ -79,26 +79,26 @@
           <div class="settings-column" id="video-texture-column">
             <section class="settings-section" id="video-texture-section">
               <h2 data-loc-key="worr_ui_textures">Textures</h2>
-              <div class="setting-row" data-control="range" data-cvar="gl_picmip">
+              <div class="setting-row" data-control="range" data-cvar="r_picmip">
                 <span class="setting-widget-icon" data-widget="range"><img src="../common/icons/widgets/range.png" /></span>
                 <label for="video-texture-quality" data-loc-key="worr_ui_texture_quality">Texture Quality</label>
-                <span class="setting-value setting-meter"><span class="setting-meter-fill" data-meter-cvar="gl_picmip" data-meter-min="0" data-meter-max="3"></span><span class="setting-meter-text" data-bind-cvar="gl_picmip"></span></span><input id="video-texture-quality" type="range" min="0" max="3" step="1" data-cvar="gl_picmip" />
+                <span class="setting-value setting-meter"><span class="setting-meter-fill" data-meter-cvar="r_picmip" data-meter-min="0" data-meter-max="3"></span><span class="setting-meter-text" data-bind-cvar="r_picmip"></span></span><input id="video-texture-quality" type="range" min="0" max="3" step="1" data-cvar="r_picmip" />
 
               </div>
-              <div class="setting-row" data-control="select" data-cvar="gl_texturemode">
+              <div class="setting-row" data-control="select" data-cvar="r_texture_filter">
                 <span class="setting-widget-icon" data-widget="select"><img src="../common/icons/widgets/select.png" /></span>
                 <label for="video-texture-filter" data-loc-key="worr_ui_texture_filter">Texture Filter</label>
-                <select id="video-texture-filter" data-cvar="gl_texturemode">
+                <select id="video-texture-filter" data-cvar="r_texture_filter">
                   <option value="GL_NEAREST" data-loc-key="worr_ui_nearest">Nearest</option>
                   <option value="GL_LINEAR" data-loc-key="worr_ui_linear">Linear</option>
                   <option value="GL_LINEAR_MIPMAP_NEAREST" data-loc-key="worr_ui_bilinear">Bilinear</option>
                   <option value="GL_LINEAR_MIPMAP_LINEAR" data-loc-key="worr_ui_trilinear">Trilinear</option>
                 </select>
               </div>
-              <div class="setting-row" data-control="select" data-cvar="gl_anisotropy">
+              <div class="setting-row" data-control="select" data-cvar="r_anisotropy">
                 <span class="setting-widget-icon" data-widget="select"><img src="../common/icons/widgets/select.png" /></span>
                 <label for="video-anisotropy" data-loc-key="worr_ui_anisotropic_filter">Anisotropic Filter</label>
-                <select id="video-anisotropy" data-cvar="gl_anisotropy">
+                <select id="video-anisotropy" data-cvar="r_anisotropy">
                   <option value="1" data-loc-key="m_off">Off</option>
                   <option value="2" data-loc-key="worr_ui_2x">2x</option>
                   <option value="4" data-loc-key="worr_ui_4x">4x</option>

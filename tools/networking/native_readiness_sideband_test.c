@@ -22,6 +22,10 @@
 
 #define NATIVE_CAPABILITIES WORR_NET_CAP_NATIVE_COMMAND_PRIVATE_MASK
 #define EVENT_NATIVE_CAPABILITIES WORR_NET_CAP_NATIVE_EVENT_PRIVATE_MASK
+#define SNAPSHOT_NATIVE_CAPABILITIES WORR_NET_CAP_NATIVE_SNAPSHOT_PRIVATE_MASK
+#define EVENT_SNAPSHOT_NATIVE_CAPABILITIES                                \
+    ((uint32_t)(WORR_NET_CAP_NATIVE_EVENT_PRIVATE_MASK |                  \
+                WORR_NET_CAP_CANONICAL_SNAPSHOT_V2))
 
 static void fill_bytes(void *object, size_t bytes, unsigned char value)
 {
@@ -129,6 +133,8 @@ static void test_reserved_range(void)
         WORR_NATIVE_READINESS_SETTING_KIND,
         WORR_NATIVE_READINESS_SETTING_EPOCH_LOW,
         WORR_NATIVE_READINESS_SETTING_EPOCH_HIGH,
+        WORR_NATIVE_READINESS_SETTING_SNAPSHOT_EPOCH_LOW,
+        WORR_NATIVE_READINESS_SETTING_SNAPSHOT_EPOCH_HIGH,
         WORR_NATIVE_READINESS_SETTING_CAPABILITIES_LOW,
         WORR_NATIVE_READINESS_SETTING_CAPABILITIES_HIGH,
         WORR_NATIVE_READINESS_SETTING_NONCE_WORD0,
@@ -142,7 +148,7 @@ static void test_reserved_range(void)
     uint32_t index;
 
     CHECK(WORR_NATIVE_READINESS_SETTING_BEGIN == -31980);
-    CHECK(WORR_NATIVE_READINESS_SETTING_COMMIT == -31968);
+    CHECK(WORR_NATIVE_READINESS_SETTING_COMMIT == -31966);
     for (index = 1;
          index < WORR_NATIVE_READINESS_SIDEBAND_PAIR_COUNT;
          ++index) {
@@ -172,10 +178,10 @@ static void test_encode_and_transactionality(void)
     static const uint16_t golden_words[
         WORR_NATIVE_READINESS_SIDEBAND_PAIR_COUNT] = {
         UINT16_C(0x0001), UINT16_C(0x0001), UINT16_C(0xcdef),
-        UINT16_C(0x89ab), UINT16_C(0x0053), UINT16_C(0x0000),
-        UINT16_C(0x3210), UINT16_C(0x7654), UINT16_C(0xba98),
-        UINT16_C(0xfedc), UINT16_C(0x0c0a), UINT16_C(0x5d6c),
-        UINT16_C(0xeb36),
+        UINT16_C(0x89ab), UINT16_C(0x0000), UINT16_C(0x0000),
+        UINT16_C(0x0053), UINT16_C(0x0000), UINT16_C(0x3210),
+        UINT16_C(0x7654), UINT16_C(0xba98), UINT16_C(0xfedc),
+        UINT16_C(0x0c0a), UINT16_C(0x5d6c), UINT16_C(0xe770),
     };
     worr_native_readiness_record_v1 record;
     worr_native_readiness_record_v1 bad;
@@ -198,7 +204,7 @@ static void test_encode_and_transactionality(void)
           (int16_t)WORR_NATIVE_READINESS_SIDEBAND_VERSION);
     CHECK(pairs[1].index == WORR_NATIVE_READINESS_SETTING_KIND);
     CHECK(pairs[1].value == WORR_NATIVE_READINESS_RECORD_CHALLENGE);
-    CHECK(pairs[12].index == WORR_NATIVE_READINESS_SETTING_COMMIT);
+    CHECK(pairs[14].index == WORR_NATIVE_READINESS_SETTING_COMMIT);
     for (index = 1;
          index < WORR_NATIVE_READINESS_SIDEBAND_PAIR_COUNT;
          ++index) {
@@ -213,13 +219,17 @@ static void test_encode_and_transactionality(void)
           (uint16_t)record.transport_epoch);
     CHECK(pair_word(pairs[3].value) ==
           (uint16_t)(record.transport_epoch >> 16));
-    CHECK(pair_word(pairs[6].value) ==
+    CHECK(pair_word(pairs[4].value) ==
+          (uint16_t)record.snapshot_epoch);
+    CHECK(pair_word(pairs[5].value) ==
+          (uint16_t)(record.snapshot_epoch >> 16));
+    CHECK(pair_word(pairs[8].value) ==
           (uint16_t)record.readiness_nonce);
-    CHECK(pair_word(pairs[9].value) ==
-          (uint16_t)(record.readiness_nonce >> 48));
-    CHECK(pair_word(pairs[10].value) ==
-          (uint16_t)record.record_checksum);
     CHECK(pair_word(pairs[11].value) ==
+          (uint16_t)(record.readiness_nonce >> 48));
+    CHECK(pair_word(pairs[12].value) ==
+          (uint16_t)record.record_checksum);
+    CHECK(pair_word(pairs[13].value) ==
           (uint16_t)(record.record_checksum >> 16));
 
     memcpy(before, pairs, sizeof(before));
@@ -277,6 +287,66 @@ static void test_clc_and_svc_round_trip(void)
               WORR_NATIVE_READINESS_SIDEBAND_PACKET_ENDED);
         CHECK(Worr_NativeReadinessSidebandParserValidateV1(&parser));
     }
+}
+
+static void test_snapshot_epoch_round_trip_and_binding_validation(void)
+{
+    static const uint32_t capabilities[] = {
+        SNAPSHOT_NATIVE_CAPABILITIES,
+        EVENT_SNAPSHOT_NATIVE_CAPABILITIES,
+    };
+    worr_native_readiness_record_v1 record;
+    worr_native_readiness_record_v1 output;
+    worr_native_readiness_setting_pair_v1 pairs[
+        WORR_NATIVE_READINESS_SIDEBAND_PAIR_COUNT];
+    worr_native_readiness_sideband_parser_v1 parser;
+    uint32_t mode;
+    uint32_t index;
+
+    CHECK(SNAPSHOT_NATIVE_CAPABILITIES == UINT32_C(0x57));
+    CHECK(EVENT_SNAPSHOT_NATIVE_CAPABILITIES == UINT32_C(0x77));
+    for (mode = 0; mode < 2; ++mode) {
+        CHECK(Worr_NativeReadinessRecordInitBoundV1(
+            &record, WORR_NATIVE_READINESS_RECORD_CLIENT_ACTIVE_CONFIRM,
+            UINT32_C(0x89abcdef), UINT32_C(0x2468ace0),
+            capabilities[mode], UINT64_C(0xfedcba9876543210)));
+        CHECK(Worr_NativeReadinessSidebandEncodeV1(
+            &record, pairs, WORR_NATIVE_READINESS_SIDEBAND_PAIR_COUNT));
+        CHECK(pair_word(pairs[4].value) == UINT16_C(0xace0));
+        CHECK(pair_word(pairs[5].value) == UINT16_C(0x2468));
+        carrier_round_trip(&record, mode != 0, &output);
+        CHECK(!memcmp(&record, &output, sizeof(record)));
+        CHECK(output.snapshot_epoch == UINT32_C(0x2468ace0));
+    }
+
+    make_pairs(WORR_NATIVE_READINESS_RECORD_CHALLENGE, &record, pairs);
+    pair_set_word(&pairs[4].value, UINT16_C(1));
+    begin_parser(&parser);
+    for (index = 0; index < 7; ++index) {
+        CHECK(observe_pair(&parser, &pairs[index], false) ==
+              WORR_NATIVE_READINESS_SIDEBAND_FIELD_ACCEPTED);
+    }
+    CHECK(observe_pair(&parser, &pairs[7], false) ==
+          WORR_NATIVE_READINESS_SIDEBAND_RECORD_INVALID);
+    CHECK(parser.phase == WORR_NATIVE_READINESS_SIDEBAND_PHASE_POISONED);
+    CHECK(parser.telemetry.record_validation_failures == 1);
+
+    CHECK(Worr_NativeReadinessRecordInitBoundV1(
+        &record, WORR_NATIVE_READINESS_RECORD_CHALLENGE,
+        UINT32_C(0x89abcdef), UINT32_C(0x2468ace0),
+        SNAPSHOT_NATIVE_CAPABILITIES, UINT64_C(0xfedcba9876543210)));
+    CHECK(Worr_NativeReadinessSidebandEncodeV1(
+        &record, pairs, WORR_NATIVE_READINESS_SIDEBAND_PAIR_COUNT));
+    pair_set_word(&pairs[4].value, UINT16_C(0));
+    pair_set_word(&pairs[5].value, UINT16_C(0));
+    begin_parser(&parser);
+    for (index = 0; index < 7; ++index) {
+        CHECK(observe_pair(&parser, &pairs[index], true) ==
+              WORR_NATIVE_READINESS_SIDEBAND_FIELD_ACCEPTED);
+    }
+    CHECK(observe_pair(&parser, &pairs[7], true) ==
+          WORR_NATIVE_READINESS_SIDEBAND_RECORD_INVALID);
+    CHECK(parser.phase == WORR_NATIVE_READINESS_SIDEBAND_PHASE_POISONED);
 }
 
 static void test_multiple_records_per_packet(void)
@@ -526,14 +596,14 @@ static void test_corrupt_records_and_commit(void)
     make_pairs(WORR_NATIVE_READINESS_RECORD_SERVER_ACTIVE, &record, clean);
 
     memcpy(corrupt, clean, sizeof(corrupt));
-    pair_set_word(&corrupt[10].value,
-                  pair_word(corrupt[10].value) ^ UINT16_C(1));
+    pair_set_word(&corrupt[12].value,
+                  pair_word(corrupt[12].value) ^ UINT16_C(1));
     begin_parser(&parser);
-    for (index = 0; index <= 10; ++index) {
+    for (index = 0; index <= 12; ++index) {
         CHECK(observe_pair(&parser, &corrupt[index], false) ==
               WORR_NATIVE_READINESS_SIDEBAND_FIELD_ACCEPTED);
     }
-    CHECK(observe_pair(&parser, &corrupt[11], false) ==
+    CHECK(observe_pair(&parser, &corrupt[13], false) ==
           WORR_NATIVE_READINESS_SIDEBAND_CHECKSUM_MISMATCH);
     CHECK(parser.telemetry.checksum_failures == 1);
     CHECK(parser.phase ==
@@ -542,13 +612,13 @@ static void test_corrupt_records_and_commit(void)
     CHECK(Worr_NativeReadinessSidebandPacketBeginV1(&parser) ==
           WORR_NATIVE_READINESS_SIDEBAND_RESET_PACKET_BOUNDARY);
     memcpy(corrupt, clean, sizeof(corrupt));
-    pair_set_word(&corrupt[12].value,
-                  pair_word(corrupt[12].value) ^ UINT16_C(1));
-    for (index = 0; index < 12; ++index) {
+    pair_set_word(&corrupt[14].value,
+                  pair_word(corrupt[14].value) ^ UINT16_C(1));
+    for (index = 0; index < 14; ++index) {
         CHECK(observe_pair(&parser, &corrupt[index], true) ==
               WORR_NATIVE_READINESS_SIDEBAND_FIELD_ACCEPTED);
     }
-    CHECK(observe_pair(&parser, &corrupt[12], true) ==
+    CHECK(observe_pair(&parser, &corrupt[14], true) ==
           WORR_NATIVE_READINESS_SIDEBAND_COMMIT_MISMATCH);
     CHECK(parser.telemetry.commit_failures == 1);
 
@@ -716,6 +786,7 @@ int main(void)
     test_reserved_range();
     test_encode_and_transactionality();
     test_clc_and_svc_round_trip();
+    test_snapshot_epoch_round_trip_and_binding_validation();
     test_multiple_records_per_packet();
     test_readiness_handshake_through_sideband();
     test_packet_boundaries();

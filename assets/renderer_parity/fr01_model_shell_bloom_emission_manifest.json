@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "task_id": "FR-01-T12",
+  "scenes": [
+    {
+      "id": "stock_md2_colour_shell_bloom_emission",
+      "config": "renderer_parity/fr01_model_shell_bloom_emission.cfg",
+      "capture": "fr01_model_shell_bloom_emission.tga",
+      "crop": [570, 450, 330, 180],
+      "metrics": {
+        "pixel_threshold": 16,
+        "max_mean_absolute_rgb": [1.6, 2.7, 0.07],
+        "max_pixels_over_threshold_percent": 0
+      },
+      "probes": [
+        {
+          "name": "translucent_blue_shell_bloom_core",
+          "min_color": [0, 0, 250],
+          "max_color": [20, 30, 255],
+          "min_pixels_per_backend": 52000,
+          "max_backend_count_delta_percent": 0,
+          "min_backend_intersection_over_union": 1
+        },
+        {
+          "name": "soft_shell_bloom_halo_on_blue_backdrop",
+          "min_color": [15, 25, 82],
+          "max_color": [25, 40, 100],
+          "min_pixels_per_backend": 1750,
+          "max_backend_count_delta_percent": 2,
+          "min_backend_intersection_over_union": 0.98
+        }
+      ]
+    }
+  ]
+}

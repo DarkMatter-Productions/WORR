@@ -9,6 +9,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #pragma once
 
+#include "common/net/native_snapshot_admission.h"
 #include "common/net/snapshot_q2proto.h"
 #include "shared/cgame_snapshot.h"
 
@@ -42,6 +43,20 @@ typedef enum cl_snapshot_shadow_capture_failure_v1_e {
     CL_SNAPSHOT_SHADOW_CAPTURE_CONTROLLED_ENTITY_RANGE = 8,
     CL_SNAPSHOT_SHADOW_CAPTURE_CONSUMED_COMMAND = 9,
 } cl_snapshot_shadow_capture_failure_v1;
+
+/*
+ * Result of looking up an independently legacy-qualified native snapshot
+ * expectation.  AVAILABLE is the only result that writes a usable
+ * expectation to the caller.
+ */
+typedef enum cl_snapshot_shadow_native_expectation_result_v1_e {
+    CL_SNAPSHOT_SHADOW_NATIVE_EXPECTATION_AVAILABLE = 0,
+    CL_SNAPSHOT_SHADOW_NATIVE_EXPECTATION_PENDING = 1,
+    CL_SNAPSHOT_SHADOW_NATIVE_EXPECTATION_UNQUALIFIED = 2,
+    CL_SNAPSHOT_SHADOW_NATIVE_EXPECTATION_STALE = 3,
+    CL_SNAPSHOT_SHADOW_NATIVE_EXPECTATION_WRONG_EPOCH = 4,
+    CL_SNAPSHOT_SHADOW_NATIVE_EXPECTATION_INVALID = 5,
+} cl_snapshot_shadow_native_expectation_result_v1;
 
 enum {
     CL_SNAPSHOT_SHADOW_PARITY_METADATA = 1u << 0,
@@ -128,6 +143,13 @@ bool CL_SnapshotShadowNotifyReset(uint32_t reason, uint64_t host_time_us);
 bool CL_SnapshotShadowNotifyResetEx(uint32_t reason,
                                     uint64_t host_time_us,
                                     uint32_t reset_flags);
+/*
+ * Rebind the projector to a server epoch learned from an independent
+ * negotiated control path.  Native snapshot DATA must never call this API.
+ * Existing map baselines are retained, while projected frames and native
+ * expectations are invalidated transactionally.
+ */
+bool CL_SnapshotShadowBindNativeEpoch(uint32_t snapshot_epoch);
 
 /* Capture exact public q2proto service values while the legacy parser owns them. */
 void CL_SnapshotShadowSetBaseline(
@@ -170,10 +192,21 @@ bool CL_SnapshotShadowLatest(
     worr_snapshot_projection_view_v2 *view_out,
     worr_snapshot_projection_hashes_v2 *hashes_out,
     worr_snapshot_ref_v2 *ref_out);
+cl_snapshot_shadow_native_expectation_result_v1
+CL_SnapshotShadowGetNativeExpectation(
+    worr_snapshot_id_v2 snapshot_id,
+    worr_native_snapshot_expectation_v1 *expectation_out);
 bool CL_SnapshotShadowGetStatus(cl_snapshot_shadow_status_v1 *status_out);
 void CL_SnapshotShadowStatus_f(void);
 bool CL_SnapshotShadowSetConsumer(
-    const worr_cgame_snapshot_timeline_export_v1 *consumer);
+    const worr_cgame_snapshot_timeline_export_v2 *consumer);
+/*
+ * Adapt the currently attached real cgame timeline to the transactional
+ * native admission ABI.  The opaque lifetime cookie invalidates previously
+ * exported adapters when cgame unloads or replaces its export.
+ */
+bool CL_SnapshotShadowGetNativeConsumerV1(
+    worr_native_snapshot_consumer_v1 *consumer_out);
 
 /* Stable simulation time for a wire frame, independent of render/seek time. */
 bool CL_SnapshotShadowServerTimeUs(int32_t server_frame,

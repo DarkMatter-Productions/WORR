@@ -1126,6 +1126,10 @@ typedef struct {
 #define BUTTON_HOLSTER  BIT(2) // Kex
 #define BUTTON_JUMP     BIT(3) // Kex
 #define BUTTON_CROUCH   BIT(4) // Kex
+// Native WORR off-hand hook intent. This is deliberately a user-command bit
+// rather than a client string command so the server can bind the action to
+// the same authenticated command mapping as every other predicted input.
+#define BUTTON_HOOK     BIT(5)
 #define BUTTON_ANY      BIT(7) // any key whatsoever
 
 typedef uint8_t button_t;

@@ -2,6 +2,7 @@
 // Licensed under the GNU General Public License 2.0.
 
 #include "cg_local.h"
+#include "cg_local_interaction.hpp"
 #include "cg_wheel.h"
 #include "cg_event_shadow.hpp"
 #include "cg_event_runtime.hpp"
@@ -30,6 +31,8 @@ extern "C" const cgame_entity_export_t *CG_GetEntityAPI(void);
 void CG_Entity_SetImport(const cgame_entity_import_t *import);
 extern "C" void CG_PredictionInputSetImport(
 	const worr_cgame_prediction_input_import_v1 *import);
+extern "C" void CG_PredictionInputSetImportV2(
+	const worr_cgame_prediction_input_import_v2 *import);
 
 static void *CG_GetExtension(const char *name)
 {
@@ -46,7 +49,7 @@ static void *CG_GetExtension(const char *name)
 		return (void *)CG_GetEventRangeAPIv2();
 	if (!strcmp(name, WORR_CGAME_EVENT_RUNTIME_EXPORT_V1))
 		return (void *)CG_GetEventRuntimeAPI();
-	if (!strcmp(name, WORR_CGAME_SNAPSHOT_TIMELINE_EXPORT_V1))
+	if (!strcmp(name, WORR_CGAME_SNAPSHOT_TIMELINE_EXPORT_V2))
 		return (void *)CG_GetCanonicalSnapshotTimelineAPI();
 
 	return nullptr;
@@ -89,6 +92,8 @@ static void InitCGame()
 static void ShutdownCGame()
 {
 	CG_PredictionInputSetImport(nullptr);
+	CG_PredictionInputSetImportV2(nullptr);
+	CG_LocalInteractionSetImport(nullptr);
 }
 
 void CG_DrawHUD (int32_t isplit, const cg_server_data_t *data, vrect_t hud_vrect, vrect_t hud_safe, int32_t scale, int32_t playernum, const player_state_t *ps);
@@ -194,8 +199,32 @@ Q2GAME_API cgame_export_t *GetCGameAPI(cgame_import_t *import)
 			prediction_import = nullptr;
 		}
 		CG_PredictionInputSetImport(prediction_import);
+		const worr_cgame_prediction_input_import_v2 *prediction_import_v2 =
+			(const worr_cgame_prediction_input_import_v2 *)import->GetExtension(
+				WORR_CGAME_PREDICTION_INPUT_IMPORT_V2);
+		if (prediction_import_v2 &&
+			(prediction_import_v2->struct_size != sizeof(*prediction_import_v2) ||
+			 prediction_import_v2->api_version !=
+				 WORR_CGAME_PREDICTION_INPUT_API_VERSION_V2 ||
+			 !prediction_import_v2->ResolveInputRangeForCursor)) {
+			prediction_import_v2 = nullptr;
+		}
+		CG_PredictionInputSetImportV2(prediction_import_v2);
+		const worr_cgame_command_record_import_v1 *command_record_import =
+			(const worr_cgame_command_record_import_v1 *)import->GetExtension(
+				WORR_CGAME_COMMAND_RECORD_IMPORT_V1);
+		if (command_record_import &&
+			(command_record_import->struct_size != sizeof(*command_record_import) ||
+			 command_record_import->api_version !=
+				 WORR_CGAME_COMMAND_RECORD_API_VERSION ||
+			 !command_record_import->ResolveCanonicalCommandRange)) {
+			command_record_import = nullptr;
+		}
+		CG_LocalInteractionSetImport(command_record_import);
 	} else {
 		CG_PredictionInputSetImport(nullptr);
+		CG_PredictionInputSetImportV2(nullptr);
+		CG_LocalInteractionSetImport(nullptr);
 	}
 
 	cglobals.apiVersion = CGAME_API_VERSION;

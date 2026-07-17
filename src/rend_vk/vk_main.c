@@ -63,8 +63,20 @@ uint32_t d_8to24table[256];
 static cvar_t *vk_draw_world;
 static cvar_t *vk_draw_entities;
 static cvar_t *vk_draw_ui;
+static cvar_t *vk_showtearing;
 static cvar_t *vk_damageblend_frac;
 static cvar_t *vk_screenshot_dir;
+static cvar_t *vk_resolutionscale;
+static cvar_t *vk_resolutionscale_aggressive;
+static cvar_t *vk_resolutionscale_fixedscale_h;
+static cvar_t *vk_resolutionscale_fixedscale_w;
+static cvar_t *vk_resolutionscale_gooddrawtime;
+static cvar_t *vk_resolutionscale_increasespeed;
+static cvar_t *vk_resolutionscale_lowerspeed;
+static cvar_t *vk_resolutionscale_numframesbeforelowering;
+static cvar_t *vk_resolutionscale_numframesbeforeraising;
+static cvar_t *vk_resolutionscale_targetdrawtime;
+static uint32_t vk_showtearing_frame;
 static shadow_frontend_state_t vk_shadow_frontend;
 static shadow_frontend_cvars_t vk_shadow_frontend_cvars;
 static bool vk_shadow_frontend_cvars_registered;
@@ -84,27 +96,175 @@ static VkDeviceSize vk_screenshot_capacity;
 static bool vk_dof_supported;
 static uint64_t vk_frame_begin_us;
 
-// Keep CPU submission timing at the same sub-millisecond precision used by
-// the OpenGL profiler. Sys_Milliseconds() is QPC-backed on Windows but its
-// integer result makes ordinary Vulkan submit work look like 0 ms.
-static uint64_t VK_HighResMicroseconds(void)
-{
+#define VK_RESOLUTION_SCALE_MIN 0.25f
+#define VK_RESOLUTION_SCALE_MAX 1.0f
+
+static float vk_resolutionscale_current_w = 1.0f;
+static float vk_resolutionscale_current_h = 1.0f;
+static float vk_resolutionscale_session_draw_ms;
+static unsigned vk_resolutionscale_draw_samples;
+static uint64_t vk_resolutionscale_last_gpu_sample_id;
+static int vk_resolutionscale_good_frames;
+static int vk_resolutionscale_bad_frames;
+static int vk_resolutionscale_last_mode = -1;
+static int vk_resolutionscale_last_width;
+static int vk_resolutionscale_last_height;
+
+// Preserve sub-millisecond CPU timing as the adaptive-scale fallback when a
+// device cannot provide Vulkan timestamp queries. Sys_Milliseconds() is
+// QPC-backed on Windows but its integer result makes ordinary Vulkan submit
+// work look like 0 ms.
+static uint64_t VK_HighResMicroseconds(void) {
 #if defined(_WIN32)
-    static LARGE_INTEGER frequency;
-    LARGE_INTEGER counter;
-    if (!frequency.QuadPart) {
-        QueryPerformanceFrequency(&frequency);
-    }
-    QueryPerformanceCounter(&counter);
-    return (uint64_t)(counter.QuadPart / frequency.QuadPart) * 1000000ULL +
-           (uint64_t)(counter.QuadPart % frequency.QuadPart) * 1000000ULL /
-           (uint64_t)frequency.QuadPart;
+  static LARGE_INTEGER frequency;
+  LARGE_INTEGER counter;
+  if (!frequency.QuadPart) {
+    QueryPerformanceFrequency(&frequency);
+  }
+  QueryPerformanceCounter(&counter);
+  return (uint64_t)(counter.QuadPart / frequency.QuadPart) * 1000000ULL +
+         (uint64_t)(counter.QuadPart % frequency.QuadPart) * 1000000ULL /
+             (uint64_t)frequency.QuadPart;
 #else
-    struct timespec now;
-    clock_gettime(CLOCK_MONOTONIC, &now);
-    return (uint64_t)now.tv_sec * 1000000ULL +
-           (uint64_t)now.tv_nsec / 1000ULL;
+  struct timespec now;
+  clock_gettime(CLOCK_MONOTONIC, &now);
+  return (uint64_t)now.tv_sec * 1000000ULL + (uint64_t)now.tv_nsec / 1000ULL;
 #endif
+}
+
+static void VK_ResetResolutionScaleHistory(void) {
+  uint64_t gpu_sample_id = 0;
+  vk_resolutionscale_session_draw_ms = 0.0f;
+  vk_resolutionscale_draw_samples = 0;
+  VK_Debug_GetLastGpuFrameTime(NULL, &gpu_sample_id);
+  vk_resolutionscale_last_gpu_sample_id = gpu_sample_id;
+  vk_resolutionscale_good_frames = 0;
+  vk_resolutionscale_bad_frames = 0;
+}
+
+static float VK_ClampResolutionScale(float scale) {
+  return Q_clipf(scale, VK_RESOLUTION_SCALE_MIN, VK_RESOLUTION_SCALE_MAX);
+}
+
+static int VK_GetResolutionScaleMode(void) {
+  return vk_resolutionscale ? Cvar_ClampInteger(vk_resolutionscale, 0, 2) : 0;
+}
+
+static void VK_UpdateResolutionScale(int width, int height) {
+  const int mode = VK_GetResolutionScaleMode();
+  if (mode != vk_resolutionscale_last_mode) {
+    vk_resolutionscale_last_mode = mode;
+    vk_resolutionscale_current_w = 1.0f;
+    vk_resolutionscale_current_h = 1.0f;
+    VK_ResetResolutionScaleHistory();
+  }
+  if (width != vk_resolutionscale_last_width ||
+      height != vk_resolutionscale_last_height) {
+    vk_resolutionscale_last_width = width;
+    vk_resolutionscale_last_height = height;
+    VK_ResetResolutionScaleHistory();
+  }
+
+  if (mode == 0) {
+    vk_resolutionscale_current_w = 1.0f;
+    vk_resolutionscale_current_h = 1.0f;
+  } else if (mode == 1) {
+    vk_resolutionscale_current_w =
+        Cvar_ClampValue(vk_resolutionscale_fixedscale_w,
+                        VK_RESOLUTION_SCALE_MIN, VK_RESOLUTION_SCALE_MAX);
+    vk_resolutionscale_current_h =
+        Cvar_ClampValue(vk_resolutionscale_fixedscale_h,
+                        VK_RESOLUTION_SCALE_MIN, VK_RESOLUTION_SCALE_MAX);
+    vk_resolutionscale_good_frames = 0;
+    vk_resolutionscale_bad_frames = 0;
+  } else {
+    float target =
+        Cvar_ClampValue(vk_resolutionscale_targetdrawtime, 0.0f, 1000.0f);
+    float good =
+        Cvar_ClampValue(vk_resolutionscale_gooddrawtime, 0.0f, 1000.0f);
+    float increase =
+        Cvar_ClampValue(vk_resolutionscale_increasespeed, 0.0f, 1.0f);
+    float lower = Cvar_ClampValue(vk_resolutionscale_lowerspeed, 0.0f, 1.0f);
+    int raise_frames =
+        Cvar_ClampInteger(vk_resolutionscale_numframesbeforeraising, 1, 10000);
+    int lower_frames =
+        Cvar_ClampInteger(vk_resolutionscale_numframesbeforelowering, 1, 10000);
+    if (good > target) {
+      good = target;
+    }
+    if (vk_resolutionscale_aggressive &&
+        vk_resolutionscale_aggressive->integer) {
+      increase *= 2.0f;
+      lower *= 2.0f;
+      raise_frames = max(1, raise_frames / 2);
+      lower_frames = max(1, lower_frames / 2);
+    }
+    if (vk_resolutionscale_draw_samples > 0) {
+      if (vk_resolutionscale_session_draw_ms <= good) {
+        vk_resolutionscale_good_frames++;
+        vk_resolutionscale_bad_frames = 0;
+      } else if (vk_resolutionscale_session_draw_ms >= target) {
+        vk_resolutionscale_bad_frames++;
+        vk_resolutionscale_good_frames = 0;
+      } else {
+        vk_resolutionscale_good_frames = 0;
+        vk_resolutionscale_bad_frames = 0;
+      }
+      if (vk_resolutionscale_bad_frames >= lower_frames) {
+        vk_resolutionscale_current_w =
+            VK_ClampResolutionScale(vk_resolutionscale_current_w - lower);
+        vk_resolutionscale_current_h = vk_resolutionscale_current_w;
+        vk_resolutionscale_bad_frames = 0;
+      } else if (vk_resolutionscale_good_frames >= raise_frames) {
+        vk_resolutionscale_current_w =
+            VK_ClampResolutionScale(vk_resolutionscale_current_w + increase);
+        vk_resolutionscale_current_h = vk_resolutionscale_current_w;
+        vk_resolutionscale_good_frames = 0;
+      }
+    }
+  }
+  vk_resolutionscale_current_w =
+      VK_ClampResolutionScale(vk_resolutionscale_current_w);
+  vk_resolutionscale_current_h =
+      VK_ClampResolutionScale(vk_resolutionscale_current_h);
+}
+
+static VkExtent2D VK_ResolutionScaleExtent(VkExtent2D output_extent) {
+  VkExtent2D extent = {
+      .width = max(
+          1u, (uint32_t)(output_extent.width * vk_resolutionscale_current_w +
+                         0.5f)),
+      .height = max(
+          1u, (uint32_t)(output_extent.height * vk_resolutionscale_current_h +
+                         0.5f)),
+  };
+  return extent;
+}
+
+static void VK_RecordResolutionScaleTime(void) {
+  float frame_ms;
+  uint64_t gpu_sample_id = 0;
+  if (VK_Debug_GetLastGpuFrameTime(&frame_ms, &gpu_sample_id)) {
+    if (gpu_sample_id == vk_resolutionscale_last_gpu_sample_id) {
+      return;
+    }
+    vk_resolutionscale_last_gpu_sample_id = gpu_sample_id;
+  } else {
+    // Timestamp-capable devices wait for a completed GPU sample instead
+    // of mixing CPU submission time into the adaptive GPU controller.
+    if (VK_Debug_GpuTimingSupported() || !vk_frame_begin_us ||
+        !vk_state.initialized) {
+      return;
+    }
+    frame_ms = (float)(VK_HighResMicroseconds() - vk_frame_begin_us) / 1000.0f;
+  }
+  if (!vk_resolutionscale_draw_samples) {
+    vk_resolutionscale_session_draw_ms = frame_ms;
+  } else {
+    vk_resolutionscale_session_draw_ms =
+        vk_resolutionscale_session_draw_ms * 0.9f + frame_ms * 0.1f;
+  }
+  vk_resolutionscale_draw_samples++;
 }
 
 static bool VK_ShadowResolveCasterBounds(void *userdata, const entity_t *ent,
@@ -778,6 +938,13 @@ static bool VK_SelectPhysicalDevice(void)
 
     VkPhysicalDeviceProperties props;
     vkGetPhysicalDeviceProperties(picked, &props);
+    VkPhysicalDeviceFeatures features;
+    vkGetPhysicalDeviceFeatures(picked, &features);
+    vk_state.ctx.sampler_anisotropy_supported =
+        features.samplerAnisotropy == VK_TRUE;
+    vk_state.ctx.max_sampler_anisotropy =
+        vk_state.ctx.sampler_anisotropy_supported
+            ? max(props.limits.maxSamplerAnisotropy, 1.0f) : 1.0f;
     Com_Printf("Vulkan device: %s\n", props.deviceName);
 
     Z_Free(devices);
@@ -804,12 +971,18 @@ static bool VK_CreateDevice(void)
         extensions[enabled_ext_count++] = VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME;
     }
 
+    VkPhysicalDeviceFeatures enabled_features = { 0 };
+    if (vk_state.ctx.sampler_anisotropy_supported) {
+        enabled_features.samplerAnisotropy = VK_TRUE;
+    }
+
     VkDeviceCreateInfo create_info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
         .enabledExtensionCount = enabled_ext_count,
         .ppEnabledExtensionNames = extensions,
+        .pEnabledFeatures = &enabled_features,
     };
 
     if (!VK_Check(vkCreateDevice(vk_state.ctx.physical_device, &create_info, NULL,
@@ -939,6 +1112,539 @@ static void VK_DestroyLiquidSceneResources(vk_context_t *ctx)
     }
 }
 
+static void VK_DestroyLinearSceneResources(vk_context_t *ctx)
+{
+    if (!ctx || !ctx->device) {
+        return;
+    }
+    for (uint32_t i = 0; i < VK_MAX_FRAMES_IN_FLIGHT; ++i) {
+        vk_frame_context_t *frame = &ctx->frames[i];
+        if (frame->linear_scene_framebuffer) {
+            vkDestroyFramebuffer(ctx->device, frame->linear_scene_framebuffer,
+                                 NULL);
+        }
+        VK_UI_DestroyExternalImageDescriptor(
+            &frame->linear_scene_copy_descriptor_set);
+        VK_UI_DestroyExternalImageDescriptor(
+            &frame->linear_scene_descriptor_set);
+        VK_UI_DestroyExternalImageDescriptor(
+            &frame->linear_scene_copy_base_descriptor_set);
+        if (frame->linear_scene_copy_base_view) {
+            vkDestroyImageView(ctx->device, frame->linear_scene_copy_base_view,
+                               NULL);
+        }
+        if (frame->linear_scene_copy_view) {
+            vkDestroyImageView(ctx->device, frame->linear_scene_copy_view, NULL);
+        }
+        if (frame->linear_scene_copy_image) {
+            vkDestroyImage(ctx->device, frame->linear_scene_copy_image, NULL);
+        }
+        if (frame->linear_scene_copy_memory) {
+            vkFreeMemory(ctx->device, frame->linear_scene_copy_memory, NULL);
+        }
+        if (frame->linear_scene_view) {
+            vkDestroyImageView(ctx->device, frame->linear_scene_view, NULL);
+        }
+        if (frame->linear_scene_image) {
+            vkDestroyImage(ctx->device, frame->linear_scene_image, NULL);
+        }
+        if (frame->linear_scene_memory) {
+            vkFreeMemory(ctx->device, frame->linear_scene_memory, NULL);
+        }
+        frame->linear_scene_copy_descriptor_set = VK_NULL_HANDLE;
+        frame->linear_scene_descriptor_set = VK_NULL_HANDLE;
+        frame->linear_scene_copy_base_descriptor_set = VK_NULL_HANDLE;
+        frame->linear_scene_framebuffer = VK_NULL_HANDLE;
+        frame->linear_scene_copy_view = VK_NULL_HANDLE;
+        frame->linear_scene_copy_base_view = VK_NULL_HANDLE;
+        frame->linear_scene_copy_image = VK_NULL_HANDLE;
+        frame->linear_scene_copy_memory = VK_NULL_HANDLE;
+        frame->linear_scene_view = VK_NULL_HANDLE;
+        frame->linear_scene_image = VK_NULL_HANDLE;
+        frame->linear_scene_memory = VK_NULL_HANDLE;
+        frame->linear_scene_copy_initialized = false;
+        frame->linear_scene_copy_mips_initialized = false;
+        frame->linear_scene_direct_sampled = false;
+    }
+}
+
+static bool VK_CreateLinearSceneResources(vk_context_t *ctx)
+{
+    if (!ctx || !ctx->scene_format || !ctx->scene_extent.width ||
+        !ctx->scene_extent.height || !ctx->frame_count) {
+        return false;
+    }
+    const uint32_t copy_mip_levels = max(ctx->linear_scene_mip_levels, 1u);
+    VkImageCreateInfo scene_info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = ctx->scene_format,
+        .extent = { ctx->scene_extent.width, ctx->scene_extent.height, 1 },
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                 VK_IMAGE_USAGE_SAMPLED_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+    };
+    VkImageCreateInfo copy_info = scene_info;
+    copy_info.mipLevels = copy_mip_levels;
+    copy_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+        (copy_mip_levels > 1 ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0);
+    VkImageViewCreateInfo view_info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = ctx->scene_format,
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .levelCount = 1,
+            .layerCount = 1,
+        },
+    };
+    VkResult result = VK_SUCCESS;
+    for (uint32_t i = 0; i < ctx->frame_count; ++i) {
+        vk_frame_context_t *frame = &ctx->frames[i];
+        VkImage *images[] = { &frame->linear_scene_image,
+                              &frame->linear_scene_copy_image };
+        VkDeviceMemory *memories[] = { &frame->linear_scene_memory,
+                                        &frame->linear_scene_copy_memory };
+        const VkImageCreateInfo *infos[] = { &scene_info, &copy_info };
+        for (uint32_t image = 0; image < q_countof(images); ++image) {
+            result = vkCreateImage(ctx->device, infos[image], NULL, images[image]);
+            if (result != VK_SUCCESS) goto unavailable;
+            VkMemoryRequirements requirements;
+            vkGetImageMemoryRequirements(ctx->device, *images[image], &requirements);
+            uint32_t memory_type = VK_FindMemoryType(
+                ctx->physical_device, requirements.memoryTypeBits,
+                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            if (memory_type == UINT32_MAX) {
+                result = VK_ERROR_FEATURE_NOT_PRESENT;
+                goto unavailable;
+            }
+            VkMemoryAllocateInfo allocation = {
+                .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+                .allocationSize = requirements.size,
+                .memoryTypeIndex = memory_type,
+            };
+            result = vkAllocateMemory(ctx->device, &allocation, NULL, memories[image]);
+            if (result != VK_SUCCESS) goto unavailable;
+            result = vkBindImageMemory(ctx->device, *images[image], *memories[image], 0);
+            if (result != VK_SUCCESS) goto unavailable;
+        }
+        view_info.image = frame->linear_scene_image;
+        view_info.subresourceRange.levelCount = 1;
+        result = vkCreateImageView(ctx->device, &view_info, NULL,
+                                   &frame->linear_scene_view);
+        if (result != VK_SUCCESS) goto unavailable;
+        frame->linear_scene_descriptor_set =
+            VK_UI_CreateExternalImageDescriptor(
+                frame->linear_scene_view,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        if (!frame->linear_scene_descriptor_set) {
+            result = VK_ERROR_INITIALIZATION_FAILED;
+            goto unavailable;
+        }
+        view_info.image = frame->linear_scene_copy_image;
+        view_info.subresourceRange.levelCount = 1;
+        result = vkCreateImageView(ctx->device, &view_info, NULL,
+                                   &frame->linear_scene_copy_base_view);
+        if (result != VK_SUCCESS) goto unavailable;
+        frame->linear_scene_copy_base_descriptor_set =
+            VK_UI_CreateExternalImageDescriptor(
+                frame->linear_scene_copy_base_view,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        if (!frame->linear_scene_copy_base_descriptor_set) {
+            result = VK_ERROR_INITIALIZATION_FAILED;
+            goto unavailable;
+        }
+        view_info.subresourceRange.levelCount = copy_mip_levels;
+        result = vkCreateImageView(ctx->device, &view_info, NULL,
+                                   &frame->linear_scene_copy_view);
+        if (result != VK_SUCCESS) goto unavailable;
+        frame->linear_scene_copy_descriptor_set =
+            VK_UI_CreateExternalImageDescriptor(
+                frame->linear_scene_copy_view,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        if (!frame->linear_scene_copy_descriptor_set) {
+            result = VK_ERROR_INITIALIZATION_FAILED;
+            goto unavailable;
+        }
+    }
+    return true;
+
+unavailable:
+    Com_WPrintf("Vulkan: native float scene resources unavailable (%s); "
+                "retaining LDR scene path.\n", VK_ResultString(result));
+    VK_DestroyLinearSceneResources(ctx);
+    return false;
+}
+
+static bool VK_CreateLinearSceneFramebuffers(vk_context_t *ctx)
+{
+    if (!ctx || !ctx->device || !ctx->scene_render_pass ||
+        !ctx->scene_extent.width || !ctx->scene_extent.height) {
+        return false;
+    }
+
+    for (uint32_t frame_index = 0; frame_index < ctx->frame_count;
+         ++frame_index) {
+        vk_frame_context_t *frame = &ctx->frames[frame_index];
+        if (!frame->linear_scene_view || !frame->depth_view) {
+            Com_SetLastError("Vulkan: scaled scene framebuffer attachment unavailable");
+            return false;
+        }
+        if (frame->linear_scene_framebuffer) {
+            vkDestroyFramebuffer(ctx->device, frame->linear_scene_framebuffer,
+                                 NULL);
+            frame->linear_scene_framebuffer = VK_NULL_HANDLE;
+        }
+        VkImageView attachments[] = {
+            frame->linear_scene_view,
+            frame->depth_view,
+        };
+        VkFramebufferCreateInfo framebuffer_info = {
+            .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+            .renderPass = ctx->scene_render_pass,
+            .attachmentCount = q_countof(attachments),
+            .pAttachments = attachments,
+            .width = ctx->scene_extent.width,
+            .height = ctx->scene_extent.height,
+            .layers = 1,
+        };
+        VkResult result = vkCreateFramebuffer(
+            ctx->device, &framebuffer_info, NULL,
+            &frame->linear_scene_framebuffer);
+        if (result != VK_SUCCESS) {
+            return VK_Check(result, "vkCreateFramebuffer(linear scene)");
+        }
+    }
+    return true;
+}
+
+// Extent-only scene refreshes keep these render passes (and their pipelines)
+// alive because the attachment formats do not change. The image family below
+// is the only bloom-emission state whose dimensions track scene_extent.
+static void VK_DestroyBloomEmissionImages(vk_context_t *ctx)
+{
+    if (!ctx || !ctx->device) {
+        return;
+    }
+
+    for (uint32_t i = 0; i < VK_MAX_FRAMES_IN_FLIGHT; ++i) {
+        vk_frame_context_t *frame = &ctx->frames[i];
+        if (frame->bloom_rim_emission_framebuffer) {
+            vkDestroyFramebuffer(ctx->device,
+                                 frame->bloom_rim_emission_framebuffer, NULL);
+            frame->bloom_rim_emission_framebuffer = VK_NULL_HANDLE;
+        }
+        if (frame->bloom_emission_framebuffer) {
+            vkDestroyFramebuffer(ctx->device, frame->bloom_emission_framebuffer, NULL);
+            frame->bloom_emission_framebuffer = VK_NULL_HANDLE;
+        }
+        if (frame->bloom_emission_view) {
+            vkDestroyImageView(ctx->device, frame->bloom_emission_view, NULL);
+            frame->bloom_emission_view = VK_NULL_HANDLE;
+        }
+        if (frame->bloom_emission_image) {
+            vkDestroyImage(ctx->device, frame->bloom_emission_image, NULL);
+            frame->bloom_emission_image = VK_NULL_HANDLE;
+        }
+        if (frame->bloom_emission_memory) {
+            vkFreeMemory(ctx->device, frame->bloom_emission_memory, NULL);
+            frame->bloom_emission_memory = VK_NULL_HANDLE;
+        }
+        frame->bloom_emission_initialized = false;
+    }
+}
+
+static void VK_DestroyBloomEmissionResources(vk_context_t *ctx)
+{
+    if (!ctx || !ctx->device) {
+        return;
+    }
+
+    VK_DestroyBloomEmissionImages(ctx);
+    if (ctx->bloom_extract_render_pass) {
+        vkDestroyRenderPass(ctx->device, ctx->bloom_extract_render_pass, NULL);
+        ctx->bloom_extract_render_pass = VK_NULL_HANDLE;
+    }
+    if (ctx->bloom_overlay_extract_render_pass) {
+        vkDestroyRenderPass(ctx->device, ctx->bloom_overlay_extract_render_pass,
+                            NULL);
+        ctx->bloom_overlay_extract_render_pass = VK_NULL_HANDLE;
+    }
+    if (ctx->bloom_rim_extract_render_pass) {
+        vkDestroyRenderPass(ctx->device, ctx->bloom_rim_extract_render_pass,
+                            NULL);
+        ctx->bloom_rim_extract_render_pass = VK_NULL_HANDLE;
+    }
+}
+
+// This pass mirrors OpenGL's bloom MRT without adding a permanent second
+// attachment to the normal scene render pass. It is recorded only while the
+// native bloom effect is active and retains the existing scene depth.
+static bool VK_CreateBloomEmissionResources(vk_context_t *ctx)
+{
+    if (!ctx || !ctx->device || !ctx->frame_count ||
+        !ctx->scene_extent.width || !ctx->scene_extent.height) {
+        return false;
+    }
+
+    const VkFormat bloom_format = ctx->frames[0].linear_scene_image
+        ? ctx->scene_format : ctx->swapchain.format;
+    VkResult result;
+
+    // Render-pass compatibility is defined by formats and subpasses, not
+    // framebuffer extent. Retain these passes on a scaled-scene resize so
+    // world/entity bloom pipelines remain valid and avoid needless pipeline
+    // cache churn.
+    if (!ctx->bloom_extract_render_pass) {
+      VkAttachmentDescription attachments[2] = {
+          {
+              .format = bloom_format,
+              .samples = VK_SAMPLE_COUNT_1_BIT,
+              .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+              .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+              .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+              .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+              .initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+              .finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+          },
+          {
+              .format = ctx->swapchain.depth_format,
+              .samples = VK_SAMPLE_COUNT_1_BIT,
+              .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+              .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+              .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+              .stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE,
+              .initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+              .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+          },
+      };
+      VkAttachmentReference color_ref = {
+          .attachment = 0,
+          .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+      };
+      VkAttachmentReference depth_ref = {
+          .attachment = 1,
+          .layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+      };
+      VkSubpassDescription subpass = {
+          .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+          .colorAttachmentCount = 1,
+          .pColorAttachments = &color_ref,
+          .pDepthStencilAttachment = &depth_ref,
+      };
+      VkSubpassDependency dependencies[2] = {
+          {
+              .srcSubpass = VK_SUBPASS_EXTERNAL,
+              .dstSubpass = 0,
+              .srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                              VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT |
+                              VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+              .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                              VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+              .srcAccessMask = VK_ACCESS_SHADER_READ_BIT |
+                               VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+              .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                               VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT,
+          },
+          {
+              .srcSubpass = 0,
+              .dstSubpass = VK_SUBPASS_EXTERNAL,
+              .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+              .dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+              .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+              .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+          },
+      };
+      VkRenderPassCreateInfo render_pass_info = {
+          .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+          .attachmentCount = q_countof(attachments),
+          .pAttachments = attachments,
+          .subpassCount = 1,
+          .pSubpasses = &subpass,
+          .dependencyCount = q_countof(dependencies),
+          .pDependencies = dependencies,
+      };
+      result = vkCreateRenderPass(ctx->device, &render_pass_info, NULL,
+                                  &ctx->bloom_extract_render_pass);
+      if (result != VK_SUCCESS) {
+        Com_WPrintf("Vulkan: bloom emission render pass unavailable (%s).\n",
+                    VK_ResultString(result));
+        return false;
+      }
+
+      // Front/depth-hack entities are submitted after the liquid scene has
+      // been copied. Preserve already extracted world emission and replay only
+      // their authored sources in a small load pass after that late entity
+      // pass.
+      VkAttachmentDescription overlay_attachments[2] = {
+          attachments[0],
+          attachments[1],
+      };
+      overlay_attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+      VkRenderPassCreateInfo overlay_render_pass_info = render_pass_info;
+      overlay_render_pass_info.pAttachments = overlay_attachments;
+      result = vkCreateRenderPass(ctx->device, &overlay_render_pass_info, NULL,
+                                  &ctx->bloom_overlay_extract_render_pass);
+      if (result != VK_SUCCESS) {
+        Com_WPrintf("Vulkan: late depth-hack bloom pass unavailable (%s).\n",
+                    VK_ResultString(result));
+        ctx->bloom_overlay_extract_render_pass = VK_NULL_HANDLE;
+      }
+
+      // Only an active rim receiver needs sampled depth. Keep the established
+      // clear-and-depth-test extract pass for world, glowmap, and shell
+      // sources; this second pass loads its emission colour and samples
+      // read-only depth solely to resolve equal-depth alias replay without
+      // bloom leaking through an occluder.
+      if (vk_dof_supported) {
+        VkAttachmentDescription rim_attachments[2] = {
+            attachments[0],
+            attachments[1],
+        };
+        rim_attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+        rim_attachments[0].initialLayout =
+            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        rim_attachments[1].initialLayout =
+            VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+        rim_attachments[1].finalLayout =
+            VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+        VkAttachmentReference rim_depth_ref = {
+            .attachment = 1,
+            .layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+        };
+        VkSubpassDescription rim_subpass = subpass;
+        rim_subpass.pDepthStencilAttachment = &rim_depth_ref;
+        VkSubpassDependency rim_dependencies[2] = {
+            dependencies[0],
+            dependencies[1],
+        };
+        rim_dependencies[0].dstStageMask |=
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        rim_dependencies[0].dstAccessMask |= VK_ACCESS_SHADER_READ_BIT;
+        VkRenderPassCreateInfo rim_render_pass_info = render_pass_info;
+        rim_render_pass_info.pAttachments = rim_attachments;
+        rim_render_pass_info.pSubpasses = &rim_subpass;
+        rim_render_pass_info.pDependencies = rim_dependencies;
+        result = vkCreateRenderPass(ctx->device, &rim_render_pass_info, NULL,
+                                    &ctx->bloom_rim_extract_render_pass);
+        if (result != VK_SUCCESS) {
+          Com_WPrintf(
+              "Vulkan: sampled-depth rim bloom pass unavailable (%s).\n",
+              VK_ResultString(result));
+          ctx->bloom_rim_extract_render_pass = VK_NULL_HANDLE;
+        }
+      }
+    }
+
+    VkImageCreateInfo image_info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = bloom_format,
+        .extent = {
+            .width = ctx->scene_extent.width,
+            .height = ctx->scene_extent.height,
+            .depth = 1,
+        },
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+    };
+    VkImageViewCreateInfo view_info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = bloom_format,
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .levelCount = 1,
+            .layerCount = 1,
+        },
+    };
+
+    for (uint32_t i = 0; i < ctx->frame_count; ++i) {
+        vk_frame_context_t *frame = &ctx->frames[i];
+        result = vkCreateImage(ctx->device, &image_info, NULL,
+                               &frame->bloom_emission_image);
+        if (result != VK_SUCCESS) {
+            goto unavailable;
+        }
+        VkMemoryRequirements requirements;
+        vkGetImageMemoryRequirements(ctx->device, frame->bloom_emission_image,
+                                     &requirements);
+        uint32_t memory_type = VK_FindMemoryType(
+            ctx->physical_device, requirements.memoryTypeBits,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        if (memory_type == UINT32_MAX) {
+            result = VK_ERROR_FEATURE_NOT_PRESENT;
+            goto unavailable;
+        }
+        VkMemoryAllocateInfo alloc_info = {
+            .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            .allocationSize = requirements.size,
+            .memoryTypeIndex = memory_type,
+        };
+        result = vkAllocateMemory(ctx->device, &alloc_info, NULL,
+                                  &frame->bloom_emission_memory);
+        if (result != VK_SUCCESS) {
+            goto unavailable;
+        }
+        result = vkBindImageMemory(ctx->device, frame->bloom_emission_image,
+                                   frame->bloom_emission_memory, 0);
+        if (result != VK_SUCCESS) {
+            goto unavailable;
+        }
+        view_info.image = frame->bloom_emission_image;
+        result = vkCreateImageView(ctx->device, &view_info, NULL,
+                                   &frame->bloom_emission_view);
+        if (result != VK_SUCCESS) {
+            goto unavailable;
+        }
+        VkImageView framebuffer_attachments[] = {
+            frame->bloom_emission_view,
+            frame->depth_view,
+        };
+        VkFramebufferCreateInfo framebuffer_info = {
+            .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+            .renderPass = ctx->bloom_extract_render_pass,
+            .attachmentCount = q_countof(framebuffer_attachments),
+            .pAttachments = framebuffer_attachments,
+            .width = ctx->scene_extent.width,
+            .height = ctx->scene_extent.height,
+            .layers = 1,
+        };
+        result = vkCreateFramebuffer(ctx->device, &framebuffer_info, NULL,
+                                     &frame->bloom_emission_framebuffer);
+        if (result != VK_SUCCESS) {
+            goto unavailable;
+        }
+        if (ctx->bloom_rim_extract_render_pass) {
+            framebuffer_info.renderPass = ctx->bloom_rim_extract_render_pass;
+            result = vkCreateFramebuffer(ctx->device, &framebuffer_info, NULL,
+                                         &frame->bloom_rim_emission_framebuffer);
+            if (result != VK_SUCCESS) {
+                Com_WPrintf("Vulkan: sampled-depth rim bloom framebuffer unavailable (%s).\n",
+                            VK_ResultString(result));
+                ctx->bloom_rim_extract_render_pass = VK_NULL_HANDLE;
+            }
+        }
+    }
+    return true;
+
+unavailable:
+    Com_WPrintf("Vulkan: bloom emission image unavailable (%s); using scene fallback.\n",
+                VK_ResultString(result));
+    VK_DestroyBloomEmissionImages(ctx);
+    return false;
+}
+
 static void VK_CreateLiquidSceneResources(vk_context_t *ctx,
                                           bool swapchain_supports_transfer_src,
                                           VkFormatFeatureFlags format_features)
@@ -1047,6 +1753,8 @@ static void VK_DestroySwapchain(vk_context_t *ctx)
     VK_Entity_DestroySwapchainResources(ctx);
     VK_Debug_DestroySwapchainResources(ctx);
     VK_UI_DestroySwapchainResources(ctx);
+    VK_DestroyBloomEmissionResources(ctx);
+    VK_DestroyLinearSceneResources(ctx);
 
     for (uint32_t i = 0; i < VK_MAX_FRAMES_IN_FLIGHT; ++i) {
         vk_frame_context_t *frame = &ctx->frames[i];
@@ -1059,6 +1767,10 @@ static void VK_DestroySwapchain(vk_context_t *ctx)
             Z_Free(frame->framebuffers);
             frame->framebuffers = NULL;
         }
+        VK_UI_DestroyExternalImageDescriptor(
+            &frame->bloom_depth_descriptor_set);
+        // VK_UI can already be shut down during final renderer teardown.
+        frame->bloom_depth_descriptor_set = VK_NULL_HANDLE;
         if (frame->depth_sample_view) {
             vkDestroyImageView(ctx->device, frame->depth_sample_view, NULL);
             frame->depth_sample_view = VK_NULL_HANDLE;
@@ -1106,17 +1818,27 @@ static void VK_DestroySwapchain(vk_context_t *ctx)
 
     VK_DestroyLiquidSceneResources(ctx);
 
-    if (ctx->render_pass) {
-        vkDestroyRenderPass(ctx->device, ctx->render_pass, NULL);
-        ctx->render_pass = VK_NULL_HANDLE;
+    if (ctx->scene_render_pass) {
+        vkDestroyRenderPass(ctx->device, ctx->scene_render_pass, NULL);
+        ctx->scene_render_pass = VK_NULL_HANDLE;
     }
-    if (ctx->overlay_render_pass) {
-        vkDestroyRenderPass(ctx->device, ctx->overlay_render_pass, NULL);
-        ctx->overlay_render_pass = VK_NULL_HANDLE;
+    if (ctx->scene_load_render_pass) {
+        vkDestroyRenderPass(ctx->device, ctx->scene_load_render_pass, NULL);
+        ctx->scene_load_render_pass = VK_NULL_HANDLE;
     }
-    if (ctx->liquid_render_pass) {
-        vkDestroyRenderPass(ctx->device, ctx->liquid_render_pass, NULL);
-        ctx->liquid_render_pass = VK_NULL_HANDLE;
+    if (ctx->presentation_render_pass) {
+        vkDestroyRenderPass(ctx->device, ctx->presentation_render_pass, NULL);
+        ctx->presentation_render_pass = VK_NULL_HANDLE;
+    }
+    if (ctx->presentation_overlay_render_pass) {
+        vkDestroyRenderPass(ctx->device,
+                            ctx->presentation_overlay_render_pass, NULL);
+        ctx->presentation_overlay_render_pass = VK_NULL_HANDLE;
+    }
+    if (ctx->presentation_load_render_pass) {
+        vkDestroyRenderPass(ctx->device, ctx->presentation_load_render_pass,
+                            NULL);
+        ctx->presentation_load_render_pass = VK_NULL_HANDLE;
     }
 
     if (ctx->swapchain.views) {
@@ -1143,12 +1865,25 @@ static void VK_DestroySwapchain(vk_context_t *ctx)
         Z_Free(ctx->swapchain.image_frame_slots);
         ctx->swapchain.image_frame_slots = NULL;
     }
+    if (ctx->swapchain.image_presented) {
+        Z_Free(ctx->swapchain.image_presented);
+        ctx->swapchain.image_presented = NULL;
+    }
 
     ctx->frame_count = 0;
     ctx->current_frame = 0;
     ctx->swapchain.image_count = 0;
     ctx->swapchain.format = VK_FORMAT_UNDEFINED;
     ctx->swapchain.depth_format = VK_FORMAT_UNDEFINED;
+    ctx->scene_format = VK_FORMAT_UNDEFINED;
+    memset(&ctx->scene_extent, 0, sizeof(ctx->scene_extent));
+    ctx->scene_is_float = false;
+    ctx->scene_offscreen_supported = false;
+    ctx->scaled_scene_blit_supported = false;
+    ctx->linear_scene_format = VK_FORMAT_UNDEFINED;
+    ctx->linear_scene_supported = false;
+    ctx->linear_scene_mips_supported = false;
+    ctx->linear_scene_mip_levels = 0;
     memset(&ctx->swapchain.extent, 0, sizeof(ctx->swapchain.extent));
 }
 
@@ -1244,10 +1979,49 @@ static bool VK_CreateSwapchain(uint32_t width, uint32_t height)
     if (vk_screenshot_supported) {
         image_usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     }
+    const bool swapchain_supports_transfer_dst =
+        (caps.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) != 0;
+    if (swapchain_supports_transfer_dst) {
+        image_usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    }
 
     VkFormatProperties scene_format_properties;
     vkGetPhysicalDeviceFormatProperties(ctx->physical_device, chosen_format.format,
                                         &scene_format_properties);
+    VkFormatProperties linear_scene_format_properties;
+    vkGetPhysicalDeviceFormatProperties(ctx->physical_device,
+                                        VK_FORMAT_R16G16B16A16_SFLOAT,
+                                        &linear_scene_format_properties);
+    const VkFormatFeatureFlags linear_scene_required =
+        VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT |
+        VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
+        VK_FORMAT_FEATURE_TRANSFER_SRC_BIT |
+        VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
+    ctx->scene_offscreen_supported =
+        (scene_format_properties.optimalTilingFeatures &
+         linear_scene_required) == linear_scene_required;
+    const VkFormatFeatureFlags scaled_scene_blit_required =
+        VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT |
+        VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
+    ctx->scaled_scene_blit_supported = swapchain_supports_transfer_dst &&
+        (scene_format_properties.optimalTilingFeatures &
+         scaled_scene_blit_required) == scaled_scene_blit_required;
+    ctx->linear_scene_format = VK_FORMAT_R16G16B16A16_SFLOAT;
+    ctx->linear_scene_supported =
+        (linear_scene_format_properties.optimalTilingFeatures &
+         linear_scene_required) == linear_scene_required;
+    const VkFormatFeatureFlags linear_scene_mip_required =
+        linear_scene_required | VK_FORMAT_FEATURE_BLIT_SRC_BIT |
+        VK_FORMAT_FEATURE_BLIT_DST_BIT |
+        VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
+    ctx->linear_scene_mips_supported =
+        (linear_scene_format_properties.optimalTilingFeatures &
+         linear_scene_mip_required) == linear_scene_mip_required;
+    ctx->linear_scene_mip_levels = 1;
+    if (!ctx->linear_scene_supported) {
+        Com_WPrintf("Vulkan: R16G16B16A16 float scene target unsupported; "
+                    "HDR scene path remains disabled.\n");
+    }
     const bool swapchain_supports_transfer_src =
         (caps.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) != 0;
 
@@ -1313,9 +2087,60 @@ static bool VK_CreateSwapchain(uint32_t width, uint32_t height)
         return false;
     }
 
-    VK_CreateLiquidSceneResources(
-        ctx, swapchain_supports_transfer_src,
-        scene_format_properties.optimalTilingFeatures);
+    cvar_t *vk_hdr_startup = Cvar_Get("vk_hdr", "0",
+                                      CVAR_ARCHIVE | CVAR_RENDERER);
+    cvar_t *vk_hdr_auto_startup = Cvar_Get("vk_hdr_auto_exposure", "0",
+                                           CVAR_ARCHIVE | CVAR_RENDERER);
+    ctx->scene_extent = extent;
+    ctx->scene_format = chosen_format.format;
+    ctx->scene_is_float = false;
+    const VkExtent2D scaled_extent = VK_ResolutionScaleExtent(extent);
+    const bool scale_requested = scaled_extent.width != extent.width ||
+        scaled_extent.height != extent.height;
+    if (vk_hdr_startup && vk_hdr_startup->integer &&
+        ctx->linear_scene_supported) {
+        ctx->scene_format = ctx->linear_scene_format;
+        ctx->scene_is_float = true;
+        ctx->scene_offscreen_supported = true;
+    }
+    if (scale_requested && !ctx->scene_is_float) {
+        if (ctx->scene_offscreen_supported) {
+            ctx->scene_extent = scaled_extent;
+        } else {
+            Com_WPrintf("Vulkan: swapchain format cannot support sampled "
+                        "offscreen resolution scaling; rendering at native resolution.\n");
+        }
+    } else if (ctx->scene_is_float) {
+        ctx->scene_extent = scaled_extent;
+    }
+    const bool offscreen_scene = ctx->scene_is_float ||
+        ctx->scene_extent.width != extent.width ||
+        ctx->scene_extent.height != extent.height;
+    if (ctx->scene_is_float && vk_hdr_auto_startup &&
+        vk_hdr_auto_startup->integer && ctx->linear_scene_mips_supported) {
+        uint32_t max_dimension = max(ctx->scene_extent.width,
+                                     ctx->scene_extent.height);
+        while (max_dimension > 1) {
+            ctx->linear_scene_mip_levels++;
+            max_dimension >>= 1;
+        }
+    } else if (ctx->scene_is_float && vk_hdr_auto_startup &&
+               vk_hdr_auto_startup->integer) {
+        Com_WPrintf("Vulkan: HDR auto exposure requires float scene blit support; "
+                    "using static exposure.\n");
+    }
+    if (offscreen_scene && !VK_CreateLinearSceneResources(ctx)) {
+        Com_WPrintf("Vulkan: offscreen scene allocation failed; rendering at native resolution.\n");
+        ctx->scene_extent = extent;
+        ctx->scene_format = chosen_format.format;
+        ctx->scene_is_float = false;
+        ctx->scene_offscreen_supported = false;
+    }
+    if (!ctx->frames[0].linear_scene_image) {
+        VK_CreateLiquidSceneResources(
+            ctx, swapchain_supports_transfer_src,
+            scene_format_properties.optimalTilingFeatures);
+    }
 
     ctx->swapchain.views = VK_AllocArray(image_count, sizeof(*ctx->swapchain.views),
                                          "swapchain image views");
@@ -1451,20 +2276,36 @@ static bool VK_CreateSwapchain(uint32_t width, uint32_t height)
                 Com_WPrintf("Vulkan: depth sample view unavailable (%s); depth-aware DOF disabled.\n",
                             VK_ResultString(result));
                 vk_dof_supported = false;
+            } else {
+                frame->bloom_depth_descriptor_set =
+                    VK_UI_CreateExternalImageTripleDescriptor(
+                        frame->depth_sample_view,
+                        VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+                        frame->depth_sample_view,
+                        VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+                        frame->depth_sample_view,
+                        VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+                if (!frame->bloom_depth_descriptor_set) {
+                    Com_WPrintf("Vulkan: rim bloom depth descriptor unavailable; using depth fallback.\n");
+                }
             }
         }
     }
 
-    VkAttachmentDescription attachments[2] = {
+    const bool linear_scene =
+        ctx->frames[0].linear_scene_image != VK_NULL_HANDLE;
+    VkAttachmentDescription scene_attachments[2] = {
         {
-            .format = ctx->swapchain.format,
+            .format = linear_scene ? ctx->scene_format : ctx->swapchain.format,
             .samples = VK_SAMPLE_COUNT_1_BIT,
             .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
             .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
             .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
             .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
             .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-            .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+            .finalLayout = linear_scene
+                ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+                : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
         },
         {
             .format = ctx->swapchain.depth_format,
@@ -1524,26 +2365,39 @@ static bool VK_CreateSwapchain(uint32_t width, uint32_t height)
 
     VkRenderPassCreateInfo render_pass_info = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-        .attachmentCount = q_countof(attachments),
-        .pAttachments = attachments,
+        .attachmentCount = q_countof(scene_attachments),
+        .pAttachments = scene_attachments,
         .subpassCount = 1,
         .pSubpasses = &subpass,
         .dependencyCount = q_countof(dependencies),
         .pDependencies = dependencies,
     };
 
-    result = vkCreateRenderPass(ctx->device, &render_pass_info, NULL, &ctx->render_pass);
+    result = vkCreateRenderPass(ctx->device, &render_pass_info, NULL,
+                                &ctx->scene_render_pass);
     if (result != VK_SUCCESS) {
         VK_DestroySwapchain(ctx);
-        return VK_Check(result, "vkCreateRenderPass");
+        return VK_Check(result, "vkCreateRenderPass(scene)");
+    }
+    VkAttachmentDescription presentation_attachments[2] = {
+        scene_attachments[0], scene_attachments[1],
+    };
+    presentation_attachments[0].format = ctx->swapchain.format;
+    presentation_attachments[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    render_pass_info.pAttachments = presentation_attachments;
+    result = vkCreateRenderPass(ctx->device, &render_pass_info, NULL,
+                                &ctx->presentation_render_pass);
+    if (result != VK_SUCCESS) {
+        VK_DestroySwapchain(ctx);
+        return VK_Check(result, "vkCreateRenderPass(presentation)");
     }
 
     // A compatible load pass lets native no-world entity previews overlay
     // the completed RmlUi shell without clearing its color attachment. Depth
     // is cleared because the menu preview is an independent scene.
     VkAttachmentDescription overlay_attachments[2] = {
-        attachments[0],
-        attachments[1],
+        presentation_attachments[0],
+        presentation_attachments[1],
     };
     overlay_attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
     overlay_attachments[0].initialLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
@@ -1553,7 +2407,7 @@ static bool VK_CreateSwapchain(uint32_t width, uint32_t height)
     VkRenderPassCreateInfo overlay_render_pass_info = render_pass_info;
     overlay_render_pass_info.pAttachments = overlay_attachments;
     result = vkCreateRenderPass(ctx->device, &overlay_render_pass_info, NULL,
-                                &ctx->overlay_render_pass);
+                                &ctx->presentation_overlay_render_pass);
     if (result != VK_SUCCESS) {
         VK_DestroySwapchain(ctx);
         return VK_Check(result, "vkCreateRenderPass(preview overlay)");
@@ -1563,8 +2417,8 @@ static bool VK_CreateSwapchain(uint32_t width, uint32_t height)
     // a sampled image. This pass loads both color and depth, retaining correct
     // depth rejection without feedback-looping the swapchain image.
     VkAttachmentDescription liquid_attachments[2] = {
-        attachments[0],
-        attachments[1],
+        scene_attachments[0],
+        scene_attachments[1],
     };
     liquid_attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
     liquid_attachments[0].initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -1578,10 +2432,36 @@ static bool VK_CreateSwapchain(uint32_t width, uint32_t height)
     // barriers bracket the scene copy and the preserved depth attachment.
     liquid_render_pass_info.pDependencies = dependencies;
     result = vkCreateRenderPass(ctx->device, &liquid_render_pass_info, NULL,
-                                &ctx->liquid_render_pass);
+                                &ctx->scene_load_render_pass);
     if (result != VK_SUCCESS) {
         VK_DestroySwapchain(ctx);
-        return VK_Check(result, "vkCreateRenderPass(liquid overlay)");
+        return VK_Check(result, "vkCreateRenderPass(scene load)");
+    }
+    VkAttachmentDescription presentation_load_attachments[2] = {
+        presentation_attachments[0], presentation_attachments[1],
+    };
+    presentation_load_attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    presentation_load_attachments[0].initialLayout =
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    presentation_load_attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    presentation_load_attachments[1].initialLayout =
+        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    liquid_render_pass_info.pAttachments = presentation_load_attachments;
+    result = vkCreateRenderPass(ctx->device, &liquid_render_pass_info, NULL,
+                                &ctx->presentation_load_render_pass);
+    if (result != VK_SUCCESS) {
+        VK_DestroySwapchain(ctx);
+        return VK_Check(result, "vkCreateRenderPass(presentation load)");
+    }
+
+    // Optional accelerated bloom source. Failure is non-fatal: the
+    // post-process module retains its scene-only fallback on constrained
+    // implementations.
+    VK_CreateBloomEmissionResources(ctx);
+
+    if (linear_scene && !VK_CreateLinearSceneFramebuffers(ctx)) {
+        VK_DestroySwapchain(ctx);
+        return false;
     }
 
     for (uint32_t frame_index = 0; frame_index < ctx->frame_count; ++frame_index) {
@@ -1600,7 +2480,7 @@ static bool VK_CreateSwapchain(uint32_t width, uint32_t height)
             };
             VkFramebufferCreateInfo framebuffer_info = {
                 .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-                .renderPass = ctx->render_pass,
+                .renderPass = ctx->presentation_render_pass,
                 .attachmentCount = q_countof(framebuffer_attachments),
                 .pAttachments = framebuffer_attachments,
                 .width = ctx->swapchain.extent.width,
@@ -1687,12 +2567,16 @@ static bool VK_CreateSwapchain(uint32_t width, uint32_t height)
     ctx->swapchain.image_frame_slots = VK_AllocArray(
         image_count, sizeof(*ctx->swapchain.image_frame_slots),
         "swapchain image frame ownership");
-    if (!ctx->swapchain.image_frame_slots) {
+    ctx->swapchain.image_presented = VK_AllocArray(
+        image_count, sizeof(*ctx->swapchain.image_presented),
+        "swapchain image presentation state");
+    if (!ctx->swapchain.image_frame_slots || !ctx->swapchain.image_presented) {
         VK_DestroySwapchain(ctx);
         return false;
     }
     for (uint32_t i = 0; i < image_count; ++i) {
         ctx->swapchain.image_frame_slots[i] = VK_INVALID_FRAME_SLOT;
+        ctx->swapchain.image_presented[i] = false;
     }
     ctx->current_frame = 0;
     return true;
@@ -2092,6 +2976,225 @@ static void VK_ImageBarrier(VkCommandBuffer cmd, VkImage image,
                          0, NULL, 0, NULL, 1, &barrier);
 }
 
+static void VK_ImageBarrierRange(VkCommandBuffer cmd, VkImage image,
+                                 VkImageLayout old_layout,
+                                 VkImageLayout new_layout,
+                                 VkAccessFlags src_access,
+                                 VkAccessFlags dst_access,
+                                 VkPipelineStageFlags src_stage,
+                                 VkPipelineStageFlags dst_stage,
+                                 uint32_t base_mip_level,
+                                 uint32_t level_count)
+{
+    if (!level_count) {
+        return;
+    }
+    VkImageMemoryBarrier barrier = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = src_access,
+        .dstAccessMask = dst_access,
+        .oldLayout = old_layout,
+        .newLayout = new_layout,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseMipLevel = base_mip_level,
+            .levelCount = level_count,
+            .layerCount = 1,
+        },
+    };
+    vkCmdPipelineBarrier(cmd, src_stage, dst_stage, 0,
+                         0, NULL, 0, NULL, 1, &barrier);
+}
+
+// The linear scene path never touches the acquired presentation image until
+// the final composite. Transition it explicitly: the legacy scene-copy path
+// used to leave the image in this layout as a side effect.
+static void VK_PresentationImageToColorAttachment(VkCommandBuffer cmd,
+                                                   uint32_t image_index)
+{
+    vk_context_t *ctx = &vk_state.ctx;
+    if (!cmd || image_index >= ctx->swapchain.image_count) {
+        return;
+    }
+    const VkImageLayout old_layout = ctx->swapchain.image_presented &&
+        ctx->swapchain.image_presented[image_index]
+        ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR : VK_IMAGE_LAYOUT_UNDEFINED;
+    VK_ImageBarrier(cmd, ctx->swapchain.images[image_index], old_layout,
+                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                    0, VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+                           VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                    VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+}
+
+// In the common fixed/adaptive LDR scaling case, the final shader composite
+// would only linearly scale the native offscreen scene. A native image blit
+// avoids the scene-copy allocation traffic and fullscreen draw while leaving
+// every colour, HDR, liquid, and CRT path on its exact shader implementation.
+static bool VK_BlitScaledSceneToPresentation(VkCommandBuffer cmd,
+                                             uint32_t image_index)
+{
+    vk_context_t *ctx = &vk_state.ctx;
+    vk_frame_context_t *frame = &ctx->frames[ctx->current_frame];
+    if (!cmd || !ctx->scaled_scene_blit_supported ||
+        !frame->linear_scene_image ||
+        image_index >= ctx->swapchain.image_count) {
+        return false;
+    }
+
+    const VkImage presentation_image = ctx->swapchain.images[image_index];
+    const VkImageLayout presentation_layout = ctx->swapchain.image_presented &&
+        ctx->swapchain.image_presented[image_index]
+        ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR : VK_IMAGE_LAYOUT_UNDEFINED;
+    VK_ImageBarrier(cmd, frame->linear_scene_image,
+                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                    VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                    VK_ACCESS_TRANSFER_READ_BIT,
+                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                    VK_PIPELINE_STAGE_TRANSFER_BIT);
+    VK_ImageBarrier(cmd, presentation_image, presentation_layout,
+                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0,
+                    VK_ACCESS_TRANSFER_WRITE_BIT,
+                    VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                    VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+    VkImageBlit blit = {
+        .srcSubresource = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .layerCount = 1,
+        },
+        .srcOffsets = {
+            { 0, 0, 0 },
+            { (int32_t)ctx->scene_extent.width,
+              (int32_t)ctx->scene_extent.height, 1 },
+        },
+        .dstSubresource = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .layerCount = 1,
+        },
+        .dstOffsets = {
+            { 0, 0, 0 },
+            { (int32_t)ctx->swapchain.extent.width,
+              (int32_t)ctx->swapchain.extent.height, 1 },
+        },
+    };
+    vkCmdBlitImage(cmd, frame->linear_scene_image,
+                   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                   presentation_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                   1, &blit, VK_FILTER_LINEAR);
+
+    // Restore the frame-slot target for a later reuse. The presentation image
+    // returns to PRESENT so the existing UI overlay pass remains compatible.
+    VK_ImageBarrier(cmd, frame->linear_scene_image,
+                    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                    VK_ACCESS_TRANSFER_READ_BIT,
+                    VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                    VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+    VK_ImageBarrier(cmd, presentation_image,
+                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                    VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                    VK_ACCESS_TRANSFER_WRITE_BIT, 0,
+                    VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+    return true;
+}
+
+static void VK_BloomEmission_Record(VkCommandBuffer cmd,
+                                    vk_frame_context_t *frame,
+                                    const VkExtent2D *extent,
+                                    bool draw_entities, bool before_liquid,
+                                    bool sampled_depth_rim)
+{
+    vk_context_t *ctx = &vk_state.ctx;
+    VkRenderPass render_pass = sampled_depth_rim
+        ? ctx->bloom_rim_extract_render_pass : ctx->bloom_extract_render_pass;
+    VkFramebuffer framebuffer = sampled_depth_rim
+        ? frame->bloom_rim_emission_framebuffer
+        : frame->bloom_emission_framebuffer;
+    if (!cmd || !frame || !extent || !render_pass || !frame->bloom_emission_image ||
+        !framebuffer) {
+        return;
+    }
+
+    VK_ImageBarrier(
+        cmd, frame->bloom_emission_image,
+        frame->bloom_emission_initialized
+            ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+            : VK_IMAGE_LAYOUT_UNDEFINED,
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        sampled_depth_rim ? VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+                          : frame->bloom_emission_initialized
+                            ? VK_ACCESS_SHADER_READ_BIT : 0,
+        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        sampled_depth_rim ? VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
+                          : frame->bloom_emission_initialized
+                            ? VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+                            : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+
+    VkClearValue clear_value = {
+        .color = { { 0.0f, 0.0f, 0.0f, 1.0f } },
+    };
+    VkRenderPassBeginInfo render_info = {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .renderPass = render_pass,
+        .framebuffer = framebuffer,
+        .renderArea = {
+            .extent = *extent,
+        },
+        .clearValueCount = sampled_depth_rim ? 0 : 1,
+        .pClearValues = sampled_depth_rim ? NULL : &clear_value,
+    };
+    vkCmdBeginRenderPass(cmd, &render_info, VK_SUBPASS_CONTENTS_INLINE);
+    if (!sampled_depth_rim) {
+        VK_World_RecordBloomEmission(cmd, extent);
+    }
+    if (draw_entities) {
+        VK_Entity_RecordBloomEmission(cmd, extent, before_liquid,
+                                      sampled_depth_rim);
+    }
+    vkCmdEndRenderPass(cmd);
+    frame->bloom_emission_initialized = true;
+}
+
+static void VK_BloomDepthHackEmission_Record(VkCommandBuffer cmd,
+                                             vk_frame_context_t *frame,
+                                             const VkExtent2D *extent)
+{
+    vk_context_t *ctx = &vk_state.ctx;
+    if (!cmd || !frame || !extent || !ctx->bloom_overlay_extract_render_pass ||
+        !frame->bloom_emission_image || !frame->bloom_emission_framebuffer ||
+        !frame->bloom_emission_initialized) {
+        return;
+    }
+
+    VK_ImageBarrier(
+        cmd, frame->bloom_emission_image,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+
+    VkRenderPassBeginInfo render_info = {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .renderPass = ctx->bloom_overlay_extract_render_pass,
+        .framebuffer = frame->bloom_emission_framebuffer,
+        .renderArea = {
+            .extent = *extent,
+        },
+    };
+    vkCmdBeginRenderPass(cmd, &render_info, VK_SUBPASS_CONTENTS_INLINE);
+    VK_Entity_RecordDepthHackBloomEmission(cmd, extent);
+    vkCmdEndRenderPass(cmd);
+}
+
 static void VK_DepthToShaderRead(VkCommandBuffer cmd,
                                  const vk_frame_context_t *frame)
 {
@@ -2252,12 +3355,232 @@ static void VK_SceneCopy_Record(VkCommandBuffer cmd, uint32_t image_index)
     frame->liquid_scene_initialized = true;
 }
 
+static void VK_LinearSceneCopy_Record(VkCommandBuffer cmd,
+                                      bool generate_exposure_mips)
+{
+    vk_context_t *ctx = &vk_state.ctx;
+    vk_frame_context_t *frame = &ctx->frames[ctx->current_frame];
+    if (!frame->linear_scene_image || !frame->linear_scene_copy_image) {
+        return;
+    }
+    VK_ImageBarrier(cmd, frame->linear_scene_image,
+                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                    VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                    VK_ACCESS_TRANSFER_READ_BIT,
+                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                    VK_PIPELINE_STAGE_TRANSFER_BIT);
+    const uint32_t mip_levels = generate_exposure_mips
+        ? max(ctx->linear_scene_mip_levels, 1u) : 1u;
+    VK_ImageBarrier(cmd, frame->linear_scene_copy_image,
+                    frame->linear_scene_copy_initialized
+                        ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                        : VK_IMAGE_LAYOUT_UNDEFINED,
+                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                    frame->linear_scene_copy_initialized
+                        ? VK_ACCESS_SHADER_READ_BIT : 0,
+                    VK_ACCESS_TRANSFER_WRITE_BIT,
+                    frame->linear_scene_copy_initialized
+                        ? VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+                        : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                    VK_PIPELINE_STAGE_TRANSFER_BIT);
+    VkImageCopy copy = {
+        .srcSubresource = { .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                            .layerCount = 1 },
+        .dstSubresource = { .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                            .layerCount = 1 },
+        .extent = { ctx->scene_extent.width, ctx->scene_extent.height, 1 },
+    };
+    vkCmdCopyImage(cmd, frame->linear_scene_image,
+                   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                   frame->linear_scene_copy_image,
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+    if (mip_levels > 1) {
+        VK_ImageBarrier(cmd, frame->linear_scene_copy_image,
+                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT);
+        for (uint32_t level = 1; level < mip_levels; ++level) {
+            VK_ImageBarrierRange(
+                cmd, frame->linear_scene_copy_image,
+                frame->linear_scene_copy_mips_initialized
+                    ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                    : VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                frame->linear_scene_copy_mips_initialized
+                    ? VK_ACCESS_SHADER_READ_BIT : 0,
+                VK_ACCESS_TRANSFER_WRITE_BIT,
+                frame->linear_scene_copy_mips_initialized
+                    ? VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+                    : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT, level, 1);
+            const uint32_t src_width = max(1u,
+                ctx->scene_extent.width >> (level - 1));
+            const uint32_t src_height = max(1u,
+                ctx->scene_extent.height >> (level - 1));
+            const uint32_t dst_width = max(1u,
+                ctx->scene_extent.width >> level);
+            const uint32_t dst_height = max(1u,
+                ctx->scene_extent.height >> level);
+            VkImageBlit blit = {
+                .srcSubresource = {
+                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .mipLevel = level - 1,
+                    .layerCount = 1,
+                },
+                .srcOffsets = { { 0, 0, 0 },
+                                { (int32_t)src_width, (int32_t)src_height, 1 } },
+                .dstSubresource = {
+                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .mipLevel = level,
+                    .layerCount = 1,
+                },
+                .dstOffsets = { { 0, 0, 0 },
+                                { (int32_t)dst_width, (int32_t)dst_height, 1 } },
+            };
+            vkCmdBlitImage(cmd, frame->linear_scene_copy_image,
+                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                           frame->linear_scene_copy_image,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit,
+                           VK_FILTER_LINEAR);
+            VK_ImageBarrierRange(
+                cmd, frame->linear_scene_copy_image,
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                level, 1);
+        }
+        VK_ImageBarrierRange(
+            cmd, frame->linear_scene_copy_image,
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_SHADER_READ_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, mip_levels);
+        frame->linear_scene_copy_mips_initialized = true;
+    } else {
+        VK_ImageBarrier(cmd, frame->linear_scene_copy_image,
+                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                        VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,
+                        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+        // Level-zero-only liquid sampling deliberately skips reduction. Keep
+        // the unused levels in a valid layout nevertheless: descriptor
+        // validation covers every level exposed by the post-process view.
+        if (ctx->linear_scene_mip_levels > 1 &&
+            !frame->linear_scene_copy_mips_initialized) {
+            VK_ImageBarrierRange(
+                cmd, frame->linear_scene_copy_image,
+                VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 0,
+                VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 1,
+                ctx->linear_scene_mip_levels - 1);
+            frame->linear_scene_copy_mips_initialized = true;
+        }
+    }
+    VK_ImageBarrier(cmd, frame->linear_scene_image,
+                    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                    VK_ACCESS_TRANSFER_READ_BIT,
+                    VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                    VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+    frame->linear_scene_copy_initialized = true;
+}
+
+static void VK_LinearSceneDirectToShaderRead(VkCommandBuffer cmd)
+{
+    vk_context_t *ctx = &vk_state.ctx;
+    vk_frame_context_t *frame = &ctx->frames[ctx->current_frame];
+    if (!frame->linear_scene_image || !frame->linear_scene_descriptor_set) {
+        return;
+    }
+    VK_ImageBarrier(cmd, frame->linear_scene_image,
+                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                    VK_ACCESS_SHADER_READ_BIT,
+                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+    frame->linear_scene_direct_sampled = true;
+}
+
+static void VK_LinearSceneRestoreColorAttachment(VkCommandBuffer cmd)
+{
+    vk_context_t *ctx = &vk_state.ctx;
+    vk_frame_context_t *frame = &ctx->frames[ctx->current_frame];
+    if (!frame->linear_scene_image || !frame->linear_scene_direct_sampled) {
+        return;
+    }
+    VK_ImageBarrier(cmd, frame->linear_scene_image,
+                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                    VK_ACCESS_SHADER_READ_BIT,
+                    VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+    frame->linear_scene_direct_sampled = false;
+}
+
+static void VK_RecordTearingDiagnostic(VkCommandBuffer cmd,
+                                       uint32_t image_index)
+{
+    vk_context_t *ctx = &vk_state.ctx;
+    if (!cmd || !ctx->presentation_render_pass || !ctx->swapchain.extent.width ||
+        !ctx->swapchain.extent.height ||
+        ctx->current_frame >= ctx->frame_count ||
+        image_index >= ctx->swapchain.image_count) {
+        return;
+    }
+
+    vk_frame_context_t *frame = &ctx->frames[ctx->current_frame];
+    if (!frame->framebuffers || !frame->framebuffers[image_index]) {
+        return;
+    }
+
+    // Match GL_DrawTearing: alternate a full-frame white and red clear after
+    // every scene/UI submission, immediately before presentation.
+    const bool white = (++vk_showtearing_frame & 1u) != 0;
+    VkClearValue clear_values[2] = {
+        {
+            .color = { { 1.0f, white ? 1.0f : 0.0f,
+                         white ? 1.0f : 0.0f, white ? 1.0f : 0.0f } },
+        },
+        {
+            .depthStencil = { 1.0f, 0 },
+        },
+    };
+    VkRenderPassBeginInfo tearing_info = {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .renderPass = ctx->presentation_render_pass,
+        .framebuffer = frame->framebuffers[image_index],
+        .renderArea = {
+            .extent = ctx->swapchain.extent,
+        },
+        .clearValueCount = q_countof(clear_values),
+        .pClearValues = clear_values,
+    };
+    vkCmdBeginRenderPass(cmd, &tearing_info, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdEndRenderPass(cmd);
+}
+
 static bool VK_RecordCommandBuffer(VkCommandBuffer cmd, uint32_t image_index)
 {
     vk_context_t *ctx = &vk_state.ctx;
     vk_frame_context_t *frame = &ctx->frames[ctx->current_frame];
+    const bool linear_scene = frame->linear_scene_image &&
+        frame->linear_scene_copy_image && frame->linear_scene_framebuffer &&
+        frame->linear_scene_copy_descriptor_set &&
+        frame->linear_scene_copy_base_descriptor_set &&
+        frame->linear_scene_descriptor_set;
     if (!frame->framebuffers || image_index >= ctx->swapchain.image_count ||
-        !frame->framebuffers[image_index]) {
+        !frame->framebuffers[image_index] ||
+        (linear_scene && !frame->linear_scene_framebuffer)) {
         Com_SetLastError("Vulkan: frame-context framebuffer unavailable");
         return false;
     }
@@ -2271,6 +3594,9 @@ static bool VK_RecordCommandBuffer(VkCommandBuffer cmd, uint32_t image_index)
         return VK_Check(result, "vkBeginCommandBuffer");
     }
     VK_Debug_BeginGpuFrame(cmd, ctx->current_frame);
+    if (linear_scene) {
+        VK_LinearSceneRestoreColorAttachment(cmd);
+    }
 
     VkClearValue clear_values[2] = {
         {
@@ -2283,11 +3609,12 @@ static bool VK_RecordCommandBuffer(VkCommandBuffer cmd, uint32_t image_index)
 
     VkRenderPassBeginInfo render_info = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-        .renderPass = ctx->render_pass,
-        .framebuffer = frame->framebuffers[image_index],
+        .renderPass = ctx->scene_render_pass,
+        .framebuffer = linear_scene ? frame->linear_scene_framebuffer
+                                    : frame->framebuffers[image_index],
         .renderArea = {
             .offset = { 0, 0 },
-            .extent = ctx->swapchain.extent,
+            .extent = linear_scene ? ctx->scene_extent : ctx->swapchain.extent,
         },
         .clearValueCount = q_countof(clear_values),
         .pClearValues = clear_values,
@@ -2311,65 +3638,125 @@ static bool VK_RecordCommandBuffer(VkCommandBuffer cmd, uint32_t image_index)
 
     const bool depth_dof = !entity_overlay && VK_PostProcess_UsesDof();
     const bool draw_world = !vk_draw_world || vk_draw_world->integer;
+    const bool draw_entities = (!entity_overlay || linear_scene) &&
+        (!vk_draw_entities || vk_draw_entities->integer);
+    const VkDescriptorSet scene_descriptor_set = linear_scene
+        ? frame->linear_scene_copy_descriptor_set
+        : frame->liquid_scene_descriptor_set;
+    const VkDescriptorSet liquid_scene_descriptor_set = linear_scene
+        ? frame->linear_scene_copy_base_descriptor_set
+        : frame->liquid_scene_descriptor_set;
     const bool liquid_refraction = !entity_overlay && draw_world &&
-        ctx->liquid_render_pass && frame->liquid_scene_image &&
-        frame->liquid_scene_descriptor_set &&
+        ctx->scene_load_render_pass && liquid_scene_descriptor_set &&
         VK_World_UsesRefraction();
+    const bool direct_linear_presentation = linear_scene &&
+        !liquid_refraction && !VK_PostProcess_RequiresSceneCopy();
     const bool postprocess_composite = VK_PostProcess_UsesCompositePass();
     const bool crt_postprocess = VK_PostProcess_UsesCrtPass();
-    const bool final_postprocess = !entity_overlay && ctx->liquid_render_pass &&
-        frame->liquid_scene_image && frame->liquid_scene_descriptor_set &&
+    const bool final_postprocess = ctx->presentation_load_render_pass &&
+        scene_descriptor_set &&
         VK_PostProcess_UsesFinalPass();
+    const bool scaled_scene_blit = linear_scene &&
+        !ctx->scene_is_float && ctx->scaled_scene_blit_supported &&
+        (ctx->scene_extent.width != ctx->swapchain.extent.width ||
+         ctx->scene_extent.height != ctx->swapchain.extent.height) &&
+        !liquid_refraction && VK_PostProcess_AllowsScaledSceneBlit();
+    const bool bloom_emission = final_postprocess &&
+        VK_PostProcess_UsesBloomEmission() &&
+        ctx->bloom_extract_render_pass && frame->bloom_emission_image &&
+        frame->bloom_emission_framebuffer;
 
     vkCmdBeginRenderPass(cmd, &render_info, VK_SUBPASS_CONTENTS_INLINE);
     if (draw_world) {
         if (liquid_refraction) {
-            VK_World_RecordOpaque(cmd, &ctx->swapchain.extent);
+            VK_World_RecordOpaque(cmd, &ctx->scene_extent);
         } else {
-            VK_World_Record(cmd, &ctx->swapchain.extent);
+            VK_World_Record(cmd, &ctx->scene_extent);
         }
     }
-    if (!entity_overlay && (!vk_draw_entities || vk_draw_entities->integer)) {
+    VK_Debug_MarkGpuPhase(cmd, VK_DEBUG_GPU_PHASE_OPAQUE_WORLD);
+    if (draw_entities) {
         if (liquid_refraction) {
-            VK_Entity_RecordBeforeLiquid(cmd, &ctx->swapchain.extent);
+            VK_Entity_RecordBeforeLiquid(cmd, &ctx->scene_extent);
         } else {
-            VK_Entity_Record(cmd, &ctx->swapchain.extent);
+            VK_Entity_Record(cmd, &ctx->scene_extent);
         }
     }
+    VK_Debug_MarkGpuPhase(cmd, VK_DEBUG_GPU_PHASE_OPAQUE_ENTITY);
     if (!liquid_refraction) {
-        VK_Debug_Record(cmd, &ctx->swapchain.extent);
+        VK_Debug_RecordShowTris(cmd, &ctx->scene_extent);
+        VK_Debug_Record(cmd, &ctx->scene_extent);
         if (!final_postprocess && (!vk_draw_ui || vk_draw_ui->integer)) {
             VK_UI_Record(cmd, &ctx->swapchain.extent);
         }
     }
     vkCmdEndRenderPass(cmd);
 
+    if (bloom_emission) {
+        VK_BloomEmission_Record(cmd, frame, &ctx->scene_extent,
+                                draw_entities, liquid_refraction, false);
+        const bool sampled_rim_bloom = draw_entities &&
+            ctx->bloom_rim_extract_render_pass &&
+            frame->bloom_rim_emission_framebuffer &&
+            VK_Entity_HasBloomRimDepthSampling(liquid_refraction);
+        if (sampled_rim_bloom) {
+            VK_DepthToShaderRead(cmd, frame);
+            VK_BloomEmission_Record(cmd, frame, &ctx->scene_extent,
+                                    true, liquid_refraction, true);
+            VK_DepthToAttachment(cmd, frame);
+        }
+    }
+
     if (liquid_refraction) {
-        VK_SceneCopy_Record(cmd, image_index);
+        if (linear_scene) {
+            VK_LinearSceneCopy_Record(cmd, false);
+        } else {
+            VK_SceneCopy_Record(cmd, image_index);
+        }
         VK_DepthAttachmentBarrier(cmd, frame);
 
         VkRenderPassBeginInfo liquid_info = render_info;
-        liquid_info.renderPass = ctx->liquid_render_pass;
+        liquid_info.renderPass = ctx->scene_load_render_pass;
         vkCmdBeginRenderPass(cmd, &liquid_info, VK_SUBPASS_CONTENTS_INLINE);
-        VK_World_RecordAlpha(cmd, &ctx->swapchain.extent,
-                             frame->liquid_scene_descriptor_set);
+        VK_World_RecordAlpha(cmd, &ctx->scene_extent,
+                             liquid_scene_descriptor_set);
         if (!vk_draw_entities || vk_draw_entities->integer) {
-            VK_Entity_RecordAfterLiquid(cmd, &ctx->swapchain.extent);
+            VK_Entity_RecordAfterLiquid(cmd, &ctx->scene_extent);
         }
-        VK_Debug_Record(cmd, &ctx->swapchain.extent);
+        VK_Debug_RecordShowTris(cmd, &ctx->scene_extent);
+        VK_Debug_Record(cmd, &ctx->scene_extent);
         if (!final_postprocess && (!vk_draw_ui || vk_draw_ui->integer)) {
             VK_UI_Record(cmd, &ctx->swapchain.extent);
         }
         vkCmdEndRenderPass(cmd);
     }
 
+    if (liquid_refraction && bloom_emission && draw_entities &&
+        ctx->bloom_overlay_extract_render_pass &&
+        VK_Entity_HasDepthHackBloomEmission()) {
+        VK_BloomDepthHackEmission_Record(cmd, frame, &ctx->scene_extent);
+    }
+
     VK_Debug_MarkGpuPhase(cmd, VK_DEBUG_GPU_PHASE_SCENE);
 
-    if (final_postprocess) {
+    if (scaled_scene_blit && VK_BlitScaledSceneToPresentation(cmd, image_index)) {
+        // The native transfer path already prepared presentation for the
+        // standard UI overlay render pass below.
+    } else if (final_postprocess) {
         // Copy the completed 3D scene (including any native liquid pass) and
         // overwrite the swapchain through native Vulkan composition. UI is
         // recorded only after the scene passes, so HUD/menu text remains sharp.
-        VK_SceneCopy_Record(cmd, image_index);
+        if (direct_linear_presentation) {
+            VK_LinearSceneDirectToShaderRead(cmd);
+        } else if (linear_scene) {
+            VK_LinearSceneCopy_Record(cmd,
+                                      VK_PostProcess_UsesAutoExposure());
+        } else {
+            VK_SceneCopy_Record(cmd, image_index);
+        }
+        if (linear_scene && VK_PostProcess_UsesAutoExposure()) {
+            VK_PostProcess_RecordAutoExposure(cmd);
+        }
         if (depth_dof) {
             VK_DepthToShaderRead(cmd, frame);
             VK_PostProcess_RecordDof(cmd);
@@ -2378,12 +3765,19 @@ static bool VK_RecordCommandBuffer(VkCommandBuffer cmd, uint32_t image_index)
         VK_PostProcess_RecordBloom(cmd);
 
         if (postprocess_composite) {
+            if (linear_scene) {
+                VK_PresentationImageToColorAttachment(cmd, image_index);
+            }
             VkRenderPassBeginInfo final_info = render_info;
-            final_info.renderPass = ctx->liquid_render_pass;
+            final_info.renderPass = ctx->presentation_load_render_pass;
+            final_info.framebuffer = frame->framebuffers[image_index];
             vkCmdBeginRenderPass(cmd, &final_info, VK_SUBPASS_CONTENTS_INLINE);
             VK_PostProcess_RecordFinal(
                 cmd, &ctx->swapchain.extent,
-                frame->liquid_scene_descriptor_set);
+                direct_linear_presentation
+                    ? frame->linear_scene_descriptor_set
+                    : scene_descriptor_set,
+                direct_linear_presentation);
             vkCmdEndRenderPass(cmd);
         }
 
@@ -2394,7 +3788,8 @@ static bool VK_RecordCommandBuffer(VkCommandBuffer cmd, uint32_t image_index)
                 VK_SceneCopy_Record(cmd, image_index);
             }
             VkRenderPassBeginInfo crt_info = render_info;
-            crt_info.renderPass = ctx->liquid_render_pass;
+            crt_info.renderPass = ctx->presentation_load_render_pass;
+            crt_info.framebuffer = frame->framebuffers[image_index];
             vkCmdBeginRenderPass(cmd, &crt_info, VK_SUBPASS_CONTENTS_INLINE);
             VK_PostProcess_RecordCrt(
                 cmd, &ctx->swapchain.extent,
@@ -2405,7 +3800,8 @@ static bool VK_RecordCommandBuffer(VkCommandBuffer cmd, uint32_t image_index)
 
     if (final_postprocess) {
         VkRenderPassBeginInfo ui_overlay_info = render_info;
-        ui_overlay_info.renderPass = ctx->overlay_render_pass;
+        ui_overlay_info.renderPass = ctx->presentation_overlay_render_pass;
+        ui_overlay_info.framebuffer = frame->framebuffers[image_index];
         vkCmdBeginRenderPass(cmd, &ui_overlay_info, VK_SUBPASS_CONTENTS_INLINE);
         if (!vk_draw_ui || vk_draw_ui->integer) {
             VK_UI_Record(cmd, &ctx->swapchain.extent);
@@ -2413,12 +3809,18 @@ static bool VK_RecordCommandBuffer(VkCommandBuffer cmd, uint32_t image_index)
         vkCmdEndRenderPass(cmd);
     }
 
-    if (entity_overlay && (!vk_draw_entities || vk_draw_entities->integer)) {
+    if (entity_overlay && !linear_scene &&
+        (!vk_draw_entities || vk_draw_entities->integer)) {
         VkRenderPassBeginInfo overlay_info = render_info;
-        overlay_info.renderPass = ctx->overlay_render_pass;
+        overlay_info.renderPass = ctx->presentation_overlay_render_pass;
+        overlay_info.framebuffer = frame->framebuffers[image_index];
         vkCmdBeginRenderPass(cmd, &overlay_info, VK_SUBPASS_CONTENTS_INLINE);
         VK_Entity_Record(cmd, &ctx->swapchain.extent);
         vkCmdEndRenderPass(cmd);
+    }
+
+    if (vk_showtearing && vk_showtearing->integer) {
+        VK_RecordTearingDiagnostic(cmd, image_index);
     }
 
     VK_Debug_MarkGpuPhase(cmd, VK_DEBUG_GPU_PHASE_POSTPROCESS);
@@ -2468,6 +3870,82 @@ static bool VK_WaitForSubmittedFrames(vk_context_t *ctx, const char *what)
             return false;
         }
     }
+    return true;
+}
+
+static void VK_UpdateLinearSceneMipLevels(vk_context_t *ctx)
+{
+    if (!ctx) {
+        return;
+    }
+
+    ctx->linear_scene_mip_levels = 1;
+    cvar_t *hdr_auto = Cvar_Get("vk_hdr_auto_exposure", "0",
+                                CVAR_ARCHIVE | CVAR_RENDERER);
+    if (!ctx->scene_is_float || !ctx->linear_scene_mips_supported ||
+        !hdr_auto || !hdr_auto->integer) {
+        return;
+    }
+
+    uint32_t max_dimension = max(ctx->scene_extent.width,
+                                 ctx->scene_extent.height);
+    while (max_dimension > 1) {
+        ctx->linear_scene_mip_levels++;
+        max_dimension >>= 1;
+    }
+}
+
+// Resize only the native offscreen scene family. Presentation images, command
+// buffers, synchronization, and native UI resources remain valid because the
+// swapchain extent and attachment formats do not change. The first entry into
+// (and final exit from) offscreen rendering still goes through the full
+// swapchain path, since that changes the scene render-pass final layout.
+static bool VK_RecreateSceneTargets(void)
+{
+    vk_context_t *ctx = &vk_state.ctx;
+    if (!ctx->device || !ctx->swapchain.handle || !ctx->scene_offscreen_supported) {
+        return false;
+    }
+
+    const VkExtent2D requested_extent =
+        VK_ResolutionScaleExtent(ctx->swapchain.extent);
+    if (requested_extent.width == ctx->scene_extent.width &&
+        requested_extent.height == ctx->scene_extent.height) {
+        return true;
+    }
+
+    // Direct presentation has a different scene-pass final layout. Let the
+    // established full rebuild perform that transition before attempting an
+    // extent-only target refresh.
+    if (!ctx->frames[0].linear_scene_image) {
+        vk_state.swapchain_dirty = true;
+        return VK_RecreateSwapchain(r_config.width, r_config.height);
+    }
+
+    if (!VK_WaitForSubmittedFrames(
+            ctx, "vkWaitForFences(resolution-scale target rebuild)")) {
+        return false;
+    }
+
+    // All retained render passes remain attachment-compatible: resolution is
+    // dynamic, while color/depth formats stay fixed. Rebuild just the images
+    // and framebuffers that name the old scene extent.
+    VK_DestroyBloomEmissionImages(ctx);
+    VK_DestroyLinearSceneResources(ctx);
+    ctx->scene_extent = requested_extent;
+    VK_UpdateLinearSceneMipLevels(ctx);
+
+    if (!VK_CreateLinearSceneResources(ctx) ||
+        !VK_CreateLinearSceneFramebuffers(ctx)) {
+        Com_WPrintf("Vulkan: scaled scene target refresh failed; rebuilding the full swapchain.\n");
+        vk_state.swapchain_dirty = true;
+        return VK_RecreateSwapchain(r_config.width, r_config.height);
+    }
+
+    // Authored bloom remains optional, but when supported its extent follows
+    // the refreshed native scene target without replacing swapchain state.
+    VK_CreateBloomEmissionResources(ctx);
+    VK_PostProcess_RefreshSceneResources(ctx);
     return true;
 }
 
@@ -2572,6 +4050,11 @@ static bool VK_DrawFrame(void)
 
     result = vkQueuePresentKHR(ctx->graphics_queue, &present_info);
 
+    if ((result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR) &&
+        ctx->swapchain.image_presented) {
+        ctx->swapchain.image_presented[image_index] = true;
+    }
+
     if (vk_screenshot_armed) {
         // The submitted command buffer already executed the readback copy;
         // finish the file write even if the present was suboptimal.
@@ -2646,11 +4129,35 @@ bool R_Init(bool total)
     if (!vk_draw_ui) {
         vk_draw_ui = Cvar_Get("vk_draw_ui", "1", 0);
     }
+    if (!vk_showtearing) {
+        vk_showtearing = Cvar_Get("vk_showtearing", "0", CVAR_CHEAT);
+    }
     if (!vk_damageblend_frac) {
         vk_damageblend_frac = Cvar_Get("gl_damageblend_frac", "0.2", 0);
     }
     if (!vk_screenshot_dir) {
         vk_screenshot_dir = Cvar_Get("r_screenshot_dir", "", CVAR_NOARCHIVE);
+    }
+    if (!vk_resolutionscale) {
+        vk_resolutionscale = Cvar_Get("r_resolutionscale", "0", CVAR_USERINFO);
+        vk_resolutionscale_aggressive = Cvar_Get(
+            "r_resolutionscale_aggressive", "0", CVAR_ARCHIVE);
+        vk_resolutionscale_fixedscale_h = Cvar_Get(
+            "r_resolutionscale_fixedscale_h", "1.0", CVAR_SERVERINFO);
+        vk_resolutionscale_fixedscale_w = Cvar_Get(
+            "r_resolutionscale_fixedscale_w", "1.0", CVAR_SERVERINFO);
+        vk_resolutionscale_gooddrawtime = Cvar_Get(
+            "r_resolutionscale_gooddrawtime", "0.9", CVAR_SERVERINFO);
+        vk_resolutionscale_increasespeed = Cvar_Get(
+            "r_resolutionscale_increasespeed", "0.1", CVAR_SERVERINFO);
+        vk_resolutionscale_lowerspeed = Cvar_Get(
+            "r_resolutionscale_lowerspeed", "0.1", CVAR_SERVERINFO);
+        vk_resolutionscale_numframesbeforelowering = Cvar_Get(
+            "r_resolutionscale_numframesbeforelowering", "20", CVAR_USERINFO);
+        vk_resolutionscale_numframesbeforeraising = Cvar_Get(
+            "r_resolutionscale_numframesbeforeraising", "200", CVAR_USERINFO);
+        vk_resolutionscale_targetdrawtime = Cvar_Get(
+            "r_resolutionscale_targetdrawtime", "1.125", CVAR_SERVERINFO);
     }
     if (!vk_shadow_frontend_cvars_registered) {
         ShadowFrontend_RegisterCvars(&vk_shadow_frontend_cvars, "vk");
@@ -2892,6 +4399,8 @@ void R_RenderFrame(const refdef_t *fd)
     VK_World_RenderFrame(fd);
     VK_PostProcess_RenderFrame(fd);
     VK_Entity_RenderFrame(fd);
+    VK_PostProcess_SetBloomAuthoredEmission(
+        VK_World_HasBloomEmission() || VK_Entity_HasBloomEmission());
 
     // Full-screen liquid/powerup and damage blends layer between the 3D view
     // and the HUD, mirroring the GL renderer's GL_Blend pass.
@@ -3210,13 +4719,23 @@ void R_BeginFrame(void)
     if (!vk_state.initialized)
         return;
 
+    VK_UpdateResolutionScale(r_config.width, r_config.height);
+    vk_context_t *ctx = &vk_state.ctx;
+    const VkExtent2D requested_scene_extent =
+        VK_ResolutionScaleExtent(ctx->swapchain.extent);
+
     if (vk_state.swapchain_dirty) {
         if (!VK_RecreateSwapchain(r_config.width, r_config.height))
             return;
+    } else if (ctx->swapchain.handle && ctx->scene_offscreen_supported &&
+               (requested_scene_extent.width != ctx->scene_extent.width ||
+                requested_scene_extent.height != ctx->scene_extent.height) &&
+               !VK_RecreateSceneTargets()) {
+        return;
     }
 
-    if (!vk_state.ctx.frame_count ||
-        !VK_WaitForFrame(&vk_state.ctx, vk_state.ctx.current_frame,
+    if (!ctx->frame_count ||
+        !VK_WaitForFrame(ctx, ctx->current_frame,
                          "vkWaitForFences(begin frame)")) {
         return;
     }
@@ -3245,6 +4764,7 @@ void R_EndFrame(void)
     }
     VK_Debug_EndFrame((float)(VK_HighResMicroseconds() - vk_frame_begin_us) /
                       1000.0f);
+    VK_RecordResolutionScaleTime();
 }
 
 void R_ModeChanged(int width, int height, int flags)

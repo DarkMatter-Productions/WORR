@@ -5,11 +5,23 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import subprocess
 import time
 from pathlib import Path
+
+try:
+    from tools.networking.headless_process import (
+        creation_flags as _headless_creation_flags,
+        start_headless_process,
+        terminate_process_tree,
+    )
+except ModuleNotFoundError:
+    from headless_process import (
+        creation_flags as _headless_creation_flags,
+        start_headless_process,
+        terminate_process_tree,
+    )
 
 
 COUNTERS_RE = re.compile(
@@ -97,15 +109,7 @@ def parse_last_status(pattern: re.Pattern[str], text: str) -> dict[str, int]:
 
 def terminate(process: subprocess.Popen[object]) -> bool:
     """Terminate a still-running test process; return whether we did it."""
-    if process.poll() is not None:
-        return False
-    process.terminate()
-    try:
-        process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait(timeout=5)
-    return True
+    return terminate_process_tree(process)
 
 
 def client_command(executable: Path, impaired: bool) -> list[str]:
@@ -169,7 +173,7 @@ def run_client(
 ) -> tuple[str, str, dict[str, int], bool]:
     with stdout_path.open("w", encoding="utf-8") as stdout_file, \
          stderr_path.open("w", encoding="utf-8") as stderr_file:
-        process = subprocess.Popen(
+        process = start_headless_process(
             command,
             cwd=working_dir,
             stdin=subprocess.DEVNULL,
@@ -363,7 +367,7 @@ def main() -> int:
     queue_stdout = args.output.with_suffix(".queue.stdout.log")
     queue_stderr = args.output.with_suffix(".queue.stderr.log")
 
-    creation_flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+    creation_flags = _headless_creation_flags()
     queue_run = subprocess.run(
         [
             str(args.dedicated_exe),

@@ -1,0 +1,43 @@
+{
+  "schema": "worr.native_snapshot_production_corpus.scenario.v1",
+  "name": "fr-10-native-snapshot-serialized-production-corpus",
+  "result_schema": "worr.native_snapshot_production_corpus.v1",
+  "classification": "headless_deterministic_serialized_production_path",
+  "expected_status": "ok",
+  "snapshot_count": 100000,
+  "seed": 1369948382,
+  "repeat": 2,
+  "timeout_seconds": 900,
+  "golden_corpus_digest": "c6aee48df85341ab",
+  "negative_probe_fields": [
+    "corrupt_server_to_client",
+    "corrupt_client_to_server"
+  ],
+  "required_nonzero_coverage": [
+    "resolved_prediction_commands",
+    "prediction_pending_ranges",
+    "prediction_nonpending_ranges",
+    "authority_history_resets",
+    "connection_activations",
+    "sequence_gaps",
+    "fragment_stalls",
+    "rate_suppressions",
+    "late_expectations",
+    "server_to_client_deliveries",
+    "server_to_client_delivery_bytes",
+    "client_to_server_deliveries",
+    "client_to_server_delivery_bytes",
+    "server_to_client_losses",
+    "server_to_client_impairment_decisions",
+    "client_to_server_impairment_decisions",
+    "burst_packet_losses",
+    "server_to_client_fragment_release_inversions",
+    "duplicate_deliveries",
+    "acknowledgement_losses",
+    "upstream_ack_stalls",
+    "repeat_revalidations",
+    "corrupt_server_to_client",
+    "corrupt_client_to_server",
+    "corrupt_rejections"
+  ]
+}

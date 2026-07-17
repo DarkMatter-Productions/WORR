@@ -10,6 +10,7 @@ import os
 import re
 import subprocess
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 
 
@@ -28,7 +29,7 @@ ADAPTER_PATTERNS = {
 
 # Renderer-independent settings that are part of the timed scenario. Renderer
 # selection itself intentionally differs between the two capture commands.
-CAPTURE_PROFILE = (
+CAPTURE_PROFILE_BASE = (
     "game=basew",
     "r_fullscreen=0",
     "win_headless=1",
@@ -42,11 +43,55 @@ CAPTURE_PROFILE = (
     "r_maxfps=62",
     "gl_swapinterval=1",
 )
+DEFAULT_LAUNCH_CVARS = {
+    # r_dof is latched at renderer initialization. Keep the non-DOF
+    # fixed-view lane equivalent to the screenshot-capture profile so a
+    # host/default archived value cannot silently add a post-process workload
+    # to only one renderer.
+    "r_dof": "0",
+    "gl_bloom": "0",
+    "vk_bloom": "0",
+    "gl_color_correction": "0",
+    "vk_color_correction": "0",
+    "r_crtmode": "0",
+}
 RMLUI_CAPTURE_MARKER = "RmlUi guarded capture route is active"
+CVAR_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
-def capture_profile(rmlui: bool) -> tuple[str, ...]:
-    return CAPTURE_PROFILE + (f"ui_rml_enable={int(rmlui)}",)
+def resolve_launch_cvars(overrides: Mapping[str, str] | None = None) -> dict[str, str]:
+    """Return a canonical, renderer-independent launch-cvar profile."""
+    resolved = dict(DEFAULT_LAUNCH_CVARS)
+    if overrides:
+        for name, value in overrides.items():
+            if not CVAR_NAME_RE.fullmatch(name):
+                raise ValueError(f"invalid launch cvar name: {name!r}")
+            if not value or "\x00" in value or "\n" in value or "\r" in value:
+                raise ValueError(f"invalid launch cvar value for {name!r}")
+            resolved[name] = value
+    return dict(sorted(resolved.items()))
+
+
+def capture_profile(rmlui: bool,
+                    launch_cvars: Mapping[str, str] | None = None) -> tuple[str, ...]:
+    resolved = resolve_launch_cvars(launch_cvars)
+    return (CAPTURE_PROFILE_BASE +
+            tuple(f"{name}={value}" for name, value in resolved.items()) +
+            (f"ui_rml_enable={int(rmlui)}",))
+
+
+def parse_launch_cvars(values: list[str]) -> dict[str, str]:
+    overrides: dict[str, str] = {}
+    for value in values:
+        name, separator, cvar_value = value.partition("=")
+        if not separator:
+            raise ValueError(
+                f"--launch-cvar must use NAME=VALUE syntax, got {value!r}"
+            )
+        if name in overrides:
+            raise ValueError(f"duplicate --launch-cvar: {name}")
+        overrides[name] = cvar_value
+    return resolve_launch_cvars(overrides)
 
 
 def file_sha256(path: Path) -> str:
@@ -84,7 +129,8 @@ def resolve_game_file(base_game: Path, relative: str) -> tuple[Path, str]:
     return candidate, normalized
 
 
-def config_tree_sha256(install_dir: Path, config: str, rmlui: bool = False) -> str:
+def config_tree_sha256(install_dir: Path, config: str, rmlui: bool = False,
+                       launch_cvars: Mapping[str, str] | None = None) -> str:
     """Hash the executed config and every repository-owned `exec` include."""
     base_game = (install_dir / "basew").resolve()
     pending = [config]
@@ -106,7 +152,7 @@ def config_tree_sha256(install_dir: Path, config: str, rmlui: bool = False) -> s
                 pending.append(included)
 
     digest = hashlib.sha256()
-    for value in capture_profile(rmlui):
+    for value in capture_profile(rmlui, launch_cvars):
         digest.update(value.encode("utf-8"))
         digest.update(b"\0")
     for relative in sorted(contents):
@@ -118,8 +164,9 @@ def config_tree_sha256(install_dir: Path, config: str, rmlui: bool = False) -> s
 
 
 def build_command(executable: Path, install_dir: Path, home: Path,
-                  renderer: str, config: str, rmlui: bool = False) -> list[str]:
-    return [
+                  renderer: str, config: str, rmlui: bool = False,
+                  launch_cvars: Mapping[str, str] | None = None) -> list[str]:
+    command = [
         str(executable),
         "+set", "basedir", str(install_dir),
         "+set", "homedir", str(home),
@@ -132,6 +179,10 @@ def build_command(executable: Path, install_dir: Path, home: Path,
         "+set", "developer", "1",
         "+set", "bot_enable", "0",
         "+set", "s_enable", "0",
+    ]
+    for name, value in resolve_launch_cvars(launch_cvars).items():
+        command.extend(("+set", name, value))
+    command.extend((
         "+set", "ui_rml_enable", "1" if rmlui else "0",
         "+set", "cl_maxfps", "62",
         "+set", "r_maxfps", "62",
@@ -139,13 +190,18 @@ def build_command(executable: Path, install_dir: Path, home: Path,
         "+set", "vid_renderer", renderer,
         "+set", "r_renderer", renderer,
         "+exec", config,
-    ]
+    ))
+    return command
 
 
-def count_stats(log: str, prefix: str) -> tuple[int, int]:
+def count_stats(log: str, prefix: str) -> tuple[int, int, int]:
     records = [match.group(0) for match in STAT_RE.finditer(log)
                if match.group(1) == prefix]
-    return len(records), sum("gpu_valid=1" in record for record in records)
+    return (
+        len(records),
+        sum("gpu_valid=1" in record for record in records),
+        sum("gpu_frame_valid=1" in record for record in records),
+    )
 
 
 def renderer_adapter(log: str, renderer: str) -> str | None:
@@ -155,11 +211,12 @@ def renderer_adapter(log: str, renderer: str) -> str | None:
 
 def run_renderer(executable: Path, install_dir: Path, run_root: Path,
                  renderer: str, config: str, timeout: float, validation: bool,
-                 min_samples: int, rmlui: bool) -> dict[str, object]:
+                 min_samples: int, rmlui: bool,
+                 launch_cvars: Mapping[str, str] | None = None) -> dict[str, object]:
     home = run_root / "homes" / renderer
     home.mkdir(parents=True, exist_ok=True)
     command = build_command(executable, install_dir, home, renderer, config,
-                            rmlui)
+                            rmlui, launch_cvars)
     environment = os.environ.copy()
     if validation and renderer == "vulkan":
         environment["VK_INSTANCE_LAYERS"] = "VK_LAYER_KHRONOS_validation"
@@ -198,7 +255,7 @@ def run_renderer(executable: Path, install_dir: Path, run_root: Path,
     log_path = run_root / f"{renderer}.log"
     log_path.write_text(log, encoding="utf-8")
     prefix = "VK_STATS" if renderer == "vulkan" else "GL_STATS"
-    samples, gpu_valid_samples = count_stats(log, prefix)
+    samples, gpu_valid_samples, gpu_frame_valid_samples = count_stats(log, prefix)
     if exit_code not in (0, None):
         failures.append(f"{renderer} client exited with status {exit_code}")
     if samples < min_samples:
@@ -223,6 +280,7 @@ def run_renderer(executable: Path, install_dir: Path, run_root: Path,
         "log_sha256": file_sha256(log_path),
         "samples": samples,
         "gpu_valid_samples": gpu_valid_samples,
+        "gpu_frame_valid_samples": gpu_frame_valid_samples,
         "adapter": renderer_adapter(log, renderer),
         "failures": failures,
     }
@@ -255,6 +313,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--vulkan-validation", action="store_true")
     parser.add_argument("--rmlui", action="store_true",
                         help="enable and require the guarded RmlUi overlay workload")
+    parser.add_argument(
+        "--launch-cvar", action="append", default=[], metavar="NAME=VALUE",
+        help=("override a renderer-independent cvar before renderer startup; "
+              "repeatable and included in the capture profile hash"),
+    )
     parser.add_argument("--json-output", type=Path)
     return parser.parse_args(argv)
 
@@ -276,13 +339,15 @@ def main(argv: list[str] | None = None) -> int:
         if not fixture.is_file():
             raise RuntimeError(f"fixture not found: {fixture}")
         executable = discover_executable(install_dir, args.executable)
-        config_sha256 = config_tree_sha256(install_dir, args.config, args.rmlui)
+        launch_cvars = parse_launch_cvars(args.launch_cvar)
+        config_sha256 = config_tree_sha256(install_dir, args.config, args.rmlui,
+                                           launch_cvars)
         run_root.mkdir(parents=True, exist_ok=True)
         captures = {
             renderer: run_renderer(executable, install_dir, run_root, renderer,
                                    args.config, args.timeout,
                                    args.vulkan_validation, args.min_samples,
-                                   args.rmlui)
+                                   args.rmlui, launch_cvars)
             for renderer in ("vulkan", "opengl")
         }
         vulkan_adapter = captures["vulkan"]["adapter"]
@@ -301,6 +366,7 @@ def main(argv: list[str] | None = None) -> int:
                 "id": args.scenario_id,
                 "fixture_sha256": file_sha256(fixture),
                 "config_sha256": config_sha256,
+                "launch_cvars": launch_cvars,
             },
             "environment": {
                 "hardware_id": args.hardware_id,

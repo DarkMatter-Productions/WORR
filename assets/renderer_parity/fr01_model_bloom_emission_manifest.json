@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "task_id": "FR-01-T12",
+  "scenes": [
+    {
+      "id": "stock_md2_skin_bloom_emission",
+      "config": "renderer_parity/fr01_model_bloom_emission.cfg",
+      "capture": "fr01_model_bloom_emission.tga",
+      "crop": [570, 470, 310, 110],
+      "metrics": {
+        "pixel_threshold": 16,
+        "max_mean_absolute_rgb": [1, 0.35, 0.3],
+        "max_pixels_over_threshold_percent": 0.8
+      },
+      "probes": [
+        {
+          "name": "stock_md2_skin_glow_bloom",
+          "min_color": [160, 0, 0],
+          "max_color": [255, 60, 30],
+          "min_pixels_per_backend": 4300,
+          "max_backend_count_delta_percent": 3,
+          "min_backend_intersection_over_union": 0.95
+        },
+        {
+          "name": "skin_bloom_halo_on_blue_backdrop",
+          "color": [29, 34, 80],
+          "tolerance": 8,
+          "min_pixels_per_backend": 1200,
+          "max_backend_count_delta_percent": 6,
+          "min_backend_intersection_over_union": 0.93
+        }
+      ]
+    }
+  ]
+}

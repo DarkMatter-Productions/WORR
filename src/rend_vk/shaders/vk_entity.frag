@@ -12,6 +12,10 @@
 #define VK_ENTITY_VERTEX_ITEM_COLORIZE_BASE 512u
 #define VK_ENTITY_VERTEX_GLOWMAP 1024u
 #define VK_ENTITY_VERTEX_NO_FOG 2048u
+#define VK_ENTITY_VERTEX_BLOOM_SHELL 4096u
+#define VK_ENTITY_VERTEX_BLOOM_RIM 8192u
+#define VK_ENTITY_VERTEX_BLOOM_DEPTHHACK 16384u
+#define VK_ENTITY_VERTEX_TEXTURE_REPLACE 65536u
 #define VK_FOG_GLOBAL 1u
 #define VK_FOG_HEIGHT 2u
 #define SHADOW_VISIBILITY_EXPONENT 2.0
@@ -34,6 +38,9 @@ struct shadow_dlight_t {
 
 layout(set = 0, binding = 0) uniform sampler2D tex_sampler;
 layout(set = 1, binding = 0) uniform sampler2D lm_sampler;
+#ifdef VK_ENTITY_BLOOM_EXTRACT_DEPTH_SAMPLE
+layout(set = 1, binding = 2) uniform sampler2D bloom_depth_sampler;
+#endif
 layout(set = 2, binding = 0) uniform sampler2DArray shadow_sampler;
 layout(set = 2, binding = 3) uniform sampler2DArrayShadow shadow_sampler_cmp;
 layout(std140, set = 2, binding = 1) uniform ShadowPages {
@@ -319,10 +326,60 @@ vec3 safe_normal(vec3 normal) {
     return normal * inversesqrt(len2);
 }
 
+#ifdef VK_ENTITY_GPU_BMODEL_FAST_LIT
+// This native specialization is selected only for opaque lightmapped inline
+// BSP faces with no glow/alpha/fullbright flags and no active sun or dynamic
+// light receiver work.  It preserves the generic lightmap, intensity, and
+// fog formula while avoiding its unrelated material and shadow branches.
+void main() {
+    vec4 base = texture(tex_sampler, in_uv);
+    // GPU inline-BSP fast-light batches are accepted only after the native
+    // submission path excluded transparent and alpha-tested materials. Keep
+    // this shader discard-free so opaque depth testing can reject covered
+    // fragments before either material sample executes.
+
+    float lm_modulate = max(shadow_dlight_count.y, 0.0);
+    float lm_add = shadow_dlight_count.z;
+    vec3 lighting = max((texture(lm_sampler, in_lm_uv).rgb + vec3(lm_add)) *
+                        lm_modulate, vec3(0.0));
+    out_color = vec4(base.rgb * lighting * in_color.rgb,
+                     base.a * in_color.a);
+    if ((in_flags & VK_ENTITY_VERTEX_INTENSITY) != 0u) {
+        out_color.rgb *= max(shadow_moment_tuning.z, 1.0);
+    }
+#ifndef VK_ENTITY_GPU_BMODEL_FAST_LIT_NO_FOG
+    apply_fog(out_color.rgb, (in_flags & VK_ENTITY_VERTEX_NO_FOG) != 0u);
+#endif
+}
+#elif defined(VK_ENTITY_GPU_BMODEL_TEXTURE_REPLACE)
+// Selected only for opaque inline-BSP faces whose OpenGL-equivalent material
+// is GLS_TEXTURE_REPLACE. The native submission gate rejects transparent and
+// alpha-tested inputs, so this companion is deliberately discard-free and
+// preserves only base texture, optional intensity, and surface fog.
+void main() {
+    out_color = texture(tex_sampler, in_uv);
+    if ((in_flags & VK_ENTITY_VERTEX_INTENSITY) != 0u) {
+        out_color.rgb *= max(shadow_moment_tuning.z, 1.0);
+    }
+#ifndef VK_ENTITY_GPU_BMODEL_TEXTURE_REPLACE_NO_FOG
+    apply_fog(out_color.rgb, false);
+#endif
+}
+#else
 void main() {
     vec4 base = texture(tex_sampler, in_uv);
     if (base.a < 0.01 ||
         ((in_flags & VK_ENTITY_VERTEX_ALPHATEST) != 0u && base.a < 0.666)) {
+        discard;
+    }
+
+    // Alias meshes keep OpenGL's default back-face culling.  The native
+    // entity pipeline is intentionally two-sided for sprites, particles, and
+    // other dynamic primitives, so apply the equivalent cull only to alias
+    // shell/rim batches. Otherwise their depth-write-disabled blend paths
+    // accept hidden back-facing triangles a second time.
+    if ((in_flags & (VK_ENTITY_VERTEX_BLOOM_SHELL |
+                     VK_ENTITY_VERTEX_BLOOM_RIM)) != 0u && !gl_FrontFacing) {
         discard;
     }
 
@@ -332,6 +389,107 @@ void main() {
     }
 
     float texture_intensity = max(shadow_moment_tuning.z, 1.0);
+#ifdef VK_ENTITY_BLOOM_EXTRACT
+    // The OpenGL bloom MRT records skin glow RGB directly, while lightmapped
+    // inline-BSP entity faces record their base texture multiplied by glow
+    // alpha. Keep this separate from the lit entity color so scene threshold
+    // extraction cannot erase authored emission.
+    vec3 emission = vec3(0.0);
+    float emission_alpha = base.a * in_color.a;
+    if ((in_flags & VK_ENTITY_VERTEX_BLOOM_RIM) != 0u) {
+#ifdef VK_ENTITY_BLOOM_EXTRACT_DEPTH_SAMPLE
+        // The normal scene pass has already selected the nearest surface at
+        // this exact pixel. Sample it instead of replaying equality through a
+        // depth attachment: several depth formats quantize alias replays just
+        // enough for LESS_OR_EQUAL to become unreliable.
+        float scene_depth = texelFetch(bloom_depth_sampler,
+                                       ivec2(gl_FragCoord.xy), 0).r;
+        const float equal_depth_epsilon = 0.02;
+        if (gl_FragCoord.z > scene_depth + equal_depth_epsilon) {
+            discard;
+        }
+#endif
+        // GLS_BLOOM_SHELL takes the rim-light diffuse result. The additive
+        // extraction pipeline applies its source-alpha blend state, matching
+        // the normal OpenGL rim material and avoiding a premultiplied source.
+        vec3 view_dir = normalize(view_origin.xyz - in_world_pos);
+        float rim = 1.0 - max(dot(safe_normal(in_normal), view_dir), 0.0);
+        rim *= rim;
+        // The native blur kernel retains more energy than the OpenGL
+        // downsample path at the same public bloom settings. Normalize this
+        // source so the final rim halo matches the OpenGL receiver response.
+        emission = in_color.rgb * rim * 0.70;
+        emission_alpha = in_color.a * rim;
+    } else if ((in_flags & VK_ENTITY_VERTEX_BLOOM_SHELL) != 0u) {
+        // GLS_BLOOM_SHELL assigns bloom = diffuse after the normal
+        // GLS_INTENSITY_ENABLE operation.  The extraction pipeline retains
+        // alpha blending, so the shell's translucent scene/bloom contract is
+        // reproduced by the attachment blend state rather than premultiplying
+        // this value here.
+        emission = base.rgb * in_color.rgb;
+        if ((in_flags & VK_ENTITY_VERTEX_INTENSITY) != 0u) {
+            emission *= texture_intensity;
+        }
+        // OpenGL's depth-hacked view weapon follows a distinct effective MRT
+        // response from world shells. Preserve that observed receiver energy
+        // without perturbing either its visible material or world-shell bloom.
+        if ((in_flags & VK_ENTITY_VERTEX_BLOOM_DEPTHHACK) != 0u) {
+            emission *= 0.10;
+        }
+    } else if ((in_flags & VK_ENTITY_VERTEX_GLOWMAP) != 0u) {
+        if ((in_flags & VK_ENTITY_VERTEX_LIGHTMAP) != 0u) {
+            float glow_alpha = texture(glow_sampler, in_uv).a;
+            if ((in_flags & VK_ENTITY_VERTEX_INTENSITY) != 0u) {
+                glow_alpha *= texture_intensity * shadow_glowmap_tuning.x;
+            }
+            emission = base.rgb * glow_alpha;
+        } else {
+            emission = texture(glow_sampler, in_uv).rgb;
+            if ((in_flags & VK_ENTITY_VERTEX_INTENSITY) != 0u) {
+                emission *= texture_intensity * shadow_glowmap_tuning.x;
+            }
+        }
+    }
+    if ((in_flags & VK_ENTITY_VERTEX_NO_FOG) == 0u) {
+        uint fog_flags = uint(shadow_fog_params.w + 0.5);
+        float frag_depth = gl_FragCoord.z / max(gl_FragCoord.w, 1e-6);
+        if ((fog_flags & VK_FOG_GLOBAL) != 0u) {
+            float d = shadow_fog_color_density.a * frag_depth;
+            emission *= exp(-(d * d));
+        }
+        if ((fog_flags & VK_FOG_HEIGHT) != 0u) {
+            float dir_z = normalize(in_world_pos - view_origin.xyz).z;
+            float s = sign(dir_z);
+            dir_z += 0.00001 * (1.0 - s * s);
+            float eye = view_origin.z - shadow_heightfog_start.w;
+            float pos = in_world_pos.z - shadow_heightfog_start.w;
+            float density =
+                (exp(-shadow_fog_params.y * eye) -
+                 exp(-shadow_fog_params.y * pos)) /
+                (shadow_fog_params.y * dir_z);
+            float extinction = 1.0 - clamp(exp(-density), 0.0, 1.0);
+            float fog = (1.0 - exp(-(shadow_fog_params.x * frag_depth))) *
+                extinction;
+            emission *= 1.0 - fog;
+        }
+    }
+    out_color = vec4(emission, emission_alpha);
+    return;
+#endif
+
+    // GLS_TEXTURE_REPLACE takes precedence over all entity-lighting inputs
+    // for opaque inline-BSP faces without a lightmap. In particular, do not
+    // turn the fallback light sample into a brightness gain when gl_modulate
+    // is above one.
+    if ((in_flags & VK_ENTITY_VERTEX_TEXTURE_REPLACE) != 0u) {
+        out_color = base;
+        if ((in_flags & VK_ENTITY_VERTEX_INTENSITY) != 0u) {
+            out_color.rgb *= texture_intensity;
+        }
+        apply_fog(out_color.rgb, (in_flags & VK_ENTITY_VERTEX_NO_FOG) != 0u);
+        return;
+    }
+
     vec3 glow_emission = vec3(0.0);
     if ((in_flags & (VK_ENTITY_VERTEX_LIGHTMAP |
                      VK_ENTITY_VERTEX_GLOWMAP)) == VK_ENTITY_VERTEX_GLOWMAP) {
@@ -426,3 +584,4 @@ void main() {
     out_color.rgb += glow_emission;
     apply_fog(out_color.rgb, (in_flags & VK_ENTITY_VERTEX_NO_FOG) != 0u);
 }
+#endif

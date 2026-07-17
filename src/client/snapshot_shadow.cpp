@@ -32,6 +32,19 @@ constexpr uint64_t canonical_entity_components =
 static_assert(MAX_STATS >= WORR_SNAPSHOT_STATS_CAPACITY,
               "legacy player state cannot cover the canonical stats range");
 
+enum class native_expectation_qualification_t : uint8_t {
+    empty = 0,
+    unqualified = 1,
+    available = 2,
+};
+
+struct native_expectation_slot_t {
+    worr_native_snapshot_expectation_v1 expectation{};
+    worr_snapshot_ref_v2 projection_ref{};
+    native_expectation_qualification_t qualification{};
+    uint8_t reserved0[3]{};
+};
+
 struct snapshot_shadow_state_t {
     worr_snapshot_q2proto_context_v2 context{};
     worr_snapshot_q2proto_slot_v2 *slots{};
@@ -64,10 +77,14 @@ struct snapshot_shadow_state_t {
 
     worr_snapshot_ref_v2 latest_ref{};
     worr_snapshot_projection_hashes_v2 latest_hashes{};
+    native_expectation_slot_t
+        native_expectations[shadow_slot_capacity]{};
+    worr_snapshot_id_v2 native_expectation_watermark{};
     cl_snapshot_shadow_status_v1 status{};
     bool active{};
     bool pending{};
     bool latest_promotion_attempted{};
+    bool native_epoch_bound{};
     uint32_t capture_failure{};
 };
 
@@ -76,7 +93,9 @@ uint32_t shadow_epoch_seed;
 uint64_t shadow_connection_resets;
 cvar_t *cl_snapshot_shadow;
 cvar_t *cl_snapshot_shadow_debug;
-const worr_cgame_snapshot_timeline_export_v1 *snapshot_consumer;
+const worr_cgame_snapshot_timeline_export_v2 *snapshot_consumer;
+uintptr_t snapshot_consumer_lifetime_cookie = 1;
+bool snapshot_consumer_lifetime_exhausted;
 
 void increment_saturating(uint64_t *value)
 {
@@ -153,7 +172,7 @@ void clear_runtime_preserving_status()
 }
 
 bool consumer_export_valid(
-    const worr_cgame_snapshot_timeline_export_v1 *consumer)
+    const worr_cgame_snapshot_timeline_export_v2 *consumer)
 {
     return consumer != nullptr &&
            consumer->struct_size == sizeof(*consumer) &&
@@ -162,6 +181,27 @@ bool consumer_export_valid(
            consumer->Reset != nullptr &&
            consumer->ConsumeCanonicalSnapshot != nullptr &&
            consumer->GetStatus != nullptr;
+}
+
+void invalidate_native_consumer_lifetime()
+{
+    if (snapshot_consumer_lifetime_exhausted)
+        return;
+    if (snapshot_consumer_lifetime_cookie == UINTPTR_MAX) {
+        snapshot_consumer_lifetime_cookie = 0;
+        snapshot_consumer_lifetime_exhausted = true;
+        return;
+    }
+    ++snapshot_consumer_lifetime_cookie;
+}
+
+bool native_consumer_cookie_valid(void *opaque)
+{
+    return !snapshot_consumer_lifetime_exhausted &&
+           snapshot_consumer_lifetime_cookie != 0 &&
+           reinterpret_cast<uintptr_t>(opaque) ==
+               snapshot_consumer_lifetime_cookie &&
+           consumer_export_valid(snapshot_consumer);
 }
 
 void reset_consumer(uint32_t reason, uint64_t reset_host_time_us)
@@ -181,7 +221,7 @@ void note_consumer_rejection()
     if (!snapshot_consumer || !snapshot_consumer->GetStatus)
         return;
 
-    worr_cgame_snapshot_timeline_status_v1 consumer_status{};
+    worr_cgame_snapshot_timeline_status_v2 consumer_status{};
     if (!snapshot_consumer->GetStatus(&consumer_status))
         return;
     shadow.status.last_consumer_rejection_result =
@@ -195,6 +235,41 @@ void note_consumer_rejection()
             consumer_status.consume_attempts, consumer_status.accepted,
             consumer_status.rejected);
     }
+}
+
+void native_consumer_reset(void *opaque, uint32_t snapshot_epoch,
+                           uint32_t reason, uint64_t reset_host_time_us)
+{
+    if (!native_consumer_cookie_valid(opaque))
+        return;
+    shadow.status.last_reset_reason = reason;
+    snapshot_consumer->Reset(snapshot_epoch, reason, reset_host_time_us);
+    increment_saturating(&shadow.status.consumer_resets);
+}
+
+bool native_consumer_consume(
+    void *opaque, const worr_snapshot_projection_view_v2 *view,
+    const worr_snapshot_projection_hashes_v2 *hashes,
+    uint64_t receive_time_us)
+{
+    if (!native_consumer_cookie_valid(opaque))
+        return false;
+    increment_saturating(&shadow.status.consumer_attempts);
+    if (!snapshot_consumer->ConsumeCanonicalSnapshot(
+            view, hashes, receive_time_us)) {
+        note_consumer_rejection();
+        return false;
+    }
+    increment_saturating(&shadow.status.consumer_accepts);
+    return true;
+}
+
+bool native_consumer_get_status(
+    void *opaque, worr_cgame_snapshot_timeline_status_v2 *status_out)
+{
+    return native_consumer_cookie_valid(opaque) &&
+           status_out != nullptr &&
+           snapshot_consumer->GetStatus(status_out);
 }
 
 void note_result(worr_snapshot_q2proto_result_v2 result)
@@ -699,10 +774,103 @@ void record_parity(const legacy_parity_result_t &parity)
     }
 }
 
+bool snapshot_id_equal(worr_snapshot_id_v2 left,
+                       worr_snapshot_id_v2 right)
+{
+    return left.epoch == right.epoch &&
+           left.sequence == right.sequence;
+}
+
+bool projection_hashes_equal(
+    const worr_snapshot_projection_hashes_v2 &left,
+    const worr_snapshot_projection_hashes_v2 &right)
+{
+    return left.struct_size == right.struct_size &&
+           left.schema_version == right.schema_version &&
+           left.endpoint_hash == right.endpoint_hash &&
+           left.legacy_parity_hash == right.legacy_parity_hash &&
+           left.semantic_player_hash == right.semantic_player_hash &&
+           left.semantic_entity_hash == right.semantic_entity_hash &&
+           left.semantic_area_hash == right.semantic_area_hash &&
+           left.semantic_event_hash == right.semantic_event_hash;
+}
+
+void clear_native_expectations(bool preserve_watermark)
+{
+    const worr_snapshot_id_v2 watermark =
+        shadow.native_expectation_watermark;
+    std::memset(shadow.native_expectations, 0,
+                sizeof(shadow.native_expectations));
+    shadow.native_expectation_watermark =
+        preserve_watermark ? watermark : worr_snapshot_id_v2{};
+}
+
+uint32_t native_expectation_slot_index(worr_snapshot_id_v2 snapshot_id)
+{
+    static_assert(
+        (shadow_slot_capacity & (shadow_slot_capacity - 1u)) == 0,
+        "native expectation capacity must be a power of two");
+    return (snapshot_id.sequence - 1u) &
+           (shadow_slot_capacity - 1u);
+}
+
+void record_native_expectation(
+    const worr_snapshot_projection_view_v2 &view,
+    const worr_snapshot_projection_hashes_v2 &hashes,
+    worr_snapshot_ref_v2 projection_ref, bool available)
+{
+    if (!shadow.native_epoch_bound || !view.snapshot ||
+        !Worr_SnapshotIdValidV2(view.snapshot->snapshot_id, false) ||
+        view.snapshot->snapshot_id.epoch !=
+            shadow.context.profile.snapshot_epoch ||
+        projection_ref.generation == 0) {
+        return;
+    }
+
+    auto &slot = shadow.native_expectations[
+        native_expectation_slot_index(view.snapshot->snapshot_id)];
+    slot = {};
+    slot.expectation.struct_size = sizeof(slot.expectation);
+    slot.expectation.schema_version =
+        WORR_NATIVE_SNAPSHOT_ADMISSION_ABI_VERSION;
+    slot.expectation.snapshot_id = view.snapshot->snapshot_id;
+    slot.expectation.hashes = hashes;
+    slot.projection_ref = projection_ref;
+    slot.qualification =
+        available ? native_expectation_qualification_t::available
+                  : native_expectation_qualification_t::unqualified;
+    shadow.native_expectation_watermark =
+        view.snapshot->snapshot_id;
+}
+
+bool native_expectation_slot_current(
+    const native_expectation_slot_t &slot)
+{
+    if (slot.qualification ==
+            native_expectation_qualification_t::empty ||
+        slot.projection_ref.generation == 0) {
+        return false;
+    }
+    worr_snapshot_projection_view_v2 view{};
+    worr_snapshot_projection_hashes_v2 hashes{};
+    if (Worr_SnapshotQ2ProtoViewV2(
+            &shadow.context, slot.projection_ref, &view, &hashes) !=
+            WORR_SNAPSHOT_Q2PROTO_OK ||
+        !view.snapshot ||
+        !snapshot_id_equal(view.snapshot->snapshot_id,
+                           slot.expectation.snapshot_id) ||
+        !projection_hashes_equal(hashes, slot.expectation.hashes)) {
+        return false;
+    }
+    return true;
+}
+
 bool reset_projection_for_demo_seek()
 {
     if (!shadow.active)
         return true;
+    clear_native_expectations(false);
+    shadow.native_epoch_bound = false;
     if (shadow_epoch_seed == UINT32_MAX) {
         note_result(WORR_SNAPSHOT_Q2PROTO_GENERATION_EXHAUSTED);
         shadow.active = false;
@@ -857,6 +1025,67 @@ extern "C" void CL_SnapshotShadowBeginConnection(
                    host_time_us());
 }
 
+extern "C" bool CL_SnapshotShadowBindNativeEpoch(
+    uint32_t snapshot_epoch)
+{
+    initialize_status();
+    if (snapshot_epoch == 0 || !shadow.active)
+        return false;
+    if (shadow.native_epoch_bound &&
+        shadow.context.profile.snapshot_epoch == snapshot_epoch) {
+        return true;
+    }
+
+    abort_pending(true);
+    reset_snapshot_clock();
+    clear_native_expectations(false);
+    shadow.native_epoch_bound = false;
+    for (uint32_t i = 0; i < shadow.context.profile.max_entities; ++i) {
+        shadow.scratch_lineage[i].present =
+            shadow.baseline_present[i] ? 1u : 0u;
+    }
+
+    const auto result = Worr_SnapshotQ2ProtoResetV2(
+        &shadow.context, snapshot_epoch);
+    note_result(result);
+    if (result != WORR_SNAPSHOT_Q2PROTO_OK) {
+        shadow.active = false;
+        shadow.status.active = 0;
+        shadow.status.lifecycle =
+            result == WORR_SNAPSHOT_Q2PROTO_GENERATION_EXHAUSTED
+                ? CL_SNAPSHOT_SHADOW_LIFECYCLE_EXHAUSTED
+                : CL_SNAPSHOT_SHADOW_LIFECYCLE_SHUTDOWN;
+        shadow.latest_ref = {};
+        shadow.latest_hashes = {};
+        shadow.latest_promotion_attempted = false;
+        reset_consumer(WORR_CGAME_SNAPSHOT_RESET_HARD_RESYNC,
+                       host_time_us());
+        return false;
+    }
+
+    for (uint32_t i = 0; i < shadow.context.profile.max_entities; ++i) {
+        shadow.baseline_present[i] =
+            shadow.scratch_lineage[i].present ? 1u : 0u;
+    }
+    shadow_epoch_seed = snapshot_epoch;
+    shadow.native_epoch_bound = true;
+    shadow.latest_ref = {};
+    shadow.latest_hashes = {};
+    shadow.latest_promotion_attempted = false;
+    shadow.status.snapshot_epoch = snapshot_epoch;
+    shadow.status.last_entity_count = 0;
+    shadow.status.last_endpoint_hash = 0;
+    shadow.status.last_legacy_parity_hash = 0;
+    shadow.status.last_legacy_observed_parity_hash = 0;
+    shadow.status.last_parity_mismatch = 0;
+    shadow.status.last_reset_reason =
+        WORR_CGAME_SNAPSHOT_RESET_CONNECTION;
+    increment_saturating(&shadow.status.lifecycle_resets);
+    reset_consumer(WORR_CGAME_SNAPSHOT_RESET_CONNECTION,
+                   host_time_us());
+    return true;
+}
+
 extern "C" bool CL_SnapshotShadowNotifyReset(uint32_t reason,
                                                uint64_t reset_host_time_us)
 {
@@ -875,6 +1104,14 @@ extern "C" bool CL_SnapshotShadowNotifyResetEx(
         return false;
     }
     abort_pending(true);
+    if ((reset_flags &
+         CL_SNAPSHOT_SHADOW_RESET_PROJECTION_EPOCH) == 0) {
+        const bool preserve_watermark =
+            reason == WORR_CGAME_SNAPSHOT_RESET_DEMO_SEEK;
+        clear_native_expectations(preserve_watermark);
+        if (!preserve_watermark)
+            shadow.native_epoch_bound = false;
+    }
     if (reason != WORR_CGAME_SNAPSHOT_RESET_DEMO_SEEK ||
         (reset_flags &
          CL_SNAPSHOT_SHADOW_RESET_PROJECTION_EPOCH) != 0) {
@@ -1135,6 +1372,7 @@ extern "C" bool CL_SnapshotShadowAcceptFrameEx(
         (view.snapshot->flags & WORR_SNAPSHOT_FLAG_PROMOTION_ELIGIBLE) != 0;
     if (promotion_eligible)
         increment_saturating(&shadow.status.frames_promotion_eligible);
+    record_native_expectation(view, hashes, ref, promotion_eligible);
 
     if ((accept_flags & CL_SNAPSHOT_SHADOW_ACCEPT_DELIVER_CONSUMER) == 0) {
         increment_saturating(&shadow.status.frames_lineage_only);
@@ -1188,6 +1426,8 @@ extern "C" bool CL_SnapshotShadowPromoteLatestFrame(
     const bool promotion_eligible =
         parity.mismatch == 0 &&
         (view.snapshot->flags & WORR_SNAPSHOT_FLAG_PROMOTION_ELIGIBLE) != 0;
+    record_native_expectation(
+        view, hashes, shadow.latest_ref, promotion_eligible);
     shadow.latest_promotion_attempted = true;
     if (!promotion_eligible) {
         increment_saturating(&shadow.status.promotion_blocks);
@@ -1223,6 +1463,52 @@ extern "C" bool CL_SnapshotShadowLatest(
         return false;
     *ref_out = shadow.latest_ref;
     return true;
+}
+
+extern "C"
+cl_snapshot_shadow_native_expectation_result_v1
+CL_SnapshotShadowGetNativeExpectation(
+    worr_snapshot_id_v2 snapshot_id,
+    worr_native_snapshot_expectation_v1 *expectation_out)
+{
+    if (expectation_out)
+        *expectation_out = {};
+    if (!expectation_out ||
+        !Worr_SnapshotIdValidV2(snapshot_id, false) ||
+        !shadow.active || !shadow.native_epoch_bound) {
+        return CL_SNAPSHOT_SHADOW_NATIVE_EXPECTATION_INVALID;
+    }
+    if (snapshot_id.epoch != shadow.context.profile.snapshot_epoch) {
+        return CL_SNAPSHOT_SHADOW_NATIVE_EXPECTATION_WRONG_EPOCH;
+    }
+
+    auto &slot = shadow.native_expectations[
+        native_expectation_slot_index(snapshot_id)];
+    if (slot.qualification !=
+            native_expectation_qualification_t::empty &&
+        snapshot_id_equal(slot.expectation.snapshot_id, snapshot_id)) {
+        if (slot.qualification ==
+            native_expectation_qualification_t::unqualified) {
+            return CL_SNAPSHOT_SHADOW_NATIVE_EXPECTATION_UNQUALIFIED;
+        }
+        if (slot.qualification !=
+                native_expectation_qualification_t::available ||
+            !native_expectation_slot_current(slot)) {
+            slot = {};
+            return CL_SNAPSHOT_SHADOW_NATIVE_EXPECTATION_STALE;
+        }
+        *expectation_out = slot.expectation;
+        return CL_SNAPSHOT_SHADOW_NATIVE_EXPECTATION_AVAILABLE;
+    }
+
+    if (!Worr_SnapshotIdValidV2(
+            shadow.native_expectation_watermark, true) ||
+        shadow.native_expectation_watermark.epoch == 0 ||
+        snapshot_id.sequence >
+            shadow.native_expectation_watermark.sequence) {
+        return CL_SNAPSHOT_SHADOW_NATIVE_EXPECTATION_PENDING;
+    }
+    return CL_SNAPSHOT_SHADOW_NATIVE_EXPECTATION_STALE;
 }
 
 extern "C" bool CL_SnapshotShadowGetStatus(
@@ -1270,7 +1556,7 @@ extern "C" void CL_SnapshotShadowStatus_f(void)
 }
 
 extern "C" bool CL_SnapshotShadowSetConsumer(
-    const worr_cgame_snapshot_timeline_export_v1 *consumer)
+    const worr_cgame_snapshot_timeline_export_v2 *consumer)
 {
     initialize_status();
     if (consumer && !consumer_export_valid(consumer))
@@ -1279,12 +1565,35 @@ extern "C" bool CL_SnapshotShadowSetConsumer(
         return true;
     if (snapshot_consumer)
         reset_consumer(WORR_CGAME_SNAPSHOT_RESET_UNLOAD, host_time_us());
+    invalidate_native_consumer_lifetime();
     snapshot_consumer = consumer;
     shadow.status.consumer_attached = snapshot_consumer ? 1u : 0u;
     if (snapshot_consumer && shadow.active) {
         reset_consumer(WORR_CGAME_SNAPSHOT_RESET_CONNECTION,
                        host_time_us());
     }
+    return true;
+}
+
+extern "C" bool CL_SnapshotShadowGetNativeConsumerV1(
+    worr_native_snapshot_consumer_v1 *consumer_out)
+{
+    if (!consumer_out)
+        return false;
+    *consumer_out = {};
+    if (snapshot_consumer_lifetime_exhausted ||
+        snapshot_consumer_lifetime_cookie == 0 ||
+        !consumer_export_valid(snapshot_consumer)) {
+        return false;
+    }
+    consumer_out->struct_size = sizeof(*consumer_out);
+    consumer_out->schema_version =
+        WORR_NATIVE_SNAPSHOT_ADMISSION_ABI_VERSION;
+    consumer_out->opaque = reinterpret_cast<void *>(
+        snapshot_consumer_lifetime_cookie);
+    consumer_out->Reset = native_consumer_reset;
+    consumer_out->ConsumeCanonicalSnapshot = native_consumer_consume;
+    consumer_out->GetStatus = native_consumer_get_status;
     return true;
 }
 

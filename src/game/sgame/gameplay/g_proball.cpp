@@ -7,6 +7,8 @@ logic so the entire mode can be reasoned about in a single location. ===========
 
 #include "g_proball.hpp"
 
+#include "../network/lag_compensation.hpp"
+
 #include <algorithm>
 
 namespace ProBall {
@@ -401,7 +403,7 @@ Ball_Launch
 =============
 */
 bool Ball_Launch(gentity_t* owner, const Vector3& start, const Vector3& dir,
-		 float speed) {
+		 float speed, bool releaseBoundThrow) {
 	if (!Ball_GametypeActive())
 		return false;
 
@@ -437,6 +439,25 @@ bool Ball_Launch(gentity_t* owner, const Vector3& start, const Vector3& dir,
 
 	ProBall::OnBallLaunched(owner, ball, spawn, ball->velocity);
 
+	if (releaseBoundThrow) {
+		// The normal Chainfist-held release owns the throw. Its policy consumes
+		// only bounded accepted command age through a fully clear current-world
+		// gravity path; Ball_Touch, pickup, goals, scoring, reset, and team
+		// behavior remain production authority.
+		LagCompensation_ObserveCanonicalWeaponCallback(
+			owner,
+			WORR_REWIND_WEAPON_PROBALL_HELD_THROW_BALLISTIC_SPAWN_FORWARD);
+		const LagCompensationProjectileForwardResult forward =
+			LagCompensation_ResolveProjectileSpawnForward(
+				owner, ball,
+				WORR_REWIND_WEAPON_PROBALL_HELD_THROW_BALLISTIC_SPAWN_FORWARD);
+		if (forward.advanced) {
+			ball->s.origin = forward.trace.endPos;
+			ball->velocity = forward.final_velocity;
+			gi.linkEntity(ball);
+		}
+	}
+
 	if (owner && owner->client)
 		G_PlayerNoise(owner, spawn, PlayerNoise::Weapon);
 
@@ -450,7 +471,7 @@ Ball_Pass
 =============
 */
 bool Ball_Pass(gentity_t* owner, const Vector3& start, const Vector3& dir) {
-	return Ball_Launch(owner, start, dir, BALL_PASS_SPEED);
+	return Ball_Launch(owner, start, dir, BALL_PASS_SPEED, false);
 }
 
 /*

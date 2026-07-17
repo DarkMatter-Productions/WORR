@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "task_id": "FR-01-T12",
+  "scenes": [
+    {
+      "id": "fixed_half_resolution_float_hdr",
+      "config": "renderer_parity/fr01_hdr_static.cfg",
+      "capture": "fr01_hdr_static.tga",
+      "launch_cvars": {
+        "r_resolutionscale": "1",
+        "r_resolutionscale_fixedscale_w": "0.5",
+        "r_resolutionscale_fixedscale_h": "0.5"
+      },
+      "crop": [100, 100, 250, 200],
+      "metrics": {
+        "pixel_threshold": 0,
+        "max_mean_absolute_rgb": [0, 0, 0],
+        "max_pixels_over_threshold_percent": 0
+      },
+      "probes": [
+        {
+          "name": "fixed_half_resolution_hdr_backdrop",
+          "color": [18, 38, 96],
+          "tolerance": 0,
+          "min_pixels_per_backend": 50000,
+          "max_backend_count_delta_percent": 0,
+          "min_backend_intersection_over_union": 1
+        }
+      ]
+    }
+  ]
+}

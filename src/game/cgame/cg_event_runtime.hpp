@@ -150,6 +150,11 @@ CG_EventRuntimeResetSnapshot(std::uint32_t snapshot_epoch);
 void CG_EventRuntimeSetAuditEnabled(bool enabled);
 bool CG_EventRuntimeAuditEnabled();
 
+/* Latch an independent local-interaction reconciliation failure into the
+ * private authority health domain before any further event admission or
+ * presentation. The engine owner observes the normal resync status bit. */
+void CG_EventRuntimeSynchronizeLocalInteractionHealth();
+
 /* All batch calls are allocation-free and transactional. */
 cg_event_runtime_result_v1 CG_EventRuntimeSubmitAuthoritativeBatch(
     const worr_event_record_v1 *records, std::uint32_t count);
@@ -163,8 +168,13 @@ cg_event_runtime_result_v1 CG_EventRuntimeCancelPrediction(
 cg_event_runtime_result_v1 CG_EventRuntimeRetirePredictionsThrough(
     worr_command_cursor_v1 consumed_cursor);
 
-/* Called only after canonical snapshot publication has succeeded. Failure is
- * audit-local and must never reject or roll back the accepted snapshot. */
+/*
+ * Called only after canonical snapshot publication has succeeded. Both
+ * authoritative and legacy-inferred references are correctness-validated
+ * regardless of cg_event_runtime_audit; that cvar gates only legacy body
+ * comparison/presentation diagnostics. Failure never rolls back the copied
+ * timeline snapshot, but withholds the native event-fence receipt and ACK.
+ */
 cg_event_runtime_result_v1 CG_EventRuntimeObserveSnapshot(
     const worr_snapshot_v2 *snapshot,
     const worr_snapshot_event_ref_v2 *event_refs,
@@ -182,4 +192,5 @@ cg_event_runtime_result_v1 CG_EventRuntimeAdvanceAudit(
     std::uint32_t max_presentations, std::uint32_t *advanced_out);
 
 bool CG_EventRuntimeGetStatus(cg_event_runtime_status_v1 *status_out);
+bool CG_EventRuntimeSnapshotFenceHealthy(std::uint32_t snapshot_epoch);
 const worr_cgame_event_runtime_export_v1 *CG_GetEventRuntimeAPI();

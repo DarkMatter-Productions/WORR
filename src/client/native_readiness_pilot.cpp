@@ -10,6 +10,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "client.h"
 #include "client/cgame_event_runtime.h"
 #include "client/native_readiness_pilot.h"
+#include "client/snapshot_shadow.h"
 
 #include "common/net/native_carrier.h"
 #include "common/net/native_carrier_ack.h"
@@ -20,12 +21,16 @@ the Free Software Foundation; either version 2 of the License, or
 #include "common/net/native_readiness.h"
 #include "common/net/native_readiness_sideband.h"
 #include "common/net/native_session.h"
+#include "common/net/native_snapshot_receiver.h"
 #include "common/q2proto_shared.h"
 #include "q2proto/q2proto.h"
 
 #include <array>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
+#include <memory>
+#include <utility>
 
 namespace {
 
@@ -33,6 +38,8 @@ constexpr uint32_t kCommandPrivateCapabilities =
     WORR_NET_CAP_NATIVE_COMMAND_PRIVATE_MASK;
 constexpr uint32_t kEventPrivateCapabilities =
     WORR_NET_CAP_NATIVE_EVENT_PRIVATE_MASK;
+constexpr uint32_t kSnapshotPrivateCapabilities =
+    WORR_NET_CAP_NATIVE_SNAPSHOT_PRIVATE_MASK;
 /* The server starts CHALLENGE after bootstrap.  This timeout covers the
  * bounded private readiness exchange only; authoritative legacy continues
  * independently if the default-off pilot fails closed. */
@@ -64,7 +71,8 @@ constexpr size_t kEventPayloadArenaBytes =
 static_assert(WORR_NET_CAP_LEGACY_STAGE_MASK == UINT32_C(3));
 static_assert(kCommandPrivateCapabilities == UINT32_C(0x53));
 static_assert(kEventPrivateCapabilities == UINT32_C(0x73));
-static_assert(kEncodedClientReadyBytes == 65u);
+static_assert(kSnapshotPrivateCapabilities == UINT32_C(0x57));
+static_assert(kEncodedClientReadyBytes == 75u);
 static_assert(kCommandPayloadBytes == 110u);
 static_assert(kCommandDatagramBytes == 166u);
 static_assert(kCommandCarrierOverhead == 206u);
@@ -104,6 +112,17 @@ struct command_ring_entry_t {
     worr_command_record_v1 record{};
 };
 
+struct snapshot_receiver_deleter_t {
+    void operator()(worr_native_snapshot_receiver_v1 *receiver) const
+    {
+        std::free(receiver);
+    }
+};
+
+using snapshot_receiver_ptr_t =
+    std::unique_ptr<worr_native_snapshot_receiver_v1,
+                    snapshot_receiver_deleter_t>;
+
 struct client_native_readiness_telemetry_t {
     uint64_t challenges{};
     uint64_t client_ready_queued{};
@@ -123,6 +142,8 @@ struct client_native_readiness_telemetry_t {
     uint64_t cancelled_commands{};
     uint64_t cancelled_event_rx{};
     uint64_t cancelled_event_receipts{};
+    uint64_t cancelled_snapshot_rx{};
+    uint64_t cancelled_snapshot_receipts{};
     uint64_t stale_cancelled_carriers{};
     uint64_t stale_cancelled_readiness_records{};
     uint32_t last_failure{};
@@ -131,6 +152,8 @@ struct client_native_readiness_telemetry_t {
 struct client_native_readiness_pilot_t {
     bool enabled{};
     bool event_enabled{};
+    bool snapshot_enabled{};
+    bool snapshot_timeline_owned{};
     bool tx_hook_registered{};
     bool rx_hook_registered{};
     bool capability_confirmed{};
@@ -180,6 +203,8 @@ struct client_native_readiness_pilot_t {
     std::array<byte, kEventPayloadArenaBytes>
         retired_event_payload_arena{};
     worr_native_carrier_ack_ledger_v1 retired_event_ack_ledger{};
+    snapshot_receiver_ptr_t snapshot_receiver{};
+    snapshot_receiver_ptr_t retired_snapshot_receiver{};
     worr_event_stream_owner_v1 event_owner{};
     worr_native_event_consumer_v1 event_consumer{};
     worr_native_command_shadow_builder_v1 builder{};
@@ -195,6 +220,8 @@ struct client_native_cancellation_stage_t {
     uint32_t cancelled_commands{};
     uint32_t cancelled_event_rx{};
     uint32_t cancelled_event_receipts{};
+    uint32_t cancelled_snapshot_rx{};
+    uint32_t cancelled_snapshot_receipts{};
     worr_native_tx_session_v1 tx{};
     std::array<worr_native_tx_slot_v1, kTxSlotCapacity> tx_slots{};
     worr_native_carrier_tx_gate_v1 tx_gate{};
@@ -213,10 +240,13 @@ struct client_native_cancellation_stage_t {
     std::array<worr_native_rx_slot_v1, kEventRxSlotCapacity>
         retired_event_rx_slots{};
     worr_native_carrier_ack_ledger_v1 retired_event_ack_ledger{};
+    snapshot_receiver_ptr_t snapshot_receiver{};
+    snapshot_receiver_ptr_t retired_snapshot_receiver{};
 };
 
 cvar_t *cl_worr_native_shadow{};
 cvar_t *cl_worr_native_event_shadow{};
+cvar_t *cl_worr_native_snapshot_shadow{};
 cvar_t *cl_worr_native_shadow_probe_hold{};
 client_native_readiness_pilot_t pilot{};
 client_native_readiness_telemetry_t telemetry{};
@@ -294,6 +324,59 @@ void counter_add(uint64_t &counter, uint64_t amount)
         counter = UINT64_MAX;
     else
         counter += amount;
+}
+
+snapshot_receiver_ptr_t allocate_snapshot_receiver()
+{
+    return snapshot_receiver_ptr_t{
+        static_cast<worr_native_snapshot_receiver_v1 *>(
+            std::calloc(1, sizeof(worr_native_snapshot_receiver_v1)))};
+}
+
+snapshot_receiver_ptr_t clone_snapshot_receiver(
+    const worr_native_snapshot_receiver_v1 *source)
+{
+    if (!source ||
+        !Worr_NativeSnapshotReceiverValidateV1(source)) {
+        return {};
+    }
+    auto clone = allocate_snapshot_receiver();
+    if (!clone)
+        return {};
+    std::memcpy(clone.get(), source, sizeof(*source));
+    clone->scratch.snapshot = &clone->decoded_snapshot;
+    clone->scratch.player = &clone->decoded_player;
+    clone->scratch.entities = clone->decoded_entities;
+    clone->scratch.area_bytes = clone->decoded_area;
+    clone->scratch.event_refs = clone->decoded_events;
+    if (!Worr_NativeSnapshotReceiverValidateV1(clone.get()))
+        return {};
+    return clone;
+}
+
+bool semantic_ack_enabled()
+{
+    return pilot.event_enabled || pilot.snapshot_enabled;
+}
+
+worr_native_carrier_ack_ledger_v1 *current_semantic_ack_ledger()
+{
+    if (pilot.event_enabled)
+        return &pilot.event_ack_ledger;
+    if (pilot.snapshot_enabled && pilot.snapshot_receiver)
+        return &pilot.snapshot_receiver->ack_ledger;
+    return nullptr;
+}
+
+worr_native_carrier_ack_ledger_v1 *retired_semantic_ack_ledger()
+{
+    if (!pilot.retired_session_initialized)
+        return nullptr;
+    if (pilot.event_enabled)
+        return &pilot.retired_event_ack_ledger;
+    if (pilot.snapshot_enabled && pilot.retired_snapshot_receiver)
+        return &pilot.retired_snapshot_receiver->ack_ledger;
+    return nullptr;
 }
 
 bool cancel_staged_command_bank(
@@ -448,6 +531,30 @@ bool stage_prior_native_epoch_cancellation(
             }
             stage.cancelled_event_rx += rx;
             stage.cancelled_event_receipts += receipts;
+        } else if (pilot.snapshot_enabled) {
+            if (!pilot.snapshot_receiver ||
+                !Worr_NativeSnapshotReceiverValidateV1(
+                    pilot.snapshot_receiver.get()) ||
+                pilot.snapshot_receiver->binding.transport_epoch !=
+                    pilot.binding.transport_epoch) {
+                return false;
+            }
+            auto receiver = clone_snapshot_receiver(
+                pilot.snapshot_receiver.get());
+            if (!receiver)
+                return false;
+            uint32_t messages = 0;
+            uint32_t receipts = 0;
+            if (Worr_NativeSnapshotReceiverCancelV1(
+                    receiver.get(), &messages, &receipts) !=
+                    WORR_NATIVE_SNAPSHOT_RECEIVER_CANCELLED_RESULT ||
+                !Worr_NativeSnapshotReceiverValidateV1(
+                    receiver.get())) {
+                return false;
+            }
+            stage.snapshot_receiver = std::move(receiver);
+            stage.cancelled_snapshot_rx += messages;
+            stage.cancelled_snapshot_receipts += receipts;
         }
         stage.cancelled_through_transport_epoch =
             pilot.binding.transport_epoch;
@@ -495,6 +602,32 @@ bool stage_prior_native_epoch_cancellation(
             }
             stage.cancelled_event_rx += rx;
             stage.cancelled_event_receipts += receipts;
+        } else if (pilot.snapshot_enabled) {
+            if (!pilot.retired_snapshot_receiver ||
+                !Worr_NativeSnapshotReceiverValidateV1(
+                    pilot.retired_snapshot_receiver.get()) ||
+                pilot.retired_snapshot_receiver->binding
+                        .transport_epoch !=
+                    pilot.retired_tx.transport_epoch) {
+                return false;
+            }
+            auto receiver = clone_snapshot_receiver(
+                pilot.retired_snapshot_receiver.get());
+            if (!receiver)
+                return false;
+            uint32_t messages = 0;
+            uint32_t receipts = 0;
+            if (Worr_NativeSnapshotReceiverCancelV1(
+                    receiver.get(), &messages, &receipts) !=
+                    WORR_NATIVE_SNAPSHOT_RECEIVER_CANCELLED_RESULT ||
+                !Worr_NativeSnapshotReceiverValidateV1(
+                    receiver.get())) {
+                return false;
+            }
+            stage.retired_snapshot_receiver =
+                std::move(receiver);
+            stage.cancelled_snapshot_rx += messages;
+            stage.cancelled_snapshot_receipts += receipts;
         }
         if (stage.cancelled_through_transport_epoch <
             pilot.retired_tx.transport_epoch) {
@@ -556,6 +689,8 @@ void commit_prior_native_epoch_cancellation(
     pilot.retired_event_rx_slots = {};
     pilot.retired_event_payload_arena = {};
     pilot.retired_event_ack_ledger = {};
+    pilot.snapshot_receiver.reset();
+    pilot.retired_snapshot_receiver.reset();
     pilot.session_initialized = false;
     pilot.retired_session_initialized = false;
     pilot.last_enqueued_command_valid = false;
@@ -578,12 +713,15 @@ void commit_prior_native_epoch_cancellation(
                 stage.cancelled_event_rx);
     counter_add(telemetry.cancelled_event_receipts,
                 stage.cancelled_event_receipts);
+    counter_add(telemetry.cancelled_snapshot_rx,
+                stage.cancelled_snapshot_rx);
+    counter_add(telemetry.cancelled_snapshot_receipts,
+                stage.cancelled_snapshot_receipts);
 }
 
-void disable_pilot()
+void detach_owned_hooks()
 {
     netchan_t *const channel = pilot.channel;
-    const bool reset_event_connection = pilot.event_enabled;
     if (channel && pilot.rx_hook_registered &&
         channel->app_rx == pilot_rx &&
         channel->app_rx_opaque == &pilot) {
@@ -596,6 +734,14 @@ void disable_pilot()
         (void)Netchan_SetApplicationTxHook(
             channel, nullptr, nullptr, nullptr);
     }
+    pilot.rx_hook_registered = false;
+    pilot.tx_hook_registered = false;
+}
+
+void disable_pilot()
+{
+    const bool reset_event_connection = pilot.event_enabled;
+    detach_owned_hooks();
     pilot = {};
     if (reset_event_connection)
         (void)CL_CGameEventRuntimeResetConnection();
@@ -614,23 +760,47 @@ bool hooks_attached_exact()
            pilot.channel->app_rx_opaque == &pilot;
 }
 
+void enter_drain(bool diagnostic_failure = true);
+
+void detach_transport_fail_closed()
+{
+    if (!pilot.enabled)
+        return;
+
+    /*
+     * Once a native snapshot epoch owns the cgame timeline, transport loss
+     * cannot authorize a mid-epoch return to legacy publication.  Quarantine
+     * the semantic receiver, abandon any non-pending dispatch, and detach
+     * only hooks that are still ours.  The ownership latch survives until an
+     * explicit map or connection boundary.
+     */
+    enter_drain(true);
+    detach_owned_hooks();
+}
+
 bool live_pilot()
 {
     if (!pilot.enabled)
         return false;
     if (cls.demo.playback || cls.demo.seeking) {
         /* Native carrier traffic is deliberately absent from demo paths. */
-        disable_pilot();
+        if (pilot.snapshot_timeline_owned && !pilot.map_quiesced)
+            detach_transport_fail_closed();
+        else
+            disable_pilot();
         return false;
     }
     if (!hooks_attached_exact()) {
-        disable_pilot();
+        if (pilot.snapshot_timeline_owned && !pilot.map_quiesced)
+            detach_transport_fail_closed();
+        else
+            disable_pilot();
         return false;
     }
     return true;
 }
 
-void enter_drain(bool diagnostic_failure = true)
+void enter_drain(bool diagnostic_failure)
 {
     if (!pilot.enabled)
         return;
@@ -644,6 +814,10 @@ void enter_drain(bool diagnostic_failure = true)
             (void)Worr_EventStreamOwnerRequireResyncV1(
                 &pilot.event_owner);
         (void)CL_CGameEventRuntimeQuiesceAuthority();
+    } else if (first_entry && diagnostic_failure &&
+               pilot.snapshot_enabled && pilot.snapshot_receiver) {
+        (void)Worr_NativeSnapshotReceiverQuarantineV1(
+            pilot.snapshot_receiver.get());
     }
 
     /* No callback is re-entrant on this netchan.  A non-pending dispatch can
@@ -657,6 +831,26 @@ void enter_drain(bool diagnostic_failure = true)
         (void)Worr_NativeCarrierSessionDispatchAbortV1(
             &pilot.tx_gate, &pilot.dispatch);
     }
+}
+
+bool enter_map_boundary()
+{
+    if (!pilot.enabled)
+        return false;
+
+    /*
+     * This is the first boundary allowed to release snapshot timeline
+     * ownership.  If transport ownership was already lost, finish disabling
+     * the pilot without disturbing a foreign replacement hook.
+     */
+    pilot.snapshot_timeline_owned = false;
+    pilot.map_quiesced = true;
+    enter_drain(false);
+    if (!hooks_attached_exact()) {
+        disable_pilot();
+        return false;
+    }
+    return true;
 }
 
 void pilot_failure()
@@ -746,20 +940,34 @@ bool observe_challenge(
         !pilot.readiness_initialized || starts_fresh_map_epoch;
     worr_native_readiness_state_v1 next{};
     if (!pilot.readiness_initialized) {
-        if (Worr_NativeReadinessClientInitV1(
-                &next, challenge.transport_epoch,
-                pilot.private_capabilities,
-                now, kReadinessTimeoutMilliseconds) !=
+        const auto initialized = pilot.snapshot_enabled
+            ? Worr_NativeReadinessClientInitBoundV1(
+                  &next, challenge.transport_epoch,
+                  challenge.snapshot_epoch,
+                  pilot.private_capabilities, now,
+                  kReadinessTimeoutMilliseconds)
+            : Worr_NativeReadinessClientInitV1(
+                  &next, challenge.transport_epoch,
+                  pilot.private_capabilities, now,
+                  kReadinessTimeoutMilliseconds);
+        if (initialized !=
             WORR_NATIVE_READINESS_OK) {
             return false;
         }
     } else {
         next = pilot.readiness;
         if (pilot.map_quiesced) {
-            if (Worr_NativeReadinessClientAdvanceEpochV1(
-                    &next, challenge.transport_epoch,
-                    pilot.private_capabilities, now,
-                    kReadinessTimeoutMilliseconds) !=
+            const auto advanced = pilot.snapshot_enabled
+                ? Worr_NativeReadinessClientAdvanceEpochBoundV1(
+                      &next, challenge.transport_epoch,
+                      challenge.snapshot_epoch,
+                      pilot.private_capabilities, now,
+                      kReadinessTimeoutMilliseconds)
+                : Worr_NativeReadinessClientAdvanceEpochV1(
+                      &next, challenge.transport_epoch,
+                      pilot.private_capabilities, now,
+                      kReadinessTimeoutMilliseconds);
+            if (advanced !=
                 WORR_NATIVE_READINESS_OK) {
                 return false;
             }
@@ -787,6 +995,11 @@ bool observe_challenge(
         (result == WORR_NATIVE_READINESS_OK)) {
         return false;
     }
+    if (pilot.snapshot_enabled &&
+        !CL_SnapshotShadowBindNativeEpoch(
+            challenge.snapshot_epoch)) {
+        return false;
+    }
 
     /* queue_readiness_record preflights and stages the complete reliable
      * append.  Its successful append is the transaction's point of no return;
@@ -803,6 +1016,7 @@ bool observe_challenge(
     pilot.readiness = next;
     pilot.readiness_initialized = true;
     pilot.map_quiesced = false;
+    pilot.snapshot_timeline_owned = pilot.snapshot_enabled;
     if (starts_fresh_map_epoch)
         pilot.mode = pilot_mode_t::arming;
     return true;
@@ -821,6 +1035,7 @@ bool activate_native_session(
         next_event_slots{};
     std::array<byte, kEventPayloadArenaBytes> next_event_arena{};
     worr_native_carrier_ack_ledger_v1 next_event_ledger{};
+    snapshot_receiver_ptr_t next_snapshot_receiver{};
 
     if (!Worr_NativeSessionBindingInitFromReadinessV1(
             &binding, &readiness, pilot.connection_owner_id) ||
@@ -894,6 +1109,25 @@ bool activate_native_session(
                 return false;
             }
         }
+    } else if (pilot.snapshot_enabled) {
+        if (pilot.session_initialized ||
+            readiness.snapshot_epoch == 0 ||
+            cl.csr.max_edicts <= 1 ||
+            cl.csr.max_edicts > MAX_EDICTS) {
+            return false;
+        }
+        worr_native_snapshot_consumer_v1 consumer{};
+        if (!CL_SnapshotShadowGetNativeConsumerV1(&consumer)) {
+            return false;
+        }
+        next_snapshot_receiver = allocate_snapshot_receiver();
+        if (!next_snapshot_receiver ||
+            !Worr_NativeSnapshotReceiverInitV1(
+                next_snapshot_receiver.get(), &binding,
+                readiness.snapshot_epoch, cl.csr.max_edicts,
+                &consumer)) {
+            return false;
+        }
     }
 
     if (pilot.session_initialized) {
@@ -909,6 +1143,9 @@ bool activate_native_session(
             pilot.retired_event_payload_arena =
                 pilot.event_payload_arena;
             pilot.retired_event_ack_ledger = pilot.event_ack_ledger;
+        } else if (pilot.snapshot_enabled) {
+            pilot.retired_snapshot_receiver =
+                std::move(pilot.snapshot_receiver);
         }
         pilot.retired_session_initialized = true;
     }
@@ -923,6 +1160,9 @@ bool activate_native_session(
         pilot.event_rx_slots = next_event_slots;
         pilot.event_payload_arena = next_event_arena;
         pilot.event_ack_ledger = next_event_ledger;
+    } else if (pilot.snapshot_enabled) {
+        pilot.snapshot_receiver =
+            std::move(next_snapshot_receiver);
     }
     pilot.session_initialized = true;
     pilot.last_enqueued_command_valid = false;
@@ -945,7 +1185,8 @@ bool observe_server_active(
         return false;
     worr_native_readiness_state_v1 next = pilot.readiness;
     worr_native_readiness_record_v1 client_active_confirm{};
-    const worr_native_readiness_result_v1 result = pilot.event_enabled
+    const worr_native_readiness_result_v1 result =
+        semantic_ack_enabled()
         ? Worr_NativeReadinessClientObserveServerActiveWithConfirmV1(
               &next, &server_active, now, &client_active_confirm)
         : Worr_NativeReadinessClientObserveServerActiveV1(
@@ -960,7 +1201,7 @@ bool observe_server_active(
     if (result == WORR_NATIVE_READINESS_OK &&
         !activate_native_session(next))
         return false;
-    if (pilot.event_enabled &&
+    if (semantic_ack_enabled() &&
         !queue_readiness_record(client_active_confirm))
         return false;
     if (result == WORR_NATIVE_READINESS_OK)
@@ -1248,7 +1489,7 @@ bool map_drain_ack_service_active()
      * by semantic admission remain valid release information for the peer.
      * Keep this exception narrower than generic fail-closed DRAIN so a
      * protocol/semantic failure cannot continue emitting native traffic. */
-    return pilot.event_enabled && pilot.session_initialized &&
+    return semantic_ack_enabled() && pilot.session_initialized &&
            pilot.mode == pilot_mode_t::drain && pilot.map_quiesced;
 }
 
@@ -1257,11 +1498,20 @@ netchan_app_tx_prepare_result_t prepare_event_ack_only(
     netchan_app_tx_prepare_output_v1_t *output, uint64_t now,
     uint16_t application_budget, uint16_t legacy_bytes)
 {
+    auto *const current_ledger =
+        current_semantic_ack_ledger();
+    auto *const retired_ledger =
+        retired_semantic_ack_ledger();
+    if (!current_ledger ||
+        (pilot.retired_session_initialized && !retired_ledger)) {
+        pilot_failure();
+        return NETCHAN_APP_TX_PREPARE_BYPASS;
+    }
     bool current_due = false;
     bool retired_due = false;
-    if (!event_ack_due(pilot.event_ack_ledger, now, current_due) ||
+    if (!event_ack_due(*current_ledger, now, current_due) ||
         (pilot.retired_session_initialized &&
-         !event_ack_due(pilot.retired_event_ack_ledger, now,
+         !event_ack_due(*retired_ledger, now,
                         retired_due))) {
         pilot_failure();
         return NETCHAN_APP_TX_PREPARE_BYPASS;
@@ -1277,8 +1527,8 @@ netchan_app_tx_prepare_result_t prepare_event_ack_only(
                            : event_ack_bank_t::retired;
 
     auto *const live_ledger = bank == event_ack_bank_t::current
-        ? &pilot.event_ack_ledger
-        : &pilot.retired_event_ack_ledger;
+        ? current_ledger
+        : retired_ledger;
     auto staged_ledger = *live_ledger;
     worr_native_carrier_ack_emit_token_v1 token{};
     size_t packet_bytes = 0;
@@ -1338,7 +1588,7 @@ netchan_app_tx_prepare_result_t pilot_tx_prepare_event(
         pilot.mode == pilot_mode_t::active && !pilot.map_quiesced;
     const bool drain_ack_service = map_drain_ack_service_active();
     if ((!active_traffic && !drain_ack_service) ||
-        !pilot.session_initialized || !pilot.event_enabled)
+        !pilot.session_initialized || !semantic_ack_enabled())
         return NETCHAN_APP_TX_PREPARE_BYPASS;
     if (!info || !output || !candidate_application ||
         info->abi_version != NETCHAN_APP_TX_HOOK_ABI_V1 ||
@@ -1403,6 +1653,12 @@ netchan_app_tx_prepare_result_t pilot_tx_prepare_event(
         }
     }
     if (data_due) {
+        auto *const current_ledger =
+            current_semantic_ack_ledger();
+        if (!current_ledger) {
+            pilot_failure();
+            return NETCHAN_APP_TX_PREPARE_BYPASS;
+        }
         const uint32_t handle =
             pilot.dispatch.send_ticket.pre_send_slot.payload_handle;
         std::array<byte, kCommandPayloadBytes> payload{};
@@ -1428,7 +1684,7 @@ netchan_app_tx_prepare_result_t pilot_tx_prepare_event(
                  WORR_NATIVE_CARRIER_SESSION_OK)) {
             (void)Worr_NativeCarrierMixedAbortV1(
                 &pilot.tx_gate, &pilot.dispatch,
-                &pilot.event_ack_ledger);
+                current_ledger);
             pilot_failure();
             return NETCHAN_APP_TX_PREPARE_BYPASS;
         }
@@ -1438,7 +1694,7 @@ netchan_app_tx_prepare_result_t pilot_tx_prepare_event(
         const auto prepared = Worr_NativeCarrierMixedPreparePacketV1(
             &pilot.tx_gate, &pilot.tx, pilot.tx_slots.data(),
             kTxSlotCapacity, &pilot.dispatch,
-            &pilot.event_ack_ledger, now,
+            current_ledger, now,
             kAckRetryIntervalMilliseconds, handle, payload.data(),
             static_cast<uint32_t>(payload_bytes), legacy_application,
             legacy_bytes, candidate_application, application_budget,
@@ -1446,7 +1702,7 @@ netchan_app_tx_prepare_result_t pilot_tx_prepare_event(
         if (prepared != WORR_NATIVE_CARRIER_MIXED_OK) {
             (void)Worr_NativeCarrierMixedAbortV1(
                 &pilot.tx_gate, &pilot.dispatch,
-                &pilot.event_ack_ledger);
+                current_ledger);
             if (prepared != WORR_NATIVE_CARRIER_MIXED_LIMIT &&
                 prepared !=
                     WORR_NATIVE_CARRIER_MIXED_OUTPUT_TOO_SMALL) {
@@ -1461,7 +1717,7 @@ netchan_app_tx_prepare_result_t pilot_tx_prepare_event(
             !allocate_completion_token(completion_token)) {
             (void)Worr_NativeCarrierMixedAbortPacketV1(
                 &pilot.tx_gate, &pilot.dispatch,
-                &pilot.event_ack_ledger, &token,
+                current_ledger, &token,
                 candidate_application, packet_bytes);
             pilot_failure();
             return NETCHAN_APP_TX_PREPARE_BYPASS;
@@ -1512,15 +1768,18 @@ void pilot_tx_completion_event(
     bool terminal_ok = false;
 
     if (pilot.tx_packet_kind == tx_packet_kind_t::command_mixed) {
+        auto *const ledger = current_semantic_ack_ledger();
         const bool retry =
             pilot.dispatch.send_ticket.pre_send_slot.send_attempts != 0;
-        if (accepted) {
+        if (!ledger) {
+            terminal_ok = false;
+        } else if (accepted) {
             uint64_t now = 0;
             const auto result = current_tick(now)
                 ? Worr_NativeCarrierMixedConfirmPacketV1(
                       &pilot.tx_gate, &pilot.tx, pilot.tx_slots.data(),
                       kTxSlotCapacity, &pilot.dispatch,
-                      &pilot.event_ack_ledger, &pilot.mixed_token, now,
+                      ledger, &pilot.mixed_token, now,
                       application, info->application_bytes)
                 : WORR_NATIVE_CARRIER_MIXED_CLOCK_REGRESSION;
             terminal_ok =
@@ -1538,14 +1797,14 @@ void pilot_tx_completion_event(
             const auto reject_result =
                 Worr_NativeCarrierMixedRejectPacketV1(
                     &pilot.tx_gate, &pilot.dispatch,
-                    &pilot.event_ack_ledger, &pilot.mixed_token,
+                    ledger, &pilot.mixed_token,
                     pilot.prepared_application.data(),
                     pilot.prepared_application_bytes);
             const auto abort_result = reject_result ==
                     WORR_NATIVE_CARRIER_MIXED_OK
                 ? Worr_NativeCarrierMixedAbortV1(
                       &pilot.tx_gate, &pilot.dispatch,
-                      &pilot.event_ack_ledger)
+                      ledger)
                 : WORR_NATIVE_CARRIER_MIXED_INVALID_STATE;
             terminal_ok = reject_result == WORR_NATIVE_CARRIER_MIXED_OK &&
                           abort_result == WORR_NATIVE_CARRIER_MIXED_OK;
@@ -1553,9 +1812,11 @@ void pilot_tx_completion_event(
     } else {
         auto *const ledger =
             pilot.tx_packet_kind == tx_packet_kind_t::ack_current
-            ? &pilot.event_ack_ledger
-            : &pilot.retired_event_ack_ledger;
-        if (accepted) {
+            ? current_semantic_ack_ledger()
+            : retired_semantic_ack_ledger();
+        if (!ledger) {
+            terminal_ok = false;
+        } else if (accepted) {
             uint64_t now = 0;
             terminal_ok = current_tick(now) &&
                 Worr_NativeCarrierAckCommitHandoffV1(
@@ -1581,7 +1842,7 @@ netchan_app_tx_prepare_result_t pilot_tx_prepare(
     const byte *legacy_application, byte *candidate_application,
     netchan_app_tx_prepare_output_v1_t *output)
 {
-    return pilot.event_enabled
+    return semantic_ack_enabled()
         ? pilot_tx_prepare_event(
               opaque, info, legacy_application, candidate_application,
               output)
@@ -1594,7 +1855,7 @@ void pilot_tx_completion(
     void *opaque, const netchan_app_tx_completion_info_v1_t *info,
     const byte *application)
 {
-    if (pilot.event_enabled)
+    if (semantic_ack_enabled())
         pilot_tx_completion_event(opaque, info, application);
     else
         pilot_tx_completion_command_only(opaque, info, application);
@@ -2013,13 +2274,275 @@ netchan_app_rx_result_t pilot_rx_event(
     return NETCHAN_APP_RX_EXPOSE_LEGACY;
 }
 
+enum class snapshot_expectation_pump_t {
+    ready,
+    pending,
+    stale,
+    retry_later,
+    keyframe_required,
+    rejected,
+};
+
+snapshot_expectation_pump_t observe_snapshot_expectation(
+    worr_snapshot_id_v2 snapshot_id)
+{
+    if (!pilot.snapshot_receiver)
+        return snapshot_expectation_pump_t::pending;
+
+    worr_native_snapshot_expectation_v1 expectation{};
+    const auto lookup = CL_SnapshotShadowGetNativeExpectation(
+        snapshot_id, &expectation);
+    if (lookup == CL_SNAPSHOT_SHADOW_NATIVE_EXPECTATION_PENDING)
+        return snapshot_expectation_pump_t::pending;
+    if (lookup == CL_SNAPSHOT_SHADOW_NATIVE_EXPECTATION_STALE)
+        return snapshot_expectation_pump_t::stale;
+    if (lookup != CL_SNAPSHOT_SHADOW_NATIVE_EXPECTATION_AVAILABLE)
+        return snapshot_expectation_pump_t::rejected;
+
+    const auto observed =
+        Worr_NativeSnapshotReceiverObserveExpectationV1(
+            pilot.snapshot_receiver.get(), &expectation);
+    switch (observed) {
+    case WORR_NATIVE_SNAPSHOT_RECEIVER_SNAPSHOT_ADMITTED:
+    case WORR_NATIVE_SNAPSHOT_RECEIVER_REPEAT_REVALIDATED:
+    case WORR_NATIVE_SNAPSHOT_RECEIVER_EXPECTATION_CACHED:
+        return snapshot_expectation_pump_t::ready;
+    case WORR_NATIVE_SNAPSHOT_RECEIVER_RETRY_LATER:
+    case WORR_NATIVE_SNAPSHOT_RECEIVER_CAPACITY:
+        return snapshot_expectation_pump_t::retry_later;
+    case WORR_NATIVE_SNAPSHOT_RECEIVER_STALE:
+        return snapshot_expectation_pump_t::stale;
+    case WORR_NATIVE_SNAPSHOT_RECEIVER_KEYFRAME_REQUIRED:
+        return snapshot_expectation_pump_t::keyframe_required;
+    default:
+        return snapshot_expectation_pump_t::rejected;
+    }
+}
+
+bool snapshot_data_entry_shape_valid(
+    const byte *application, const worr_native_carrier_view_v1 &view,
+    uint16_t entry_index, worr_snapshot_id_v2 &snapshot_id_out)
+{
+    if (!application || entry_index >= view.entry_count)
+        return false;
+    const auto &entry = view.entries[entry_index];
+    if (entry.entry_type != WORR_NATIVE_CARRIER_ENTRY_DATA_V1 ||
+        entry.data_offset > view.packet_bytes ||
+        entry.data_bytes > view.packet_bytes - entry.data_offset) {
+        return false;
+    }
+    worr_native_envelope_frame_info_v1 frame{};
+    if (Worr_NativeEnvelopeDecodeV1(
+            application + entry.data_offset, entry.data_bytes, &frame) !=
+            WORR_NATIVE_ENVELOPE_DECODE_OK ||
+        frame.transport_epoch != view.transport_epoch ||
+        frame.record.reserved0 != 0 ||
+        frame.record.record_class != WORR_NATIVE_RECORD_SNAPSHOT_V1 ||
+        frame.record.record_schema_version !=
+            WORR_SNAPSHOT_ABI_VERSION) {
+        return false;
+    }
+    snapshot_id_out.epoch = frame.record.object_epoch;
+    snapshot_id_out.sequence = frame.record.object_sequence;
+    return Worr_SnapshotIdValidV2(snapshot_id_out, false);
+}
+
+bool admit_current_snapshot_data(
+    const byte *application, size_t application_bytes,
+    uint16_t entry_index, uint64_t now,
+    worr_snapshot_id_v2 snapshot_id)
+{
+    if (!pilot.snapshot_receiver ||
+        snapshot_id.epoch !=
+            pilot.snapshot_receiver->snapshot_epoch ||
+        now > UINT64_MAX / UINT64_C(1000)) {
+        return false;
+    }
+
+    const auto expectation =
+        observe_snapshot_expectation(snapshot_id);
+    if (expectation == snapshot_expectation_pump_t::rejected)
+        return false;
+    if (expectation == snapshot_expectation_pump_t::stale ||
+        expectation ==
+            snapshot_expectation_pump_t::retry_later ||
+        expectation ==
+            snapshot_expectation_pump_t::keyframe_required) {
+        return true;
+    }
+
+    const auto admitted =
+        Worr_NativeSnapshotReceiverAcceptDataV1(
+            pilot.snapshot_receiver.get(), now,
+            now * UINT64_C(1000), application, application_bytes,
+            entry_index);
+    switch (admitted) {
+    case WORR_NATIVE_SNAPSHOT_RECEIVER_FRAGMENT_ACCEPTED:
+    case WORR_NATIVE_SNAPSHOT_RECEIVER_FRAGMENT_DUPLICATE:
+    case WORR_NATIVE_SNAPSHOT_RECEIVER_COMPLETE_PENDING:
+    case WORR_NATIVE_SNAPSHOT_RECEIVER_SNAPSHOT_ADMITTED:
+    case WORR_NATIVE_SNAPSHOT_RECEIVER_REPEAT_REVALIDATED:
+    case WORR_NATIVE_SNAPSHOT_RECEIVER_RETRY_LATER:
+    case WORR_NATIVE_SNAPSHOT_RECEIVER_CAPACITY:
+    case WORR_NATIVE_SNAPSHOT_RECEIVER_STALE:
+    case WORR_NATIVE_SNAPSHOT_RECEIVER_KEYFRAME_REQUIRED:
+        return true;
+    default:
+        return false;
+    }
+}
+
+netchan_app_rx_result_t pilot_rx_snapshot(
+    void *opaque, const netchan_app_rx_info_v1_t *info,
+    const byte *application, netchan_app_rx_output_v1_t *output)
+{
+    if (opaque != &pilot || !live_pilot())
+        return NETCHAN_APP_RX_BYPASS;
+    if (!info || !output || !application ||
+        info->abi_version != NETCHAN_APP_RX_HOOK_ABI_V1 ||
+        info->struct_size != sizeof(*info)) {
+        pilot_failure();
+        return NETCHAN_APP_RX_REJECT;
+    }
+
+    worr_native_carrier_view_v1 view{};
+    const auto decoded = Worr_NativeCarrierDecodeV1(
+        application, info->application_bytes, &view);
+    if (decoded == WORR_NATIVE_CARRIER_NO_CARRIER)
+        return NETCHAN_APP_RX_BYPASS;
+    if (decoded != WORR_NATIVE_CARRIER_OK) {
+        pilot.carrier_traffic_seen = true;
+        enter_drain(true);
+        return NETCHAN_APP_RX_REJECT;
+    }
+
+    uint16_t data_count = 0;
+    uint16_t data_index = 0;
+    bool has_ack = false;
+    for (uint16_t index = 0; index < view.entry_count; ++index) {
+        if (view.entries[index].entry_type ==
+            WORR_NATIVE_CARRIER_ENTRY_DATA_V1) {
+            data_index = index;
+            ++data_count;
+        } else if (view.entries[index].entry_type ==
+                   WORR_NATIVE_CARRIER_ENTRY_ACK_V1) {
+            has_ack = true;
+        } else {
+            pilot.carrier_traffic_seen = true;
+            enter_drain(true);
+            return NETCHAN_APP_RX_REJECT;
+        }
+    }
+    if (data_count > 1) {
+        pilot.carrier_traffic_seen = true;
+        enter_drain(true);
+        return NETCHAN_APP_RX_REJECT;
+    }
+
+    worr_snapshot_id_v2 snapshot_id{};
+    if (data_count != 0 &&
+        !snapshot_data_entry_shape_valid(
+            application, view, data_index, snapshot_id)) {
+        pilot.carrier_traffic_seen = true;
+        enter_drain(true);
+        return NETCHAN_APP_RX_REJECT;
+    }
+    if (pilot.cancelled_through_transport_epoch != 0 &&
+        view.transport_epoch <=
+            pilot.cancelled_through_transport_epoch) {
+        counter_increment(telemetry.stale_cancelled_carriers);
+        expose_legacy(output, view.legacy_bytes);
+        return NETCHAN_APP_RX_EXPOSE_LEGACY;
+    }
+
+    pilot.carrier_traffic_seen = true;
+    if (!pilot.session_initialized ||
+        (pilot.mode != pilot_mode_t::active &&
+         pilot.mode != pilot_mode_t::drain)) {
+        enter_drain(true);
+        return NETCHAN_APP_RX_REJECT;
+    }
+
+    const bool current_epoch =
+        view.transport_epoch == pilot.binding.transport_epoch;
+    const bool retired_epoch = pilot.retired_session_initialized &&
+        view.transport_epoch == pilot.retired_tx.transport_epoch;
+    if (current_epoch == retired_epoch ||
+        (retired_epoch && data_count != 0) ||
+        (pilot.mode == pilot_mode_t::drain && data_count != 0)) {
+        enter_drain(true);
+        return NETCHAN_APP_RX_REJECT;
+    }
+
+    if (current_epoch && pilot.mode == pilot_mode_t::active) {
+        uint64_t gate_now = 0;
+        if (!current_tick(gate_now) ||
+            !Worr_NativeReadinessCanReceiveNativeV1(
+                &pilot.readiness, gate_now)) {
+            enter_drain(true);
+            return NETCHAN_APP_RX_REJECT;
+        }
+    }
+
+    worr_native_tx_session_v1 staged_tx = current_epoch
+        ? pilot.tx
+        : pilot.retired_tx;
+    auto staged_slots = current_epoch
+        ? pilot.tx_slots
+        : pilot.retired_tx_slots;
+    auto staged_registry = current_epoch
+        ? pilot.payload_registry
+        : pilot.retired_payload_registry;
+    uint32_t acknowledged = 0;
+    if (has_ack &&
+        !apply_ack_to_bank(
+            staged_tx, staged_slots, staged_registry, application,
+            info->application_bytes, acknowledged)) {
+        enter_drain(true);
+        return NETCHAN_APP_RX_REJECT;
+    }
+
+    if (data_count != 0) {
+        uint64_t now = 0;
+        if (!current_tick(now) ||
+            !admit_current_snapshot_data(
+                application, info->application_bytes, data_index, now,
+                snapshot_id)) {
+            enter_drain(true);
+            return NETCHAN_APP_RX_REJECT;
+        }
+    }
+
+    if (has_ack) {
+        if (current_epoch) {
+            pilot.tx = staged_tx;
+            pilot.tx_slots = staged_slots;
+            pilot.payload_registry = staged_registry;
+        } else {
+            pilot.retired_tx = staged_tx;
+            pilot.retired_tx_slots = staged_slots;
+            pilot.retired_payload_registry = staged_registry;
+        }
+        counter_increment(telemetry.ack_carriers);
+        if (acknowledged != 0) {
+            counter_increment(telemetry.retained_releases);
+            counter_increment(telemetry.acknowledged_reliable);
+        }
+    }
+
+    expose_legacy(output, view.legacy_bytes);
+    return NETCHAN_APP_RX_EXPOSE_LEGACY;
+}
+
 netchan_app_rx_result_t pilot_rx(
     void *opaque, const netchan_app_rx_info_v1_t *info,
     const byte *application, netchan_app_rx_output_v1_t *output)
 {
-    return pilot.event_enabled
-        ? pilot_rx_event(opaque, info, application, output)
-        : pilot_rx_command_only(opaque, info, application, output);
+    if (pilot.event_enabled)
+        return pilot_rx_event(opaque, info, application, output);
+    if (pilot.snapshot_enabled)
+        return pilot_rx_snapshot(opaque, info, application, output);
+    return pilot_rx_command_only(opaque, info, application, output);
 }
 
 } // namespace
@@ -2029,6 +2552,8 @@ extern "C" void CL_NativeReadinessPilotRegisterCvar(void)
     cl_worr_native_shadow = Cvar_Get("cl_worr_native_shadow", "0", 0);
     cl_worr_native_event_shadow = Cvar_Get(
         "cl_worr_native_event_shadow", "0", 0);
+    cl_worr_native_snapshot_shadow = Cvar_Get(
+        "cl_worr_native_snapshot_shadow", "0", 0);
     cl_worr_native_shadow_probe_hold = Cvar_Get(
         "cl_worr_native_shadow_probe_hold", "0", CVAR_NOARCHIVE);
 }
@@ -2049,18 +2574,28 @@ extern "C" bool CL_NativeReadinessPilotBeginConnection(netchan_t *channel)
     /* The opt-in is sampled exactly once per fresh NEW netchan. */
     if (!cl_worr_native_shadow || !cl_worr_native_shadow->integer)
         return false;
+    const bool event_enabled =
+        cl_worr_native_event_shadow &&
+        cl_worr_native_event_shadow->integer;
+    const bool snapshot_enabled =
+        cl_worr_native_snapshot_shadow &&
+        cl_worr_native_snapshot_shadow->integer;
+    if (event_enabled && snapshot_enabled)
+        return false;
 
     uint64_t owner;
     if (!allocate_connection_owner(owner))
         return false;
     pilot.enabled = true;
-    pilot.event_enabled = cl_worr_native_event_shadow &&
-                          cl_worr_native_event_shadow->integer;
+    pilot.event_enabled = event_enabled;
+    pilot.snapshot_enabled = snapshot_enabled;
     pilot.channel = channel;
     pilot.connection_owner_id = owner;
     pilot.private_capabilities = pilot.event_enabled
         ? kEventPrivateCapabilities
-        : kCommandPrivateCapabilities;
+        : pilot.snapshot_enabled
+              ? kSnapshotPrivateCapabilities
+              : kCommandPrivateCapabilities;
     pilot.map_quiesced = true;
     pilot.mode = pilot_mode_t::arming;
     pilot.ack_next_bank = event_ack_bank_t::current;
@@ -2104,18 +2639,13 @@ extern "C" void CL_NativeReadinessPilotBeforeNetchanClose(
 
 extern "C" void CL_NativeReadinessPilotQuiesceMap(void)
 {
-    if (live_pilot()) {
-        pilot.map_quiesced = true;
-        enter_drain(false);
-    }
+    (void)enter_map_boundary();
 }
 
 extern "C" void CL_NativeReadinessPilotServerDataReset(void)
 {
-    if (!live_pilot())
+    if (!enter_map_boundary())
         return;
-    pilot.map_quiesced = true;
-    enter_drain(false);
     pilot.capability_confirmed = false;
     pilot.builder_initialized = false;
     pilot.builder = {};
@@ -2357,6 +2887,66 @@ extern "C" void CL_NativeReadinessPilotObserveEncodedCommandRange(
         telemetry.retained_highwater = retained_total;
 }
 
+extern "C" bool CL_NativeReadinessPilotOwnsSnapshotTimeline(void)
+{
+    if (!pilot.enabled || !pilot.snapshot_enabled ||
+        !pilot.snapshot_timeline_owned || pilot.map_quiesced) {
+        return false;
+    }
+
+    /*
+     * Validate attachment for its fail-closed side effect, but never make
+     * transport liveness the authority decision for an already-bound epoch.
+     */
+    (void)live_pilot();
+    return pilot.enabled && pilot.snapshot_timeline_owned &&
+           !pilot.map_quiesced;
+}
+
+extern "C" void
+CL_NativeReadinessPilotSnapshotExpectationReady(void)
+{
+    if (!CL_NativeReadinessPilotOwnsSnapshotTimeline())
+        return;
+
+    worr_snapshot_projection_view_v2 view{};
+    worr_snapshot_projection_hashes_v2 hashes{};
+    worr_snapshot_ref_v2 ref{};
+    if (!CL_SnapshotShadowLatest(&view, &hashes, &ref) ||
+        !view.snapshot ||
+        !Worr_SnapshotIdValidV2(
+            view.snapshot->snapshot_id, false)) {
+        CL_NativeReadinessPilotSnapshotExpectationFailed();
+        return;
+    }
+
+    /* SERVER_ACTIVE may not have arrived yet.  The snapshot shadow retains
+     * this independently qualified expectation; DATA admission will look it
+     * up by exact ID once the heap-owned receiver exists. */
+    if (!pilot.snapshot_receiver)
+        return;
+
+    const auto result = observe_snapshot_expectation(
+        view.snapshot->snapshot_id);
+    if (result == snapshot_expectation_pump_t::rejected ||
+        result == snapshot_expectation_pump_t::pending ||
+        result == snapshot_expectation_pump_t::stale) {
+        CL_NativeReadinessPilotSnapshotExpectationFailed();
+    }
+}
+
+extern "C" void
+CL_NativeReadinessPilotSnapshotExpectationFailed(void)
+{
+    if (!CL_NativeReadinessPilotOwnsSnapshotTimeline())
+        return;
+    if (pilot.snapshot_receiver) {
+        (void)Worr_NativeSnapshotReceiverQuarantineV1(
+            pilot.snapshot_receiver.get());
+    }
+    enter_drain(true);
+}
+
 extern "C" bool CL_NativeReadinessPilotOutputDue(void)
 {
     const bool active_traffic = pilot.mode == pilot_mode_t::active &&
@@ -2380,15 +2970,23 @@ extern "C" bool CL_NativeReadinessPilotOutputDue(void)
         }
     }
 
-    if (pilot.event_enabled) {
+    if (semantic_ack_enabled()) {
+        auto *const current_ledger =
+            current_semantic_ack_ledger();
+        auto *const retired_ledger =
+            retired_semantic_ack_ledger();
+        if (!current_ledger ||
+            (pilot.retired_session_initialized &&
+             !retired_ledger)) {
+            return false;
+        }
         bool due = false;
-        if (!event_ack_due(pilot.event_ack_ledger, now, due))
+        if (!event_ack_due(*current_ledger, now, due))
             return false;
         if (due)
             return true;
         if (pilot.retired_session_initialized) {
-            if (!event_ack_due(
-                    pilot.retired_event_ack_ledger, now, due))
+            if (!event_ack_due(*retired_ledger, now, due))
                 return false;
             if (due)
                 return true;
@@ -2417,7 +3015,7 @@ extern "C" bool CL_NativeReadinessPilotOutputDue(void)
         return false;
     auto gate = pilot.tx_gate;
     worr_native_carrier_dispatch_v1 dispatch{};
-    if (pilot.event_enabled) {
+    if (semantic_ack_enabled()) {
         return Worr_NativeCarrierMixedBeginV1(
                    &gate, &pilot.tx, pilot.tx_slots.data(),
                    kTxSlotCapacity, now, kResendIntervalMilliseconds,
@@ -2561,7 +3159,23 @@ extern "C" bool CL_NativeReadinessPilotGetTestState(
                                              ? pilot.event_owner
                                                    .epoch_high_water
                                              : 0;
-    state.ack_next_bank = pilot.event_enabled
+    state.snapshot_epoch =
+        pilot.snapshot_enabled && pilot.snapshot_receiver
+            ? pilot.snapshot_receiver->snapshot_epoch
+            : 0;
+    state.snapshot_receiver_flags =
+        pilot.snapshot_enabled && pilot.snapshot_receiver
+            ? pilot.snapshot_receiver->state_flags
+            : 0;
+    state.snapshot_rx_occupied =
+        pilot.snapshot_enabled && pilot.snapshot_receiver
+            ? pilot.snapshot_receiver->rx.occupied_count
+            : 0;
+    state.snapshot_ack_receipts =
+        pilot.snapshot_enabled && pilot.snapshot_receiver
+            ? pilot.snapshot_receiver->ack_ledger.receipt_count
+            : 0;
+    state.ack_next_bank = semantic_ack_enabled()
                               ? static_cast<uint32_t>(pilot.ack_next_bank)
                               : 0;
     state.cancelled_through_transport_epoch =
@@ -2585,6 +3199,7 @@ extern "C" bool CL_NativeReadinessPilotGetTestState(
     state.proof_enqueued_once = pilot.last_enqueued_command_valid;
     state.carrier_traffic_seen = pilot.carrier_traffic_seen;
     state.event_enabled = pilot.event_enabled;
+    state.snapshot_enabled = pilot.snapshot_enabled;
     state.client_active_confirm_queued =
         pilot.client_active_confirm_queued;
     *state_out = state;

@@ -68,6 +68,17 @@ enum {
 #define WORR_NET_CAP_NATIVE_EVENT_PRIVATE_MASK                       \
     ((uint32_t)(WORR_NET_CAP_NATIVE_COMMAND_PRIVATE_MASK |          \
                 WORR_NET_CAP_NATIVE_EVENT_STREAM_V1))
+/*
+ * Private full-snapshot transaction binding.  This remains outside the
+ * public legacy-stage offer until native snapshot DATA has a live endpoint
+ * on both peers.
+ */
+#define WORR_NET_CAP_NATIVE_SNAPSHOT_PRIVATE_MASK                    \
+    ((uint32_t)(WORR_NET_CAP_NATIVE_COMMAND_PRIVATE_MASK |          \
+                WORR_NET_CAP_CANONICAL_SNAPSHOT_V2))
+#define WORR_NET_CAP_NATIVE_EVENT_SNAPSHOT_PRIVATE_MASK              \
+    ((uint32_t)(WORR_NET_CAP_NATIVE_EVENT_PRIVATE_MASK |             \
+                WORR_NET_CAP_CANONICAL_SNAPSHOT_V2))
 
 typedef enum worr_net_capability_phase_v1_e {
     WORR_NET_CAPABILITY_RESET = 0,

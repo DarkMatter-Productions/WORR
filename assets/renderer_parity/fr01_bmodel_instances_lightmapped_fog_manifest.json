@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "task_id": "FR-01-T15",
+  "scenes": [
+    {
+      "id": "ordinary_lightmapped_bmodel_instance_grid_global_fog",
+      "config": "renderer_parity/fr01_bmodel_instances_lightmapped_fog.cfg",
+      "capture": "fr01_bmodel_instances_lightmapped_fog.tga",
+      "crop": [220, 150, 520, 420],
+      "metrics": {
+        "pixel_threshold": 8,
+        "max_mean_absolute_rgb": [2, 2, 2],
+        "max_pixels_over_threshold_percent": 0.5
+      }
+    }
+  ]
+}

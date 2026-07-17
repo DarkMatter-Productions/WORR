@@ -65,6 +65,8 @@ class ModelGlowmapFixtureTests(unittest.TestCase):
         self.assertIn("set r_glowmaps 1", config)
         self.assertIn("set r_glowmap_intensity 1", config)
         self.assertIn("set gl_glowmap_intensity 1", config)
+        self.assertIn("set gl_bloom 0", config)
+        self.assertIn("set vk_bloom 0", config)
 
 
 if __name__ == "__main__":

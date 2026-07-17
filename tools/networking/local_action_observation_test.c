@@ -58,7 +58,9 @@ static int test_valid_record_and_differences(void)
 
     CHECK(sizeof(before) == 64);
     CHECK(sizeof(record) == 256);
-    after.flags |= WORR_LOCAL_ACTION_OBSERVATION_ATTACK_HELD;
+    after.flags |= WORR_LOCAL_ACTION_OBSERVATION_ATTACK_HELD |
+                   WORR_LOCAL_ACTION_OBSERVATION_OFFHAND_HOOK_HELD |
+                   WORR_LOCAL_ACTION_OBSERVATION_OFFHAND_HOOK_ACTIVE;
     after.phase = WORR_LOCAL_ACTION_OBSERVATION_FIRING;
     after.active_ammo_units = 19;
     after.presentation_frame = 18;
@@ -110,6 +112,12 @@ static int test_fail_closed_and_corruption(void)
                                               &record));
     record.state_after.presentation_rate = 1001;
     CHECK(!Worr_LocalActionObservationRecordValidateV1(&record));
+
+    after = make_state();
+    after.flags |= UINT32_C(1) << 31;
+    memset(&record, 0, sizeof(record));
+    CHECK(!Worr_LocalActionObservationBuildV1(0, &command, &before, &after,
+                                               &record));
     return 0;
 }
 

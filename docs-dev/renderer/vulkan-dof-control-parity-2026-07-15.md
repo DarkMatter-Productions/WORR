@@ -4,8 +4,9 @@ Date: 2026-07-15
 
 Task ID: `FR-01-T12`
 
-Status: implemented native raster baseline; paired no-window visual evidence
-remains open.
+Status: native raster baseline with strict paired no-window fixed-focus,
+centre-depth/automatic-range, wide explicit-range, and real menu-rectangle
+state visual gates. Isolated rectangle-clipping semantics remain open.
 
 ## Shared controls
 
@@ -33,13 +34,16 @@ never invokes OpenGL:
    attachment write to shader read, and restores it before the existing final
    presentation pass.
 3. Frame-local off-screen resources downsample that scene to quarter
-   resolution, then run four horizontal/vertical Gaussian pairs. This mirrors
-   OpenGL's four blur iterations without a CPU readback or an OpenGL fallback.
+   resolution, then run four alternating Gaussian passes (two horizontal and
+   two vertical). Their sigma uses the same shared OpenGL bloom-sigma,
+   base-height, and bloom-downscale equation. This mirrors OpenGL's four blur
+   iterations without a CPU readback or an OpenGL fallback.
 4. A dedicated `vk_dof.frag` pass samples scene, blurred scene, and depth. It
    reconstructs view distance from the same projection coefficients used by
-   Vulkan world/entity drawing, dynamically samples centre depth when focus is
-   zero, and blends only the optional `dof_rect`; pixels outside that rect copy
-   the original scene exactly.
+   Vulkan world/entity drawing and dynamically samples centre depth when focus
+   is zero. On a menu rectangle frame it keeps a complete current-frame native
+   composite, matching OpenGL's retained `FBO_POST` presentation without
+   relying on stale Vulkan image contents.
 5. The depth-composited scene proceeds through Vulkan's existing native
    waterwarp, colour/LUT, bloom, CRT, and sharp UI overlay stages.
 
@@ -57,8 +61,9 @@ substituting an OpenGL or non-depth-aware path.
 ## Validation
 
 Headless structural coverage verifies the controls, sampled-depth transition,
-quarter-resolution copy plus four Gaussian pairs, focus reconstruction,
-`dof_rect`, and command ordering. It does not launch a client window:
+quarter-resolution copy plus four alternating Gaussian passes, shared sigma
+scaling, focus reconstruction, `dof_rect`, and command ordering. It does not
+launch a client window:
 
 ```text
 python tools/gen_vk_world_spv.py --validate
@@ -67,7 +72,9 @@ python -m unittest tools/renderer_parity/test_vulkan_dof_control_source.py
 ```
 
 The native DLL build validates shader embedding and C-side interface linkage.
-The remaining acceptance work is a compliant paired Vulkan/OpenGL no-window
-scene capture for fixed focus, centre-depth focus, blur range, and a clipped
-DOF rectangle. HDR/tone mapping and resolution scaling remain separate
+`vulkan-dof-visual-parity-2026-07-16.md` records strict paired fixed-focus,
+centre-depth/automatic-range, wide explicit-range, and compact-menu rectangle
+state receivers. The remaining acceptance work is compliant paired
+Vulkan/OpenGL coverage for isolated rectangle clipping and broader dynamic
+scene geometry. HDR/tone mapping and resolution scaling remain separate
 `FR-01-T12` gaps.

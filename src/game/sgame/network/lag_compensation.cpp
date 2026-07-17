@@ -81,6 +81,12 @@ struct Diagnostics {
   uint64_t historicalBrushes = 0;
   uint64_t historicalBrushRejected = 0;
   uint64_t ignoredIdentities = 0;
+  uint64_t projectileForwardRequests = 0;
+  uint64_t projectileForwardAuthenticated = 0;
+  uint64_t projectileForwardAdvanced = 0;
+  uint64_t projectileForwardClamped = 0;
+  uint64_t projectileForwardBlocked = 0;
+  uint64_t projectileForwardRejected = 0;
   GameTime nextReport{};
 };
 
@@ -90,6 +96,23 @@ struct CommandDecisionCache {
   worr_rewind_policy_decision_v1 decision{};
   bool valid = false;
   bool accepted = false;
+};
+
+// A Generic weapon can reach a normal projectile callback after the
+// command-context scope closes. This stores only a short-lived, accepted
+// command decision for the same live shooter and weapon; it carries no
+// collision result, historical scene, target, or damage authority.
+struct DeferredProjectileForwardAuthorization {
+  worr_event_entity_ref_v1 shooter{};
+  worr_rewind_policy_decision_v1 decision{};
+  item_id_t weapon_item = IT_NULL;
+  uint64_t expires_at_us = 0;
+  uint8_t launches_remaining = 0;
+  // Hand grenades may use this only when it was captured from the real
+  // attack-to-release edge. Generic projectile policies retain their usual
+  // held-attack authorization semantics.
+  bool release_only = false;
+  bool valid = false;
 };
 
 struct FrozenSceneCache {
@@ -135,6 +158,8 @@ std::array<uint32_t, MAX_CLIENTS_KEX> clientLifeGenerations{};
 std::array<bool, MAX_CLIENTS_KEX> clientLifeGenerationExhausted{};
 std::array<worr_rewind_policy_state_v1, MAX_CLIENTS_KEX> policyStates{};
 std::array<CommandDecisionCache, MAX_CLIENTS_KEX> decisionCaches{};
+std::array<DeferredProjectileForwardAuthorization, MAX_CLIENTS_KEX>
+    deferredProjectileForwardAuthorizations{};
 std::array<FrozenSceneCache, MAX_CLIENTS_KEX> sceneCaches{};
 std::array<worr_rewind_pose_v1, kHistoryCapacity> relabelScratch{};
 std::array<gentity_t *, MAX_ENTITIES> traceCandidates{};
@@ -150,13 +175,36 @@ cvar_t *sg_lag_compensation_max_ms = nullptr;
 cvar_t *sg_lag_compensation_interp_ms = nullptr;
 cvar_t *sg_lag_compensation_debug = nullptr;
 cvar_t *sg_lag_compensation_legacy_error_ms = nullptr;
+cvar_t *sg_lag_compensation_projectile_forward_ms = nullptr;
+cvar_t *sg_lag_compensation_melee_max_displacement = nullptr;
 cvar_t *sg_worr_rewind_mover_selftest_status = nullptr;
 cvar_t *sg_worr_rewind_rail_damage_selftest_status = nullptr;
 cvar_t *sg_worr_rewind_canonical_rail_damage_status = nullptr;
+cvar_t *sg_worr_rewind_canonical_rail_mover_occlusion_status = nullptr;
 cvar_t *sg_worr_rewind_canonical_machinegun_damage_status = nullptr;
 cvar_t *sg_worr_rewind_canonical_chaingun_damage_status = nullptr;
 cvar_t *sg_worr_rewind_canonical_super_shotgun_damage_status = nullptr;
 cvar_t *sg_worr_rewind_canonical_disruptor_damage_status = nullptr;
+cvar_t *sg_worr_rewind_canonical_rocket_damage_status = nullptr;
+cvar_t *sg_worr_rewind_canonical_bfg_damage_status = nullptr;
+cvar_t *sg_worr_rewind_canonical_ion_ripper_damage_status = nullptr;
+cvar_t *sg_worr_rewind_canonical_tesla_mine_damage_status = nullptr;
+cvar_t *sg_worr_rewind_canonical_trap_damage_status = nullptr;
+cvar_t *sg_worr_rewind_canonical_grapple_damage_status = nullptr;
+cvar_t *sg_worr_rewind_canonical_offhand_hook_status = nullptr;
+cvar_t *sg_worr_rewind_canonical_proball_throw_status = nullptr;
+cvar_t *sg_worr_rewind_canonical_grenade_launcher_damage_status = nullptr;
+cvar_t *sg_worr_rewind_canonical_hand_grenade_damage_status = nullptr;
+cvar_t *sg_worr_rewind_canonical_prox_launcher_damage_status = nullptr;
+cvar_t *sg_worr_rewind_canonical_rocket_splash_damage_status = nullptr;
+cvar_t *sg_worr_rewind_canonical_phalanx_splash_damage_status = nullptr;
+cvar_t *sg_worr_rewind_canonical_plasma_gun_damage_status = nullptr;
+cvar_t *sg_worr_rewind_canonical_plasma_gun_splash_damage_status = nullptr;
+cvar_t *sg_worr_rewind_canonical_blaster_damage_status = nullptr;
+cvar_t *sg_worr_rewind_canonical_hyperblaster_damage_status = nullptr;
+cvar_t *sg_worr_rewind_canonical_chainfist_damage_status = nullptr;
+cvar_t *sg_worr_rewind_canonical_etf_rifle_damage_status = nullptr;
+cvar_t *sg_worr_rewind_canonical_phalanx_damage_status = nullptr;
 cvar_t *sg_worr_rewind_canonical_plasma_beam_damage_status = nullptr;
 cvar_t *sg_worr_rewind_canonical_plasma_beam_held_damage_status = nullptr;
 cvar_t *sg_worr_rewind_canonical_plasma_beam_sustained_damage_status = nullptr;
@@ -190,14 +238,32 @@ struct CanonicalRailProbeState {
   gentity_t *shooter = nullptr;
   gentity_t *target = nullptr;
   gentity_t *water = nullptr;
+  gentity_t *historical_mover = nullptr;
+  gentity_t *current_world_splash_impact = nullptr;
+  gentity_t *current_world_splash_damage_target = nullptr;
+  gentity_t *prox_landing_surface = nullptr;
   worr_event_entity_ref_v1 shooter_identity{};
   worr_event_entity_ref_v1 target_identity{};
   worr_event_entity_ref_v1 water_identity{};
+  worr_event_entity_ref_v1 historical_mover_identity{};
+  worr_event_entity_ref_v1 current_world_splash_impact_identity{};
+  worr_event_entity_ref_v1 current_world_splash_damage_target_identity{};
+  worr_event_entity_ref_v1 current_world_splash_projectile_identity{};
+  worr_event_entity_ref_v1 prox_mine_identity{};
+  worr_event_entity_ref_v1 prox_landing_surface_identity{};
   worr_command_id_v1 command_id{};
+  // A Generic weapon may enter its first fire frame from one real attack
+  // command and spawn its projectile from a later real held command. Current
+  // world projectile proof tracks that authenticated firing command without
+  // weakening the initial attack admission proof.
+  worr_command_id_v1 projectile_command_id{};
   Vector3 shooter_origin{};
   Vector3 historical_target_origin{64.0f, 192.0f, 64.0f};
   Vector3 current_target_origin{};
   Vector3 current_target_offset{0.0f, 96.0f, 0.0f};
+  Vector3 historical_mover_restore_origin{};
+  Vector3 historical_mover_current_origin{};
+  bool historical_mover_restore_linked = false;
   uint64_t applied_age_us = 0;
   uint32_t target_history_captures = 0;
   uint32_t target_capture_prepares = 0;
@@ -218,9 +284,16 @@ struct CanonicalRailProbeState {
   uint64_t trace_current_time_us = 0;
   uint64_t context_snapshot_time_us = 0;
   uint64_t context_mapped_time_us = 0;
+  uint64_t projectile_forward_age_us = 0;
+  uint64_t projectile_forward_advanced_age_us = 0;
+  uint32_t projectile_forward_launches = 0;
+  uint32_t projectile_forward_expected_launches = 0;
+  uint32_t melee_current_displacement_units = 0;
+  uint32_t historical_mover_history_count = 0;
   uint32_t weapon_policy = WORR_REWIND_WEAPON_UNSPECIFIED;
   item_id_t weapon_item = IT_NULL;
   uint32_t expected_damage = 0;
+  uint32_t minimum_damage = 0;
   int initial_ammo = 8;
   int weapon_idle_frame = 0;
   float target_distance = 112.0f;
@@ -233,6 +306,34 @@ struct CanonicalRailProbeState {
   bool release_damage_stable = false;
   bool water_retrace_required = false;
   bool water_retrace_observed = false;
+  bool historical_mover_occlusion_required = false;
+  bool historical_mover_relocated = false;
+  bool historical_mover_baseline_clear = false;
+  bool historical_mover_occlusion_observed = false;
+  bool historical_mover_target_undamaged = false;
+  bool projectile_forward_required = false;
+  bool projectile_forward_authenticated = false;
+  bool projectile_forward_advanced = false;
+  bool projectile_forward_clamped = false;
+  bool projectile_forward_blocked = false;
+  bool projectile_current_authority_required = false;
+  bool offhand_hook_input_required = false;
+  bool melee_selection_required = false;
+  bool melee_selection_authenticated = false;
+  bool melee_historical_eligible = false;
+  bool melee_current_displacement_accepted = false;
+  bool current_world_splash_required = false;
+  bool current_world_splash_impact_observed = false;
+  bool current_world_splash_impact_damageable = false;
+  bool current_world_splash_after_forward = false;
+  bool current_world_splash_clear_impact_after_touch = false;
+  bool current_world_splash_damage_target_after_touch = false;
+  float current_world_splash_impact_half_extent = 16.0f;
+  bool prox_lifecycle_required = false;
+  bool prox_mine_landed = false;
+  bool prox_mine_triggered = false;
+  bool prox_mine_exploded = false;
+  bool damage_required = true;
   bool sustained_hold_required = false;
   bool sustained_hold_interrupted = false;
   bool thunderbolt_discharge_required = false;
@@ -261,6 +362,36 @@ constexpr int kCanonicalMachinegunProbeExpectedDamage = 8;
 constexpr int kCanonicalChaingunProbeExpectedDamage = 18;
 constexpr int kCanonicalSuperShotgunProbeExpectedDamage = 120;
 constexpr int kCanonicalDisruptorProbeExpectedDamage = 45;
+constexpr int kCanonicalRocketProbeExpectedDamage = 100;
+// The fixture's damageable present-world blocker receives the grenade's
+// normal contact, while the off-axis real client receives the ordinary
+// RadiusDamage result: 57–60 at the fixture's sideways live target, not the
+// nominal 120 direct damage. The fixed geometry turns the production ±10
+// right/up launch adjustments into this bounded normal falloff envelope.
+constexpr int kCanonicalGrenadeLauncherProbeExpectedDamage = 60;
+constexpr int kCanonicalHandGrenadeProbeExpectedDamage = 60;
+constexpr int kCanonicalProxLauncherProbeExpectedDamage = 90;
+constexpr int kCanonicalTeslaMineProbeExpectedDamage = 3;
+constexpr int kCanonicalTrapProbeExpectedDamage = 20;
+constexpr int kCanonicalGrappleProbeExpectedDamage = 1;
+constexpr int kCanonicalProBallThrowProbeExpectedDamage = 1;
+// The fixed post-landing target is 64 units right and 64 units above the
+// normally attached mine. Production RadiusDamage resolves that live player
+// hull to the deterministic 61-damage falloff below, rather than nominal
+// direct mine damage.
+constexpr int kCanonicalProxLauncherLifecycleProbeExpectedDamage = 61;
+constexpr int kCanonicalRocketSplashProbeExpectedDamage = 58;
+// The normal Phalanx 7/8 barrel callbacks both reach the present-world
+// blocker. Their production RadiusDamage outcomes are 48 then 45, so this
+// bounded fixture requires the exact normal two-shell total.
+constexpr int kCanonicalPhalanxSplashProbeExpectedDamage = 93;
+constexpr int kCanonicalPlasmaGunProbeExpectedDamage = 20;
+constexpr int kCanonicalPlasmaGunSplashProbeExpectedDamage = 7;
+constexpr int kCanonicalBlasterProbeExpectedDamage = 15;
+constexpr int kCanonicalHyperBlasterProbeExpectedDamage = 15;
+constexpr int kCanonicalChainfistProbeExpectedDamage = 15;
+constexpr int kCanonicalEtfRifleProbeExpectedDamage = 10;
+constexpr int kCanonicalPhalanxProbeExpectedDamage = 80;
 constexpr int kCanonicalPlasmaBeamProbeExpectedDamage = 8;
 constexpr int kCanonicalPlasmaBeamHeldProbeExpectedDamage = 24;
 constexpr int kCanonicalPlasmaBeamSustainedProbeExpectedDamage = 256;
@@ -285,18 +416,71 @@ constexpr uint64_t kCanonicalBeamSustainedProbeTimeoutUs = UINT64_C(5000000);
 constexpr GameTime kCanonicalBeamSustainedProbeAngleLockDuration = 6_sec;
 constexpr int kCanonicalShotgunProbeExpectedDamage = 48;
 constexpr uint64_t kCanonicalBeamReleaseGraceUs = UINT64_C(250000);
+// A Generic fire animation must reach its normal callback promptly after the
+// accepted attack. This independent authorization lifetime never extends the
+// projectile forward-distance cap itself.
+constexpr uint64_t kDeferredProjectileForwardAuthorizationLifetimeUs =
+    UINT64_C(250000);
+// BFG starts its ordinary firing sequence at frame 9, performs its wind-up
+// there, and creates the projectile at frame 17. At the normal 10 Hz weapon
+// rate that is eight animation intervals, so retain only the same accepted
+// single-launch authorization for a bounded 1.25 second window. This does not
+// authorize BFG laser, touch, explosion, or splash behavior.
+constexpr uint64_t kBfgDeferredProjectileForwardAuthorizationLifetimeUs =
+    UINT64_C(1250000);
+// Grapple's normal Generic state machine reaches its frame-six hook callback
+// after the accepted attack edge. Keep one single-launch authorization just
+// long enough for those ordinary frames, without extending the 100 ms forward
+// distance cap or authorizing any attachment lifecycle.
+constexpr uint64_t kGrappleDeferredProjectileForwardAuthorizationLifetimeUs =
+    UINT64_C(750000);
 
 CanonicalRailProbeState canonicalRailProbe{};
+
+[[nodiscard]] bool CanonicalRailProbeDamageApplied() {
+  const uint32_t observed = canonicalRailProbe.weapon_damage;
+  return observed >= canonicalRailProbe.minimum_damage &&
+         observed <= canonicalRailProbe.expected_damage;
+}
 
 void CanonicalRailProbePrepareFrameCapture(gentity_t *entity);
 void CanonicalRailProbeCaptureFrame(gentity_t *entity);
 void CanonicalRailProbeObserveTrace(
     gentity_t *shooter, const worr_rewind_observation_v1 &observation);
+void CanonicalRailProbeObserveProjectileForward(
+    gentity_t *shooter,
+    const LagCompensationProjectileForwardResult &result);
+void CanonicalRailProbeObserveMeleeSelection(
+    gentity_t *shooter, const LagCompensationMeleeSelectionResult &result);
+[[nodiscard]] bool CanonicalRailProbeSameEntity(
+    const gentity_t *entity, worr_event_entity_ref_v1 expected);
 bool CanonicalRailProbeArm();
+bool CanonicalRailMoverOcclusionProbeArm();
 bool CanonicalMachinegunProbeArm();
 bool CanonicalChaingunProbeArm();
 bool CanonicalSuperShotgunProbeArm();
 bool CanonicalDisruptorProbeArm();
+bool CanonicalRocketProbeArm();
+bool CanonicalBfgProbeArm();
+bool CanonicalIonRipperProbeArm();
+bool CanonicalTeslaMineProbeArm();
+bool CanonicalTrapProbeArm();
+bool CanonicalGrappleProbeArm();
+bool CanonicalOffhandHookProbeArm();
+bool CanonicalProBallThrowProbeArm();
+bool CanonicalGrenadeLauncherProbeArm();
+bool CanonicalHandGrenadeProbeArm();
+bool CanonicalHandGrenadeSplashProbeArm();
+bool CanonicalProxLauncherProbeArm();
+bool CanonicalRocketSplashProbeArm();
+bool CanonicalPhalanxSplashProbeArm();
+bool CanonicalPlasmaGunProbeArm();
+bool CanonicalPlasmaGunSplashProbeArm();
+bool CanonicalBlasterProbeArm();
+bool CanonicalHyperBlasterProbeArm();
+bool CanonicalChainfistProbeArm();
+bool CanonicalEtfRifleProbeArm();
+bool CanonicalPhalanxProbeArm();
 bool CanonicalPlasmaBeamProbeArm();
 bool CanonicalPlasmaBeamHeldProbeArm();
 bool CanonicalPlasmaBeamSustainedProbeArm();
@@ -326,6 +510,13 @@ bool initialized = false;
 void InvalidateDecisionCaches() {
   for (CommandDecisionCache &cache : decisionCaches)
     cache.valid = false;
+}
+
+void InvalidateDeferredProjectileForwardAuthorizations() {
+  for (DeferredProjectileForwardAuthorization &authorization :
+       deferredProjectileForwardAuthorizations) {
+    authorization = {};
+  }
 }
 
 void InvalidateSceneCaches() {
@@ -484,6 +675,7 @@ void ResetHistories(uint32_t mapEpoch) {
     (void)InitTrack(poseTracks[i], static_cast<uint32_t>(i + 1u));
   ResetMoverTracks();
   InvalidateDecisionCaches();
+  InvalidateDeferredProjectileForwardAuthorizations();
   InvalidateSceneCaches();
 }
 
@@ -602,6 +794,113 @@ void ResetHistories(uint32_t mapEpoch) {
   return std::clamp(estimatedSnapshotIntervalMs / 2, 0, MaxRewindMs());
 }
 
+[[nodiscard]] int ProjectileForwardMs() {
+  const int configured =
+      sg_lag_compensation_projectile_forward_ms
+          ? sg_lag_compensation_projectile_forward_ms->integer
+          : 100;
+  // The projectile policy may be narrower than the historical trace window,
+  // but it never advances farther than the server's accepted rewind ceiling.
+  return std::clamp(configured, 0, MaxRewindMs());
+}
+
+[[nodiscard]] uint32_t
+ProjectileForwardPolicyForWeapon(item_id_t weaponItem) {
+  switch (weaponItem) {
+  case IT_WEAPON_DISRUPTOR:
+    return WORR_REWIND_WEAPON_DISRUPTOR_CONVERGENCE;
+  case IT_WEAPON_RLAUNCHER:
+    return WORR_REWIND_WEAPON_ROCKET_SPAWN_FORWARD;
+  case IT_WEAPON_PLASMAGUN:
+    return WORR_REWIND_WEAPON_PLASMA_GUN_SPAWN_FORWARD;
+  case IT_WEAPON_BLASTER:
+  case IT_WEAPON_HYPERBLASTER:
+    return WORR_REWIND_WEAPON_BLASTER_BOLT_SPAWN_FORWARD;
+  case IT_WEAPON_ETF_RIFLE:
+    return WORR_REWIND_WEAPON_ETF_FLECHETTE_SPAWN_FORWARD;
+  case IT_WEAPON_PHALANX:
+    return WORR_REWIND_WEAPON_PHALANX_SPAWN_FORWARD;
+  case IT_WEAPON_GLAUNCHER:
+    return WORR_REWIND_WEAPON_GRENADE_LAUNCHER_BALLISTIC_SPAWN_FORWARD;
+  case IT_AMMO_GRENADES:
+    return WORR_REWIND_WEAPON_HAND_GRENADE_RELEASE_BALLISTIC_SPAWN_FORWARD;
+  case IT_WEAPON_PROXLAUNCHER:
+    return WORR_REWIND_WEAPON_PROX_MINE_BALLISTIC_DEPLOY_FORWARD;
+  case IT_WEAPON_BFG:
+    return WORR_REWIND_WEAPON_BFG_SPAWN_FORWARD;
+  case IT_WEAPON_IONRIPPER:
+    return WORR_REWIND_WEAPON_ION_RIPPER_BURST_SPAWN_FORWARD;
+  case IT_AMMO_TESLA:
+    return WORR_REWIND_WEAPON_TESLA_MINE_RELEASE_BALLISTIC_DEPLOY_FORWARD;
+  case IT_AMMO_TRAP:
+    return WORR_REWIND_WEAPON_TRAP_RELEASE_BALLISTIC_DEPLOY_FORWARD;
+  case IT_WEAPON_GRAPPLE:
+    return WORR_REWIND_WEAPON_GRAPPLE_HOOK_SPAWN_FORWARD;
+  case IT_BALL:
+    return WORR_REWIND_WEAPON_PROBALL_HELD_THROW_BALLISTIC_SPAWN_FORWARD;
+  default:
+    return WORR_REWIND_WEAPON_UNSPECIFIED;
+  }
+}
+
+[[nodiscard]] bool ProjectileForwardPolicyMatchesWeapon(
+    uint32_t weaponPolicy, item_id_t weaponItem) {
+  return ProjectileForwardPolicyForWeapon(weaponItem) == weaponPolicy;
+}
+
+[[nodiscard]] bool
+ReleaseOnlyProjectileForwardPolicy(uint32_t weaponPolicy) {
+  return weaponPolicy ==
+             WORR_REWIND_WEAPON_HAND_GRENADE_RELEASE_BALLISTIC_SPAWN_FORWARD ||
+         weaponPolicy ==
+             WORR_REWIND_WEAPON_TESLA_MINE_RELEASE_BALLISTIC_DEPLOY_FORWARD ||
+         weaponPolicy ==
+             WORR_REWIND_WEAPON_TRAP_RELEASE_BALLISTIC_DEPLOY_FORWARD ||
+         weaponPolicy ==
+             WORR_REWIND_WEAPON_PROBALL_HELD_THROW_BALLISTIC_SPAWN_FORWARD;
+}
+
+[[nodiscard]] uint8_t DeferredProjectileForwardLaunches(uint32_t weaponPolicy) {
+  // One Phalanx attack normally advances through two barrel frames. Each
+  // ordinary spawn remains current-world; this only lets both callbacks
+  // consume their one accepted attack authorization before it expires.
+  if (weaponPolicy == WORR_REWIND_WEAPON_PHALANX_SPAWN_FORWARD)
+    return 2u;
+  // The normal Ion Ripper callback emits exactly fifteen independently
+  // randomized bolts. A deferred callback may consume only this complete
+  // production burst, not an open-ended projectile budget.
+  if (weaponPolicy == WORR_REWIND_WEAPON_ION_RIPPER_BURST_SPAWN_FORWARD)
+    return 15u;
+  return 1u;
+}
+
+[[nodiscard]] uint32_t
+CanonicalProjectileForwardExpectedLaunches(uint32_t weaponPolicy) {
+  return weaponPolicy == WORR_REWIND_WEAPON_ION_RIPPER_BURST_SPAWN_FORWARD
+             ? 15u
+             : 0u;
+}
+
+[[nodiscard]] uint64_t
+DeferredProjectileForwardAuthorizationLifetimeUs(uint32_t weaponPolicy) {
+  if (weaponPolicy == WORR_REWIND_WEAPON_BFG_SPAWN_FORWARD)
+    return kBfgDeferredProjectileForwardAuthorizationLifetimeUs;
+  if (weaponPolicy == WORR_REWIND_WEAPON_GRAPPLE_HOOK_SPAWN_FORWARD)
+    return kGrappleDeferredProjectileForwardAuthorizationLifetimeUs;
+  return kDeferredProjectileForwardAuthorizationLifetimeUs;
+}
+
+[[nodiscard]] int MeleeMaxDisplacementUnits() {
+  const int configured =
+      sg_lag_compensation_melee_max_displacement
+          ? sg_lag_compensation_melee_max_displacement->integer
+          : 64;
+  // This is deliberately a small world-space guard, independent of the
+  // command rewind window. A player who has moved farther than this cannot be
+  // selected by historical melee eligibility.
+  return std::clamp(configured, 0, 128);
+}
+
 void MaybeReportDiagnostics() {
   if (!sg_lag_compensation_debug || !sg_lag_compensation_debug->integer)
     return;
@@ -617,7 +916,10 @@ void MaybeReportDiagnostics() {
       "scenes_rejected={} movers_captured={} mover_capture_rejected={} "
       "mover_track_exhausted={} mover_scene_candidates={} "
       "historical_brushes={} historical_brush_rejected={} "
-      "ignored_identities={}\n",
+      "ignored_identities={} projectile_forward_requests={} "
+      "projectile_forward_authenticated={} projectile_forward_advanced={} "
+      "projectile_forward_clamped={} projectile_forward_blocked={} "
+      "projectile_forward_rejected={}\n",
       diagnostics.requests, diagnostics.sessions, diagnostics.targets,
       diagnostics.interpolated, diagnostics.discontinuities,
       diagnostics.capped, diagnostics.rejectedClock,
@@ -628,7 +930,11 @@ void MaybeReportDiagnostics() {
       diagnostics.moversCaptured, diagnostics.moverCaptureRejected,
       diagnostics.moverTrackExhausted, diagnostics.moverSceneCandidates,
       diagnostics.historicalBrushes, diagnostics.historicalBrushRejected,
-      diagnostics.ignoredIdentities);
+      diagnostics.ignoredIdentities, diagnostics.projectileForwardRequests,
+      diagnostics.projectileForwardAuthenticated,
+      diagnostics.projectileForwardAdvanced,
+      diagnostics.projectileForwardClamped, diagnostics.projectileForwardBlocked,
+      diagnostics.projectileForwardRejected);
 }
 
 [[nodiscard]] const LegacyFrameSample &NewestLegacyFrame(
@@ -806,6 +1112,44 @@ void RecordLegacyFrame(PoseTrack &track, uint32_t serverFrame,
   ++diagnostics.sessions;
   if ((cache.decision.flags & WORR_REWIND_DECISION_CLAMPED) != 0)
     ++diagnostics.capped;
+  return true;
+}
+
+[[nodiscard]] bool ResolveDeferredProjectileForwardDecision(
+    gentity_t *shooter, std::size_t shooterIndex, uint32_t weaponPolicy,
+    uint64_t currentTimeUs, worr_rewind_policy_decision_v1 &decision) {
+  if (!shooter || shooterIndex >= deferredProjectileForwardAuthorizations.size())
+    return false;
+
+  DeferredProjectileForwardAuthorization &authorization =
+      deferredProjectileForwardAuthorizations[shooterIndex];
+  if (!authorization.valid || authorization.launches_remaining == 0 ||
+      currentTimeUs > authorization.expires_at_us) {
+    authorization = {};
+    return false;
+  }
+
+  worr_event_entity_ref_v1 shooterIdentity{};
+  const bool releaseOnlyPolicy =
+      ReleaseOnlyProjectileForwardPolicy(weaponPolicy);
+  if (!EntityRef(shooter, shooterIdentity) ||
+      shooterIdentity.index != authorization.shooter.index ||
+      shooterIdentity.generation != authorization.shooter.generation ||
+      !ProjectileForwardPolicyMatchesWeapon(weaponPolicy,
+                                            authorization.weapon_item) ||
+      authorization.release_only != releaseOnlyPolicy ||
+      (authorization.decision.flags & WORR_REWIND_DECISION_ACCEPTED) == 0 ||
+      authorization.decision.mapped_time_us > currentTimeUs ||
+      authorization.decision.snapshot_id.epoch == 0 ||
+      authorization.decision.snapshot_id.epoch != authoritativeMapEpoch) {
+    authorization = {};
+    return false;
+  }
+
+  decision = authorization.decision;
+  --authorization.launches_remaining;
+  if (authorization.launches_remaining == 0)
+    authorization.valid = false;
   return true;
 }
 
@@ -1899,6 +2243,21 @@ trace_t TraceHistoricalScene(gentity_t *fromPlayer, const Vector3 &start,
       start, mins, maxs, end, passEntity, contentMask, ignoredEntities,
       ignoredEntityCount, true,
       target.canonical ? &historicalBrushes : nullptr, bounds);
+  if (target.canonical &&
+      canonicalRailProbe.stage == CanonicalRailProbeStage::AwaitingDamage &&
+      canonicalRailProbe.historical_mover_occlusion_required &&
+      fromPlayer == canonicalRailProbe.shooter &&
+      weaponPolicy == WORR_REWIND_WEAPON_RAILGUN &&
+      canonicalRailProbe.historical_mover_relocated &&
+      CanonicalRailProbeSameEntity(
+          canonicalRailProbe.historical_mover,
+          canonicalRailProbe.historical_mover_identity) &&
+      canonicalRailProbe.historical_mover->linked &&
+      canonicalRailProbe.historical_mover->s.origin ==
+          canonicalRailProbe.historical_mover_current_origin &&
+      result.fraction == 1.0f) {
+    canonicalRailProbe.historical_mover_baseline_clear = true;
+  }
   if (result.fraction == 0.0f) {
     if (observe) {
       observation.flags |= WORR_REWIND_OBSERVATION_CURRENT_FALLBACK;
@@ -2052,12 +2411,72 @@ trace_t TraceHistoricalScene(gentity_t *fromPlayer, const Vector3 &start,
          !CanonicalRailProbeTerminal();
 }
 
+void CanonicalRailProbeReleaseCurrentWorldSplashImpact() {
+  gentity_t *impact = canonicalRailProbe.current_world_splash_impact;
+  canonicalRailProbe.current_world_splash_impact = nullptr;
+  canonicalRailProbe.current_world_splash_impact_identity = {};
+  if (impact && impact->inUse)
+    FreeEntity(impact);
+}
+
+void CanonicalRailProbeReleaseCurrentWorldSplashDamageTarget() {
+  gentity_t *target = canonicalRailProbe.current_world_splash_damage_target;
+  canonicalRailProbe.current_world_splash_damage_target = nullptr;
+  canonicalRailProbe.current_world_splash_damage_target_identity = {};
+  if (target && target->inUse)
+    FreeEntity(target);
+}
+
+void CanonicalRailProbeReleaseProxLandingSurface() {
+  gentity_t *surface = canonicalRailProbe.prox_landing_surface;
+  canonicalRailProbe.prox_landing_surface = nullptr;
+  canonicalRailProbe.prox_landing_surface_identity = {};
+  if (surface && surface->inUse)
+    FreeEntity(surface);
+}
+
+void CanonicalRailProbeRestoreHistoricalMover() {
+  gentity_t *mover = canonicalRailProbe.historical_mover;
+  if (canonicalRailProbe.historical_mover_relocated && mover &&
+      CanonicalRailProbeSameEntity(
+          mover, canonicalRailProbe.historical_mover_identity)) {
+    mover->s.origin = canonicalRailProbe.historical_mover_restore_origin;
+    if (canonicalRailProbe.historical_mover_restore_linked)
+      gi.linkEntity(mover);
+    else
+      gi.unlinkEntity(mover);
+  }
+  canonicalRailProbe.historical_mover = nullptr;
+  canonicalRailProbe.historical_mover_identity = {};
+}
+
 void CanonicalRailProbePublish() {
   if (!sg_worr_rewind_canonical_rail_damage_status ||
+      !sg_worr_rewind_canonical_rail_mover_occlusion_status ||
       !sg_worr_rewind_canonical_machinegun_damage_status ||
       !sg_worr_rewind_canonical_chaingun_damage_status ||
       !sg_worr_rewind_canonical_super_shotgun_damage_status ||
       !sg_worr_rewind_canonical_disruptor_damage_status ||
+      !sg_worr_rewind_canonical_rocket_damage_status ||
+      !sg_worr_rewind_canonical_bfg_damage_status ||
+      !sg_worr_rewind_canonical_ion_ripper_damage_status ||
+      !sg_worr_rewind_canonical_tesla_mine_damage_status ||
+      !sg_worr_rewind_canonical_trap_damage_status ||
+      !sg_worr_rewind_canonical_grapple_damage_status ||
+      !sg_worr_rewind_canonical_offhand_hook_status ||
+      !sg_worr_rewind_canonical_proball_throw_status ||
+      !sg_worr_rewind_canonical_grenade_launcher_damage_status ||
+      !sg_worr_rewind_canonical_hand_grenade_damage_status ||
+      !sg_worr_rewind_canonical_prox_launcher_damage_status ||
+      !sg_worr_rewind_canonical_rocket_splash_damage_status ||
+      !sg_worr_rewind_canonical_phalanx_splash_damage_status ||
+      !sg_worr_rewind_canonical_plasma_gun_damage_status ||
+      !sg_worr_rewind_canonical_plasma_gun_splash_damage_status ||
+      !sg_worr_rewind_canonical_blaster_damage_status ||
+      !sg_worr_rewind_canonical_hyperblaster_damage_status ||
+      !sg_worr_rewind_canonical_chainfist_damage_status ||
+      !sg_worr_rewind_canonical_etf_rifle_damage_status ||
+      !sg_worr_rewind_canonical_phalanx_damage_status ||
       !sg_worr_rewind_canonical_plasma_beam_damage_status ||
       !sg_worr_rewind_canonical_plasma_beam_held_damage_status ||
       !sg_worr_rewind_canonical_plasma_beam_sustained_damage_status ||
@@ -2079,12 +2498,11 @@ void CanonicalRailProbePublish() {
   else if (CanonicalRailProbeActive())
     status = "pending";
   const uint32_t armed = canonicalRailProbe.stage != CanonicalRailProbeStage::Idle;
-  const uint32_t damageApplied =
-      canonicalRailProbe.weapon_damage == canonicalRailProbe.expected_damage;
-  char value[256]{};
+  const uint32_t damageApplied = CanonicalRailProbeDamageApplied();
+  char value[640]{};
   std::snprintf(
       value, sizeof(value),
-      "%s:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%llu:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%llu:%llu:%llu:%llu:%llu:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u", status, armed,
+      "%s:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%llu:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%llu:%llu:%llu:%llu:%llu:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%llu:%llu:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u", status, armed,
       canonicalRailProbe.players_ready ? 1u : 0u,
       canonicalRailProbe.history_ready ? 1u : 0u,
       canonicalRailProbe.canonical_scope ? 1u : 0u,
@@ -2120,12 +2538,67 @@ void CanonicalRailProbePublish() {
       canonicalRailProbe.thunderbolt_discharge_ammo_drained ? 1u : 0u,
       canonicalRailProbe.thunderbolt_discharge_observed ? 1u : 0u,
       canonicalRailProbe.sustained_hold_required ? 1u : 0u,
-      canonicalRailProbe.sustained_hold_interrupted ? 1u : 0u);
+      canonicalRailProbe.sustained_hold_interrupted ? 1u : 0u,
+      canonicalRailProbe.projectile_forward_required ? 1u : 0u,
+      canonicalRailProbe.projectile_forward_authenticated ? 1u : 0u,
+      canonicalRailProbe.projectile_forward_advanced ? 1u : 0u,
+      canonicalRailProbe.projectile_forward_clamped ? 1u : 0u,
+      canonicalRailProbe.projectile_forward_blocked ? 1u : 0u,
+      static_cast<unsigned long long>(
+          canonicalRailProbe.projectile_forward_age_us),
+      static_cast<unsigned long long>(
+          canonicalRailProbe.projectile_forward_advanced_age_us),
+      canonicalRailProbe.projectile_forward_launches,
+      canonicalRailProbe.projectile_forward_expected_launches,
+      canonicalRailProbe.melee_selection_required ? 1u : 0u,
+      canonicalRailProbe.melee_selection_authenticated ? 1u : 0u,
+      canonicalRailProbe.melee_historical_eligible ? 1u : 0u,
+      canonicalRailProbe.melee_current_displacement_accepted ? 1u : 0u,
+      canonicalRailProbe.melee_current_displacement_units,
+      canonicalRailProbe.prox_lifecycle_required ? 1u : 0u,
+      canonicalRailProbe.prox_mine_landed ? 1u : 0u,
+      canonicalRailProbe.prox_mine_triggered ? 1u : 0u,
+      canonicalRailProbe.prox_mine_exploded ? 1u : 0u,
+      canonicalRailProbe.historical_mover_occlusion_required ? 1u : 0u,
+      canonicalRailProbe.historical_mover_relocated ? 1u : 0u,
+      canonicalRailProbe.historical_mover_baseline_clear ? 1u : 0u,
+      canonicalRailProbe.historical_mover_occlusion_observed ? 1u : 0u,
+      canonicalRailProbe.historical_mover_target_undamaged ? 1u : 0u,
+      canonicalRailProbe.historical_mover_history_count);
   gi.cvarForceSet("sg_worr_rewind_canonical_rail_damage_status", value);
+  gi.cvarForceSet("sg_worr_rewind_canonical_rail_mover_occlusion_status",
+                  value);
   gi.cvarForceSet("sg_worr_rewind_canonical_machinegun_damage_status", value);
   gi.cvarForceSet("sg_worr_rewind_canonical_chaingun_damage_status", value);
   gi.cvarForceSet("sg_worr_rewind_canonical_super_shotgun_damage_status", value);
   gi.cvarForceSet("sg_worr_rewind_canonical_disruptor_damage_status", value);
+  gi.cvarForceSet("sg_worr_rewind_canonical_rocket_damage_status", value);
+  gi.cvarForceSet("sg_worr_rewind_canonical_bfg_damage_status", value);
+  gi.cvarForceSet("sg_worr_rewind_canonical_ion_ripper_damage_status", value);
+  gi.cvarForceSet("sg_worr_rewind_canonical_tesla_mine_damage_status", value);
+  gi.cvarForceSet("sg_worr_rewind_canonical_trap_damage_status", value);
+  gi.cvarForceSet("sg_worr_rewind_canonical_grapple_damage_status", value);
+  gi.cvarForceSet("sg_worr_rewind_canonical_offhand_hook_status", value);
+  gi.cvarForceSet("sg_worr_rewind_canonical_proball_throw_status", value);
+  gi.cvarForceSet("sg_worr_rewind_canonical_grenade_launcher_damage_status",
+                  value);
+  gi.cvarForceSet("sg_worr_rewind_canonical_hand_grenade_damage_status",
+                  value);
+  gi.cvarForceSet("sg_worr_rewind_canonical_prox_launcher_damage_status",
+                  value);
+  gi.cvarForceSet("sg_worr_rewind_canonical_rocket_splash_damage_status",
+                  value);
+  gi.cvarForceSet("sg_worr_rewind_canonical_phalanx_splash_damage_status",
+                  value);
+  gi.cvarForceSet("sg_worr_rewind_canonical_plasma_gun_damage_status", value);
+  gi.cvarForceSet("sg_worr_rewind_canonical_plasma_gun_splash_damage_status",
+                  value);
+  gi.cvarForceSet("sg_worr_rewind_canonical_blaster_damage_status", value);
+  gi.cvarForceSet("sg_worr_rewind_canonical_hyperblaster_damage_status",
+                  value);
+  gi.cvarForceSet("sg_worr_rewind_canonical_chainfist_damage_status", value);
+  gi.cvarForceSet("sg_worr_rewind_canonical_etf_rifle_damage_status", value);
+  gi.cvarForceSet("sg_worr_rewind_canonical_phalanx_damage_status", value);
   gi.cvarForceSet("sg_worr_rewind_canonical_plasma_beam_damage_status", value);
   gi.cvarForceSet("sg_worr_rewind_canonical_plasma_beam_held_damage_status", value);
   gi.cvarForceSet("sg_worr_rewind_canonical_plasma_beam_sustained_damage_status", value);
@@ -2147,6 +2620,10 @@ void CanonicalRailProbeFail(uint32_t failure) {
   }
   canonicalRailProbe.failure = failure;
   canonicalRailProbe.stage = CanonicalRailProbeStage::Failed;
+  CanonicalRailProbeRestoreHistoricalMover();
+  CanonicalRailProbeReleaseCurrentWorldSplashImpact();
+  CanonicalRailProbeReleaseCurrentWorldSplashDamageTarget();
+  CanonicalRailProbeReleaseProxLandingSurface();
   CanonicalRailProbePublish();
 }
 
@@ -2210,6 +2687,126 @@ void CanonicalRailProbePinTarget(gentity_t *entity, const Vector3 &origin) {
   gi.linkEntity(entity);
 }
 
+[[nodiscard]] bool CanonicalRailProbePlaceCurrentWorldSplashImpact(
+    const Vector3 *originOverride = nullptr) {
+  if (!canonicalRailProbe.current_world_splash_required)
+    return true;
+  if (canonicalRailProbe.current_world_splash_impact) {
+    return CanonicalRailProbeSameEntity(
+        canonicalRailProbe.current_world_splash_impact,
+        canonicalRailProbe.current_world_splash_impact_identity);
+  }
+
+  // This is present-world fixture geometry, deliberately created only after
+  // history capture and immediately before the real attack. The player target
+  // is off-axis on the shooter's left, so the normal projectile must collide
+  // with this blocker and let the production RadiusDamage path decide splash.
+  gentity_t *impact = Spawn();
+  impact->className = "worr_canonical_current_world_splash_impact";
+  impact->s.origin = originOverride
+                         ? *originOverride
+                         : canonicalRailProbe.historical_target_origin +
+                               Vector3{-16.0f, 0.0f, 0.0f};
+  const float halfExtent =
+      canonicalRailProbe.current_world_splash_impact_half_extent;
+  impact->mins = {-halfExtent, -halfExtent, -64.0f};
+  impact->maxs = {halfExtent, halfExtent, 64.0f};
+  impact->solid = SOLID_BBOX;
+  impact->clipMask = MASK_PROJECTILE;
+  impact->moveType = MoveType::None;
+  impact->takeDamage =
+      canonicalRailProbe.current_world_splash_impact_damageable;
+  if (impact->takeDamage)
+    impact->health = 100000;
+  impact->svFlags = SVF_NONE;
+  gi.linkEntity(impact);
+
+  worr_event_entity_ref_v1 identity{};
+  if (!EntityRef(impact, identity)) {
+    FreeEntity(impact);
+    return false;
+  }
+  canonicalRailProbe.current_world_splash_impact = impact;
+  canonicalRailProbe.current_world_splash_impact_identity = identity;
+  return true;
+}
+
+[[nodiscard]] bool CanonicalRailProbePlaceProxLandingSurface(
+    gentity_t *mine) {
+  if (!canonicalRailProbe.prox_lifecycle_required)
+    return true;
+  if (canonicalRailProbe.prox_landing_surface) {
+    return CanonicalRailProbeSameEntity(
+        canonicalRailProbe.prox_landing_surface,
+        canonicalRailProbe.prox_landing_surface_identity);
+  }
+  if (!mine || !CanonicalRailProbeSameEntity(
+                   mine, canonicalRailProbe.prox_mine_identity)) {
+    return false;
+  }
+
+  // The packaged collision map deliberately has an open firing lane. Stage a
+  // broad, non-damageable Push surface beneath the mine only after its
+  // accepted clear ballistic advance has finished. The next normal physics
+  // frame supplies the actual contact; prox_land still decides whether it can
+  // attach and creates the production trigger.
+  gentity_t *surface = Spawn();
+  surface->className = "worr_canonical_prox_landing_surface";
+  surface->s.origin = mine->s.origin + Vector3{0.0f, 0.0f, -128.0f};
+  surface->mins = {-1024.0f, -1024.0f, -16.0f};
+  surface->maxs = {1024.0f, 1024.0f, 16.0f};
+  surface->solid = SOLID_BBOX;
+  surface->clipMask = MASK_PROJECTILE;
+  surface->moveType = MoveType::Push;
+  surface->takeDamage = false;
+  surface->svFlags = SVF_NONE;
+  gi.linkEntity(surface);
+
+  worr_event_entity_ref_v1 identity{};
+  if (!EntityRef(surface, identity)) {
+    FreeEntity(surface);
+    return false;
+  }
+  canonicalRailProbe.prox_landing_surface = surface;
+  canonicalRailProbe.prox_landing_surface_identity = identity;
+  return true;
+}
+
+[[nodiscard]] bool CanonicalRailProbeSelectHistoricalMover() {
+  if (!canonicalRailProbe.historical_mover_occlusion_required)
+    return true;
+  if (canonicalRailProbe.historical_mover) {
+    return CanonicalRailProbeSameEntity(
+               canonicalRailProbe.historical_mover,
+               canonicalRailProbe.historical_mover_identity) &&
+           EligibleLiveMover(canonicalRailProbe.historical_mover);
+  }
+
+  worr_sgame_rewind_collision::Map map{};
+  if (!CurrentCollisionMap(map))
+    return false;
+  const std::size_t total = std::min<std::size_t>(
+      static_cast<std::size_t>(MAX_ENTITIES),
+      static_cast<std::size_t>(globals.numEntities));
+  const std::size_t firstMover = std::min<std::size_t>(
+      total, static_cast<std::size_t>(game.maxClients) + 1u);
+  for (std::size_t index = firstMover; index < total; ++index) {
+    gentity_t *candidate = &g_entities[index];
+    worr_event_entity_ref_v1 identity{};
+    worr_sgame_rewind_collision::Asset asset{};
+    if (!EligibleLiveMover(candidate) || !EntityRef(candidate, identity) ||
+        !ResolveMoverAsset(*candidate, map, asset) ||
+        asset.local_maxs[0] - asset.local_mins[0] < 16.0f ||
+        asset.local_maxs[1] - asset.local_mins[1] < 16.0f) {
+      continue;
+    }
+    canonicalRailProbe.historical_mover = candidate;
+    canonicalRailProbe.historical_mover_identity = identity;
+    return true;
+  }
+  return false;
+}
+
 [[nodiscard]] bool CanonicalRailProbeSelectPlayers() {
   if (canonicalRailProbe.shooter || canonicalRailProbe.target) {
     if (!CanonicalRailProbeSameEntity(canonicalRailProbe.shooter,
@@ -2223,6 +2820,26 @@ void CanonicalRailProbePinTarget(gentity_t *entity, const Vector3 &origin) {
         !CanonicalRailProbeSameEntity(canonicalRailProbe.water,
                                       canonicalRailProbe.water_identity)) {
       CanonicalRailProbeFail(16);
+      return false;
+    }
+    if (canonicalRailProbe.current_world_splash_required &&
+        canonicalRailProbe.current_world_splash_impact &&
+        !CanonicalRailProbeSameEntity(
+            canonicalRailProbe.current_world_splash_impact,
+            canonicalRailProbe.current_world_splash_impact_identity)) {
+      CanonicalRailProbeFail(21);
+      return false;
+    }
+    if (canonicalRailProbe.prox_lifecycle_required &&
+        canonicalRailProbe.prox_landing_surface &&
+        !CanonicalRailProbeSameEntity(
+            canonicalRailProbe.prox_landing_surface,
+            canonicalRailProbe.prox_landing_surface_identity)) {
+      CanonicalRailProbeFail(24);
+      return false;
+    }
+    if (!CanonicalRailProbeSelectHistoricalMover()) {
+      CanonicalRailProbeFail(26);
       return false;
     }
     return true;
@@ -2296,6 +2913,10 @@ void CanonicalRailProbePinTarget(gentity_t *entity, const Vector3 &origin) {
       return false;
     }
   }
+  if (!CanonicalRailProbeSelectHistoricalMover()) {
+    CanonicalRailProbeFail(26);
+    return false;
+  }
   // Keep the target inside P_ProjectSource's close-target branch for the
   // bullet family as well as Railgun. The ordinary weapon callback still
   // computes and owns the final hitscan trace; this merely prevents the
@@ -2336,6 +2957,15 @@ void CanonicalRailProbePrepareFrameCapture(gentity_t *entity) {
     canonicalRailProbe.target->client->PowerupTimer(
         PowerupTimer::SpawnProtection) = 0_ms;
     CanonicalRailProbePublish();
+  } else if (canonicalRailProbe.stage == CanonicalRailProbeStage::AwaitingDamage &&
+             canonicalRailProbe.projectile_current_authority_required &&
+             entity == canonicalRailProbe.target) {
+    // Headless clients can submit a predicted zero-input origin between the
+    // initial attack and a Generic weapon's later fire frame. Keep only the
+    // fixture target's server-staged current pose; health, collision, normal
+    // projectile flight, contact, splash, and damage remain untouched.
+    CanonicalRailProbePinTarget(entity,
+                                canonicalRailProbe.current_target_origin);
   }
 }
 
@@ -2372,22 +3002,46 @@ void CanonicalRailProbeCaptureFrame(gentity_t *entity) {
     CanonicalRailProbeFail(11);
     return;
   }
-  if (canonicalRailProbe.sustained_hold_required) {
+  if (canonicalRailProbe.sustained_hold_required ||
+      canonicalRailProbe.current_world_splash_required ||
+      (canonicalRailProbe.prox_lifecycle_required &&
+       canonicalRailProbe.prox_mine_landed)) {
     CanonicalRailProbePinTarget(canonicalRailProbe.target,
                                 canonicalRailProbe.current_target_origin);
+  }
+  gentity_t *damageTarget = canonicalRailProbe.target;
+  if (canonicalRailProbe.current_world_splash_damage_target_after_touch) {
+    if (!CanonicalRailProbeSameEntity(
+            canonicalRailProbe.current_world_splash_damage_target,
+            canonicalRailProbe.current_world_splash_damage_target_identity)) {
+      // The production touch has not yet staged its isolated radius target.
+      // Preserve the bounded normal projectile lifetime before failing it.
+      uint64_t currentTimeUs = 0;
+      if (canonicalRailProbe.damage_settle_delay_us &&
+          CurrentAuthoritativeTimeUs(currentTimeUs) &&
+          currentTimeUs >= canonicalRailProbe.damage_settle_deadline_us) {
+        CanonicalRailProbeFail(25);
+        return;
+      }
+      CanonicalRailProbePublish();
+      return;
+    }
+    damageTarget = canonicalRailProbe.current_world_splash_damage_target;
   }
   const int healthBefore = canonicalRailProbe.thunderbolt_discharge_required
                                ? canonicalRailProbe.shooter_health_before
                                : canonicalRailProbe.target_health_before;
   const int healthAfter = canonicalRailProbe.thunderbolt_discharge_required
                               ? canonicalRailProbe.shooter->health
-                              : canonicalRailProbe.target->health;
+                              : damageTarget->health;
   canonicalRailProbe.weapon_damage =
       healthBefore > healthAfter
           ? static_cast<uint32_t>(healthBefore - healthAfter)
           : 0u;
-  const bool damageApplied =
-      canonicalRailProbe.weapon_damage == canonicalRailProbe.expected_damage;
+  canonicalRailProbe.historical_mover_target_undamaged =
+      !canonicalRailProbe.historical_mover_occlusion_required ||
+      healthAfter == healthBefore;
+  const bool damageApplied = CanonicalRailProbeDamageApplied();
   uint64_t currentTimeUs = 0;
   const bool needsAuthoritativeTime =
       canonicalRailProbe.damage_settle_delay_us ||
@@ -2405,9 +3059,11 @@ void CanonicalRailProbeCaptureFrame(gentity_t *entity) {
     // before measuring damage. Held beams instead publish pending progress
     // until the requested normal cadence reaches exact cumulative damage, then
     // finish immediately; the same deadline remains a fail-closed timeout.
-    damageSettled = canonicalRailProbe.defer_damage_evaluation_until_deadline
-                        ? deadlineReached
-                        : (damageApplied || deadlineReached);
+    damageSettled = !canonicalRailProbe.damage_required
+                        ? true
+                        : (canonicalRailProbe.defer_damage_evaluation_until_deadline
+                               ? deadlineReached
+                               : (damageApplied || deadlineReached));
   }
   if (!damageSettled) {
     CanonicalRailProbePublish();
@@ -2457,16 +3113,70 @@ void CanonicalRailProbeCaptureFrame(gentity_t *entity) {
         canonicalRailProbe.shooter->client->pers.inventory[
             canonicalRailProbe.thunderbolt_discharge_ammo_item] == 0;
   }
+  const bool projectileForwardProof =
+      canonicalRailProbe.projectile_forward_required &&
+      canonicalRailProbe.projectile_forward_authenticated &&
+      canonicalRailProbe.projectile_forward_advanced &&
+      !canonicalRailProbe.projectile_forward_blocked &&
+      (canonicalRailProbe.projectile_forward_expected_launches == 0 ||
+       canonicalRailProbe.projectile_forward_launches ==
+           canonicalRailProbe.projectile_forward_expected_launches) &&
+      canonicalRailProbe.projectile_forward_advanced_age_us > 0 &&
+      canonicalRailProbe.projectile_forward_advanced_age_us <=
+          canonicalRailProbe.projectile_forward_age_us;
+  const bool meleeSelectionProof =
+      !canonicalRailProbe.melee_selection_required ||
+      (canonicalRailProbe.melee_selection_authenticated &&
+       canonicalRailProbe.melee_historical_eligible &&
+       canonicalRailProbe.melee_current_displacement_accepted &&
+       canonicalRailProbe.melee_current_displacement_units <=
+           static_cast<uint32_t>(MeleeMaxDisplacementUnits()));
+  const bool historicalMoverOcclusionProof =
+      !canonicalRailProbe.historical_mover_occlusion_required ||
+      (canonicalRailProbe.historical_mover_relocated &&
+       canonicalRailProbe.historical_mover_baseline_clear &&
+       canonicalRailProbe.historical_mover_occlusion_observed &&
+       canonicalRailProbe.historical_mover_target_undamaged &&
+       canonicalRailProbe.historical_mover_history_count >=
+           kCanonicalRailProbeRequiredHistoryCaptures);
   const bool normalHitscanProof =
       canonicalRailProbe.canonical_scope &&
       canonicalRailProbe.attack_received && canonicalRailProbe.weapon_callback &&
-      canonicalRailProbe.canonical_historical_hit && damageApplied &&
+      canonicalRailProbe.canonical_historical_hit &&
+      (!canonicalRailProbe.damage_required || damageApplied) &&
       canonicalRailProbe.current_geometry_unchanged &&
       (!canonicalRailProbe.water_retrace_required ||
        canonicalRailProbe.water_retrace_observed) &&
+      (!canonicalRailProbe.projectile_forward_required ||
+       projectileForwardProof) &&
+      meleeSelectionProof &&
+      historicalMoverOcclusionProof &&
       (!canonicalRailProbe.release_required ||
        (canonicalRailProbe.release_received &&
         canonicalRailProbe.release_damage_stable));
+  // Current-world spawn-forward projectiles intentionally do not use a
+  // historical impact, target, or splash query. Their proof instead joins the
+  // same authenticated command scope to the current-world spawn sweep and
+  // unmodified current-authority direct impact.
+  const bool currentAuthorityProjectileProof =
+      canonicalRailProbe.players_ready && canonicalRailProbe.history_ready &&
+      canonicalRailProbe.canonical_scope &&
+      canonicalRailProbe.attack_received &&
+      canonicalRailProbe.weapon_callback &&
+      (!canonicalRailProbe.damage_required || damageApplied) &&
+      !canonicalRailProbe.canonical_historical_hit &&
+      canonicalRailProbe.current_geometry_unchanged &&
+      projectileForwardProof;
+  const bool proxLifecycleProof =
+      !canonicalRailProbe.prox_lifecycle_required ||
+      (canonicalRailProbe.prox_mine_landed &&
+       canonicalRailProbe.prox_mine_triggered &&
+       canonicalRailProbe.prox_mine_exploded);
+  const bool currentWorldSplashProof =
+      currentAuthorityProjectileProof &&
+      canonicalRailProbe.current_world_splash_required &&
+      canonicalRailProbe.current_world_splash_impact_observed &&
+      (!canonicalRailProbe.damage_required || damageApplied);
   // Production discharge intentionally returns before the beam's historical
   // trace. It is a current-authority radius/self-damage effect, so require the
   // explicit production-branch observer rather than fabricating a hitscan
@@ -2478,21 +3188,38 @@ void CanonicalRailProbeCaptureFrame(gentity_t *entity) {
       canonicalRailProbe.thunderbolt_discharge_ammo_drained;
   if ((canonicalRailProbe.thunderbolt_discharge_required
            ? thunderboltDischargeProof
-           : normalHitscanProof)) {
+           : (canonicalRailProbe.projectile_current_authority_required
+                  ? (canonicalRailProbe.current_world_splash_required
+                         ? currentWorldSplashProof
+                         : (currentAuthorityProjectileProof &&
+                            proxLifecycleProof))
+                  : normalHitscanProof))) {
     canonicalRailProbe.stage = CanonicalRailProbeStage::Passed;
+    CanonicalRailProbeRestoreHistoricalMover();
+    CanonicalRailProbeReleaseCurrentWorldSplashImpact();
+    CanonicalRailProbeReleaseCurrentWorldSplashDamageTarget();
+    CanonicalRailProbeReleaseProxLandingSurface();
     CanonicalRailProbePublish();
   } else {
-    CanonicalRailProbeFail(
-        canonicalRailProbe.water_retrace_required &&
-                !canonicalRailProbe.water_retrace_observed
-            ? 17
-            : (canonicalRailProbe.thunderbolt_discharge_required &&
-                       (!canonicalRailProbe.thunderbolt_discharge_ammo_drained ||
-                        !canonicalRailProbe.thunderbolt_discharge_observed)
-                   ? (canonicalRailProbe.thunderbolt_discharge_ammo_drained
-                          ? 19
-                          : 18)
-                   : 12));
+    uint32_t failure = 12;
+    if (canonicalRailProbe.water_retrace_required &&
+        !canonicalRailProbe.water_retrace_observed) {
+      failure = 17;
+    } else if (canonicalRailProbe.thunderbolt_discharge_required &&
+               (!canonicalRailProbe.thunderbolt_discharge_ammo_drained ||
+                !canonicalRailProbe.thunderbolt_discharge_observed)) {
+      failure = canonicalRailProbe.thunderbolt_discharge_ammo_drained ? 19 : 18;
+    } else if (canonicalRailProbe.current_world_splash_required &&
+               !canonicalRailProbe.current_world_splash_impact_observed) {
+      failure = 22;
+    } else if (canonicalRailProbe.prox_lifecycle_required &&
+               !proxLifecycleProof) {
+      failure = 24;
+    } else if (canonicalRailProbe.historical_mover_occlusion_required &&
+               !historicalMoverOcclusionProof) {
+      failure = 28;
+    }
+    CanonicalRailProbeFail(failure);
   }
 }
 
@@ -2521,6 +3248,18 @@ void CanonicalRailProbeObserveTrace(
       observation.hit_entity.index == canonicalRailProbe.target_identity.index &&
       observation.hit_entity.generation == canonicalRailProbe.target_identity.generation &&
       observation.trace_fraction > 0.0f && observation.trace_fraction < 1.0f;
+  const bool historicalMoverHit =
+      canonicalRailProbe.historical_mover_occlusion_required &&
+      observation.path == WORR_REWIND_OBSERVATION_PATH_CANONICAL &&
+      observation.outcome == WORR_REWIND_OBSERVATION_OUTCOME_HISTORICAL_HIT &&
+      observation.fallback_reason == WORR_REWIND_OBSERVATION_FALLBACK_NONE &&
+      (observation.flags & requiredFlags) == requiredFlags &&
+      (observation.flags & WORR_REWIND_OBSERVATION_CURRENT_FALLBACK) == 0 &&
+      SameCommand(observation.command_id, canonicalRailProbe.command_id) &&
+      CanonicalRailProbeSameReference(
+          observation.hit_entity,
+          canonicalRailProbe.historical_mover_identity) &&
+      observation.trace_fraction > 0.0f && observation.trace_fraction < 1.0f;
   const bool historicalWaterHit =
       canonicalRailProbe.water_retrace_required &&
       observation.path == WORR_REWIND_OBSERVATION_PATH_CANONICAL &&
@@ -2536,12 +3275,20 @@ void CanonicalRailProbeObserveTrace(
   const bool currentGeometryUnchanged =
       canonicalRailProbe.target && canonicalRailProbe.target->linked &&
       canonicalRailProbe.target->s.origin ==
-          canonicalRailProbe.current_target_origin;
+          canonicalRailProbe.current_target_origin &&
+      (!canonicalRailProbe.historical_mover_occlusion_required ||
+       (canonicalRailProbe.historical_mover_relocated &&
+        CanonicalRailProbeSameEntity(
+            canonicalRailProbe.historical_mover,
+            canonicalRailProbe.historical_mover_identity) &&
+        canonicalRailProbe.historical_mover->linked &&
+        canonicalRailProbe.historical_mover->s.origin ==
+            canonicalRailProbe.historical_mover_current_origin));
 
   // A hitscan weapon can emit auxiliary collision queries before or after the
   // target-bearing damage trace. Retain only the observation that names the
   // target instead of mistaking an unrelated clear segment for a miss.
-  if (historicalTargetHit) {
+  if (historicalTargetHit || historicalMoverHit) {
     canonicalRailProbe.observation_path = observation.path;
     canonicalRailProbe.observation_outcome = observation.outcome;
     canonicalRailProbe.observation_fallback = observation.fallback_reason;
@@ -2572,12 +3319,218 @@ void CanonicalRailProbeObserveTrace(
   CanonicalRailProbePublish();
 }
 
+void CanonicalRailProbeObserveProjectileForward(
+    gentity_t *shooter,
+    const LagCompensationProjectileForwardResult &result) {
+  if (canonicalRailProbe.stage != CanonicalRailProbeStage::AwaitingDamage ||
+      !canonicalRailProbe.projectile_forward_required ||
+      shooter != canonicalRailProbe.shooter ||
+      result.weapon_policy != canonicalRailProbe.weapon_policy ||
+      !CanonicalRailProbeSameEntity(shooter,
+                                    canonicalRailProbe.shooter_identity)) {
+    return;
+  }
+  const bool matchingCommand =
+      SameCommand(result.command_id, canonicalRailProbe.projectile_command_id);
+  if (sg_lag_compensation_debug && sg_lag_compensation_debug->integer >= 3) {
+    gi.Com_PrintFmt(
+        "lagcomp projectile_forward fixture policy={} result_command={}:{} "
+        "expected_command={}:{} match={} authenticated={} advanced={} "
+        "age_us={} advanced_us={}\n",
+        result.weapon_policy, result.command_id.epoch, result.command_id.sequence,
+        canonicalRailProbe.projectile_command_id.epoch,
+        canonicalRailProbe.projectile_command_id.sequence,
+        matchingCommand ? 1u : 0u, result.authenticated ? 1u : 0u,
+        result.advanced ? 1u : 0u,
+        static_cast<unsigned long long>(result.authoritative_age_us),
+        static_cast<unsigned long long>(result.advanced_age_us));
+  }
+  if (!matchingCommand)
+    return;
+  // Item::weaponThink may revisit an idle weapon frame after the one real
+  // projectile spawn. Keep the first authenticated spawn result; a later
+  // no-op call has no authority to erase that production evidence. Ion Ripper
+  // is the deliberate exception: its one callback creates fifteen real bolts,
+  // and its fixture requires all fifteen bounded current-world sweeps.
+  if (!result.authenticated && !result.advanced)
+    return;
+  if (canonicalRailProbe.projectile_forward_expected_launches != 0) {
+    ++canonicalRailProbe.projectile_forward_launches;
+    canonicalRailProbe.projectile_forward_authenticated =
+        canonicalRailProbe.projectile_forward_authenticated || result.authenticated;
+    canonicalRailProbe.projectile_forward_advanced =
+        canonicalRailProbe.projectile_forward_advanced || result.advanced;
+    canonicalRailProbe.projectile_forward_clamped =
+        canonicalRailProbe.projectile_forward_clamped || result.clamped;
+    canonicalRailProbe.projectile_forward_blocked =
+        canonicalRailProbe.projectile_forward_blocked || result.blocked;
+    canonicalRailProbe.projectile_forward_age_us = std::max(
+        canonicalRailProbe.projectile_forward_age_us,
+        result.authoritative_age_us);
+    canonicalRailProbe.projectile_forward_advanced_age_us = std::max(
+        canonicalRailProbe.projectile_forward_advanced_age_us,
+        result.advanced_age_us);
+  } else {
+    canonicalRailProbe.projectile_forward_authenticated = result.authenticated;
+    canonicalRailProbe.projectile_forward_advanced = result.advanced;
+    canonicalRailProbe.projectile_forward_clamped = result.clamped;
+    canonicalRailProbe.projectile_forward_blocked = result.blocked;
+    canonicalRailProbe.projectile_forward_age_us =
+        result.authoritative_age_us;
+    canonicalRailProbe.projectile_forward_advanced_age_us =
+        result.advanced_age_us;
+  }
+  if (canonicalRailProbe.current_world_splash_required) {
+    if (result.projectile_entity.index == 0) {
+      CanonicalRailProbeFail(23);
+      return;
+    }
+    canonicalRailProbe.current_world_splash_projectile_identity =
+        result.projectile_entity;
+    if (canonicalRailProbe.current_world_splash_after_forward) {
+      const std::size_t projectileIndex =
+          static_cast<std::size_t>(result.projectile_entity.index);
+      if (projectileIndex >= static_cast<std::size_t>(globals.numEntities)) {
+        CanonicalRailProbeFail(23);
+        return;
+      }
+      gentity_t *projectile = &g_entities[projectileIndex];
+      Vector3 direction = projectile->velocity;
+      if (!CanonicalRailProbeSameEntity(projectile, result.projectile_entity) ||
+          direction.normalize() <= 0.0f) {
+        CanonicalRailProbeFail(23);
+        return;
+      }
+      const Vector3 impactOrigin = projectile->s.origin + direction * 96.0f;
+      const Vector3 lateral{-direction[1], direction[0], 0.0f};
+      canonicalRailProbe.current_target_origin =
+          impactOrigin + lateral * 128.0f + Vector3{0.0f, 0.0f, 32.0f};
+      if (!CanonicalRailProbePlaceCurrentWorldSplashImpact(&impactOrigin)) {
+        CanonicalRailProbeFail(23);
+        return;
+      }
+      CanonicalRailProbePinTarget(canonicalRailProbe.target,
+                                  canonicalRailProbe.current_target_origin);
+      canonicalRailProbe.target->health = kCanonicalRailProbeTargetHealth;
+      canonicalRailProbe.target->client->PowerupTimer(
+          PowerupTimer::SpawnProtection) = 0_ms;
+    }
+  }
+  if (canonicalRailProbe.prox_lifecycle_required) {
+    if (result.projectile_entity.index == 0) {
+      CanonicalRailProbeFail(24);
+      return;
+    }
+    canonicalRailProbe.prox_mine_identity = result.projectile_entity;
+    const std::size_t mineIndex =
+        static_cast<std::size_t>(result.projectile_entity.index);
+    if (mineIndex >= static_cast<std::size_t>(globals.numEntities) ||
+        !CanonicalRailProbePlaceProxLandingSurface(&g_entities[mineIndex])) {
+      CanonicalRailProbeFail(24);
+      return;
+    }
+  }
+  canonicalRailProbe.weapon_callback = true;
+  canonicalRailProbe.current_geometry_unchanged =
+      canonicalRailProbe.target && canonicalRailProbe.target->linked &&
+      canonicalRailProbe.target->s.origin ==
+          canonicalRailProbe.current_target_origin;
+  CanonicalRailProbePublish();
+}
+
+void CanonicalRailProbeObserveMeleeSelection(
+    gentity_t *shooter, const LagCompensationMeleeSelectionResult &result) {
+  if (canonicalRailProbe.stage != CanonicalRailProbeStage::AwaitingDamage ||
+      !canonicalRailProbe.melee_selection_required ||
+      shooter != canonicalRailProbe.shooter ||
+      result.weapon_policy != canonicalRailProbe.weapon_policy ||
+      !SameCommand(result.command_id, canonicalRailProbe.command_id) ||
+      !CanonicalRailProbeSameEntity(shooter,
+                                    canonicalRailProbe.shooter_identity)) {
+    return;
+  }
+
+  canonicalRailProbe.weapon_callback = true;
+  canonicalRailProbe.melee_selection_authenticated = result.authenticated;
+  canonicalRailProbe.melee_historical_eligible =
+      result.historical_eligible &&
+      CanonicalRailProbeSameReference(result.target_entity,
+                                      canonicalRailProbe.target_identity);
+  canonicalRailProbe.melee_current_displacement_accepted =
+      result.current_displacement_accepted;
+  canonicalRailProbe.melee_current_displacement_units =
+      result.current_displacement_units;
+  canonicalRailProbe.canonical_historical_hit =
+      canonicalRailProbe.melee_historical_eligible;
+  canonicalRailProbe.observation_applied_time_us = result.applied_time_us;
+  canonicalRailProbe.trace_current_time_us = result.current_time_us;
+  if (result.applied_time_us <= result.current_time_us) {
+    canonicalRailProbe.applied_age_us =
+        result.current_time_us - result.applied_time_us;
+  }
+  canonicalRailProbe.current_geometry_unchanged =
+      canonicalRailProbe.target && canonicalRailProbe.target->linked &&
+      canonicalRailProbe.target->s.origin ==
+          canonicalRailProbe.current_target_origin;
+  CanonicalRailProbePublish();
+}
+
+[[nodiscard]] bool CanonicalRailProbeRelocateHistoricalMover() {
+  if (!canonicalRailProbe.historical_mover_occlusion_required)
+    return true;
+  if (canonicalRailProbe.historical_mover_relocated) {
+    return CanonicalRailProbeSameEntity(
+               canonicalRailProbe.historical_mover,
+               canonicalRailProbe.historical_mover_identity) &&
+           canonicalRailProbe.historical_mover->linked &&
+           canonicalRailProbe.historical_mover->s.origin ==
+               canonicalRailProbe.historical_mover_current_origin;
+  }
+  gentity_t *mover = canonicalRailProbe.historical_mover;
+  if (!CanonicalRailProbeSameEntity(
+          mover, canonicalRailProbe.historical_mover_identity) ||
+      !EligibleLiveMover(mover)) {
+    return false;
+  }
+  MoverTrack *track =
+      FindMoverTrack(canonicalRailProbe.historical_mover_identity);
+  if (!track || !track->initialized ||
+      !Worr_RewindHistoryValidateV1(&track->history) ||
+      track->history.count < kCanonicalRailProbeRequiredHistoryCaptures) {
+    return false;
+  }
+
+  canonicalRailProbe.historical_mover_history_count = track->history.count;
+  canonicalRailProbe.historical_mover_restore_origin = mover->s.origin;
+  canonicalRailProbe.historical_mover_restore_linked = mover->linked;
+  canonicalRailProbe.historical_mover_current_origin =
+      mover->s.origin + Vector3{0.0f, 96.0f, 0.0f};
+  mover->s.origin = canonicalRailProbe.historical_mover_current_origin;
+  gi.linkEntity(mover);
+  canonicalRailProbe.historical_mover_relocated =
+      mover->linked &&
+      mover->s.origin == canonicalRailProbe.historical_mover_current_origin;
+  return canonicalRailProbe.historical_mover_relocated;
+}
+
 void CanonicalRailProbePrepareCommand(gentity_t *entity, usercmd_t *command) {
-  if (!CanonicalRailProbeActive() || !entity || !entity->client || !command ||
-      !CanonicalRailProbeSelectPlayers() || entity != canonicalRailProbe.shooter ||
-      (canonicalRailProbe.stage !=
-           CanonicalRailProbeStage::WaitingForCanonicalAttack &&
-       canonicalRailProbe.stage != CanonicalRailProbeStage::AwaitingDamage)) {
+  if (!CanonicalRailProbeActive() || !entity || !entity->client || !command)
+    return;
+  if (!CanonicalRailProbeSelectPlayers())
+    return;
+  if (canonicalRailProbe.stage == CanonicalRailProbeStage::AwaitingDamage &&
+      canonicalRailProbe.projectile_current_authority_required &&
+      entity == canonicalRailProbe.target) {
+    CanonicalRailProbePinTarget(entity,
+                                canonicalRailProbe.current_target_origin);
+    return;
+  }
+  if (entity != canonicalRailProbe.shooter) {
+    return;
+  }
+  if (canonicalRailProbe.stage !=
+          CanonicalRailProbeStage::WaitingForCanonicalAttack &&
+      canonicalRailProbe.stage != CanonicalRailProbeStage::AwaitingDamage) {
     return;
   }
   if (!commandContextImport || !commandContextImport->GetScopeState ||
@@ -2607,6 +3560,40 @@ void CanonicalRailProbePrepareCommand(gentity_t *entity, usercmd_t *command) {
   canonicalRailProbe.context_mapped_time_us =
       context.mapping_proof.mapped_server_time_us;
   if (canonicalRailProbe.stage == CanonicalRailProbeStage::AwaitingDamage) {
+    // Weapon_Generic advances Phalanx from its initial fire frame to the
+    // actual barrel callback on a later held command. Generic projectile
+    // weapons use that same held-command correlation. A release-only held
+    // throw is different: its callback is caused by the real no-attack
+    // release command, which must replace the initial prime command here.
+    // This is fixture correlation only; no user-command bit or production
+    // weapon state is changed.
+    const bool releaseOnlyPolicy =
+        ReleaseOnlyProjectileForwardPolicy(canonicalRailProbe.weapon_policy);
+    const bool actionPressed =
+        (command->buttons &
+         (canonicalRailProbe.offhand_hook_input_required ? BUTTON_HOOK
+                                                          : BUTTON_ATTACK)) != 0;
+    const bool releaseOnlyCommand =
+        releaseOnlyPolicy &&
+        (command->buttons & BUTTON_ATTACK) == 0 &&
+        (entity->client->buttons & BUTTON_ATTACK) != 0;
+    if (canonicalRailProbe.projectile_current_authority_required &&
+        ((releaseOnlyPolicy && releaseOnlyCommand) ||
+         (!releaseOnlyPolicy && !canonicalRailProbe.offhand_hook_input_required &&
+          actionPressed))) {
+      canonicalRailProbe.projectile_command_id = context.command.command_id;
+    }
+    if (releaseOnlyPolicy && releaseOnlyCommand &&
+        canonicalRailProbe.current_world_splash_after_forward &&
+        canonicalRailProbe.damage_settle_delay_us) {
+      uint64_t currentTimeUs = 0;
+      if (!CurrentAuthoritativeTimeUs(currentTimeUs)) {
+        CanonicalRailProbeFail(13);
+        return;
+      }
+      canonicalRailProbe.damage_settle_deadline_us =
+          currentTimeUs + canonicalRailProbe.damage_settle_delay_us;
+    }
     if (canonicalRailProbe.sustained_hold_required &&
         (command->buttons & BUTTON_ATTACK) == 0) {
       canonicalRailProbe.sustained_hold_interrupted = true;
@@ -2618,7 +3605,7 @@ void CanonicalRailProbePrepareCommand(gentity_t *entity, usercmd_t *command) {
     // under the same production command-context admission path.
     if (canonicalRailProbe.release_required && !canonicalRailProbe.release_received &&
         (command->buttons & BUTTON_ATTACK) == 0 &&
-        canonicalRailProbe.weapon_damage == canonicalRailProbe.expected_damage) {
+        CanonicalRailProbeDamageApplied()) {
       uint64_t currentTimeUs = 0;
       if (!CurrentAuthoritativeTimeUs(currentTimeUs)) {
         CanonicalRailProbeFail(13);
@@ -2632,27 +3619,39 @@ void CanonicalRailProbePrepareCommand(gentity_t *entity, usercmd_t *command) {
     CanonicalRailProbePublish();
     return;
   }
-  if ((command->buttons & BUTTON_ATTACK) == 0) {
+  const bool actionPressed =
+      (command->buttons &
+       (canonicalRailProbe.offhand_hook_input_required ? BUTTON_HOOK
+                                                        : BUTTON_ATTACK)) != 0;
+  if (!actionPressed) {
     CanonicalRailProbePublish();
     return;
   }
 
   Item *weapon = GetItemByIndex(canonicalRailProbe.weapon_item);
-  if (!weapon || !weapon->weaponThink || weapon->ammo == IT_NULL ||
-      weapon->id == IT_NULL ||
+  if (!weapon || !weapon->weaponThink || weapon->id == IT_NULL ||
       canonicalRailProbe.weapon_policy == WORR_REWIND_WEAPON_UNSPECIFIED ||
       canonicalRailProbe.expected_damage == 0) {
     CanonicalRailProbeFail(8);
     return;
   }
 
-  // This alters only the isolated fixture's server-owned player state.  The
-  // received command retains its original attack bit and the normal weapon
-  // dispatcher below invokes Item::weaponThink; this function never calls a
-  // weapon or trace routine directly.
+  // This alters only the isolated fixture's server-owned player state. The
+  // received action bit remains intact: normal fixtures reach Item::weaponThink
+  // later, while the off-hand fixture reaches its production +hook action
+  // later in ClientThink. This function never calls a weapon or trace routine.
   CanonicalRailProbePlacePlayer(entity, canonicalRailProbe.shooter_origin);
   CanonicalRailProbePlacePlayer(canonicalRailProbe.target,
                                 canonicalRailProbe.current_target_origin);
+  if (!CanonicalRailProbeRelocateHistoricalMover()) {
+    CanonicalRailProbeFail(27);
+    return;
+  }
+  if (!canonicalRailProbe.current_world_splash_after_forward &&
+      !CanonicalRailProbePlaceCurrentWorldSplashImpact()) {
+    CanonicalRailProbeFail(21);
+    return;
+  }
   canonicalRailProbe.target->health = kCanonicalRailProbeTargetHealth;
   canonicalRailProbe.target->client->PowerupTimer(
       PowerupTimer::SpawnProtection) = 0_ms;
@@ -2663,7 +3662,16 @@ void CanonicalRailProbePrepareCommand(gentity_t *entity, usercmd_t *command) {
                         : 1_sec);
   entity->client->pers.weapon = weapon;
   entity->client->pers.inventory[weapon->id] = 1;
-  entity->client->pers.inventory[weapon->ammo] = canonicalRailProbe.initial_ammo;
+  if (canonicalRailProbe.weapon_policy ==
+      WORR_REWIND_WEAPON_PROBALL_HELD_THROW_BALLISTIC_SPAWN_FORWARD) {
+    // The fixture supplies possession only, after both real clients are
+    // admitted and before the real attack. It never fabricates a pickup,
+    // touch, pass, launch, goal, score, or command authority.
+    entity->client->pers.inventory[IT_BALL] = 1;
+  }
+  if (weapon->ammo != IT_NULL)
+    entity->client->pers.inventory[weapon->ammo] =
+        canonicalRailProbe.initial_ammo;
   if (canonicalRailProbe.thunderbolt_discharge_required) {
     entity->client->pers.ammoMax[static_cast<int>(AmmoID::Cells)] =
         static_cast<short>(std::max<int>(
@@ -2677,13 +3685,16 @@ void CanonicalRailProbePrepareCommand(gentity_t *entity, usercmd_t *command) {
   entity->client->weapon.thunk = false;
   entity->client->weaponState = WeaponState::Ready;
   entity->client->ps.gunFrame = canonicalRailProbe.weapon_idle_frame;
-  // The fixture reacts only after observing a genuine attack bit. Reset an
-  // older held-button edge so the ordinary ClientThink assignment immediately
-  // below latches this same received command; no button is synthesized here.
+  // The fixture reacts only after observing its genuine received action bit.
+  // Reset an older held-button edge so the ordinary ClientThink assignment
+  // immediately below latches this same command; no button is synthesized.
   entity->client->buttons = BUTTON_NONE;
-  entity->client->latchedButtons &= ~BUTTON_ATTACK;
+  entity->client->latchedButtons &=
+      ~(canonicalRailProbe.offhand_hook_input_required ? BUTTON_HOOK
+                                                        : BUTTON_ATTACK);
 
   canonicalRailProbe.command_id = context.command.command_id;
+  canonicalRailProbe.projectile_command_id = context.command.command_id;
   canonicalRailProbe.target_health_before = canonicalRailProbe.target->health;
   if (canonicalRailProbe.thunderbolt_discharge_required) {
     canonicalRailProbe.shooter_health_before = entity->health;
@@ -2717,7 +3728,24 @@ bool CanonicalHitscanProbeArm(uint32_t weaponPolicy, item_id_t weaponItem,
                               bool waterRetraceRequired = false,
                               bool thunderboltDischargeRequired = false,
                               int initialAmmo = 8,
-                              bool sustainedHoldRequired = false) {
+                              bool sustainedHoldRequired = false,
+                              bool currentWorldSplashRequired = false,
+                              uint32_t minimumDamage = 0,
+                              bool currentWorldSplashImpactDamageable = false,
+                              bool damageRequired = true,
+                              bool proxLifecycleRequired = false,
+                              bool currentWorldSplashAfterForward = false,
+                              bool offhandHookInputRequired = false,
+                              float currentWorldSplashImpactHalfExtent =
+                                  16.0f,
+                              bool currentWorldSplashClearImpactAfterTouch =
+                                  false,
+                              bool currentWorldSplashDamageTargetAfterTouch =
+                                  false) {
+  CanonicalRailProbeRestoreHistoricalMover();
+  CanonicalRailProbeReleaseCurrentWorldSplashImpact();
+  CanonicalRailProbeReleaseCurrentWorldSplashDamageTarget();
+  CanonicalRailProbeReleaseProxLandingSurface();
   if (!initialized || !deathmatch || !deathmatch->integer ||
       !g_lagCompensation || !g_lagCompensation->integer ||
       !ObservationEnabled() || !commandContextImport ||
@@ -2732,6 +3760,8 @@ bool CanonicalHitscanProbeArm(uint32_t weaponPolicy, item_id_t weaponItem,
   canonicalRailProbe.weapon_policy = weaponPolicy;
   canonicalRailProbe.weapon_item = weaponItem;
   canonicalRailProbe.expected_damage = expectedDamage;
+  canonicalRailProbe.minimum_damage =
+      minimumDamage ? minimumDamage : expectedDamage;
   canonicalRailProbe.initial_ammo = initialAmmo;
   canonicalRailProbe.weapon_idle_frame = weaponIdleFrame;
   canonicalRailProbe.target_distance = targetDistance;
@@ -2744,7 +3774,69 @@ bool CanonicalHitscanProbeArm(uint32_t weaponPolicy, item_id_t weaponItem,
   canonicalRailProbe.water_retrace_required = waterRetraceRequired;
   canonicalRailProbe.thunderbolt_discharge_required =
       thunderboltDischargeRequired;
+  canonicalRailProbe.projectile_forward_required =
+      weaponPolicy == WORR_REWIND_WEAPON_DISRUPTOR_CONVERGENCE ||
+      weaponPolicy == WORR_REWIND_WEAPON_ROCKET_SPAWN_FORWARD ||
+      weaponPolicy == WORR_REWIND_WEAPON_PLASMA_GUN_SPAWN_FORWARD ||
+      weaponPolicy == WORR_REWIND_WEAPON_BLASTER_BOLT_SPAWN_FORWARD ||
+      weaponPolicy == WORR_REWIND_WEAPON_ETF_FLECHETTE_SPAWN_FORWARD ||
+      weaponPolicy == WORR_REWIND_WEAPON_PHALANX_SPAWN_FORWARD ||
+      weaponPolicy ==
+          WORR_REWIND_WEAPON_GRENADE_LAUNCHER_BALLISTIC_SPAWN_FORWARD ||
+      weaponPolicy ==
+          WORR_REWIND_WEAPON_HAND_GRENADE_RELEASE_BALLISTIC_SPAWN_FORWARD ||
+      weaponPolicy == WORR_REWIND_WEAPON_PROX_MINE_BALLISTIC_DEPLOY_FORWARD ||
+      weaponPolicy == WORR_REWIND_WEAPON_BFG_SPAWN_FORWARD ||
+      weaponPolicy == WORR_REWIND_WEAPON_ION_RIPPER_BURST_SPAWN_FORWARD ||
+      weaponPolicy ==
+          WORR_REWIND_WEAPON_TESLA_MINE_RELEASE_BALLISTIC_DEPLOY_FORWARD ||
+      weaponPolicy ==
+          WORR_REWIND_WEAPON_TRAP_RELEASE_BALLISTIC_DEPLOY_FORWARD ||
+      weaponPolicy == WORR_REWIND_WEAPON_GRAPPLE_HOOK_SPAWN_FORWARD ||
+      weaponPolicy == WORR_REWIND_WEAPON_OFFHAND_HOOK_SPAWN_FORWARD ||
+      weaponPolicy ==
+          WORR_REWIND_WEAPON_PROBALL_HELD_THROW_BALLISTIC_SPAWN_FORWARD;
+  canonicalRailProbe.projectile_forward_expected_launches =
+      CanonicalProjectileForwardExpectedLaunches(weaponPolicy);
+  canonicalRailProbe.projectile_current_authority_required =
+      weaponPolicy == WORR_REWIND_WEAPON_ROCKET_SPAWN_FORWARD ||
+      weaponPolicy == WORR_REWIND_WEAPON_PLASMA_GUN_SPAWN_FORWARD ||
+      weaponPolicy == WORR_REWIND_WEAPON_BLASTER_BOLT_SPAWN_FORWARD ||
+      weaponPolicy == WORR_REWIND_WEAPON_ETF_FLECHETTE_SPAWN_FORWARD ||
+      weaponPolicy == WORR_REWIND_WEAPON_PHALANX_SPAWN_FORWARD ||
+      weaponPolicy ==
+          WORR_REWIND_WEAPON_GRENADE_LAUNCHER_BALLISTIC_SPAWN_FORWARD ||
+      weaponPolicy ==
+          WORR_REWIND_WEAPON_HAND_GRENADE_RELEASE_BALLISTIC_SPAWN_FORWARD ||
+      weaponPolicy == WORR_REWIND_WEAPON_PROX_MINE_BALLISTIC_DEPLOY_FORWARD ||
+      weaponPolicy == WORR_REWIND_WEAPON_BFG_SPAWN_FORWARD ||
+      weaponPolicy == WORR_REWIND_WEAPON_ION_RIPPER_BURST_SPAWN_FORWARD ||
+      weaponPolicy ==
+          WORR_REWIND_WEAPON_TESLA_MINE_RELEASE_BALLISTIC_DEPLOY_FORWARD ||
+      weaponPolicy ==
+          WORR_REWIND_WEAPON_TRAP_RELEASE_BALLISTIC_DEPLOY_FORWARD ||
+      weaponPolicy == WORR_REWIND_WEAPON_GRAPPLE_HOOK_SPAWN_FORWARD ||
+      weaponPolicy == WORR_REWIND_WEAPON_OFFHAND_HOOK_SPAWN_FORWARD ||
+      weaponPolicy ==
+          WORR_REWIND_WEAPON_PROBALL_HELD_THROW_BALLISTIC_SPAWN_FORWARD;
+  canonicalRailProbe.melee_selection_required =
+      weaponPolicy == WORR_REWIND_WEAPON_CHAINFIST_MELEE_HYBRID;
+  canonicalRailProbe.current_world_splash_required =
+      currentWorldSplashRequired;
+  canonicalRailProbe.current_world_splash_impact_damageable =
+      currentWorldSplashImpactDamageable;
+  canonicalRailProbe.current_world_splash_after_forward =
+      currentWorldSplashAfterForward;
+  canonicalRailProbe.current_world_splash_impact_half_extent =
+      std::max(currentWorldSplashImpactHalfExtent, 1.0f);
+  canonicalRailProbe.current_world_splash_clear_impact_after_touch =
+      currentWorldSplashClearImpactAfterTouch;
+  canonicalRailProbe.current_world_splash_damage_target_after_touch =
+      currentWorldSplashDamageTargetAfterTouch;
+  canonicalRailProbe.damage_required = damageRequired;
   canonicalRailProbe.sustained_hold_required = sustainedHoldRequired;
+  canonicalRailProbe.prox_lifecycle_required = proxLifecycleRequired;
+  canonicalRailProbe.offhand_hook_input_required = offhandHookInputRequired;
   canonicalRailProbe.stage = CanonicalRailProbeStage::WaitingForPlayers;
   // The runner has already admitted the two real clients. Select and separate
   // them synchronously with the arming command so an ordinary spawn-frame
@@ -2766,6 +3858,31 @@ bool CanonicalRailProbeArm() {
                                   IT_WEAPON_RAILGUN,
                                   kCanonicalRailProbeExpectedDamage, 19, 112.0f,
                                   0);
+}
+
+bool CanonicalRailMoverOcclusionProbeArm() {
+  if (!CanonicalRailProbeArm())
+    return false;
+
+  canonicalRailProbe.historical_mover_occlusion_required = true;
+  canonicalRailProbe.damage_required = false;
+  canonicalRailProbe.historical_target_origin = {64.0f, 0.0f, -14.0f};
+  canonicalRailProbe.current_target_offset = {};
+  canonicalRailProbe.shooter_origin =
+      canonicalRailProbe.historical_target_origin -
+      Vector3{canonicalRailProbe.target_distance, 0.0f, 0.0f};
+  canonicalRailProbe.current_target_origin =
+      canonicalRailProbe.historical_target_origin;
+  if (!CanonicalRailProbeSelectHistoricalMover()) {
+    CanonicalRailProbeFail(26);
+    return false;
+  }
+  CanonicalRailProbePlacePlayer(canonicalRailProbe.shooter,
+                                canonicalRailProbe.shooter_origin);
+  CanonicalRailProbePlacePlayer(canonicalRailProbe.target,
+                                canonicalRailProbe.historical_target_origin);
+  CanonicalRailProbePublish();
+  return canonicalRailProbe.stage != CanonicalRailProbeStage::Failed;
 }
 
 bool CanonicalMachinegunProbeArm() {
@@ -2806,6 +3923,292 @@ bool CanonicalDisruptorProbeArm() {
                                   IT_WEAPON_DISRUPTOR,
                                   kCanonicalDisruptorProbeExpectedDamage, 10,
                                   112.0f, UINT64_C(1500000), true);
+}
+
+bool CanonicalRocketProbeArm() {
+  // Retain history before the real command, then move the current target
+  // farther down the same aim ray. The rocket has no historical impact query:
+  // the normal current-world hull flight must advance, impact, and damage the
+  // live target after its bounded authenticated spawn advance.
+  return CanonicalHitscanProbeArm(WORR_REWIND_WEAPON_ROCKET_SPAWN_FORWARD,
+                                  IT_WEAPON_RLAUNCHER,
+                                  kCanonicalRocketProbeExpectedDamage, 13,
+                                  112.0f, UINT64_C(1500000), false,
+                                  {32.0f, 0.0f, 0.0f});
+}
+
+bool CanonicalBfgProbeArm() {
+  // This proves the initial current-world BFG launch only. Its later laser,
+  // touch, staged explosion, and radius lifecycle are deliberately unclaimed.
+  return CanonicalHitscanProbeArm(
+      WORR_REWIND_WEAPON_BFG_SPAWN_FORWARD, IT_WEAPON_BFG, 200, 17, 112.0f,
+      UINT64_C(1500000), false, {32.0f, 0.0f, 0.0f}, false,
+      {64.0f, 192.0f, 64.0f}, false, false, 50, false, false, 0, false,
+      false);
+}
+
+bool CanonicalIonRipperProbeArm() {
+  // The normal Ion Ripper callback creates fifteen randomized bolts. The
+  // live target is moved well outside that narrow spread so this fixture
+  // proves every bounded spawn advance, not a direct damage or ricochet
+  // outcome.
+  return CanonicalHitscanProbeArm(
+      WORR_REWIND_WEAPON_ION_RIPPER_BURST_SPAWN_FORWARD,
+      IT_WEAPON_IONRIPPER, 10, 6, 112.0f, UINT64_C(1500000), false,
+      {0.0f, 256.0f, 0.0f}, false, {64.0f, 192.0f, 64.0f}, false, false,
+      10, false, false, 0, false, false);
+}
+
+bool CanonicalTeslaMineProbeArm() {
+  // Tesla uses the same normal held-release path as a hand grenade, but its
+  // deployment contains independent bounce, activation, target scan, and
+  // damage authority. This fixture proves only the fresh mine's clear,
+  // release-bound initial gravity advance.
+  return CanonicalHitscanProbeArm(
+      WORR_REWIND_WEAPON_TESLA_MINE_RELEASE_BALLISTIC_DEPLOY_FORWARD,
+      IT_AMMO_TESLA, kCanonicalTeslaMineProbeExpectedDamage, 32, 160.0f,
+      UINT64_C(2500000), false, {-64.0f, 96.0f, 0.0f}, false,
+      {64.0f, 192.0f, 64.0f}, false, false, 8, false, false, 0, false,
+      false);
+}
+
+bool CanonicalTrapProbeArm() {
+  // Trap deployment starts from the same real held-release input boundary,
+  // but its Bounce/capture/destruction lifecycle remains independently
+  // current-world. This fixture proves only the new Trap's fresh clear
+  // release-bound gravity advance.
+  return CanonicalHitscanProbeArm(
+      WORR_REWIND_WEAPON_TRAP_RELEASE_BALLISTIC_DEPLOY_FORWARD, IT_AMMO_TRAP,
+      kCanonicalTrapProbeExpectedDamage, 48, 160.0f, UINT64_C(2500000),
+      false, {-64.0f, 96.0f, 0.0f}, false, {64.0f, 192.0f, 64.0f}, false,
+      false, 8, false, false, 0, false, false);
+}
+
+bool CanonicalGrappleProbeArm() {
+  // The normal Generic weapon callback creates the hook after its frame-six
+  // wind-up. Keep the target off-axis: a passing fixture proves only clear
+  // fresh-hook flight, not contact, attachment, pull, or damage.
+  return CanonicalHitscanProbeArm(
+      WORR_REWIND_WEAPON_GRAPPLE_HOOK_SPAWN_FORWARD, IT_WEAPON_GRAPPLE,
+      kCanonicalGrappleProbeExpectedDamage, 31, 112.0f, UINT64_C(1500000),
+      false, {0.0f, 256.0f, 0.0f}, false, {64.0f, 192.0f, 64.0f}, false,
+      false, 8, false, false, 0, false, false);
+}
+
+bool CanonicalOffhandHookProbeArm() {
+  // +hook is a one-shot native input action rather than an equipped weapon
+  // callback. The fixture selects an otherwise inert normal weapon only to
+  // keep generic player-state setup deterministic; BUTTON_HOOK alone invokes
+  // the production off-hand action later in ClientThink. The target remains
+  // off-axis, proving only fresh clear current-world hook flight—not touch,
+  // attachment, pull, damage, or reset.
+  return CanonicalHitscanProbeArm(
+      WORR_REWIND_WEAPON_OFFHAND_HOOK_SPAWN_FORWARD, IT_WEAPON_BLASTER,
+      kCanonicalGrappleProbeExpectedDamage, 9, 112.0f, UINT64_C(1500000),
+      false, {0.0f, 256.0f, 0.0f}, false, {64.0f, 192.0f, 64.0f}, false,
+      false, 8, false, false, 0, false, false, false, false, true);
+}
+
+bool CanonicalProBallThrowProbeArm() {
+  // A normal Chainfist-held throw releases only after its real attack-to-
+  // release edge. The target remains off-axis: a pass proves a fresh ball's
+  // clear current-world gravity advance, not possession, pickup, touch,
+  // goals, scores, teams, or resets.
+  if (Game::IsNot(GameType::ProBall)) {
+    canonicalRailProbe = {};
+    CanonicalRailProbeFail(26);
+    return false;
+  }
+  return CanonicalHitscanProbeArm(
+      WORR_REWIND_WEAPON_PROBALL_HELD_THROW_BALLISTIC_SPAWN_FORWARD,
+      // Chainfist's ordinary first fire callback is frame five. Staging the
+      // ready state on its preceding frame lets the real attack enter the
+      // unmodified held-throw animation rather than beginning in Chainfist's
+      // later idle loop.
+      IT_WEAPON_CHAINFIST, kCanonicalProBallThrowProbeExpectedDamage, 4,
+      160.0f, UINT64_C(2500000), false, {-64.0f, 96.0f, 0.0f}, false,
+      {64.0f, 192.0f, 64.0f}, false, false, 8, false, false, 0, false,
+      false);
+}
+
+bool CanonicalGrenadeLauncherProbeArm() {
+  // A Grenade Launcher round has gravity and future bounce ownership, so this
+  // This acceptance seam puts a damageable, present-world impact fixture in
+  // the normal arc after history capture and moves the real client off-axis.
+  // The normal grenade touch must initiate the ordinary explosion; only
+  // production RadiusDamage may reach the client. Ballistic advance cannot
+  // invent a bounce, placement, trigger, or historical impact.
+  return CanonicalHitscanProbeArm(
+      WORR_REWIND_WEAPON_GRENADE_LAUNCHER_BALLISTIC_SPAWN_FORWARD,
+      IT_WEAPON_GLAUNCHER, kCanonicalGrenadeLauncherProbeExpectedDamage, 5,
+      160.0f, UINT64_C(1500000), false, {-64.0f, 96.0f, 0.0f}, false,
+      {64.0f, 192.0f, 64.0f}, false, false, 8, false, true, 57, true);
+}
+
+bool CanonicalHandGrenadeProbeArm() {
+  // The hand grenade must be released by a real no-attack command after the
+  // ordinary prime/hold animation. Acceptance proves only its first clear
+  // bounded current-world ballistic advance; normal Toss collision, bounce,
+  // touch, fuse, splash, and damage remain wholly production-owned.
+  return CanonicalHitscanProbeArm(
+      WORR_REWIND_WEAPON_HAND_GRENADE_RELEASE_BALLISTIC_SPAWN_FORWARD,
+      IT_AMMO_GRENADES, kCanonicalHandGrenadeProbeExpectedDamage, 16, 160.0f,
+      // The normal prime/hold/release lifecycle precedes flight, unlike a
+      // launcher callback. The settling allowance includes that real
+      // animation and does not create a throw.
+      UINT64_C(2500000), false, {-64.0f, 96.0f, 0.0f}, false,
+      {64.0f, 192.0f, 64.0f}, false, false, 8, false, false, 0, false,
+      false);
+}
+
+bool CanonicalHandGrenadeSplashProbeArm() {
+  // The live blocker is derived from the accepted released grenade's actual
+  // post-forward origin/velocity, then normal Toss physics chooses contact.
+  return CanonicalHitscanProbeArm(
+      WORR_REWIND_WEAPON_HAND_GRENADE_RELEASE_BALLISTIC_SPAWN_FORWARD,
+      IT_AMMO_GRENADES, kCanonicalHandGrenadeProbeExpectedDamage, 16, 160.0f,
+      UINT64_C(2500000), false, {-64.0f, 96.0f, 0.0f}, false,
+      {64.0f, 192.0f, 64.0f}, false, false, 8, false, true, 45, true, true,
+      false, true);
+}
+
+bool CanonicalProxLauncherProbeArm() {
+  // A proximity mine starts as a bouncing projectile but becomes a
+  // deployable with independently current-world land/arm/trigger/explosion
+  // behavior. This fixture proves only one clear initial gravity path after
+  // a real command; it deliberately creates neither a landing nor a trigger.
+  return CanonicalHitscanProbeArm(
+      WORR_REWIND_WEAPON_PROX_MINE_BALLISTIC_DEPLOY_FORWARD,
+      IT_WEAPON_PROXLAUNCHER, kCanonicalProxLauncherProbeExpectedDamage, 5,
+      160.0f, UINT64_C(1500000), false, {-64.0f, 96.0f, 0.0f}, false,
+      {64.0f, 192.0f, 64.0f}, false, false, 8, false, false, 0, false,
+      false);
+}
+
+bool CanonicalProxLauncherLifecycleProbeArm() {
+  // The first gravity advance is still the only rewind-owned operation. Once
+  // the real mine has landed, this fixture stages its isolated target near
+  // that normal landing and proves production arm delay, radial target scan,
+  // delayed explosion, and RadiusDamage without creating a touch, target, or
+  // damage result itself.
+  return CanonicalHitscanProbeArm(
+      WORR_REWIND_WEAPON_PROX_MINE_BALLISTIC_DEPLOY_FORWARD,
+      IT_WEAPON_PROXLAUNCHER,
+      kCanonicalProxLauncherLifecycleProbeExpectedDamage, 5, 160.0f,
+      UINT64_C(5000000), false, {-64.0f, 96.0f, 0.0f}, false,
+      {64.0f, 192.0f, 64.0f}, false, false, 8, false, false, 0, false,
+      true, true);
+}
+
+bool CanonicalRocketSplashProbeArm() {
+  // The target moves off the firing ray after history capture. A normal rocket
+  // must first strike the current-world blocker, then let RadiusDamage apply
+  // its exact reduced splash through the clear side of that blocker.
+  return CanonicalHitscanProbeArm(
+      WORR_REWIND_WEAPON_ROCKET_SPAWN_FORWARD, IT_WEAPON_RLAUNCHER,
+      kCanonicalRocketSplashProbeExpectedDamage, 13, 112.0f,
+      UINT64_C(1500000), false, {-64.0f, 48.0f, 0.0f}, false,
+      {64.0f, 192.0f, 64.0f}, false, false, 8, false, true);
+}
+
+bool CanonicalPhalanxSplashProbeArm() {
+  // The live target moves off the shell's aim ray after history capture. The
+  // normal Phalanx shell must strike the present-world blocker, then let its
+  // unmodified RadiusDamage path apply the exact reduced splash amount.
+  return CanonicalHitscanProbeArm(
+      WORR_REWIND_WEAPON_PHALANX_SPAWN_FORWARD, IT_WEAPON_PHALANX,
+      kCanonicalPhalanxSplashProbeExpectedDamage, 21, 112.0f,
+      UINT64_C(1500000), false, {-64.0f, 48.0f, 0.0f}, false,
+      {64.0f, 192.0f, 64.0f}, false, false, 8, false, true);
+}
+
+bool CanonicalPlasmaGunProbeArm() {
+  // The target remains on the live aim ray but beyond the 100 ms / 200-unit
+  // maximum Plasma Gun advance. This accepts only a real production
+  // current-world direct hit after its bounded authenticated spawn advance;
+  // radius damage is intentionally outside this direct-hit seam.
+  return CanonicalHitscanProbeArm(
+      WORR_REWIND_WEAPON_PLASMA_GUN_SPAWN_FORWARD, IT_WEAPON_PLASMAGUN,
+      kCanonicalPlasmaGunProbeExpectedDamage, 43, 224.0f, UINT64_C(1500000),
+      false, {32.0f, 0.0f, 0.0f});
+}
+
+bool CanonicalPlasmaGunSplashProbeArm() {
+  // The normal Plasma Gun may advance no more than 200 units from the accepted
+  // command. Start the real client 256 units behind retained history so that
+  // bounded advance cannot reach the fixture blocker. The live player remains
+  // on the established direct-hit ray behind that blocker, so its ordinary
+  // Plasma Gun callback still fires. Only after normal current-world touch is
+  // the small radius target staged from that touch's actual position and
+  // flight direction. This gives RadiusDamage a real
+  // clear-side target for a deterministic seven-damage production splash
+  // without assuming a
+  // muzzle, player-center, or trace-coordinate offset. A one-unit impact hull
+  // still leaves the player collision hull separate. Once normal touch has
+  // accepted the sacrificial fixture blocker, it is unlinked solely so the
+  // plasma entity relinked at that impact cannot self-occlude RadiusDamage's
+  // production current-world line-of-sight test.
+  return CanonicalHitscanProbeArm(
+      WORR_REWIND_WEAPON_PLASMA_GUN_SPAWN_FORWARD, IT_WEAPON_PLASMAGUN,
+      kCanonicalPlasmaGunSplashProbeExpectedDamage, 43, 256.0f,
+      UINT64_C(1500000), false, {32.0f, 0.0f, 0.0f}, false,
+      {64.0f, 192.0f, 64.0f}, false, false, 8, false, true, 0, false, true,
+      false, false, false, 1.0f, true, true);
+}
+
+bool CanonicalBlasterProbeArm() {
+  // The standard Blaster's maximum 100 ms advance is 150 units at speed 1500.
+  // Keep the live target beyond that advance and require normal remaining
+  // current-world bolt flight for the exact direct hit. The shared path also
+  // covers HyperBlaster, whose direct/radius lifecycle remains current-owned.
+  return CanonicalHitscanProbeArm(
+      WORR_REWIND_WEAPON_BLASTER_BOLT_SPAWN_FORWARD, IT_WEAPON_BLASTER,
+      kCanonicalBlasterProbeExpectedDamage, 9, 224.0f, UINT64_C(1500000),
+      false, {32.0f, 0.0f, 0.0f});
+}
+
+bool CanonicalHyperBlasterProbeArm() {
+  // A real held attack enters the repeating 6–11 gun-frame cadence. The
+  // shared bolt policy may only consume bounded accepted delay through the
+  // current world; this fixture accepts the first ordinary 15-damage bolt,
+  // not a historical contact or a Q3 radius branch.
+  return CanonicalHitscanProbeArm(
+      WORR_REWIND_WEAPON_BLASTER_BOLT_SPAWN_FORWARD, IT_WEAPON_HYPERBLASTER,
+      kCanonicalHyperBlasterProbeExpectedDamage, 5, 224.0f,
+      UINT64_C(1500000), false, {32.0f, 0.0f, 0.0f});
+}
+
+bool CanonicalChainfistProbeArm() {
+  // At the authenticated historical time the two player bounds are 48 units
+  // apart, leaving a 16-unit box gap inside Chainfist's 24-unit reach. The
+  // live target is shifted 64 units off-axis, beyond ordinary present-time
+  // melee reach but still exactly at the bounded displacement guard.
+  return CanonicalHitscanProbeArm(
+      WORR_REWIND_WEAPON_CHAINFIST_MELEE_HYBRID, IT_WEAPON_CHAINFIST,
+      kCanonicalChainfistProbeExpectedDamage, 33, 48.0f, 0, false,
+      {0.0f, 64.0f, 0.0f});
+}
+
+bool CanonicalEtfRifleProbeArm() {
+  // ETF's 1150-unit-per-second flechette may consume up to 115 units under
+  // the shared 100 ms cap. The muzzle-to-target box gap is 129 units, so a
+  // passing result requires normal remaining current-world flight and direct
+  // damage after even the full bounded advance.
+  return CanonicalHitscanProbeArm(
+      WORR_REWIND_WEAPON_ETF_FLECHETTE_SPAWN_FORWARD, IT_WEAPON_ETF_RIFLE,
+      kCanonicalEtfRifleProbeExpectedDamage, 8, 128.0f, UINT64_C(1500000),
+      false, {32.0f, 0.0f, 0.0f});
+}
+
+bool CanonicalPhalanxProbeArm() {
+  // The 725-unit-per-second shell can advance at most 72 units under the
+  // shared 100 ms cap. Keep the target beyond that advance; normal remaining
+  // flight must supply the exact direct hit while RadiusDamage stays available
+  // to its unmodified production lifecycle.
+  return CanonicalHitscanProbeArm(
+      WORR_REWIND_WEAPON_PHALANX_SPAWN_FORWARD, IT_WEAPON_PHALANX,
+      kCanonicalPhalanxProbeExpectedDamage, 21, 64.0f, UINT64_C(1500000),
+      false, {32.0f, 0.0f, 0.0f});
 }
 
 bool CanonicalPlasmaBeamProbeArm() {
@@ -2951,12 +4354,21 @@ void LagCompensation_Init() {
       gi.cvar("sg_lag_compensation_debug", "0", CVAR_NOFLAGS);
   sg_lag_compensation_legacy_error_ms = gi.cvar(
       "sg_lag_compensation_legacy_error_ms", "50", CVAR_NOFLAGS);
+  // Projectile simulation remains current-world authority. This cap only
+  // compensates the server-side spawn delay of an already accepted command.
+  sg_lag_compensation_projectile_forward_ms = gi.cvar(
+      "sg_lag_compensation_projectile_forward_ms", "100", CVAR_NOFLAGS);
+  sg_lag_compensation_melee_max_displacement = gi.cvar(
+      "sg_lag_compensation_melee_max_displacement", "64", CVAR_NOFLAGS);
   sg_worr_rewind_mover_selftest_status = gi.cvar(
       "sg_worr_rewind_mover_selftest_status", "idle", CVAR_NOSET);
   sg_worr_rewind_rail_damage_selftest_status = gi.cvar(
       "sg_worr_rewind_rail_damage_selftest_status", "idle", CVAR_NOSET);
   sg_worr_rewind_canonical_rail_damage_status = gi.cvar(
       "sg_worr_rewind_canonical_rail_damage_status", "idle", CVAR_NOSET);
+  sg_worr_rewind_canonical_rail_mover_occlusion_status = gi.cvar(
+      "sg_worr_rewind_canonical_rail_mover_occlusion_status", "idle",
+      CVAR_NOSET);
   sg_worr_rewind_canonical_machinegun_damage_status = gi.cvar(
       "sg_worr_rewind_canonical_machinegun_damage_status", "idle",
       CVAR_NOSET);
@@ -2967,6 +4379,58 @@ void LagCompensation_Init() {
       CVAR_NOSET);
   sg_worr_rewind_canonical_disruptor_damage_status = gi.cvar(
       "sg_worr_rewind_canonical_disruptor_damage_status", "idle", CVAR_NOSET);
+  sg_worr_rewind_canonical_rocket_damage_status = gi.cvar(
+      "sg_worr_rewind_canonical_rocket_damage_status", "idle", CVAR_NOSET);
+  sg_worr_rewind_canonical_bfg_damage_status = gi.cvar(
+      "sg_worr_rewind_canonical_bfg_damage_status", "idle", CVAR_NOSET);
+  sg_worr_rewind_canonical_ion_ripper_damage_status = gi.cvar(
+      "sg_worr_rewind_canonical_ion_ripper_damage_status", "idle",
+      CVAR_NOSET);
+  sg_worr_rewind_canonical_tesla_mine_damage_status = gi.cvar(
+      "sg_worr_rewind_canonical_tesla_mine_damage_status", "idle",
+      CVAR_NOSET);
+  sg_worr_rewind_canonical_trap_damage_status = gi.cvar(
+      "sg_worr_rewind_canonical_trap_damage_status", "idle", CVAR_NOSET);
+  sg_worr_rewind_canonical_grapple_damage_status = gi.cvar(
+      "sg_worr_rewind_canonical_grapple_damage_status", "idle", CVAR_NOSET);
+  sg_worr_rewind_canonical_offhand_hook_status = gi.cvar(
+      "sg_worr_rewind_canonical_offhand_hook_status", "idle", CVAR_NOSET);
+  sg_worr_rewind_canonical_proball_throw_status = gi.cvar(
+      "sg_worr_rewind_canonical_proball_throw_status", "idle", CVAR_NOSET);
+  sg_worr_rewind_canonical_grenade_launcher_damage_status = gi.cvar(
+      "sg_worr_rewind_canonical_grenade_launcher_damage_status", "idle",
+      CVAR_NOSET);
+  sg_worr_rewind_canonical_hand_grenade_damage_status = gi.cvar(
+      "sg_worr_rewind_canonical_hand_grenade_damage_status", "idle",
+      CVAR_NOSET);
+  sg_worr_rewind_canonical_prox_launcher_damage_status = gi.cvar(
+      "sg_worr_rewind_canonical_prox_launcher_damage_status", "idle",
+      CVAR_NOSET);
+  sg_worr_rewind_canonical_rocket_splash_damage_status = gi.cvar(
+      "sg_worr_rewind_canonical_rocket_splash_damage_status", "idle",
+      CVAR_NOSET);
+  sg_worr_rewind_canonical_phalanx_splash_damage_status = gi.cvar(
+      "sg_worr_rewind_canonical_phalanx_splash_damage_status", "idle",
+      CVAR_NOSET);
+  sg_worr_rewind_canonical_plasma_gun_damage_status = gi.cvar(
+      "sg_worr_rewind_canonical_plasma_gun_damage_status", "idle",
+      CVAR_NOSET);
+  sg_worr_rewind_canonical_plasma_gun_splash_damage_status = gi.cvar(
+      "sg_worr_rewind_canonical_plasma_gun_splash_damage_status", "idle",
+      CVAR_NOSET);
+  sg_worr_rewind_canonical_blaster_damage_status = gi.cvar(
+      "sg_worr_rewind_canonical_blaster_damage_status", "idle", CVAR_NOSET);
+  sg_worr_rewind_canonical_hyperblaster_damage_status = gi.cvar(
+      "sg_worr_rewind_canonical_hyperblaster_damage_status", "idle",
+      CVAR_NOSET);
+  sg_worr_rewind_canonical_chainfist_damage_status = gi.cvar(
+      "sg_worr_rewind_canonical_chainfist_damage_status", "idle",
+      CVAR_NOSET);
+  sg_worr_rewind_canonical_etf_rifle_damage_status = gi.cvar(
+      "sg_worr_rewind_canonical_etf_rifle_damage_status", "idle",
+      CVAR_NOSET);
+  sg_worr_rewind_canonical_phalanx_damage_status = gi.cvar(
+      "sg_worr_rewind_canonical_phalanx_damage_status", "idle", CVAR_NOSET);
   sg_worr_rewind_canonical_plasma_beam_damage_status = gi.cvar(
       "sg_worr_rewind_canonical_plasma_beam_damage_status", "idle",
       CVAR_NOSET);
@@ -3043,11 +4507,15 @@ void LagCompensation_Init() {
 void LagCompensation_Shutdown() {
   commandContextImport = nullptr;
   rewindCollisionImport = nullptr;
+  CanonicalRailProbeRestoreHistoricalMover();
+  CanonicalRailProbeReleaseCurrentWorldSplashImpact();
+  CanonicalRailProbeReleaseCurrentWorldSplashDamageTarget();
   canonicalRailProbe = {};
   // Init()/ResetMap() recreate all bounded state before it can be used again.
   // Do not aggregate-assign those large static arrays here: MSVC lowers that
   // assignment through a stack temporary and can overflow the game thread.
   InvalidateDecisionCaches();
+  InvalidateDeferredProjectileForwardAuthorizations();
   InvalidateSceneCaches();
   initialized = false;
 }
@@ -3055,6 +4523,10 @@ void LagCompensation_Shutdown() {
 void LagCompensation_ResetMap() {
   if (!initialized)
     return;
+  CanonicalRailProbeRestoreHistoricalMover();
+  CanonicalRailProbeReleaseCurrentWorldSplashImpact();
+  CanonicalRailProbeReleaseCurrentWorldSplashDamageTarget();
+  CanonicalRailProbeReleaseProxLandingSurface();
   canonicalRailProbe = {};
   CanonicalRailProbePublish();
   ++provisionalMapEpoch;
@@ -3078,9 +4550,17 @@ void LagCompensation_ResetClient(gentity_t *entity) {
   const std::size_t index = ClientIndex(entity);
   if (index >= poseTracks.size())
     return;
+  if (CanonicalRailProbeActive() &&
+      (entity == canonicalRailProbe.shooter ||
+       entity == canonicalRailProbe.target)) {
+    // A participant disconnect/lifecycle reset must not strand fixture-owned
+    // mover relocation after its normal end-frame callback disappears.
+    CanonicalRailProbeFail(29);
+  }
   (void)InitTrack(poseTracks[index], static_cast<uint32_t>(index + 1u));
   (void)Worr_RewindPolicyStateInitV1(&policyStates[index]);
   decisionCaches[index].valid = false;
+  deferredProjectileForwardAuthorizations[index] = {};
   sceneCaches[index].valid = false;
 }
 
@@ -3090,12 +4570,18 @@ void LagCompensation_BeginClientLife(gentity_t *entity) {
   const std::size_t index = ClientIndex(entity);
   if (index >= poseTracks.size())
     return;
+  if (CanonicalRailProbeActive() &&
+      (entity == canonicalRailProbe.shooter ||
+       entity == canonicalRailProbe.target)) {
+    CanonicalRailProbeFail(29);
+  }
 
   // Clear the old life first.  Exhaustion is sticky for the rest of the map:
   // generation zero makes pose capture and live-reference resolution fail
   // closed rather than aliasing an earlier life after uint32 wrap.
   (void)InitTrack(poseTracks[index], static_cast<uint32_t>(index + 1u));
   decisionCaches[index].valid = false;
+  deferredProjectileForwardAuthorizations[index] = {};
   sceneCaches[index].valid = false;
   if (clientLifeGenerationExhausted[index] ||
       clientLifeGenerations[index] == UINT32_MAX) {
@@ -4360,6 +5846,10 @@ bool LagCompensation_ArmCanonicalRailDamageRuntimeProbe() {
   return CanonicalRailProbeArm();
 }
 
+bool LagCompensation_ArmCanonicalRailMoverOcclusionRuntimeProbe() {
+  return CanonicalRailMoverOcclusionProbeArm();
+}
+
 bool LagCompensation_ArmCanonicalMachinegunDamageRuntimeProbe() {
   return CanonicalMachinegunProbeArm();
 }
@@ -4374,6 +5864,94 @@ bool LagCompensation_ArmCanonicalSuperShotgunDamageRuntimeProbe() {
 
 bool LagCompensation_ArmCanonicalDisruptorDamageRuntimeProbe() {
   return CanonicalDisruptorProbeArm();
+}
+
+bool LagCompensation_ArmCanonicalRocketDamageRuntimeProbe() {
+  return CanonicalRocketProbeArm();
+}
+
+bool LagCompensation_ArmCanonicalBfgDamageRuntimeProbe() {
+  return CanonicalBfgProbeArm();
+}
+
+bool LagCompensation_ArmCanonicalIonRipperDamageRuntimeProbe() {
+  return CanonicalIonRipperProbeArm();
+}
+
+bool LagCompensation_ArmCanonicalTeslaMineDamageRuntimeProbe() {
+  return CanonicalTeslaMineProbeArm();
+}
+
+bool LagCompensation_ArmCanonicalTrapDamageRuntimeProbe() {
+  return CanonicalTrapProbeArm();
+}
+
+bool LagCompensation_ArmCanonicalGrappleDamageRuntimeProbe() {
+  return CanonicalGrappleProbeArm();
+}
+
+bool LagCompensation_ArmCanonicalOffhandHookRuntimeProbe() {
+  return CanonicalOffhandHookProbeArm();
+}
+
+bool LagCompensation_ArmCanonicalProBallThrowRuntimeProbe() {
+  return CanonicalProBallThrowProbeArm();
+}
+
+bool LagCompensation_ArmCanonicalGrenadeLauncherDamageRuntimeProbe() {
+  return CanonicalGrenadeLauncherProbeArm();
+}
+
+bool LagCompensation_ArmCanonicalHandGrenadeDamageRuntimeProbe() {
+  return CanonicalHandGrenadeProbeArm();
+}
+
+bool LagCompensation_ArmCanonicalHandGrenadeSplashRuntimeProbe() {
+  return CanonicalHandGrenadeSplashProbeArm();
+}
+
+bool LagCompensation_ArmCanonicalProxLauncherDamageRuntimeProbe() {
+  return CanonicalProxLauncherProbeArm();
+}
+
+bool LagCompensation_ArmCanonicalProxLauncherLifecycleRuntimeProbe() {
+  return CanonicalProxLauncherLifecycleProbeArm();
+}
+
+bool LagCompensation_ArmCanonicalRocketSplashDamageRuntimeProbe() {
+  return CanonicalRocketSplashProbeArm();
+}
+
+bool LagCompensation_ArmCanonicalPhalanxSplashDamageRuntimeProbe() {
+  return CanonicalPhalanxSplashProbeArm();
+}
+
+bool LagCompensation_ArmCanonicalPlasmaGunDamageRuntimeProbe() {
+  return CanonicalPlasmaGunProbeArm();
+}
+
+bool LagCompensation_ArmCanonicalPlasmaGunSplashDamageRuntimeProbe() {
+  return CanonicalPlasmaGunSplashProbeArm();
+}
+
+bool LagCompensation_ArmCanonicalBlasterDamageRuntimeProbe() {
+  return CanonicalBlasterProbeArm();
+}
+
+bool LagCompensation_ArmCanonicalHyperBlasterDamageRuntimeProbe() {
+  return CanonicalHyperBlasterProbeArm();
+}
+
+bool LagCompensation_ArmCanonicalChainfistDamageRuntimeProbe() {
+  return CanonicalChainfistProbeArm();
+}
+
+bool LagCompensation_ArmCanonicalEtfRifleDamageRuntimeProbe() {
+  return CanonicalEtfRifleProbeArm();
+}
+
+bool LagCompensation_ArmCanonicalPhalanxDamageRuntimeProbe() {
+  return CanonicalPhalanxProbeArm();
 }
 
 bool LagCompensation_ArmCanonicalPlasmaBeamDamageRuntimeProbe() {
@@ -4429,6 +6007,146 @@ void LagCompensation_PrepareCanonicalWeaponDamageCommand(gentity_t *entity,
   CanonicalRailProbePrepareCommand(entity, command);
 }
 
+void LagCompensation_RecordDeferredProjectileForwardCommand(
+    gentity_t *entity, const usercmd_t *command) {
+  if (!initialized || !entity || !entity->client || !command) {
+    return;
+  }
+
+  const std::size_t shooterIndex = ClientIndex(entity);
+  if (shooterIndex >= deferredProjectileForwardAuthorizations.size())
+    return;
+  DeferredProjectileForwardAuthorization &authorization =
+      deferredProjectileForwardAuthorizations[shooterIndex];
+
+  const Item *weapon = entity->client->pers.weapon;
+  // ProBall's Chainfist-held throw is a release-bound action that ultimately
+  // launches IT_BALL. Record it as ball authority only while the carrier still
+  // possesses the ball; ordinary Chainfist melee and the direct-use pass path
+  // remain outside this policy.
+  const bool proBallHeldThrow =
+      Game::Is(GameType::ProBall) && weapon &&
+      weapon->id == IT_WEAPON_CHAINFIST &&
+      entity->client->pers.inventory[IT_BALL] > 0;
+  const item_id_t authorizationItem =
+      proBallHeldThrow ? IT_BALL : (weapon ? weapon->id : IT_NULL);
+  const uint32_t weaponPolicy =
+      ProjectileForwardPolicyForWeapon(authorizationItem);
+  if (weaponPolicy == WORR_REWIND_WEAPON_UNSPECIFIED ||
+      ProjectileForwardMs() <= 0) {
+    authorization = {};
+    return;
+  }
+  const bool releaseOnlyPolicy =
+      ReleaseOnlyProjectileForwardPolicy(weaponPolicy);
+  const uint64_t authorizationLifetimeUs =
+      DeferredProjectileForwardAuthorizationLifetimeUs(weaponPolicy);
+  const bool releaseEdge =
+      releaseOnlyPolicy &&
+      (command->buttons & BUTTON_ATTACK) == 0 &&
+      (entity->client->buttons & BUTTON_ATTACK) != 0;
+  if (releaseOnlyPolicy) {
+    // A subsequent prime always invalidates any unconsumed release. Other
+    // zero-input commands retain the first edge because the normal held-throw
+    // callback may occur on its following weapon-animation frame.
+    if ((command->buttons & BUTTON_ATTACK) != 0)
+      authorization = {};
+    if (!releaseEdge)
+      return;
+  } else if ((command->buttons & BUTTON_ATTACK) == 0) {
+    return;
+  }
+
+  bool canonicalContextAvailable = false;
+  worr_rewind_policy_decision_v1 decision{};
+  uint64_t currentTimeUs = 0;
+  worr_event_entity_ref_v1 shooterIdentity{};
+  if (!ResolveCanonicalDecision(shooterIndex, decision,
+                                canonicalContextAvailable) ||
+      (decision.flags & WORR_REWIND_DECISION_ACCEPTED) == 0 ||
+      !CurrentAuthoritativeTimeUs(currentTimeUs) ||
+      decision.mapped_time_us > currentTimeUs ||
+      !EntityRef(entity, shooterIdentity) ||
+      currentTimeUs >
+          std::numeric_limits<uint64_t>::max() -
+              authorizationLifetimeUs) {
+    authorization = {};
+    return;
+  }
+
+  authorization = {};
+  authorization.shooter = shooterIdentity;
+  authorization.decision = decision;
+  authorization.weapon_item = authorizationItem;
+  authorization.release_only = releaseOnlyPolicy;
+  authorization.expires_at_us =
+      currentTimeUs + authorizationLifetimeUs;
+  authorization.launches_remaining =
+      DeferredProjectileForwardLaunches(weaponPolicy);
+  authorization.valid = authorization.launches_remaining != 0;
+  if (authorization.valid && sg_lag_compensation_debug &&
+      sg_lag_compensation_debug->integer >= 3 &&
+      canonicalRailProbe.stage == CanonicalRailProbeStage::AwaitingDamage &&
+      entity == canonicalRailProbe.shooter &&
+      weaponPolicy == canonicalRailProbe.weapon_policy) {
+    gi.Com_PrintFmt(
+        "lagcomp projectile_forward deferred_record policy={} command={}:{} "
+        "mapped_us={} expires_us={} launches={} release={}\n",
+        weaponPolicy, decision.command_id.epoch, decision.command_id.sequence,
+        static_cast<unsigned long long>(decision.mapped_time_us),
+        static_cast<unsigned long long>(authorization.expires_at_us),
+        authorization.launches_remaining,
+        authorization.release_only ? 1u : 0u);
+  }
+}
+
+void LagCompensation_ObserveCanonicalWeaponCallback(
+    gentity_t *shooter, uint32_t weaponPolicy) {
+  if (canonicalRailProbe.stage != CanonicalRailProbeStage::AwaitingDamage ||
+      !shooter || shooter != canonicalRailProbe.shooter ||
+      weaponPolicy != canonicalRailProbe.weapon_policy ||
+      !CanonicalRailProbeSameEntity(shooter,
+                                    canonicalRailProbe.shooter_identity)) {
+    return;
+  }
+  // Generic firing can be deferred past a target's next zero-input client
+  // update. Restore only the already-staged fixture target pose immediately
+  // before the normal callback creates its current-world projectile; do not
+  // alter health, collision shape, contact, splash, or damage authority.
+  if (canonicalRailProbe.projectile_current_authority_required) {
+    CanonicalRailProbePinTarget(canonicalRailProbe.target,
+                                canonicalRailProbe.current_target_origin);
+  }
+  canonicalRailProbe.weapon_callback = true;
+  CanonicalRailProbePublish();
+}
+
+void LagCompensation_ObserveCanonicalRailPierceHit(
+    gentity_t *shooter, const trace_t &trace) {
+  if (canonicalRailProbe.stage != CanonicalRailProbeStage::AwaitingDamage ||
+      !canonicalRailProbe.historical_mover_occlusion_required ||
+      shooter != canonicalRailProbe.shooter ||
+      !CanonicalRailProbeSameEntity(shooter,
+                                    canonicalRailProbe.shooter_identity) ||
+      !canonicalRailProbe.historical_mover_baseline_clear ||
+      !canonicalRailProbe.canonical_historical_hit ||
+      canonicalRailProbe.observation_path !=
+          WORR_REWIND_OBSERVATION_PATH_CANONICAL ||
+      canonicalRailProbe.observation_outcome !=
+          WORR_REWIND_OBSERVATION_OUTCOME_HISTORICAL_HIT ||
+      canonicalRailProbe.observation_fallback !=
+          WORR_REWIND_OBSERVATION_FALLBACK_NONE ||
+      trace.fraction <= 0.0f || trace.fraction >= 1.0f ||
+      !CanonicalRailProbeSameEntity(
+          trace.ent, canonicalRailProbe.historical_mover_identity)) {
+    return;
+  }
+
+  canonicalRailProbe.weapon_callback = true;
+  canonicalRailProbe.historical_mover_occlusion_observed = true;
+  CanonicalRailProbePublish();
+}
+
 void LagCompensation_ObserveThunderboltUnderwaterDischarge(gentity_t *shooter) {
   if (canonicalRailProbe.stage != CanonicalRailProbeStage::AwaitingDamage ||
       !canonicalRailProbe.thunderbolt_discharge_required ||
@@ -4439,6 +6157,125 @@ void LagCompensation_ObserveThunderboltUnderwaterDischarge(gentity_t *shooter) {
   }
   canonicalRailProbe.weapon_callback = true;
   canonicalRailProbe.thunderbolt_discharge_observed = true;
+  CanonicalRailProbePublish();
+}
+
+void LagCompensation_ObserveCurrentWorldProjectileSplashImpact(
+    gentity_t *projectile, gentity_t *other, const trace_t &trace,
+    uint32_t weaponPolicy) {
+  if (canonicalRailProbe.stage != CanonicalRailProbeStage::AwaitingDamage ||
+      !canonicalRailProbe.current_world_splash_required || !projectile ||
+      !other || projectile->owner != canonicalRailProbe.shooter ||
+      weaponPolicy != canonicalRailProbe.weapon_policy ||
+      !CanonicalRailProbeSameEntity(
+          other, canonicalRailProbe.current_world_splash_impact_identity) ||
+      !CanonicalRailProbeSameEntity(
+          projectile,
+          canonicalRailProbe.current_world_splash_projectile_identity) ||
+      trace.fraction >= 1.0f || trace.startSolid || trace.allSolid) {
+    return;
+  }
+  canonicalRailProbe.current_world_splash_impact_observed = true;
+  if (canonicalRailProbe.current_world_splash_damage_target_after_touch) {
+    Vector3 direction = projectile->velocity;
+    if (direction.normalize() <= 0.0f) {
+      CanonicalRailProbeFail(23);
+      return;
+    }
+    // A player hull is larger than the Plasma Gun's 20-unit splash radius,
+    // so staging it near this impact can produce a second direct projectile
+    // touch. Use a one-unit current-world damageable fixture on the clear side
+    // instead. RadiusDamage still owns candidate discovery, line-of-sight,
+    // falloff, and Damage; this merely supplies the isolated target geometry
+    // after the real projectile contact has already been accepted.
+    gentity_t *damageTarget = Spawn();
+    damageTarget->className = "worr_canonical_current_world_splash_target";
+    damageTarget->s.origin = trace.endPos - direction * 12.0f;
+    damageTarget->mins = {-1.0f, -1.0f, -1.0f};
+    damageTarget->maxs = {1.0f, 1.0f, 1.0f};
+    damageTarget->solid = SOLID_BBOX;
+    damageTarget->clipMask = MASK_PROJECTILE;
+    damageTarget->moveType = MoveType::None;
+    damageTarget->takeDamage = true;
+    damageTarget->health = kCanonicalRailProbeTargetHealth;
+    damageTarget->maxHealth = kCanonicalRailProbeTargetHealth;
+    damageTarget->svFlags = SVF_NONE;
+    gi.linkEntity(damageTarget);
+    worr_event_entity_ref_v1 identity{};
+    if (!EntityRef(damageTarget, identity)) {
+      FreeEntity(damageTarget);
+      CanonicalRailProbeFail(23);
+      return;
+    }
+    canonicalRailProbe.current_world_splash_damage_target = damageTarget;
+    canonicalRailProbe.current_world_splash_damage_target_identity = identity;
+    canonicalRailProbe.target_health_before = damageTarget->health;
+  }
+  if (canonicalRailProbe.current_world_splash_clear_impact_after_touch) {
+    // The production touch has already selected this isolated, non-damageable
+    // fixture hull. Remove only that hull before the production RadiusDamage
+    // call so a projectile relinked exactly at the contact point cannot trace
+    // into the blocker it has just hit. This neither creates a victim nor
+    // fabricates damage, line-of-sight, or a collision result.
+    other->solid = SOLID_NOT;
+    gi.unlinkEntity(other);
+  }
+  CanonicalRailProbePublish();
+}
+
+void LagCompensation_ObserveProxMineLanded(gentity_t *mine,
+                                           gentity_t *trigger) {
+  if (canonicalRailProbe.stage != CanonicalRailProbeStage::AwaitingDamage ||
+      !canonicalRailProbe.prox_lifecycle_required || !mine || !trigger ||
+      mine->teamMaster != canonicalRailProbe.shooter ||
+      trigger->owner != mine ||
+      !CanonicalRailProbeSameEntity(mine,
+                                    canonicalRailProbe.prox_mine_identity)) {
+    return;
+  }
+  // The mine/trigger pair is already linked by prox_land. Only now stage the
+  // isolated real target at a fixed, clear point within the normal trigger
+  // and damage radius. This neither creates contact nor changes the mine's
+  // arming, visibility, explosion, or RadiusDamage decisions.
+  canonicalRailProbe.current_target_origin =
+      mine->s.origin + Vector3{64.0f, 0.0f, 64.0f};
+  CanonicalRailProbePinTarget(canonicalRailProbe.target,
+                              canonicalRailProbe.current_target_origin);
+  canonicalRailProbe.prox_mine_landed = true;
+  canonicalRailProbe.current_geometry_unchanged =
+      canonicalRailProbe.target && canonicalRailProbe.target->linked &&
+      canonicalRailProbe.target->s.origin ==
+          canonicalRailProbe.current_target_origin;
+  CanonicalRailProbePublish();
+}
+
+void LagCompensation_ObserveProxMineTriggered(gentity_t *mine,
+                                              gentity_t *target) {
+  if (canonicalRailProbe.stage != CanonicalRailProbeStage::AwaitingDamage ||
+      !canonicalRailProbe.prox_lifecycle_required || !mine || !target ||
+      target != canonicalRailProbe.target ||
+      !canonicalRailProbe.prox_mine_landed ||
+      !CanonicalRailProbeSameEntity(mine,
+                                    canonicalRailProbe.prox_mine_identity)) {
+    return;
+  }
+  // This runs only after the normal production radial candidate/visibility
+  // checks have accepted the staged target.
+  canonicalRailProbe.prox_mine_triggered = true;
+  CanonicalRailProbePublish();
+}
+
+void LagCompensation_ObserveProxMineExploded(gentity_t *mine) {
+  if (canonicalRailProbe.stage != CanonicalRailProbeStage::AwaitingDamage ||
+      !canonicalRailProbe.prox_lifecycle_required || !mine ||
+      !canonicalRailProbe.prox_mine_landed ||
+      !canonicalRailProbe.prox_mine_triggered ||
+      !CanonicalRailProbeSameEntity(mine,
+                                    canonicalRailProbe.prox_mine_identity)) {
+    return;
+  }
+  // Prox_Explode calls this only after its ordinary RadiusDamage invocation.
+  canonicalRailProbe.prox_mine_exploded = true;
   CanonicalRailProbePublish();
 }
 
@@ -4466,6 +6303,312 @@ trace_t LagCompensation_Trace(gentity_t *fromPlayer,
   return TraceHistoricalScene(fromPlayer, start, &mins, &maxs, end,
                               passEntity, contentMask, nullptr, 0,
                               weaponPolicy);
+}
+
+LagCompensationProjectileForwardResult
+LagCompensation_ResolveProjectileSpawnForward(gentity_t *shooter,
+                                              gentity_t *projectile,
+                                              uint32_t weaponPolicy) {
+  LagCompensationProjectileForwardResult result{};
+  result.weapon_policy = weaponPolicy;
+  const auto finish = [&]() {
+    CanonicalRailProbeObserveProjectileForward(shooter, result);
+    MaybeReportDiagnostics();
+    return result;
+  };
+
+  ++diagnostics.projectileForwardRequests;
+  if (!initialized || !deathmatch || !deathmatch->integer ||
+      !g_lagCompensation || !g_lagCompensation->integer || !shooter ||
+      !shooter->client || (shooter->svFlags & SVF_BOT) || !projectile ||
+      !projectile->inUse ||
+      weaponPolicy == WORR_REWIND_WEAPON_UNSPECIFIED ||
+      weaponPolicy >= WORR_REWIND_WEAPON_POLICY_COUNT ||
+      ProjectileForwardMs() <= 0) {
+    ++diagnostics.projectileForwardRejected;
+    return finish();
+  }
+  if (!EntityRef(projectile, result.projectile_entity)) {
+    ++diagnostics.projectileForwardRejected;
+    return finish();
+  }
+
+  const std::size_t shooterIndex = ClientIndex(shooter);
+  if (shooterIndex >= policyStates.size()) {
+    ++diagnostics.projectileForwardRejected;
+    return finish();
+  }
+
+  bool canonicalContextAvailable = false;
+  worr_rewind_policy_decision_v1 decision{};
+  uint64_t currentTimeUs = 0;
+  if (!CurrentAuthoritativeTimeUs(currentTimeUs)) {
+    ++diagnostics.projectileForwardRejected;
+    return finish();
+  }
+  const bool resolvedActive = ResolveCanonicalDecision(
+      shooterIndex, decision, canonicalContextAvailable);
+  // A release-only held throw can occur one weapon-animation frame after its
+  // command scope closes. Its deferred record is accepted only when it was
+  // captured from that actual attack-to-release edge; a held prime can never
+  // be relabeled as release authority.
+  const bool resolvedDeferred =
+      !resolvedActive &&
+      ResolveDeferredProjectileForwardDecision(shooter, shooterIndex,
+                                                weaponPolicy, currentTimeUs,
+                                                decision);
+  if (!resolvedActive && !resolvedDeferred) {
+    ++diagnostics.projectileForwardRejected;
+    return finish();
+  }
+  result.command_id = decision.command_id;
+  if (sg_lag_compensation_debug && sg_lag_compensation_debug->integer >= 3 &&
+      canonicalRailProbe.stage == CanonicalRailProbeStage::AwaitingDamage &&
+      shooter == canonicalRailProbe.shooter &&
+      weaponPolicy == canonicalRailProbe.weapon_policy) {
+    gi.Com_PrintFmt(
+        "lagcomp projectile_forward resolve policy={} active={} deferred={} "
+        "command={}:{} mapped_us={} current_us={}\n",
+        weaponPolicy, resolvedActive ? 1u : 0u, resolvedDeferred ? 1u : 0u,
+        decision.command_id.epoch, decision.command_id.sequence,
+        static_cast<unsigned long long>(decision.mapped_time_us),
+        static_cast<unsigned long long>(currentTimeUs));
+  }
+
+  if ((decision.flags & WORR_REWIND_DECISION_ACCEPTED) == 0 ||
+      decision.mapped_time_us > currentTimeUs) {
+    ++diagnostics.projectileForwardRejected;
+    return finish();
+  }
+
+  result.authenticated = true;
+  result.authoritative_age_us = currentTimeUs - decision.mapped_time_us;
+  ++diagnostics.projectileForwardAuthenticated;
+  if (result.authoritative_age_us == 0)
+    return finish();
+
+  const uint64_t capUs =
+      static_cast<uint64_t>(ProjectileForwardMs()) * UINT64_C(1000);
+  result.advanced_age_us = std::min(result.authoritative_age_us, capUs);
+  result.clamped = result.advanced_age_us != result.authoritative_age_us;
+  if (result.clamped)
+    ++diagnostics.projectileForwardClamped;
+  if (result.advanced_age_us == 0)
+    return finish();
+
+  // A bouncing projectile needs a separate, conservative path. Mirror the
+  // regular Toss gravity-before-move ordering over the accepted bounded age,
+  // but do not fabricate a partial bounce or touch. Any current-world
+  // contact rejects the advance entirely so normal G_Physics_Toss remains the
+  // only owner of collision response, placement, triggers, and damage.
+  if (weaponPolicy ==
+          WORR_REWIND_WEAPON_GRENADE_LAUNCHER_BALLISTIC_SPAWN_FORWARD ||
+      weaponPolicy ==
+          WORR_REWIND_WEAPON_HAND_GRENADE_RELEASE_BALLISTIC_SPAWN_FORWARD ||
+      weaponPolicy ==
+          WORR_REWIND_WEAPON_PROX_MINE_BALLISTIC_DEPLOY_FORWARD ||
+      weaponPolicy ==
+          WORR_REWIND_WEAPON_TESLA_MINE_RELEASE_BALLISTIC_DEPLOY_FORWARD ||
+      weaponPolicy ==
+          WORR_REWIND_WEAPON_TRAP_RELEASE_BALLISTIC_DEPLOY_FORWARD ||
+      weaponPolicy ==
+          WORR_REWIND_WEAPON_PROBALL_HELD_THROW_BALLISTIC_SPAWN_FORWARD) {
+    constexpr uint64_t kMinimumBallisticStepUs = UINT64_C(1000);
+    constexpr uint64_t kMaximumBallisticStepUs = UINT64_C(20000);
+    const uint64_t frameStepUs = std::clamp(
+        static_cast<uint64_t>(std::llround(gi.frameTimeSec * 1000000.0f)),
+        kMinimumBallisticStepUs, kMaximumBallisticStepUs);
+    uint64_t remainingUs = result.advanced_age_us;
+    Vector3 origin = projectile->s.origin;
+    Vector3 velocity = projectile->velocity;
+    trace_t trace{};
+
+    while (remainingUs != 0) {
+      const uint64_t stepUs = std::min(remainingUs, frameStepUs);
+      const float stepSeconds = static_cast<float>(stepUs) / 1000000.0f;
+      velocity += projectile->gravityVector *
+                  (projectile->gravity * level.gravity * stepSeconds);
+      const Vector3 end = origin + velocity * stepSeconds;
+      trace = gi.trace(origin, projectile->mins, projectile->maxs, end,
+                       projectile, projectile->clipMask);
+      if (trace.startSolid || trace.allSolid || trace.fraction < 1.0f) {
+        result.trace = trace;
+        result.blocked = true;
+        result.advanced_age_us = 0;
+        ++diagnostics.projectileForwardBlocked;
+        return finish();
+      }
+      origin = trace.endPos;
+      remainingUs -= stepUs;
+    }
+
+    result.trace = trace;
+    result.trace.endPos = origin;
+    result.final_velocity = velocity;
+    result.advanced = true;
+    result.ballistic = true;
+    ++diagnostics.projectileForwardAdvanced;
+    return finish();
+  }
+
+  // This is deliberately the same current-world swept-hull query used by the
+  // ordinary FlyMissile physics path. It does not consult historical player or
+  // mover poses and cannot pass through a present-world blocker.
+  const float elapsedSeconds =
+      static_cast<float>(result.advanced_age_us) / 1000000.0f;
+  const Vector3 end = projectile->s.origin + projectile->velocity * elapsedSeconds;
+  result.trace = gi.trace(projectile->s.origin, projectile->mins,
+                          projectile->maxs, end, projectile,
+                          projectile->clipMask);
+  result.advanced = true;
+  result.blocked = result.trace.startSolid || result.trace.allSolid ||
+                   result.trace.fraction < 1.0f;
+  ++diagnostics.projectileForwardAdvanced;
+  if (result.blocked)
+    ++diagnostics.projectileForwardBlocked;
+  return finish();
+}
+
+LagCompensationMeleeSelectionResult
+LagCompensation_ResolveMeleePlayerCandidate(gentity_t *shooter,
+                                            const Vector3 &start,
+                                            const Vector3 &aim, int reach,
+                                            uint32_t weaponPolicy) {
+  LagCompensationMeleeSelectionResult result{};
+  result.weapon_policy = weaponPolicy;
+  const auto finish = [&]() {
+    CanonicalRailProbeObserveMeleeSelection(shooter, result);
+    MaybeReportDiagnostics();
+    return result;
+  };
+
+  // Melee admits only the active canonical command. Unlike legacy historical
+  // hitscan compatibility, there is no packet-ack or timestamp fallback that
+  // could extend close-range authority outside the authenticated command.
+  if (!initialized || !deathmatch || !deathmatch->integer ||
+      !g_lagCompensation || !g_lagCompensation->integer || !shooter ||
+      !shooter->client || (shooter->svFlags & SVF_BOT) || reach <= 0 ||
+      weaponPolicy != WORR_REWIND_WEAPON_CHAINFIST_MELEE_HYBRID) {
+    return finish();
+  }
+
+  const std::size_t shooterIndex = ClientIndex(shooter);
+  if (shooterIndex >= poseTracks.size())
+    return finish();
+
+  bool canonicalContextAvailable = false;
+  worr_rewind_policy_decision_v1 decision{};
+  if (!ResolveCanonicalDecision(shooterIndex, decision,
+                                canonicalContextAvailable) ||
+      (decision.flags & WORR_REWIND_DECISION_ACCEPTED) == 0) {
+    return finish();
+  }
+  result.authenticated = true;
+  result.command_id = decision.command_id;
+  result.applied_time_us = decision.applied_time_us;
+  if (!CurrentAuthoritativeTimeUs(result.current_time_us) ||
+      result.applied_time_us > result.current_time_us) {
+    return finish();
+  }
+
+  Vector3 normalizedAim = aim;
+  if (normalizedAim.normalize() <= 0.0f)
+    return finish();
+
+  gentity_t *nearest = nullptr;
+  worr_event_entity_ref_v1 nearestIdentity{};
+  Vector3 nearestHistoricalOrigin{};
+  float nearestRange = std::numeric_limits<float>::max();
+  const std::size_t clientCount = std::min<std::size_t>(
+      static_cast<std::size_t>(game.maxClients), poseTracks.size());
+  for (std::size_t index = 0; index < clientCount; ++index) {
+    gentity_t *candidate = &g_entities[index + 1u];
+    if (candidate == shooter || !EligibleLivePlayer(candidate))
+      continue;
+
+    worr_event_entity_ref_v1 identity{};
+    if (!EntityRef(candidate, identity)) {
+      // Do not let a partial historical roster exclude only some live
+      // players. Returning selection_ready=false leaves the normal current
+      // melee broadphase untouched for this attack.
+      return finish();
+    }
+
+    worr_rewind_pose_query_v1 query{};
+    query.struct_size = sizeof(query);
+    query.schema_version = WORR_REWIND_ABI_VERSION;
+    query.entity = identity;
+    query.map_epoch = decision.snapshot_id.epoch;
+    query.required_lifecycle = WORR_REWIND_LIFECYCLE_ALIVE;
+    query.target_time_us = decision.applied_time_us;
+    worr_rewind_pose_result_v1 historical{};
+    if (!Worr_RewindHistoryQueryV1(&poseTracks[index].history, &query,
+                                   &historical) ||
+        !historical.found) {
+      ++diagnostics.missingHistory;
+      return finish();
+    }
+    if (historical.pose.collision_shape != WORR_REWIND_COLLISION_BOUNDS ||
+        (historical.pose.flags &
+         (WORR_REWIND_POSE_LINKED | WORR_REWIND_POSE_DAMAGEABLE)) !=
+            (WORR_REWIND_POSE_LINKED | WORR_REWIND_POSE_DAMAGEABLE)) {
+      continue;
+    }
+
+    const Vector3 historicalOrigin = ToVector(historical.pose.origin);
+    const Vector3 historicalMins =
+        historicalOrigin + ToVector(historical.pose.mins);
+    const Vector3 historicalMaxs =
+        historicalOrigin + ToVector(historical.pose.maxs);
+    const Vector3 closestPointToCandidate =
+        closest_point_to_box(start, historicalMins, historicalMaxs);
+    const Vector3 closestPointToShooter = closest_point_to_box(
+        closestPointToCandidate, shooter->s.origin + shooter->mins,
+        shooter->s.origin + shooter->maxs);
+    Vector3 direction = closestPointToCandidate - closestPointToShooter;
+    const float range = direction.normalize();
+    if (range > reach)
+      continue;
+
+    const Vector3 shrink{2, 2, 2};
+    if (!boxes_intersect(historicalMins + shrink, historicalMaxs - shrink,
+                         shooter->absMin + shrink,
+                         shooter->absMax - shrink)) {
+      direction =
+          (((historicalMins + historicalMaxs) / 2) - start).normalized();
+      if (direction.dot(normalizedAim) < 0.70f)
+        continue;
+    }
+
+    if (!nearest || range < nearestRange) {
+      nearest = candidate;
+      nearestIdentity = identity;
+      nearestHistoricalOrigin = historicalOrigin;
+      nearestRange = range;
+    }
+  }
+
+  // Every live player had a coherent historical query. Subsequent caller
+  // broadphase filtering can therefore reject present-time player candidates
+  // without accidentally replacing only part of the roster.
+  result.selection_ready = true;
+  if (!nearest)
+    return finish();
+
+  result.target_entity = nearestIdentity;
+  result.historical_origin = nearestHistoricalOrigin;
+  result.historical_eligible = true;
+  const float displacement =
+      (nearest->s.origin - nearestHistoricalOrigin).length();
+  result.current_displacement_units = static_cast<uint32_t>(
+      std::min<float>(displacement + 0.5f,
+                      static_cast<float>(std::numeric_limits<uint32_t>::max())));
+  if (displacement > static_cast<float>(MeleeMaxDisplacementUnits()))
+    return finish();
+
+  result.current_displacement_accepted = true;
+  result.target = nearest;
+  return finish();
 }
 
 bool LagCompensation_CopyObservations(

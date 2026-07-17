@@ -1208,6 +1208,10 @@ gentity_t* ent, usercmd_t* ucmd) {
 	// prepares an isolated fixture; ordinary weapon dispatch below remains the
 	// sole caller of the configured hitscan weapon callback.
 	LagCompensation_PrepareCanonicalWeaponDamageCommand(ent, ucmd);
+	// A Generic weapon can reach a current-world projectile callback after
+	// this command scope closes. Retain only the bounded accepted command
+	// authorization; the normal weapon path still owns the eventual spawn.
+	LagCompensation_RecordDeferredProjectileForwardCommand(ent, ucmd);
 	SG_LocalActionObservationScope localActionObservation(ent);
 
 	//no movement during map or match intermission
@@ -1609,6 +1613,17 @@ gentity_t* ent, usercmd_t* ucmd) {
 			if (other->touch)
 				other->touch(other, ent, tr, true);
 		}
+	}
+
+	// The native +hook input is a one-shot user-command action. It is kept
+	// separate from the legacy `hook` client string so its bounded spawn-forward
+	// policy can use the active authenticated command mapping. Attachment,
+	// pull, damage, reset, and every legacy string-command action remain
+	// current-world production behavior.
+	if (cl->latchedButtons & BUTTON_HOOK) {
+		cl->latchedButtons &= ~BUTTON_HOOK;
+		if (!IsBlockingUiMenuOpen(cl) && ClientIsPlaying(cl) && !cl->eliminated)
+			Weapon_Hook_CanonicalInput(ent);
 	}
 
 	// fire weapon from final position if needed

@@ -179,9 +179,9 @@ bool Worr_NativeSessionBindingInitReceiveFromReadinessV1(
     uint64_t now_tick)
 {
     worr_native_readiness_state_v1 checked;
-    const uint32_t event_caps =
-        WORR_NET_CAP_NATIVE_ENVELOPE_V1 |
-        WORR_NET_CAP_NATIVE_EVENT_STREAM_V1;
+    const uint32_t server_data_caps =
+        WORR_NET_CAP_NATIVE_EVENT_STREAM_V1 |
+        WORR_NET_CAP_CANONICAL_SNAPSHOT_V2;
     bool receive_phase;
 
     if (binding_out == NULL || readiness == NULL ||
@@ -197,7 +197,10 @@ bool Worr_NativeSessionBindingInitReceiveFromReadinessV1(
          (readiness->phase == WORR_NATIVE_READINESS_PHASE_SERVER_ACTIVE ||
           (readiness->phase ==
                WORR_NATIVE_READINESS_PHASE_SERVER_WAIT_CLIENT_ACTIVE_CONFIRM &&
-           (readiness->negotiated_capabilities & event_caps) == event_caps))) ||
+           (readiness->negotiated_capabilities &
+            WORR_NET_CAP_NATIVE_ENVELOPE_V1) != 0 &&
+           (readiness->negotiated_capabilities &
+            server_data_caps) != 0))) ||
         (readiness->role == WORR_NATIVE_READINESS_ROLE_CLIENT &&
          readiness->phase == WORR_NATIVE_READINESS_PHASE_CLIENT_ACTIVE);
     if (!receive_phase || readiness->transport_epoch == 0 ||
@@ -1028,11 +1031,41 @@ static uint16_t bitmap_count(uint64_t value)
     return count;
 }
 
+static uint16_t reassembly_bitmap_count(const uint64_t bitmap[2])
+{
+    return (uint16_t)(bitmap_count(bitmap[0]) +
+                      bitmap_count(bitmap[1]));
+}
+
+static uint64_t bitmap_valid_bits(uint16_t fragment_count,
+                                  unsigned word_index)
+{
+    const uint16_t word_first_fragment =
+        (uint16_t)(word_index * 64u);
+    uint16_t word_fragment_count;
+
+    if (fragment_count <= word_first_fragment)
+        return 0;
+    word_fragment_count =
+        (uint16_t)(fragment_count - word_first_fragment);
+    if (word_fragment_count >= 64u)
+        return UINT64_MAX;
+    return (UINT64_C(1) << word_fragment_count) - 1u;
+}
+
+static bool bitmap_has_fragment(const uint64_t bitmap[2],
+                                uint16_t fragment_index)
+{
+    const unsigned word_index = fragment_index / 64u;
+    const unsigned bit_index = fragment_index % 64u;
+
+    return (bitmap[word_index] & (UINT64_C(1) << bit_index)) != 0;
+}
+
 static bool reassembly_valid(
     const worr_native_envelope_reassembly_v1 *reassembly,
     uint32_t transport_epoch)
 {
-    uint64_t valid_bits;
     uint32_t expected_bytes = 0;
     uint16_t index;
     bool complete;
@@ -1058,21 +1091,19 @@ static bool reassembly_valid(
         reassembly->received_fragment_count > reassembly->fragment_count ||
         reassembly->received_payload_bytes > reassembly->total_payload_bytes ||
         reassembly->priority > WORR_NATIVE_ENVELOPE_MAX_PRIORITY ||
-        reassembly->reserved0 != 0 ||
-        !bytes_are_zero(reassembly->reserved1,
-                        sizeof(reassembly->reserved1))) {
+        reassembly->reserved0 != 0) {
         return false;
     }
-    valid_bits = reassembly->fragment_count == 64
-                     ? UINT64_MAX
-                     : (UINT64_C(1) << reassembly->fragment_count) - 1u;
-    if ((reassembly->received_bitmap & ~valid_bits) != 0 ||
-        bitmap_count(reassembly->received_bitmap) !=
+    if ((reassembly->received_bitmap[0] &
+         ~bitmap_valid_bits(reassembly->fragment_count, 0)) != 0 ||
+        (reassembly->received_bitmap[1] &
+         ~bitmap_valid_bits(reassembly->fragment_count, 1)) != 0 ||
+        reassembly_bitmap_count(reassembly->received_bitmap) !=
             reassembly->received_fragment_count) {
         return false;
     }
     for (index = 0; index < reassembly->fragment_count; ++index) {
-        if ((reassembly->received_bitmap & (UINT64_C(1) << index)) != 0) {
+        if (bitmap_has_fragment(reassembly->received_bitmap, index)) {
             const uint32_t offset =
                 (uint32_t)index * reassembly->fragment_stride;
             const uint32_t remaining =

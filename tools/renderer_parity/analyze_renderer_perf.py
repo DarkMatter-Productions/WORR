@@ -115,19 +115,59 @@ def summarize(records: list[dict[str, float]], warmup: int) -> dict[str, float |
     if not samples:
         raise ValueError("no telemetry samples remain after warmup")
     result: dict[str, float | int] = {"samples": len(samples)}
-    for metric in ("cpu_ms", "gpu_ms", "draws", "uploads"):
+    for metric in (
+        "cpu_ms",
+        "gpu_ms",
+        "gpu_frame_ms",
+        "gpu_upload_ms",
+        "gpu_shadow_ms",
+        "gpu_opaque_world_ms",
+        "gpu_opaque_entity_ms",
+        "gpu_scene_ms",
+        "gpu_post_ms",
+        "world_fast_lit_draws",
+        "world_fast_lit_no_fog_draws",
+        "world_texture_replace_draws",
+        "world_texture_replace_no_fog_draws",
+        "entity_fast_lit_draws",
+        "entity_fast_lit_no_fog_draws",
+        "entity_texture_replace_draws",
+        "entity_texture_replace_no_fog_draws",
+        "world_fast_lit_candidates",
+        "world_fast_lit_disabled",
+        "world_fast_lit_fullbright",
+        "world_fast_lit_receiver_lighting",
+        "world_fast_lit_pipeline_unavailable",
+        "world_fast_lit_material_ineligible",
+        "draws",
+        "uploads",
+        "world_draws",
+        "entity_draws",
+        "ui_draws",
+        "post_draws",
+        "shadow_draws",
+        "debug_draws",
+    ):
         values = [sample[metric] for sample in samples if metric in sample]
         if not values:
             continue
         result[f"{metric}_mean"] = statistics.fmean(values)
+        result[f"{metric}_p50"] = statistics.median(values)
         result[f"{metric}_p95"] = percentile(values, 0.95)
     result["gpu_valid_samples"] = sum(sample.get("gpu_valid", 0.0) > 0.0 for sample in samples)
+    result["gpu_frame_valid_samples"] = sum(
+        sample.get("gpu_frame_valid", 0.0) > 0.0 for sample in samples
+    )
     return result
 
 
 def ratios(vulkan: dict[str, float | int], opengl: dict[str, float | int]) -> dict[str, float]:
     result: dict[str, float] = {}
-    for metric in ("cpu_ms_mean", "cpu_ms_p95", "gpu_ms_mean", "gpu_ms_p95"):
+    for metric in (
+        "cpu_ms_mean", "cpu_ms_p95", "gpu_ms_mean", "gpu_ms_p95",
+        "gpu_frame_ms_mean", "gpu_frame_ms_p95",
+        "gpu_post_ms_mean", "gpu_post_ms_p95",
+    ):
         lhs = vulkan.get(metric)
         rhs = opengl.get(metric)
         if isinstance(lhs, (float, int)) and isinstance(rhs, (float, int)) and rhs > 0:
@@ -153,6 +193,12 @@ def evaluate_budget(result: dict[str, object], budget_path: Path) -> list[str]:
             assert isinstance(summary, dict)
             if int(summary.get("gpu_valid_samples", 0)) < int(summary.get("samples", 0)):
                 failures.append(f"{renderer} is missing valid GPU timing samples")
+    if raw.get("require_gpu_frame_valid") is True:
+        for renderer in ("vulkan", "opengl"):
+            summary = result[renderer]
+            assert isinstance(summary, dict)
+            if int(summary.get("gpu_frame_valid_samples", 0)) < int(summary.get("samples", 0)):
+                failures.append(f"{renderer} is missing valid full-frame GPU timing samples")
 
     capture_contract = raw.get("capture_contract")
     if capture_contract is not None:

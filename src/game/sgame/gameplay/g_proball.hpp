@@ -4,7 +4,11 @@
 
 void		Ball_RegisterSpawn(gentity_t* ent);
 void		Ball_OnPickup(gentity_t* ball, gentity_t* player);
-bool		Ball_Launch(gentity_t* owner, const Vector3& start, const Vector3& dir, float speed);
+// Only the normal Chainfist-held release path may opt into a bounded
+// current-world launch advance. Direct item-use passes always retain their
+// normal production timing.
+bool		Ball_Launch(gentity_t* owner, const Vector3& start, const Vector3& dir,
+			float speed, bool releaseBoundThrow = false);
 bool		Ball_Pass(gentity_t* owner, const Vector3& start, const Vector3& dir);
 bool		Ball_Drop(gentity_t* owner, const Vector3& origin);
 void		Ball_Reset(bool silent);

@@ -37,6 +37,7 @@ MAP_NAME = "worr_fr01_warp_flow.bsp"
 BACKGROUND_TEXTURE = "parity/fr01_wf_background"
 WARP_TEXTURE = "parity/fr01_wf_turbulent"
 SURF_WARP = 1 << 3
+SURF_TRANS33 = 1 << 4
 SURF_FLOWING = 1 << 6
 
 
@@ -64,10 +65,16 @@ def _checker_tga() -> bytes:
     return header + bytes(pixels)
 
 
-def build_bsp() -> bytes:
+def build_bsp(
+    worldspawn_properties: tuple[str, ...] = (),
+    warp_flags: int = SURF_WARP | SURF_FLOWING,
+    view_leaf_contents: int = 0,
+) -> bytes:
+    properties = "".join(worldspawn_properties)
     entities = (
         '{\n"classname" "worldspawn"\n'
-        '"message" "WORR FR-01-T10 warp-flow parity"\n}\n'
+        '"message" "WORR FR-01-T10 warp-flow parity"\n'
+        f"{properties}}}\n"
         '{\n"classname" "info_player_start"\n'
         '"origin" "0 0 -22"\n"angle" "0"\n}\n\0'
     ).encode("ascii")
@@ -92,12 +99,12 @@ def build_bsp() -> bytes:
                                     -2048, -2048, -2048,
                                     2048, 2048, 2048, 0, 2)
     lumps[LUMP_TEXINFO] = (_texinfo(BACKGROUND_TEXTURE, 0) +
-                            _texinfo(WARP_TEXTURE, SURF_WARP | SURF_FLOWING))
+                            _texinfo(WARP_TEXTURE, warp_flags))
     lumps[LUMP_FACES] = b"".join(_face(1, firstedge, index)
                                   for index, firstedge in enumerate(firstedges))
     lumps[LUMP_LEAFS] = b"".join((
         _leaf(1, (-2048, -2048, -2048), (-1, 2048, 2048), 0, 0),
-        _leaf(0, (0, -2048, -2048), (2048, 2048, 2048), 0, 2),
+        _leaf(view_leaf_contents, (0, -2048, -2048), (2048, 2048, 2048), 0, 2),
     ))
     lumps[LUMP_LEAFFACES] = struct.pack("<2H", 0, 1)
     lumps[LUMP_EDGES] = b"".join(struct.pack("<HH", *edge) for edge in edges)

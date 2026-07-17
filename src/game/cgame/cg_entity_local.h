@@ -18,6 +18,7 @@ extern cvar_t *cg_sv_paused;
 void CG_Entity_SetImport(const cgame_entity_import_t *import);
 void CG_Entity_InitCvars(void);
 void CG_CanonicalSnapshotRender_InitCvars(void);
+void CG_PredictionAuthority_InitCvars(void);
 
 extern cvar_t *cl_gun;
 extern cvar_t *cl_gunalpha;

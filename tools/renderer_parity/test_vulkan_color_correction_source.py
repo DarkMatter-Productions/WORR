@@ -36,6 +36,42 @@ class VulkanColorCorrectionSourceTests(unittest.TestCase):
         self.assertIn("VK_PostProcess_UsesCompositePass()", VK_MAIN)
         self.assertIn("const bool final_postprocess", VK_MAIN)
 
+    def test_static_hdr_controls_are_native_and_use_the_shared_per_frame_ubo(self) -> None:
+        self.assertIn('Cvar_Get("vk_hdr", "0",', VK_POSTPROCESS)
+        self.assertIn("CVAR_ARCHIVE | CVAR_RENDERER", VK_POSTPROCESS)
+        self.assertIn('Cvar_Get("vk_hdr_exposure", "1.0", CVAR_ARCHIVE)', VK_POSTPROCESS)
+        self.assertIn('Cvar_Get("vk_hdr_white", "1.0", CVAR_ARCHIVE)', VK_POSTPROCESS)
+        self.assertIn('Cvar_Get("vk_hdr_gamma", "2.2", CVAR_ARCHIVE)', VK_POSTPROCESS)
+        self.assertIn("vk_postprocess.hdr_active = vk_postprocess.hdr &&", VK_POSTPROCESS)
+        self.assertIn("Cvar_ClampValue(vk_postprocess.hdr_exposure, 0.0f, 10.0f)", VK_POSTPROCESS)
+        self.assertIn("Cvar_ClampValue(vk_postprocess.hdr_white, 0.1f, 20.0f)", VK_POSTPROCESS)
+        self.assertIn("Cvar_ClampValue(vk_postprocess.hdr_gamma, 1.0f, 3.0f)", VK_POSTPROCESS)
+        self.assertIn("float hdr[4];", VK_POSTPROCESS)
+        self.assertIn("memcpy(mapped->hdr, vk_postprocess.hdr_controls", VK_POSTPROCESS)
+        self.assertIn("vk_postprocess.hdr_active ||", VK_POSTPROCESS)
+        self.assertIn("frame->blur_kernel_descriptor_set", VK_POSTPROCESS)
+        self.assertIn("layout(std140, set = 1, binding = 0) uniform PostControls", POSTPROCESS_SHADER)
+        self.assertIn("vec4 hdr;", POSTPROCESS_SHADER)
+        self.assertIn("if (post_controls.hdr.w > 0.5)", POSTPROCESS_SHADER)
+        self.assertIn("float exposure = post_controls.hdr.x;", POSTPROCESS_SHADER)
+        self.assertIn("color.rgb *= exposure;", POSTPROCESS_SHADER)
+        self.assertIn("vec3 mapped = clamp", POSTPROCESS_SHADER)
+        self.assertIn("vec3 white = clamp", POSTPROCESS_SHADER)
+        self.assertIn("vec3(1.0 / post_controls.hdr.z)", POSTPROCESS_SHADER)
+
+    def test_auto_exposure_reduces_the_float_scene_natively(self) -> None:
+        self.assertIn('Cvar_Get("vk_hdr_auto_exposure", "0", CVAR_ARCHIVE | CVAR_RENDERER)', VK_POSTPROCESS)
+        self.assertIn("VK_PostProcess_RecordAutoExposure", VK_POSTPROCESS)
+        self.assertIn("VK_PostProcess_UsesAutoExposure()", VK_MAIN)
+        self.assertIn("linear_scene_mip_levels", VK_MAIN)
+        self.assertIn("vkCmdBlitImage", VK_MAIN)
+        self.assertIn("linear_scene_copy_base_descriptor_set", VK_MAIN)
+        self.assertIn("VK_LinearSceneCopy_Record(cmd, false)", VK_MAIN)
+        self.assertIn("VK_PostProcess_UsesAutoExposure())", VK_MAIN)
+        self.assertIn("vec4 auto_exposure;", POSTPROCESS_SHADER)
+        self.assertIn("textureLod(scene_sampler, vec2(0.5), max_mip)", POSTPROCESS_SHADER)
+        self.assertIn("texture(auto_exposure_sampler, vec2(0.5)).r", POSTPROCESS_SHADER)
+
     def test_final_pass_uses_native_scene_copy_before_ui_overlay(self) -> None:
         final_record = VK_MAIN.index("VK_PostProcess_RecordFinal(")
         final_copy = VK_MAIN.rindex("VK_SceneCopy_Record(cmd, image_index);", 0, final_record)
@@ -128,6 +164,18 @@ class VulkanColorCorrectionSourceTests(unittest.TestCase):
         self.assertIn("layout(set = 0, binding = 1) uniform sampler2D lut_sampler", POSTPROCESS_SHADER)
         self.assertIn("if (push_data.lut_params.x > 0.0", POSTPROCESS_SHADER)
         self.assertIn("float slice = lut_color.b * (size - 1.0);", POSTPROCESS_SHADER)
+        self.assertIn(
+            "float u = lut_color.r * (size - 1.0) + 0.5;",
+            POSTPROCESS_SHADER,
+        )
+        self.assertIn(
+            "float v = lut_color.g * (size - 1.0) + 0.5;",
+            POSTPROCESS_SHADER,
+        )
+        self.assertNotIn(
+            "float u = (lut_color.r * (size - 1.0) + 0.5) / size;",
+            POSTPROCESS_SHADER,
+        )
         self.assertIn("texture(lut_sampler, uv0).rgb", POSTPROCESS_SHADER)
         self.assertIn("texture(lut_sampler, uv1).rgb", POSTPROCESS_SHADER)
         self.assertIn("color.rgb = mix(color.rgb, graded, push_data.lut_params.x);", POSTPROCESS_SHADER)

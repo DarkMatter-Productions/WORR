@@ -14,7 +14,7 @@ _Static_assert(offsetof(worr_native_codec_info_v1, object_epoch) == 36,
                "native codec object identity offset changed");
 _Static_assert(WORR_NATIVE_CODEC_WIRE_HEADER_BYTES == 48,
                "native codec wire header changed");
-_Static_assert(WORR_NATIVE_CODEC_MAX_ENCODED_BYTES == 65536,
+_Static_assert(WORR_NATIVE_CODEC_MAX_ENCODED_BYTES == 131072,
                "native codec envelope bound changed");
 _Static_assert(WORR_NATIVE_CODEC_SNAPSHOT_ENTITY_MIN_BYTES == 52 &&
                    WORR_NATIVE_CODEC_SNAPSHOT_ENTITY_MAX_BYTES == 125,

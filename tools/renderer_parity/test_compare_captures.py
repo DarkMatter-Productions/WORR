@@ -119,6 +119,26 @@ class CompareCapturesTests(unittest.TestCase):
             self.assertTrue(any("green_outline" in item for item in report["failures"]))
             self.assertTrue(any("intersection-over-union" in item for item in report["failures"]))
 
+    def test_manifest_can_require_probe_absence(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            capture_root = root / "captures"
+            manifest_path = self.make_manifest(root)
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            absence_probe = manifest["scenes"][0]["probes"][0]
+            absence_probe["min_pixels_per_backend"] = 0
+            absence_probe["max_pixels_per_backend"] = 0
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            pixels = [(0, 255, 0), (20, 30, 40), (50, 60, 70), (80, 90, 100)]
+            write_tga(capture_root / "opengl" / "fixture.tga", 2, 2, pixels)
+            write_tga(capture_root / "vulkan" / "fixture.tga", 2, 2, pixels)
+
+            report = compare_captures.evaluate_manifest(manifest_path, capture_root)
+
+            self.assertFalse(report["passed"])
+            self.assertTrue(any("required at most 0" in item for item in report["failures"]))
+
     def test_loader_normalizes_bottom_origin_tga(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "bottom.tga"

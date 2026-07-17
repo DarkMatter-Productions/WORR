@@ -486,7 +486,7 @@ void Worr_NativeEnvelopeReassemblyResetV1(
     reassembly->schema_version = WORR_NATIVE_ENVELOPE_ABI_VERSION;
 }
 
-static unsigned bitmap_count(uint64_t value)
+static unsigned bitmap_word_count(uint64_t value)
 {
     unsigned count = 0;
 
@@ -497,10 +497,42 @@ static unsigned bitmap_count(uint64_t value)
     return count;
 }
 
+static unsigned bitmap_count(const uint64_t bitmap[2])
+{
+    return bitmap_word_count(bitmap[0]) +
+           bitmap_word_count(bitmap[1]);
+}
+
+static uint64_t bitmap_valid_bits(uint16_t fragment_count,
+                                  unsigned word_index)
+{
+    const uint16_t word_first_fragment =
+        (uint16_t)(word_index * 64u);
+    uint16_t word_fragment_count;
+
+    if (fragment_count <= word_first_fragment) {
+        return 0;
+    }
+    word_fragment_count =
+        (uint16_t)(fragment_count - word_first_fragment);
+    if (word_fragment_count >= 64u) {
+        return UINT64_MAX;
+    }
+    return (UINT64_C(1) << word_fragment_count) - 1u;
+}
+
+static bool bitmap_has_fragment(const uint64_t bitmap[2],
+                                uint16_t fragment_index)
+{
+    const unsigned word_index = fragment_index / 64u;
+    const unsigned bit_index = fragment_index % 64u;
+
+    return (bitmap[word_index] & (UINT64_C(1) << bit_index)) != 0;
+}
+
 static bool reassembly_state_valid(
     const worr_native_envelope_reassembly_v1 *reassembly)
 {
-    uint64_t valid_bits;
     uint32_t expected_received_bytes = 0;
     bool complete;
 
@@ -526,15 +558,10 @@ static bool reassembly_state_valid(
                reassembly->received_payload_bytes == 0 &&
                reassembly->fragment_stride == 0 &&
                reassembly->fragment_count == 0 &&
-               reassembly->reserved0 == 0 && reassembly->priority == 0 &&
-               reassembly->reserved1[0] == 0 &&
-               reassembly->reserved1[1] == 0 &&
-               reassembly->reserved1[2] == 0 &&
-               reassembly->reserved1[3] == 0 &&
-               reassembly->reserved1[4] == 0 &&
-               reassembly->reserved1[5] == 0 &&
-               reassembly->reserved1[6] == 0 &&
-               reassembly->received_bitmap == 0;
+               reassembly->priority == 0 &&
+               reassembly->reserved0 == 0 &&
+               reassembly->received_bitmap[0] == 0 &&
+               reassembly->received_bitmap[1] == 0;
     }
 
     if (!Worr_NativeEnvelopeRecordRefValidV1(reassembly->record) ||
@@ -555,24 +582,17 @@ static bool reassembly_state_valid(
         reassembly->reserved0 != 0) {
         return false;
     }
-    for (size_t i = 0; i < sizeof(reassembly->reserved1); ++i) {
-        if (reassembly->reserved1[i] != 0) {
-            return false;
-        }
-    }
 
-    valid_bits = reassembly->fragment_count == 64
-                     ? UINT64_MAX
-                     : (UINT64_C(1) << reassembly->fragment_count) - 1u;
-    if ((reassembly->received_bitmap & ~valid_bits) != 0 ||
+    if ((reassembly->received_bitmap[0] &
+         ~bitmap_valid_bits(reassembly->fragment_count, 0)) != 0 ||
+        (reassembly->received_bitmap[1] &
+         ~bitmap_valid_bits(reassembly->fragment_count, 1)) != 0 ||
         bitmap_count(reassembly->received_bitmap) !=
             reassembly->received_fragment_count) {
         return false;
     }
     for (uint16_t index = 0; index < reassembly->fragment_count; ++index) {
-        const uint64_t bit = UINT64_C(1) << index;
-
-        if ((reassembly->received_bitmap & bit) != 0) {
+        if (bitmap_has_fragment(reassembly->received_bitmap, index)) {
             const uint32_t offset = (uint32_t)index *
                                     (uint32_t)reassembly->fragment_stride;
             const uint32_t remaining =
@@ -625,6 +645,7 @@ worr_native_envelope_accept_result_v1 Worr_NativeEnvelopeReassemblyAcceptV1(
 {
     worr_native_envelope_frame_info_v1 info;
     worr_native_envelope_decode_result_v1 decode_result;
+    unsigned fragment_word;
     uint64_t fragment_bit;
     uint8_t *destination;
     const uint8_t *source;
@@ -667,10 +688,11 @@ worr_native_envelope_accept_result_v1 Worr_NativeEnvelopeReassemblyAcceptV1(
         return WORR_NATIVE_ENVELOPE_REJECT_MESSAGE_CONFLICT;
     }
 
-    fragment_bit = UINT64_C(1) << info.fragment_index;
+    fragment_word = info.fragment_index / 64u;
+    fragment_bit = UINT64_C(1) << (info.fragment_index % 64u);
     destination = (uint8_t *)payload_storage + info.fragment_offset;
     source = (const uint8_t *)datagram + info.payload_offset;
-    if ((reassembly->received_bitmap & fragment_bit) != 0) {
+    if ((reassembly->received_bitmap[fragment_word] & fragment_bit) != 0) {
         if (memcmp(destination, source, info.fragment_payload_bytes) != 0) {
             return WORR_NATIVE_ENVELOPE_REJECT_DUPLICATE_CONFLICT;
         }
@@ -695,7 +717,7 @@ worr_native_envelope_accept_result_v1 Worr_NativeEnvelopeReassemblyAcceptV1(
     }
 
     memmove(destination, source, info.fragment_payload_bytes);
-    reassembly->received_bitmap |= fragment_bit;
+    reassembly->received_bitmap[fragment_word] |= fragment_bit;
     ++reassembly->received_fragment_count;
     reassembly->received_payload_bytes += info.fragment_payload_bytes;
 

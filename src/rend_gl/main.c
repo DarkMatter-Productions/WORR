@@ -1493,6 +1493,9 @@ static int32_t gl_waterwarp_modified = 0;
 static int32_t gl_bloom_modified = 0;
 static int32_t gl_bloom_downscale_modified = 0;
 static int32_t gl_hdr_modified = 0;
+static int32_t gl_color_split_strength_modified = 0;
+static int32_t gl_color_lut_modified = 0;
+static int32_t gl_color_lut_intensity_modified = 0;
 static int32_t r_dof_allow_stencil_modified = 0;
 static int32_t gl_crt_modified = 0;
 static int32_t gl_warp_refraction_modified = 0;
@@ -1591,6 +1594,15 @@ static pp_flags_t GL_BindFramebuffer(void) {
     postfx_enabled = true;
   if (gl_color_correction && gl_color_correction->integer)
     postfx_enabled = true;
+  // Split toning and LUT grading are independent final-shader stages. They
+  // must allocate the post target even when the broader colour-correction
+  // stage is disabled; otherwise their uniforms are populated but no final
+  // pass ever executes.
+  if (gl_color_split_strength && gl_color_split_strength->value > 0.0f)
+    postfx_enabled = true;
+  if (gl_color_lut_valid && gl_color_lut_intensity &&
+      gl_color_lut_intensity->value > 0.0f)
+    postfx_enabled = true;
   if (gl_hdr && gl_hdr->integer) {
     postfx_enabled = true;
     hdr_requested = true;
@@ -1609,6 +1621,11 @@ static pp_flags_t GL_BindFramebuffer(void) {
       gl_bloom->modified_count != gl_bloom_modified ||
       gl_bloom_downscale->modified_count != gl_bloom_downscale_modified ||
       (gl_hdr && gl_hdr->modified_count != gl_hdr_modified) ||
+      (gl_color_split_strength && gl_color_split_strength->modified_count !=
+                                      gl_color_split_strength_modified) ||
+      (gl_color_lut && gl_color_lut->modified_count != gl_color_lut_modified) ||
+      (gl_color_lut_intensity && gl_color_lut_intensity->modified_count !=
+                                     gl_color_lut_intensity_modified) ||
       (r_dof_allow_stencil &&
        r_dof_allow_stencil->modified_count != r_dof_allow_stencil_modified) ||
       (r_crtmode && r_crtmode->modified_count != gl_crt_modified) ||
@@ -1627,6 +1644,13 @@ static pp_flags_t GL_BindFramebuffer(void) {
     gl_auto_exposure_index = 0;
     if (gl_hdr)
       gl_hdr_modified = gl_hdr->modified_count;
+    if (gl_color_split_strength)
+      gl_color_split_strength_modified =
+          gl_color_split_strength->modified_count;
+    if (gl_color_lut)
+      gl_color_lut_modified = gl_color_lut->modified_count;
+    if (gl_color_lut_intensity)
+      gl_color_lut_intensity_modified = gl_color_lut_intensity->modified_count;
     if (r_dof_allow_stencil)
       r_dof_allow_stencil_modified = r_dof_allow_stencil->modified_count;
     gl_warp_refraction_modified = gl_warp_refraction->modified_count;
@@ -1869,6 +1893,7 @@ bool R_SupportsPerPixelLighting(void) {
 void R_BeginFrame(void) {
   memset(&c, 0, sizeof(c));
   GL_ProfileBeginFrame();
+  GL_ProfileGpuFrameBegin();
   gl_frame_debug_group = GL_DebugGroupBegin("frame");
 
   if (gl_finish->integer)
@@ -1909,6 +1934,7 @@ void R_EndFrame(void) {
   if (gl_showerrors->integer > 1)
     GL_ShowErrors(__func__);
 
+  GL_ProfileGpuFrameEnd();
   GL_DebugGroupEnd(&gl_frame_debug_group);
   GL_ProfileEndFrame();
 
@@ -2771,6 +2797,7 @@ static void Draw_Stats_s(void) {
                     GL_ProfileGpuMilliseconds(GL_GPU_PROFILE_EFFECTS));
   SCR_StatKeyValuef("GPU postfx ms",
                     GL_ProfileGpuMilliseconds(GL_GPU_PROFILE_POSTFX));
+  SCR_StatKeyValuef("GPU frame ms", GL_ProfileGpuFrameMilliseconds());
 }
 
 void GL_PrintStats(void) {
@@ -2786,12 +2813,14 @@ void GL_PrintStats(void) {
   Com_Printf(
       "GL_STATS frame=%u draws=%d vertices=%llu indices=0 uploads=%llu "
       "entities=%d dlights=%d particles=%d cpu_ms=%.3f gpu_ms=%.3f "
-      "gpu_world_ms=%.3f gpu_effects_ms=%.3f gpu_post_ms=%.3f gpu_valid=%d\n",
+      "gpu_frame_ms=%.3f gpu_world_ms=%.3f gpu_effects_ms=%.3f "
+      "gpu_post_ms=%.3f gpu_frame_valid=%d gpu_valid=%d\n",
       gl_telemetry.frame_number, c.batchesDrawn + c.batchesDrawn2D,
       (unsigned long long)c.trisDrawn * 3u, (unsigned long long)uploads,
       glr.fd.num_entities, glr.fd.num_dlights, glr.fd.num_particles,
       GL_ProfileCpuMilliseconds(GL_CPU_PROFILE_FRAME),
-      gpu_world + gpu_effects + gpu_post, gpu_world, gpu_effects, gpu_post,
+      gpu_world + gpu_effects + gpu_post, GL_ProfileGpuFrameMilliseconds(),
+      gpu_world, gpu_effects, gpu_post, gl_telemetry.gpu_frame_valid,
       gl_telemetry.gpu_available_mask ? 1 : 0);
 }
 

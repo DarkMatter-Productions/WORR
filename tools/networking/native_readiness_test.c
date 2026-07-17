@@ -17,6 +17,10 @@
 
 #define NATIVE_CAPABILITIES WORR_NET_CAP_NATIVE_COMMAND_PRIVATE_MASK
 #define EVENT_NATIVE_CAPABILITIES WORR_NET_CAP_NATIVE_EVENT_PRIVATE_MASK
+#define SNAPSHOT_NATIVE_CAPABILITIES WORR_NET_CAP_NATIVE_SNAPSHOT_PRIVATE_MASK
+#define EVENT_SNAPSHOT_NATIVE_CAPABILITIES                                \
+    ((uint32_t)(WORR_NET_CAP_NATIVE_EVENT_PRIVATE_MASK |                  \
+                WORR_NET_CAP_CANONICAL_SNAPSHOT_V2))
 #define COMMAND_WITHOUT_EPOCH_CANCEL                                       \
     ((uint32_t)(WORR_NET_CAP_LEGACY_STAGE_MASK |                           \
                 WORR_NET_CAP_NATIVE_ENVELOPE_V1))
@@ -85,7 +89,7 @@ static void test_record_validation(void)
     CHECK(Worr_NativeReadinessRecordValidateV1(&record));
     CHECK(record.struct_size == sizeof(record));
     CHECK(record.schema_version == WORR_NATIVE_READINESS_ABI_VERSION);
-    CHECK(record.reserved0 == 0);
+    CHECK(record.snapshot_epoch == 0);
     CHECK(record.record_checksum != 0);
 
 #define CHECK_CORRUPT(member, expression)                                  \
@@ -101,7 +105,7 @@ static void test_record_validation(void)
     CHECK_CORRUPT(negotiated_capabilities, UINT32_C(0));
     CHECK_CORRUPT(readiness_nonce, UINT64_C(0));
     CHECK_CORRUPT(record_checksum, record.record_checksum ^ UINT32_C(1));
-    CHECK_CORRUPT(reserved0, UINT32_C(1));
+    CHECK_CORRUPT(snapshot_epoch, UINT32_C(1));
 #undef CHECK_CORRUPT
 
     CHECK(!Worr_NativeReadinessRecordValidateV1(NULL));
@@ -140,6 +144,33 @@ static void test_record_validation(void)
     CHECK(!Worr_NativeReadinessRecordInitV1(NULL,
         WORR_NATIVE_READINESS_RECORD_CHALLENGE, 7,
         NATIVE_CAPABILITIES, UINT64_C(100)));
+
+    CHECK(!Worr_NativeReadinessRecordInitV1(
+        &record, WORR_NATIVE_READINESS_RECORD_CHALLENGE, 7,
+        SNAPSHOT_NATIVE_CAPABILITIES, UINT64_C(100)));
+    CHECK(!memcmp(&record, &before, sizeof(record)));
+    CHECK(Worr_NativeReadinessRecordInitBoundV1(
+        &record, WORR_NATIVE_READINESS_RECORD_CHALLENGE, 7, 19,
+        SNAPSHOT_NATIVE_CAPABILITIES, UINT64_C(100)));
+    CHECK(record.snapshot_epoch == 19);
+    CHECK(Worr_NativeReadinessRecordValidateV1(&record));
+    altered = record;
+    altered.snapshot_epoch = 18;
+    CHECK(!Worr_NativeReadinessRecordValidateV1(&altered));
+    CHECK(Worr_NativeReadinessRecordInitBoundV1(
+        &record, WORR_NATIVE_READINESS_RECORD_CLIENT_ACTIVE_CONFIRM,
+        7, 20, EVENT_SNAPSHOT_NATIVE_CAPABILITIES, UINT64_C(100)));
+    CHECK(record.snapshot_epoch == 20);
+    CHECK(Worr_NativeReadinessRecordValidateV1(&record));
+    before = record;
+    CHECK(!Worr_NativeReadinessRecordInitBoundV1(
+        &record, WORR_NATIVE_READINESS_RECORD_CHALLENGE, 7, 0,
+        SNAPSHOT_NATIVE_CAPABILITIES, UINT64_C(100)));
+    CHECK(!memcmp(&record, &before, sizeof(record)));
+    CHECK(!Worr_NativeReadinessRecordInitBoundV1(
+        &record, WORR_NATIVE_READINESS_RECORD_CHALLENGE, 7, 19,
+        NATIVE_CAPABILITIES, UINT64_C(100)));
+    CHECK(!memcmp(&record, &before, sizeof(record)));
 }
 
 static void test_capability_gating(void)
@@ -523,7 +554,7 @@ static void test_event_stream_active_confirmation_fail_closed(void)
           WORR_NATIVE_READINESS_DEADLINE_EXPIRED);
     check_failed(&server);
 
-    /* Output aliasing and a legacy binding passed to the event-only entry
+    /* Output aliasing and a legacy binding passed to the confirmation entry
      * point are rejected without mutating state or output. */
     CHECK(Worr_NativeReadinessClientInitV1(
               &client, 20, EVENT_NATIVE_CAPABILITIES, UINT64_C(5000),
@@ -554,6 +585,150 @@ static void test_event_stream_active_confirmation_fail_closed(void)
           WORR_NATIVE_READINESS_INVALID_STATE);
     CHECK(!memcmp(&client, &before, sizeof(before)));
     CHECK(!memcmp(&output, &output_before, sizeof(output)));
+}
+
+static void run_snapshot_confirmation_binding(uint32_t capabilities,
+                                              uint32_t snapshot_epoch)
+{
+    worr_native_readiness_state_v1 server;
+    worr_native_readiness_state_v1 client;
+    worr_native_readiness_state_v1 before;
+    worr_native_readiness_record_v1 challenge;
+    worr_native_readiness_record_v1 client_ready;
+    worr_native_readiness_record_v1 server_active;
+    worr_native_readiness_record_v1 client_active_confirm;
+
+    CHECK(capabilities == UINT32_C(0x57) ||
+          capabilities == UINT32_C(0x77));
+    CHECK(Worr_NativeReadinessServerInitBoundV1(
+              &server, 27, snapshot_epoch, capabilities, UINT64_C(1900),
+              UINT64_C(6000), UINT64_C(100), &challenge) ==
+          WORR_NATIVE_READINESS_OK);
+    CHECK(Worr_NativeReadinessClientInitBoundV1(
+              &client, 27, snapshot_epoch, capabilities, UINT64_C(6000),
+              UINT64_C(100)) == WORR_NATIVE_READINESS_OK);
+    CHECK(server.snapshot_epoch == snapshot_epoch);
+    CHECK(client.snapshot_epoch == snapshot_epoch);
+    CHECK(challenge.snapshot_epoch == snapshot_epoch);
+
+    CHECK(Worr_NativeReadinessClientObserveChallengeV1(
+              &client, &challenge, UINT64_C(6010), &client_ready) ==
+          WORR_NATIVE_READINESS_OK);
+    CHECK(client_ready.snapshot_epoch == snapshot_epoch);
+    CHECK(Worr_NativeReadinessServerObserveClientReadyV1(
+              &server, &client_ready, UINT64_C(6020), &server_active) ==
+          WORR_NATIVE_READINESS_OK);
+    CHECK(server_active.snapshot_epoch == snapshot_epoch);
+    CHECK(server.phase ==
+          WORR_NATIVE_READINESS_PHASE_SERVER_WAIT_CLIENT_ACTIVE_CONFIRM);
+    CHECK(Worr_NativeReadinessCanReceiveNativeV1(
+        &server, UINT64_C(6020)));
+    CHECK(!Worr_NativeReadinessCanTransmitNativeV1(
+        &server, UINT64_C(6020)));
+
+    before = client;
+    CHECK(Worr_NativeReadinessClientObserveServerActiveV1(
+              &client, &server_active, UINT64_C(6030)) ==
+          WORR_NATIVE_READINESS_INVALID_STATE);
+    CHECK(!memcmp(&client, &before, sizeof(before)));
+    CHECK(Worr_NativeReadinessClientObserveServerActiveWithConfirmV1(
+              &client, &server_active, UINT64_C(6030),
+              &client_active_confirm) == WORR_NATIVE_READINESS_OK);
+    CHECK(client_active_confirm.snapshot_epoch == snapshot_epoch);
+    CHECK(client_active_confirm.negotiated_capabilities == capabilities);
+    CHECK(Worr_NativeReadinessServerObserveClientActiveConfirmV1(
+              &server, &client_active_confirm, UINT64_C(6040)) ==
+          WORR_NATIVE_READINESS_OK);
+    CHECK(server.phase == WORR_NATIVE_READINESS_PHASE_SERVER_ACTIVE);
+    CHECK(Worr_NativeReadinessCanTransmitNativeV1(
+        &server, UINT64_C(6040)));
+}
+
+static void test_snapshot_epoch_binding_and_confirmation(void)
+{
+    worr_native_readiness_state_v1 server;
+    worr_native_readiness_state_v1 client;
+    worr_native_readiness_state_v1 before;
+    worr_native_readiness_record_v1 challenge;
+    worr_native_readiness_record_v1 wrong_challenge;
+    worr_native_readiness_record_v1 output;
+    worr_native_readiness_record_v1 output_before;
+
+    CHECK(SNAPSHOT_NATIVE_CAPABILITIES == UINT32_C(0x57));
+    CHECK(EVENT_SNAPSHOT_NATIVE_CAPABILITIES == UINT32_C(0x77));
+    run_snapshot_confirmation_binding(
+        SNAPSHOT_NATIVE_CAPABILITIES, UINT32_C(701));
+    run_snapshot_confirmation_binding(
+        EVENT_SNAPSHOT_NATIVE_CAPABILITIES, UINT32_C(702));
+
+    fill_bytes(&server, sizeof(server), 0x41);
+    fill_bytes(&challenge, sizeof(challenge), 0x14);
+    before = server;
+    output_before = challenge;
+    CHECK(Worr_NativeReadinessServerInitV1(
+              &server, 28, SNAPSHOT_NATIVE_CAPABILITIES, UINT64_C(2000),
+              UINT64_C(7000), UINT64_C(100), &challenge) ==
+          WORR_NATIVE_READINESS_INVALID_ARGUMENT);
+    CHECK(!memcmp(&server, &before, sizeof(server)));
+    CHECK(!memcmp(&challenge, &output_before, sizeof(challenge)));
+    CHECK(Worr_NativeReadinessClientInitV1(
+              &server, 28, SNAPSHOT_NATIVE_CAPABILITIES, UINT64_C(7000),
+              UINT64_C(100)) == WORR_NATIVE_READINESS_INVALID_ARGUMENT);
+    CHECK(!memcmp(&server, &before, sizeof(server)));
+
+    CHECK(Worr_NativeReadinessServerInitBoundV1(
+              &server, 28, 703, SNAPSHOT_NATIVE_CAPABILITIES,
+              UINT64_C(2000), UINT64_C(7000), UINT64_C(100),
+              &challenge) == WORR_NATIVE_READINESS_OK);
+    CHECK(Worr_NativeReadinessClientInitBoundV1(
+              &client, 28, 703, SNAPSHOT_NATIVE_CAPABILITIES,
+              UINT64_C(7000), UINT64_C(100)) ==
+          WORR_NATIVE_READINESS_OK);
+    CHECK(Worr_NativeReadinessRecordInitBoundV1(
+        &wrong_challenge, WORR_NATIVE_READINESS_RECORD_CHALLENGE,
+        28, 704, SNAPSHOT_NATIVE_CAPABILITIES, UINT64_C(2000)));
+    fill_bytes(&output, sizeof(output), 0xa6);
+    output_before = output;
+    CHECK(Worr_NativeReadinessClientObserveChallengeV1(
+              &client, &wrong_challenge, UINT64_C(7010), &output) ==
+          WORR_NATIVE_READINESS_BINDING_MISMATCH);
+    CHECK(!memcmp(&output, &output_before, sizeof(output)));
+    check_failed(&client);
+
+    CHECK(Worr_NativeReadinessClientInitBoundV1(
+              &client, 28, 703, SNAPSHOT_NATIVE_CAPABILITIES,
+              UINT64_C(7000), UINT64_C(100)) ==
+          WORR_NATIVE_READINESS_OK);
+    before = server;
+    output_before = challenge;
+    CHECK(Worr_NativeReadinessServerAdvanceEpochV1(
+              &server, 29, SNAPSHOT_NATIVE_CAPABILITIES,
+              UINT64_C(2001), UINT64_C(7010), UINT64_C(100),
+              &challenge) == WORR_NATIVE_READINESS_INVALID_ARGUMENT);
+    CHECK(!memcmp(&server, &before, sizeof(server)));
+    CHECK(!memcmp(&challenge, &output_before, sizeof(challenge)));
+    CHECK(Worr_NativeReadinessServerAdvanceEpochBoundV1(
+              &server, 29, 705, SNAPSHOT_NATIVE_CAPABILITIES,
+              UINT64_C(2001), UINT64_C(7010), UINT64_C(100),
+              &challenge) == WORR_NATIVE_READINESS_OK);
+    CHECK(server.snapshot_epoch == 705);
+    CHECK(challenge.snapshot_epoch == 705);
+
+    before = client;
+    CHECK(Worr_NativeReadinessClientAdvanceEpochV1(
+              &client, 29, SNAPSHOT_NATIVE_CAPABILITIES,
+              UINT64_C(7010), UINT64_C(100)) ==
+          WORR_NATIVE_READINESS_INVALID_ARGUMENT);
+    CHECK(!memcmp(&client, &before, sizeof(client)));
+    CHECK(Worr_NativeReadinessClientAdvanceEpochBoundV1(
+              &client, 29, 705, SNAPSHOT_NATIVE_CAPABILITIES,
+              UINT64_C(7010), UINT64_C(100)) ==
+          WORR_NATIVE_READINESS_OK);
+    CHECK(client.snapshot_epoch == 705);
+    CHECK(Worr_NativeReadinessClientObserveChallengeV1(
+              &client, &challenge, UINT64_C(7020), &output) ==
+          WORR_NATIVE_READINESS_OK);
+    CHECK(output.snapshot_epoch == 705);
 }
 
 static void check_failed(worr_native_readiness_state_v1 *state)
@@ -1092,6 +1267,7 @@ int main(void)
     test_exact_duplicates();
     test_event_stream_active_confirmation_barrier();
     test_event_stream_active_confirmation_fail_closed();
+    test_snapshot_epoch_binding_and_confirmation();
     test_invalid_order_and_sticky_failure();
     test_binding_failures();
     test_fresh_reconnect_epoch_binding();

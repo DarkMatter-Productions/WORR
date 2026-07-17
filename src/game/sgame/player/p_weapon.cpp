@@ -1394,7 +1394,39 @@ static void Weapon_HandGrenade_Fire(gentity_t *ent, bool held) {
 
   ent->client->grenadeTime = 0_ms;
 
-  fire_handgrenade(ent, start, dir, damage, speed, timer, radius, held);
+  // A hand grenade's relevant client action is release, not the earlier
+  // priming key-down. The observer merely identifies the normal callback; no
+  // fixture supplies a launch, contact, fuse, or damage result.
+  if (!held) {
+    LagCompensation_ObserveCanonicalWeaponCallback(
+        ent,
+        WORR_REWIND_WEAPON_HAND_GRENADE_RELEASE_BALLISTIC_SPAWN_FORWARD);
+  }
+  if (gentity_t *grenade =
+          fire_handgrenade(ent, start, dir, damage, speed, timer, radius,
+                           held);
+      !held && grenade && grenade->inUse) {
+    // Advance only the bounded, fully clear current-world gravity path of the
+    // released production grenade. A contact fails closed, so ordinary Toss
+    // physics remains the sole owner of bounce, placement, trigger, touch,
+    // explosion, and splash behavior.
+    const LagCompensationProjectileForwardResult forward =
+        LagCompensation_ResolveProjectileSpawnForward(
+            ent, grenade,
+            WORR_REWIND_WEAPON_HAND_GRENADE_RELEASE_BALLISTIC_SPAWN_FORWARD);
+    if (forward.advanced) {
+      grenade->s.origin = forward.trace.endPos;
+      grenade->velocity = forward.final_velocity;
+      gi.linkEntity(grenade);
+
+      // The remaining hand-grenade fuse was established at the accepted
+      // release command. Consuming bounded server delay cannot add lifetime.
+      const GameTime elapsed = GameTime::from_ms(
+          static_cast<int64_t>(forward.advanced_age_us / UINT64_C(1000)));
+      if (elapsed && grenade->nextThink > level.time)
+        grenade->nextThink = std::max(level.time, grenade->nextThink - elapsed);
+    }
+  }
 
   ent->client->pers.match.totalShots++;
   ent->client->pers.match
@@ -1673,8 +1705,35 @@ static void Weapon_GrenadeLauncher_Fire(gentity_t *ent) {
   const float bounce = crandom_open() * 10.0f;
   const float fuseVel = 200.0f + crandom_open() * 10.0f;
 
-  fire_grenade(ent, start, dir, damage, speed, 2.5_sec, splashRadius, bounce,
-               fuseVel, false);
+  // The observation only identifies the ordinary production callback for the
+  // isolated canonical fixture. It supplies no projectile, collision, bounce,
+  // fuse, or damage result.
+  LagCompensation_ObserveCanonicalWeaponCallback(
+      ent, WORR_REWIND_WEAPON_GRENADE_LAUNCHER_BALLISTIC_SPAWN_FORWARD);
+  if (gentity_t *grenade =
+          fire_grenade(ent, start, dir, damage, speed, 2.5_sec, splashRadius,
+                       bounce, fuseVel, false)) {
+    // A bouncing projectile cannot reuse straight-flight forwarding. The
+    // resolver advances only a fully clear current-world gravity path. If it
+    // observes even one present-world contact, this remains the unchanged
+    // normal launch and G_Physics_Toss later owns every bounce/trigger path.
+    const LagCompensationProjectileForwardResult forward =
+        LagCompensation_ResolveProjectileSpawnForward(
+            ent, grenade,
+            WORR_REWIND_WEAPON_GRENADE_LAUNCHER_BALLISTIC_SPAWN_FORWARD);
+    if (forward.advanced) {
+      grenade->s.origin = forward.trace.endPos;
+      grenade->velocity = forward.final_velocity;
+      gi.linkEntity(grenade);
+
+      // The ordinary grenade fuse began at the accepted command. Consuming
+      // bounded delay cannot grant it additional current-server lifetime.
+      const GameTime elapsed = GameTime::from_ms(
+          static_cast<int64_t>(forward.advanced_age_us / UINT64_C(1000)));
+      if (elapsed && grenade->timeStamp > level.time)
+        grenade->timeStamp = std::max(level.time, grenade->timeStamp - elapsed);
+    }
+  }
 
   // Muzzle flash
   gi.WriteByte(svc_muzzleflash);
@@ -1943,7 +2002,7 @@ static DIE(Weapon_Grapple_Die)(gentity_t *self, gentity_t *other,
 
 static bool Weapon_Grapple_FireHook(gentity_t *self, const Vector3 &start,
                                     const Vector3 &dir, int damage, int speed,
-                                    Effect effect) {
+                                    Effect effect, uint32_t weaponPolicy) {
   gentity_t *grapple;
   trace_t tr;
   Vector3 normalized = dir.normalized();
@@ -1982,6 +2041,20 @@ static bool Weapon_Grapple_FireHook(gentity_t *self, const Vector3 &start,
     return false;
   }
 
+  if (weaponPolicy != WORR_REWIND_WEAPON_UNSPECIFIED) {
+    // The ordinary muzzle-clearance trace above remains authoritative. Only
+    // after it is clear may an accepted command age advance the fresh hook
+    // through the current world. A contact during that bounded interval is
+    // not fabricated here: normal FlyMissile/touch ownership remains intact.
+    const LagCompensationProjectileForwardResult forward =
+        LagCompensation_ResolveProjectileSpawnForward(self, grapple,
+                                                       weaponPolicy);
+    if (forward.advanced && !forward.blocked) {
+      grapple->s.origin = forward.trace.endPos;
+      gi.linkEntity(grapple);
+    }
+  }
+
   grapple->s.sound = gi.soundIndex("weapons/grapple/grfly.wav");
 
   return true;
@@ -2001,8 +2074,14 @@ static void Weapon_Grapple_DoFire(gentity_t *ent, const Vector3 &g_offset,
   if (ent->client->PowerupCount(PowerupCount::SilencerShots))
     volume = 0.2f;
 
+  // This is an observation-only fixture hook. Attachment, pull, damage,
+  // reset, and cable state remain owned by Weapon_Grapple_FireHook and its
+  // normal touch/pull lifecycle.
+  LagCompensation_ObserveCanonicalWeaponCallback(
+      ent, WORR_REWIND_WEAPON_GRAPPLE_HOOK_SPAWN_FORWARD);
   if (Weapon_Grapple_FireHook(ent, start, dir, damage,
-                              g_grapple_fly_speed->value, effect))
+                              g_grapple_fly_speed->value, effect,
+                              WORR_REWIND_WEAPON_GRAPPLE_HOOK_SPAWN_FORWARD))
     gi.sound(ent, CHAN_WEAPON, gi.soundIndex("weapons/grapple/grfire.wav"),
              volume, ATTN_NORM, 0);
 
@@ -2074,7 +2153,8 @@ OFF-HAND HOOK
 */
 
 static void Weapon_Hook_DoFire(gentity_t *ent, const Vector3 &g_offset,
-                               int damage, Effect effect) {
+                               int damage, Effect effect,
+                               uint32_t weaponPolicy) {
   if (ent->client->grapple.state > GrappleState::Fly)
     return; // it's already out
 
@@ -2083,7 +2163,8 @@ static void Weapon_Hook_DoFire(gentity_t *ent, const Vector3 &g_offset,
                   dir);
 
   if (Weapon_Grapple_FireHook(ent, start, dir, damage,
-                              g_grapple_fly_speed->value, effect)) {
+                              g_grapple_fly_speed->value, effect,
+                              weaponPolicy)) {
     const float volume =
         ent->client->PowerupCount(PowerupCount::SilencerShots) ? 0.2f : 1.0f;
     gi.sound(ent, CHAN_WEAPON, gi.soundIndex("weapons/grapple/grfire.wav"),
@@ -2094,7 +2175,24 @@ static void Weapon_Hook_DoFire(gentity_t *ent, const Vector3 &g_offset,
 }
 
 void Weapon_Hook(gentity_t *ent) {
-  Weapon_Hook_DoFire(ent, vec3_origin, g_grapple_damage->integer, EF_NONE);
+  Weapon_Hook_DoFire(ent, vec3_origin, g_grapple_damage->integer, EF_NONE,
+                     WORR_REWIND_WEAPON_UNSPECIFIED);
+}
+
+void Weapon_Hook_CanonicalInput(gentity_t *ent) {
+  if (!ent || !ent->client || !g_allow_grapple->integer ||
+      !g_grapple_offhand->integer ||
+      ent->client->grapple.state > GrappleState::Fly) {
+    return;
+  }
+
+  // Only this native user-command path can consume a canonical mapping. The
+  // legacy `hook` client string has no server-mapped input time and remains
+  // entirely current-world through Weapon_Hook above.
+  LagCompensation_ObserveCanonicalWeaponCallback(
+      ent, WORR_REWIND_WEAPON_OFFHAND_HOOK_SPAWN_FORWARD);
+  Weapon_Hook_DoFire(ent, vec3_origin, g_grapple_damage->integer, EF_NONE,
+                     WORR_REWIND_WEAPON_OFFHAND_HOOK_SPAWN_FORWARD);
 }
 
 /*
@@ -2245,6 +2343,12 @@ static void Weapon_HyperBlaster_Fire(gentity_t *ent) {
     const Effect effect =
         (client->ps.gunFrame % 4 == 0) ? EF_HYPERBLASTER : EF_NONE;
 
+    // Observation-only fixture hook immediately before the production shared
+    // bolt callback. It can restore only the already staged current target
+    // pose for a delayed held command; fire_blaster retains all projectile,
+    // collision, direct/radius damage, and cadence authority.
+    LagCompensation_ObserveCanonicalWeaponCallback(
+        ent, WORR_REWIND_WEAPON_BLASTER_BOLT_SPAWN_FORWARD);
     Weapon_Blaster_Fire(ent, offset, damage, true, effect);
     Weapon_PowerupSound(ent);
 
@@ -2698,6 +2802,8 @@ static void Weapon_BFG_Fire(gentity_t *ent) {
 
   Vector3 start, dir;
   P_ProjectSource(ent, ent->client->vAngle, {8.f, 8.f, -8.f}, start, dir);
+  LagCompensation_ObserveCanonicalWeaponCallback(
+      ent, WORR_REWIND_WEAPON_BFG_SPAWN_FORWARD);
   fire_bfg(ent, start, dir, damage, speed, radius);
 
   // Apply kickback
@@ -2755,6 +2861,8 @@ static void Weapon_ProxLauncher_Fire(gentity_t *ent) {
   P_AddWeaponKick(ent, ent->client->vForward * -2.f, {-1.f, 0.f, 0.f});
 
   // Fire prox mine
+  LagCompensation_ObserveCanonicalWeaponCallback(
+      ent, WORR_REWIND_WEAPON_PROX_MINE_BALLISTIC_DEPLOY_FORWARD);
   fire_prox(ent, start, dir, damageMultiplier, 600);
 
   // Muzzle flash and sound
@@ -2809,8 +2917,41 @@ static void Weapon_Tesla_Fire(gentity_t *ent, bool held) {
 
   ent->client->grenadeTime = 0_ms;
 
-  // Fire tesla mine
-  fire_tesla(ent, start, dir, damageMultiplier, static_cast<int>(speed));
+  // A Tesla Mine's relevant action is the normal release command. The
+  // observer only identifies the production callback; it creates no flight,
+  // landing, target, damage, or deployable lifecycle result.
+  if (!held) {
+    LagCompensation_ObserveCanonicalWeaponCallback(
+        ent,
+        WORR_REWIND_WEAPON_TESLA_MINE_RELEASE_BALLISTIC_DEPLOY_FORWARD);
+  }
+  if (gentity_t *tesla =
+          fire_tesla(ent, start, dir, damageMultiplier,
+                     static_cast<int>(speed));
+      !held && tesla && tesla->inUse) {
+    // Consume only the accepted release-command age through a fully clear
+    // current-world gravity path. Any contact rejects the advance, leaving
+    // normal Bounce movement, activation, targeting, and damage untouched.
+    const LagCompensationProjectileForwardResult forward =
+        LagCompensation_ResolveProjectileSpawnForward(
+            ent, tesla,
+            WORR_REWIND_WEAPON_TESLA_MINE_RELEASE_BALLISTIC_DEPLOY_FORWARD);
+    if (forward.advanced) {
+      tesla->s.origin = forward.trace.endPos;
+      tesla->velocity = forward.final_velocity;
+      gi.linkEntity(tesla);
+
+      // Skipped server-authoritative flight time cannot extend the normal
+      // activation or lifetime schedule that fire_tesla already established.
+      const GameTime elapsed = GameTime::from_ms(
+          static_cast<int64_t>(forward.advanced_age_us / UINT64_C(1000)));
+      if (elapsed && tesla->nextThink > level.time)
+        tesla->nextThink = std::max(level.time, tesla->nextThink - elapsed);
+      if (elapsed)
+        tesla->wait = std::max(level.time.seconds(),
+                               tesla->wait - elapsed.seconds());
+    }
+  }
 
   // Stats and ammo
   ent->client->pers.match.totalShots++;
@@ -2868,7 +3009,7 @@ static void Weapon_Ball_Fire(gentity_t *ent, bool held) {
                           : std::min(GRENADE_MINSPEED + heldSeconds * speedStep,
                                      GRENADE_MAXSPEED);
 
-  Ball_Launch(ent, start, dir, speed);
+  Ball_Launch(ent, start, dir, speed, true);
 }
 
 static void Weapon_ChainFist_Fire(gentity_t *ent) {
@@ -3532,6 +3673,8 @@ static void Weapon_IonRipper_Fire(gentity_t *ent) {
 
   Vector3 start;
   P_ProjectSource(ent, ent->client->vAngle, muzzleOffset, start, forward);
+  LagCompensation_ObserveCanonicalWeaponCallback(
+      ent, WORR_REWIND_WEAPON_ION_RIPPER_BURST_SPAWN_FORWARD);
 
   for (int i = 0; i < kProjectileCount; ++i) {
     // Compute bullet-style spread (same as fire_lead)
@@ -3608,6 +3751,12 @@ static void Weapon_Phalanx_Fire(gentity_t *ent) {
   constexpr float splashRadius = 100.f;
   constexpr int projectileSpeed = 725;
   const Vector3 offset = {0.f, 8.f, -8.f};
+
+  // This is an observation-only hook for the canonical runtime fixture. The
+  // normal Phalanx callback remains the sole owner of projectile spawn,
+  // contact, splash, effects, and damage.
+  LagCompensation_ObserveCanonicalWeaponCallback(
+      ent, WORR_REWIND_WEAPON_PHALANX_SPAWN_FORWARD);
 
   int damage = baseDamage;
   int splashDamage = baseDamage;
@@ -3695,7 +3844,37 @@ static void Weapon_Trap_Fire(gentity_t *ent, bool held) {
   speed = std::min(speed, TRAP_MAXSPEED);
   ent->client->grenadeTime = 0_ms;
 
-  fire_trap(ent, start, dir, static_cast<int>(speed));
+  // A Trap's relevant action is the ordinary held-throw release command.
+  // This observer records only the normal production callback and supplies no
+  // collision, capture, destruction, or lifetime result.
+  if (!held) {
+    LagCompensation_ObserveCanonicalWeaponCallback(
+        ent, WORR_REWIND_WEAPON_TRAP_RELEASE_BALLISTIC_DEPLOY_FORWARD);
+  }
+  if (gentity_t *trap = fire_trap(ent, start, dir, static_cast<int>(speed));
+      !held && trap && trap->inUse) {
+    // Consume only a fully clear current-world gravity path. A contact rejects
+    // the advance, leaving normal Bounce physics and all later Trap lifecycle
+    // behavior as the sole production authority.
+    const LagCompensationProjectileForwardResult forward =
+        LagCompensation_ResolveProjectileSpawnForward(
+            ent, trap,
+            WORR_REWIND_WEAPON_TRAP_RELEASE_BALLISTIC_DEPLOY_FORWARD);
+    if (forward.advanced) {
+      trap->s.origin = forward.trace.endPos;
+      trap->velocity = forward.final_velocity;
+      gi.linkEntity(trap);
+
+      // Consumed flight time cannot extend the first production think or the
+      // normal 30-second expiry established by fire_trap.
+      const GameTime elapsed = GameTime::from_ms(
+          static_cast<int64_t>(forward.advanced_age_us / UINT64_C(1000)));
+      if (elapsed && trap->nextThink > level.time)
+        trap->nextThink = std::max(level.time, trap->nextThink - elapsed);
+      if (elapsed && trap->timeStamp > level.time)
+        trap->timeStamp = std::max(level.time, trap->timeStamp - elapsed);
+    }
+  }
 
   // Track usage stats
   ent->client->pers.match.totalShots++;

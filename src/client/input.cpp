@@ -409,7 +409,7 @@ typedef struct {
 static kbutton_t    in_klook;
 static kbutton_t    in_left, in_right, in_forward, in_back;
 static kbutton_t    in_lookup, in_lookdown, in_moveleft, in_moveright;
-static kbutton_t    in_strafe, in_speed, in_use, in_attack;
+static kbutton_t    in_strafe, in_speed, in_use, in_attack, in_hook;
 static kbutton_t    in_up, in_down;
 // Kex stuff
 static kbutton_t    in_holster;
@@ -565,6 +565,25 @@ static void IN_AttackDown(void)
 static void IN_AttackUp(void)
 {
     KeyUp(&in_attack);
+    // Release-driven weapons (notably hand grenades) must not wait behind an
+    // avoidable packet cadence after the player has let go. This still sends
+    // the normal client-built user command; it neither initializes physical
+    // input nor changes server weapon authority.
+    CL_CheckInstantPacket();
+}
+
+static void IN_HookDown(void)
+{
+    KeyDown(&in_hook);
+    // A Hook press is an ordinary user-command edge. Prompt delivery changes
+    // neither input-device initialization nor the headless input policy.
+    CL_CheckInstantPacket();
+}
+
+static void IN_HookUp(void)
+{
+    KeyUp(&in_hook);
+    CL_CheckInstantPacket();
 }
 
 static void IN_UseDown(void)
@@ -986,6 +1005,8 @@ static const cmdreg_t c_input[] = {
     { "-speed", IN_SpeedUp },
     { "+attack", IN_AttackDown },
     { "-attack", IN_AttackUp },
+    { "+hook", IN_HookDown },
+    { "-hook", IN_HookUp },
     { "+use", IN_UseDown },
     { "-use", IN_UseUp },
     { "impulse", IN_Impulse },
@@ -1101,6 +1122,8 @@ void CL_FinalizeCmd(void)
         allow_attack = cgame->Wheel_AllowAttack();
     if (in_attack.state & 3 && allow_attack)
         cl.cmd.buttons |= BUTTON_ATTACK;
+    if (in_hook.state & 3)
+        cl.cmd.buttons |= BUTTON_HOOK;
     if (in_use.state & 3)
         cl.cmd.buttons |= BUTTON_USE;
     if (in_holster.state & 3)
@@ -1169,10 +1192,18 @@ void CL_FinalizeCmd(void)
             worr_prediction_command_v1 prediction_command = {};
             if (CL_CommandIdentityForNumber(cl.cmdNumber, &command_id) &&
                 NetUsercmd_ToPredictionCommandV1(
-                    &cl.cmd, &prediction_command)) {
+                    &cl.cmd, &prediction_command) &&
+                CL_CommandIdentityRetainCommand(cl.cmdNumber,
+                                                &prediction_command)) {
                 CL_NativeReadinessPilotObserveFinalizedCommand(
                     cl.cmdNumber, &command_id, &prediction_command);
             } else {
+                if (CL_NetCapabilityHas(
+                        WORR_NET_CAP_LEGACY_COMMAND_SIDEBAND_V1)) {
+                    Com_Error(ERR_DROP,
+                              "%s: failed to retain canonical command record",
+                              __func__);
+                }
                 CL_NativeReadinessPilotObserveFinalizedCommand(
                     cl.cmdNumber, nullptr, nullptr);
             }
@@ -1190,6 +1221,7 @@ clear:
     cl.gamepadmove[1] = 0;
 
     in_attack.state &= ~2;
+    in_hook.state &= ~2;
     in_use.state &= ~2;
     in_holster.state &= ~2;
 

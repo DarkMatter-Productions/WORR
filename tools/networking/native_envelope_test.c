@@ -272,6 +272,79 @@ static bool test_fragmentation_and_reorder(void)
     return true;
 }
 
+static bool test_maximum_payload_and_fragment_count(void)
+{
+    worr_native_envelope_reassembly_v1 reassembly;
+    worr_native_envelope_frame_info_v1 info;
+    uint16_t count;
+    uint16_t index;
+
+    fill_payload(WORR_NATIVE_ENVELOPE_MAX_PAYLOAD_BYTES, 91);
+    CHECK(encode_payload(WORR_NATIVE_ENVELOPE_MAX_PAYLOAD_BYTES,
+                         WORR_NATIVE_ENVELOPE_MAX_DATAGRAM_BYTES,
+                         12,
+                         43,
+                         make_ref(WORR_NATIVE_RECORD_SNAPSHOT_V1, 87),
+                         3,
+                         &count));
+    CHECK(count == 115);
+    CHECK(encode_payload(WORR_NATIVE_ENVELOPE_MAX_PAYLOAD_BYTES,
+                         1080,
+                         12,
+                         44,
+                         make_ref(WORR_NATIVE_RECORD_SNAPSHOT_V1, 88),
+                         3,
+                         &count));
+    CHECK(count == WORR_NATIVE_ENVELOPE_MAX_FRAGMENTS);
+    CHECK(Worr_NativeEnvelopeDecodeV1(
+              frames[WORR_NATIVE_ENVELOPE_MAX_FRAGMENTS - 1u],
+              frame_bytes[WORR_NATIVE_ENVELOPE_MAX_FRAGMENTS - 1u],
+              &info) == WORR_NATIVE_ENVELOPE_DECODE_OK);
+    CHECK(info.fragment_index ==
+              WORR_NATIVE_ENVELOPE_MAX_FRAGMENTS - 1u &&
+          info.fragment_count == WORR_NATIVE_ENVELOPE_MAX_FRAGMENTS &&
+          info.fragment_stride == 1024 &&
+          info.total_payload_bytes ==
+              WORR_NATIVE_ENVELOPE_MAX_PAYLOAD_BYTES);
+
+    memset(restored, 0xa5, sizeof(restored));
+    Worr_NativeEnvelopeReassemblyResetV1(&reassembly);
+    for (index = count; index-- > 0;) {
+        const worr_native_envelope_accept_result_v1 result =
+            Worr_NativeEnvelopeReassemblyAcceptV1(
+                &reassembly,
+                restored,
+                sizeof(restored),
+                frames[index],
+                frame_bytes[index],
+                NULL);
+
+        CHECK(result ==
+              (index == 0
+                   ? WORR_NATIVE_ENVELOPE_ACCEPTED_COMPLETE
+                   : WORR_NATIVE_ENVELOPE_ACCEPTED));
+        if (index == (uint16_t)(count - 1u)) {
+            CHECK(reassembly.received_bitmap[0] == 0);
+            CHECK(reassembly.received_bitmap[1] ==
+                  (UINT64_C(1) << 63));
+            CHECK(Worr_NativeEnvelopeReassemblyAcceptV1(
+                      &reassembly,
+                      restored,
+                      sizeof(restored),
+                      frames[index],
+                      frame_bytes[index],
+                      NULL) ==
+                  WORR_NATIVE_ENVELOPE_ACCEPTED_DUPLICATE);
+        }
+    }
+    CHECK(reassembly.received_bitmap[0] == UINT64_MAX &&
+          reassembly.received_bitmap[1] == UINT64_MAX);
+    CHECK(reassembly.received_fragment_count ==
+          WORR_NATIVE_ENVELOPE_MAX_FRAGMENTS);
+    CHECK(memcmp(restored, payload, sizeof(payload)) == 0);
+    return true;
+}
+
 static bool test_fragmenter_limits_and_transactionality(void)
 {
     worr_native_envelope_fragmenter_v1 fragmenter;
@@ -299,6 +372,36 @@ static bool test_fragmenter_limits_and_transactionality(void)
     CHECK(!Worr_NativeEnvelopeFragmenterInitV1(
         &fragmenter, 1, 1, record, 0, payload, 1, 1200));
     record.object_sequence = 1;
+    CHECK(!Worr_NativeEnvelopeFragmenterInitV1(
+        &fragmenter,
+        1,
+        1,
+        record,
+        0,
+        payload,
+        WORR_NATIVE_ENVELOPE_MAX_PAYLOAD_BYTES + 1u,
+        1200));
+    CHECK(!Worr_NativeEnvelopeFragmenterInitV1(
+        &fragmenter,
+        1,
+        1,
+        record,
+        0,
+        payload,
+        WORR_NATIVE_ENVELOPE_MAX_PAYLOAD_BYTES,
+        1079));
+    CHECK(Worr_NativeEnvelopeFragmenterInitV1(
+        &fragmenter,
+        1,
+        1,
+        record,
+        0,
+        payload,
+        WORR_NATIVE_ENVELOPE_MAX_PAYLOAD_BYTES,
+        1080));
+    CHECK(fragmenter.fragment_stride == 1024 &&
+          fragmenter.fragment_count ==
+              WORR_NATIVE_ENVELOPE_MAX_FRAGMENTS);
     CHECK(!Worr_NativeEnvelopeFragmenterInitV1(
         &fragmenter,
         1,
@@ -503,6 +606,7 @@ static bool test_malformed_and_integrity(void)
 static bool test_reassembly_rejections(void)
 {
     worr_native_envelope_reassembly_v1 reassembly;
+    worr_native_envelope_reassembly_v1 malformed_reassembly;
     uint8_t altered[WORR_NATIVE_ENVELOPE_MAX_DATAGRAM_BYTES];
     uint8_t other_frame[WORR_NATIVE_ENVELOPE_MAX_DATAGRAM_BYTES];
     size_t other_bytes;
@@ -547,6 +651,15 @@ static bool test_reassembly_rejections(void)
               frames[0],
               frame_bytes[0],
               NULL) == WORR_NATIVE_ENVELOPE_ACCEPTED);
+    malformed_reassembly = reassembly;
+    malformed_reassembly.received_bitmap[1] = UINT64_C(1);
+    CHECK(Worr_NativeEnvelopeReassemblyAcceptV1(
+              &malformed_reassembly,
+              restored,
+              sizeof(restored),
+              frames[1],
+              frame_bytes[1],
+              NULL) == WORR_NATIVE_ENVELOPE_REJECT_INVALID_STATE);
 
     CHECK(Worr_NativeEnvelopeFragmenterInitV1(
         &other_fragmenter,
@@ -745,6 +858,7 @@ static bool test_priority_queue(void)
 int main(void)
 {
     if (!test_fragmentation_and_reorder() ||
+        !test_maximum_payload_and_fragment_count() ||
         !test_fragmenter_limits_and_transactionality() ||
         !test_malformed_and_integrity() ||
         !test_reassembly_rejections() ||

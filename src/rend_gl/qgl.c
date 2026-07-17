@@ -377,6 +377,7 @@ static const glsection_t sections[] = {
         .caps = QGL_CAP_TIMER_QUERY,
         .functions = (const glfunction_t []) {
             QGL_FN(GetQueryObjectui64v),
+            QGL_FN(QueryCounter),
             { NULL }
         }
     },

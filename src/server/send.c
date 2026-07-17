@@ -1033,9 +1033,10 @@ void SV_SendClientMessages(void)
         }
 
         /* A post-bootstrap readiness request starts its deadline only at the
-         * first clean, rate-admitted boundary.  Transmit the 117-byte reliable
-         * alone so no later frame or game-start output can delay visibility
-         * behind an arbitrarily large fragmented application message. */
+         * first clean, rate-admitted boundary.  Transmit the fixed
+         * count-derived reliable record alone so no later frame or game-start
+         * output can delay visibility behind a fragmented application
+         * message. */
         if (SV_TryQueueNativeShadowChallenge(client)) {
             client->frameflags |= FF_SUPPRESSED;
             client->suppress_count++;

@@ -5,7 +5,8 @@ Date: 2026-07-15
 Task ID: `FR-01-T15`
 
 Status: implemented collection gate and one environment-bound dense inline-BSP
-CPU-submission budget. Broader representative-map and GPU budgets remain open.
+CPU-submission budget. A shared full-frame GPU timing contract is implemented,
+but representative-map and accepted GPU budgets remain open.
 
 ## Purpose
 
@@ -26,6 +27,20 @@ Its first result is documented in
 `vulkan-paired-fixed-view-telemetry-2026-07-15.md`; it is collection evidence
 only, not a performance budget.
 
+The runner's common profile and every existing non-DOF workload configuration
+now explicitly disable the latched `r_dof` effect before workload setup. This
+prevents an archived user setting from changing the measured work and is part
+of the configuration hash. The current controlled audit and the status of the
+historical dense-instance budget are documented in
+`vulkan-paired-performance-nondof-contract-2026-07-16.md`.
+
+For effect-specific capture, repeatable `--launch-cvar NAME=VALUE` overrides
+replace the named common-profile value before renderer startup. The runner
+rejects duplicate, malformed, multiline, and NUL-containing inputs;
+canonicalises the effective map; includes it in the configuration hash; and
+records it in the capture manifest. This makes latched effects such as
+`r_dof=1` auditable rather than relying on a too-late config command.
+
 ## Capture manifest schema
 
 The `--capture-manifest` JSON input uses schema version `1`:
@@ -36,7 +51,10 @@ The `--capture-manifest` JSON input uses schema version `1`:
   "scenario": {
     "id": "stable-scenario-name",
     "fixture_sha256": "<64 lowercase-or-uppercase hex characters>",
-    "config_sha256": "<64 lowercase-or-uppercase hex characters>"
+    "config_sha256": "<64 lowercase-or-uppercase hex characters>",
+    "launch_cvars": {
+      "r_dof": "1"
+    }
   },
   "environment": {
     "hardware_id": "stable GPU/CPU/OS identifier",
@@ -58,7 +76,9 @@ configuration hash covers their shared simulation, resolution, cvar profile,
 warm-up, and capture command sequence. Renderer-specific selection belongs in
 the two runs but must not change the scenario. The environment fields make a
 driver or hardware change visible in retained evidence instead of treating it
-as a continuation of an old baseline.
+as a continuation of an old baseline. `launch_cvars` is optional in schema
+version `1`, but when present it records the canonical complete map used for
+the capture rather than only the caller's overrides.
 
 The analyzer validates all required fields and both telemetry file hashes. Its
 JSON report retains the scenario and artifact hashes. `--budget` now requires
@@ -90,7 +110,10 @@ hash-checked capture manifest. The optional `vulkan_max` object supplies raw
 Vulkan metric ceilings; `vulkan_over_opengl_max` retains ratio limits. This
 prevents a different map, command profile, adapter, or driver from silently
 passing a machine-specific budget. A future budget must cover valid GPU
-samples and both mean/p95 metrics that it claims.
+samples and both mean/p95 metrics that it claims. GPU budgets must use only
+the shared `gpu_frame_ms_*` metrics and set `require_gpu_frame_valid`; legacy
+`gpu_ms` and phase totals are diagnostic only. See
+`vulkan-opengl-full-frame-gpu-timing-2026-07-16.md`.
 
 ## Headless validation
 

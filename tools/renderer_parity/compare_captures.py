@@ -273,6 +273,21 @@ def evaluate_scene(
                     f"{scene_id}.{name}: min_color must not exceed max_color"
                 )
         minimum = int(_number(probe.get("min_pixels_per_backend", 0), f"{scene_id}.{name}.min_pixels_per_backend"))
+        maximum: int | None = None
+        if "max_pixels_per_backend" in probe:
+            maximum = int(_number(
+                probe["max_pixels_per_backend"],
+                f"{scene_id}.{name}.max_pixels_per_backend",
+            ))
+            if maximum < 0:
+                raise CaptureError(
+                    f"{scene_id}.{name}.max_pixels_per_backend must be non-negative"
+                )
+            if minimum > maximum:
+                raise CaptureError(
+                    f"{scene_id}.{name}: min_pixels_per_backend must not exceed "
+                    "max_pixels_per_backend"
+                )
         max_delta = _number(
             probe.get("max_backend_count_delta_percent", 100),
             f"{scene_id}.{name}.max_backend_count_delta_percent",
@@ -310,6 +325,11 @@ def evaluate_scene(
         if gl_count < minimum or vk_count < minimum:
             failures.append(
                 f"{scene_id}.{name}: required at least {minimum} matching pixels "
+                f"per backend; OpenGL={gl_count}, Vulkan={vk_count}"
+            )
+        if maximum is not None and (gl_count > maximum or vk_count > maximum):
+            failures.append(
+                f"{scene_id}.{name}: required at most {maximum} matching pixels "
                 f"per backend; OpenGL={gl_count}, Vulkan={vk_count}"
             )
         if delta_percent > max_delta:

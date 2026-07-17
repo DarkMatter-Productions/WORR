@@ -56,8 +56,10 @@ static cvar_t *gl_bilerp_pics;
 static cvar_t *gl_bilerp_skies;
 static cvar_t *gl_upscale_pcx;
 static cvar_t *gl_texturemode;
+static cvar_t *r_texture_filter;
 static cvar_t *gl_texturebits;
 static cvar_t *gl_anisotropy;
+static cvar_t *r_anisotropy;
 static cvar_t *gl_saturation;
 static cvar_t *gl_gamma;
 static cvar_t *vid_gamma_legacy;
@@ -70,6 +72,8 @@ cvar_t *gl_intensity;
 
 static bool gl_picmip_syncing;
 static bool gl_intensity_syncing;
+static bool gl_texturemode_syncing;
+static bool gl_anisotropy_syncing;
 static bool r_picmip_filter_syncing;
 static bool gl_gamma_alias_syncing;
 
@@ -236,17 +240,61 @@ static void gl_sync_intensity_defaults(void)
         Cvar_SetByVar(gl_intensity, r_intensity->string, FROM_CODE);
 }
 
+static void gl_sync_anisotropy_defaults(void)
+{
+    if (!r_anisotropy || !gl_anisotropy)
+        return;
+
+    if (!(r_anisotropy->flags & CVAR_MODIFIED) &&
+        (gl_anisotropy->flags & CVAR_MODIFIED)) {
+        Cvar_SetByVar(r_anisotropy, gl_anisotropy->string, FROM_CODE);
+    } else {
+        Cvar_SetByVar(gl_anisotropy, r_anisotropy->string, FROM_CODE);
+    }
+}
+
+static void gl_sync_texturemode_defaults(void)
+{
+    if (!r_texture_filter || !gl_texturemode)
+        return;
+
+    if (!(r_texture_filter->flags & CVAR_MODIFIED) &&
+        (gl_texturemode->flags & CVAR_MODIFIED)) {
+        Cvar_SetByVar(r_texture_filter, gl_texturemode->string, FROM_CODE);
+    } else {
+        Cvar_SetByVar(gl_texturemode, r_texture_filter->string, FROM_CODE);
+    }
+}
+
 static void gl_texturemode_changed(cvar_t *self)
 {
     int i;
 
+    if (gl_texturemode_syncing || !self)
+        return;
+
+    gl_texturemode_syncing = true;
+    if (self == r_texture_filter && gl_texturemode) {
+        Cvar_SetByVar(gl_texturemode, self->string, FROM_CODE);
+    } else if (self == gl_texturemode && r_texture_filter) {
+        Cvar_SetByVar(r_texture_filter, self->string, FROM_CODE);
+    }
+    gl_texturemode_syncing = false;
+
+    const cvar_t *filter = r_texture_filter ? r_texture_filter : self;
+
     for (i = 0; i < numFilterModes; i++)
-        if (!Q_stricmp(filterModes[i].name, self->string))
+        if (!Q_stricmp(filterModes[i].name, filter->string))
             break;
 
     if (i == numFilterModes) {
-        Com_WPrintf("Bad texture mode: %s\n", self->string);
-        Cvar_Reset(self);
+        Com_WPrintf("Bad texture mode: %s\n", filter->string);
+        gl_texturemode_syncing = true;
+        Cvar_Reset(r_texture_filter ? r_texture_filter : self);
+        if (r_texture_filter && gl_texturemode) {
+            Cvar_SetByVar(gl_texturemode, r_texture_filter->string, FROM_CODE);
+        }
+        gl_texturemode_syncing = false;
         gl_filter_min = GL_LINEAR_MIPMAP_LINEAR;
         gl_filter_max = GL_LINEAR;
     } else {
@@ -269,13 +317,25 @@ static void gl_texturemode_g(genctx_t *ctx)
 
 static void gl_anisotropy_changed(cvar_t *self)
 {
+    if (gl_anisotropy_syncing || !self)
+        return;
+
+    gl_anisotropy_syncing = true;
+    if (self == r_anisotropy && gl_anisotropy) {
+        Cvar_SetByVar(gl_anisotropy, self->string, FROM_CODE);
+    } else if (self == gl_anisotropy && r_anisotropy) {
+        Cvar_SetByVar(r_anisotropy, self->string, FROM_CODE);
+    }
+    gl_anisotropy_syncing = false;
+
     GLfloat value = 1;
 
     if (!(gl_config.caps & QGL_CAP_TEXTURE_ANISOTROPY))
         return;
 
     qglGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY, &value);
-    gl_filter_anisotropy = Cvar_ClampValue(self, 1, value);
+    gl_filter_anisotropy = Cvar_ClampValue(
+        r_anisotropy ? r_anisotropy : self, 1, value);
 
     // change all the existing mipmap texture objects
     update_image_params(BIT(IT_WALL) | BIT(IT_SKIN));
@@ -1874,11 +1934,20 @@ void GL_InitImages(void)
     gl_bilerp_skies = Cvar_Get("gl_bilerp_skies", "1", 0);
     gl_bilerp_skies->changed = gl_bilerp_skies_changed;
     gl_texturemode = Cvar_Get("gl_texturemode", "GL_LINEAR_MIPMAP_LINEAR", CVAR_ARCHIVE);
+    r_texture_filter = Cvar_Get("r_texture_filter", gl_texturemode->string,
+                                CVAR_ARCHIVE);
+    gl_sync_texturemode_defaults();
     gl_texturemode->changed = gl_texturemode_changed;
+    r_texture_filter->changed = gl_texturemode_changed;
     gl_texturemode->generator = gl_texturemode_g;
+    r_texture_filter->generator = gl_texturemode_g;
     gl_texturebits = Cvar_Get("gl_texturebits", "0", CVAR_FILES);
     gl_anisotropy = Cvar_Get("gl_anisotropy", va("%g", gl_config.max_anisotropy), 0);
+    r_anisotropy = Cvar_Get("r_anisotropy", gl_anisotropy->string,
+                            CVAR_ARCHIVE);
+    gl_sync_anisotropy_defaults();
     gl_anisotropy->changed = gl_anisotropy_changed;
+    r_anisotropy->changed = gl_anisotropy_changed;
     gl_noscrap = Cvar_Get("gl_noscrap", "0", CVAR_FILES);
     gl_round_down = Cvar_Get("gl_round_down", "0", CVAR_FILES);
     gl_picmip = Cvar_Get("gl_picmip", "0", CVAR_FILES);
@@ -1922,9 +1991,9 @@ void GL_InitImages(void)
     gl_intensity->changed = gl_intensity_sync;
     r_intensity->changed = gl_intensity_sync;
 
-    gl_texturemode_changed(gl_texturemode);
+    gl_texturemode_changed(r_texture_filter);
     gl_texturebits_changed(gl_texturebits);
-    gl_anisotropy_changed(gl_anisotropy);
+    gl_anisotropy_changed(r_anisotropy);
 
     IMG_Init();
 
@@ -1978,9 +2047,20 @@ void GL_ShutdownImages(void)
     gl_bilerp_chars->changed = NULL;
     gl_bilerp_pics->changed = NULL;
     gl_bilerp_skies->changed = NULL;
-    gl_texturemode->changed = NULL;
-    gl_texturemode->generator = NULL;
-    gl_anisotropy->changed = NULL;
+    if (gl_texturemode && gl_texturemode->changed == gl_texturemode_changed)
+        gl_texturemode->changed = NULL;
+    if (r_texture_filter && r_texture_filter->changed == gl_texturemode_changed)
+        r_texture_filter->changed = NULL;
+    if (gl_texturemode && gl_texturemode->generator == gl_texturemode_g)
+        gl_texturemode->generator = NULL;
+    if (r_texture_filter && r_texture_filter->generator == gl_texturemode_g)
+        r_texture_filter->generator = NULL;
+    gl_texturemode_syncing = false;
+    if (gl_anisotropy && gl_anisotropy->changed == gl_anisotropy_changed)
+        gl_anisotropy->changed = NULL;
+    if (r_anisotropy && r_anisotropy->changed == gl_anisotropy_changed)
+        r_anisotropy->changed = NULL;
+    gl_anisotropy_syncing = false;
     gl_gamma->changed = NULL;
     if (vid_gamma_legacy)
         vid_gamma_legacy->changed = NULL;

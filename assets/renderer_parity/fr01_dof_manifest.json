@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "task_id": "FR-01-T12",
+  "scenes": [
+    {
+      "id": "depth_aware_dof_bmodel_focus",
+      "config": "renderer_parity/fr01_dof.cfg",
+      "capture": "fr01_dof.tga",
+      "launch_cvars": {
+        "r_dof": "1"
+      },
+      "crop": [160, 120, 640, 480],
+      "metrics": {
+        "pixel_threshold": 1,
+        "max_mean_absolute_rgb": [0.1, 0.1, 0.1],
+        "max_pixels_over_threshold_percent": 0
+      }
+    },
+    {
+      "id": "depth_aware_dof_disabled_control",
+      "config": "renderer_parity/fr01_dof_disabled.cfg",
+      "capture": "fr01_dof_disabled.tga",
+      "launch_cvars": {
+        "r_dof": "0"
+      },
+      "crop": [160, 120, 640, 480],
+      "metrics": {
+        "pixel_threshold": 1,
+        "max_mean_absolute_rgb": [0.1, 0.1, 0.1],
+        "max_pixels_over_threshold_percent": 0
+      }
+    },
+    {
+      "id": "depth_aware_dof_centre_focus_auto_range",
+      "config": "renderer_parity/fr01_dof_centre_focus.cfg",
+      "capture": "fr01_dof_centre_focus.tga",
+      "launch_cvars": {
+        "r_dof": "1"
+      },
+      "crop": [160, 120, 640, 480],
+      "metrics": {
+        "pixel_threshold": 1,
+        "max_mean_absolute_rgb": [0.1, 0.1, 0.1],
+        "max_pixels_over_threshold_percent": 0
+      }
+    },
+    {
+      "id": "depth_aware_dof_centre_focus_disabled_control",
+      "config": "renderer_parity/fr01_dof_centre_focus_disabled.cfg",
+      "capture": "fr01_dof_centre_focus_disabled.tga",
+      "launch_cvars": {
+        "r_dof": "0"
+      },
+      "crop": [160, 120, 640, 480],
+      "metrics": {
+        "pixel_threshold": 1,
+        "max_mean_absolute_rgb": [0.1, 0.1, 0.1],
+        "max_pixels_over_threshold_percent": 0
+      }
+    },
+    {
+      "id": "depth_aware_dof_menu_rect",
+      "config": "renderer_parity/fr01_dof_menu_rect.cfg",
+      "capture": "fr01_dof_menu_rect.tga",
+      "launch_cvars": {
+        "r_dof": "1"
+      },
+      "crop": [160, 120, 640, 480],
+      "metrics": {
+        "pixel_threshold": 1,
+        "max_mean_absolute_rgb": [0.1, 0.1, 0.1],
+        "max_pixels_over_threshold_percent": 0
+      }
+    },
+    {
+      "id": "depth_aware_dof_menu_rect_disabled_control",
+      "config": "renderer_parity/fr01_dof_menu_rect_disabled.cfg",
+      "capture": "fr01_dof_menu_rect_disabled.tga",
+      "launch_cvars": {
+        "r_dof": "0"
+      },
+      "crop": [160, 120, 640, 480],
+      "metrics": {
+        "pixel_threshold": 1,
+        "max_mean_absolute_rgb": [0.1, 0.1, 0.1],
+        "max_pixels_over_threshold_percent": 0
+      }
+    },
+    {
+      "id": "depth_aware_dof_wide_explicit_range",
+      "config": "renderer_parity/fr01_dof_wide_range.cfg",
+      "capture": "fr01_dof_wide_range.tga",
+      "launch_cvars": {
+        "r_dof": "1"
+      },
+      "crop": [160, 120, 640, 480],
+      "metrics": {
+        "pixel_threshold": 1,
+        "max_mean_absolute_rgb": [0.1, 0.1, 0.1],
+        "max_pixels_over_threshold_percent": 0
+      }
+    },
+    {
+      "id": "depth_aware_dof_wide_explicit_range_disabled_control",
+      "config": "renderer_parity/fr01_dof_wide_range_disabled.cfg",
+      "capture": "fr01_dof_wide_range_disabled.tga",
+      "launch_cvars": {
+        "r_dof": "0"
+      },
+      "crop": [160, 120, 640, 480],
+      "metrics": {
+        "pixel_threshold": 1,
+        "max_mean_absolute_rgb": [0.1, 0.1, 0.1],
+        "max_pixels_over_threshold_percent": 0
+      }
+    }
+  ]
+}

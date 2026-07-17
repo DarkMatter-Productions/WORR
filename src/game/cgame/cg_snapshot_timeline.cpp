@@ -236,6 +236,12 @@ const char *prediction_correction_reason_name(
         return "state_divergence";
     case cg_prediction_correction_reason_t::correction_threshold_exceeded:
         return "correction_threshold_exceeded";
+    case cg_prediction_correction_reason_t::canonical_authority_unavailable:
+        return "canonical_authority_unavailable";
+    case cg_prediction_correction_reason_t::canonical_authority_mismatch:
+        return "canonical_authority_mismatch";
+    case cg_prediction_correction_reason_t::snapshot_discontinuity:
+        return "snapshot_discontinuity";
     }
     return "unknown";
 }

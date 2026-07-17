@@ -30,6 +30,12 @@ runtime owner has caller-provided fixed arenas; published slots contain copied
 V2 records and generation-checked process-local references. No q2proto, demo or
 wire format changed.
 
+Update, 2026-07-16: the export/status ABI is now V2 so the added exact snapshot
+admission receipt cannot be mistaken for the smaller V1 record. The Stage D
+semantic ACK and event-health fence are documented in
+`docs-dev/fr-10-t04-t06-native-snapshot-semantic-admission-2026-07-16.md`.
+The paragraph above remains the historical V1 integration record.
+
 Implementation:
 
 - `inc/common/net/snapshot_timeline.h`

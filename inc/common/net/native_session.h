@@ -84,14 +84,15 @@ bool Worr_NativeSessionBindingInitFromReadinessV1(
     uint64_t connection_owner_id);
 
 /*
- * Receive-side variant for the event-stream confirmation barrier.  In
+ * Receive-side variant for the server-DATA confirmation barrier.  In
  * addition to either final ACTIVE phase, this accepts only a server in
- * SERVER_WAIT_CLIENT_ACTIVE_CONFIRM whose mutating readiness RX gate succeeds
- * at now_tick.  That narrow phase is RX-safe because CLIENT_ACTIVE_CONFIRM may
- * share its legacy packet with client-originated native DATA; it is never a TX
- * authorization.  The input readiness object is copied before the deadline
- * check and remains unchanged.  Existing active-only callers should continue
- * to use InitFromReadinessV1.
+ * SERVER_WAIT_CLIENT_ACTIVE_CONFIRM for an event-stream or canonical-snapshot
+ * binding whose mutating readiness RX gate succeeds at now_tick.  That narrow
+ * phase is RX-safe because CLIENT_ACTIVE_CONFIRM may share its legacy packet
+ * with client-originated native DATA; it is never a TX authorization.  The
+ * input readiness object is copied before the deadline check and remains
+ * unchanged.  Existing active-only callers should continue to use
+ * InitFromReadinessV1.
  */
 bool Worr_NativeSessionBindingInitReceiveFromReadinessV1(
     worr_native_session_binding_v1 *binding_out,

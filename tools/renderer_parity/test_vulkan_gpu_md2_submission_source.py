@@ -22,6 +22,7 @@ class VulkanGpuMd2SubmissionSourceTests(unittest.TestCase):
         self.assertIn("VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT", VK_ENTITY)
         self.assertIn("VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT", VK_ENTITY)
         self.assertIn("VK_Entity_CopyStaticBuffers", VK_ENTITY)
+        self.assertIn("uploads[i].destination = *destination_buffers[i];", VK_ENTITY)
         self.assertIn("VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT", VK_ENTITY)
         self.assertIn("VK_ACCESS_INDEX_READ_BIT", VK_ENTITY)
         self.assertIn("VK_Entity_DestroyMd2GpuResources", VK_ENTITY)
@@ -38,10 +39,22 @@ class VulkanGpuMd2SubmissionSourceTests(unittest.TestCase):
         self.assertIn("vk_md2_gpu_instance_t *md2_instances;", VK_ENTITY)
         self.assertIn("static bool VK_Entity_AppendGpuMd2Batch", VK_ENTITY)
         self.assertIn("batch->gpu_md2_frame != frame", VK_ENTITY)
+        self.assertIn("batch->vertex_flags != vertex_flags", VK_ENTITY)
         self.assertIn("batch->first_instance + batch->instance_count != instance_index", VK_ENTITY)
         self.assertIn("VK_Entity_AddGpuMD2", VK_ENTITY)
         self.assertIn("VK_Entity_ShouldUseGpuMD2", VK_ENTITY)
         self.assertIn("vkCmdDrawIndexed(cmd, batch->index_count, batch->instance_count,", VK_ENTITY)
+
+    def test_bloom_replay_uses_resolved_batch_flags(self) -> None:
+        self.assertIn("static bool VK_Entity_BatchHasDirectBloomEmission", VK_ENTITY)
+        self.assertIn(
+            "const uint32_t vertex_flags = VK_Entity_BatchVertexFlags(batch);",
+            VK_ENTITY,
+        )
+        self.assertIn(
+            "if ((vertex_flags & (VK_ENTITY_VERTEX_ITEM_COLORIZE |",
+            VK_ENTITY,
+        )
 
     def test_current_frame_instance_upload_is_device_local_and_synchronized(self) -> None:
         self.assertIn("static bool VK_Entity_EnsureMd2InstanceBuffer", VK_ENTITY)
@@ -55,7 +68,18 @@ class VulkanGpuMd2SubmissionSourceTests(unittest.TestCase):
     def test_cpu_fallback_keeps_special_model_passes_intact(self) -> None:
         self.assertIn("!(ent->flags & (RF_ITEM_COLORIZE | RF_OUTLINE))", VK_ENTITY)
         self.assertIn("using CPU interpolation", VK_ENTITY)
+        self.assertIn("GPU MD2 residency unavailable for %s ", VK_ENTITY)
+        self.assertIn('error && *error ? error : "unknown failure"', VK_ENTITY)
         self.assertNotIn('#include "rend_gl', VK_ENTITY)
+
+    def test_model_lifetime_releases_static_gpu_resources_before_cpu_storage(self) -> None:
+        free_model = VK_ENTITY.split("static void VK_Entity_FreeModel", 1)[1].split(
+            "static void VK_Entity_FreeAllModels", 1
+        )[0]
+        self.assertLess(
+            free_model.index("VK_Entity_DestroyMd2GpuResources(&model->md2);"),
+            free_model.index("free(model->md2.positions);"),
+        )
 
 
 if __name__ == "__main__":

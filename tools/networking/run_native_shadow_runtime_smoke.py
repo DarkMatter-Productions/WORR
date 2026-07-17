@@ -28,6 +28,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 
+try:
+    from tools.networking.headless_process import (
+        creation_flags as _headless_creation_flags,
+        start_headless_process,
+        terminate_process_tree,
+    )
+except ModuleNotFoundError:
+    from headless_process import (
+        creation_flags as _headless_creation_flags,
+        start_headless_process,
+        terminate_process_tree,
+    )
+
 
 SCHEMA = "worr.networking.native-shadow-runtime.v1"
 FAILURE_SCHEMA = "worr.networking.native-shadow-runtime-failure.v1"
@@ -947,15 +960,7 @@ def reserve_udp_port() -> int:
 
 
 def terminate_process(process: subprocess.Popen[object] | None) -> bool:
-    if process is None or process.poll() is not None:
-        return False
-    process.terminate()
-    try:
-        process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait(timeout=5)
-    return True
+    return terminate_process_tree(process)
 
 
 def _read_text(path: Path) -> str:
@@ -999,7 +1004,7 @@ def run_processes(
         "server_stdout": run_root / "server.stdout.log",
         "server_stderr": run_root / "server.stderr.log",
     }
-    creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    creation_flags = _headless_creation_flags()
     server: subprocess.Popen[object] | None = None
     client: subprocess.Popen[object] | None = None
     server_terminated = False
@@ -1011,7 +1016,7 @@ def run_processes(
             for role, path in paths.items()
         }
         try:
-            server = subprocess.Popen(
+            server = start_headless_process(
                 list(server_argv),
                 cwd=working_dir,
                 stdin=subprocess.DEVNULL,
@@ -1020,7 +1025,7 @@ def run_processes(
                 creationflags=creation_flags,
             )
             _wait_for_server_map(server, paths["server_stdout"], timeout)
-            client = subprocess.Popen(
+            client = start_headless_process(
                 list(client_argv),
                 cwd=working_dir,
                 stdin=subprocess.DEVNULL,

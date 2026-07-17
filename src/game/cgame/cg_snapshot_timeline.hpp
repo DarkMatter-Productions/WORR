@@ -69,6 +69,9 @@ enum class cg_prediction_correction_reason_t : std::uint8_t {
     replay_rejected,
     state_divergence,
     correction_threshold_exceeded,
+    canonical_authority_unavailable,
+    canonical_authority_mismatch,
+    snapshot_discontinuity,
 };
 
 struct cg_prediction_reconciliation_t {

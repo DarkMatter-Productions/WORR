@@ -187,6 +187,7 @@ client_src = [
   'src/server/entities.c',
   'src/server/event_shadow.c',
   'src/server/game.c',
+  'src/server/local_interaction_authority.c',
   'src/server/rewind_collision.c',
   'src/server/game3_proxy/game3_proxy.c',
   'src/server/init.c',
@@ -363,6 +364,7 @@ server_src = [
   'src/server/entities.c',
   'src/server/event_shadow.c',
   'src/server/game.c',
+  'src/server/local_interaction_authority.c',
   'src/server/rewind_collision.c',
   'src/server/game3_proxy/game3_proxy.c',
   'src/server/init.c',
@@ -618,8 +620,12 @@ cgame_src = bgame_src + [
   'src/game/cgame/cg_event_shadow.cpp',
   'src/game/cgame/cg_event_runtime.hpp',
   'src/game/cgame/cg_event_runtime.cpp',
+  'src/game/cgame/cg_local_interaction.hpp',
+  'src/game/cgame/cg_local_interaction.cpp',
   'src/game/cgame/cg_canonical_snapshot_timeline.hpp',
   'src/game/cgame/cg_canonical_snapshot_timeline.cpp',
+  'src/game/cgame/cg_prediction_authority.hpp',
+  'src/game/cgame/cg_prediction_authority.cpp',
   'src/game/cgame/cg_main.cpp',
   'src/game/cgame/cg_entity_api.cpp',
   'src/game/cgame/cg_entities.cpp',
@@ -1589,26 +1595,6 @@ canonical_event_math_core_lib = static_library(
   override_options: ['c_std=c11'],
 )
 
-canonical_event_core_lib = static_library(
-  'canonical_event_core',
-  [
-    'src/common/net/event_abi.c',
-    'src/common/net/event_journal.c',
-    'src/common/net/event_stream.c',
-    'src/common/net/legacy_entity_event_candidate.c',
-    'src/common/net/legacy_game_event_candidate.c',
-    'src/common/net/legacy_muzzle_event_candidate.c',
-    'src/common/net/legacy_spatial_audio_event_candidate.c',
-    'src/common/net/legacy_temp_event_candidate.c',
-  ],
-  include_directories: include_directories('inc', 'q2proto/inc'),
-  link_with: canonical_event_math_core_lib,
-  c_args: prediction_core_c_fp_args,
-  install: false,
-  pic: true,
-  override_options: ['c_std=c11'],
-)
-
 networking_math_deps = []
 if host_machine.system() != 'windows'
   networking_math_deps += cc.find_library('m', required: true)
@@ -1674,6 +1660,37 @@ local_action_observation_core_lib = static_library(
   'local_action_observation_core',
   'src/common/net/local_action_observation.c',
   include_directories: include_directories('inc'),
+  c_args: prediction_core_c_fp_args,
+  install: false,
+  pic: true,
+  override_options: ['c_std=c11'],
+)
+
+local_interaction_core_lib = static_library(
+  'local_interaction_core',
+  'src/common/net/local_interaction.c',
+  include_directories: include_directories('inc'),
+  link_with: [canonical_command_core_lib],
+  c_args: prediction_core_c_fp_args,
+  install: false,
+  pic: true,
+  override_options: ['c_std=c11'],
+)
+
+canonical_event_core_lib = static_library(
+  'canonical_event_core',
+  [
+    'src/common/net/event_abi.c',
+    'src/common/net/event_journal.c',
+    'src/common/net/event_stream.c',
+    'src/common/net/legacy_entity_event_candidate.c',
+    'src/common/net/legacy_game_event_candidate.c',
+    'src/common/net/legacy_muzzle_event_candidate.c',
+    'src/common/net/legacy_spatial_audio_event_candidate.c',
+    'src/common/net/legacy_temp_event_candidate.c',
+  ],
+  include_directories: include_directories('inc', 'q2proto/inc'),
+  link_with: [canonical_event_math_core_lib, local_interaction_core_lib],
   c_args: prediction_core_c_fp_args,
   install: false,
   pic: true,
@@ -1812,6 +1829,33 @@ native_event_admission_core_lib = static_library(
   override_options: ['c_std=c11'],
 )
 
+native_snapshot_admission_core_lib = static_library(
+  'native_snapshot_admission_core',
+  'src/common/net/native_snapshot_admission.c',
+  include_directories: include_directories('inc'),
+  install: false,
+  pic: true,
+  override_options: ['c_std=c11'],
+)
+
+native_snapshot_receiver_core_lib = static_library(
+  'native_snapshot_receiver_core',
+  'src/common/net/native_snapshot_receiver.c',
+  include_directories: include_directories('inc'),
+  install: false,
+  pic: true,
+  override_options: ['c_std=c11'],
+)
+
+native_snapshot_sender_core_lib = static_library(
+  'native_snapshot_sender_core',
+  'src/common/net/native_snapshot_sender.c',
+  include_directories: include_directories('inc'),
+  install: false,
+  pic: true,
+  override_options: ['c_std=c11'],
+)
+
 canonical_rewind_core_lib = static_library(
   'canonical_rewind_core',
   [
@@ -1869,6 +1913,9 @@ shared_library(client_engine_binary_name, common_src, client_src, renderer_engin
                           native_carrier_mixed_core_lib,
                           native_event_sender_core_lib,
                           native_event_admission_core_lib,
+                          native_snapshot_admission_core_lib,
+                          native_snapshot_receiver_core_lib,
+                          native_snapshot_sender_core_lib,
                           canonical_rewind_core_lib],
   c_args:                ['-DUSE_CLIENT=1', '-DUSE_REF=REF_GL', engine_c_args, prediction_core_c_fp_args],
   cpp_args:              client_cpp_args,
@@ -1898,6 +1945,8 @@ shared_library(server_engine_binary_name, common_src, server_src,
                           native_carrier_mixed_core_lib,
                           native_event_sender_core_lib,
                           native_event_admission_core_lib,
+                          native_snapshot_admission_core_lib,
+                          native_snapshot_sender_core_lib,
                           canonical_rewind_core_lib,
                           canonical_snapshot_core_lib,
                           snapshot_q2proto_core_lib],
@@ -2052,7 +2101,8 @@ sgame_dll = shared_library(sgame_binary_name, sgame_src,
   link_with:             [canonical_command_core_lib,
                           canonical_snapshot_core_lib,
                           canonical_event_core_lib,
-                          local_action_observation_core_lib],
+                          local_action_observation_core_lib,
+                          local_interaction_core_lib],
   link_whole:            [q3a_botlib_utility_lib, prediction_core_lib,
                           canonical_rewind_core_lib],
   link_args:             dll_link_args + game_link_args,
@@ -2093,7 +2143,8 @@ cgame_dll = shared_library(cgame_binary_name, cgame_all_src,
   c_args:                game_c_args + cgame_defines,
   cpp_args:              game_cpp_args + cgame_defines,
   link_whole:            [prediction_core_lib, canonical_event_core_lib,
-                          canonical_snapshot_core_lib],
+                          canonical_snapshot_core_lib,
+                          local_interaction_core_lib],
   link_args:             dll_link_args + game_link_args,
   install:              true,
   install_dir:          libdir / get_option('base-game'),
@@ -2200,12 +2251,93 @@ native_event_admission_test = executable(
   override_options: ['c_std=c11'],
 )
 
+native_snapshot_admission_test = executable(
+  'native_snapshot_admission_test',
+  'tools/networking/native_snapshot_admission_test.c',
+  dependencies: networking_math_deps,
+  include_directories: include_directories('inc'),
+  link_with: [native_snapshot_admission_core_lib,
+              native_carrier_ack_core_lib,
+              native_carrier_session_core_lib,
+              native_carrier_core_lib,
+              native_session_core_lib,
+              native_readiness_core_lib,
+              net_capability_core_lib,
+              native_codec_core_lib,
+              native_envelope_core_lib,
+              canonical_command_core_lib,
+              canonical_event_core_lib,
+              canonical_snapshot_core_lib],
+  install: false,
+  override_options: ['c_std=c11'],
+)
+
+native_snapshot_admission_layout_c_test = executable(
+  'native_snapshot_admission_layout_c_test',
+  'tools/networking/native_snapshot_admission_layout_c.c',
+  include_directories: include_directories('inc'),
+  install: false,
+  override_options: ['c_std=c11'],
+)
+
+native_snapshot_admission_layout_cpp_test = executable(
+  'native_snapshot_admission_layout_cpp_test',
+  'tools/networking/native_snapshot_admission_layout_cpp.cpp',
+  include_directories: include_directories('inc'),
+  install: false,
+  override_options: ['cpp_std=c++20'],
+)
+
+native_snapshot_receiver_test = executable(
+  'native_snapshot_receiver_test',
+  'tools/networking/native_snapshot_receiver_test.c',
+  dependencies: networking_math_deps,
+  include_directories: include_directories('inc'),
+  link_with: [native_snapshot_receiver_core_lib,
+              native_snapshot_admission_core_lib,
+              native_carrier_ack_core_lib,
+              native_carrier_session_core_lib,
+              native_carrier_core_lib,
+              native_session_core_lib,
+              native_readiness_core_lib,
+              net_capability_core_lib,
+              native_codec_core_lib,
+              native_envelope_core_lib,
+              canonical_command_core_lib,
+              canonical_event_core_lib,
+              canonical_snapshot_core_lib],
+  install: false,
+  override_options: ['c_std=c11'],
+)
+
 native_event_sender_test = executable(
   'native_event_sender_test',
   'tools/networking/native_event_sender_test.c',
   dependencies: networking_math_deps,
   include_directories: include_directories('inc'),
   link_with: [native_event_sender_core_lib,
+              native_carrier_mixed_core_lib,
+              native_carrier_ack_core_lib,
+              native_carrier_session_core_lib,
+              native_carrier_core_lib,
+              native_session_core_lib,
+              native_readiness_core_lib,
+              net_capability_core_lib,
+              native_codec_core_lib,
+              native_envelope_core_lib,
+              canonical_command_core_lib,
+              canonical_event_core_lib,
+              canonical_snapshot_core_lib],
+  install: false,
+  override_options: ['c_std=c11'],
+)
+
+native_snapshot_sender_test = executable(
+  'native_snapshot_sender_test',
+  'tools/networking/native_snapshot_sender_test.c',
+  dependencies: networking_math_deps,
+  include_directories: include_directories('inc'),
+  link_with: [native_snapshot_sender_core_lib,
               native_carrier_mixed_core_lib,
               native_carrier_ack_core_lib,
               native_carrier_session_core_lib,
@@ -2232,6 +2364,18 @@ event_shadow_test = executable(
   include_directories: include_directories('inc'),
   c_args: ['-DWORR_EVENT_SHADOW_TESTING=1'],
   link_with: canonical_event_core_lib,
+  install: false,
+  override_options: ['c_std=c11'],
+)
+
+local_interaction_authority_test = executable(
+  'local_interaction_authority_test',
+  [
+    'tools/networking/local_interaction_authority_test.c',
+    'src/server/local_interaction_authority.c',
+  ],
+  include_directories: include_directories('inc'),
+  link_with: local_interaction_core_lib,
   install: false,
   override_options: ['c_std=c11'],
 )
@@ -2290,10 +2434,24 @@ cgame_event_presentation_test = executable(
     'tools/networking/cgame_event_presentation_test.cpp',
     'src/game/cgame/cg_event_shadow.cpp',
     'src/game/cgame/cg_event_runtime.cpp',
+    'src/game/cgame/cg_local_interaction.cpp',
     'src/common/net/cgame_event_shadow.c',
   ],
   include_directories: include_directories('inc', 'src/game/cgame'),
-  link_with: [canonical_event_core_lib, canonical_snapshot_core_lib],
+  link_with: [canonical_event_core_lib, canonical_snapshot_core_lib,
+              local_interaction_core_lib, canonical_command_core_lib],
+  install: false,
+  override_options: ['c_std=c11', 'cpp_std=c++20'],
+)
+
+cgame_local_interaction_test = executable(
+  'cgame_local_interaction_test',
+  [
+    'tools/networking/cgame_local_interaction_test.cpp',
+    'src/game/cgame/cg_local_interaction.cpp',
+  ],
+  include_directories: include_directories('inc', 'src/game/cgame'),
+  link_with: [local_interaction_core_lib, canonical_command_core_lib],
   install: false,
   override_options: ['c_std=c11', 'cpp_std=c++20'],
 )
@@ -2304,10 +2462,12 @@ cgame_event_runtime_test = executable(
     'tools/networking/cgame_event_runtime_test.cpp',
     'src/game/cgame/cg_event_shadow.cpp',
     'src/game/cgame/cg_event_runtime.cpp',
+    'src/game/cgame/cg_local_interaction.cpp',
     'src/common/net/cgame_event_shadow.c',
   ],
   include_directories: include_directories('inc', 'src/game/cgame'),
-  link_with: [canonical_event_core_lib, canonical_snapshot_core_lib],
+  link_with: [canonical_event_core_lib, canonical_snapshot_core_lib,
+              local_interaction_core_lib, canonical_command_core_lib],
   install: false,
   override_options: ['c_std=c11', 'cpp_std=c++20'],
 )
@@ -2318,10 +2478,12 @@ cgame_event_runtime_export_test = executable(
     'tools/networking/cgame_event_runtime_export_test.cpp',
     'src/game/cgame/cg_event_shadow.cpp',
     'src/game/cgame/cg_event_runtime.cpp',
+    'src/game/cgame/cg_local_interaction.cpp',
     'src/common/net/cgame_event_shadow.c',
   ],
   include_directories: include_directories('inc', 'src/game/cgame'),
-  link_with: [canonical_event_core_lib, canonical_snapshot_core_lib],
+  link_with: [canonical_event_core_lib, canonical_snapshot_core_lib,
+              local_interaction_core_lib, canonical_command_core_lib],
   install: false,
   override_options: ['c_std=c11', 'cpp_std=c++20'],
 )
@@ -2849,6 +3011,18 @@ local_action_observation_test = executable(
   override_options: ['c_std=c11'],
 )
 
+local_interaction_test = executable(
+  'local_interaction_test',
+  'tools/networking/local_interaction_test.c',
+  include_directories: include_directories('inc'),
+  link_with: [
+    local_interaction_core_lib,
+    canonical_command_core_lib,
+  ],
+  install: false,
+  override_options: ['c_std=c11'],
+)
+
 local_action_audit_test = executable(
   'local_action_audit_test',
   'tools/networking/local_action_audit_test.c',
@@ -2964,6 +3138,26 @@ prediction_input_layout_cpp_test = executable(
   'prediction_input_layout_cpp_test',
   'tools/networking/prediction_input_layout_cpp.cpp',
   include_directories: include_directories('inc'),
+  install: false,
+  override_options: ['cpp_std=c++20'],
+)
+
+cgame_prediction_snapshot_authority_test = executable(
+  'cgame_prediction_snapshot_authority_test',
+  [
+    'tools/networking/cgame_prediction_snapshot_authority_test.cpp',
+    'src/game/cgame/cg_prediction_authority.cpp',
+  ],
+  include_directories: include_directories(
+    'inc',
+    'src/game/cgame',
+  ),
+  cpp_args: game_cpp_args + prediction_core_fp_args,
+  link_with: [
+    canonical_command_core_lib,
+    canonical_event_core_lib,
+    canonical_snapshot_core_lib,
+  ],
   install: false,
   override_options: ['cpp_std=c++20'],
 )
@@ -3246,6 +3440,7 @@ native_server_shadow_pilot_test = executable(
               native_carrier_session_core_lib,
               native_carrier_core_lib,
               native_event_sender_core_lib,
+              native_snapshot_sender_core_lib,
               native_session_core_lib,
               native_command_shadow_core_lib,
               native_codec_core_lib,
@@ -3273,6 +3468,8 @@ native_client_readiness_pilot_test = executable(
   dependencies: networking_math_deps + [zlib],
   cpp_args: client_cpp_args + ['-DWORR_NATIVE_READINESS_PILOT_TESTING=1'],
   link_with: [native_event_admission_core_lib,
+              native_snapshot_receiver_core_lib,
+              native_snapshot_admission_core_lib,
               native_carrier_mixed_core_lib,
               native_carrier_ack_core_lib,
               native_carrier_session_core_lib,
@@ -3297,20 +3494,27 @@ native_event_virtual_link_test = executable(
     'tools/networking/native_event_virtual_link_test.cpp',
     'src/client/cgame_event_runtime.cpp',
     'src/client/native_readiness_pilot.cpp',
+    'src/game/cgame/cg_event_shadow.cpp',
+    'src/game/cgame/cg_event_runtime.cpp',
+    'src/game/cgame/cg_local_interaction.cpp',
+    'src/common/net/cgame_event_shadow.c',
     'src/server/native_shadow.c',
     'src/server/snapshot_event_candidates.c',
     'src/server/snapshot_shadow.c',
   ],
-  include_directories: include_directories('inc', 'q2proto/inc', 'src/client'),
+  include_directories: include_directories('inc', 'q2proto/inc', 'src/client', 'src/game/cgame'),
   dependencies: networking_math_deps + [zlib],
   c_args: ['-DUSE_SERVER=1', engine_c_args],
   cpp_args: client_cpp_args + ['-DWORR_NATIVE_READINESS_PILOT_TESTING=1'],
   link_with: [native_event_admission_core_lib,
+              native_snapshot_receiver_core_lib,
+              native_snapshot_admission_core_lib,
               native_carrier_mixed_core_lib,
               native_carrier_ack_core_lib,
               native_carrier_session_core_lib,
               native_carrier_core_lib,
               native_event_sender_core_lib,
+              native_snapshot_sender_core_lib,
               native_session_core_lib,
               native_command_shadow_core_lib,
               native_codec_core_lib,
@@ -3321,6 +3525,147 @@ native_event_virtual_link_test = executable(
               canonical_command_core_lib,
               canonical_event_core_lib,
               canonical_snapshot_core_lib,
+              local_interaction_core_lib,
+              snapshot_q2proto_core_lib,
+              q2proto_lib],
+  install: false,
+  override_options: ['c_std=c11', 'cpp_std=c++20'],
+)
+
+native_snapshot_production_virtual_link_test = executable(
+  'native_snapshot_production_virtual_link_test',
+  [
+    'tools/networking/native_snapshot_production_virtual_link_test.cpp',
+    'src/client/cgame_event_runtime.cpp',
+    'src/client/native_readiness_pilot.cpp',
+    'src/client/snapshot_shadow.cpp',
+    'src/game/cgame/cg_canonical_snapshot_timeline.cpp',
+    'src/game/cgame/cg_prediction_authority.cpp',
+    'src/game/cgame/cg_event_runtime.cpp',
+    'src/game/cgame/cg_local_interaction.cpp',
+    'src/server/native_shadow.c',
+    'src/server/snapshot_event_candidates.c',
+    'src/server/snapshot_shadow.c',
+  ],
+  include_directories: include_directories(
+    'inc',
+    'q2proto/inc',
+    'src/client',
+    'src/game/cgame',
+    'src/game/bgame',
+  ),
+  dependencies: networking_math_deps + [zlib],
+  c_args: ['-DUSE_SERVER=1', engine_c_args],
+  cpp_args: client_cpp_args + [
+    '-DWORR_NATIVE_READINESS_PILOT_TESTING=1',
+  ] + prediction_core_fp_args,
+  link_with: [native_event_admission_core_lib,
+              native_snapshot_receiver_core_lib,
+              native_snapshot_admission_core_lib,
+              native_carrier_mixed_core_lib,
+              native_carrier_ack_core_lib,
+              native_carrier_session_core_lib,
+              native_carrier_core_lib,
+              native_event_sender_core_lib,
+              native_snapshot_sender_core_lib,
+              native_session_core_lib,
+              native_command_shadow_core_lib,
+              native_codec_core_lib,
+              native_envelope_core_lib,
+              native_readiness_sideband_core_lib,
+              native_readiness_core_lib,
+              net_capability_core_lib,
+              canonical_command_core_lib,
+              canonical_event_core_lib,
+              canonical_snapshot_core_lib,
+              local_interaction_core_lib,
+              snapshot_q2proto_core_lib,
+              q2proto_lib],
+  install: false,
+  override_options: ['c_std=c11', 'cpp_std=c++20'],
+)
+
+native_snapshot_production_corpus_test = executable(
+  'native_snapshot_production_corpus_test',
+  [
+    'tools/networking/native_snapshot_production_corpus_test.cpp',
+    'src/client/cgame_event_runtime.cpp',
+    'src/client/native_readiness_pilot.cpp',
+    'src/client/snapshot_shadow.cpp',
+    'src/common/net/impair.c',
+    'src/game/cgame/cg_canonical_snapshot_timeline.cpp',
+    'src/game/cgame/cg_prediction_authority.cpp',
+    'src/game/cgame/cg_event_runtime.cpp',
+    'src/game/cgame/cg_local_interaction.cpp',
+    'src/server/native_shadow.c',
+    'src/server/snapshot_event_candidates.c',
+    'src/server/snapshot_shadow.c',
+  ],
+  include_directories: include_directories(
+    'inc',
+    'q2proto/inc',
+    'src/client',
+    'src/game/cgame',
+    'src/game/bgame',
+  ),
+  dependencies: networking_math_deps + [zlib],
+  c_args: ['-DUSE_SERVER=1', engine_c_args],
+  cpp_args: client_cpp_args + [
+    '-DWORR_NATIVE_READINESS_PILOT_TESTING=1',
+  ] + prediction_core_fp_args,
+  link_with: [native_event_admission_core_lib,
+              native_snapshot_receiver_core_lib,
+              native_snapshot_admission_core_lib,
+              native_carrier_mixed_core_lib,
+              native_carrier_ack_core_lib,
+              native_carrier_session_core_lib,
+              native_carrier_core_lib,
+              native_event_sender_core_lib,
+              native_snapshot_sender_core_lib,
+              native_session_core_lib,
+              native_command_shadow_core_lib,
+              native_codec_core_lib,
+              native_envelope_core_lib,
+              native_readiness_sideband_core_lib,
+              native_readiness_core_lib,
+              net_capability_core_lib,
+              canonical_command_core_lib,
+              canonical_event_core_lib,
+              canonical_snapshot_core_lib,
+              local_interaction_core_lib,
+              snapshot_q2proto_core_lib,
+              q2proto_lib],
+  install: false,
+  override_options: ['c_std=c11', 'cpp_std=c++20'],
+)
+
+native_snapshot_virtual_link_test = executable(
+  'native_snapshot_virtual_link_test',
+  [
+    'tools/networking/native_snapshot_virtual_link_test.cpp',
+    'src/game/cgame/cg_canonical_snapshot_timeline.cpp',
+    'src/game/cgame/cg_event_runtime.cpp',
+    'src/game/cgame/cg_local_interaction.cpp',
+    'src/server/snapshot_event_candidates.c',
+    'src/server/snapshot_shadow.c',
+  ],
+  include_directories: cgame_inc,
+  dependencies: networking_math_deps,
+  c_args: game_c_args + prediction_core_c_fp_args,
+  cpp_args: game_cpp_args + prediction_core_fp_args,
+  link_with: [native_snapshot_admission_core_lib,
+              native_carrier_ack_core_lib,
+              native_carrier_session_core_lib,
+              native_carrier_core_lib,
+              native_session_core_lib,
+              native_readiness_core_lib,
+              net_capability_core_lib,
+              native_codec_core_lib,
+              native_envelope_core_lib,
+              canonical_command_core_lib,
+              canonical_event_core_lib,
+              canonical_snapshot_core_lib,
+              local_interaction_core_lib,
               snapshot_q2proto_core_lib,
               q2proto_lib],
   install: false,
@@ -3522,6 +3867,34 @@ test(
 )
 
 test(
+  'network-native-snapshot-admission',
+  native_snapshot_admission_test,
+  suite: 'networking',
+  timeout: 30,
+)
+
+test(
+  'network-native-snapshot-admission-layout-c',
+  native_snapshot_admission_layout_c_test,
+  suite: 'networking',
+  timeout: 30,
+)
+
+test(
+  'network-native-snapshot-admission-layout-cpp',
+  native_snapshot_admission_layout_cpp_test,
+  suite: 'networking',
+  timeout: 30,
+)
+
+test(
+  'network-native-snapshot-receiver',
+  native_snapshot_receiver_test,
+  suite: 'networking',
+  timeout: 30,
+)
+
+test(
   'network-native-event-sender',
   native_event_sender_test,
   suite: 'networking',
@@ -3529,8 +3902,22 @@ test(
 )
 
 test(
+  'network-native-snapshot-sender',
+  native_snapshot_sender_test,
+  suite: 'networking',
+  timeout: 30,
+)
+
+test(
   'network-event-shadow',
   event_shadow_test,
+  suite: 'networking',
+  timeout: 30,
+)
+
+test(
+  'network-local-interaction-authority',
+  local_interaction_authority_test,
   suite: 'networking',
   timeout: 30,
 )
@@ -3573,6 +3960,13 @@ test(
 test(
   'network-cgame-event-presentation',
   cgame_event_presentation_test,
+  suite: 'networking',
+  timeout: 30,
+)
+
+test(
+  'network-cgame-local-interaction',
+  cgame_local_interaction_test,
   suite: 'networking',
   timeout: 30,
 )
@@ -3954,6 +4348,13 @@ test(
 )
 
 test(
+  'network-local-interaction',
+  local_interaction_test,
+  suite: 'networking',
+  timeout: 30,
+)
+
+test(
   'network-local-action-audit',
   local_action_audit_test,
   suite: 'networking',
@@ -4040,6 +4441,13 @@ test(
 test(
   'network-prediction-input-layout-cpp',
   prediction_input_layout_cpp_test,
+  suite: 'networking',
+  timeout: 30,
+)
+
+test(
+  'network-cgame-prediction-snapshot-authority',
+  cgame_prediction_snapshot_authority_test,
   suite: 'networking',
   timeout: 30,
 )
@@ -4250,6 +4658,51 @@ test(
 test(
   'network-native-event-virtual-link',
   native_event_virtual_link_test,
+  suite: 'networking',
+  timeout: 30,
+)
+
+test(
+  'network-native-snapshot-production-virtual-link',
+  native_snapshot_production_virtual_link_test,
+  suite: 'networking',
+  timeout: 30,
+)
+
+native_snapshot_production_corpus_script = files(
+  'tools/networking/run_native_snapshot_production_corpus.py',
+)
+native_snapshot_production_corpus_manifest = files(
+  'tools/networking/scenarios/native_snapshot_production_corpus.json',
+)
+
+native_snapshot_production_corpus_runner_test = files(
+  'tools/networking/test_run_native_snapshot_production_corpus.py',
+)
+test(
+  'network-native-snapshot-production-corpus-runner',
+  version_prog,
+  args: native_snapshot_production_corpus_runner_test,
+  suite: 'networking',
+  timeout: 30,
+)
+
+test(
+  'network-native-snapshot-production-corpus',
+  version_prog,
+  args: [
+    native_snapshot_production_corpus_script,
+    '--corpus-exe', native_snapshot_production_corpus_test,
+    '--manifest', native_snapshot_production_corpus_manifest,
+    '--evidence', meson.current_source_dir() / '.tmp' / 'networking' / 'native_snapshot_production_corpus' / 'evidence.json',
+  ],
+  suite: 'networking',
+  timeout: 1900,
+)
+
+test(
+  'network-native-snapshot-virtual-link',
+  native_snapshot_virtual_link_test,
   suite: 'networking',
   timeout: 30,
 )
@@ -4569,6 +5022,28 @@ test(
   version_prog,
   args: network_headless_input_contract_test,
   suite: 'networking',
+  timeout: 30,
+)
+
+network_headless_process_test = files(
+  'tools/networking/test_headless_process.py',
+)
+test(
+  'network-headless-process-policy',
+  version_prog,
+  args: network_headless_process_test,
+  suite: 'networking',
+  timeout: 30,
+)
+
+release_bootstrap_headless_contract_test = files(
+  'tools/release/test_bootstrap_headless_contract.py',
+)
+test(
+  'release-bootstrap-headless-contract',
+  version_prog,
+  args: release_bootstrap_headless_contract_test,
+  suite: 'release',
   timeout: 30,
 )
 

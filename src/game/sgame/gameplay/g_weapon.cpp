@@ -490,7 +490,33 @@ void fire_blaster(gentity_t *self, const Vector3 &start, const Vector3 &dir,
   if (tr.fraction < 1.0f) {
     bolt->s.origin = tr.endPos + (tr.plane.normal * 1.f);
     bolt->touch(bolt, tr.ent, tr, false);
+    return;
   }
+
+  // The shared player Blaster/HyperBlaster path keeps ordinary muzzle
+  // clearance first. It may then consume only bounded server-authenticated
+  // command age through the current world; collision, contact, direct/radius
+  // damage, and effects remain on this normal projectile lifecycle.
+  const LagCompensationProjectileForwardResult forward =
+      LagCompensation_ResolveProjectileSpawnForward(
+          self, bolt, WORR_REWIND_WEAPON_BLASTER_BOLT_SPAWN_FORWARD);
+  if (!forward.advanced)
+    return;
+
+  bolt->s.origin =
+      forward.trace.endPos + (forward.trace.plane.normal * 0.5f);
+  gi.linkEntity(bolt);
+  if (forward.blocked) {
+    bolt->touch(bolt, forward.trace.ent, forward.trace, false);
+    return;
+  }
+
+  // Consuming authenticated delay cannot extend the ordinary two-second
+  // projectile lifetime.
+  const GameTime elapsed = GameTime::from_ms(
+      static_cast<int64_t>(forward.advanced_age_us / UINT64_C(1000)));
+  if (elapsed && bolt->nextThink > level.time)
+    bolt->nextThink = std::max(level.time, bolt->nextThink - elapsed);
 }
 
 /*
@@ -719,6 +745,17 @@ static TOUCH(Grenade_Touch)(gentity_t *ent, gentity_t *other, const trace_t &tr,
     return;
   }
 
+  // A canonical fixture may observe only this ordinary current-world grenade
+  // touch. It cannot choose the contact, bounce, fuse, direct damage,
+  // RadiusDamage victim, or explosion result. Hand Grenades use a distinct
+  // release-time policy so a held input can never be mistaken for the later
+  // no-attack throw command.
+  LagCompensation_ObserveCurrentWorldProjectileSplashImpact(
+      ent, other, tr,
+      ent->spawnFlags.has(SPAWNFLAG_GRENADE_HAND)
+          ? WORR_REWIND_WEAPON_HAND_GRENADE_RELEASE_BALLISTIC_SPAWN_FORWARD
+          : WORR_REWIND_WEAPON_GRENADE_LAUNCHER_BALLISTIC_SPAWN_FORWARD);
+
   if (!other->takeDamage) {
     if (ent->spawnFlags.has(SPAWNFLAG_GRENADE_HAND)) {
       if (frandom() > 0.5f)
@@ -767,9 +804,10 @@ static THINK(Grenade4_Think)(gentity_t *self)->void {
   self->nextThink = level.time + FRAME_TIME_S;
 }
 
-void fire_grenade(gentity_t *self, const Vector3 &start, const Vector3 &aimDir,
-                  int damage, int speed, GameTime timer, float splashRadius,
-                  float rightAdjust, float upAdjust, bool monster) {
+gentity_t *fire_grenade(gentity_t *self, const Vector3 &start,
+                        const Vector3 &aimDir, int damage, int speed,
+                        GameTime timer, float splashRadius, float rightAdjust,
+                        float upAdjust, bool monster) {
   gentity_t *grenade;
   Vector3 dir;
   Vector3 forward, right, up;
@@ -822,11 +860,12 @@ void fire_grenade(gentity_t *self, const Vector3 &start, const Vector3 &aimDir,
   grenade->className = "grenade";
 
   gi.linkEntity(grenade);
+  return grenade;
 }
 
-void fire_handgrenade(gentity_t *self, const Vector3 &start,
-                      const Vector3 &aimDir, int damage, int speed,
-                      GameTime timer, float splashRadius, bool held) {
+gentity_t *fire_handgrenade(gentity_t *self, const Vector3 &start,
+                            const Vector3 &aimDir, int damage, int speed,
+                            GameTime timer, float splashRadius, bool held) {
   gentity_t *grenade;
   Vector3 dir;
   Vector3 forward, right, up;
@@ -896,6 +935,8 @@ void fire_handgrenade(gentity_t *self, const Vector3 &start,
              ATTN_NORM, 0);
     gi.linkEntity(grenade);
   }
+
+  return grenade;
 }
 
 /*
@@ -914,6 +955,12 @@ static TOUCH(rocket_touch)(gentity_t *ent, gentity_t *other, const trace_t &tr,
     FreeEntity(ent);
     return;
   }
+
+  // This is diagnostic-only and has no gameplay effect outside the isolated
+  // current-world projectile splash fixture. The normal touch path below
+  // remains the sole owner of direct impact and RadiusDamage authority.
+  LagCompensation_ObserveCurrentWorldProjectileSplashImpact(
+      ent, other, tr, WORR_REWIND_WEAPON_ROCKET_SPAWN_FORWARD);
 
   if (ent->owner->client)
     G_PlayerNoise(ent->owner, ent->s.origin, PlayerNoise::Impact);
@@ -984,6 +1031,31 @@ gentity_t *fire_rocket(gentity_t *self, const Vector3 &start,
 
   gi.linkEntity(rocket);
 
+  // A Rocket remains entirely current-world authority after its accepted
+  // command. The bounded advance merely consumes authenticated spawn delay;
+  // current collision, impact, splash, and all damage remain the normal
+  // rocket_touch/RadiusDamage path.
+  const LagCompensationProjectileForwardResult forward =
+      LagCompensation_ResolveProjectileSpawnForward(
+          self, rocket, WORR_REWIND_WEAPON_ROCKET_SPAWN_FORWARD);
+  if (!forward.advanced)
+    return rocket;
+
+  rocket->s.origin =
+      forward.trace.endPos + (forward.trace.plane.normal * 0.5f);
+  gi.linkEntity(rocket);
+  if (forward.blocked) {
+    rocket->touch(rocket, forward.trace.ent, forward.trace, false);
+    return nullptr;
+  }
+
+  // Do not grant a delayed rocket extra life after consuming part of its
+  // ordinary flight at spawn.
+  const GameTime elapsed = GameTime::from_ms(
+      static_cast<int64_t>(forward.advanced_age_us / UINT64_C(1000)));
+  if (elapsed && rocket->nextThink > level.time)
+    rocket->nextThink = std::max(level.time, rocket->nextThink - elapsed);
+
   return rocket;
 }
 
@@ -1036,6 +1108,10 @@ struct fire_rail_pierce_t : pierce_args_t {
   // we hit an entity; return false to stop the piercing.
   // you can adjust the mask for the re-trace (for water, etc).
   bool hit(contents_t &mask, Vector3 &end) override {
+    // This observer marks the concrete damage-bearing Railgun pierce result,
+    // not P_ProjectSource's earlier convergence trace. It is otherwise a no-op.
+    LagCompensation_ObserveCanonicalRailPierceHit(self, tr);
+
     if (tr.contents & (CONTENTS_SLIME | CONTENTS_LAVA)) {
       mask &= ~(CONTENTS_SLIME | CONTENTS_LAVA);
       water = true;
@@ -1427,6 +1503,19 @@ void fire_bfg(gentity_t *self, const Vector3 &start, const Vector3 &dir,
   bfg->teamChain = nullptr;
 
   gi.linkEntity(bfg);
+
+  // Only the fresh BFG entity's bounded authenticated launch delay may be
+  // consumed in the current world. Every later BFG laser, touch, explosion,
+  // and radius result remains on the normal production lifecycle.
+  const LagCompensationProjectileForwardResult forward =
+      LagCompensation_ResolveProjectileSpawnForward(
+          self, bfg, WORR_REWIND_WEAPON_BFG_SPAWN_FORWARD);
+  if (!forward.advanced)
+    return;
+  bfg->s.origin = forward.trace.endPos + (forward.trace.plane.normal * 0.5f);
+  gi.linkEntity(bfg);
+  if (forward.blocked)
+    bfg->touch(bfg, forward.trace.ent, forward.trace, false);
 }
 
 static TOUCH(disintegrator_touch)(gentity_t *self, gentity_t *other,
@@ -2024,7 +2113,33 @@ void fire_disruptor(gentity_t *self, const Vector3 &start, const Vector3 &dir,
   if (tr.fraction < 1.0f) {
     bolt->s.origin = tr.endPos + (tr.plane.normal * 1.f);
     bolt->touch(bolt, tr.ent, tr, false);
+    return;
   }
+
+  // Historical selection above only determines the optional homing target.
+  // The spawned missile itself advances exclusively through the current world
+  // by a bounded server-authenticated command age; the normal touch callback
+  // remains the sole owner of contact effects and damage.
+  const LagCompensationProjectileForwardResult forward =
+      LagCompensation_ResolveProjectileSpawnForward(
+          self, bolt, WORR_REWIND_WEAPON_DISRUPTOR_CONVERGENCE);
+  if (!forward.advanced)
+    return;
+
+  bolt->s.origin = forward.trace.endPos + (forward.trace.plane.normal * 0.5f);
+  gi.linkEntity(bolt);
+  if (forward.blocked) {
+    bolt->touch(bolt, forward.trace.ent, forward.trace, false);
+    return;
+  }
+
+  // The projectile has already consumed this bounded interval of flight, so
+  // retain the original lifetime/think schedule rather than granting extra
+  // server-time after a delayed spawn.
+  const GameTime elapsed = GameTime::from_ms(
+      static_cast<int64_t>(forward.advanced_age_us / UINT64_C(1000)));
+  if (elapsed && bolt->nextThink > level.time)
+    bolt->nextThink = std::max(level.time, bolt->nextThink - elapsed);
 }
 
 /*
@@ -2098,7 +2213,37 @@ void fire_flechette(gentity_t *self, const Vector3 &start, const Vector3 &dir,
   if (tr.fraction < 1.0f) {
     flechette->s.origin = tr.endPos + (tr.plane.normal * 1.f);
     flechette->touch(flechette, tr.ent, tr, false);
+    // ETF's legacy muzzle probe can touch the owner while its model origin is
+    // still inside the player bounds. Its touch intentionally ignores that
+    // owner contact, so continue with the same normal projectile only when
+    // the probe did not consume it on a real contact.
+    if (!flechette->inUse)
+      return;
   }
+
+  // ETF flechettes retain their normal muzzle-clearance trace. Only after
+  // that current-world check may the projectile consume bounded
+  // server-authenticated command age through another current-world hull
+  // sweep; ordinary contact, direct damage, and lifetime remain this
+  // projectile's production authority.
+  const LagCompensationProjectileForwardResult forward =
+      LagCompensation_ResolveProjectileSpawnForward(
+          self, flechette, WORR_REWIND_WEAPON_ETF_FLECHETTE_SPAWN_FORWARD);
+  if (!forward.advanced)
+    return;
+
+  flechette->s.origin =
+      forward.trace.endPos + (forward.trace.plane.normal * 0.5f);
+  gi.linkEntity(flechette);
+  if (forward.blocked) {
+    flechette->touch(flechette, forward.trace.ent, forward.trace, false);
+    return;
+  }
+
+  const GameTime elapsed = GameTime::from_ms(
+      static_cast<int64_t>(forward.advanced_age_us / UINT64_C(1000)));
+  if (elapsed && flechette->nextThink > level.time)
+    flechette->nextThink = std::max(level.time, flechette->nextThink - elapsed);
 }
 
 // **************************
@@ -2139,6 +2284,7 @@ static THINK(Prox_Explode)(gentity_t *ent)->void {
   ent->takeDamage = false;
   RadiusDamage(ent, owner, (float)ent->dmg, ent, PROX_DAMAGE_RADIUS,
                DamageFlags::Normal, ModID::ProxMine);
+  LagCompensation_ObserveProxMineExploded(ent);
 
   origin = ent->s.origin + (ent->velocity * -0.02f);
   gi.WriteByte(svc_temp_entity);
@@ -2238,6 +2384,7 @@ static THINK(Prox_TriggerThink)(gentity_t *trigger)->void {
     // Trigger warning and arm explosion after short delay
     gi.sound(prox, CHAN_VOICE, gi.soundIndex("weapons/proxwarn.wav"), 1.0f,
              ATTN_NORM, 0);
+    LagCompensation_ObserveProxMineTriggered(prox, search);
     prox->think = Prox_Explode;
     prox->nextThink = level.time + PROX_TIME_DELAY;
 
@@ -2314,6 +2461,7 @@ static THINK(prox_open)(gentity_t *ent)->void {
 
         gi.sound(ent, CHAN_VOICE, gi.soundIndex("weapons/proxwarn.wav"), 1.0f,
                  ATTN_NORM, 0);
+        LagCompensation_ObserveProxMineTriggered(ent, search);
         Prox_Explode(ent);
         return;
       }
@@ -2471,6 +2619,7 @@ static TOUCH(prox_land)(gentity_t *ent, gentity_t *other, const trace_t &tr,
   ent->solid = SOLID_BBOX;
 
   gi.linkEntity(ent);
+  LagCompensation_ObserveProxMineLanded(ent, trigger);
 }
 
 /*
@@ -2557,6 +2706,27 @@ void fire_prox(gentity_t *self, const Vector3 &start, const Vector3 &aimDir,
   }
 
   gi.linkEntity(prox);
+
+  // A Proximity Launcher mine is a deployed, bouncing entity. It can consume
+  // only bounded accepted command delay through a clear current-world gravity
+  // path. Any contact rejects the advance so normal Bounce landing, arming,
+  // trigger scans, explosion, and mine lifetime remain the sole authority.
+  const LagCompensationProjectileForwardResult launchForward =
+      LagCompensation_ResolveProjectileSpawnForward(
+          self, prox, WORR_REWIND_WEAPON_PROX_MINE_BALLISTIC_DEPLOY_FORWARD);
+  if (!launchForward.advanced)
+    return;
+
+  prox->s.origin = launchForward.trace.endPos +
+                   (launchForward.trace.plane.normal * 0.5f);
+  prox->velocity = launchForward.final_velocity;
+  gi.linkEntity(prox);
+
+  // Consumed launch time cannot extend the normal deployable lifetime.
+  const GameTime elapsed = GameTime::from_ms(
+      static_cast<int64_t>(launchForward.advanced_age_us / UINT64_C(1000)));
+  if (elapsed && prox->timeStamp > level.time)
+    prox->timeStamp = std::max(level.time, prox->timeStamp - elapsed);
 }
 
 // *************************
@@ -2568,6 +2738,7 @@ struct player_melee_data_t {
   const Vector3 &start;
   const Vector3 &aim;
   int reach;
+  bool exclude_player_candidates = false;
 };
 
 static BoxEntitiesResult_t fire_player_melee_BoxFilter(gentity_t *check,
@@ -2575,6 +2746,8 @@ static BoxEntitiesResult_t fire_player_melee_BoxFilter(gentity_t *check,
   const player_melee_data_t *data = (const player_melee_data_t *)data_v;
 
   if (!check->inUse || !check->takeDamage || check == data->self)
+    return BoxEntitiesResult_t::Skip;
+  if (data->exclude_player_candidates && check->client)
     return BoxEntitiesResult_t::Skip;
 
   // check distance
@@ -2608,17 +2781,28 @@ static BoxEntitiesResult_t fire_player_melee_BoxFilter(gentity_t *check,
 bool fire_player_melee(gentity_t *self, const Vector3 &start,
                        const Vector3 &aim, int reach, int damage, int kick,
                        MeansOfDeath mod) {
-  constexpr size_t MAX_HIT = 4;
+  // Preserve the normal current-world broadphase for non-player entities,
+  // while allowing the Chainfist policy to substitute at most one bounded
+  // historical player eligibility candidate.
+  constexpr size_t MAX_HIT = 5;
 
   Vector3 reach_vec{float(reach - 1), float(reach - 1), float(reach - 1)};
   gentity_t *targets[MAX_HIT];
 
-  player_melee_data_t data{self, start, aim, reach};
+  LagCompensationMeleeSelectionResult historicalSelection{};
+  if (mod.id == ModID::Chainfist) {
+    historicalSelection = LagCompensation_ResolveMeleePlayerCandidate(
+        self, start, aim, reach, WORR_REWIND_WEAPON_CHAINFIST_MELEE_HYBRID);
+  }
+  player_melee_data_t data{self, start, aim, reach,
+                            historicalSelection.selection_ready};
 
   // find all the things we could maybe hit
   size_t num = gi.BoxEntities(
       self->absMin - reach_vec, self->absMax + reach_vec, targets,
       q_countof(targets), AREA_SOLID, fire_player_melee_BoxFilter, &data);
+  if (historicalSelection.target && num < q_countof(targets))
+    targets[num++] = historicalSelection.target;
 
   if (!num)
     return false;
@@ -3172,8 +3356,9 @@ static TOUCH(tesla_touch)(gentity_t *ent, gentity_t *other, const trace_t &tr,
   }
 }
 
-void fire_tesla(gentity_t *self, const Vector3 &start, const Vector3 &aimDir,
-                int tesla_damage_multiplier, int speed) {
+gentity_t *fire_tesla(gentity_t *self, const Vector3 &start,
+                      const Vector3 &aimDir, int tesla_damage_multiplier,
+                      int speed) {
   gentity_t *tesla;
   Vector3 dir;
   Vector3 forward, right, up;
@@ -3226,6 +3411,7 @@ void fire_tesla(gentity_t *self, const Vector3 &start, const Vector3 &aimDir,
   tesla->flags |= FL_MECHANICAL;
 
   gi.linkEntity(tesla);
+  return tesla;
 }
 
 /*
@@ -3317,7 +3503,30 @@ void fire_ionripper(gentity_t *self, const Vector3 &start, const Vector3 &dir,
   if (tr.fraction < 1.0f) {
     ion->s.origin = tr.endPos + (tr.plane.normal * 1.f);
     ion->touch(ion, tr.ent, tr, false);
+    return;
   }
+
+  // Ion Ripper's normal callback creates a fixed fifteen-bolt randomized
+  // burst. Each fresh bolt may consume only the same bounded authenticated
+  // command age through a current-world hull sweep; ricochet, contact, damage,
+  // effects, and lifetime remain this production path's authority.
+  const LagCompensationProjectileForwardResult forward =
+      LagCompensation_ResolveProjectileSpawnForward(
+          self, ion, WORR_REWIND_WEAPON_ION_RIPPER_BURST_SPAWN_FORWARD);
+  if (!forward.advanced)
+    return;
+
+  ion->s.origin = forward.trace.endPos + (forward.trace.plane.normal * 0.5f);
+  gi.linkEntity(ion);
+  if (forward.blocked) {
+    ion->touch(ion, forward.trace.ent, forward.trace, false);
+    return;
+  }
+
+  const GameTime elapsed = GameTime::from_ms(
+      static_cast<int64_t>(forward.advanced_age_us / UINT64_C(1000)));
+  if (elapsed && ion->nextThink > level.time)
+    ion->nextThink = std::max(level.time, ion->nextThink - elapsed);
 }
 
 /*
@@ -3452,6 +3661,13 @@ static TOUCH(plasmagun_touch)(gentity_t *ent, gentity_t *other,
     return;
   }
 
+  // Diagnostic-only observation for the isolated current-world Plasma Gun
+  // splash fixture. The normal touch path below remains the sole owner of
+  // contact, direct damage, line-of-sight, radius victim selection, and
+  // RadiusDamage application.
+  LagCompensation_ObserveCurrentWorldProjectileSplashImpact(
+      ent, other, tr, WORR_REWIND_WEAPON_PLASMA_GUN_SPAWN_FORWARD);
+
   const Vector3 impact = tr.endPos;
 
   if (ent->owner && ent->owner->client)
@@ -3516,7 +3732,33 @@ void fire_plasmagun(gentity_t *self, const Vector3 &start, const Vector3 &dir,
   if (tr.fraction < 1.0f) {
     plasma->s.origin = tr.endPos + (tr.plane.normal * 1.f);
     plasma->touch(plasma, tr.ent, tr, false);
+    return;
   }
+
+  // Plasma Gun keeps ordinary muzzle clearance first, then may consume only a
+  // bounded server-authenticated command age through the current world. It
+  // never uses a historical player/mover scene for flight, contact, direct
+  // damage, or its small-radius splash.
+  const LagCompensationProjectileForwardResult forward =
+      LagCompensation_ResolveProjectileSpawnForward(
+          self, plasma, WORR_REWIND_WEAPON_PLASMA_GUN_SPAWN_FORWARD);
+  if (!forward.advanced)
+    return;
+
+  plasma->s.origin =
+      forward.trace.endPos + (forward.trace.plane.normal * 0.5f);
+  gi.linkEntity(plasma);
+  if (forward.blocked) {
+    plasma->touch(plasma, forward.trace.ent, forward.trace, false);
+    return;
+  }
+
+  // Forward consumption cannot grant a late command more projectile lifetime
+  // than a current-world launch would have received.
+  const GameTime elapsed = GameTime::from_ms(
+      static_cast<int64_t>(forward.advanced_age_us / UINT64_C(1000)));
+  if (elapsed && plasma->nextThink > level.time)
+    plasma->nextThink = std::max(level.time, plasma->nextThink - elapsed);
 }
 
 /*
@@ -3536,6 +3778,12 @@ static TOUCH(phalanx_touch)(gentity_t *ent, gentity_t *other, const trace_t &tr,
     FreeEntity(ent);
     return;
   }
+
+  // Observation only for the isolated current-world splash fixture. The
+  // normal Phalanx touch path below remains the sole owner of direct impact
+  // and RadiusDamage authority.
+  LagCompensation_ObserveCurrentWorldProjectileSplashImpact(
+      ent, other, tr, WORR_REWIND_WEAPON_PHALANX_SPAWN_FORWARD);
 
   if (ent->owner->client)
     G_PlayerNoise(ent->owner, ent->s.origin, PlayerNoise::Impact);
@@ -3591,6 +3839,28 @@ void fire_phalanx(gentity_t *self, const Vector3 &start, const Vector3 &dir,
   phalanx->s.effects |= EF_PLASMA | EF_ANIM_ALLFAST;
 
   gi.linkEntity(phalanx);
+
+  // Phalanx retains all direct and splash authority in its normal
+  // current-world touch path. Only already accepted server command delay may
+  // be consumed by this bounded current-world projectile hull advance.
+  const LagCompensationProjectileForwardResult forward =
+      LagCompensation_ResolveProjectileSpawnForward(
+          self, phalanx, WORR_REWIND_WEAPON_PHALANX_SPAWN_FORWARD);
+  if (!forward.advanced)
+    return;
+
+  phalanx->s.origin =
+      forward.trace.endPos + (forward.trace.plane.normal * 0.5f);
+  gi.linkEntity(phalanx);
+  if (forward.blocked) {
+    phalanx->touch(phalanx, forward.trace.ent, forward.trace, false);
+    return;
+  }
+
+  const GameTime elapsed = GameTime::from_ms(
+      static_cast<int64_t>(forward.advanced_age_us / UINT64_C(1000)));
+  if (elapsed && phalanx->nextThink > level.time)
+    phalanx->nextThink = std::max(level.time, phalanx->nextThink - elapsed);
 }
 
 /*
@@ -3850,8 +4120,8 @@ static THINK(Trap_Think)(gentity_t *ent)->void {
   }
 }
 
-void fire_trap(gentity_t *self, const Vector3 &start, const Vector3 &aimDir,
-               int speed) {
+gentity_t *fire_trap(gentity_t *self, const Vector3 &start,
+                     const Vector3 &aimDir, int speed) {
   gentity_t *trap;
   Vector3 dir;
   Vector3 forward, right, up;
@@ -3894,6 +4164,7 @@ void fire_trap(gentity_t *self, const Vector3 &start, const Vector3 &aimDir,
   gi.linkEntity(trap);
 
   trap->timeStamp = level.time + 30_sec;
+  return trap;
 }
 
 // =================================================

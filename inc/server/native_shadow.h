@@ -55,7 +55,9 @@ extern "C" {
 #define SV_NATIVE_SHADOW_RX_COMPLETE_TIMEOUT_MS 1000u
 #define SV_NATIVE_SHADOW_STATUS_VERSION 1u
 #define SV_NATIVE_SHADOW_EVENT_STATUS_VERSION 1u
+#define SV_NATIVE_SHADOW_SNAPSHOT_STATUS_VERSION 1u
 #define SV_NATIVE_SHADOW_EVENT_RESEND_MS 100u
+#define SV_NATIVE_SHADOW_SNAPSHOT_RESEND_MS 100u
 #define SV_NATIVE_SHADOW_EVENT_FIRST_SEQUENCE 1u
 #define SV_NATIVE_SHADOW_EVENT_MAX_DATAGRAM_BYTES                         \
     (WORR_NATIVE_CARRIER_MAX_PACKET_BYTES -                              \
@@ -63,10 +65,13 @@ extern "C" {
      WORR_NATIVE_CARRIER_WIRE_ENTRY_HEADER_BYTES -                       \
      (7u *                                                              \
       WORR_NATIVE_CARRIER_WIRE_ACK_ENTRY_BYTES))
+#define SV_NATIVE_SHADOW_SNAPSHOT_MAX_DATAGRAM_BYTES                    \
+    SV_NATIVE_SHADOW_EVENT_MAX_DATAGRAM_BYTES
 
 typedef enum sv_native_shadow_mode_v1_e {
     SV_NATIVE_SHADOW_MODE_COMMAND = 1,
     SV_NATIVE_SHADOW_MODE_EVENT = 2,
+    SV_NATIVE_SHADOW_MODE_SNAPSHOT = 3,
 } sv_native_shadow_mode_v1;
 
 typedef enum sv_native_shadow_lifecycle_v1_e {
@@ -99,6 +104,8 @@ typedef enum sv_native_shadow_failure_v1_e {
     SV_NATIVE_SHADOW_FAILURE_ACK = 13,
     SV_NATIVE_SHADOW_FAILURE_EVENT_SENDER = 14,
     SV_NATIVE_SHADOW_FAILURE_SNAPSHOT_EVENTS = 15,
+    SV_NATIVE_SHADOW_FAILURE_SNAPSHOT_SENDER = 16,
+    SV_NATIVE_SHADOW_FAILURE_SNAPSHOT_PROJECTION = 17,
 } sv_native_shadow_failure_v1;
 
 typedef enum sv_native_shadow_observe_result_v1_e {
@@ -111,6 +118,8 @@ typedef enum sv_native_shadow_observe_result_v1_e {
 
 typedef struct sv_native_shadow_event_state_v1_s
     sv_native_shadow_event_state_v1;
+typedef struct sv_native_shadow_snapshot_state_v1_s
+    sv_native_shadow_snapshot_state_v1;
 
 typedef struct sv_native_shadow_transport_v1_s {
     worr_native_session_binding_v1 binding;
@@ -209,6 +218,37 @@ typedef struct sv_native_shadow_event_status_v1_s {
     uint64_t retries;
 } sv_native_shadow_event_status_v1;
 
+/* Pointer-free canonical-snapshot-mode diagnostics. */
+typedef struct sv_native_shadow_snapshot_status_v1_s {
+    uint32_t struct_size;
+    uint16_t schema_version;
+    uint16_t reserved0;
+    uint32_t mode;
+    uint32_t sender_initialized;
+    uint32_t retired_sender_initialized;
+    uint32_t tx_open;
+    uint32_t snapshot_epoch;
+    uint32_t retained_count;
+    uint32_t retired_retained_count;
+    uint32_t output_due;
+    uint32_t active_payload_bytes;
+    uint32_t pending_payload_bytes;
+    worr_snapshot_id_v2 active_snapshot;
+    worr_snapshot_id_v2 pending_snapshot;
+    uint64_t active_confirms;
+    uint64_t snapshots_queued;
+    uint64_t snapshot_queue_failures;
+    uint64_t snapshots_superseded;
+    uint64_t pending_coalesced;
+    uint64_t acknowledgements_applied;
+    uint64_t payloads_released;
+    uint64_t packets_prepared;
+    uint64_t packets_confirmed;
+    uint64_t packets_rejected;
+    uint64_t first_sends;
+    uint64_t retries;
+} sv_native_shadow_snapshot_status_v1;
+
 #if defined(__cplusplus)
 static_assert(sizeof(sv_native_shadow_status_v1) == 304,
               "server native shadow status V1 layout changed");
@@ -239,6 +279,26 @@ _Static_assert(offsetof(sv_native_shadow_event_status_v1, active_confirms) == 56
                "server native event status V1 counter offset changed");
 _Static_assert(offsetof(sv_native_shadow_event_status_v1, retries) == 144,
                "server native event status V1 tail offset changed");
+#endif
+
+#if defined(__cplusplus)
+static_assert(sizeof(sv_native_shadow_snapshot_status_v1) == 160,
+              "server native snapshot status V1 layout changed");
+static_assert(
+    offsetof(sv_native_shadow_snapshot_status_v1, active_confirms) == 64,
+    "server native snapshot status V1 counter offset changed");
+static_assert(
+    offsetof(sv_native_shadow_snapshot_status_v1, retries) == 152,
+    "server native snapshot status V1 tail offset changed");
+#else
+_Static_assert(sizeof(sv_native_shadow_snapshot_status_v1) == 160,
+               "server native snapshot status V1 layout changed");
+_Static_assert(
+    offsetof(sv_native_shadow_snapshot_status_v1, active_confirms) == 64,
+    "server native snapshot status V1 counter offset changed");
+_Static_assert(
+    offsetof(sv_native_shadow_snapshot_status_v1, retries) == 152,
+    "server native snapshot status V1 tail offset changed");
 #endif
 
 /*
@@ -314,6 +374,7 @@ typedef struct sv_native_shadow_peer_v1_s {
     uint64_t cancelled_rx_messages;
     uint64_t cancelled_receipts;
     uint64_t cancelled_event_records;
+    uint64_t cancelled_snapshot_records;
     uint64_t stale_cancelled_carriers;
     uint64_t stale_cancelled_readiness_records;
     uint64_t async_rate_deferrals;
@@ -331,6 +392,8 @@ typedef struct sv_native_shadow_peer_v1_s {
     sv_native_shadow_transport_v1 retired_transport;
     /* Allocated only by the explicit event-mode initializer. */
     sv_native_shadow_event_state_v1 *event_state;
+    /* Allocated only by the explicit canonical-snapshot initializer. */
+    sv_native_shadow_snapshot_state_v1 *snapshot_state;
 } sv_native_shadow_peer_v1;
 
 /* Hook registration is the final successful initialization action. */
@@ -392,7 +455,10 @@ bool SV_NativeShadowAppendSvcReadinessV1(
  * (NATIVE_ENVELOPE + NATIVE_EPOCH_CANCEL); explicit event mode privately
  * binds 0x73 (NATIVE_ENVELOPE + NATIVE_EVENT_STREAM +
  * NATIVE_EPOCH_CANCEL) and requires the fourth readiness confirmation before
- * native server TX opens.  A queued fresh CHALLENGE explicitly cancels every
+ * native server TX opens.  Explicit snapshot mode binds 0x57
+ * (NATIVE_ENVELOPE + CANONICAL_SNAPSHOT + NATIVE_EPOCH_CANCEL), independently
+ * binds the nonzero canonical snapshot epoch, and uses the same fourth
+ * confirmation barrier.  A queued fresh CHALLENGE explicitly cancels every
  * lower private transport epoch for the same connection owner.
  */
 bool SV_NativeShadowBeginEpochV1(
@@ -400,6 +466,14 @@ bool SV_NativeShadowBeginEpochV1(
     uint32_t official_connection_epoch,
     uint32_t official_supported,
     uint32_t official_negotiated,
+    uint32_t raw_time_ms,
+    worr_native_readiness_record_v1 *challenge_out);
+bool SV_NativeShadowBeginEpochBoundV1(
+    sv_native_shadow_peer_v1 *peer,
+    uint32_t official_connection_epoch,
+    uint32_t official_supported,
+    uint32_t official_negotiated,
+    uint32_t snapshot_epoch,
     uint32_t raw_time_ms,
     worr_native_readiness_record_v1 *challenge_out);
 
@@ -447,6 +521,14 @@ bool SV_NativeShadowQueueSnapshotEventsV1(
     const sv_snapshot_shadow_peer_v1 *snapshot_shadow,
     sv_snapshot_shadow_ref_v1 snapshot_ref,
     uint32_t raw_time_ms);
+/* Copies and encodes one exact final per-peer WNC1 projection into the
+ * snapshot-mode sender.  Queue failure drains only the native pilot; the
+ * already emitted legacy frame remains authoritative. */
+bool SV_NativeShadowQueueSnapshotV1(
+    sv_native_shadow_peer_v1 *peer,
+    sv_snapshot_shadow_peer_v1 *snapshot_shadow,
+    sv_snapshot_shadow_ref_v1 snapshot_ref,
+    uint32_t raw_time_ms);
 bool SV_NativeShadowQueueEventCandidatesV1(
     sv_native_shadow_peer_v1 *peer,
     const worr_event_record_v1 *candidates,
@@ -485,6 +567,10 @@ bool SV_NativeShadowGetEventStatusV1(
     const sv_native_shadow_peer_v1 *peer,
     uint32_t raw_time_ms,
     sv_native_shadow_event_status_v1 *status_out);
+bool SV_NativeShadowGetSnapshotStatusV1(
+    const sv_native_shadow_peer_v1 *peer,
+    uint32_t raw_time_ms,
+    sv_native_shadow_snapshot_status_v1 *status_out);
 
 /* Packet-scoped CLC sideband parser. */
 bool SV_NativeShadowPacketBeginV1(sv_native_shadow_peer_v1 *peer,

@@ -1963,6 +1963,26 @@ VkDescriptorSet VK_Shadow_GetDescriptorSet(void)
     return frame ? frame->descriptor_set : VK_NULL_HANDLE;
 }
 
+bool VK_Shadow_HasActiveReceiverLighting(void)
+{
+    // The receiver shader's expensive lighting paths are relevant only while
+    // a sun page is active or the current refdef supplied dynamic lights.
+    // This is queried after ShadowFrontend_BuildFrame and
+    // VK_Shadow_UpdateDlights have populated the frame UBO.
+    return vk_shadow.sun_active || vk_shadow.uniform.dlight_count[0] > 0.0f;
+}
+
+bool VK_Shadow_HasActiveSurfaceFog(void)
+{
+    // The opaque receiver shaders invoke apply_fog(..., false), so a
+    // sky-only fog flag cannot affect them. The query runs after
+    // VK_Shadow_UpdateDlights has refreshed the current frame UBO and lets
+    // static-light receiver pipelines omit all fog work only when global and
+    // height fog are both inactive.
+    const uint32_t flags = (uint32_t)(vk_shadow.uniform.fog_params[3] + 0.5f);
+    return (flags & (VK_FOG_GLOBAL | VK_FOG_HEIGHT)) != 0;
+}
+
 static void VK_Shadow_FillDlightPages(int source_index,
                                       vk_shadow_uniform_dlight_t *out)
 {

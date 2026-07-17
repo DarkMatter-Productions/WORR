@@ -11,7 +11,7 @@ static_assert(offsetof(worr_native_codec_info_v1, object_epoch) == 36);
 static_assert(std::is_standard_layout_v<worr_native_codec_info_v1>);
 static_assert(std::is_trivially_copyable_v<worr_native_codec_info_v1>);
 static_assert(WORR_NATIVE_CODEC_WIRE_HEADER_BYTES == 48);
-static_assert(WORR_NATIVE_CODEC_MAX_ENCODED_BYTES == 65536);
+static_assert(WORR_NATIVE_CODEC_MAX_ENCODED_BYTES == 131072);
 static_assert(WORR_NATIVE_CODEC_SNAPSHOT_ENTITY_MIN_BYTES == 52);
 static_assert(WORR_NATIVE_CODEC_SNAPSHOT_ENTITY_MAX_BYTES == 125);
 

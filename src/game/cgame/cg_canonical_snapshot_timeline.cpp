@@ -36,7 +36,7 @@ struct canonical_snapshot_timeline_state_t {
                CG_CANONICAL_SNAPSHOT_TIMELINE_SLOT_CAPACITY *
                    CG_CANONICAL_SNAPSHOT_TIMELINE_EVENT_CAPACITY> event_refs;
 
-    worr_cgame_snapshot_timeline_status_v1 status;
+    worr_cgame_snapshot_timeline_status_v2 status;
     worr_snapshot_timeline_ref_v1 latest_ref;
     std::uint64_t reset_host_time_us;
     std::uint64_t accepted_in_epoch;
@@ -66,6 +66,11 @@ void clear_latest()
     canonical.status.last_receive_time_us = 0;
     canonical.status.last_endpoint_hash = 0;
     canonical.status.last_legacy_parity_hash = 0;
+    canonical.status.last_snapshot_id = {};
+    canonical.status.last_snapshot_hash = 0;
+    canonical.status.last_event_fence_result =
+        CG_EVENT_RUNTIME_UNINITIALIZED;
+    canonical.status.receipt_flags = 0;
 }
 
 worr_snapshot_timeline_result_v1 ensure_initialized()
@@ -330,12 +335,34 @@ bool consume_snapshot(const worr_snapshot_projection_view_v2 *view,
     canonical.status.last_legacy_parity_hash = computed.legacy_parity_hash;
     canonical.status.last_result = WORR_SNAPSHOT_TIMELINE_OK;
 
-    /* The timeline publication above is already committed. Event-runtime
-     * observation feeds authority correctness whenever that domain is active
-     * and feeds legacy comparison only when its audit cvar is enabled. Either
-     * path remains subordinate to immutable snapshot publication. */
-    (void)CG_EventRuntimeObserveSnapshot(
+    /*
+     * The timeline publication above is already committed.  Native transport
+     * ACK authority additionally requires a fresh exact receipt proving that
+     * the event fence accepted this same snapshot.  Legacy presentation stays
+     * authoritative if that secondary fence fails; its caller can continue
+     * while native admission observes the missing receipt and hard-resyncs.
+     */
+    const auto event_result = CG_EventRuntimeObserveSnapshot(
         view->snapshot, view->event_refs, view->event_ref_count);
+    const bool event_fence_accepted =
+        CG_EventRuntimeSnapshotFenceHealthy(
+            view->snapshot->snapshot_id.epoch) &&
+        (event_result == CG_EVENT_RUNTIME_OK ||
+         event_result == CG_EVENT_RUNTIME_DUPLICATE ||
+         (event_result == CG_EVENT_RUNTIME_EMPTY &&
+          view->event_ref_count == 0));
+    canonical.status.last_snapshot_id = view->snapshot->snapshot_id;
+    canonical.status.last_snapshot_hash = view->snapshot->snapshot_hash;
+    canonical.status.last_event_fence_result =
+        static_cast<std::uint32_t>(event_result);
+    canonical.status.receipt_flags =
+        WORR_CGAME_SNAPSHOT_RECEIPT_TIMELINE_ACCEPTED;
+    if (event_fence_accepted &&
+        canonical.status.admission_generation != UINT64_MAX) {
+        canonical.status.receipt_flags |=
+            WORR_CGAME_SNAPSHOT_RECEIPT_EVENT_FENCE_ACCEPTED;
+        ++canonical.status.admission_generation;
+    }
 
     /* Publication is already durable at this point.  A terminal clock error
      * is reported without pretending that the copied snapshot was rejected. */
@@ -346,7 +373,7 @@ bool consume_snapshot(const worr_snapshot_projection_view_v2 *view,
     return true;
 }
 
-bool get_status(worr_cgame_snapshot_timeline_status_v1 *status_out)
+bool get_status(worr_cgame_snapshot_timeline_status_v2 *status_out)
 {
     if (!status_out)
         return false;
@@ -355,7 +382,7 @@ bool get_status(worr_cgame_snapshot_timeline_status_v1 *status_out)
     if (init_result != WORR_SNAPSHOT_TIMELINE_OK)
         return false;
 
-    worr_cgame_snapshot_timeline_status_v1 status = canonical.status;
+    worr_cgame_snapshot_timeline_status_v2 status = canonical.status;
     const auto result =
         Worr_SnapshotTimelineGetStatsV1(&canonical.timeline, &status.timeline);
     if (result != WORR_SNAPSHOT_TIMELINE_OK) {
@@ -366,7 +393,7 @@ bool get_status(worr_cgame_snapshot_timeline_status_v1 *status_out)
     return true;
 }
 
-const worr_cgame_snapshot_timeline_export_v1 snapshot_timeline_api = {
+const worr_cgame_snapshot_timeline_export_v2 snapshot_timeline_api = {
     sizeof(snapshot_timeline_api),
     WORR_CGAME_SNAPSHOT_TIMELINE_API_VERSION,
     reset_consumer,
@@ -385,7 +412,7 @@ worr_snapshot_timeline_result_v1 record_query_result(
 
 } // namespace
 
-const worr_cgame_snapshot_timeline_export_v1 *
+const worr_cgame_snapshot_timeline_export_v2 *
 CG_GetCanonicalSnapshotTimelineAPI()
 {
     return &snapshot_timeline_api;
@@ -497,6 +524,80 @@ worr_snapshot_timeline_result_v1 CG_CanonicalSnapshotTimelineCopyPlayer(
         result = Worr_SnapshotTimelineCopyPlayerV1(
             &canonical.timeline, ref, player_out);
     }
+    return record_query_result(result);
+}
+
+worr_snapshot_timeline_result_v1
+CG_CanonicalSnapshotTimelineCopyPredictionSnapshot(
+    std::uint32_t snapshot_sequence,
+    cg_canonical_prediction_snapshot_v1 *snapshot_out)
+{
+    auto result = ensure_initialized();
+    if (result == WORR_SNAPSHOT_TIMELINE_OK &&
+        (!snapshot_out || snapshot_sequence == 0)) {
+        result = WORR_SNAPSHOT_TIMELINE_INVALID_ARGUMENT;
+    }
+    if (result == WORR_SNAPSHOT_TIMELINE_OK && !canonical.active)
+        result = WORR_SNAPSHOT_TIMELINE_INVALID_TIMELINE;
+    if (result == WORR_SNAPSHOT_TIMELINE_OK &&
+        canonical.pending_clock_reset) {
+        result = WORR_SNAPSHOT_TIMELINE_CLOCK_UNINITIALIZED;
+    }
+    if (result != WORR_SNAPSHOT_TIMELINE_OK)
+        return record_query_result(result);
+
+    std::uint32_t selected = UINT32_MAX;
+    for (std::uint32_t index = 0;
+         index < static_cast<std::uint32_t>(canonical.slots.size());
+         ++index) {
+        const auto &slot = canonical.slots[index];
+        if (!slot.committed ||
+            slot.snapshot.snapshot_id.epoch !=
+                canonical.status.active_epoch ||
+            slot.snapshot.snapshot_id.sequence != snapshot_sequence) {
+            continue;
+        }
+        if (selected != UINT32_MAX)
+            return record_query_result(WORR_SNAPSHOT_TIMELINE_CORRUPT);
+        selected = index;
+    }
+    if (selected == UINT32_MAX)
+        return record_query_result(WORR_SNAPSHOT_TIMELINE_NOT_FOUND);
+
+    const auto &slot = canonical.slots[selected];
+    const worr_snapshot_timeline_ref_v1 ref{
+        selected, slot.generation
+    };
+    cg_canonical_prediction_snapshot_v1 staged{};
+    staged.struct_size = sizeof(staged);
+    staged.schema_version = CG_CANONICAL_PREDICTION_SNAPSHOT_VERSION;
+    staged.active_epoch = canonical.status.active_epoch;
+    staged.ref = ref;
+
+    result = Worr_SnapshotTimelineCopySnapshotV1(
+        &canonical.timeline, ref, &staged.snapshot);
+    if (result == WORR_SNAPSHOT_TIMELINE_OK) {
+        result = Worr_SnapshotTimelineCopyPlayerV1(
+            &canonical.timeline, ref, &staged.player);
+    }
+    const auto &snapshot_generation = staged.snapshot.controlled_entity;
+    const auto &player_generation = staged.player.controlled_entity;
+    if (result == WORR_SNAPSHOT_TIMELINE_OK &&
+        (canonical.status.active_epoch != staged.active_epoch ||
+         !Worr_SnapshotTimelineRefValidV1(&canonical.timeline, ref) ||
+         staged.snapshot.snapshot_id.epoch != staged.active_epoch ||
+         staged.snapshot.snapshot_id.sequence != snapshot_sequence ||
+         snapshot_generation.identity.index !=
+             player_generation.identity.index ||
+         snapshot_generation.identity.generation !=
+             player_generation.identity.generation ||
+         snapshot_generation.provenance_flags !=
+             player_generation.provenance_flags ||
+         snapshot_generation.reserved0 != player_generation.reserved0)) {
+        result = WORR_SNAPSHOT_TIMELINE_CORRUPT;
+    }
+    if (result == WORR_SNAPSHOT_TIMELINE_OK)
+        *snapshot_out = staged;
     return record_query_result(result);
 }
 

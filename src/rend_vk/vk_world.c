@@ -52,6 +52,7 @@ typedef struct {
     uint32_t vertex_count;
     VkDescriptorSet descriptor_set;
     uint32_t flags;
+    uint8_t vertex_flags;
     vec3_t center;
 } vk_world_batch_t;
 
@@ -71,6 +72,9 @@ enum {
 enum {
     VK_WORLD_BATCH_ALPHA = BIT(0),
     VK_WORLD_BATCH_SKY = BIT(1),
+    // A bloom extract replay needs only batches whose material has a
+    // lightmapped glow companion; all other material emissions are zero.
+    VK_WORLD_BATCH_BLOOM_EMISSION = BIT(2),
 };
 
 enum {
@@ -100,6 +104,13 @@ typedef struct {
 
     VkPipelineLayout pipeline_layout;
     VkPipeline pipeline_opaque;
+    VkPipeline pipeline_fast_lit_opaque;
+    VkPipeline pipeline_fast_lit_no_fog_opaque;
+    VkPipeline pipeline_fast_lit_glowmap_opaque;
+    VkPipeline pipeline_fast_lit_glowmap_no_fog_opaque;
+    VkPipeline pipeline_texture_replace_opaque;
+    VkPipeline pipeline_texture_replace_no_fog_opaque;
+    VkPipeline pipeline_bloom_extract;
     VkPipeline pipeline_alpha;
     VkPipeline pipeline_sky;
     VkPipeline pipeline_sky_array;
@@ -108,6 +119,8 @@ typedef struct {
     VkDeviceMemory vertex_memory;
     size_t vertex_buffer_bytes;
     uint32_t vertex_count;
+    vec3_t *showtris_positions;
+    uint32_t showtris_position_count;
     vk_world_frame_buffer_t frame_buffers[VK_MAX_FRAMES_IN_FLIGHT];
     vk_world_batch_t *batches;
     uint32_t batch_count;
@@ -159,6 +172,8 @@ static cvar_t *vk_lightmap_debug;
 static cvar_t *vk_drawsky;
 static cvar_t *vk_shaders;
 static cvar_t *vk_warp_refraction;
+static cvar_t *vk_world_fast_lit;
+static cvar_t *vk_world_fast_lit_no_fog;
 
 // Lighting gain cvars shared with the OpenGL renderer so both backends read
 // the same archived configuration. The native Vulkan swapchain has no
@@ -395,6 +410,40 @@ static void VK_World_DestroyVertexBuffer(void)
 
     vk_world.vertex_buffer_bytes = 0;
     vk_world.vertex_count = 0;
+}
+
+static void VK_World_ClearShowTrisPositions(void)
+{
+    free(vk_world.showtris_positions);
+    vk_world.showtris_positions = NULL;
+    vk_world.showtris_position_count = 0;
+}
+
+static bool VK_World_SetShowTrisPositions(const vk_world_vertex_t *vertices,
+                                          uint32_t vertex_count)
+{
+    VK_World_ClearShowTrisPositions();
+    if (!vertices || !vertex_count) {
+        return true;
+    }
+
+    size_t bytes;
+    if (!VK_World_ArrayBytes((size_t)vertex_count,
+                             sizeof(*vk_world.showtris_positions), &bytes,
+                             "show-tris positions")) {
+        return false;
+    }
+    vec3_t *positions = malloc(bytes);
+    if (!positions) {
+        Com_SetLastError("Vulkan world: out of memory retaining show-tris positions");
+        return false;
+    }
+    for (uint32_t i = 0; i < vertex_count; ++i) {
+        VectorCopy(vertices[i].pos, positions[i]);
+    }
+    vk_world.showtris_positions = positions;
+    vk_world.showtris_position_count = vertex_count;
+    return true;
 }
 
 static vk_world_frame_buffer_t *VK_World_CurrentFrameBuffer(void)
@@ -2315,6 +2364,7 @@ static bool VK_World_BuildMesh(vk_world_vertex_t **out_vertices,
             vertex_flags |= VK_WORLD_VERTEX_LIGHTMAPPED;
             if (has_glowmap) {
                 vertex_flags |= VK_WORLD_VERTEX_GLOWMAP;
+                batch_flags |= VK_WORLD_BATCH_BLOOM_EMISSION;
             }
         }
         if (VK_World_SurfaceUsesIntensity(bsp, face)) {
@@ -2346,12 +2396,14 @@ static bool VK_World_BuildMesh(vk_world_vertex_t **out_vertices,
             if (batch_out == 0 ||
                 batches[batch_out - 1].descriptor_set != descriptor_set ||
                 batches[batch_out - 1].flags != batch_flags ||
+                batches[batch_out - 1].vertex_flags != vertex_flags ||
                 ((batch_flags & VK_WORLD_BATCH_ALPHA) && j == 1)) {
                 batches[batch_out++] = (vk_world_batch_t){
                     .first_vertex = out,
                     .vertex_count = 0,
                     .descriptor_set = descriptor_set,
                     .flags = batch_flags,
+                    .vertex_flags = vertex_flags,
                     .center = { face_center[0], face_center[1], face_center[2] },
                 };
             }
@@ -2573,7 +2625,13 @@ static void VK_World_ClearFrame(void)
 
 static bool VK_World_CreatePipelineVariant(vk_context_t *ctx, bool alpha_blend,
                                            bool depth_test, VkCullModeFlags cull_mode,
-                                           bool sky_array, VkPipeline *out_pipeline)
+                                           bool sky_array, bool bloom_extract,
+                                           bool fast_lit, bool fast_lit_glowmap,
+                                           bool fast_lit_no_fog,
+                                           bool fast_lit_glowmap_no_fog,
+                                           bool texture_replace,
+                                           bool texture_replace_no_fog,
+                                           VkPipeline *out_pipeline)
 {
     VkShaderModule vert_shader = VK_NULL_HANDLE;
     VkShaderModule frag_shader = VK_NULL_HANDLE;
@@ -2589,10 +2647,22 @@ static bool VK_World_CreatePipelineVariant(vk_context_t *ctx, bool alpha_blend,
         return false;
     }
 
-    const uint32_t *fragment_spv = sky_array ? vk_world_sky_frag_spv
-                                              : vk_world_animated_frag_spv;
-    const size_t fragment_spv_size = sky_array ? vk_world_sky_frag_spv_size
-                                                : vk_world_animated_frag_spv_size;
+    const uint32_t *fragment_spv = fast_lit_no_fog ? vk_world_fast_lit_no_fog_frag_spv
+        : fast_lit_glowmap_no_fog ? vk_world_fast_lit_glowmap_no_fog_frag_spv
+        : fast_lit ? vk_world_fast_lit_frag_spv
+        : fast_lit_glowmap ? vk_world_fast_lit_glowmap_frag_spv
+        : texture_replace_no_fog ? vk_world_texture_replace_no_fog_frag_spv
+        : texture_replace ? vk_world_texture_replace_frag_spv
+        : bloom_extract ? vk_world_bloom_extract_frag_spv
+        : sky_array ? vk_world_sky_frag_spv : vk_world_animated_frag_spv;
+    const size_t fragment_spv_size = fast_lit_no_fog ? vk_world_fast_lit_no_fog_frag_spv_size
+        : fast_lit_glowmap_no_fog ? vk_world_fast_lit_glowmap_no_fog_frag_spv_size
+        : fast_lit ? vk_world_fast_lit_frag_spv_size
+        : fast_lit_glowmap ? vk_world_fast_lit_glowmap_frag_spv_size
+        : texture_replace_no_fog ? vk_world_texture_replace_no_fog_frag_spv_size
+        : texture_replace ? vk_world_texture_replace_frag_spv_size
+        : bloom_extract ? vk_world_bloom_extract_frag_spv_size
+        : sky_array ? vk_world_sky_frag_spv_size : vk_world_animated_frag_spv_size;
     VkShaderModuleCreateInfo frag_info = {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .codeSize = fragment_spv_size,
@@ -2754,7 +2824,8 @@ static bool VK_World_CreatePipelineVariant(vk_context_t *ctx, bool alpha_blend,
     VkPipelineDepthStencilStateCreateInfo depth_stencil = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
         .depthTestEnable = depth_test ? VK_TRUE : VK_FALSE,
-        .depthWriteEnable = depth_test && !alpha_blend ? VK_TRUE : VK_FALSE,
+        .depthWriteEnable = depth_test && !alpha_blend && !bloom_extract
+            ? VK_TRUE : VK_FALSE,
         .depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL,
         .depthBoundsTestEnable = VK_FALSE,
         .stencilTestEnable = VK_FALSE,
@@ -2805,11 +2876,21 @@ static bool VK_World_CreatePipelineVariant(vk_context_t *ctx, bool alpha_blend,
         .pColorBlendState = &blend,
         .pDynamicState = &dynamic,
         .layout = vk_world.pipeline_layout,
-        .renderPass = ctx->render_pass,
+        .renderPass = bloom_extract ? ctx->bloom_extract_render_pass : ctx->scene_render_pass,
         .subpass = 0,
     };
 
-    const char *pipeline_name = sky_array ? "vkCreateGraphicsPipelines(world sky array)" :
+    const char *pipeline_name = fast_lit_no_fog
+        ? "vkCreateGraphicsPipelines(world fast lit no fog)"
+        : fast_lit_glowmap_no_fog
+        ? "vkCreateGraphicsPipelines(world fast lit glowmap no fog)"
+        : fast_lit ? "vkCreateGraphicsPipelines(world fast lit)" :
+        fast_lit_glowmap ? "vkCreateGraphicsPipelines(world fast lit glowmap)" :
+        texture_replace_no_fog
+        ? "vkCreateGraphicsPipelines(world texture replace no fog)" :
+        texture_replace ? "vkCreateGraphicsPipelines(world texture replace)" :
+        bloom_extract ? "vkCreateGraphicsPipelines(world bloom extract)" :
+        sky_array ? "vkCreateGraphicsPipelines(world sky array)" :
         alpha_blend ? "vkCreateGraphicsPipelines(world alpha)" :
         "vkCreateGraphicsPipelines(world opaque)";
     bool ok = VK_World_Check(vkCreateGraphicsPipelines(ctx->device, VK_NULL_HANDLE, 1,
@@ -2837,6 +2918,13 @@ bool VK_World_Init(vk_context_t *ctx)
     }
     if (!vk_warp_refraction) {
         vk_warp_refraction = Cvar_Get("vk_warp_refraction", "0.1", 0);
+    }
+    if (!vk_world_fast_lit) {
+        vk_world_fast_lit = Cvar_Get("vk_world_fast_lit", "1", CVAR_ARCHIVE);
+    }
+    if (!vk_world_fast_lit_no_fog) {
+        vk_world_fast_lit_no_fog = Cvar_Get("vk_world_fast_lit_no_fog", "1",
+                                            CVAR_ARCHIVE);
     }
     if (!vk_gl_modulate) {
         vk_gl_modulate = Cvar_Get("gl_modulate", "2", CVAR_ARCHIVE);
@@ -2963,38 +3051,149 @@ void VK_World_DestroySwapchainResources(vk_context_t *ctx)
         vk_world.pipeline_opaque = VK_NULL_HANDLE;
     }
 
+    if (vk_world.pipeline_fast_lit_opaque) {
+        vkDestroyPipeline(vk_world.ctx->device, vk_world.pipeline_fast_lit_opaque,
+                          NULL);
+        vk_world.pipeline_fast_lit_opaque = VK_NULL_HANDLE;
+    }
+
+    if (vk_world.pipeline_fast_lit_no_fog_opaque) {
+        vkDestroyPipeline(vk_world.ctx->device, vk_world.pipeline_fast_lit_no_fog_opaque,
+                          NULL);
+        vk_world.pipeline_fast_lit_no_fog_opaque = VK_NULL_HANDLE;
+    }
+
+    if (vk_world.pipeline_fast_lit_glowmap_opaque) {
+        vkDestroyPipeline(vk_world.ctx->device, vk_world.pipeline_fast_lit_glowmap_opaque,
+                          NULL);
+        vk_world.pipeline_fast_lit_glowmap_opaque = VK_NULL_HANDLE;
+    }
+
+    if (vk_world.pipeline_fast_lit_glowmap_no_fog_opaque) {
+        vkDestroyPipeline(vk_world.ctx->device,
+                          vk_world.pipeline_fast_lit_glowmap_no_fog_opaque, NULL);
+        vk_world.pipeline_fast_lit_glowmap_no_fog_opaque = VK_NULL_HANDLE;
+    }
+
+    if (vk_world.pipeline_texture_replace_opaque) {
+        vkDestroyPipeline(vk_world.ctx->device, vk_world.pipeline_texture_replace_opaque,
+                          NULL);
+        vk_world.pipeline_texture_replace_opaque = VK_NULL_HANDLE;
+    }
+
+    if (vk_world.pipeline_texture_replace_no_fog_opaque) {
+        vkDestroyPipeline(vk_world.ctx->device,
+                          vk_world.pipeline_texture_replace_no_fog_opaque, NULL);
+        vk_world.pipeline_texture_replace_no_fog_opaque = VK_NULL_HANDLE;
+    }
+
+    if (vk_world.pipeline_bloom_extract) {
+        vkDestroyPipeline(vk_world.ctx->device, vk_world.pipeline_bloom_extract, NULL);
+        vk_world.pipeline_bloom_extract = VK_NULL_HANDLE;
+    }
+
     vk_world.swapchain_ready = false;
 }
 
 bool VK_World_CreateSwapchainResources(vk_context_t *ctx)
 {
-    if (!vk_world.initialized || !ctx || !ctx->render_pass) {
+    if (!vk_world.initialized || !ctx || !ctx->scene_render_pass) {
         return false;
     }
 
     VK_World_DestroySwapchainResources(ctx);
 
-    if (!VK_World_CreatePipelineVariant(ctx, false, true, VK_CULL_MODE_NONE, false,
+    if (!VK_World_CreatePipelineVariant(ctx, false, true, VK_CULL_MODE_NONE, false, false,
+                                        false, false, false, false, false, false,
                                         &vk_world.pipeline_opaque)) {
         return false;
     }
 
-    if (!VK_World_CreatePipelineVariant(ctx, true, true, VK_CULL_MODE_NONE, false,
+    // The fast receiver accepts only ordinary one-sided opaque BSP faces.
+    // With Vulkan's inverted viewport, CCW front faces plus BACK culling are
+    // the native equivalent of OpenGL's default CW/BACK world state.
+    if (!VK_World_CreatePipelineVariant(ctx, false, true, VK_CULL_MODE_BACK_BIT, false, false,
+                                        true, false, false, false, false, false,
+                                        &vk_world.pipeline_fast_lit_opaque)) {
+        // The general opaque pipeline remains a complete native fallback if a
+        // driver rejects the optional static-light specialization.
+        Com_WPrintf("Vulkan: static world fast-light pipeline unavailable; "
+                    "using the general opaque pipeline\n");
+    }
+
+    // Opaque receivers with no global or height fog select this companion
+    // every frame.  Keep the fog-aware fast pipeline above as a native
+    // fallback if a driver rejects the optional specialization.
+    if (!VK_World_CreatePipelineVariant(ctx, false, true, VK_CULL_MODE_BACK_BIT, false, false,
+                                        false, false, true, false, false, false,
+                                        &vk_world.pipeline_fast_lit_no_fog_opaque)) {
+        Com_WPrintf("Vulkan: static world no-fog fast-light pipeline unavailable; "
+                    "using the fog-aware static pipeline\n");
+    }
+
+    // The general world path is double-sided because legacy BSPs may carry
+    // winding inconsistent with their plane flag. Preserve that visual
+    // contract for the glow-map variant; its fragment specialization is the
+    // performance win, while culling remains only for the proven one-sided
+    // non-glow receiver path above.
+    if (!VK_World_CreatePipelineVariant(ctx, false, true, VK_CULL_MODE_NONE, false, false,
+                                        false, true, false, false, false, false,
+                                        &vk_world.pipeline_fast_lit_glowmap_opaque)) {
+        Com_WPrintf("Vulkan: static world fast-light glow-map pipeline unavailable; "
+                    "using the general opaque pipeline\n");
+    }
+
+    if (!VK_World_CreatePipelineVariant(ctx, false, true, VK_CULL_MODE_NONE, false, false,
+                                        false, false, false, true, false, false,
+                                        &vk_world.pipeline_fast_lit_glowmap_no_fog_opaque)) {
+        Com_WPrintf("Vulkan: static world no-fog glow-map pipeline unavailable; "
+                    "using the fog-aware static pipeline\n");
+    }
+
+    // OpenGL compiles ordinary opaque faces with GLS_TEXTURE_REPLACE even
+    // when they have no lightmap.  Preserve the general world's double-sided
+    // raster state here: legacy BSP face winding is not sufficiently reliable
+    // to apply the one-sided lightmapped fast-receiver optimization.
+    if (!VK_World_CreatePipelineVariant(ctx, false, true, VK_CULL_MODE_NONE, false, false,
+                                        false, false, false, false, true, false,
+                                        &vk_world.pipeline_texture_replace_opaque)) {
+        Com_WPrintf("Vulkan: texture-replace world pipeline unavailable; "
+                    "using the general opaque pipeline\n");
+    }
+
+    if (!VK_World_CreatePipelineVariant(ctx, false, true, VK_CULL_MODE_NONE, false, false,
+                                        false, false, false, false, false, true,
+                                        &vk_world.pipeline_texture_replace_no_fog_opaque)) {
+        Com_WPrintf("Vulkan: no-fog texture-replace world pipeline unavailable; "
+                    "using the fog-aware texture-replace pipeline\n");
+    }
+
+    if (!VK_World_CreatePipelineVariant(ctx, true, true, VK_CULL_MODE_NONE, false, false,
+                                        false, false, false, false, false, false,
                                         &vk_world.pipeline_alpha)) {
         VK_World_DestroySwapchainResources(ctx);
         return false;
     }
 
-    if (!VK_World_CreatePipelineVariant(ctx, false, false, VK_CULL_MODE_FRONT_BIT, false,
+    if (!VK_World_CreatePipelineVariant(ctx, false, false, VK_CULL_MODE_FRONT_BIT, false, false,
+                                        false, false, false, false, false, false,
                                         &vk_world.pipeline_sky)) {
         VK_World_DestroySwapchainResources(ctx);
         return false;
     }
 
-    if (!VK_World_CreatePipelineVariant(ctx, false, false, VK_CULL_MODE_FRONT_BIT, true,
+    if (!VK_World_CreatePipelineVariant(ctx, false, false, VK_CULL_MODE_FRONT_BIT, true, false,
+                                        false, false, false, false, false, false,
                                         &vk_world.pipeline_sky_array)) {
         VK_World_DestroySwapchainResources(ctx);
         return false;
+    }
+
+    if (ctx->bloom_extract_render_pass &&
+        !VK_World_CreatePipelineVariant(ctx, false, true, VK_CULL_MODE_NONE, false, true,
+                                        false, false, false, false, false, false,
+                                        &vk_world.pipeline_bloom_extract)) {
+        Com_WPrintf("Vulkan: authored bloom emission extraction unavailable; using scene fallback.\n");
     }
 
     vk_world.swapchain_ready = true;
@@ -3016,6 +3215,7 @@ void VK_World_Shutdown(vk_context_t *ctx)
 
     VK_World_DestroySwapchainResources(ctx);
     VK_World_DestroyVertexBuffer();
+    VK_World_ClearShowTrisPositions();
     for (uint32_t i = 0; i < VK_MAX_FRAMES_IN_FLIGHT; ++i) {
         VK_World_DestroyFrameVertexBuffer(&vk_world.frame_buffers[i]);
     }
@@ -3064,6 +3264,7 @@ void VK_World_BeginRegistration(const char *map)
     vkDeviceWaitIdle(vk_world.ctx->device);
 
     VK_World_DestroyVertexBuffer();
+    VK_World_ClearShowTrisPositions();
     VK_World_ClearBatches();
     VK_World_ClearLightmap();
     VK_World_FreeBSP();
@@ -3091,18 +3292,24 @@ void VK_World_BeginRegistration(const char *map)
     if (!VK_World_BuildLightmapAtlas(vk_world.bsp, NULL, &face_lms, &atlas_size, &atlas_rgba)) {
         free(face_lms);
         free(atlas_rgba);
-        Com_Error(ERR_DROP, "VK_World_BeginRegistration: failed to build world lightmaps for %s", map);
+        Com_Error(ERR_DROP,
+                  "VK_World_BeginRegistration: failed to build world lightmaps "
+                  "for %s",
+                  map);
         return;
     }
 
-    qhandle_t lightmap_handle = VK_UI_RegisterRawImage("**world_lightmap**",
-                                                        atlas_size, atlas_size, atlas_rgba,
-                                                        IT_WALL, IF_REPEAT);
+    qhandle_t lightmap_handle =
+        VK_UI_RegisterRawImage("**world_lightmap**", atlas_size, atlas_size,
+                               atlas_rgba, IT_SPRITE, IF_REPEAT);
     if (!lightmap_handle) {
-        free(face_lms);
-        free(atlas_rgba);
-        Com_Error(ERR_DROP, "VK_World_BeginRegistration: failed to register world lightmaps for %s", map);
-        return;
+      free(face_lms);
+      free(atlas_rgba);
+      Com_Error(ERR_DROP,
+                "VK_World_BeginRegistration: failed to register world "
+                "lightmaps for %s",
+                map);
+      return;
     }
 
     VkDescriptorSet lightmap_set = VK_UI_GetDescriptorSetForImage(lightmap_handle);
@@ -3130,8 +3337,21 @@ void VK_World_BeginRegistration(const char *map)
         return;
     }
 
+    if (!VK_World_SetShowTrisPositions(vertices, vertex_count)) {
+        VK_UI_UnregisterImage(lightmap_handle);
+        free(face_lms);
+        free(atlas_rgba);
+        free(vertices);
+        free(batches);
+        Com_Error(ERR_DROP,
+                  "VK_World_BeginRegistration: failed to retain show-tris geometry for %s",
+                  map);
+        return;
+    }
+
     if (!VK_World_UploadVertices(vertices, vertex_count)) {
         VK_UI_UnregisterImage(lightmap_handle);
+        VK_World_ClearShowTrisPositions();
         free(face_lms);
         free(atlas_rgba);
         free(vertices);
@@ -3301,38 +3521,37 @@ static void VK_World_ComputeFramePush(const refdef_t *fd, renderer_view_push_t *
     R_BuildViewPush(fd, znear, zfar, out_push);
 }
 
-void VK_World_RenderFrame(const refdef_t *fd)
-{
-    VK_World_ClearFrame();
+void VK_World_RenderFrame(const refdef_t *fd) {
+  VK_World_ClearFrame();
 
-    if (!vk_world.initialized || !fd) {
-        return;
-    }
+  if (!vk_world.initialized || !fd) {
+    return;
+  }
 
-    vk_world.current_fd = fd;
+  vk_world.current_fd = fd;
 
-    if (!vk_world.bsp || !vk_world.vertex_count) {
-        return;
-    }
+  if (!vk_world.bsp || !vk_world.vertex_count) {
+    return;
+  }
 
-    if (fd->rdflags & RDF_NOWORLDMODEL) {
-        return;
-    }
+  if (fd->rdflags & RDF_NOWORLDMODEL) {
+    return;
+  }
 
-    if (!VK_World_UpdateLightmapStyles(fd)) {
-        return;
-    }
+  if (!VK_World_UpdateLightmapStyles(fd)) {
+    return;
+  }
 
-    if (!VK_World_UpdateAnimationFrame(fd)) {
-        return;
-    }
+  if (!VK_World_UpdateAnimationFrame(fd)) {
+    return;
+  }
 
-    if (!VK_World_UpdateSkyGeometry()) {
-        return;
-    }
+  if (!VK_World_UpdateSkyGeometry()) {
+    return;
+  }
 
-    VK_World_ComputeFramePush(fd, &vk_world.frame_push);
-    vk_world.frame_active = true;
+  VK_World_ComputeFramePush(fd, &vk_world.frame_push);
+  vk_world.frame_active = true;
 }
 
 static int VK_World_CompareAlphaBatches(const void *left, const void *right)
@@ -3431,6 +3650,10 @@ void VK_World_RecordOpaque(VkCommandBuffer cmd, const VkExtent2D *extent)
         return;
     }
 
+    VK_Debug_QueueShowTrisTriangles(VK_DEBUG_SHOWTRIS_WORLD,
+                                    vk_world.showtris_positions,
+                                    vk_world.showtris_position_count);
+
     VkBuffer world_buffers[2];
     if (!VK_World_BindFrame(cmd, extent, VK_NULL_HANDLE, world_buffers)) {
         return;
@@ -3488,13 +3711,153 @@ void VK_World_RecordOpaque(VkCommandBuffer cmd, const VkExtent2D *extent)
                                 &vk_world.lightmap_descriptor_set, 0, NULL);
     }
 
+    const bool fast_lit_enabled = !vk_world_fast_lit || vk_world_fast_lit->integer;
+    const bool fast_lit_no_fog_enabled = !vk_world_fast_lit_no_fog ||
+        vk_world_fast_lit_no_fog->integer;
+    const bool world_fullbright = VK_World_Fullbright();
+    const bool receiver_lighting_active = VK_Shadow_HasActiveReceiverLighting();
+    const bool surface_fog_active = VK_Shadow_HasActiveSurfaceFog();
+    const bool fast_lit_receivers_inactive =
+        !world_fullbright && !receiver_lighting_active;
+    const uint8_t fast_lit_vertex_flags = VK_WORLD_VERTEX_LIGHTMAPPED |
+                                         VK_WORLD_VERTEX_INTENSITY;
+    const uint8_t fast_lit_glowmap_vertex_flags =
+        VK_WORLD_VERTEX_LIGHTMAPPED | VK_WORLD_VERTEX_INTENSITY |
+        VK_WORLD_VERTEX_GLOWMAP;
+    const uint8_t texture_replace_vertex_flags = VK_WORLD_VERTEX_INTENSITY;
+    uint32_t fast_lit_candidates = 0;
+    uint32_t fast_lit_disabled = 0;
+    uint32_t fast_lit_fullbright = 0;
+    uint32_t fast_lit_receiver_lighting = 0;
+    uint32_t fast_lit_pipeline_unavailable = 0;
+    uint32_t fast_lit_material_ineligible = 0;
     VkDescriptorSet last_set = VK_NULL_HANDLE;
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_world.pipeline_opaque);
+    VkPipeline bound_pipeline = VK_NULL_HANDLE;
     for (uint32_t i = 0; i < vk_world.batch_count; i++) {
         const vk_world_batch_t *batch = &vk_world.batches[i];
         if (!batch->vertex_count || !batch->descriptor_set ||
             (batch->flags & VK_WORLD_BATCH_ALPHA) ||
             (batch->flags & VK_WORLD_BATCH_SKY)) {
+            continue;
+        }
+        const bool lightmapped =
+            (batch->vertex_flags & VK_WORLD_VERTEX_LIGHTMAPPED) != 0;
+        const bool glowmapped =
+            (batch->vertex_flags & VK_WORLD_VERTEX_GLOWMAP) != 0;
+        const uint8_t compatible_flags = glowmapped
+            ? fast_lit_glowmap_vertex_flags : fast_lit_vertex_flags;
+        const bool material_eligible = lightmapped &&
+            (batch->vertex_flags & ~compatible_flags) == 0;
+        const bool pipeline_available = glowmapped
+            ? vk_world.pipeline_fast_lit_glowmap_opaque != VK_NULL_HANDLE
+            : vk_world.pipeline_fast_lit_opaque != VK_NULL_HANDLE;
+        if (lightmapped) {
+            fast_lit_candidates++;
+            if (!fast_lit_enabled) {
+                fast_lit_disabled++;
+            } else if (world_fullbright) {
+                fast_lit_fullbright++;
+            } else if (receiver_lighting_active) {
+                fast_lit_receiver_lighting++;
+            } else if (!pipeline_available) {
+                fast_lit_pipeline_unavailable++;
+            } else if (!material_eligible) {
+                fast_lit_material_ineligible++;
+            }
+        }
+        const bool fast_lit = fast_lit_enabled && fast_lit_receivers_inactive &&
+            vk_world.pipeline_fast_lit_opaque &&
+            lightmapped &&
+            (batch->vertex_flags & ~fast_lit_vertex_flags) == 0;
+        const bool fast_lit_glowmap = fast_lit_enabled && fast_lit_receivers_inactive &&
+            vk_world.pipeline_fast_lit_glowmap_opaque &&
+            (batch->vertex_flags & (VK_WORLD_VERTEX_LIGHTMAPPED |
+                                    VK_WORLD_VERTEX_GLOWMAP)) ==
+                (VK_WORLD_VERTEX_LIGHTMAPPED | VK_WORLD_VERTEX_GLOWMAP) &&
+            (batch->vertex_flags & ~fast_lit_glowmap_vertex_flags) == 0;
+        // Surface fog is sampled from the current shadow UBO every frame.
+        // A sky-only fog flag does not affect opaque receivers, so it remains
+        // safe to use this no-fog shader for ordinary world batches.
+        const bool fast_lit_no_fog = fast_lit && fast_lit_no_fog_enabled &&
+            !surface_fog_active &&
+            vk_world.pipeline_fast_lit_no_fog_opaque;
+        const bool fast_lit_glowmap_no_fog = fast_lit_glowmap &&
+            fast_lit_no_fog_enabled && !surface_fog_active &&
+            vk_world.pipeline_fast_lit_glowmap_no_fog_opaque;
+        const bool texture_replace = fast_lit_enabled &&
+            vk_world.pipeline_texture_replace_opaque &&
+            (batch->vertex_flags & ~texture_replace_vertex_flags) == 0;
+        const bool texture_replace_no_fog = texture_replace &&
+            fast_lit_no_fog_enabled && !surface_fog_active &&
+            vk_world.pipeline_texture_replace_no_fog_opaque;
+        const VkPipeline target_pipeline = fast_lit_glowmap_no_fog
+            ? vk_world.pipeline_fast_lit_glowmap_no_fog_opaque
+            : fast_lit_glowmap
+            ? vk_world.pipeline_fast_lit_glowmap_opaque
+            : texture_replace_no_fog
+            ? vk_world.pipeline_texture_replace_no_fog_opaque
+            : texture_replace
+            ? vk_world.pipeline_texture_replace_opaque
+            : fast_lit_no_fog
+            ? vk_world.pipeline_fast_lit_no_fog_opaque
+            : fast_lit ? vk_world.pipeline_fast_lit_opaque : vk_world.pipeline_opaque;
+        if (target_pipeline != bound_pipeline) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              target_pipeline);
+            bound_pipeline = target_pipeline;
+        }
+        if (batch->descriptor_set != last_set) {
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    vk_world.pipeline_layout, 0, 1,
+                                    &batch->descriptor_set, 0, NULL);
+            last_set = batch->descriptor_set;
+        }
+        vkCmdDraw(cmd, batch->vertex_count, 1, batch->first_vertex, 0);
+        if (fast_lit || fast_lit_glowmap) {
+            VK_Debug_RecordFastLitDraw(VK_DEBUG_DOMAIN_WORLD);
+        }
+        if (fast_lit_no_fog || fast_lit_glowmap_no_fog) {
+            VK_Debug_RecordWorldFastLitNoFogDraw();
+        }
+        if (texture_replace) {
+            VK_Debug_RecordWorldTextureReplaceDraw(texture_replace_no_fog);
+        }
+        VK_Debug_RecordDraw(VK_DEBUG_DOMAIN_WORLD, batch->vertex_count, 0);
+    }
+    VK_Debug_SetWorldFastLitCoverage(fast_lit_candidates, fast_lit_disabled,
+                                     fast_lit_fullbright,
+                                     fast_lit_receiver_lighting,
+                                     fast_lit_pipeline_unavailable,
+                                     fast_lit_material_ineligible);
+
+    if (!vk_world.first_draw_logged) {
+        vk_world.first_draw_logged = true;
+        Com_DPrintf("VK_World_RecordOpaque: rendered map=%s vertices=%u batches=%u\n",
+                    vk_world.map_name[0] ? vk_world.map_name : "<unknown>",
+                    vk_world.vertex_count, vk_world.batch_count);
+    }
+}
+
+void VK_World_RecordBloomEmission(VkCommandBuffer cmd, const VkExtent2D *extent)
+{
+    if (!VK_World_CanRecord(extent) || !vk_world.pipeline_bloom_extract) {
+        return;
+    }
+
+    VkBuffer world_buffers[2];
+    if (!VK_World_BindFrame(cmd, extent, VK_NULL_HANDLE, world_buffers)) {
+        return;
+    }
+
+    VkDescriptorSet last_set = VK_NULL_HANDLE;
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                      vk_world.pipeline_bloom_extract);
+    for (uint32_t i = 0; i < vk_world.batch_count; i++) {
+        const vk_world_batch_t *batch = &vk_world.batches[i];
+        if (!batch->vertex_count || !batch->descriptor_set ||
+            (batch->flags & VK_WORLD_BATCH_ALPHA) ||
+            (batch->flags & VK_WORLD_BATCH_SKY) ||
+            !(batch->flags & VK_WORLD_BATCH_BLOOM_EMISSION)) {
             continue;
         }
         if (batch->descriptor_set != last_set) {
@@ -3506,13 +3869,25 @@ void VK_World_RecordOpaque(VkCommandBuffer cmd, const VkExtent2D *extent)
         vkCmdDraw(cmd, batch->vertex_count, 1, batch->first_vertex, 0);
         VK_Debug_RecordDraw(VK_DEBUG_DOMAIN_WORLD, batch->vertex_count, 0);
     }
+}
 
-    if (!vk_world.first_draw_logged) {
-        vk_world.first_draw_logged = true;
-        Com_DPrintf("VK_World_RecordOpaque: rendered map=%s vertices=%u batches=%u\n",
-                    vk_world.map_name[0] ? vk_world.map_name : "<unknown>",
-                    vk_world.vertex_count, vk_world.batch_count);
+bool VK_World_HasBloomEmission(void)
+{
+    if (!vk_world.initialized || !vk_world.swapchain_ready ||
+        !vk_world.frame_active || !vk_world.pipeline_bloom_extract) {
+        return false;
     }
+
+    for (uint32_t i = 0; i < vk_world.batch_count; ++i) {
+        const vk_world_batch_t *batch = &vk_world.batches[i];
+        if (batch->vertex_count && batch->descriptor_set &&
+            !(batch->flags & VK_WORLD_BATCH_ALPHA) &&
+            !(batch->flags & VK_WORLD_BATCH_SKY) &&
+            (batch->flags & VK_WORLD_BATCH_BLOOM_EMISSION)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void VK_World_RecordAlpha(VkCommandBuffer cmd, const VkExtent2D *extent,

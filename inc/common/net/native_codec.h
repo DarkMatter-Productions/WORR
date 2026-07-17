@@ -150,6 +150,11 @@ worr_native_codec_result_v1 Worr_NativeCodecEventStreamDecodeV1(
     size_t encoded_bytes,
     worr_event_stream_descriptor_v1 *descriptor_out);
 
+/*
+ * max_entities is the exclusive entity-index limit.  The independently
+ * bounded number of records carried by one projection is capped by
+ * WORR_NATIVE_CODEC_MAX_SNAPSHOT_ENTITIES.
+ */
 worr_native_codec_result_v1 Worr_NativeCodecSnapshotPreflightV1(
     const worr_snapshot_projection_view_v2 *view,
     uint32_t max_entities,
@@ -160,6 +165,34 @@ worr_native_codec_result_v1 Worr_NativeCodecSnapshotEncodeV1(
     void *encoded_out,
     size_t encoded_capacity,
     size_t *encoded_bytes_out);
+
+/*
+ * Decodes a complete snapshot directly into a transient, fully valid
+ * projection.  Unlike SnapshotDecodeV1, this preserves the wire hashes and
+ * assigns deterministic nonzero transient range serials so the returned view
+ * can be independently rehashed and synchronously consumed.  The projection
+ * and all of its pointers remain caller-owned; retaining any pointer after
+ * the backing outputs are reused is invalid.
+ *
+ * All output regions must be pairwise disjoint and must not overlap the
+ * encoded input.  Every output is untouched unless the entire payload,
+ * semantic hash set, capacities, and projection hash recomputation succeed.
+ */
+worr_native_codec_result_v1
+Worr_NativeCodecSnapshotDecodeProjectionV1(
+    const void *encoded,
+    size_t encoded_bytes,
+    uint32_t max_entities,
+    worr_snapshot_v2 *snapshot_out,
+    worr_snapshot_player_v2 *player_out,
+    worr_snapshot_entity_v2 *entities_out,
+    uint32_t entity_capacity,
+    uint8_t *area_bytes_out,
+    uint32_t area_capacity,
+    worr_snapshot_event_ref_v2 *event_refs_out,
+    uint32_t event_ref_capacity,
+    worr_snapshot_projection_view_v2 *view_out,
+    worr_snapshot_projection_hashes_v2 *hashes_out);
 
 /*
  * Snapshot decode is transactional across every destination.  On success it

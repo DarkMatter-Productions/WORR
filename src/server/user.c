@@ -19,6 +19,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "server.h"
 #include "server/command_context.h"
+#include "server/local_interaction_authority.h"
 #include "server/native_shadow.h"
 #include "server/snapshot_shadow.h"
 #include "common/net/usercmd_delta.h"
@@ -344,7 +345,7 @@ bool SV_TryQueueNativeShadowChallenge(client_t *client)
     SZ_Init(&staging, staging_data, sizeof(staging_data),
             "native_readiness_challenge");
     /* Preflight before advancing readiness: after this check, the validated
-     * fixed record has an exact 117-byte atomic append reservation. */
+     * fixed record has an exact count-derived atomic append reservation. */
     if (!SV_NativeShadowCanAppendSvcReadinessV1(
             &staging, &client->netchan.message)) {
         client->worr_native_shadow_challenge_pending = false;
@@ -353,10 +354,13 @@ bool SV_TryQueueNativeShadowChallenge(client_t *client)
             pilot, SV_NATIVE_SHADOW_FAILURE_QUEUE);
         return false;
     }
-    if (!SV_NativeShadowBeginEpochV1(
+    if (!SV_NativeShadowBeginEpochBoundV1(
             pilot, client->worr_capability_epoch,
             client->worr_capabilities_supported,
             client->worr_capabilities_negotiated,
+            pilot->mode == SV_NATIVE_SHADOW_MODE_SNAPSHOT
+                ? sv.worr_snapshot_epoch
+                : 0,
             svs.realtime, &challenge)) {
         client->worr_native_shadow_challenge_pending = false;
         client->worr_native_shadow_challenge_requested_at = 0;
@@ -1635,6 +1639,51 @@ static bool SV_WorrCommandStreamInit(
     return true;
 }
 
+static void SV_WorrQueueLocalInteractionAuthorityReceipt(
+    worr_command_id_v1 command_id)
+{
+    worr_local_interaction_authority_receipt_v1 receipt;
+    worr_event_record_v1 candidate;
+    ptrdiff_t client_index;
+
+    if (!sv_client || !svs.client_pool || sv_client < svs.client_pool ||
+        sv_client >= svs.client_pool + svs.maxclients) {
+        return;
+    }
+    client_index = sv_client - svs.client_pool;
+    if (!SV_LocalInteractionAuthorityTakeReceiptForCommand(
+            (uint32_t)client_index, command_id, &receipt)) {
+        return;
+    }
+
+    /* This is a private control receipt, not a world event.  Its absent
+     * entity references, authoritative-only prediction class, and dedicated
+     * payload kind make it non-presentable on the cgame side.  Queue it only
+     * after the authenticated command callback has completed: the native
+     * sender then owns reliable retransmission and epoch cancellation. */
+    memset(&candidate, 0, sizeof(candidate));
+    candidate.struct_size = sizeof(candidate);
+    candidate.schema_version = WORR_EVENT_ABI_VERSION;
+    candidate.model_revision = WORR_EVENT_MODEL_REVISION;
+    candidate.flags = WORR_EVENT_FLAG_CRITICAL;
+    candidate.source_tick = sv.framenum > 0 ?
+                                (uint32_t)(sv.framenum - 1) :
+                                0;
+    candidate.source_time_us = sv.worr_server_time_us;
+    candidate.source_entity.index = WORR_EVENT_NO_ENTITY;
+    candidate.subject_entity.index = WORR_EVENT_NO_ENTITY;
+    candidate.event_type = WORR_EVENT_TYPE_AUTHORITY_RECEIPT;
+    candidate.delivery_class = WORR_EVENT_DELIVERY_RELIABLE_ORDERED;
+    candidate.prediction_class = WORR_EVENT_PREDICTION_AUTHORITATIVE_ONLY;
+    candidate.payload_kind =
+        WORR_EVENT_PAYLOAD_LOCAL_INTERACTION_AUTHORITY_V1;
+    candidate.payload_size = sizeof(receipt);
+    memcpy(candidate.payload, &receipt, sizeof(receipt));
+
+    (void)SV_NativeShadowQueueEventCandidatesV1(
+        sv_client->worr_native_shadow, &candidate, 1, svs.realtime);
+}
+
 static bool SV_WorrConsumeCommand(worr_command_id_v1 command_id,
                                   usercmd_t *command,
                                   bool simulate)
@@ -1682,6 +1731,7 @@ static bool SV_WorrConsumeCommand(worr_command_id_v1 command_id,
             return false;
         SV_ClientThink(command, true);
         SV_CommandContextEnd();
+        SV_WorrQueueLocalInteractionAuthorityReceipt(command_id);
     }
     result = Worr_CommandStreamConsumeV1(
         &sv_client->worr_command_stream, command_id, NULL);

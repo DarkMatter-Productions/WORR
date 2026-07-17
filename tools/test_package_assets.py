@@ -10,6 +10,7 @@ import sys
 import tempfile
 import unittest
 import zipfile
+from unittest import mock
 
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -81,11 +82,23 @@ def write_renderer_parity_fixture(assets_dir: pathlib.Path) -> list[str]:
         "renderer_parity/fixture_manifest.json",
         "maps/worr_fr01_bmodel_first_frame.bsp",
         "maps/worr_fr01_bmodel_instances.bsp",
+        "maps/worr_fr01_bmodel_instances_fog.bsp",
+        "maps/worr_fr01_bmodel_instances_lightmapped.bsp",
+        "maps/worr_fr01_bmodel_instances_lightmapped_fog.bsp",
+        "maps/worr_fr01_world_texture_replace.bsp",
+        "maps/worr_fr01_world_texture_replace_fog.bsp",
+        "maps/worr_fr01_alpha_test.bsp",
         "maps/worr_fr01_beam_fog.bsp",
         "maps/worr_fr01_global_fog.bsp",
         "maps/worr_fr01_flare_fog.bsp",
         "maps/worr_fr01_glowmap.bsp",
         "maps/worr_fr01_model_glowmap.bsp",
+        "maps/worr_fr01_model_shell.bsp",
+        "maps/worr_fr01_model_rim.bsp",
+        "maps/worr_fr01_model_rim_occluded.bsp",
+        "maps/worr_fr01_viewweapon_shell_bloom.bsp",
+        "maps/worr_fr01_viewweapon_shell_bloom_refraction.bsp",
+        "maps/worr_fr01_underwater_waterwarp.bsp",
         "maps/worr_fr01_height_fog.bsp",
         "maps/worr_fr01_sprite_fog.bsp",
         "maps/worr_fr01_transparent_ordering.bsp",
@@ -195,11 +208,23 @@ class PackageAssetsTest(unittest.TestCase):
                 "Mirrored loose asset paths: botfiles, renderer_parity, "
                 "maps/worr_fr01_bmodel_first_frame.bsp, "
                 "maps/worr_fr01_bmodel_instances.bsp, "
+                "maps/worr_fr01_bmodel_instances_fog.bsp, "
+                "maps/worr_fr01_bmodel_instances_lightmapped.bsp, "
+                "maps/worr_fr01_bmodel_instances_lightmapped_fog.bsp, "
+                "maps/worr_fr01_world_texture_replace.bsp, "
+                "maps/worr_fr01_world_texture_replace_fog.bsp, "
+                "maps/worr_fr01_alpha_test.bsp, "
                 "maps/worr_fr01_beam_fog.bsp, "
                 "maps/worr_fr01_global_fog.bsp, "
                 "maps/worr_fr01_flare_fog.bsp, "
                 "maps/worr_fr01_glowmap.bsp, "
                 "maps/worr_fr01_model_glowmap.bsp, "
+                "maps/worr_fr01_model_shell.bsp, "
+                "maps/worr_fr01_model_rim.bsp, "
+                "maps/worr_fr01_model_rim_occluded.bsp, "
+                "maps/worr_fr01_viewweapon_shell_bloom.bsp, "
+                "maps/worr_fr01_viewweapon_shell_bloom_refraction.bsp, "
+                "maps/worr_fr01_underwater_waterwarp.bsp, "
                 "maps/worr_fr01_height_fog.bsp, "
                 "maps/worr_fr01_sprite_fog.bsp, "
                 "maps/worr_fr01_transparent_ordering.bsp, "
@@ -306,6 +331,60 @@ class PackageAssetsTest(unittest.TestCase):
 
 
 class RefreshInstallPackageValidationTest(unittest.TestCase):
+    def test_runtime_stage_retains_only_an_identical_locked_destination(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            build_dir = root / "build"
+            install_dir = root / ".install"
+            build_dir.mkdir()
+            install_dir.mkdir()
+            source = build_dir / "worr_engine_x86_64.dll"
+            dest = install_dir / source.name
+            source.write_bytes(b"current runtime")
+            dest.write_bytes(source.read_bytes())
+            original_remove_path = stage_install.remove_path
+
+            def deny_locked_destination(path: pathlib.Path) -> None:
+                if path == dest:
+                    raise PermissionError("simulated image lock")
+                original_remove_path(path)
+
+            with mock.patch.object(
+                stage_install,
+                "remove_path",
+                side_effect=deny_locked_destination,
+            ):
+                copied = stage_install.copy_runtime_files(build_dir, install_dir)
+
+            self.assertEqual(copied, 1)
+            self.assertEqual(dest.read_bytes(), source.read_bytes())
+
+    def test_runtime_stage_rejects_a_mismatched_locked_destination(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            build_dir = root / "build"
+            install_dir = root / ".install"
+            build_dir.mkdir()
+            install_dir.mkdir()
+            source = build_dir / "worr_engine_x86_64.dll"
+            dest = install_dir / source.name
+            source.write_bytes(b"current runtime")
+            dest.write_bytes(b"stale runtime")
+            original_remove_path = stage_install.remove_path
+
+            def deny_locked_destination(path: pathlib.Path) -> None:
+                if path == dest:
+                    raise PermissionError("simulated image lock")
+                original_remove_path(path)
+
+            with mock.patch.object(
+                stage_install,
+                "remove_path",
+                side_effect=deny_locked_destination,
+            ):
+                with self.assertRaises(PermissionError):
+                    stage_install.copy_runtime_files(build_dir, install_dir)
+
     def test_q2aas_stage_report_becomes_hashed_archive_member_requirement(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)

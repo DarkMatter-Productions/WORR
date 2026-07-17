@@ -8,6 +8,11 @@ Status: historical readiness-only production slice, later extended by the
 one-command DATA/ACK observation linked below. Simulation authority remains
 legacy-only and `FR-10-T04` remains Incomplete.
 
+> 2026-07-16 supersession: readiness now carries an independently checksummed
+> `snapshot_epoch` in 15 setting pairs. Current atomic sizes are 75 client
+> bytes and 135 server bytes; the 65/117-byte figures below describe this
+> historical readiness-only revision.
+
 ## Delivered boundary
 
 This slice moves the isolated readiness core and signed-setting carrier into

@@ -61,11 +61,23 @@ void CL_NativeReadinessPilotObserveEncodedCommandRange(
     uint32_t command_count);
 
 /*
+ * Native full-snapshot mode owns the canonical cgame timeline for the complete
+ * private readiness epoch.  Legacy rendering remains authoritative, but the
+ * independently reconstructed legacy shadow supplies only parity-qualified
+ * expectations so the native DATA path is the sole timeline publisher.  Once
+ * bound, ownership remains latched through fail-closed DRAIN and transport-hook
+ * loss; only an explicit map or connection boundary releases it.
+ */
+bool CL_NativeReadinessPilotOwnsSnapshotTimeline(void);
+void CL_NativeReadinessPilotSnapshotExpectationReady(void);
+void CL_NativeReadinessPilotSnapshotExpectationFailed(void);
+
+/*
  * Non-mutating scheduler query for an outer client send loop.  True means a
  * zero-unreliable-prefix Netchan_Transmit would give the pilot an immediately
- * due command retry or event receipt.  It never reserves a native dispatch or
- * ACK token and remains false for demos and disabled pilots.  During a
- * map-quiesced DRAIN it may report only an already-authorized event ACK;
+ * due command retry or semantic S2C receipt.  It never reserves a native
+ * dispatch or ACK token and remains false for demos and disabled pilots.
+ * During a map-quiesced DRAIN it may report only an already-authorized ACK;
  * client DATA remains ineligible.
  */
 bool CL_NativeReadinessPilotOutputDue(void);
@@ -161,6 +173,10 @@ typedef struct cl_native_readiness_pilot_test_state_s {
     uint32_t retired_event_ack_receipts;
     uint32_t event_owner_flags;
     uint32_t event_owner_epoch_high_water;
+    uint32_t snapshot_epoch;
+    uint32_t snapshot_receiver_flags;
+    uint32_t snapshot_rx_occupied;
+    uint32_t snapshot_ack_receipts;
     uint32_t ack_next_bank;
     uint32_t cancelled_through_transport_epoch;
     uint64_t cancellation_barriers;
@@ -175,6 +191,7 @@ typedef struct cl_native_readiness_pilot_test_state_s {
     bool proof_enqueued_once;
     bool carrier_traffic_seen;
     bool event_enabled;
+    bool snapshot_enabled;
     bool client_active_confirm_queued;
 } cl_native_readiness_pilot_test_state_t;
 

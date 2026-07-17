@@ -65,12 +65,20 @@ static bool capabilities_valid(uint32_t capabilities)
                WORR_NET_CAP_NATIVE_READINESS_REQUIRED_MASK;
 }
 
+static bool snapshot_epoch_binding_valid(uint32_t capabilities,
+                                         uint32_t snapshot_epoch)
+{
+    return ((capabilities & WORR_NET_CAP_CANONICAL_SNAPSHOT_V2) != 0) ==
+           (snapshot_epoch != 0);
+}
+
 static bool record_fields_valid(
     const worr_native_readiness_record_v1 *record)
 {
     worr_native_readiness_record_v1 expected;
-    return Worr_NativeReadinessRecordInitV1(
+    return Worr_NativeReadinessRecordInitBoundV1(
         &expected, record->record_kind, record->transport_epoch,
+        record->snapshot_epoch,
         record->negotiated_capabilities, record->readiness_nonce);
 }
 
@@ -129,27 +137,33 @@ static void build_prefix(
         WORR_NATIVE_READINESS_SETTING_EPOCH_HIGH,
         signed_word((uint16_t)(record->transport_epoch >> 16))};
     pairs[4] = (worr_native_readiness_setting_pair_v1){
+        WORR_NATIVE_READINESS_SETTING_SNAPSHOT_EPOCH_LOW,
+        signed_word((uint16_t)record->snapshot_epoch)};
+    pairs[5] = (worr_native_readiness_setting_pair_v1){
+        WORR_NATIVE_READINESS_SETTING_SNAPSHOT_EPOCH_HIGH,
+        signed_word((uint16_t)(record->snapshot_epoch >> 16))};
+    pairs[6] = (worr_native_readiness_setting_pair_v1){
         WORR_NATIVE_READINESS_SETTING_CAPABILITIES_LOW,
         signed_word((uint16_t)record->negotiated_capabilities)};
-    pairs[5] = (worr_native_readiness_setting_pair_v1){
+    pairs[7] = (worr_native_readiness_setting_pair_v1){
         WORR_NATIVE_READINESS_SETTING_CAPABILITIES_HIGH,
         signed_word((uint16_t)(record->negotiated_capabilities >> 16))};
-    pairs[6] = (worr_native_readiness_setting_pair_v1){
+    pairs[8] = (worr_native_readiness_setting_pair_v1){
         WORR_NATIVE_READINESS_SETTING_NONCE_WORD0,
         signed_word((uint16_t)record->readiness_nonce)};
-    pairs[7] = (worr_native_readiness_setting_pair_v1){
+    pairs[9] = (worr_native_readiness_setting_pair_v1){
         WORR_NATIVE_READINESS_SETTING_NONCE_WORD1,
         signed_word((uint16_t)(record->readiness_nonce >> 16))};
-    pairs[8] = (worr_native_readiness_setting_pair_v1){
+    pairs[10] = (worr_native_readiness_setting_pair_v1){
         WORR_NATIVE_READINESS_SETTING_NONCE_WORD2,
         signed_word((uint16_t)(record->readiness_nonce >> 32))};
-    pairs[9] = (worr_native_readiness_setting_pair_v1){
+    pairs[11] = (worr_native_readiness_setting_pair_v1){
         WORR_NATIVE_READINESS_SETTING_NONCE_WORD3,
         signed_word((uint16_t)(record->readiness_nonce >> 48))};
-    pairs[10] = (worr_native_readiness_setting_pair_v1){
+    pairs[12] = (worr_native_readiness_setting_pair_v1){
         WORR_NATIVE_READINESS_SETTING_CHECKSUM_LOW,
         signed_word((uint16_t)record->record_checksum)};
-    pairs[11] = (worr_native_readiness_setting_pair_v1){
+    pairs[13] = (worr_native_readiness_setting_pair_v1){
         WORR_NATIVE_READINESS_SETTING_CHECKSUM_HIGH,
         signed_word((uint16_t)(record->record_checksum >> 16))};
 }
@@ -168,7 +182,7 @@ bool Worr_NativeReadinessSidebandEncodeV1(
         return false;
     }
     build_prefix(record, output);
-    output[12] = (worr_native_readiness_setting_pair_v1){
+    output[14] = (worr_native_readiness_setting_pair_v1){
         WORR_NATIVE_READINESS_SETTING_COMMIT,
         signed_word(sideband_commit(output))};
     memcpy(pairs_out, output, sizeof(output));
@@ -182,15 +196,14 @@ static bool record_is_zero(
            record->record_kind == 0 && record->transport_epoch == 0 &&
            record->negotiated_capabilities == 0 &&
            record->readiness_nonce == 0 && record->record_checksum == 0 &&
-           record->reserved0 == 0;
+           record->snapshot_epoch == 0;
 }
 
 static bool pending_header_valid(
     const worr_native_readiness_record_v1 *record)
 {
     return record->struct_size == sizeof(*record) &&
-           record->schema_version == WORR_NATIVE_READINESS_ABI_VERSION &&
-           record->reserved0 == 0;
+           record->schema_version == WORR_NATIVE_READINESS_ABI_VERSION;
 }
 
 static void parser_clear_pending(
@@ -235,6 +248,10 @@ static int16_t expected_index(uint16_t phase)
         return WORR_NATIVE_READINESS_SETTING_EPOCH_LOW;
     case WORR_NATIVE_READINESS_SIDEBAND_PHASE_EPOCH_HIGH:
         return WORR_NATIVE_READINESS_SETTING_EPOCH_HIGH;
+    case WORR_NATIVE_READINESS_SIDEBAND_PHASE_SNAPSHOT_EPOCH_LOW:
+        return WORR_NATIVE_READINESS_SETTING_SNAPSHOT_EPOCH_LOW;
+    case WORR_NATIVE_READINESS_SIDEBAND_PHASE_SNAPSHOT_EPOCH_HIGH:
+        return WORR_NATIVE_READINESS_SETTING_SNAPSHOT_EPOCH_HIGH;
     case WORR_NATIVE_READINESS_SIDEBAND_PHASE_CAPABILITIES_LOW:
         return WORR_NATIVE_READINESS_SETTING_CAPABILITIES_LOW;
     case WORR_NATIVE_READINESS_SIDEBAND_PHASE_CAPABILITIES_HIGH:
@@ -268,18 +285,35 @@ static bool pending_prefix_valid(
     switch (parser->phase) {
     case WORR_NATIVE_READINESS_SIDEBAND_PHASE_KIND:
         return record->record_kind == 0 && record->transport_epoch == 0 &&
+               record->snapshot_epoch == 0 &&
                record->negotiated_capabilities == 0 &&
                record->readiness_nonce == 0 &&
                record->record_checksum == 0 && parser->checksum_low == 0;
     case WORR_NATIVE_READINESS_SIDEBAND_PHASE_EPOCH_LOW:
         return record_kind_valid(record->record_kind) &&
                record->transport_epoch == 0 &&
+               record->snapshot_epoch == 0 &&
                record->negotiated_capabilities == 0 &&
                record->readiness_nonce == 0 &&
                record->record_checksum == 0 && parser->checksum_low == 0;
     case WORR_NATIVE_READINESS_SIDEBAND_PHASE_EPOCH_HIGH:
         return record_kind_valid(record->record_kind) &&
                record->transport_epoch <= UINT16_MAX &&
+               record->snapshot_epoch == 0 &&
+               record->negotiated_capabilities == 0 &&
+               record->readiness_nonce == 0 &&
+               record->record_checksum == 0 && parser->checksum_low == 0;
+    case WORR_NATIVE_READINESS_SIDEBAND_PHASE_SNAPSHOT_EPOCH_LOW:
+        return record_kind_valid(record->record_kind) &&
+               record->transport_epoch != 0 &&
+               record->snapshot_epoch == 0 &&
+               record->negotiated_capabilities == 0 &&
+               record->readiness_nonce == 0 &&
+               record->record_checksum == 0 && parser->checksum_low == 0;
+    case WORR_NATIVE_READINESS_SIDEBAND_PHASE_SNAPSHOT_EPOCH_HIGH:
+        return record_kind_valid(record->record_kind) &&
+               record->transport_epoch != 0 &&
+               record->snapshot_epoch <= UINT16_MAX &&
                record->negotiated_capabilities == 0 &&
                record->readiness_nonce == 0 &&
                record->record_checksum == 0 && parser->checksum_low == 0;
@@ -299,24 +333,36 @@ static bool pending_prefix_valid(
         return record_kind_valid(record->record_kind) &&
                record->transport_epoch != 0 &&
                capabilities_valid(record->negotiated_capabilities) &&
+               snapshot_epoch_binding_valid(
+                   record->negotiated_capabilities,
+                   record->snapshot_epoch) &&
                record->readiness_nonce == 0 &&
                record->record_checksum == 0 && parser->checksum_low == 0;
     case WORR_NATIVE_READINESS_SIDEBAND_PHASE_NONCE_WORD1:
         return record_kind_valid(record->record_kind) &&
                record->transport_epoch != 0 &&
                capabilities_valid(record->negotiated_capabilities) &&
+               snapshot_epoch_binding_valid(
+                   record->negotiated_capabilities,
+                   record->snapshot_epoch) &&
                record->readiness_nonce <= UINT16_MAX &&
                record->record_checksum == 0 && parser->checksum_low == 0;
     case WORR_NATIVE_READINESS_SIDEBAND_PHASE_NONCE_WORD2:
         return record_kind_valid(record->record_kind) &&
                record->transport_epoch != 0 &&
                capabilities_valid(record->negotiated_capabilities) &&
+               snapshot_epoch_binding_valid(
+                   record->negotiated_capabilities,
+                   record->snapshot_epoch) &&
                record->readiness_nonce <= UINT32_MAX &&
                record->record_checksum == 0 && parser->checksum_low == 0;
     case WORR_NATIVE_READINESS_SIDEBAND_PHASE_NONCE_WORD3:
         return record_kind_valid(record->record_kind) &&
                record->transport_epoch != 0 &&
                capabilities_valid(record->negotiated_capabilities) &&
+               snapshot_epoch_binding_valid(
+                   record->negotiated_capabilities,
+                   record->snapshot_epoch) &&
                record->readiness_nonce <= UINT64_C(0x0000ffffffffffff) &&
                record->record_checksum == 0 && parser->checksum_low == 0;
     case WORR_NATIVE_READINESS_SIDEBAND_PHASE_CHECKSUM_LOW:
@@ -529,6 +575,16 @@ static worr_native_readiness_sideband_result_v1 observe_pair_validated(
             return WORR_NATIVE_READINESS_SIDEBAND_RECORD_INVALID;
         }
         parser->phase =
+            WORR_NATIVE_READINESS_SIDEBAND_PHASE_SNAPSHOT_EPOCH_LOW;
+        break;
+    case WORR_NATIVE_READINESS_SIDEBAND_PHASE_SNAPSHOT_EPOCH_LOW:
+        parser->pending_record.snapshot_epoch = word;
+        parser->phase =
+            WORR_NATIVE_READINESS_SIDEBAND_PHASE_SNAPSHOT_EPOCH_HIGH;
+        break;
+    case WORR_NATIVE_READINESS_SIDEBAND_PHASE_SNAPSHOT_EPOCH_HIGH:
+        parser->pending_record.snapshot_epoch |= (uint32_t)word << 16;
+        parser->phase =
             WORR_NATIVE_READINESS_SIDEBAND_PHASE_CAPABILITIES_LOW;
         break;
     case WORR_NATIVE_READINESS_SIDEBAND_PHASE_CAPABILITIES_LOW:
@@ -540,7 +596,10 @@ static worr_native_readiness_sideband_result_v1 observe_pair_validated(
         parser->pending_record.negotiated_capabilities |=
             (uint32_t)word << 16;
         if (!capabilities_valid(
-                parser->pending_record.negotiated_capabilities)) {
+                parser->pending_record.negotiated_capabilities) ||
+            !snapshot_epoch_binding_valid(
+                parser->pending_record.negotiated_capabilities,
+                parser->pending_record.snapshot_epoch)) {
             parser_poison(parser);
             saturating_increment(
                 &parser->telemetry.record_validation_failures);
@@ -576,9 +635,10 @@ static worr_native_readiness_sideband_result_v1 observe_pair_validated(
         break;
     case WORR_NATIVE_READINESS_SIDEBAND_PHASE_CHECKSUM_HIGH:
         checksum = (uint32_t)word << 16 | parser->checksum_low;
-        if (!Worr_NativeReadinessRecordInitV1(
+        if (!Worr_NativeReadinessRecordInitBoundV1(
                 &expected, parser->pending_record.record_kind,
                 parser->pending_record.transport_epoch,
+                parser->pending_record.snapshot_epoch,
                 parser->pending_record.negotiated_capabilities,
                 parser->pending_record.readiness_nonce)) {
             parser_poison(parser);

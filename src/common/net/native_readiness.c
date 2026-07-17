@@ -57,13 +57,20 @@ static bool capability_mask_valid(uint32_t capabilities)
                WORR_NET_CAP_NATIVE_READINESS_REQUIRED_MASK;
 }
 
+static bool snapshot_epoch_binding_valid(uint32_t capabilities,
+                                         uint32_t snapshot_epoch)
+{
+    const bool snapshot_capable =
+        (capabilities & WORR_NET_CAP_CANONICAL_SNAPSHOT_V2) != 0;
+
+    return snapshot_capable == (snapshot_epoch != 0);
+}
+
 static bool active_confirm_required(uint32_t capabilities)
 {
-    const uint32_t required =
-        WORR_NET_CAP_NATIVE_READINESS_REQUIRED_MASK |
-        WORR_NET_CAP_NATIVE_EVENT_STREAM_V1;
-
-    return (capabilities & required) == required;
+    return (capabilities &
+            (WORR_NET_CAP_NATIVE_EVENT_STREAM_V1 |
+             WORR_NET_CAP_CANONICAL_SNAPSHOT_V2)) != 0;
 }
 
 static bool record_kind_binding_valid(uint16_t record_kind,
@@ -152,13 +159,14 @@ static uint32_t record_checksum(
     crc = crc32_u32_le(crc, record->transport_epoch);
     crc = crc32_u32_le(crc, record->negotiated_capabilities);
     crc = crc32_u64_le(crc, record->readiness_nonce);
-    crc = crc32_u32_le(crc, record->reserved0);
+    crc = crc32_u32_le(crc, record->snapshot_epoch);
     return ~crc;
 }
 
 static bool record_init_local(worr_native_readiness_record_v1 *record_out,
                               uint16_t record_kind,
                               uint32_t transport_epoch,
+                              uint32_t snapshot_epoch,
                               uint32_t negotiated_capabilities,
                               uint64_t readiness_nonce)
 {
@@ -167,6 +175,8 @@ static bool record_init_local(worr_native_readiness_record_v1 *record_out,
     if (record_out == NULL || !record_kind_valid(record_kind) ||
         transport_epoch == 0 ||
         !capability_mask_valid(negotiated_capabilities) ||
+        !snapshot_epoch_binding_valid(negotiated_capabilities,
+                                      snapshot_epoch) ||
         !record_kind_binding_valid(record_kind,
                                    negotiated_capabilities) ||
         readiness_nonce == 0) {
@@ -179,6 +189,7 @@ static bool record_init_local(worr_native_readiness_record_v1 *record_out,
     record.transport_epoch = transport_epoch;
     record.negotiated_capabilities = negotiated_capabilities;
     record.readiness_nonce = readiness_nonce;
+    record.snapshot_epoch = snapshot_epoch;
     record.record_checksum = record_checksum(&record);
     *record_out = record;
     return true;
@@ -189,11 +200,22 @@ bool Worr_NativeReadinessRecordInitV1(
     uint32_t transport_epoch, uint32_t negotiated_capabilities,
     uint64_t readiness_nonce)
 {
+    return Worr_NativeReadinessRecordInitBoundV1(
+        record_out, record_kind, transport_epoch, 0,
+        negotiated_capabilities, readiness_nonce);
+}
+
+bool Worr_NativeReadinessRecordInitBoundV1(
+    worr_native_readiness_record_v1 *record_out, uint16_t record_kind,
+    uint32_t transport_epoch, uint32_t snapshot_epoch,
+    uint32_t negotiated_capabilities, uint64_t readiness_nonce)
+{
     worr_native_readiness_record_v1 record;
 
     if (record_out == NULL ||
         !record_init_local(&record, record_kind, transport_epoch,
-                           negotiated_capabilities, readiness_nonce)) {
+                           snapshot_epoch, negotiated_capabilities,
+                           readiness_nonce)) {
         return false;
     }
     *record_out = record;
@@ -208,9 +230,11 @@ bool Worr_NativeReadinessRecordValidateV1(
            record_kind_valid(record->record_kind) &&
            record->transport_epoch != 0 &&
            capability_mask_valid(record->negotiated_capabilities) &&
+           snapshot_epoch_binding_valid(record->negotiated_capabilities,
+                                        record->snapshot_epoch) &&
            record_kind_binding_valid(record->record_kind,
                                      record->negotiated_capabilities) &&
-           record->readiness_nonce != 0 && record->reserved0 == 0 &&
+           record->readiness_nonce != 0 &&
            record->record_checksum == record_checksum(record);
 }
 
@@ -224,7 +248,9 @@ bool Worr_NativeReadinessStateValidateV1(
         state->state_flags != WORR_NATIVE_READINESS_STATE_INITIALIZED ||
         state->transport_epoch == 0 ||
         !capability_mask_valid(state->negotiated_capabilities) ||
-        state->reserved0 != 0 || state->generation == 0 ||
+        !snapshot_epoch_binding_valid(state->negotiated_capabilities,
+                                      state->snapshot_epoch) ||
+        state->generation == 0 ||
         state->timeout_ticks == 0 || state->last_tick < state->phase_start_tick) {
         return false;
     }
@@ -278,6 +304,7 @@ static void state_header_init(worr_native_readiness_state_v1 *state,
                               uint16_t role,
                               uint16_t phase,
                               uint32_t transport_epoch,
+                              uint32_t snapshot_epoch,
                               uint32_t negotiated_capabilities,
                               uint64_t now_tick,
                               uint64_t timeout_ticks,
@@ -291,6 +318,7 @@ static void state_header_init(worr_native_readiness_state_v1 *state,
     state->state_flags = WORR_NATIVE_READINESS_STATE_INITIALIZED;
     state->transport_epoch = transport_epoch;
     state->negotiated_capabilities = negotiated_capabilities;
+    state->snapshot_epoch = snapshot_epoch;
     state->generation = 1;
     state->timeout_ticks = timeout_ticks;
     state->phase_start_tick = now_tick;
@@ -299,11 +327,16 @@ static void state_header_init(worr_native_readiness_state_v1 *state,
 }
 
 static worr_native_readiness_result_v1 init_arguments_validate(
-    uint32_t transport_epoch, uint32_t negotiated_capabilities,
-    uint64_t now_tick, uint64_t timeout_ticks, uint64_t *deadline_out)
+    uint32_t transport_epoch, uint32_t snapshot_epoch,
+    uint32_t negotiated_capabilities, uint64_t now_tick,
+    uint64_t timeout_ticks, uint64_t *deadline_out)
 {
     if (transport_epoch == 0 ||
         !capability_mask_valid(negotiated_capabilities) || timeout_ticks == 0) {
+        return WORR_NATIVE_READINESS_INVALID_ARGUMENT;
+    }
+    if (!snapshot_epoch_binding_valid(negotiated_capabilities,
+                                      snapshot_epoch)) {
         return WORR_NATIVE_READINESS_INVALID_ARGUMENT;
     }
     if (!deadline_make(now_tick, timeout_ticks, deadline_out))
@@ -317,6 +350,17 @@ worr_native_readiness_result_v1 Worr_NativeReadinessServerInitV1(
     uint64_t now_tick, uint64_t timeout_ticks,
     worr_native_readiness_record_v1 *challenge_out)
 {
+    return Worr_NativeReadinessServerInitBoundV1(
+        state_out, transport_epoch, 0, negotiated_capabilities,
+        readiness_nonce, now_tick, timeout_ticks, challenge_out);
+}
+
+worr_native_readiness_result_v1 Worr_NativeReadinessServerInitBoundV1(
+    worr_native_readiness_state_v1 *state_out, uint32_t transport_epoch,
+    uint32_t snapshot_epoch, uint32_t negotiated_capabilities,
+    uint64_t readiness_nonce, uint64_t now_tick, uint64_t timeout_ticks,
+    worr_native_readiness_record_v1 *challenge_out)
+{
     worr_native_readiness_state_v1 state;
     worr_native_readiness_record_v1 challenge;
     uint64_t deadline;
@@ -327,20 +371,22 @@ worr_native_readiness_result_v1 Worr_NativeReadinessServerInitV1(
                        sizeof(*challenge_out))) {
         return WORR_NATIVE_READINESS_INVALID_ARGUMENT;
     }
-    result = init_arguments_validate(transport_epoch, negotiated_capabilities,
-                                     now_tick, timeout_ticks, &deadline);
+    result = init_arguments_validate(
+        transport_epoch, snapshot_epoch, negotiated_capabilities,
+        now_tick, timeout_ticks, &deadline);
     if (result != WORR_NATIVE_READINESS_OK)
         return result;
     state_header_init(
         &state, WORR_NATIVE_READINESS_ROLE_SERVER,
         WORR_NATIVE_READINESS_PHASE_SERVER_WAIT_CLIENT_READY,
-        transport_epoch, negotiated_capabilities, now_tick, timeout_ticks,
-        deadline);
+        transport_epoch, snapshot_epoch, negotiated_capabilities, now_tick,
+        timeout_ticks, deadline);
     state.readiness_nonce = readiness_nonce;
     counter_increment(&state.telemetry.challenges_emitted);
     if (!record_init_local(&challenge,
                            WORR_NATIVE_READINESS_RECORD_CHALLENGE,
-                           transport_epoch, negotiated_capabilities,
+                           transport_epoch, snapshot_epoch,
+                           negotiated_capabilities,
                            readiness_nonce) ||
         !Worr_NativeReadinessStateValidateV1(&state)) {
         return WORR_NATIVE_READINESS_INVALID_ARGUMENT;
@@ -355,21 +401,32 @@ worr_native_readiness_result_v1 Worr_NativeReadinessClientInitV1(
     uint32_t negotiated_capabilities, uint64_t now_tick,
     uint64_t timeout_ticks)
 {
+    return Worr_NativeReadinessClientInitBoundV1(
+        state_out, transport_epoch, 0, negotiated_capabilities,
+        now_tick, timeout_ticks);
+}
+
+worr_native_readiness_result_v1 Worr_NativeReadinessClientInitBoundV1(
+    worr_native_readiness_state_v1 *state_out, uint32_t transport_epoch,
+    uint32_t snapshot_epoch, uint32_t negotiated_capabilities,
+    uint64_t now_tick, uint64_t timeout_ticks)
+{
     worr_native_readiness_state_v1 state;
     uint64_t deadline;
     worr_native_readiness_result_v1 result;
 
     if (state_out == NULL)
         return WORR_NATIVE_READINESS_INVALID_ARGUMENT;
-    result = init_arguments_validate(transport_epoch, negotiated_capabilities,
-                                     now_tick, timeout_ticks, &deadline);
+    result = init_arguments_validate(
+        transport_epoch, snapshot_epoch, negotiated_capabilities,
+        now_tick, timeout_ticks, &deadline);
     if (result != WORR_NATIVE_READINESS_OK)
         return result;
     state_header_init(
         &state, WORR_NATIVE_READINESS_ROLE_CLIENT,
         WORR_NATIVE_READINESS_PHASE_CLIENT_WAIT_CHALLENGE,
-        transport_epoch, negotiated_capabilities, now_tick, timeout_ticks,
-        deadline);
+        transport_epoch, snapshot_epoch, negotiated_capabilities, now_tick,
+        timeout_ticks, deadline);
     if (!Worr_NativeReadinessStateValidateV1(&state))
         return WORR_NATIVE_READINESS_INVALID_ARGUMENT;
     *state_out = state;
@@ -404,8 +461,9 @@ static worr_native_readiness_result_v1 state_check_time(
 
 static worr_native_readiness_result_v1 advance_common_validate(
     const worr_native_readiness_state_v1 *state, uint16_t expected_role,
-    uint32_t transport_epoch, uint32_t negotiated_capabilities,
-    uint64_t now_tick, uint64_t timeout_ticks, uint64_t *deadline_out)
+    uint32_t transport_epoch, uint32_t snapshot_epoch,
+    uint32_t negotiated_capabilities, uint64_t now_tick,
+    uint64_t timeout_ticks, uint64_t *deadline_out)
 {
     if (!Worr_NativeReadinessStateValidateV1(state) ||
         state->phase == WORR_NATIVE_READINESS_PHASE_FAILED) {
@@ -417,8 +475,12 @@ static worr_native_readiness_result_v1 advance_common_validate(
         return WORR_NATIVE_READINESS_EPOCH_EXHAUSTED;
     if (transport_epoch <= state->transport_epoch)
         return WORR_NATIVE_READINESS_EPOCH_NOT_NEWER;
-    if (!capability_mask_valid(negotiated_capabilities) || timeout_ticks == 0)
+    if (!capability_mask_valid(negotiated_capabilities) ||
+        !snapshot_epoch_binding_valid(negotiated_capabilities,
+                                      snapshot_epoch) ||
+        timeout_ticks == 0) {
         return WORR_NATIVE_READINESS_INVALID_ARGUMENT;
+    }
     if (now_tick < state->last_tick)
         return WORR_NATIVE_READINESS_CLOCK_REGRESSION;
     if (state->generation == UINT64_MAX)
@@ -434,6 +496,18 @@ worr_native_readiness_result_v1 Worr_NativeReadinessServerAdvanceEpochV1(
     uint64_t now_tick, uint64_t timeout_ticks,
     worr_native_readiness_record_v1 *challenge_out)
 {
+    return Worr_NativeReadinessServerAdvanceEpochBoundV1(
+        state, transport_epoch, 0, negotiated_capabilities,
+        readiness_nonce, now_tick, timeout_ticks, challenge_out);
+}
+
+worr_native_readiness_result_v1
+Worr_NativeReadinessServerAdvanceEpochBoundV1(
+    worr_native_readiness_state_v1 *state, uint32_t transport_epoch,
+    uint32_t snapshot_epoch, uint32_t negotiated_capabilities,
+    uint64_t readiness_nonce, uint64_t now_tick, uint64_t timeout_ticks,
+    worr_native_readiness_record_v1 *challenge_out)
+{
     worr_native_readiness_state_v1 updated;
     worr_native_readiness_record_v1 challenge;
     uint64_t deadline;
@@ -446,6 +520,7 @@ worr_native_readiness_result_v1 Worr_NativeReadinessServerAdvanceEpochV1(
     }
     result = advance_common_validate(
         state, WORR_NATIVE_READINESS_ROLE_SERVER, transport_epoch,
+        snapshot_epoch,
         negotiated_capabilities, now_tick, timeout_ticks, &deadline);
     if (result != WORR_NATIVE_READINESS_OK)
         return result;
@@ -459,6 +534,7 @@ worr_native_readiness_result_v1 Worr_NativeReadinessServerAdvanceEpochV1(
         WORR_NATIVE_READINESS_PHASE_SERVER_WAIT_CLIENT_READY;
     updated.transport_epoch = transport_epoch;
     updated.negotiated_capabilities = negotiated_capabilities;
+    updated.snapshot_epoch = snapshot_epoch;
     updated.nonce_floor = state->readiness_nonce;
     updated.readiness_nonce = readiness_nonce;
     ++updated.generation;
@@ -470,7 +546,8 @@ worr_native_readiness_result_v1 Worr_NativeReadinessServerAdvanceEpochV1(
     counter_increment(&updated.telemetry.challenges_emitted);
     if (!record_init_local(&challenge,
                            WORR_NATIVE_READINESS_RECORD_CHALLENGE,
-                           transport_epoch, negotiated_capabilities,
+                           transport_epoch, snapshot_epoch,
+                           negotiated_capabilities,
                            readiness_nonce) ||
         !Worr_NativeReadinessStateValidateV1(&updated)) {
         return WORR_NATIVE_READINESS_INVALID_STATE;
@@ -485,6 +562,17 @@ worr_native_readiness_result_v1 Worr_NativeReadinessClientAdvanceEpochV1(
     uint32_t negotiated_capabilities, uint64_t now_tick,
     uint64_t timeout_ticks)
 {
+    return Worr_NativeReadinessClientAdvanceEpochBoundV1(
+        state, transport_epoch, 0, negotiated_capabilities,
+        now_tick, timeout_ticks);
+}
+
+worr_native_readiness_result_v1
+Worr_NativeReadinessClientAdvanceEpochBoundV1(
+    worr_native_readiness_state_v1 *state, uint32_t transport_epoch,
+    uint32_t snapshot_epoch, uint32_t negotiated_capabilities,
+    uint64_t now_tick, uint64_t timeout_ticks)
+{
     worr_native_readiness_state_v1 updated;
     uint64_t deadline;
     uint64_t nonce_floor;
@@ -494,6 +582,7 @@ worr_native_readiness_result_v1 Worr_NativeReadinessClientAdvanceEpochV1(
         return WORR_NATIVE_READINESS_INVALID_ARGUMENT;
     result = advance_common_validate(
         state, WORR_NATIVE_READINESS_ROLE_CLIENT, transport_epoch,
+        snapshot_epoch,
         negotiated_capabilities, now_tick, timeout_ticks, &deadline);
     if (result != WORR_NATIVE_READINESS_OK)
         return result;
@@ -506,6 +595,7 @@ worr_native_readiness_result_v1 Worr_NativeReadinessClientAdvanceEpochV1(
     updated.phase = WORR_NATIVE_READINESS_PHASE_CLIENT_WAIT_CHALLENGE;
     updated.transport_epoch = transport_epoch;
     updated.negotiated_capabilities = negotiated_capabilities;
+    updated.snapshot_epoch = snapshot_epoch;
     updated.readiness_nonce = 0;
     updated.nonce_floor = nonce_floor;
     ++updated.generation;
@@ -527,6 +617,7 @@ static bool record_binding_equal(
     return record->transport_epoch == state->transport_epoch &&
            record->negotiated_capabilities ==
                state->negotiated_capabilities &&
+           record->snapshot_epoch == state->snapshot_epoch &&
            record->readiness_nonce == state->readiness_nonce;
 }
 
@@ -592,7 +683,8 @@ worr_native_readiness_result_v1 Worr_NativeReadinessClientObserveChallengeV1(
     if (updated.phase == WORR_NATIVE_READINESS_PHASE_CLIENT_WAIT_CHALLENGE) {
         if (challenge->transport_epoch != updated.transport_epoch ||
             challenge->negotiated_capabilities !=
-                updated.negotiated_capabilities) {
+                updated.negotiated_capabilities ||
+            challenge->snapshot_epoch != updated.snapshot_epoch) {
             state_fail(&updated, &updated.telemetry.binding_mismatches);
             *state = updated;
             return WORR_NATIVE_READINESS_BINDING_MISMATCH;
@@ -639,6 +731,7 @@ worr_native_readiness_result_v1 Worr_NativeReadinessClientObserveChallengeV1(
     if (!record_init_local(&response,
                            WORR_NATIVE_READINESS_RECORD_CLIENT_READY,
                            updated.transport_epoch,
+                           updated.snapshot_epoch,
                            updated.negotiated_capabilities,
                            updated.readiness_nonce)) {
         state_fail(&updated, NULL);
@@ -720,6 +813,7 @@ Worr_NativeReadinessServerObserveClientReadyV1(
     if (!record_init_local(&response,
                            WORR_NATIVE_READINESS_RECORD_SERVER_ACTIVE,
                            updated.transport_epoch,
+                           updated.snapshot_epoch,
                            updated.negotiated_capabilities,
                            updated.readiness_nonce)) {
         state_fail(&updated, NULL);
@@ -839,7 +933,8 @@ Worr_NativeReadinessClientObserveServerActiveWithConfirmV1(
     if (!record_init_local(
             &response,
             WORR_NATIVE_READINESS_RECORD_CLIENT_ACTIVE_CONFIRM,
-            updated.transport_epoch, updated.negotiated_capabilities,
+            updated.transport_epoch, updated.snapshot_epoch,
+            updated.negotiated_capabilities,
             updated.readiness_nonce)) {
         state_fail(&updated, NULL);
         *state = updated;

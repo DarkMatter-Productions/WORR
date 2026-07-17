@@ -329,7 +329,9 @@ typedef struct {
     bool ppl_used;
     uint64_t cpu_us[GL_CPU_PROFILE_COUNT];
     uint64_t gpu_ns[GL_GPU_PROFILE_COUNT];
+    uint64_t gpu_frame_ns;
     uint32_t gpu_available_mask;
+    bool gpu_frame_valid;
     int gpu_pending;
     int gpu_missed;
 } glFrameTelemetry_t;
@@ -340,6 +342,8 @@ void GL_ProfileInit(void);
 void GL_ProfileShutdown(void);
 void GL_ProfileBeginFrame(void);
 void GL_ProfileEndFrame(void);
+void GL_ProfileGpuFrameBegin(void);
+void GL_ProfileGpuFrameEnd(void);
 void GL_PrintStats(void);
 glCpuProfileGuard_t GL_ProfileCpuBegin(glCpuProfileScope_t scope);
 void GL_ProfileCpuEnd(glCpuProfileGuard_t *guard);
@@ -349,6 +353,7 @@ glDebugGroup_t GL_DebugGroupBegin(const char *name);
 void GL_DebugGroupEnd(glDebugGroup_t *group);
 float GL_ProfileCpuMilliseconds(glCpuProfileScope_t scope);
 float GL_ProfileGpuMilliseconds(glGpuProfileScope_t scope);
+float GL_ProfileGpuFrameMilliseconds(void);
 
 // regular variables
 extern cvar_t *gl_partscale;

@@ -9,6 +9,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "client.h"
 #include "client/command_identity.h"
+#include "common/net/native_command_shadow.h"
 
 #include <array>
 #include <cstring>
@@ -19,12 +20,16 @@ struct command_identity_state_t {
     std::array<uint32_t, CMD_BACKUP> legacy_numbers{};
     std::array<worr_command_id_v1, CMD_BACKUP> ids{};
     std::array<bool, CMD_BACKUP> valid{};
+    std::array<worr_command_record_v1, CMD_BACKUP> records{};
+    std::array<bool, CMD_BACKUP> record_valid{};
+    worr_native_command_shadow_builder_v1 record_builder{};
     worr_command_id_v1 latest{};
     uint32_t epoch{};
     uint32_t baseline_legacy_sequence{};
     uint32_t latest_legacy_sequence{};
     bool initialized{};
     bool has_latest{};
+    bool record_builder_initialized{};
 };
 
 command_identity_state_t identity;
@@ -42,7 +47,12 @@ extern "C" void CL_CommandIdentityReset(uint32_t command_epoch)
     identity.epoch = command_epoch;
     identity.baseline_legacy_sequence = cl.cmdNumber;
     identity.latest_legacy_sequence = cl.cmdNumber;
-    identity.initialized = command_epoch != 0;
+    identity.record_builder_initialized =
+        command_epoch != 0 &&
+        Worr_NativeCommandShadowBuilderInitV1(
+            &identity.record_builder, command_epoch,
+            WORR_COMMAND_MAX_NEGOTIATED_DURATION_MS);
+    identity.initialized = identity.record_builder_initialized;
 }
 
 extern "C" void CL_CommandIdentityShutdown(void)
@@ -68,6 +78,8 @@ extern "C" bool CL_CommandIdentityFinalize(
     identity.legacy_numbers[slot] = legacy_command_number;
     identity.ids[slot] = next;
     identity.valid[slot] = true;
+    identity.records[slot] = {};
+    identity.record_valid[slot] = false;
     identity.latest = next;
     identity.latest_legacy_sequence = legacy_command_number;
     identity.has_latest = true;
@@ -86,6 +98,47 @@ extern "C" bool CL_CommandIdentityForNumber(
         return false;
     }
     *id_out = identity.ids[slot];
+    return true;
+}
+
+extern "C" bool CL_CommandIdentityRetainCommand(
+    uint32_t legacy_command_number, const worr_prediction_command_v1 *command)
+{
+    const uint32_t slot = legacy_command_number & CMD_MASK;
+    worr_command_record_v1 record{};
+
+    if (!command || !identity.initialized ||
+        !identity.record_builder_initialized || !identity.valid[slot] ||
+        identity.legacy_numbers[slot] != legacy_command_number ||
+        identity.record_valid[slot] ||
+        Worr_NativeCommandShadowBuilderBuildV1(
+            &identity.record_builder, identity.ids[slot], command, &record) !=
+            WORR_NATIVE_COMMAND_SHADOW_BUILD_BUILT) {
+        return false;
+    }
+
+    identity.records[slot] = record;
+    identity.record_valid[slot] = true;
+    return true;
+}
+
+extern "C" bool CL_CommandIdentityRecordForNumber(
+    uint32_t legacy_command_number, worr_command_record_v1 *record_out)
+{
+    const uint32_t slot = legacy_command_number & CMD_MASK;
+
+    if (!record_out || !identity.initialized || !identity.valid[slot] ||
+        !identity.record_valid[slot] ||
+        identity.legacy_numbers[slot] != legacy_command_number ||
+        identity.records[slot].command_id.epoch != identity.ids[slot].epoch ||
+        identity.records[slot].command_id.sequence !=
+            identity.ids[slot].sequence ||
+        !Worr_CommandRecordValidateV1(
+            &identity.records[slot], WORR_COMMAND_MAX_NEGOTIATED_DURATION_MS)) {
+        return false;
+    }
+
+    *record_out = identity.records[slot];
     return true;
 }
 

@@ -10,6 +10,7 @@ the Free Software Foundation; either version 2 of the License, or
 #pragma once
 
 #include "shared/command_context.h"
+#include "shared/local_interaction_abi.h"
 #include "shared/local_action_observation.h"
 
 struct gentity_t;
@@ -39,3 +40,21 @@ private:
 void SG_LocalActionObservationInitialize();
 void SG_LocalActionObservationResetMap();
 void SG_LocalActionObservationNoteWeaponThink(gentity_t *entity);
+
+/*
+ * Read-only bounded lookup for a future authoritative event bridge. It never
+ * creates an event, changes game state, or exposes mutable ledger storage.
+ */
+bool SG_LocalInteractionObservationCopyForCommand(
+    uint32_t client_index, worr_command_id_v1 command_id,
+    worr_local_interaction_transaction_v1 *transaction_out);
+
+/*
+ * Read-only sparse projection for a future per-peer reliable authority
+ * carrier. It succeeds only for an authoritative Hook request edge and never
+ * allocates an event, chooses a recipient, writes a packet, or changes game
+ * state. `receipt_out` is untouched on failure.
+ */
+bool SG_LocalInteractionObservationCopyAuthorityReceiptForCommand(
+    uint32_t client_index, worr_command_id_v1 command_id,
+    worr_local_interaction_authority_receipt_v1 *receipt_out);

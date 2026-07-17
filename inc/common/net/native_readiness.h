@@ -42,7 +42,7 @@ typedef enum worr_native_readiness_phase_v1_e {
     WORR_NATIVE_READINESS_PHASE_SERVER_ACTIVE = 4,
     WORR_NATIVE_READINESS_PHASE_CLIENT_ACTIVE = 5,
     WORR_NATIVE_READINESS_PHASE_FAILED = 6,
-    /* Opt-in NATIVE_ENVELOPE + NATIVE_EVENT_STREAM + EPOCH_CANCEL extension. */
+    /* Opt-in server-originated semantic DATA confirmation extension. */
     WORR_NATIVE_READINESS_PHASE_SERVER_WAIT_CLIENT_ACTIVE_CONFIRM = 7,
 } worr_native_readiness_phase_v1;
 
@@ -50,7 +50,7 @@ typedef enum worr_native_readiness_record_kind_v1_e {
     WORR_NATIVE_READINESS_RECORD_CHALLENGE = 1,
     WORR_NATIVE_READINESS_RECORD_CLIENT_READY = 2,
     WORR_NATIVE_READINESS_RECORD_SERVER_ACTIVE = 3,
-    /* Valid only for an opt-in native event-stream capability binding. */
+    /* Valid only for an opt-in server-originated semantic DATA binding. */
     WORR_NATIVE_READINESS_RECORD_CLIENT_ACTIVE_CONFIRM = 4,
 } worr_native_readiness_record_kind_v1;
 
@@ -81,7 +81,7 @@ typedef struct worr_native_readiness_record_v1_s {
     uint32_t negotiated_capabilities;
     uint64_t readiness_nonce;
     uint32_t record_checksum;
-    uint32_t reserved0;
+    uint32_t snapshot_epoch;
 } worr_native_readiness_record_v1;
 
 /* Every counter saturates at UINT64_MAX. */
@@ -115,7 +115,7 @@ typedef struct worr_native_readiness_state_v1_s {
     uint16_t state_flags;
     uint32_t transport_epoch;
     uint32_t negotiated_capabilities;
-    uint32_t reserved0;
+    uint32_t snapshot_epoch;
     uint64_t readiness_nonce;
     uint64_t nonce_floor;
     uint64_t generation;
@@ -130,11 +130,23 @@ typedef struct worr_native_readiness_state_v1_s {
  * Records use a canonical little-endian CRC32 over their domain tag and every
  * field except record_checksum.  The checksum detects accidental corruption;
  * it is not authentication.  Invalid initialization leaves output untouched.
+ *
+ * The legacy constructor is valid only for bindings without
+ * CANONICAL_SNAPSHOT_V2 and initializes snapshot_epoch to zero.  The bound
+ * constructor enforces the exact relationship: snapshot-capable bindings
+ * require a nonzero snapshot_epoch, and all other bindings require zero.
  */
 bool Worr_NativeReadinessRecordInitV1(
     worr_native_readiness_record_v1 *record_out,
     uint16_t record_kind,
     uint32_t transport_epoch,
+    uint32_t negotiated_capabilities,
+    uint64_t readiness_nonce);
+bool Worr_NativeReadinessRecordInitBoundV1(
+    worr_native_readiness_record_v1 *record_out,
+    uint16_t record_kind,
+    uint32_t transport_epoch,
+    uint32_t snapshot_epoch,
     uint32_t negotiated_capabilities,
     uint64_t readiness_nonce);
 bool Worr_NativeReadinessRecordValidateV1(
@@ -147,7 +159,7 @@ bool Worr_NativeReadinessStateValidateV1(
  * BYPASS-only transmit hook are ready.  Success atomically initializes state
  * and emits CHALLENGE.  State and output must be disjoint and remain untouched
  * on failure.  timeout_ticks is nonzero and now_tick + timeout_ticks must fit.
- * For both Init entry points, transport_epoch identifies the fresh connection
+ * For every Init entry point, transport_epoch identifies the fresh connection
  * incarnation and must be globally non-reused by the caller.  Before an
  * adapter emits the returned CHALLENGE, it must have made all server-owned
  * retained work from older epochs terminal and unable to emit later.
@@ -155,6 +167,15 @@ bool Worr_NativeReadinessStateValidateV1(
 worr_native_readiness_result_v1 Worr_NativeReadinessServerInitV1(
     worr_native_readiness_state_v1 *state_out,
     uint32_t transport_epoch,
+    uint32_t negotiated_capabilities,
+    uint64_t readiness_nonce,
+    uint64_t now_tick,
+    uint64_t timeout_ticks,
+    worr_native_readiness_record_v1 *challenge_out);
+worr_native_readiness_result_v1 Worr_NativeReadinessServerInitBoundV1(
+    worr_native_readiness_state_v1 *state_out,
+    uint32_t transport_epoch,
+    uint32_t snapshot_epoch,
     uint32_t negotiated_capabilities,
     uint64_t readiness_nonce,
     uint64_t now_tick,
@@ -168,6 +189,13 @@ worr_native_readiness_result_v1 Worr_NativeReadinessClientInitV1(
     uint32_t negotiated_capabilities,
     uint64_t now_tick,
     uint64_t timeout_ticks);
+worr_native_readiness_result_v1 Worr_NativeReadinessClientInitBoundV1(
+    worr_native_readiness_state_v1 *state_out,
+    uint32_t transport_epoch,
+    uint32_t snapshot_epoch,
+    uint32_t negotiated_capabilities,
+    uint64_t now_tick,
+    uint64_t timeout_ticks);
 
 /*
  * In-incarnation advancement requires a strictly newer epoch and generation.
@@ -178,7 +206,8 @@ worr_native_readiness_result_v1 Worr_NativeReadinessClientInitV1(
  * connection incarnation must receive a globally non-reused transport_epoch;
  * that caller-owned invariant prevents an old valid CHALLENGE from binding to
  * a newly initialized client and cannot be enforced by this pointer-free core.
- * ServerAdvanceEpoch has the same cancellation precondition as ServerInit.
+ * Both ServerAdvanceEpoch entry points have the same cancellation
+ * precondition as ServerInit.
  */
 worr_native_readiness_result_v1 Worr_NativeReadinessServerAdvanceEpochV1(
     worr_native_readiness_state_v1 *state,
@@ -188,9 +217,27 @@ worr_native_readiness_result_v1 Worr_NativeReadinessServerAdvanceEpochV1(
     uint64_t now_tick,
     uint64_t timeout_ticks,
     worr_native_readiness_record_v1 *challenge_out);
+worr_native_readiness_result_v1
+Worr_NativeReadinessServerAdvanceEpochBoundV1(
+    worr_native_readiness_state_v1 *state,
+    uint32_t transport_epoch,
+    uint32_t snapshot_epoch,
+    uint32_t negotiated_capabilities,
+    uint64_t readiness_nonce,
+    uint64_t now_tick,
+    uint64_t timeout_ticks,
+    worr_native_readiness_record_v1 *challenge_out);
 worr_native_readiness_result_v1 Worr_NativeReadinessClientAdvanceEpochV1(
     worr_native_readiness_state_v1 *state,
     uint32_t transport_epoch,
+    uint32_t negotiated_capabilities,
+    uint64_t now_tick,
+    uint64_t timeout_ticks);
+worr_native_readiness_result_v1
+Worr_NativeReadinessClientAdvanceEpochBoundV1(
+    worr_native_readiness_state_v1 *state,
+    uint32_t transport_epoch,
+    uint32_t snapshot_epoch,
     uint32_t negotiated_capabilities,
     uint64_t now_tick,
     uint64_t timeout_ticks);
@@ -209,8 +256,9 @@ worr_native_readiness_result_v1 Worr_NativeReadinessClientAdvanceEpochV1(
  * declarations but cannot perform adapter-owned cancellation.  Exact
  * duplicates only reassert the same barrier and do not start a new lifecycle.
  *
- * A binding containing NATIVE_ENVELOPE_V1, NATIVE_EVENT_STREAM_V1, and
- * NATIVE_EPOCH_CANCEL_V1 opts into the extended transition chain:
+ * A binding containing NATIVE_ENVELOPE_V1, NATIVE_EPOCH_CANCEL_V1, and either
+ * NATIVE_EVENT_STREAM_V1 or CANONICAL_SNAPSHOT_V2 opts into the extended
+ * transition chain:
  *   CHALLENGE -> CLIENT_READY -> SERVER_ACTIVE -> CLIENT_ACTIVE_CONFIRM.
  * The server remains in SERVER_WAIT_CLIENT_ACTIVE_CONFIRM until the exact
  * fourth record is accepted.  Native server RX is safe in that wait phase so
@@ -241,11 +289,11 @@ worr_native_readiness_result_v1 Worr_NativeReadinessClientObserveServerActiveV1(
     uint64_t now_tick);
 
 /*
- * Event-stream-only client transition.  It accepts SERVER_ACTIVE and emits
- * the exact CLIENT_ACTIVE_CONFIRM atomically.  Exact duplicate SERVER_ACTIVE
- * records reproduce the same confirmation.  The legacy entry point above
- * rejects event-stream bindings without mutation so activation cannot
- * silently omit the explicit confirmation barrier.
+ * Server-originated-semantic-DATA client transition.  It accepts
+ * SERVER_ACTIVE and emits the exact CLIENT_ACTIVE_CONFIRM atomically.  Exact
+ * duplicate SERVER_ACTIVE records reproduce the same confirmation.  The
+ * legacy entry point above rejects event/snapshot bindings without mutation
+ * so activation cannot silently omit the explicit confirmation barrier.
  */
 worr_native_readiness_result_v1
 Worr_NativeReadinessClientObserveServerActiveWithConfirmV1(
@@ -255,11 +303,11 @@ Worr_NativeReadinessClientObserveServerActiveWithConfirmV1(
     worr_native_readiness_record_v1 *client_active_confirm_out);
 
 /*
- * Event-stream-only server transition.  The exact confirmation opens native
- * server TX; RX was already safe in the wait phase because application hooks
- * run before legacy setting parsing.  Exact duplicates after activation are
- * idempotent.  Missing, corrupt, out-of-order, or binding-mismatched records
- * remain fail-closed.
+ * Server-originated-semantic-DATA server transition.  The exact confirmation
+ * opens native server TX; RX was already safe in the wait phase because
+ * application hooks run before legacy setting parsing.  Exact duplicates
+ * after activation are idempotent.  Missing, corrupt, out-of-order, or
+ * binding-mismatched records remain fail-closed.
  */
 worr_native_readiness_result_v1
 Worr_NativeReadinessServerObserveClientActiveConfirmV1(
@@ -276,11 +324,12 @@ worr_native_readiness_result_v1 Worr_NativeReadinessCheckDeadlineV1(
  * Client receive becomes safe after CHALLENGE was accepted and local adapter
  * setup completed before CLIENT_READY emission.  Server receive/transmit and
  * client transmit normally become safe only in their respective ACTIVE
- * phases.  The event-stream extension additionally makes server receive safe
+ * phases.  The semantic-DATA extension additionally makes server receive safe
  * in SERVER_WAIT_CLIENT_ACTIVE_CONFIRM: the application RX hook runs before
  * the legacy parser can consume a reliable confirmation carried in that same
- * packet.  Server transmit remains closed until final SERVER_ACTIVE.  Live
- * adapters must use these mutating gates immediately before every native RX/TX
+ * packet.  This applies to both event-stream and canonical-snapshot DATA.
+ * Server transmit remains closed until final SERVER_ACTIVE.  Live adapters
+ * must use these mutating gates immediately before every native RX/TX
  * admission; each gate applies the same sticky clock/deadline check as
  * Worr_NativeReadinessCheckDeadlineV1 before testing the phase.
  */
@@ -317,11 +366,17 @@ WORR_NATIVE_READINESS_STATIC_ASSERT(
     offsetof(worr_native_readiness_record_v1, record_checksum) == 24,
     "native readiness record checksum offset changed");
 WORR_NATIVE_READINESS_STATIC_ASSERT(
+    offsetof(worr_native_readiness_record_v1, snapshot_epoch) == 28,
+    "native readiness record snapshot epoch offset changed");
+WORR_NATIVE_READINESS_STATIC_ASSERT(
     sizeof(worr_native_readiness_telemetry_v1) == 120,
     "native readiness telemetry V1 layout changed");
 WORR_NATIVE_READINESS_STATIC_ASSERT(
     sizeof(worr_native_readiness_state_v1) == 200,
     "native readiness state V1 layout changed");
+WORR_NATIVE_READINESS_STATIC_ASSERT(
+    offsetof(worr_native_readiness_state_v1, snapshot_epoch) == 20,
+    "native readiness state snapshot epoch offset changed");
 WORR_NATIVE_READINESS_STATIC_ASSERT(
     offsetof(worr_native_readiness_state_v1, readiness_nonce) == 24,
     "native readiness state nonce offset changed");

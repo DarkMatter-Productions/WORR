@@ -2,6 +2,9 @@
 // Licensed under the GNU General Public License 2.0.
 
 #include "cg_entity_local.h"
+#include "cg_prediction_authority.hpp"
+#include "cg_event_runtime.hpp"
+#include "cg_local_interaction.hpp"
 #include "cg_snapshot_timeline.hpp"
 #include "shared/cgame_prediction.h"
 #include "shared/prediction_abi.h"
@@ -25,11 +28,64 @@ extern "C" void CG_GetPredictionConfigV1(
     worr_prediction_config_v1 *config);
 
 static const worr_cgame_prediction_input_import_v1 *prediction_input_import;
+static const worr_cgame_prediction_input_import_v2 *prediction_input_import_v2;
+static cvar_t *cg_prediction_snapshot_authority;
+
+enum : std::uint32_t {
+    CG_PREDICTION_SNAPSHOT_AUTHORITY_LEGACY = 0,
+    CG_PREDICTION_SNAPSHOT_AUTHORITY_AUDIT = 1,
+    CG_PREDICTION_SNAPSHOT_AUTHORITY_PROMOTE = 2,
+};
+
+struct cg_prediction_frame_authority_t {
+    worr_cgame_prediction_input_range_v1 input;
+    worr_prediction_state_v1 movement;
+    float view_angles[3];
+    float view_offset[3];
+    float screen_blend[4];
+    std::uint32_t controlled_entity_index;
+    std::uint32_t discontinuity_flags;
+    std::uint32_t input_result;
+    cg_prediction_authority_result_v1 canonical_result;
+    worr_snapshot_id_v2 snapshot_id;
+    std::uint8_t rdflags;
+    bool canonical;
+    bool blocked;
+    bool history_reset_required;
+};
+
+struct cg_prediction_authority_stats_t {
+    std::uint64_t attempts;
+    std::uint64_t canonical;
+    std::uint64_t unavailable;
+    std::uint64_t audit_matches;
+    std::uint64_t audit_mismatches;
+    std::uint64_t blocked;
+    std::uint32_t last_result;
+    std::uint32_t last_debug_time_ms;
+};
+
+static cg_prediction_authority_stats_t prediction_authority_stats;
+static worr_snapshot_id_v2 prediction_discontinuity_reset_snapshot;
 
 extern "C" void CG_PredictionInputSetImport(
     const worr_cgame_prediction_input_import_v1 *import)
 {
     prediction_input_import = import;
+}
+
+extern "C" void CG_PredictionInputSetImportV2(
+    const worr_cgame_prediction_input_import_v2 *import)
+{
+    prediction_input_import_v2 = import;
+}
+
+void CG_PredictionAuthority_InitCvars()
+{
+    if (!cgei)
+        return;
+    cg_prediction_snapshot_authority = Cvar_Get(
+        "cg_prediction_snapshot_authority", "0", CVAR_NOARCHIVE);
 }
 
 static void CG_PredictionPlaneFromTrace(worr_prediction_plane_v1 *out,
@@ -205,21 +261,10 @@ static void CG_RecordPrediction(uint32_t command_sequence,
     VectorCopy(step.state.origin, cl.predicted_origins[slot]);
 }
 
-static uint32_t CG_ResolvePredictionInput(
-    worr_cgame_prediction_input_range_v1 &range)
+static uint32_t CG_ValidatePredictionInputRange(
+    worr_cgame_prediction_input_range_v1 &range,
+    std::uint32_t result)
 {
-    range = {};
-    if (!prediction_input_import ||
-        prediction_input_import->struct_size !=
-            sizeof(*prediction_input_import) ||
-        prediction_input_import->api_version !=
-            WORR_CGAME_PREDICTION_INPUT_API_VERSION ||
-        !prediction_input_import->ResolveInputRange) {
-        return WORR_CGAME_PREDICTION_INPUT_INVALID_ARGUMENT;
-    }
-
-    const uint32_t result =
-        prediction_input_import->ResolveInputRange(&range);
     if (range.struct_size != sizeof(range) ||
         range.api_version != WORR_CGAME_PREDICTION_INPUT_API_VERSION ||
         range.result != result ||
@@ -228,6 +273,11 @@ static uint32_t CG_ResolvePredictionInput(
     }
     if (result != WORR_CGAME_PREDICTION_INPUT_OK)
         return result;
+    if (range.command_count !=
+        range.current_legacy_sequence -
+            range.authoritative_legacy_sequence) {
+        return WORR_CGAME_PREDICTION_INPUT_INVALID_ARGUMENT;
+    }
 
     const uint32_t known_flags =
         WORR_CGAME_PREDICTION_INPUT_CANONICAL |
@@ -292,13 +342,339 @@ static uint32_t CG_ResolvePredictionInput(
     return WORR_CGAME_PREDICTION_INPUT_OK;
 }
 
-static void CG_PredictionHardResync(
-    uint32_t result,
-    const worr_cgame_prediction_input_range_v1 &range)
+static uint32_t CG_ResolvePredictionInput(
+    worr_cgame_prediction_input_range_v1 &range)
 {
-    static int last_noted_frame = INT_MIN;
-    static uint32_t last_noted_result = UINT32_MAX;
+    range = {};
+    if (!prediction_input_import ||
+        prediction_input_import->struct_size !=
+            sizeof(*prediction_input_import) ||
+        prediction_input_import->api_version !=
+            WORR_CGAME_PREDICTION_INPUT_API_VERSION ||
+        !prediction_input_import->ResolveInputRange) {
+        return WORR_CGAME_PREDICTION_INPUT_INVALID_ARGUMENT;
+    }
 
+    const uint32_t result =
+        prediction_input_import->ResolveInputRange(&range);
+    return CG_ValidatePredictionInputRange(range, result);
+}
+
+static uint32_t CG_ResolvePredictionInputForCursor(
+    const worr_snapshot_consumed_command_v2 &consumed_command,
+    worr_cgame_prediction_input_range_v1 &range)
+{
+    range = {};
+    if (!prediction_input_import_v2 ||
+        prediction_input_import_v2->struct_size !=
+            sizeof(*prediction_input_import_v2) ||
+        prediction_input_import_v2->api_version !=
+            WORR_CGAME_PREDICTION_INPUT_API_VERSION_V2 ||
+        !prediction_input_import_v2->ResolveInputRangeForCursor) {
+        return WORR_CGAME_PREDICTION_INPUT_INVALID_ARGUMENT;
+    }
+
+    worr_cgame_prediction_input_request_v2 request{};
+    request.struct_size = sizeof(request);
+    request.api_version = WORR_CGAME_PREDICTION_INPUT_API_VERSION_V2;
+    request.flags =
+        WORR_CGAME_PREDICTION_INPUT_REQUEST_CANONICAL_REQUIRED;
+    request.consumed_command = consumed_command;
+    const uint32_t result =
+        prediction_input_import_v2->ResolveInputRangeForCursor(
+            &request, &range);
+    return CG_ValidatePredictionInputRange(range, result);
+}
+
+static void CG_IncrementSaturated(std::uint64_t &value)
+{
+    if (value != UINT64_MAX)
+        ++value;
+}
+
+static std::uint32_t CG_PredictionAuthorityMode()
+{
+    const int configured = cg_prediction_snapshot_authority
+        ? Q_clip(cg_prediction_snapshot_authority->integer,
+                 static_cast<int>(
+                     CG_PREDICTION_SNAPSHOT_AUTHORITY_LEGACY),
+                 static_cast<int>(
+                     CG_PREDICTION_SNAPSHOT_AUTHORITY_PROMOTE))
+        : CG_PREDICTION_SNAPSHOT_AUTHORITY_LEGACY;
+    return static_cast<std::uint32_t>(configured);
+}
+
+static bool CG_SnapshotIdEqual(worr_snapshot_id_v2 left,
+                               worr_snapshot_id_v2 right)
+{
+    return left.epoch == right.epoch &&
+           left.sequence == right.sequence;
+}
+
+static void CG_FillLegacyPredictionAuthority(
+    cg_prediction_frame_authority_t &authority)
+{
+    authority.movement = CG_PredictionState(cl.frame.ps.pmove);
+    VectorCopy(cl.frame.ps.viewangles, authority.view_angles);
+    VectorCopy(cl.frame.ps.viewoffset, authority.view_offset);
+    Vector4Copy(cl.frame.ps.screen_blend, authority.screen_blend);
+    authority.rdflags = cl.frame.ps.rdflags;
+    authority.controlled_entity_index =
+        cl.frame.clientNum >= 0 && cl.frame.clientNum + 1 < MAX_EDICTS
+            ? static_cast<std::uint32_t>(cl.frame.clientNum + 1)
+            : WORR_PREDICTION_NO_ENTITY;
+}
+
+static bool CG_PredictionAuthorityAuditMatchesLegacy(
+    const cg_prediction_authority_v1 &canonical,
+    const worr_cgame_prediction_input_range_v1 &legacy)
+{
+    const auto &snapshot = canonical.timeline.snapshot;
+    const auto &player = canonical.timeline.player;
+    const std::uint32_t comparable_flags =
+        WORR_CGAME_PREDICTION_INPUT_CANONICAL |
+        WORR_CGAME_PREDICTION_INPUT_HAS_PENDING;
+    if (!CG_PredictionStateMatches(
+            player.movement, CG_PredictionState(cl.frame.ps.pmove)) ||
+        snapshot.consumed_command.cursor.epoch !=
+            cl.frame.consumed_command.cursor.epoch ||
+        snapshot.consumed_command.cursor.contiguous_sequence !=
+            cl.frame.consumed_command.cursor.contiguous_sequence ||
+        snapshot.consumed_command.provenance !=
+            cl.frame.consumed_command.provenance ||
+        canonical.input.authoritative_legacy_sequence !=
+            legacy.authoritative_legacy_sequence ||
+        canonical.input.current_legacy_sequence !=
+            legacy.current_legacy_sequence ||
+        canonical.input.command_count != legacy.command_count ||
+        (canonical.input.flags & comparable_flags) !=
+            (legacy.flags & comparable_flags) ||
+        canonical.input.source != legacy.source ||
+        canonical.input.consumed_command.cursor.epoch !=
+            legacy.consumed_command.cursor.epoch ||
+        canonical.input.consumed_command.cursor.contiguous_sequence !=
+            legacy.consumed_command.cursor.contiguous_sequence ||
+        canonical.input.consumed_command.provenance !=
+            legacy.consumed_command.provenance) {
+        return false;
+    }
+    if (!CG_PredictionStateValid(player.movement))
+        return false;
+    for (unsigned index = 0; index < 3; ++index) {
+        if (player.view_angles[index] != cl.frame.ps.viewangles[index] ||
+            player.view_offset[index] != cl.frame.ps.viewoffset[index])
+            return false;
+    }
+    for (unsigned index = 0; index < 4; ++index) {
+        if (player.screen_blend[index] !=
+            cl.frame.ps.screen_blend[index]) {
+            return false;
+        }
+    }
+    if (player.rdflags != cl.frame.ps.rdflags)
+        return false;
+    for (std::uint32_t index = 0;
+         index < canonical.input.command_count; ++index) {
+        const auto &left = canonical.input.commands[index];
+        const auto &right = legacy.commands[index];
+        if (left.legacy_sequence != right.legacy_sequence ||
+            left.command_id.epoch != right.command_id.epoch ||
+            left.command_id.sequence != right.command_id.sequence ||
+            Worr_PredictionHashCommandV1(&left.command) !=
+                Worr_PredictionHashCommandV1(&right.command)) {
+            return false;
+        }
+    }
+    if ((canonical.input.flags &
+         WORR_CGAME_PREDICTION_INPUT_HAS_PENDING) != 0) {
+        const auto &left = canonical.input.pending_command;
+        const auto &right = legacy.pending_command;
+        if (left.legacy_sequence != right.legacy_sequence ||
+            Worr_PredictionHashCommandV1(&left.command) !=
+                Worr_PredictionHashCommandV1(&right.command)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static cg_prediction_authority_result_v1
+CG_ResolveCanonicalPredictionAuthority(
+    cg_prediction_authority_v1 &authority)
+{
+    authority = {};
+    if (cl.frame.number < 0 ||
+        static_cast<std::uint32_t>(cl.frame.number) == UINT32_MAX ||
+        !cl.frame.canonical_server_time_valid ||
+        cl.frame.clientNum < 0 ||
+        cl.frame.clientNum + 1 >= MAX_EDICTS) {
+        return cg_prediction_authority_result_v1::invalid_argument;
+    }
+
+    const std::uint32_t snapshot_sequence =
+        static_cast<std::uint32_t>(cl.frame.number) + 1u;
+    cg_prediction_authority_candidate_v1 candidate{};
+    const auto timeline_result =
+        CG_CanonicalSnapshotTimelineCopyPredictionSnapshot(
+            snapshot_sequence, &candidate.timeline);
+    if (timeline_result != WORR_SNAPSHOT_TIMELINE_OK)
+        return cg_prediction_authority_result_v1::timeline_unavailable;
+
+    const std::uint32_t input_result =
+        CG_ResolvePredictionInputForCursor(
+            candidate.timeline.snapshot.consumed_command,
+            candidate.input);
+    if (input_result != WORR_CGAME_PREDICTION_INPUT_OK)
+        return cg_prediction_authority_result_v1::input_range_invalid;
+
+    cg_prediction_authority_expectation_v1 expectation{};
+    expectation.snapshot_sequence = snapshot_sequence;
+    expectation.server_tick =
+        static_cast<std::uint32_t>(cl.frame.number);
+    expectation.server_time_us =
+        cl.frame.canonical_server_time_us;
+    expectation.controlled_entity_index =
+        static_cast<std::uint32_t>(cl.frame.clientNum + 1);
+    return CG_PredictionAuthoritySelectV1(
+        &expectation, &candidate, &authority);
+}
+
+static void CG_NotePredictionAuthorityResult(
+    cg_prediction_authority_result_v1 result, bool audit_match,
+    bool audit_sample, bool blocked)
+{
+    CG_IncrementSaturated(prediction_authority_stats.attempts);
+    prediction_authority_stats.last_result =
+        static_cast<std::uint32_t>(result);
+    if (result == cg_prediction_authority_result_v1::canonical)
+        CG_IncrementSaturated(prediction_authority_stats.canonical);
+    else
+        CG_IncrementSaturated(prediction_authority_stats.unavailable);
+    if (audit_sample) {
+        if (audit_match)
+            CG_IncrementSaturated(prediction_authority_stats.audit_matches);
+        else
+            CG_IncrementSaturated(
+                prediction_authority_stats.audit_mismatches);
+    }
+    if (blocked)
+        CG_IncrementSaturated(prediction_authority_stats.blocked);
+
+    if (cls.realtime - prediction_authority_stats.last_debug_time_ms <
+        1000) {
+        return;
+    }
+    prediction_authority_stats.last_debug_time_ms = cls.realtime;
+    Com_LPrintf(
+        PRINT_DEVELOPER,
+        "cg_prediction_snapshot_authority: mode=%u result=%s "
+        "attempts=%llu canonical=%llu unavailable=%llu "
+        "audit=%llu/%llu blocked=%llu\n",
+        CG_PredictionAuthorityMode(),
+        CG_PredictionAuthorityResultName(result),
+        static_cast<unsigned long long>(
+            prediction_authority_stats.attempts),
+        static_cast<unsigned long long>(
+            prediction_authority_stats.canonical),
+        static_cast<unsigned long long>(
+            prediction_authority_stats.unavailable),
+        static_cast<unsigned long long>(
+            prediction_authority_stats.audit_matches),
+        static_cast<unsigned long long>(
+            prediction_authority_stats.audit_mismatches),
+        static_cast<unsigned long long>(
+            prediction_authority_stats.blocked));
+}
+
+static bool CG_ResolvePredictionFrameAuthority(
+    cg_prediction_frame_authority_t &frame)
+{
+    frame = {};
+    CG_FillLegacyPredictionAuthority(frame);
+
+    const std::uint32_t mode = CG_PredictionAuthorityMode();
+    if (mode == CG_PREDICTION_SNAPSHOT_AUTHORITY_LEGACY) {
+        frame.input_result = CG_ResolvePredictionInput(frame.input);
+        return frame.input_result == WORR_CGAME_PREDICTION_INPUT_OK;
+    }
+
+    cg_prediction_authority_v1 canonical{};
+    frame.canonical_result =
+        CG_ResolveCanonicalPredictionAuthority(canonical);
+    const bool canonical_ok =
+        frame.canonical_result ==
+        cg_prediction_authority_result_v1::canonical;
+
+    if (mode == CG_PREDICTION_SNAPSHOT_AUTHORITY_AUDIT) {
+        frame.input_result = CG_ResolvePredictionInput(frame.input);
+        const bool legacy_ok =
+            frame.input_result == WORR_CGAME_PREDICTION_INPUT_OK;
+        const bool audit_match =
+            canonical_ok && legacy_ok &&
+            CG_PredictionAuthorityAuditMatchesLegacy(
+                canonical, frame.input);
+        CG_NotePredictionAuthorityResult(
+            frame.canonical_result, audit_match, canonical_ok, false);
+        return legacy_ok;
+    }
+
+    CG_NotePredictionAuthorityResult(
+        frame.canonical_result, false, false, !canonical_ok);
+    if (!canonical_ok) {
+        frame.blocked = true;
+        frame.input_result =
+            WORR_CGAME_PREDICTION_INPUT_CANONICAL_METADATA_REQUIRED;
+        return false;
+    }
+
+    frame.input = canonical.input;
+    frame.input_result = WORR_CGAME_PREDICTION_INPUT_OK;
+    frame.movement = canonical.timeline.player.movement;
+    VectorCopy(canonical.timeline.player.view_angles,
+               frame.view_angles);
+    VectorCopy(canonical.timeline.player.view_offset,
+               frame.view_offset);
+    Vector4Copy(canonical.timeline.player.screen_blend,
+                frame.screen_blend);
+    frame.rdflags = canonical.timeline.player.rdflags;
+    frame.controlled_entity_index =
+        canonical.timeline.snapshot.controlled_entity.identity.index;
+    frame.discontinuity_flags =
+        canonical.timeline.snapshot.discontinuity.flags;
+    frame.snapshot_id = canonical.timeline.snapshot.snapshot_id;
+    frame.history_reset_required =
+        canonical.history_reset_required != 0;
+    frame.canonical = true;
+    return true;
+}
+
+static void CG_PredictionAnglesFromAuthority(
+    const cg_prediction_frame_authority_t &authority)
+{
+    if (authority.movement.movement_type < PM_DEAD &&
+        cls.serverProtocol > PROTOCOL_VERSION_DEFAULT) {
+        for (unsigned index = 0; index < 3; ++index) {
+            cl.predicted_angles[index] =
+                cl.viewangles[index] +
+                authority.movement.delta_angles[index];
+        }
+    } else {
+        VectorCopy(authority.view_angles, cl.predicted_angles);
+    }
+}
+
+static void CG_ApplyPredictionAuthority(
+    const cg_prediction_frame_authority_t &authority)
+{
+    VectorCopy(authority.movement.origin, cl.predicted_origin);
+    VectorCopy(authority.movement.velocity, cl.predicted_velocity);
+    CG_PredictionAnglesFromAuthority(authority);
+    Vector4Copy(authority.screen_blend, cl.predicted_screen_blend);
+    cl.predicted_rdflags = authority.rdflags;
+}
+
+static void CG_ClearPredictionHistory()
+{
     VectorClear(cl.prediction_error);
     memset(cl.predicted_sequences, 0, sizeof(cl.predicted_sequences));
     memset(cl.predicted_states, 0, sizeof(cl.predicted_states));
@@ -311,19 +687,35 @@ static void CG_PredictionHardResync(
            sizeof(cl.predicted_config_hashes));
     memset(cl.predicted_replay_chain_hashes, 0,
            sizeof(cl.predicted_replay_chain_hashes));
-    VectorCopy(cl.frame.ps.pmove.origin, cl.predicted_origin);
-    VectorCopy(cl.frame.ps.pmove.velocity, cl.predicted_velocity);
-    if (cl.frame.ps.pmove.pm_type < PM_DEAD &&
-        cls.serverProtocol > PROTOCOL_VERSION_DEFAULT) {
-        CL_PredictAngles();
-    } else {
-        VectorCopy(cl.frame.ps.viewangles, cl.predicted_angles);
-    }
-    Vector4Copy(cl.frame.ps.screen_blend, cl.predicted_screen_blend);
-    cl.predicted_rdflags = cl.frame.ps.rdflags;
     cl.predicted_step = 0;
     cl.last_groundentity = nullptr;
     memset(&cl.last_groundplane, 0, sizeof(cl.last_groundplane));
+}
+
+static bool CG_ConsumePredictionDiscontinuity(
+    const cg_prediction_frame_authority_t &authority)
+{
+    if (!authority.canonical || !authority.history_reset_required ||
+        CG_SnapshotIdEqual(
+            prediction_discontinuity_reset_snapshot,
+            authority.snapshot_id)) {
+        return false;
+    }
+    prediction_discontinuity_reset_snapshot = authority.snapshot_id;
+    return true;
+}
+
+static void CG_PredictionHardResync(
+    uint32_t result,
+    const worr_cgame_prediction_input_range_v1 &range,
+    const cg_prediction_frame_authority_t &authority,
+    cg_prediction_correction_reason_t reason)
+{
+    static int last_noted_frame = INT_MIN;
+    static uint32_t last_noted_result = UINT32_MAX;
+
+    CG_ClearPredictionHistory();
+    CG_ApplyPredictionAuthority(authority);
 
     CG_SnapshotTimeline_NotePredictionReplay(
         range.authoritative_legacy_sequence,
@@ -333,7 +725,7 @@ static void CG_PredictionHardResync(
         CG_SnapshotTimeline_NotePredictionCorrection(
             range.authoritative_legacy_sequence,
             range.current_legacy_sequence, 0, true,
-            cg_prediction_correction_reason_t::input_range_invalid);
+            reason);
         CG_SHOWMISS("%i: prediction input hard resync (result %u)\n",
                     cl.frame.number, result);
         last_noted_frame = cl.frame.number;
@@ -341,11 +733,23 @@ static void CG_PredictionHardResync(
     }
 }
 
+static cg_prediction_correction_reason_t
+CG_PredictionAuthorityFailureReason(
+    cg_prediction_authority_result_v1 result)
+{
+    return result ==
+               cg_prediction_authority_result_v1::timeline_unavailable
+        ? cg_prediction_correction_reason_t::
+              canonical_authority_unavailable
+        : cg_prediction_correction_reason_t::
+              canonical_authority_mismatch;
+}
+
 void CL_PredictAngles(void)
 {
-    cl.predicted_angles[0] = cl.viewangles[0] + cl.frame.ps.pmove.delta_angles[0];
-    cl.predicted_angles[1] = cl.viewangles[1] + cl.frame.ps.pmove.delta_angles[1];
-    cl.predicted_angles[2] = cl.viewangles[2] + cl.frame.ps.pmove.delta_angles[2];
+    cg_prediction_frame_authority_t authority{};
+    (void)CG_ResolvePredictionFrameAuthority(authority);
+    CG_PredictionAnglesFromAuthority(authority);
 }
 
 void CL_CheckPredictionError(void)
@@ -358,16 +762,38 @@ void CL_CheckPredictionError(void)
         return;
     }
 
-    if (!cl_predict->integer ||
-        (cl.frame.ps.pmove.pm_flags & PMF_NO_PREDICTION)) {
+    if (!cl_predict->integer) {
         return;
     }
 
-    worr_cgame_prediction_input_range_v1 input_range{};
-    const uint32_t input_result =
-        CG_ResolvePredictionInput(input_range);
-    if (input_result != WORR_CGAME_PREDICTION_INPUT_OK) {
-        CG_PredictionHardResync(input_result, input_range);
+    cg_prediction_frame_authority_t authority{};
+    if (!CG_ResolvePredictionFrameAuthority(authority)) {
+        const auto reason = authority.blocked
+            ? CG_PredictionAuthorityFailureReason(
+                  authority.canonical_result)
+            : cg_prediction_correction_reason_t::
+                  input_range_invalid;
+        const std::uint32_t result = authority.blocked
+            ? UINT32_C(0x100) +
+                  static_cast<std::uint32_t>(
+                      authority.canonical_result)
+            : authority.input_result;
+        CG_PredictionHardResync(
+            result, authority.input, authority, reason);
+        return;
+    }
+
+    auto &input_range = authority.input;
+    if (CG_ConsumePredictionDiscontinuity(authority)) {
+        CG_PredictionHardResync(
+            UINT32_C(0x200), input_range, authority,
+            cg_prediction_correction_reason_t::
+                snapshot_discontinuity);
+        return;
+    }
+
+    if (authority.movement.movement_flags & PMF_NO_PREDICTION) {
+        VectorClear(cl.prediction_error);
         return;
     }
 
@@ -383,14 +809,17 @@ void CL_CheckPredictionError(void)
     const uint32_t command = input_range.authoritative_legacy_sequence;
     const unsigned slot = command & CMD_MASK;
     const worr_prediction_state_v1 authoritative =
-        CG_PredictionState(cl.frame.ps.pmove);
+        authority.movement;
     const uint64_t authoritative_hash =
         Worr_PredictionHashStateV1(&authoritative);
 
     if (cl.predicted_sequences[slot] != command ||
         !CG_PredictionStateValid(cl.predicted_states[slot])) {
         CG_PredictionHardResync(
-            WORR_CGAME_PREDICTION_INPUT_RETAINED_STATE_MISSING, input_range);
+            WORR_CGAME_PREDICTION_INPUT_RETAINED_STATE_MISSING,
+            input_range, authority,
+            cg_prediction_correction_reason_t::
+                retained_state_missing);
         return;
     }
 
@@ -400,7 +829,10 @@ void CL_CheckPredictionError(void)
     if (cl.predicted_config_hashes[slot] &&
         cl.predicted_config_hashes[slot] != config_hash) {
         CG_PredictionHardResync(
-            WORR_CGAME_PREDICTION_INPUT_CONFIG_DISCONTINUITY, input_range);
+            WORR_CGAME_PREDICTION_INPUT_CONFIG_DISCONTINUITY,
+            input_range, authority,
+            cg_prediction_correction_reason_t::
+                config_discontinuity);
         return;
     }
 
@@ -449,18 +881,39 @@ void CL_PredictMovement(void)
     if (sv_paused && sv_paused->integer)
         return;
 
-    if (!cl_predict->integer ||
-        (cl.frame.ps.pmove.pm_flags & PMF_NO_PREDICTION)) {
+    if (!cl_predict->integer) {
         CL_PredictAngles();
         return;
     }
 
-    worr_cgame_prediction_input_range_v1 input_range{};
-    const uint32_t input_result =
-        CG_ResolvePredictionInput(input_range);
-    if (input_result != WORR_CGAME_PREDICTION_INPUT_OK) {
-        CG_PredictionHardResync(input_result, input_range);
+    cg_prediction_frame_authority_t authority{};
+    if (!CG_ResolvePredictionFrameAuthority(authority)) {
+        const auto reason = authority.blocked
+            ? CG_PredictionAuthorityFailureReason(
+                  authority.canonical_result)
+            : cg_prediction_correction_reason_t::
+                  input_range_invalid;
+        const std::uint32_t result = authority.blocked
+            ? UINT32_C(0x100) +
+                  static_cast<std::uint32_t>(
+                      authority.canonical_result)
+            : authority.input_result;
+        CG_PredictionHardResync(
+            result, authority.input, authority, reason);
         CG_SnapshotTimeline_DebugTick(cls.realtime);
+        return;
+    }
+
+    auto &input_range = authority.input;
+    if (CG_ConsumePredictionDiscontinuity(authority)) {
+        CG_PredictionHardResync(
+            UINT32_C(0x200), input_range, authority,
+            cg_prediction_correction_reason_t::
+                snapshot_discontinuity);
+    }
+
+    if (authority.movement.movement_flags & PMF_NO_PREDICTION) {
+        CG_ApplyPredictionAuthority(authority);
         return;
     }
 
@@ -471,7 +924,16 @@ void CL_PredictMovement(void)
     const bool has_pending =
         (input_range.flags & WORR_CGAME_PREDICTION_INPUT_HAS_PENDING) != 0;
 
+    /*
+     * Independent off-hand interactions consume the same immutable canonical
+     * records as movement but remain shadow-only until an authoritative
+     * lifecycle transaction can be delivered and reconciled.
+    */
+    CG_LocalInteractionPredict(input_range);
+    CG_EventRuntimeSynchronizeLocalInteractionHealth();
+
     if (!has_pending && replay_count == 0) {
+        CG_ApplyPredictionAuthority(authority);
         CG_SnapshotTimeline_NotePredictionReplay(acknowledged, current, 0);
         CG_SnapshotTimeline_DebugTick(cls.realtime);
         CG_SHOWMISS("%i: not moved\n", cl.frame.number);
@@ -484,14 +946,11 @@ void CL_PredictMovement(void)
     worr_prediction_step_v1 step{};
     step.struct_size = sizeof(step);
     step.schema_version = WORR_PREDICTION_ABI_VERSION;
-    step.state = CG_PredictionState(cl.frame.ps.pmove);
+    step.state = authority.movement;
     CG_GetPredictionConfigV1(&step.config);
     step.snap_initial = 1;
-    step.player_entity_id =
-        cl.frame.clientNum >= 0 && cl.frame.clientNum + 1 < MAX_EDICTS
-            ? static_cast<uint32_t>(cl.frame.clientNum + 1)
-            : WORR_PREDICTION_NO_ENTITY;
-    VectorCopy(cl.frame.ps.viewoffset, step.view_offset);
+    step.player_entity_id = authority.controlled_entity_index;
+    VectorCopy(authority.view_offset, step.view_offset);
     step.trace = CG_PredictionTrace;
     step.point_contents = CG_PredictionPointContents;
     const uint64_t config_hash = Worr_PredictionHashConfigV1(&step.config);
@@ -518,7 +977,10 @@ void CL_PredictMovement(void)
         const auto &input = input_range.commands[replayed];
         if (!run_command(input.legacy_sequence, input.command)) {
             CG_PredictionHardResync(
-                WORR_CGAME_PREDICTION_INPUT_REPLAY_REJECTED, input_range);
+                WORR_CGAME_PREDICTION_INPUT_REPLAY_REJECTED,
+                input_range, authority,
+                cg_prediction_correction_reason_t::
+                    replay_rejected);
             CG_SnapshotTimeline_DebugTick(cls.realtime);
             return;
         }
@@ -532,7 +994,10 @@ void CL_PredictMovement(void)
         if (!run_command(input_range.pending_command.legacy_sequence,
                          input_range.pending_command.command)) {
             CG_PredictionHardResync(
-                WORR_CGAME_PREDICTION_INPUT_REPLAY_REJECTED, input_range);
+                WORR_CGAME_PREDICTION_INPUT_REPLAY_REJECTED,
+                input_range, authority,
+                cg_prediction_correction_reason_t::
+                    replay_rejected);
             CG_SnapshotTimeline_DebugTick(cls.realtime);
             return;
         }
@@ -556,7 +1021,8 @@ void CL_PredictMovement(void)
             CG_PredictionEntityPointer(step.ground_entity_id);
         const bool step_detected =
             abs_step > 1 && abs_step < 20 &&
-            ((cl.frame.ps.pmove.pm_flags & PMF_ON_GROUND) || step.step_clip) &&
+            ((authority.movement.movement_flags & PMF_ON_GROUND) ||
+             step.step_clip) &&
             ((step.state.movement_flags & PMF_ON_GROUND) &&
              step.state.movement_type <= PM_GRAPPLE) &&
             (!CG_PredictionPlaneMatches(cl.last_groundplane, ground_plane) ||

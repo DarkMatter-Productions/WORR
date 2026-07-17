@@ -288,6 +288,25 @@ std::string Trim(std::string text) {
   return std::string(begin, end);
 }
 
+// A launcher hosts the engine in-process, so its own UI must obey the same
+// no-window contract as the engine it is about to start. Keep this parser
+// deliberately limited to the command-line cvar form understood by the engine;
+// later +set occurrences retain their normal override semantics.
+bool ForwardedArgsRequestHeadless(const std::vector<std::string> &args) {
+  bool headless = false;
+  for (size_t i = 0; i + 2 < args.size(); ++i) {
+    if (ToLower(args[i]) != "+set" || ToLower(args[i + 1]) != "win_headless")
+      continue;
+
+    const std::string value = Trim(args[i + 2]);
+    char *end = nullptr;
+    const long parsed = std::strtol(value.c_str(), &end, 10);
+    headless = end != value.c_str() && *end == '\0' && parsed != 0;
+    i += 2;
+  }
+  return headless;
+}
+
 std::string NowUtcString() {
   std::time_t now = std::time(nullptr);
   std::tm utc{};
@@ -3628,6 +3647,7 @@ BootstrapOptions ParseBootstrapOptions(int argc, char **argv) {
     options.launch_relpath = DefaultLaunchRelpath(options.role);
   if (options.engine_library_relpath.empty())
     options.engine_library_relpath = DefaultEngineLibraryRelpath(options.role);
+  options.quiet_status = options.quiet_status || ForwardedArgsRequestHeadless(options.forwarded_args);
   BootstrapTrace("ParseBootstrapOptions role=" + std::string(RoleToCString(options.role)) +
                  " approved_install=" + std::to_string(options.approved_install ? 1 : 0) +
                  " skip_update_check=" + std::to_string(options.skip_update_check ? 1 : 0) +
@@ -3667,6 +3687,7 @@ int RunLauncher(Role role, const std::string &launch_relative_path, const std::s
       }
       options.forwarded_args.push_back(argv[i]);
     }
+    options.quiet_status = options.quiet_status || ForwardedArgsRequestHeadless(options.forwarded_args);
     return RunBootstrapFlow(options);
   } catch (const std::exception &e) {
     std::fprintf(stderr, "WORR launcher error: %s\n", e.what());

@@ -181,11 +181,11 @@ Worr_NativeCarrierAckPeekDueV1(const worr_native_carrier_ack_ledger_v1 *ledger,
 /*
  * Stages the complete RX session, slot array, and ACK ledger; calls the native
  * RX Commit API; and imports only its exact single-message acknowledgement.
- * Event and event-stream descriptor slots return
- * SEMANTIC_ADMISSION_REQUIRED and must use native-event admission, which owns
- * the only retained-ledger ACK-authorizing semantic commit bridge.  A
- * successful COMMITTED result changes all three objects atomically.  Every
- * other result leaves them byte-identical.
+ * Snapshot, event, and event-stream descriptor slots return
+ * SEMANTIC_ADMISSION_REQUIRED and must use their class-specific admission
+ * core, which owns the only retained-ledger ACK-authorizing semantic commit
+ * bridge.  A successful COMMITTED result changes all three objects atomically.
+ * Every other result leaves them byte-identical.
  */
 worr_native_rx_result_v1 Worr_NativeCarrierSessionCommitRetainedV1(
     worr_native_rx_session_v1 *session, worr_native_rx_slot_v1 *slots,
@@ -197,10 +197,10 @@ worr_native_rx_result_v1 Worr_NativeCarrierSessionCommitRetainedV1(
  * retaining repeat authority internally.  ALREADY_COMMITTED is the only path
  * that refreshes a receipt: its one-shot native output must match the same
  * owner, epoch, and an identity still present in RX history or a committed
- * snapshot tombstone.  Event and event-stream descriptor repeats return
- * SEMANTIC_REVALIDATION_REQUIRED without refreshing the ledger; they must use
- * the observation-bound native-event admission API instead.  Receipt state is
- * serialized against an active outbound ACK emission.
+ * snapshot tombstone.  Snapshot, event, and event-stream descriptor repeats
+ * return SEMANTIC_REVALIDATION_REQUIRED without refreshing the ledger; they
+ * must use the corresponding observation-bound admission API instead.
+ * Receipt state is serialized against an active outbound ACK emission.
  */
 worr_native_carrier_session_result_v1
 Worr_NativeCarrierSessionAcceptDataRetainedV1(

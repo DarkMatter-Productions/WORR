@@ -3,11 +3,13 @@
 #include "client.h"
 #include "client/cgame_event_runtime.h"
 #include "client/native_readiness_pilot.h"
+#include "client/snapshot_shadow.h"
 
 #include "common/net/native_carrier.h"
 #include "common/net/native_codec.h"
 #include "common/net/native_readiness.h"
 #include "common/net/native_readiness_sideband.h"
+#include "common/net/native_snapshot_receiver.h"
 #include "shared/native_envelope.h"
 
 #include <array>
@@ -15,6 +17,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <vector>
 
 client_static_t cls{};
 client_state_t cl{};
@@ -26,12 +29,24 @@ constexpr uint32_t kPrivateCapabilities =
     WORR_NET_CAP_NATIVE_COMMAND_PRIVATE_MASK;
 constexpr uint32_t kEventPrivateCapabilities =
     WORR_NET_CAP_NATIVE_EVENT_PRIVATE_MASK;
+constexpr uint32_t kSnapshotPrivateCapabilities =
+    WORR_NET_CAP_NATIVE_SNAPSHOT_PRIVATE_MASK;
 static_assert(kPrivateCapabilities == UINT32_C(0x53));
 static_assert(kEventPrivateCapabilities == UINT32_C(0x73));
+static_assert(kSnapshotPrivateCapabilities == UINT32_C(0x57));
+constexpr size_t kEncodedReadinessBytes =
+    WORR_NATIVE_READINESS_SIDEBAND_PAIR_COUNT * 5u;
+static_assert(kEncodedReadinessBytes == 75u);
 constexpr size_t kApplicationCeiling = 1024;
+constexpr uint32_t kSnapshotMaxEntities = 64;
+constexpr uint32_t kSnapshotStoreSlots = 8;
+constexpr uint32_t kSnapshotEntitiesPerSlot = 2;
+constexpr uint32_t kSnapshotAreaBytesPerSlot = 8;
+constexpr uint32_t kSnapshotEventsPerSlot = 2;
 
 cvar_t pilot_cvar{};
 cvar_t event_pilot_cvar{};
+cvar_t snapshot_pilot_cvar{};
 cvar_t probe_hold_cvar{};
 std::array<byte, 512> reliable_storage{};
 
@@ -114,6 +129,100 @@ const worr_cgame_event_runtime_export_v1 fake_event_export{
     fake_get_status,
 };
 
+struct fake_snapshot_shadow_t {
+    bool bind_ok{true};
+    bool consumer_available{true};
+    bool latest_available{};
+    cl_snapshot_shadow_native_expectation_result_v1 expectation_result{
+        CL_SNAPSHOT_SHADOW_NATIVE_EXPECTATION_PENDING};
+    uint32_t bound_epoch{};
+    uint32_t bind_calls{};
+    uint32_t consume_calls{};
+    uint32_t status_calls{};
+    worr_snapshot_store_v2 store{};
+    std::array<worr_snapshot_store_slot_v2,
+               kSnapshotStoreSlots> slots{};
+    std::array<worr_snapshot_entity_v2,
+               kSnapshotStoreSlots * kSnapshotEntitiesPerSlot>
+        entities{};
+    std::array<uint8_t,
+               kSnapshotStoreSlots * kSnapshotAreaBytesPerSlot>
+        area{};
+    std::array<worr_snapshot_event_ref_v2,
+               kSnapshotStoreSlots * kSnapshotEventsPerSlot>
+        events{};
+    worr_snapshot_ref_v2 ref{};
+    worr_snapshot_projection_view_v2 view{};
+    worr_snapshot_projection_hashes_v2 hashes{};
+    worr_native_snapshot_expectation_v1 expectation{};
+    worr_cgame_snapshot_timeline_status_v2 consumer_status{};
+};
+
+fake_snapshot_shadow_t fake_snapshot_shadow{};
+
+void fake_snapshot_reset(
+    void *, uint32_t snapshot_epoch, uint32_t, uint64_t)
+{
+    const uint64_t generation =
+        fake_snapshot_shadow.consumer_status.admission_generation;
+    const uint64_t resets =
+        fake_snapshot_shadow.consumer_status.resets + 1u;
+    fake_snapshot_shadow.consumer_status = {};
+    auto &status = fake_snapshot_shadow.consumer_status;
+    status.struct_size = sizeof(status);
+    status.api_version =
+        WORR_CGAME_SNAPSHOT_TIMELINE_API_VERSION;
+    status.active_epoch = snapshot_epoch;
+    status.resets = resets;
+    status.admission_generation = generation;
+    status.timeline.struct_size = sizeof(status.timeline);
+    status.timeline.schema_version =
+        WORR_SNAPSHOT_TIMELINE_VERSION;
+}
+
+bool fake_snapshot_consume(
+    void *, const worr_snapshot_projection_view_v2 *view,
+    const worr_snapshot_projection_hashes_v2 *hashes,
+    uint64_t receive_time_us)
+{
+    ++fake_snapshot_shadow.consume_calls;
+    auto &status = fake_snapshot_shadow.consumer_status;
+    ++status.consume_attempts;
+    worr_snapshot_projection_hashes_v2 computed{};
+    if (!view || !hashes ||
+        !Worr_SnapshotProjectionHashesV2(
+            view, kSnapshotMaxEntities, &computed) ||
+        std::memcmp(&computed, hashes, sizeof(computed)) != 0 ||
+        !view->snapshot ||
+        view->snapshot->snapshot_id.epoch != status.active_epoch) {
+        ++status.rejected;
+        return false;
+    }
+    ++status.accepted;
+    ++status.timeline.publish_count;
+    status.last_receive_time_us = receive_time_us;
+    status.last_endpoint_hash = hashes->endpoint_hash;
+    status.last_legacy_parity_hash = hashes->legacy_parity_hash;
+    status.last_snapshot_id = view->snapshot->snapshot_id;
+    status.last_snapshot_hash = view->snapshot->snapshot_hash;
+    status.last_event_fence_result = WORR_CGAME_EVENT_RUNTIME_OK;
+    status.receipt_flags =
+        WORR_CGAME_SNAPSHOT_RECEIPT_TIMELINE_ACCEPTED |
+        WORR_CGAME_SNAPSHOT_RECEIPT_EVENT_FENCE_ACCEPTED;
+    ++status.admission_generation;
+    return true;
+}
+
+bool fake_snapshot_status(
+    void *, worr_cgame_snapshot_timeline_status_v2 *status_out)
+{
+    ++fake_snapshot_shadow.status_calls;
+    if (!status_out)
+        return false;
+    *status_out = fake_snapshot_shadow.consumer_status;
+    return true;
+}
+
 struct packet_t {
     std::array<byte, WORR_NATIVE_CARRIER_MAX_PACKET_BYTES> bytes{};
     size_t count{};
@@ -176,6 +285,209 @@ cl_native_readiness_pilot_status_v1 pilot_status()
     return status;
 }
 
+worr_snapshot_entity_generation_v2 snapshot_generation(
+    uint32_t index, uint32_t generation)
+{
+    worr_snapshot_entity_generation_v2 value{};
+    value.identity.index = index;
+    value.identity.generation = generation;
+    value.provenance_flags =
+        WORR_SNAPSHOT_GENERATION_AUTHORITATIVE;
+    return value;
+}
+
+worr_snapshot_player_v2 snapshot_player(uint32_t sequence)
+{
+    worr_snapshot_player_v2 player{};
+    player.struct_size = sizeof(player);
+    player.schema_version = WORR_SNAPSHOT_ABI_VERSION;
+    player.model_revision = WORR_SNAPSHOT_MODEL_REVISION;
+    player.controlled_entity = snapshot_generation(1, 4);
+    player.component_mask = WORR_SNAPSHOT_PLAYER_COMPONENTS_V2;
+    player.movement.struct_size = sizeof(player.movement);
+    player.movement.schema_version = WORR_PREDICTION_ABI_VERSION;
+    player.movement.origin[0] = 10.0f + sequence;
+    player.movement.velocity[1] = -2.0f;
+    player.movement.movement_flags = 5;
+    player.movement.movement_time_ms = 16;
+    player.movement.gravity = 800;
+    player.movement.view_height = 22;
+    player.view_angles[1] = 90.0f;
+    player.gun_index = 7;
+    player.gun_frame = static_cast<uint16_t>(10u + sequence);
+    player.fov = 100.0f;
+    for (uint32_t index = 0;
+         index < WORR_SNAPSHOT_STATS_CAPACITY; ++index) {
+        player.stats[index] =
+            static_cast<int16_t>(index + sequence);
+    }
+    return player;
+}
+
+worr_snapshot_entity_v2 snapshot_entity(
+    uint32_t index, uint32_t generation, uint32_t sequence)
+{
+    worr_snapshot_entity_v2 entity{};
+    entity.struct_size = sizeof(entity);
+    entity.schema_version = WORR_SNAPSHOT_ABI_VERSION;
+    entity.model_revision = WORR_SNAPSHOT_MODEL_REVISION;
+    entity.generation = snapshot_generation(index, generation);
+    entity.component_mask =
+        WORR_SNAPSHOT_ENTITY_TRANSFORM |
+        WORR_SNAPSHOT_ENTITY_INTERPOLATION |
+        WORR_SNAPSHOT_ENTITY_MODELS |
+        WORR_SNAPSHOT_ENTITY_ANIMATION |
+        WORR_SNAPSHOT_ENTITY_APPEARANCE |
+        WORR_SNAPSHOT_ENTITY_EFFECTS |
+        WORR_SNAPSHOT_ENTITY_COLLISION;
+    entity.origin[0] =
+        static_cast<float>(index * 10u + sequence);
+    entity.angles[1] = 5.0f * sequence;
+    entity.old_origin[0] = entity.origin[0] - 1.0f;
+    entity.model_index[0] =
+        static_cast<uint16_t>(index + 2u);
+    entity.frame = static_cast<uint16_t>(sequence);
+    entity.skin = index;
+    entity.solid = 1;
+    entity.effects = sequence;
+    entity.alpha = 1.0f;
+    entity.scale = 1.0f;
+    entity.owner.index = WORR_EVENT_NO_ENTITY;
+    entity.old_frame = static_cast<int32_t>(sequence) - 1;
+    return entity;
+}
+
+void prepare_snapshot_projection(
+    uint32_t snapshot_epoch, uint32_t sequence)
+{
+    auto &shadow = fake_snapshot_shadow;
+    CHECK(Worr_SnapshotStoreInitV2(
+              &shadow.store, shadow.slots.data(),
+              kSnapshotStoreSlots, shadow.entities.data(),
+              static_cast<uint32_t>(shadow.entities.size()),
+              kSnapshotEntitiesPerSlot, shadow.area.data(),
+              static_cast<uint32_t>(shadow.area.size()),
+              kSnapshotAreaBytesPerSlot, shadow.events.data(),
+              static_cast<uint32_t>(shadow.events.size()),
+              kSnapshotEventsPerSlot, kSnapshotMaxEntities) ==
+          WORR_SNAPSHOT_STORE_OK);
+
+    worr_snapshot_v2 snapshot{};
+    snapshot.struct_size = sizeof(snapshot);
+    snapshot.schema_version = WORR_SNAPSHOT_ABI_VERSION;
+    snapshot.model_revision = WORR_SNAPSHOT_MODEL_REVISION;
+    snapshot.flags = WORR_SNAPSHOT_FLAG_COMPLETE |
+                     WORR_SNAPSHOT_FLAG_AUTHORITATIVE_GENERATIONS |
+                     WORR_SNAPSHOT_FLAG_PROMOTION_ELIGIBLE |
+                     WORR_SNAPSHOT_FLAG_KEYFRAME;
+    snapshot.snapshot_id.epoch = snapshot_epoch;
+    snapshot.snapshot_id.sequence = sequence;
+    snapshot.server_tick = 100u + sequence;
+    snapshot.server_time_us =
+        UINT64_C(1000000) +
+        static_cast<uint64_t>(sequence) * UINT64_C(16000);
+    snapshot.controlled_entity = snapshot_generation(1, 4);
+    snapshot.consumed_command.cursor.epoch = 2;
+    snapshot.consumed_command.cursor.contiguous_sequence =
+        40u + sequence;
+    snapshot.consumed_command.provenance =
+        WORR_SNAPSHOT_CONSUMED_COMMAND_SERVER_CONSUMED;
+    if (sequence == 1u) {
+        snapshot.discontinuity.flags =
+            WORR_SNAPSHOT_DISCONTINUITY_INITIAL |
+            WORR_SNAPSHOT_DISCONTINUITY_FULL_SNAPSHOT;
+        snapshot.discontinuity.reason =
+            WORR_SNAPSHOT_DISCONTINUITY_REASON_INITIAL;
+    } else {
+        snapshot.discontinuity.flags =
+            WORR_SNAPSHOT_DISCONTINUITY_FULL_SNAPSHOT |
+            WORR_SNAPSHOT_DISCONTINUITY_HARD_RESYNC;
+        snapshot.discontinuity.reason =
+            WORR_SNAPSHOT_DISCONTINUITY_REASON_HARD_RESYNC;
+        snapshot.discontinuity.previous.epoch = snapshot_epoch;
+        snapshot.discontinuity.previous.sequence = sequence - 1u;
+        snapshot.discontinuity.server_tick_delta = 1;
+    }
+
+    const auto player = snapshot_player(sequence);
+    const std::array<worr_snapshot_entity_v2, 2> entities{
+        snapshot_entity(1, 4, sequence),
+        snapshot_entity(2, 7, sequence)};
+    const std::array<uint8_t, 2> area{
+        static_cast<uint8_t>(sequence),
+        static_cast<uint8_t>(sequence ^ 0x5au)};
+    worr_snapshot_event_ref_v2 event{};
+    event.struct_size = sizeof(event);
+    event.schema_version = WORR_SNAPSHOT_ABI_VERSION;
+    event.provenance =
+        WORR_SNAPSHOT_EVENT_PROVENANCE_AUTHORITY;
+    event.carrier_ordinal = 0;
+    event.semantic_version = WORR_EVENT_MODEL_REVISION;
+    event.authority_id.stream_epoch = 5;
+    event.authority_id.sequence = sequence;
+    event.semantic_hash =
+        UINT64_C(0xabc0000000000000) + sequence;
+    worr_snapshot_store_publish_v2 publication{};
+    publication.struct_size = sizeof(publication);
+    publication.schema_version = WORR_SNAPSHOT_STORE_VERSION;
+    publication.snapshot = &snapshot;
+    publication.player = &player;
+    publication.entities = entities.data();
+    publication.area_bytes = area.data();
+    publication.event_refs = &event;
+    publication.entity_count =
+        static_cast<uint32_t>(entities.size());
+    publication.area_byte_count =
+        static_cast<uint32_t>(area.size());
+    publication.event_ref_count = 1;
+    shadow.ref = {};
+    const auto publish_result = Worr_SnapshotStorePublishV2(
+        &shadow.store, &publication, &shadow.ref);
+    CHECK(publish_result == WORR_SNAPSHOT_STORE_OK);
+
+    const size_t entity_offset =
+        static_cast<size_t>(shadow.ref.slot) *
+        kSnapshotEntitiesPerSlot;
+    const size_t area_offset =
+        static_cast<size_t>(shadow.ref.slot) *
+        kSnapshotAreaBytesPerSlot;
+    const size_t event_offset =
+        static_cast<size_t>(shadow.ref.slot) *
+        kSnapshotEventsPerSlot;
+    shadow.view = {};
+    shadow.view.struct_size = sizeof(shadow.view);
+    shadow.view.schema_version =
+        WORR_SNAPSHOT_PROJECTION_VERSION;
+    shadow.view.snapshot =
+        &shadow.slots[shadow.ref.slot].snapshot;
+    shadow.view.player =
+        &shadow.slots[shadow.ref.slot].player;
+    shadow.view.entities =
+        shadow.entities.data() + entity_offset;
+    shadow.view.area_bytes = shadow.area.data() + area_offset;
+    shadow.view.event_refs =
+        shadow.events.data() + event_offset;
+    shadow.view.entity_count =
+        shadow.view.snapshot->entity_range.count;
+    shadow.view.area_byte_count =
+        shadow.view.snapshot->area_range.count;
+    shadow.view.event_ref_count =
+        shadow.view.snapshot->event_range.count;
+    CHECK(Worr_SnapshotProjectionHashesV2(
+        &shadow.view, kSnapshotMaxEntities, &shadow.hashes));
+    shadow.expectation = {};
+    shadow.expectation.struct_size =
+        sizeof(shadow.expectation);
+    shadow.expectation.schema_version =
+        WORR_NATIVE_SNAPSHOT_ADMISSION_ABI_VERSION;
+    shadow.expectation.snapshot_id =
+        shadow.view.snapshot->snapshot_id;
+    shadow.expectation.hashes = shadow.hashes;
+    shadow.expectation_result =
+        CL_SNAPSHOT_SHADOW_NATIVE_EXPECTATION_AVAILABLE;
+    shadow.latest_available = true;
+}
+
 void reset_environment(uint32_t raw_time, size_t reliable_capacity)
 {
     CL_NativeReadinessPilotBeforeNetchanClose(&cls.netchan);
@@ -186,12 +498,18 @@ void reset_environment(uint32_t raw_time, size_t reliable_capacity)
     std::memset(&cl, 0, sizeof(cl));
     std::memset(&pilot_cvar, 0, sizeof(pilot_cvar));
     std::memset(&event_pilot_cvar, 0, sizeof(event_pilot_cvar));
+    std::memset(&snapshot_pilot_cvar, 0,
+                sizeof(snapshot_pilot_cvar));
     std::memset(&probe_hold_cvar, 0, sizeof(probe_hold_cvar));
     fake_event_runtime = {};
+    fake_snapshot_shadow = {};
+    fake_snapshot_shadow.bind_ok = true;
+    fake_snapshot_shadow.consumer_available = true;
     reliable_storage.fill(0);
     com_localTime = raw_time;
     cls.netchan.type = NETCHAN_NEW;
     cls.serverProtocol = PROTOCOL_VERSION_RERELEASE;
+    cl.csr.max_edicts = kSnapshotMaxEntities;
     cls.netchan.maxpacketlen = kApplicationCeiling;
     SZ_InitWrite(&cls.netchan.message, reliable_storage.data(),
                  reliable_capacity);
@@ -214,6 +532,20 @@ bool begin_event_enabled(
     pilot_cvar.integer = 1;
     event_pilot_cvar.integer = 1;
     CHECK(CL_CGameEventRuntimeSetConsumer(&fake_event_export));
+    return CL_NativeReadinessPilotBeginConnection(&cls.netchan);
+}
+
+bool begin_snapshot_enabled(
+    uint32_t raw_time,
+    size_t reliable_capacity = reliable_storage.size(),
+    uint32_t max_entities = kSnapshotMaxEntities,
+    int server_protocol = PROTOCOL_VERSION_RERELEASE)
+{
+    reset_environment(raw_time, reliable_capacity);
+    cl.csr.max_edicts = static_cast<uint16_t>(max_entities);
+    cls.serverProtocol = server_protocol;
+    pilot_cvar.integer = 1;
+    snapshot_pilot_cvar.integer = 1;
     return CL_NativeReadinessPilotBeginConnection(&cls.netchan);
 }
 
@@ -262,7 +594,8 @@ void feed_packet_record(const worr_native_readiness_record_v1 &record)
 
 worr_native_readiness_record_v1 decode_client_record(size_t offset)
 {
-    CHECK(cls.netchan.message.cursize >= offset + 65u);
+    CHECK(cls.netchan.message.cursize >=
+          offset + kEncodedReadinessBytes);
     worr_native_readiness_sideband_parser_v1 parser{};
     CHECK(Worr_NativeReadinessSidebandParserInitV1(&parser));
     CHECK(Worr_NativeReadinessSidebandPacketBeginV1(&parser) ==
@@ -293,21 +626,33 @@ worr_native_readiness_record_v1 decode_client_record(size_t offset)
 
 worr_native_readiness_record_v1 server_challenge(
     worr_native_readiness_state_v1 &server, uint32_t transport_epoch,
-    uint64_t nonce, uint64_t now, bool advance)
+    uint64_t nonce, uint64_t now, bool advance,
+    uint32_t snapshot_epoch = 0)
 {
     worr_native_readiness_record_v1 challenge{};
-    const uint32_t private_capabilities = event_pilot_cvar.integer
-        ? kEventPrivateCapabilities
-        : kPrivateCapabilities;
-    const auto result = advance
-                            ? Worr_NativeReadinessServerAdvanceEpochV1(
-                                  &server, transport_epoch,
-                                  private_capabilities, nonce, now, 10000,
-                                  &challenge)
-                            : Worr_NativeReadinessServerInitV1(
-                                  &server, transport_epoch,
-                                  private_capabilities, nonce, now, 10000,
-                                  &challenge);
+    const uint32_t private_capabilities =
+        event_pilot_cvar.integer
+            ? kEventPrivateCapabilities
+            : snapshot_pilot_cvar.integer
+                  ? kSnapshotPrivateCapabilities
+                  : kPrivateCapabilities;
+    const auto result = snapshot_pilot_cvar.integer
+        ? (advance
+               ? Worr_NativeReadinessServerAdvanceEpochBoundV1(
+                     &server, transport_epoch, snapshot_epoch,
+                     private_capabilities, nonce, now, 10000,
+                     &challenge)
+               : Worr_NativeReadinessServerInitBoundV1(
+                     &server, transport_epoch, snapshot_epoch,
+                     private_capabilities, nonce, now, 10000,
+                     &challenge))
+        : (advance
+               ? Worr_NativeReadinessServerAdvanceEpochV1(
+                     &server, transport_epoch, private_capabilities,
+                     nonce, now, 10000, &challenge)
+               : Worr_NativeReadinessServerInitV1(
+                     &server, transport_epoch, private_capabilities,
+                     nonce, now, 10000, &challenge));
     CHECK(result == WORR_NATIVE_READINESS_OK);
     return challenge;
 }
@@ -324,13 +669,15 @@ worr_native_readiness_record_v1 server_accept_ready(
 
 worr_native_readiness_record_v1 begin_handshake(
     worr_native_readiness_state_v1 &server, uint32_t transport_epoch,
-    uint64_t nonce, bool advance)
+    uint64_t nonce, bool advance, uint32_t snapshot_epoch = 0)
 {
     const size_t ready_offset = cls.netchan.message.cursize;
     const auto challenge = server_challenge(
-        server, transport_epoch, nonce, com_localTime, advance);
+        server, transport_epoch, nonce, com_localTime, advance,
+        snapshot_epoch);
     feed_packet_record(challenge);
-    CHECK(cls.netchan.message.cursize == ready_offset + 65u);
+    CHECK(cls.netchan.message.cursize ==
+          ready_offset + kEncodedReadinessBytes);
     const auto ready = decode_client_record(ready_offset);
     CHECK(ready.record_kind == WORR_NATIVE_READINESS_RECORD_CLIENT_READY);
     return server_accept_ready(server, ready, com_localTime);
@@ -351,7 +698,8 @@ void complete_event_handshake(
 {
     const size_t confirm_offset = cls.netchan.message.cursize;
     complete_handshake(server_active);
-    CHECK(cls.netchan.message.cursize == confirm_offset + 65u);
+    CHECK(cls.netchan.message.cursize ==
+          confirm_offset + kEncodedReadinessBytes);
     const auto confirm = decode_client_record(confirm_offset);
     CHECK(confirm.record_kind ==
           WORR_NATIVE_READINESS_RECORD_CLIENT_ACTIVE_CONFIRM);
@@ -363,6 +711,35 @@ void complete_event_handshake(
     const auto state = pilot_state();
     CHECK(state.event_enabled && state.client_active_confirm_queued);
     CHECK(state.private_capabilities == kEventPrivateCapabilities);
+}
+
+void complete_snapshot_handshake(
+    worr_native_readiness_state_v1 &server,
+    const worr_native_readiness_record_v1 &server_active,
+    uint32_t snapshot_epoch)
+{
+    const size_t confirm_offset = cls.netchan.message.cursize;
+    complete_handshake(server_active);
+    CHECK(cls.netchan.message.cursize ==
+          confirm_offset + kEncodedReadinessBytes);
+    const auto confirm = decode_client_record(confirm_offset);
+    CHECK(confirm.record_kind ==
+          WORR_NATIVE_READINESS_RECORD_CLIENT_ACTIVE_CONFIRM);
+    CHECK(confirm.negotiated_capabilities ==
+          kSnapshotPrivateCapabilities);
+    CHECK(confirm.snapshot_epoch == snapshot_epoch);
+    CHECK(Worr_NativeReadinessServerObserveClientActiveConfirmV1(
+              &server, &confirm, com_localTime) ==
+          WORR_NATIVE_READINESS_OK);
+    CHECK(server.phase == WORR_NATIVE_READINESS_PHASE_SERVER_ACTIVE);
+    const auto state = pilot_state();
+    CHECK(state.snapshot_enabled &&
+          state.client_active_confirm_queued);
+    CHECK(state.private_capabilities ==
+          kSnapshotPrivateCapabilities);
+    CHECK(state.snapshot_epoch == snapshot_epoch);
+    CHECK((state.snapshot_receiver_flags &
+           WORR_NATIVE_SNAPSHOT_RECEIVER_INITIALIZED) != 0);
 }
 
 worr_prediction_command_v1 prediction_command(uint32_t sequence)
@@ -581,6 +958,66 @@ packet_t native_payload_packet(
     return packet;
 }
 
+std::vector<packet_t> snapshot_packets(
+    uint32_t transport_epoch, uint32_t message_sequence)
+{
+    uint32_t preflight_bytes = 0;
+    CHECK(Worr_NativeCodecSnapshotPreflightV1(
+              &fake_snapshot_shadow.view, kSnapshotMaxEntities,
+              &preflight_bytes) == WORR_NATIVE_CODEC_OK);
+    CHECK(preflight_bytes != 0 &&
+          preflight_bytes <= WORR_NATIVE_CODEC_MAX_ENCODED_BYTES);
+    std::vector<byte> encoded(preflight_bytes);
+    size_t encoded_bytes = 0;
+    CHECK(Worr_NativeCodecSnapshotEncodeV1(
+              &fake_snapshot_shadow.view, kSnapshotMaxEntities,
+              encoded.data(), encoded.size(), &encoded_bytes) ==
+          WORR_NATIVE_CODEC_OK);
+    CHECK(encoded_bytes == encoded.size());
+    worr_native_codec_info_v1 info{};
+    worr_native_record_ref_v1 record{};
+    CHECK(Worr_NativeCodecInspectV1(
+              encoded.data(), encoded.size(), &info) ==
+          WORR_NATIVE_CODEC_OK);
+    CHECK(Worr_NativeCodecInfoRecordRefV1(&info, &record));
+
+    constexpr uint32_t kFragmentDatagramBytes = 512;
+    worr_native_envelope_fragmenter_v1 fragmenter{};
+    CHECK(Worr_NativeEnvelopeFragmenterInitV1(
+        &fragmenter, transport_epoch, message_sequence, record, 2,
+        encoded.data(), static_cast<uint32_t>(encoded.size()),
+        kFragmentDatagramBytes));
+    std::vector<packet_t> packets;
+    packets.reserve(fragmenter.fragment_count);
+    while ((fragmenter.state_flags &
+            WORR_NATIVE_FRAGMENTER_EXHAUSTED) == 0) {
+        std::array<byte,
+                   WORR_NATIVE_ENVELOPE_MAX_DATAGRAM_BYTES>
+            datagram{};
+        size_t datagram_bytes = 0;
+        CHECK(Worr_NativeEnvelopeFragmentNextV1(
+                  &fragmenter, encoded.data(),
+                  static_cast<uint32_t>(encoded.size()),
+                  datagram.data(), datagram.size(),
+                  &datagram_bytes) ==
+              WORR_NATIVE_ENVELOPE_EMIT_OK);
+        packet_t packet{};
+        worr_native_carrier_entry_v1 entry{};
+        entry.struct_size = sizeof(entry);
+        entry.schema_version = WORR_NATIVE_CARRIER_ABI_VERSION;
+        entry.entry_type = WORR_NATIVE_CARRIER_ENTRY_DATA_V1;
+        entry.data_bytes = static_cast<uint32_t>(datagram_bytes);
+        CHECK(Worr_NativeCarrierEncodeV1(
+                  transport_epoch, nullptr, 0, datagram.data(),
+                  datagram_bytes, &entry, 1, packet.bytes.data(),
+                  packet.bytes.size(), &packet.count) ==
+              WORR_NATIVE_CARRIER_OK);
+        packets.push_back(packet);
+    }
+    CHECK(packets.size() == fragmenter.fragment_count);
+    return packets;
+}
+
 packet_t descriptor_packet(
     uint32_t transport_epoch, uint32_t message_sequence,
     const worr_event_stream_descriptor_v1 &descriptor,
@@ -687,6 +1124,21 @@ void test_default_off_demo_and_hook_ownership()
      * without the base native shadow cvar. */
     reset_environment(10, reliable_storage.size());
     event_pilot_cvar.integer = 1;
+    CHECK(!CL_NativeReadinessPilotBeginConnection(&cls.netchan));
+    CHECK(!cls.netchan.app_tx_prepare && !cls.netchan.app_rx);
+
+    reset_environment(10, reliable_storage.size());
+    snapshot_pilot_cvar.integer = 1;
+    CHECK(!CL_NativeReadinessPilotBeginConnection(&cls.netchan));
+    CHECK(!cls.netchan.app_tx_prepare && !cls.netchan.app_rx);
+
+    /* Event and full-snapshot semantic S2C modes intentionally remain
+     * mutually exclusive until their independent sequence spaces can be
+     * negotiated together. */
+    reset_environment(10, reliable_storage.size());
+    pilot_cvar.integer = 1;
+    event_pilot_cvar.integer = 1;
+    snapshot_pilot_cvar.integer = 1;
     CHECK(!CL_NativeReadinessPilotBeginConnection(&cls.netchan));
     CHECK(!cls.netchan.app_tx_prepare && !cls.netchan.app_rx);
 
@@ -1240,7 +1692,7 @@ void test_readiness_atomic_capacity_and_pretraffic_failure()
         server, 1102, 1401, UINT32_MAX - UINT64_C(5), false);
     com_localTime = 3;
     feed_packet_record(wrapped);
-    CHECK(cls.netchan.message.cursize == 65u);
+    CHECK(cls.netchan.message.cursize == kEncodedReadinessBytes);
 
     CHECK(begin_enabled(1200));
     CL_NativeReadinessPilotPacketBegin();
@@ -1260,7 +1712,7 @@ void test_readiness_atomic_capacity_and_pretraffic_failure()
         server_challenge(server, 1301, 1500, 1300, false);
     feed_svc_record(same_packet);
     CL_NativeReadinessPilotPacketEnd();
-    CHECK(cls.netchan.message.cursize == 65u);
+    CHECK(cls.netchan.message.cursize == kEncodedReadinessBytes);
     CHECK(pilot_state().hooks_installed);
 
     /* Once CLIENT_READY is in the reliable queue it cannot be withdrawn.
@@ -1503,7 +1955,8 @@ void test_event_ack_exhaustion_cancellation_and_stale_floor()
         server, kNewTransportEpoch, 2801, com_localTime, true);
     const auto before_barrier = pilot_state();
     feed_packet_record(challenge);
-    CHECK(cls.netchan.message.cursize == ready_offset + 65u);
+    CHECK(cls.netchan.message.cursize ==
+          ready_offset + kEncodedReadinessBytes);
     const auto ready = decode_client_record(ready_offset);
     auto state = pilot_state();
     CHECK(state.mode == 1u && state.transport_epoch == 0u &&
@@ -1539,7 +1992,8 @@ void test_event_ack_exhaustion_cancellation_and_stale_floor()
     const uint32_t resets_before_duplicate =
         fake_event_runtime.reset_calls;
     feed_packet_record(challenge);
-    CHECK(cls.netchan.message.cursize == duplicate_offset + 65u);
+    CHECK(cls.netchan.message.cursize ==
+          duplicate_offset + kEncodedReadinessBytes);
     const auto duplicate_ready = decode_client_record(duplicate_offset);
     CHECK(std::memcmp(&ready, &duplicate_ready, sizeof(ready)) == 0);
     const auto duplicate_state = pilot_state();
@@ -1648,12 +2102,409 @@ void test_event_repeat_requires_fresh_cgame_receipt()
            WORR_EVENT_STREAM_OWNER_REQUIRES_RESYNC) != 0);
 }
 
+void test_snapshot_epoch_deferred_admission_ack_and_conflict_drain()
+{
+    constexpr uint32_t kCommandEpoch = 100;
+    constexpr uint32_t kTransportEpoch = 2001;
+    constexpr uint32_t kSnapshotEpoch = 5001;
+
+    CHECK(begin_snapshot_enabled(2000));
+    CHECK(pilot_status().private_mask ==
+          kSnapshotPrivateCapabilities);
+    confirm_capability(kCommandEpoch);
+    worr_native_readiness_state_v1 server{};
+    const auto active = begin_handshake(
+        server, kTransportEpoch, 3000, false, kSnapshotEpoch);
+    CHECK(fake_snapshot_shadow.bind_calls == 1u);
+    CHECK(fake_snapshot_shadow.bound_epoch == kSnapshotEpoch);
+    CHECK(CL_NativeReadinessPilotOwnsSnapshotTimeline());
+    CHECK(server.phase ==
+          WORR_NATIVE_READINESS_PHASE_SERVER_WAIT_CLIENT_ACTIVE_CONFIRM);
+    complete_snapshot_handshake(
+        server, active, kSnapshotEpoch);
+
+    prepare_snapshot_projection(kSnapshotEpoch, 1);
+    fake_snapshot_shadow.expectation_result =
+        CL_SNAPSHOT_SHADOW_NATIVE_EXPECTATION_PENDING;
+    const auto packets = snapshot_packets(
+        kTransportEpoch, 1);
+    CHECK(!packets.empty());
+    netchan_app_rx_output_v1_t output{};
+    for (size_t delivery = 0; delivery < packets.size(); ++delivery) {
+        const auto &packet =
+            packets[packets.size() - delivery - 1u];
+        CHECK(receive_packet(packet, output) ==
+              NETCHAN_APP_RX_EXPOSE_LEGACY);
+        CHECK(output.legacy_bytes == 0u);
+    }
+    auto state = pilot_state();
+    CHECK(state.snapshot_rx_occupied == 1u);
+    CHECK(state.snapshot_ack_receipts == 0u);
+    CHECK(fake_snapshot_shadow.consume_calls == 0u);
+    CHECK(!CL_NativeReadinessPilotOutputDue());
+
+    fake_snapshot_shadow.expectation_result =
+        CL_SNAPSHOT_SHADOW_NATIVE_EXPECTATION_AVAILABLE;
+    CL_NativeReadinessPilotSnapshotExpectationReady();
+    state = pilot_state();
+    CHECK(state.mode == 2u);
+    CHECK(state.snapshot_rx_occupied == 0u);
+    CHECK(state.snapshot_ack_receipts == 1u);
+    CHECK(fake_snapshot_shadow.consume_calls == 1u);
+    CHECK(CL_NativeReadinessPilotOutputDue());
+
+    build_command(kCommandEpoch, 1);
+    CL_NativeReadinessPilotObserveEncodedCommandRange(1, 1);
+    const auto mixed = prepare_tx(0);
+    CHECK(mixed.result == NETCHAN_APP_TX_PREPARE_PREPARED);
+    worr_native_carrier_view_v1 mixed_view{};
+    CHECK(Worr_NativeCarrierDecodeV1(
+              mixed.candidate.data(),
+              mixed.output.application_bytes, &mixed_view) ==
+          WORR_NATIVE_CARRIER_OK);
+    CHECK(mixed_view.transport_epoch == kTransportEpoch);
+    CHECK(mixed_view.entry_count == 2u);
+    CHECK(mixed_view.entries[0].entry_type ==
+          WORR_NATIVE_CARRIER_ENTRY_DATA_V1);
+    CHECK(mixed_view.entries[1].entry_type ==
+          WORR_NATIVE_CARRIER_ENTRY_ACK_V1);
+    CHECK(mixed_view.entries[1].first_message_sequence == 1u);
+    CHECK(mixed_view.entries[1].last_message_sequence == 1u);
+    complete_tx(mixed, NETCHAN_APP_TX_COMPLETION_ACCEPTED);
+    CHECK(pilot_state().retained_messages == 1u);
+
+    const auto command_ack =
+        ack_packet(kTransportEpoch, 1, 1);
+    CHECK(receive_packet(command_ack, output) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    CHECK(pilot_state().retained_messages == 0u);
+
+    /* A lost semantic receipt is rearmed by an exact committed DATA repeat
+     * after fresh cgame receipt revalidation, without consuming twice. */
+    CHECK(receive_packet(packets.front(), output) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    CHECK(fake_snapshot_shadow.consume_calls == 1u);
+    CHECK(CL_NativeReadinessPilotOutputDue());
+
+    prepare_snapshot_projection(kSnapshotEpoch, 2);
+    CL_NativeReadinessPilotSnapshotExpectationReady();
+    CHECK(pilot_state().mode == 2u);
+    fake_snapshot_shadow.expectation.hashes.endpoint_hash ^= 1u;
+    CL_NativeReadinessPilotSnapshotExpectationReady();
+    state = pilot_state();
+    CHECK(state.mode == 3u);
+    CHECK((state.snapshot_receiver_flags &
+           WORR_NATIVE_SNAPSHOT_RECEIVER_QUARANTINED) != 0);
+    /* Ownership is latched through diagnostic DRAIN.  CL_DeltaFrame will
+     * therefore keep using COMPARE_LEGACY without DELIVER_CONSUMER instead
+     * of switching the bound epoch back to legacy cgame publication. */
+    CHECK(CL_NativeReadinessPilotOwnsSnapshotTimeline());
+}
+
+void test_snapshot_map_barrier_cancels_retained_receipt()
+{
+    constexpr uint32_t kOldTransportEpoch = 2101;
+    constexpr uint32_t kNewTransportEpoch = 2102;
+    constexpr uint32_t kOldSnapshotEpoch = 5101;
+    constexpr uint32_t kNewSnapshotEpoch = 5102;
+
+    CHECK(begin_snapshot_enabled(2100));
+    confirm_capability(110);
+    worr_native_readiness_state_v1 server{};
+    auto active = begin_handshake(
+        server, kOldTransportEpoch, 3100, false,
+        kOldSnapshotEpoch);
+    complete_snapshot_handshake(
+        server, active, kOldSnapshotEpoch);
+
+    prepare_snapshot_projection(kOldSnapshotEpoch, 1);
+    const auto packets = snapshot_packets(kOldTransportEpoch, 1);
+    netchan_app_rx_output_v1_t output{};
+    for (const auto &packet : packets) {
+        CHECK(receive_packet(packet, output) ==
+              NETCHAN_APP_RX_EXPOSE_LEGACY);
+    }
+    CHECK(pilot_state().snapshot_ack_receipts == 1u);
+
+    CL_NativeReadinessPilotQuiesceMap();
+    CL_NativeReadinessPilotServerDataReset();
+    confirm_capability(111);
+    ++com_localTime;
+    active = begin_handshake(
+        server, kNewTransportEpoch, 3101, true,
+        kNewSnapshotEpoch);
+    const auto state = pilot_state();
+    CHECK(state.mode == 1u);
+    CHECK(state.transport_epoch == 0u);
+    CHECK(state.snapshot_epoch == 0u);
+    CHECK(state.snapshot_ack_receipts == 0u);
+    CHECK(state.cancelled_through_transport_epoch ==
+          kOldTransportEpoch);
+    CHECK(fake_snapshot_shadow.bound_epoch == kNewSnapshotEpoch);
+    CHECK(CL_NativeReadinessPilotOwnsSnapshotTimeline());
+    complete_snapshot_handshake(
+        server, active, kNewSnapshotEpoch);
+}
+
+void test_snapshot_hook_loss_preserves_timeline_until_boundary()
+{
+    constexpr uint32_t kTransportEpoch = 2151;
+    constexpr uint32_t kSnapshotEpoch = 5151;
+
+    CHECK(begin_snapshot_enabled(2150));
+    confirm_capability(115);
+    worr_native_readiness_state_v1 server{};
+    const auto active = begin_handshake(
+        server, kTransportEpoch, 3150, false, kSnapshotEpoch);
+    complete_snapshot_handshake(
+        server, active, kSnapshotEpoch);
+    CHECK(CL_NativeReadinessPilotOwnsSnapshotTimeline());
+    CHECK(pilot_status().hooks == 1u);
+
+    /*
+     * Simulate a foreign subsystem replacing one application hook after the
+     * native epoch has bound.  The ownership query must fail transport closed
+     * without allowing CL_DeltaFrame to resume legacy cgame publication.
+     */
+    cls.netchan.app_rx = occupied_rx;
+    cls.netchan.app_rx_opaque = &reliable_storage;
+    CHECK(CL_NativeReadinessPilotOwnsSnapshotTimeline());
+    const auto state = pilot_state();
+    const auto status = pilot_status();
+    CHECK(state.mode == 3u && !state.hooks_installed);
+    CHECK((state.snapshot_receiver_flags &
+           WORR_NATIVE_SNAPSHOT_RECEIVER_QUARANTINED) != 0);
+    CHECK(status.enabled == 1u && status.mode == 3u &&
+          status.hooks == 0u && status.drains == 1u);
+    CHECK(!cls.netchan.app_tx_prepare &&
+          !cls.netchan.app_tx_completion &&
+          !cls.netchan.app_tx_opaque);
+    CHECK(cls.netchan.app_rx == occupied_rx &&
+          cls.netchan.app_rx_opaque == &reliable_storage);
+
+    /* Repeated authority checks are stable and do not disturb the foreign
+     * hook or increment DRAIN telemetry again. */
+    CHECK(CL_NativeReadinessPilotOwnsSnapshotTimeline());
+    CHECK(pilot_status().drains == 1u);
+    CHECK(cls.netchan.app_rx == occupied_rx &&
+          cls.netchan.app_rx_opaque == &reliable_storage);
+
+    CL_NativeReadinessPilotQuiesceMap();
+    CHECK(!CL_NativeReadinessPilotOwnsSnapshotTimeline());
+    CHECK(pilot_status().enabled == 0u);
+    CHECK(cls.netchan.app_rx == occupied_rx &&
+          cls.netchan.app_rx_opaque == &reliable_storage);
+
+    /* SERVERDATA is independently a map boundary; it must release the same
+     * latch even when QuiesceMap was not called first. */
+    CHECK(begin_snapshot_enabled(2160));
+    confirm_capability(116);
+    server = {};
+    const auto reset_active = begin_handshake(
+        server, kTransportEpoch + 1u, 3160, false,
+        kSnapshotEpoch + 1u);
+    complete_snapshot_handshake(
+        server, reset_active, kSnapshotEpoch + 1u);
+    cls.netchan.app_rx = occupied_rx;
+    cls.netchan.app_rx_opaque = &reliable_storage;
+    CHECK(CL_NativeReadinessPilotOwnsSnapshotTimeline());
+    CL_NativeReadinessPilotServerDataReset();
+    CHECK(!CL_NativeReadinessPilotOwnsSnapshotTimeline());
+    CHECK(pilot_status().enabled == 0u);
+    CHECK(cls.netchan.app_rx == occupied_rx &&
+          cls.netchan.app_rx_opaque == &reliable_storage);
+
+    /* Only closure of the pilot's actual netchan is a connection boundary.
+     * An unrelated close cannot release authority; the matching close does
+     * and still leaves the foreign replacement hook untouched. */
+    CHECK(begin_snapshot_enabled(2170));
+    confirm_capability(117);
+    server = {};
+    const auto close_active = begin_handshake(
+        server, kTransportEpoch + 2u, 3170, false,
+        kSnapshotEpoch + 2u);
+    complete_snapshot_handshake(
+        server, close_active, kSnapshotEpoch + 2u);
+    cls.netchan.app_rx = occupied_rx;
+    cls.netchan.app_rx_opaque = &reliable_storage;
+    CHECK(CL_NativeReadinessPilotOwnsSnapshotTimeline());
+    netchan_t unrelated{};
+    unrelated.type = NETCHAN_NEW;
+    CL_NativeReadinessPilotBeforeNetchanClose(&unrelated);
+    CHECK(CL_NativeReadinessPilotOwnsSnapshotTimeline());
+    CHECK(pilot_status().enabled == 1u &&
+          pilot_status().mode == 3u);
+    CL_NativeReadinessPilotBeforeNetchanClose(&cls.netchan);
+    CHECK(!CL_NativeReadinessPilotOwnsSnapshotTimeline());
+    CHECK(pilot_status().enabled == 0u);
+    CHECK(cls.netchan.app_rx == occupied_rx &&
+          cls.netchan.app_rx_opaque == &reliable_storage);
+}
+
+void test_snapshot_real_protocol_domains_and_expectation_window()
+{
+    struct domain_case_t {
+        uint32_t max_entities;
+        int protocol;
+    };
+    constexpr std::array<domain_case_t, 2> cases{{
+        {MAX_EDICTS_OLD, PROTOCOL_VERSION_DEFAULT},
+        {MAX_EDICTS, PROTOCOL_VERSION_RERELEASE},
+    }};
+
+    for (size_t case_index = 0; case_index < cases.size();
+         ++case_index) {
+        const auto &domain = cases[case_index];
+        const uint32_t command_epoch =
+            120u + static_cast<uint32_t>(case_index);
+        const uint32_t transport_epoch =
+            2201u + static_cast<uint32_t>(case_index);
+        const uint32_t snapshot_epoch =
+            5201u + static_cast<uint32_t>(case_index);
+        const uint32_t raw_time =
+            2200u + static_cast<uint32_t>(case_index) * 100u;
+
+        CHECK(begin_snapshot_enabled(
+            raw_time, reliable_storage.size(),
+            domain.max_entities, domain.protocol));
+        CHECK(cl.csr.max_edicts == domain.max_entities);
+        CHECK(cls.serverProtocol == domain.protocol);
+        confirm_capability(command_epoch);
+        worr_native_readiness_state_v1 server{};
+        const auto active = begin_handshake(
+            server, transport_epoch,
+            3200u + static_cast<uint32_t>(case_index),
+            false, snapshot_epoch);
+        complete_snapshot_handshake(
+            server, active, snapshot_epoch);
+        auto state = pilot_state();
+        CHECK(state.mode == 2u);
+        CHECK((state.snapshot_receiver_flags &
+               WORR_NATIVE_SNAPSHOT_RECEIVER_INITIALIZED) != 0);
+        CHECK((state.snapshot_receiver_flags &
+               WORR_NATIVE_SNAPSHOT_RECEIVER_QUARANTINED) == 0);
+
+        if (domain.max_entities != MAX_EDICTS)
+            continue;
+
+        constexpr uint32_t expectation_total =
+            WORR_NATIVE_SNAPSHOT_RECEIVER_EXPECTATION_CAPACITY + 8u;
+        for (uint32_t sequence = 1;
+             sequence <= expectation_total; ++sequence) {
+            prepare_snapshot_projection(snapshot_epoch, sequence);
+            CL_NativeReadinessPilotSnapshotExpectationReady();
+            state = pilot_state();
+            CHECK(state.mode == 2u);
+            CHECK((state.snapshot_receiver_flags &
+                   WORR_NATIVE_SNAPSHOT_RECEIVER_QUARANTINED) == 0);
+            CHECK(state.snapshot_rx_occupied == 0u);
+            CHECK(state.snapshot_ack_receipts == 0u);
+            CHECK(fake_snapshot_shadow.consume_calls == 0u);
+        }
+
+        const auto packets =
+            snapshot_packets(transport_epoch, 1);
+        CHECK(!packets.empty());
+        netchan_app_rx_output_v1_t output{};
+        for (const auto &packet : packets) {
+            CHECK(receive_packet(packet, output) ==
+                  NETCHAN_APP_RX_EXPOSE_LEGACY);
+        }
+        state = pilot_state();
+        CHECK(state.mode == 2u);
+        CHECK(state.snapshot_rx_occupied == 0u);
+        CHECK(state.snapshot_ack_receipts == 1u);
+        CHECK(fake_snapshot_shadow.consume_calls == 1u);
+    }
+}
+
 } // namespace
+
+extern "C" bool CL_SnapshotShadowBindNativeEpoch(
+    uint32_t snapshot_epoch)
+{
+    ++fake_snapshot_shadow.bind_calls;
+    if (!fake_snapshot_shadow.bind_ok || snapshot_epoch == 0)
+        return false;
+    fake_snapshot_shadow.bound_epoch = snapshot_epoch;
+    fake_snapshot_reset(
+        nullptr, snapshot_epoch,
+        WORR_CGAME_SNAPSHOT_RESET_CONNECTION, com_localTime);
+    return true;
+}
+
+extern "C" bool CL_SnapshotShadowLatest(
+    worr_snapshot_projection_view_v2 *view_out,
+    worr_snapshot_projection_hashes_v2 *hashes_out,
+    worr_snapshot_ref_v2 *ref_out)
+{
+    if (!view_out || !hashes_out || !ref_out ||
+        !fake_snapshot_shadow.latest_available) {
+        return false;
+    }
+    *view_out = fake_snapshot_shadow.view;
+    *hashes_out = fake_snapshot_shadow.hashes;
+    *ref_out = fake_snapshot_shadow.ref;
+    return true;
+}
+
+extern "C"
+cl_snapshot_shadow_native_expectation_result_v1
+CL_SnapshotShadowGetNativeExpectation(
+    worr_snapshot_id_v2 snapshot_id,
+    worr_native_snapshot_expectation_v1 *expectation_out)
+{
+    if (expectation_out)
+        *expectation_out = {};
+    if (!expectation_out || snapshot_id.epoch == 0 ||
+        snapshot_id.sequence == 0 ||
+        snapshot_id.epoch != fake_snapshot_shadow.bound_epoch) {
+        return CL_SNAPSHOT_SHADOW_NATIVE_EXPECTATION_WRONG_EPOCH;
+    }
+    if (!fake_snapshot_shadow.latest_available)
+        return CL_SNAPSHOT_SHADOW_NATIVE_EXPECTATION_PENDING;
+    const auto expected =
+        fake_snapshot_shadow.expectation.snapshot_id;
+    if (snapshot_id.epoch != expected.epoch ||
+        snapshot_id.sequence != expected.sequence) {
+        return snapshot_id.sequence > expected.sequence
+            ? CL_SNAPSHOT_SHADOW_NATIVE_EXPECTATION_PENDING
+            : CL_SNAPSHOT_SHADOW_NATIVE_EXPECTATION_STALE;
+    }
+    if (fake_snapshot_shadow.expectation_result ==
+        CL_SNAPSHOT_SHADOW_NATIVE_EXPECTATION_AVAILABLE) {
+        *expectation_out = fake_snapshot_shadow.expectation;
+    }
+    return fake_snapshot_shadow.expectation_result;
+}
+
+extern "C" bool CL_SnapshotShadowGetNativeConsumerV1(
+    worr_native_snapshot_consumer_v1 *consumer_out)
+{
+    if (!consumer_out ||
+        !fake_snapshot_shadow.consumer_available) {
+        return false;
+    }
+    *consumer_out = {};
+    consumer_out->struct_size = sizeof(*consumer_out);
+    consumer_out->schema_version =
+        WORR_NATIVE_SNAPSHOT_ADMISSION_ABI_VERSION;
+    consumer_out->opaque = &fake_snapshot_shadow;
+    consumer_out->Reset = fake_snapshot_reset;
+    consumer_out->ConsumeCanonicalSnapshot =
+        fake_snapshot_consume;
+    consumer_out->GetStatus = fake_snapshot_status;
+    return true;
+}
 
 extern "C" cvar_t *Cvar_Get(const char *name, const char *, int)
 {
     if (name && std::strcmp(name, "cl_worr_native_shadow_probe_hold") == 0)
         return &probe_hold_cvar;
+    if (name &&
+        std::strcmp(name, "cl_worr_native_snapshot_shadow") == 0) {
+        return &snapshot_pilot_cvar;
+    }
     if (name && std::strcmp(name, "cl_worr_native_event_shadow") == 0)
         return &event_pilot_cvar;
     return &pilot_cvar;
@@ -1750,6 +2601,10 @@ int main()
     test_event_opt_in_semantic_admission_and_mixed_egress();
     test_event_ack_exhaustion_cancellation_and_stale_floor();
     test_event_repeat_requires_fresh_cgame_receipt();
+    test_snapshot_epoch_deferred_admission_ack_and_conflict_drain();
+    test_snapshot_map_barrier_cancels_retained_receipt();
+    test_snapshot_hook_loss_preserves_timeline_until_boundary();
+    test_snapshot_real_protocol_domains_and_expectation_window();
     CL_NativeReadinessPilotBeforeNetchanClose(&cls.netchan);
     std::puts("native_client_readiness_pilot_test: ok");
     return EXIT_SUCCESS;

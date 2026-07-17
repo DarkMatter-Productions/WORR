@@ -360,7 +360,10 @@ typedef enum {
 #define CM_IMPULSE      BIT(7)
 
 // R1Q2 button byte hacks
-#define BUTTON_MASK     (BUTTON_ATTACK|BUTTON_USE|BUTTON_ANY)
+// Preserve the native +hook action across the legacy usercmd writer. Older
+// servers that do not understand bit 5 retain their existing behavior by
+// ignoring it; WORR consumes it only through its mapped off-hand policy.
+#define BUTTON_MASK     (BUTTON_ATTACK|BUTTON_USE|BUTTON_HOOK|BUTTON_ANY)
 #define BUTTON_FORWARD  BIT(2)
 #define BUTTON_SIDE     BIT(3)
 #define BUTTON_UP       BIT(4)

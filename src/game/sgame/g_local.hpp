@@ -4866,12 +4866,13 @@ void fire_blueblaster(gentity_t *self, const Vector3 &start,
 void fire_greenblaster(gentity_t *self, const Vector3 &start,
                        const Vector3 &aimDir, int damage, int speed,
                        Effect effect, bool hyper);
-void fire_grenade(gentity_t *self, const Vector3 &start, const Vector3 &aimDir,
-                  int damage, int speed, GameTime timer, float splashRadius,
-                  float rightAdjust, float upAdjust, bool monster);
-void fire_handgrenade(gentity_t *self, const Vector3 &start,
-                      const Vector3 &aimDir, int damage, int speed,
-                      GameTime timer, float splashRadius, bool held);
+gentity_t *fire_grenade(gentity_t *self, const Vector3 &start,
+                        const Vector3 &aimDir, int damage, int speed,
+                        GameTime timer, float splashRadius, float rightAdjust,
+                        float upAdjust, bool monster);
+gentity_t *fire_handgrenade(gentity_t *self, const Vector3 &start,
+                            const Vector3 &aimDir, int damage, int speed,
+                            GameTime timer, float splashRadius, bool held);
 gentity_t *fire_rocket(gentity_t *self, const Vector3 &start,
                        const Vector3 &dir, int damage, int speed,
                        float splashRadius, int splashDamage);
@@ -4890,8 +4891,8 @@ void fire_heat(gentity_t *self, const Vector3 &start, const Vector3 &dir,
                float turnFraction);
 void fire_phalanx(gentity_t *self, const Vector3 &start, const Vector3 &dir,
                   int damage, int speed, float splashRadius, int splashDamage);
-void fire_trap(gentity_t *self, const Vector3 &start, const Vector3 &aimDir,
-               int speed);
+gentity_t *fire_trap(gentity_t *self, const Vector3 &start,
+                     const Vector3 &aimDir, int speed);
 void fire_plasmabeam(gentity_t *self, const Vector3 &start,
                      const Vector3 &aimDir, const Vector3 &offset, int damage,
                      int kick, bool monster);
@@ -4909,8 +4910,8 @@ void fire_nuke(gentity_t *self, const Vector3 &start, const Vector3 &aimDir,
 bool fire_player_melee(gentity_t *self, const Vector3 &start,
                        const Vector3 &aim, int reach, int damage, int kick,
                        MeansOfDeath mod);
-void fire_tesla(gentity_t *self, const Vector3 &start, const Vector3 &aimDir,
-                int damage, int speed);
+gentity_t *fire_tesla(gentity_t *self, const Vector3 &start,
+                      const Vector3 &aimDir, int damage, int speed);
 void fire_disintegrator(gentity_t *self, const Vector3 &start,
                         const Vector3 &dir, int speed);
 void fire_homing_pod(gentity_t *self, const Vector3 &start, const Vector3 &dir,
@@ -5281,6 +5282,9 @@ void Weapon_ForceIdle(gentity_t *ent);
 
 // HOOK
 void Weapon_Hook(gentity_t *ent);
+// The mapped +hook user-command action. The legacy Hook client string remains
+// current-world only because it has no authenticated command-time mapping.
+void Weapon_Hook_CanonicalInput(gentity_t *ent);
 
 constexpr GameTime GRENADE_TIMER = 3_sec;
 constexpr float GRENADE_MINSPEED = 400.f;

@@ -35,7 +35,7 @@ class VulkanFramesInFlightSourceTests(unittest.TestCase):
 
     def test_scheduler_waits_current_slot_and_acquired_image_owner(self) -> None:
         self.assertIn(
-            "VK_WaitForFrame(&vk_state.ctx, vk_state.ctx.current_frame",
+            "VK_WaitForFrame(ctx, ctx->current_frame",
             VK_MAIN,
         )
         self.assertIn("image_frame_slots[image_index]", VK_MAIN)

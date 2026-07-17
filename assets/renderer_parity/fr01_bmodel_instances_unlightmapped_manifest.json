@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "task_id": "FR-01-T15",
+  "scenes": [
+    {
+      "id": "ordinary_unlightmapped_bmodel_instance_grid",
+      "config": "renderer_parity/fr01_bmodel_instances_unlightmapped.cfg",
+      "capture": "fr01_bmodel_instances_unlightmapped.tga",
+      "crop": [220, 150, 520, 420],
+      "metrics": {
+        "pixel_threshold": 8,
+        "max_mean_absolute_rgb": [2, 2, 2],
+        "max_pixels_over_threshold_percent": 0.5
+      },
+      "probes": [
+        {
+          "name": "ordinary_unlightmapped_inline_bsp_grid",
+          "min_color": [24, 160, 48],
+          "max_color": [96, 255, 144],
+          "min_pixels_per_backend": 20000,
+          "max_backend_count_delta_percent": 1,
+          "min_backend_intersection_over_union": 0.99
+        }
+      ]
+    }
+  ]
+}

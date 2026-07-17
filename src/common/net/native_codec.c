@@ -701,6 +701,9 @@ static uint32_t event_payload_wire_bytes(uint16_t payload_kind)
         return 8;
     case WORR_EVENT_PAYLOAD_SPATIAL_AUDIO_V1:
         return 40;
+    case WORR_EVENT_PAYLOAD_LOCAL_INTERACTION_AUTHORITY_V1:
+        return (uint32_t)sizeof(
+            worr_local_interaction_authority_receipt_v1);
     default:
         return UINT32_MAX;
     }
@@ -806,6 +809,22 @@ static void write_event_payload(byte_writer *writer,
         put_float(writer, payload.attenuation);
         put_float(writer, payload.time_offset);
         put_float(writer, payload.pitch);
+        break;
+    }
+    case WORR_EVENT_PAYLOAD_LOCAL_INTERACTION_AUTHORITY_V1: {
+        worr_local_interaction_authority_receipt_v1 payload;
+        memcpy(&payload, record->payload, sizeof(payload));
+        put_u32(writer, payload.struct_size);
+        put_u32(writer, payload.schema_version);
+        put_u32(writer, payload.command_id.epoch);
+        put_u32(writer, payload.command_id.sequence);
+        put_u64(writer, payload.command_hash);
+        put_u64(writer, payload.state_hash);
+        put_u64(writer, payload.transaction_hash);
+        put_u32(writer, payload.action_sequence);
+        put_u32(writer, payload.state_flags);
+        put_u32(writer, payload.outcome_flags);
+        put_u32(writer, payload.reserved0);
         break;
     }
     default:
@@ -939,6 +958,25 @@ static bool read_event_payload(byte_reader *reader,
             !get_float(reader, &payload.attenuation) ||
             !get_float(reader, &payload.time_offset) ||
             !get_float(reader, &payload.pitch)) {
+            return false;
+        }
+        memcpy(record->payload, &payload, sizeof(payload));
+        return true;
+    }
+    case WORR_EVENT_PAYLOAD_LOCAL_INTERACTION_AUTHORITY_V1: {
+        worr_local_interaction_authority_receipt_v1 payload;
+        memset(&payload, 0, sizeof(payload));
+        if (!get_u32(reader, &payload.struct_size) ||
+            !get_u32(reader, &payload.schema_version) ||
+            !get_u32(reader, &payload.command_id.epoch) ||
+            !get_u32(reader, &payload.command_id.sequence) ||
+            !get_u64(reader, &payload.command_hash) ||
+            !get_u64(reader, &payload.state_hash) ||
+            !get_u64(reader, &payload.transaction_hash) ||
+            !get_u32(reader, &payload.action_sequence) ||
+            !get_u32(reader, &payload.state_flags) ||
+            !get_u32(reader, &payload.outcome_flags) ||
+            !get_u32(reader, &payload.reserved0)) {
             return false;
         }
         memcpy(record->payload, &payload, sizeof(payload));
@@ -1126,6 +1164,12 @@ static uint64_t snapshot_hash_u8(uint64_t hash, uint8_t value)
     return (hash ^ value) * snapshot_fnv_prime;
 }
 
+static uint64_t snapshot_hash_u16(uint64_t hash, uint16_t value)
+{
+    hash = snapshot_hash_u8(hash, (uint8_t)value);
+    return snapshot_hash_u8(hash, (uint8_t)(value >> 8));
+}
+
 static uint64_t snapshot_hash_u32(uint64_t hash, uint32_t value)
 {
     unsigned int index;
@@ -1147,6 +1191,125 @@ static uint64_t snapshot_begin_hash(uint32_t domain)
     uint64_t hash = snapshot_fnv_offset;
     hash = snapshot_hash_u32(hash, UINT32_C(0x574f5252));
     return snapshot_hash_u32(hash, domain);
+}
+
+static uint64_t snapshot_hash_float(uint64_t hash, float value)
+{
+    uint32_t bits;
+
+    if (value == 0.0f)
+        bits = 0;
+    else
+        memcpy(&bits, &value, sizeof(bits));
+    return snapshot_hash_u32(hash, bits);
+}
+
+static uint64_t snapshot_hash_floats(
+    uint64_t hash, const float *values, uint32_t count)
+{
+    uint32_t index;
+
+    for (index = 0; index < count; ++index)
+        hash = snapshot_hash_float(hash, values[index]);
+    return hash;
+}
+
+static uint64_t snapshot_hash_identity(
+    uint64_t hash, worr_event_entity_ref_v1 identity)
+{
+    hash = snapshot_hash_u32(hash, identity.index);
+    return snapshot_hash_u32(hash, identity.generation);
+}
+
+static uint64_t codec_semantic_player_hash(
+    const worr_snapshot_player_v2 *player)
+{
+    const worr_prediction_state_v1 *movement = &player->movement;
+    uint64_t hash =
+        snapshot_begin_hash(UINT32_C(0x53504c32)); /* SPL2 */
+    uint32_t index;
+
+    hash = snapshot_hash_u32(hash, WORR_SNAPSHOT_MODEL_REVISION);
+    hash = snapshot_hash_identity(
+        hash, player->controlled_entity.identity);
+    hash = snapshot_hash_u64(hash, player->component_mask);
+    hash = snapshot_hash_u32(
+        hash, (uint32_t)movement->movement_type);
+    hash = snapshot_hash_floats(hash, movement->origin, 3);
+    hash = snapshot_hash_floats(hash, movement->velocity, 3);
+    hash = snapshot_hash_u16(hash, movement->movement_flags);
+    hash = snapshot_hash_u16(hash, movement->movement_time_ms);
+    hash = snapshot_hash_u16(hash, (uint16_t)movement->gravity);
+    hash = snapshot_hash_u8(hash, (uint8_t)movement->view_height);
+    hash = snapshot_hash_floats(hash, movement->delta_angles, 3);
+    hash = snapshot_hash_floats(hash, player->view_angles, 3);
+    hash = snapshot_hash_floats(hash, player->view_offset, 3);
+    hash = snapshot_hash_floats(hash, player->kick_angles, 3);
+    hash = snapshot_hash_floats(hash, player->gun_angles, 3);
+    hash = snapshot_hash_floats(hash, player->gun_offset, 3);
+    hash = snapshot_hash_floats(hash, player->screen_blend, 4);
+    hash = snapshot_hash_floats(hash, player->damage_blend, 4);
+    hash = snapshot_hash_u16(hash, player->gun_index);
+    hash = snapshot_hash_u16(hash, player->gun_frame);
+    hash = snapshot_hash_u8(hash, player->gun_skin);
+    hash = snapshot_hash_u8(hash, player->gun_rate);
+    hash = snapshot_hash_u8(hash, player->rdflags);
+    hash = snapshot_hash_u8(hash, player->team_id);
+    hash = snapshot_hash_float(hash, player->fov);
+    for (index = 0; index < WORR_SNAPSHOT_STATS_CAPACITY; ++index)
+        hash = snapshot_hash_u16(
+            hash, (uint16_t)player->stats[index]);
+    return hash;
+}
+
+static uint64_t codec_semantic_entity_hash(
+    const worr_snapshot_entity_v2 *entity)
+{
+    uint64_t hash =
+        snapshot_begin_hash(UINT32_C(0x53454e32)); /* SEN2 */
+    uint32_t index;
+
+    hash = snapshot_hash_u32(hash, WORR_SNAPSHOT_MODEL_REVISION);
+    hash = snapshot_hash_identity(
+        hash, entity->generation.identity);
+    hash = snapshot_hash_u64(hash, entity->component_mask);
+    hash = snapshot_hash_floats(hash, entity->origin, 3);
+    hash = snapshot_hash_floats(hash, entity->angles, 3);
+    hash = snapshot_hash_floats(hash, entity->old_origin, 3);
+    for (index = 0; index < 4; ++index)
+        hash = snapshot_hash_u16(hash, entity->model_index[index]);
+    hash = snapshot_hash_u16(hash, entity->frame);
+    hash = snapshot_hash_u16(hash, entity->sound);
+    hash = snapshot_hash_u32(hash, entity->skin);
+    hash = snapshot_hash_u32(hash, entity->solid);
+    hash = snapshot_hash_u64(hash, entity->effects);
+    hash = snapshot_hash_u32(hash, entity->renderfx);
+    hash = snapshot_hash_float(hash, entity->alpha);
+    hash = snapshot_hash_float(hash, entity->scale);
+    hash = snapshot_hash_float(hash, entity->loop_volume);
+    hash = snapshot_hash_float(hash, entity->loop_attenuation);
+    hash = snapshot_hash_identity(hash, entity->owner);
+    hash = snapshot_hash_u32(hash, (uint32_t)entity->old_frame);
+    return snapshot_hash_u8(hash, entity->instance_bits);
+}
+
+static uint64_t codec_semantic_event_list_hash(
+    const worr_snapshot_event_ref_v2 *events, uint32_t count)
+{
+    uint64_t hash =
+        snapshot_begin_hash(UINT32_C(0x53455632)); /* SEV2 */
+    uint32_t index;
+
+    hash = snapshot_hash_u32(hash, count);
+    for (index = 0; index < count; ++index) {
+        hash = snapshot_hash_u32(
+            hash, events[index].carrier_ordinal);
+        hash = snapshot_hash_u32(
+            hash, events[index].semantic_version);
+        hash = snapshot_hash_u64(
+            hash, events[index].semantic_hash);
+    }
+    return hash;
 }
 
 static bool generation_equal(worr_snapshot_entity_generation_v2 left,
@@ -1704,6 +1867,7 @@ static bool read_snapshot_event_ref(
 typedef struct snapshot_decode_validation_s {
     worr_snapshot_v2 snapshot;
     worr_snapshot_player_v2 player;
+    worr_snapshot_projection_hashes_v2 hashes;
     uint32_t entity_offset;
     uint32_t area_offset;
     uint32_t event_offset;
@@ -1723,11 +1887,14 @@ static worr_native_codec_result_v1 validate_snapshot_wire(
     worr_snapshot_entity_generation_v2 previous_generation;
     byte_reader reader;
     uint64_t entity_list_hash;
+    uint64_t semantic_entity_list_hash;
     uint64_t entity_hash;
     uint64_t player_hash;
     uint64_t area_hash;
     uint64_t event_hash;
     uint64_t snapshot_hash;
+    uint64_t hash;
+    uint32_t parity_flags;
     uint32_t expected_source;
     uint32_t index;
 
@@ -1769,6 +1936,10 @@ static worr_native_codec_result_v1 validate_snapshot_wire(
     entity_list_hash = snapshot_begin_hash(UINT32_C(0x454c5332));
     entity_list_hash =
         snapshot_hash_u32(entity_list_hash, info->range_counts[0]);
+    semantic_entity_list_hash =
+        snapshot_begin_hash(UINT32_C(0x534c5332)); /* SLS2 */
+    semantic_entity_list_hash = snapshot_hash_u32(
+        semantic_entity_list_hash, info->range_counts[0]);
     for (index = 0; index < info->range_counts[0]; ++index) {
         if (!read_snapshot_entity(&reader, &entity))
             return WORR_NATIVE_CODEC_MALFORMED;
@@ -1787,6 +1958,9 @@ static worr_native_codec_result_v1 validate_snapshot_wire(
         }
         entity_list_hash =
             snapshot_hash_u64(entity_list_hash, entity_hash);
+        semantic_entity_list_hash = snapshot_hash_u64(
+            semantic_entity_list_hash,
+            codec_semantic_entity_hash(&entity));
         previous_generation = entity.generation;
     }
     if (entity_list_hash != validation.snapshot.entity_hash)
@@ -1825,6 +1999,58 @@ static worr_native_codec_result_v1 validate_snapshot_wire(
     }
     if (snapshot_hash != validation.snapshot.snapshot_hash)
         return WORR_NATIVE_CODEC_CORRUPT;
+
+    validation.hashes.struct_size = sizeof(validation.hashes);
+    validation.hashes.schema_version =
+        WORR_SNAPSHOT_PROJECTION_VERSION;
+    validation.hashes.semantic_player_hash =
+        codec_semantic_player_hash(&validation.player);
+    validation.hashes.semantic_entity_hash =
+        semantic_entity_list_hash;
+    validation.hashes.semantic_area_hash = area_hash;
+    validation.hashes.semantic_event_hash =
+        codec_semantic_event_list_hash(
+            event_refs, info->range_counts[2]);
+
+    hash = snapshot_begin_hash(UINT32_C(0x45504832)); /* EPH2 */
+    hash = snapshot_hash_u64(
+        hash, validation.snapshot.snapshot_hash);
+    hash = snapshot_hash_u64(hash, player_hash);
+    hash = snapshot_hash_u64(hash, entity_list_hash);
+    hash = snapshot_hash_u64(hash, area_hash);
+    hash = snapshot_hash_u64(hash, event_hash);
+    validation.hashes.endpoint_hash = hash;
+
+    parity_flags = validation.snapshot.flags &
+        (WORR_SNAPSHOT_FLAG_KEYFRAME |
+         WORR_SNAPSHOT_FLAG_COMPLETE |
+         WORR_SNAPSHOT_FLAG_LEGACY_PROJECTION);
+    hash = snapshot_begin_hash(UINT32_C(0x50525932)); /* PRY2 */
+    hash = snapshot_hash_u32(hash, WORR_SNAPSHOT_ABI_VERSION);
+    hash = snapshot_hash_u32(hash, WORR_SNAPSHOT_MODEL_REVISION);
+    hash = snapshot_hash_u32(hash, parity_flags);
+    hash = snapshot_hash_u32(
+        hash, validation.snapshot.snapshot_id.epoch);
+    hash = snapshot_hash_u32(
+        hash, validation.snapshot.snapshot_id.sequence);
+    hash = snapshot_hash_u32(
+        hash, validation.snapshot.base_id.epoch);
+    hash = snapshot_hash_u32(
+        hash, validation.snapshot.base_id.sequence);
+    hash = snapshot_hash_identity(
+        hash, validation.snapshot.controlled_entity.identity);
+    hash = snapshot_hash_u32(hash, info->range_counts[0]);
+    hash = snapshot_hash_u32(hash, info->range_counts[1]);
+    hash = snapshot_hash_u32(hash, info->range_counts[2]);
+    hash = snapshot_hash_u64(
+        hash, validation.hashes.semantic_player_hash);
+    hash = snapshot_hash_u64(
+        hash, validation.hashes.semantic_entity_hash);
+    hash = snapshot_hash_u64(
+        hash, validation.hashes.semantic_area_hash);
+    hash = snapshot_hash_u64(
+        hash, validation.hashes.semantic_event_hash);
+    validation.hashes.legacy_parity_hash = hash;
     *validation_out = validation;
     return WORR_NATIVE_CODEC_OK;
 }
@@ -1990,6 +2216,153 @@ static bool output_regions_disjoint(const void *encoded,
         }
     }
     return true;
+}
+
+static bool projection_output_regions_disjoint(
+    const void *encoded,
+    size_t encoded_bytes,
+    worr_snapshot_v2 *snapshot_out,
+    worr_snapshot_player_v2 *player_out,
+    worr_snapshot_entity_v2 *entities_out,
+    uint32_t entity_count,
+    uint8_t *area_bytes_out,
+    uint32_t area_count,
+    worr_snapshot_event_ref_v2 *event_refs_out,
+    uint32_t event_count,
+    worr_snapshot_projection_view_v2 *view_out,
+    worr_snapshot_projection_hashes_v2 *hashes_out)
+{
+    const void *regions[7];
+    size_t sizes[7];
+    uint32_t left;
+    uint32_t right;
+
+    regions[0] = snapshot_out;
+    sizes[0] = sizeof(*snapshot_out);
+    regions[1] = player_out;
+    sizes[1] = sizeof(*player_out);
+    regions[2] = entities_out;
+    sizes[2] = (size_t)entity_count * sizeof(*entities_out);
+    regions[3] = area_bytes_out;
+    sizes[3] = area_count;
+    regions[4] = event_refs_out;
+    sizes[4] = (size_t)event_count * sizeof(*event_refs_out);
+    regions[5] = view_out;
+    sizes[5] = sizeof(*view_out);
+    regions[6] = hashes_out;
+    sizes[6] = sizeof(*hashes_out);
+    for (left = 0; left < 7; ++left) {
+        if (ranges_overlap(encoded, encoded_bytes, regions[left],
+                           sizes[left])) {
+            return false;
+        }
+        for (right = left + 1; right < 7; ++right) {
+            if (ranges_overlap(regions[left], sizes[left], regions[right],
+                               sizes[right])) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+worr_native_codec_result_v1
+Worr_NativeCodecSnapshotDecodeProjectionV1(
+    const void *encoded,
+    size_t encoded_bytes,
+    uint32_t max_entities,
+    worr_snapshot_v2 *snapshot_out,
+    worr_snapshot_player_v2 *player_out,
+    worr_snapshot_entity_v2 *entities_out,
+    uint32_t entity_capacity,
+    uint8_t *area_bytes_out,
+    uint32_t area_capacity,
+    worr_snapshot_event_ref_v2 *event_refs_out,
+    uint32_t event_ref_capacity,
+    worr_snapshot_projection_view_v2 *view_out,
+    worr_snapshot_projection_hashes_v2 *hashes_out)
+{
+    worr_native_codec_info_v1 info;
+    snapshot_decode_validation validation;
+    worr_snapshot_projection_view_v2 view;
+    byte_reader reader;
+    uint32_t index;
+    worr_native_codec_result_v1 result;
+
+    if (snapshot_out == NULL || player_out == NULL || view_out == NULL ||
+        hashes_out == NULL || max_entities == 0) {
+        return WORR_NATIVE_CODEC_INVALID_ARGUMENT;
+    }
+    result = Worr_NativeCodecInspectV1(encoded, encoded_bytes, &info);
+    if (result != WORR_NATIVE_CODEC_OK)
+        return result;
+    if (info.record_class != WORR_NATIVE_RECORD_SNAPSHOT_V1)
+        return WORR_NATIVE_CODEC_UNSUPPORTED;
+    result = validate_snapshot_wire(encoded, encoded_bytes, &info,
+                                    max_entities, &validation);
+    if (result != WORR_NATIVE_CODEC_OK)
+        return result;
+
+    if ((info.range_counts[0] == 0 &&
+         (entities_out != NULL || entity_capacity != 0)) ||
+        (info.range_counts[0] != 0 &&
+         (entities_out == NULL || entity_capacity < info.range_counts[0])) ||
+        (info.range_counts[1] == 0 &&
+         (area_bytes_out != NULL || area_capacity != 0)) ||
+        (info.range_counts[1] != 0 &&
+         (area_bytes_out == NULL || area_capacity < info.range_counts[1])) ||
+        (info.range_counts[2] == 0 &&
+         (event_refs_out != NULL || event_ref_capacity != 0)) ||
+        (info.range_counts[2] != 0 &&
+         (event_refs_out == NULL ||
+          event_ref_capacity < info.range_counts[2]))) {
+        return WORR_NATIVE_CODEC_CAPACITY;
+    }
+    if (!projection_output_regions_disjoint(
+            encoded, encoded_bytes, snapshot_out, player_out, entities_out,
+            info.range_counts[0], area_bytes_out, info.range_counts[1],
+            event_refs_out, info.range_counts[2], view_out, hashes_out)) {
+        return WORR_NATIVE_CODEC_INVALID_ARGUMENT;
+    }
+
+    /*
+     * validate_snapshot_wire already performed a complete dry run, including
+     * exact end offsets and all five canonical hashes.  This commit pass has
+     * no data-dependent failure after its first write.
+     */
+    reader.cursor = (const uint8_t *)encoded + validation.entity_offset;
+    reader.end = (const uint8_t *)encoded + encoded_bytes;
+    for (index = 0; index < info.range_counts[0]; ++index)
+        (void)read_snapshot_entity(&reader, &entities_out[index]);
+    if (info.range_counts[1] != 0) {
+        memcpy(area_bytes_out,
+               (const uint8_t *)encoded + validation.area_offset,
+               info.range_counts[1]);
+    }
+    reader.cursor = (const uint8_t *)encoded + validation.event_offset;
+    for (index = 0; index < info.range_counts[2]; ++index)
+        (void)read_snapshot_event_ref(&reader, &event_refs_out[index]);
+
+    memset(&view, 0, sizeof(view));
+    view.struct_size = sizeof(view);
+    view.schema_version = WORR_SNAPSHOT_PROJECTION_VERSION;
+    view.snapshot = snapshot_out;
+    view.player = player_out;
+    view.entities =
+        info.range_counts[0] == 0 ? NULL : entities_out;
+    view.area_bytes =
+        info.range_counts[1] == 0 ? NULL : area_bytes_out;
+    view.event_refs =
+        info.range_counts[2] == 0 ? NULL : event_refs_out;
+    view.entity_count = info.range_counts[0];
+    view.area_byte_count = info.range_counts[1];
+    view.event_ref_count = info.range_counts[2];
+    *snapshot_out = validation.snapshot;
+    *player_out = validation.player;
+
+    *view_out = view;
+    *hashes_out = validation.hashes;
+    return WORR_NATIVE_CODEC_OK;
 }
 
 worr_native_codec_result_v1 Worr_NativeCodecSnapshotDecodeV1(

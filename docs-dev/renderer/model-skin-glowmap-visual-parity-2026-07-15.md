@@ -31,6 +31,12 @@ setting removes unrelated receiver-lighting variation while preserving the
 post-lighting skin glow contribution. The crop `[570, 470, 310, 110]` contains
 the visible model and excludes the shared fixture's inline BSP model.
 
+The generated map now uses the unpaired `parity/fr01_to_background` material,
+so the later bloom gate can isolate the model emitter from the wall-glow
+fixture. This direct-material configuration explicitly keeps both `gl_bloom`
+and `vk_bloom` off; bloom evidence is recorded in
+`vulkan-model-bloom-emission-visual-parity-2026-07-16.md`.
+
 ## Gate contract
 
 `fr01_model_glowmap_manifest.json` limits paired mean absolute error to

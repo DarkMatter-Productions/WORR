@@ -8,6 +8,7 @@ the Free Software Foundation; either version 2 of the License, or
 */
 
 #include "cg_event_runtime.hpp"
+#include "cg_local_interaction.hpp"
 
 #include <array>
 #include <cstdio>
@@ -110,6 +111,45 @@ worr_event_record_v1 authorize(worr_event_record_v1 predicted,
     predicted.flags |= WORR_EVENT_FLAG_HAS_AUTHORITY_ID;
     predicted.event_id = {epoch, sequence};
     return predicted;
+}
+
+worr_event_record_v1 make_local_interaction_authority_receipt_event(
+    std::uint32_t epoch, std::uint32_t sequence)
+{
+    worr_local_interaction_authority_receipt_v1 receipt{};
+    worr_event_record_v1 record{};
+
+    receipt.struct_size = sizeof(receipt);
+    receipt.schema_version = WORR_LOCAL_INTERACTION_ABI_VERSION;
+    receipt.command_id = {91, 17};
+    receipt.command_hash = UINT64_C(0x1000000000000001);
+    receipt.state_hash = UINT64_C(0x2000000000000001);
+    receipt.transaction_hash = UINT64_C(0x3000000000000001);
+    receipt.action_sequence = 1;
+    receipt.state_flags = WORR_LOCAL_INTERACTION_STATE_HOOK_HELD;
+    receipt.outcome_flags = WORR_LOCAL_INTERACTION_OUTCOME_HOOK_REQUESTED |
+                            WORR_LOCAL_INTERACTION_OUTCOME_HOOK_REJECTED;
+    CHECK(Worr_LocalInteractionAuthorityReceiptValidateV1(&receipt));
+
+    record.struct_size = sizeof(record);
+    record.schema_version = WORR_EVENT_ABI_VERSION;
+    record.model_revision = WORR_EVENT_MODEL_REVISION;
+    record.flags = WORR_EVENT_FLAG_HAS_AUTHORITY_ID | WORR_EVENT_FLAG_CRITICAL;
+    record.event_id = {epoch, sequence};
+    record.source_tick = 700;
+    record.source_time_us = UINT64_C(7000000);
+    record.source_entity = {WORR_EVENT_NO_ENTITY, 0};
+    record.subject_entity = {WORR_EVENT_NO_ENTITY, 0};
+    record.event_type = WORR_EVENT_TYPE_AUTHORITY_RECEIPT;
+    record.delivery_class = WORR_EVENT_DELIVERY_RELIABLE_ORDERED;
+    record.prediction_class = WORR_EVENT_PREDICTION_AUTHORITATIVE_ONLY;
+    record.payload_kind =
+        WORR_EVENT_PAYLOAD_LOCAL_INTERACTION_AUTHORITY_V1;
+    record.payload_size = sizeof(receipt);
+    std::memcpy(record.payload, &receipt, sizeof(receipt));
+    CHECK(Worr_EventRecordValidateV1(
+        &record, WORR_CGAME_EVENT_RANGE_MAX_ENTITIES_V2));
+    return record;
 }
 
 std::uint64_t semantic_hash(const worr_event_record_v1 &record)
@@ -571,6 +611,7 @@ void test_cancel_expiry_and_reset_separation()
 
     CHECK(CG_EventRuntimeResetAuthority(133, 1) == CG_EVENT_RUNTIME_OK);
     CHECK(CG_EventRuntimeResetSnapshot(234) == CG_EVENT_RUNTIME_OK);
+    CHECK(CG_EventRuntimeSnapshotFenceHealthy(234));
     const auto survives_fence_reset = make_event(
         true, 133, 1, 1, 0x4004, 70, 700000,
         WORR_EVENT_DELIVERY_RELIABLE_ORDERED,
@@ -586,6 +627,7 @@ void test_cancel_expiry_and_reset_separation()
     CHECK(current.receipt.highest_contiguous == 1);
     CHECK(current.authority_count == 1);
     CHECK(current.authority_requires_resync == 1);
+    CHECK(!CG_EventRuntimeSnapshotFenceHealthy(235));
     CHECK(advance(700000, 70, 1, 0) == CG_EVENT_RUNTIME_NOT_READY);
     CHECK(CG_EventRuntimeSubmitAuthoritativeBatch(
               &survives_fence_reset, 1) == CG_EVENT_RUNTIME_NOT_READY);
@@ -593,6 +635,7 @@ void test_cancel_expiry_and_reset_separation()
     /* A lost unresolved fence is a hard boundary. A new event epoch may
      * reuse the new snapshot timeline, but the old record cannot. */
     CHECK(CG_EventRuntimeResetAuthority(134, 1) == CG_EVENT_RUNTIME_OK);
+    CHECK(CG_EventRuntimeSnapshotFenceHealthy(235));
     const auto after_fence_resync = make_event(
         true, 134, 1, 1, 0x4004, 70, 700000,
         WORR_EVENT_DELIVERY_RELIABLE_ORDERED,
@@ -1310,6 +1353,193 @@ void test_strict_mismatch_degradation()
           CG_EVENT_RUNTIME_WRONG_EPOCH);
 }
 
+void test_private_authority_receipt_bridge()
+{
+    CHECK(CG_EventRuntimeResetAuthority(0, 0) == CG_EVENT_RUNTIME_OK);
+    CHECK(CG_EventRuntimeResetLegacy(0) == CG_EVENT_RUNTIME_OK);
+    CHECK(CG_EventRuntimeResetSnapshot(0) == CG_EVENT_RUNTIME_OK);
+    CHECK(CG_EventRuntimeResetAuthority(190, 1) == CG_EVENT_RUNTIME_OK);
+    const auto record =
+        make_local_interaction_authority_receipt_event(190, 1);
+    CHECK(CG_EventRuntimeSubmitAuthoritativeBatch(&record, 1) ==
+          CG_EVENT_RUNTIME_OK);
+    cg_local_interaction_shadow_status_v1 interaction{};
+    CG_LocalInteractionGetStatus(&interaction);
+    CHECK(interaction.authority_receipts == 1);
+    CHECK(interaction.authority_unmatched == 1);
+    CHECK(interaction.requires_resync == 0);
+    const auto before_advance = status();
+    CHECK(advance(7000000, 700, 1, 0) == CG_EVENT_RUNTIME_OK);
+    const auto after_advance = status();
+    CHECK(after_advance.authoritative_terminal_skips ==
+          before_advance.authoritative_terminal_skips + 1);
+    CHECK(after_advance.authoritative_presentations ==
+          before_advance.authoritative_presentations);
+    CHECK(CG_EventRuntimeSubmitAuthoritativeBatch(&record, 1) ==
+          CG_EVENT_RUNTIME_DUPLICATE);
+    CG_LocalInteractionGetStatus(&interaction);
+    CHECK(interaction.authority_duplicates == 1);
+}
+
+void test_local_interaction_resync_latches_runtime_health()
+{
+    CHECK(CG_EventRuntimeResetAuthority(0, 0) == CG_EVENT_RUNTIME_OK);
+    CHECK(CG_EventRuntimeResetAuthority(191, 1) == CG_EVENT_RUNTIME_OK);
+
+    const auto record =
+        make_local_interaction_authority_receipt_event(191, 1);
+    worr_local_interaction_authority_receipt_v1 receipt{};
+    std::memcpy(&receipt, record.payload, sizeof(receipt));
+    CHECK(CG_LocalInteractionSubmitAuthorityReceipt(&receipt) ==
+          cg_local_interaction_receipt_result_v1::accepted_unmatched);
+    auto conflicting_receipt = receipt;
+    conflicting_receipt.state_hash ^= UINT64_C(1);
+    CHECK(Worr_LocalInteractionAuthorityReceiptValidateV1(
+        &conflicting_receipt));
+    CHECK(CG_LocalInteractionSubmitAuthorityReceipt(&conflicting_receipt) ==
+          cg_local_interaction_receipt_result_v1::conflict);
+    CHECK(CG_LocalInteractionRequiresResync());
+
+    /* Prediction-side reconciliation may fail between carrier deliveries. It
+     * still has to become visible through the normal runtime health bit before
+     * any later native admission or presentation proceeds. */
+    CG_EventRuntimeSynchronizeLocalInteractionHealth();
+    const auto current = status();
+    CHECK(current.authority_requires_resync == 1);
+    CHECK(current.authority_degraded == 1);
+    worr_cgame_event_runtime_status_v1 exported{};
+    const auto *api = CG_GetEventRuntimeAPI();
+    CHECK(api && api->GetStatus(&exported));
+    CHECK((exported.state_flags &
+           WORR_CGAME_EVENT_RUNTIME_STATE_REQUIRES_RESYNC) != 0);
+    CHECK(advance(7100000, 710, 1, 0) == CG_EVENT_RUNTIME_NOT_READY);
+
+    CHECK(CG_EventRuntimeResetAuthority(192, 1) == CG_EVENT_RUNTIME_OK);
+    CHECK(!CG_LocalInteractionRequiresResync());
+    CHECK(status().authority_requires_resync == 0);
+}
+
+void test_legacy_snapshot_fence_is_audit_independent_and_bounded()
+{
+    constexpr std::uint32_t snapshot_epoch = 601;
+    constexpr std::uint32_t references_per_snapshot = 512;
+    constexpr std::uint32_t snapshot_count = 5;
+    std::array<worr_snapshot_event_ref_v2,
+               references_per_snapshot> refs{};
+
+    CHECK(CG_EventRuntimeResetAuthority(0, 0) == CG_EVENT_RUNTIME_OK);
+    CHECK(CG_EventRuntimeResetLegacy(0) == CG_EVENT_RUNTIME_OK);
+    CHECK(CG_EventRuntimeResetSnapshot(0) == CG_EVENT_RUNTIME_OK);
+    CG_EventRuntimeSetAuditEnabled(false);
+    CHECK(!CG_EventRuntimeAuditEnabled());
+    CHECK(CG_EventRuntimeResetLegacy(snapshot_epoch) ==
+          CG_EVENT_RUNTIME_OK);
+    CHECK(CG_EventRuntimeResetSnapshot(snapshot_epoch) ==
+          CG_EVENT_RUNTIME_OK);
+
+    for (std::uint32_t index = 0; index < refs.size(); ++index) {
+        refs[index] = legacy_ref(
+            index, UINT64_C(0x6000000000000000) + index + 1u);
+    }
+    CHECK(Worr_SnapshotEventRefsValidateV2(
+        refs.data(), static_cast<std::uint32_t>(refs.size())));
+
+    const auto before = status();
+    for (std::uint32_t sequence = 1;
+         sequence <= snapshot_count; ++sequence) {
+        CHECK(observe(
+                  snapshot_epoch, sequence, 1000u + sequence,
+                  UINT64_C(20000000) + sequence * UINT64_C(1000),
+                  refs.data(),
+                  static_cast<std::uint32_t>(refs.size())) ==
+              CG_EVENT_RUNTIME_OK);
+        CHECK(CG_EventRuntimeSnapshotFenceHealthy(snapshot_epoch));
+    }
+
+    auto current = status();
+    CHECK(current.audit_enabled == 0);
+    CHECK(current.snapshots_observed ==
+          before.snapshots_observed + snapshot_count);
+    CHECK(current.references_observed ==
+          before.references_observed +
+              snapshot_count * references_per_snapshot);
+    CHECK(current.reference_capacity_failures ==
+          before.reference_capacity_failures);
+    CHECK(current.reference_count == 0);
+    CHECK(current.legacy_body_count == 0);
+    CHECK(advance(UINT64_C(21000000), 1005, 1, 0) ==
+          CG_EVENT_RUNTIME_EMPTY);
+
+    const auto last_snapshot = make_snapshot(
+        snapshot_epoch, snapshot_count,
+        1000u + snapshot_count,
+        UINT64_C(20000000) +
+            snapshot_count * UINT64_C(1000),
+        refs.data(), static_cast<std::uint32_t>(refs.size()));
+    const auto before_bad_hash = status();
+    auto bad_hash_snapshot = last_snapshot;
+    bad_hash_snapshot.event_hash ^= UINT64_C(1);
+    CHECK(CG_EventRuntimeObserveSnapshot(
+              &bad_hash_snapshot, refs.data(),
+              static_cast<std::uint32_t>(refs.size())) ==
+          CG_EVENT_RUNTIME_INVALID_ARGUMENT);
+    current = status();
+    CHECK(current.snapshot_rejections ==
+          before_bad_hash.snapshot_rejections + 1u);
+    CHECK(current.snapshots_observed ==
+          before_bad_hash.snapshots_observed);
+    CHECK(current.reference_count ==
+          before_bad_hash.reference_count);
+
+    /*
+     * More than the complete fixed reference-table capacity was fenced above
+     * without retaining audit-only join entries. Toggling or resetting the
+     * legacy comparison domain cannot erase the exact snapshot chronology.
+     */
+    CG_EventRuntimeSetAuditEnabled(true);
+    CHECK(CG_EventRuntimeObserveSnapshot(
+              &last_snapshot, refs.data(),
+              static_cast<std::uint32_t>(refs.size())) ==
+          CG_EVENT_RUNTIME_DUPLICATE);
+    CHECK(CG_EventRuntimeResetLegacy(snapshot_epoch + 1u) ==
+          CG_EVENT_RUNTIME_OK);
+    CHECK(CG_EventRuntimeObserveSnapshot(
+              &last_snapshot, refs.data(),
+              static_cast<std::uint32_t>(refs.size())) ==
+          CG_EVENT_RUNTIME_DUPLICATE);
+    CHECK(CG_EventRuntimeSnapshotFenceHealthy(snapshot_epoch));
+
+    constexpr std::uint32_t authority_snapshot_epoch =
+        snapshot_epoch + 1u;
+    CHECK(CG_EventRuntimeResetSnapshot(authority_snapshot_epoch) ==
+          CG_EVENT_RUNTIME_OK);
+    const auto authority_record = make_event(
+        true, 777, 1, 0, 0x7777, 2000, UINT64_C(22000000),
+        WORR_EVENT_DELIVERY_RELIABLE_ORDERED,
+        WORR_EVENT_PREDICTION_AUTHORITATIVE_ONLY);
+    const auto missing_authority_ref =
+        authority_ref(0, authority_record);
+    const auto missing_authority_snapshot = make_snapshot(
+        authority_snapshot_epoch, 1, 2000, UINT64_C(22000000),
+        &missing_authority_ref, 1);
+    const auto before_not_ready = status();
+    CHECK(CG_EventRuntimeObserveSnapshot(
+              &missing_authority_snapshot,
+              &missing_authority_ref, 1) ==
+          CG_EVENT_RUNTIME_NOT_READY);
+    current = status();
+    CHECK(current.snapshots_observed ==
+          before_not_ready.snapshots_observed);
+    CHECK(current.reference_count ==
+          before_not_ready.reference_count);
+
+    CHECK(CG_EventRuntimeResetSnapshot(0) == CG_EVENT_RUNTIME_OK);
+    current = status();
+    CHECK(current.reference_count == 0);
+    CHECK(!CG_EventRuntimeSnapshotFenceHealthy(
+        authority_snapshot_epoch));
+}
+
 } // namespace
 
 int main()
@@ -1338,6 +1568,9 @@ int main()
     test_unref_authority_expiration_does_not_stall_sequence();
     test_reverse_reconciliation_binds_existing_authority_id();
     test_strict_mismatch_degradation();
+    test_private_authority_receipt_bridge();
+    test_local_interaction_resync_latches_runtime_health();
+    test_legacy_snapshot_fence_is_audit_independent_and_bounded();
     std::puts("cgame event runtime tests passed");
     return 0;
 }

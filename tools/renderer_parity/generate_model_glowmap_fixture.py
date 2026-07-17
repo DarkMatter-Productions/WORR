@@ -25,10 +25,18 @@ MODEL_ENTITY = (
     '}\n',
 )
 
+# Keep this model-emission scene independent from the wall-glow companion used
+# by the shared bmodel fixture.  Bloom captures can then isolate the MD2 skin
+# contribution without a full-screen world-material emitter in the same frame.
+BACKGROUND_TEXTURE = "parity/fr01_to_background"
+
 
 def generated_outputs(asset_root: Path) -> dict[Path, bytes]:
     return {
-        asset_root / "maps" / MAP_NAME: build_bsp(extra_entities=MODEL_ENTITY),
+        asset_root / "maps" / MAP_NAME: build_bsp(
+            extra_entities=MODEL_ENTITY,
+            background_texture=BACKGROUND_TEXTURE,
+        ),
     }
 
 

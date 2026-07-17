@@ -18,6 +18,30 @@ import compare_captures
 RENDERERS = ("opengl", "vulkan")
 
 
+def scene_launch_cvars(scene: dict[str, Any]) -> tuple[tuple[str, str], ...]:
+    raw = scene.get("launch_cvars", {})
+    if raw is None:
+        return ()
+    if not isinstance(raw, dict):
+        raise compare_captures.CaptureError(
+            f"{scene['id']}: launch_cvars must be an object"
+        )
+    result: list[tuple[str, str]] = []
+    for name, value in raw.items():
+        if (not isinstance(name, str) or not name or not name.isascii() or
+                not all(char.isalnum() or char == "_" for char in name)):
+            raise compare_captures.CaptureError(
+                f"{scene['id']}: launch cvar name must be ASCII alphanumeric/underscore"
+            )
+        if (not isinstance(value, str) or "\0" in value or "\r" in value or
+                "\n" in value):
+            raise compare_captures.CaptureError(
+                f"{scene['id']}: launch cvar value must be a single line string"
+            )
+        result.append((name, value))
+    return tuple(result)
+
+
 def load_manifest(path: Path) -> dict[str, Any]:
     raw = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict) or raw.get("schema_version") != 1:
@@ -40,6 +64,7 @@ def load_manifest(path: Path) -> dict[str, Any]:
             raise compare_captures.CaptureError(
                 f"{scene['id']}: capture must be a plain filename"
             )
+        scene_launch_cvars(scene)
     return raw
 
 
@@ -143,6 +168,10 @@ def run_capture(
         "+set",
         "r_dof",
         "0",
+    ]
+    for name, value in scene_launch_cvars(scene):
+        command.extend(("+set", name, value))
+    command.extend([
         "+set",
         "ui_rml_enable",
         "0",
@@ -154,7 +183,7 @@ def run_capture(
         "1",
         "+exec",
         scene["config"],
-    ]
+    ])
     environment = os.environ.copy()
     if validation and renderer == "vulkan":
         environment["VK_INSTANCE_LAYERS"] = "VK_LAYER_KHRONOS_validation"

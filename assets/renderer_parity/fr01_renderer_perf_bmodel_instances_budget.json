@@ -5,7 +5,7 @@
   "capture_contract": {
     "scenario_id": "fr01-bmodel-instance-grid-telemetry",
     "fixture_sha256": "3c211952df975e03a8ac0b8cdf3dd162e86d88c5e52b343ea07ed9385b83404b",
-    "config_sha256": "8e03949e71095c2db2aad697098224dcfc1974a10abece795fe795540c4386fc",
+    "config_sha256": "b96cbed2ea23060db61ce8531f131749ebb03cfa718bec1dcb65671c4a421b82",
     "hardware_id": "GPU=Intel(R) Iris(R) Xe Graphics; CPU=13th Gen Intel(R) Core(TM) i7-13700H; OS=Windows 11 Home 10.0.26200",
     "driver": "Intel 31.0.101.5590 (2024-06-10)"
   },

@@ -24,6 +24,21 @@ the Free Software Foundation; either version 2 of the License, or
 
 namespace {
 
+constexpr size_t kSvcSettingWireBytes = 9u;
+constexpr size_t kSvcSettingValueOffset = 5u;
+constexpr size_t kClcSettingWireBytes = 5u;
+constexpr size_t kClcSettingValueOffset = 3u;
+constexpr size_t kSvcReadinessRecordWireBytes =
+    WORR_NATIVE_READINESS_SIDEBAND_PAIR_COUNT * kSvcSettingWireBytes;
+constexpr size_t kClcReadinessRecordWireBytes =
+    WORR_NATIVE_READINESS_SIDEBAND_PAIR_COUNT * kClcSettingWireBytes;
+
+constexpr size_t readiness_pair_index(int setting)
+{
+    return static_cast<size_t>(
+        setting - WORR_NATIVE_READINESS_SETTING_BEGIN);
+}
+
 struct memory_io_t {
     std::array<uint8_t, 4096> data{};
     std::array<uint8_t, 4096> overflow{};
@@ -165,8 +180,8 @@ void write_svc_record(
                                static_cast<uint32_t>(
                                    static_cast<int32_t>(pair.value)));
     }
-    CHECK(io.write_pos == WORR_NATIVE_READINESS_SIDEBAND_PAIR_COUNT * 9u);
-    constexpr std::array<uint8_t, 9> begin_wire{
+    CHECK(io.write_pos == kSvcReadinessRecordWireBytes);
+    constexpr std::array<uint8_t, kSvcSettingWireBytes> begin_wire{
         37u, 0x14u, 0x83u, 0xffu, 0xffu,
         0x01u, 0x00u, 0x00u, 0x00u};
     CHECK(std::memcmp(io.data.data(), begin_wire.data(),
@@ -219,14 +234,18 @@ void write_clc_record(protocol_fixture_t &fixture,
                   reinterpret_cast<uintptr_t>(&fixture.io), &message) ==
               Q2P_ERR_SUCCESS);
     }
-    CHECK(fixture.io.write_pos ==
-          WORR_NATIVE_READINESS_SIDEBAND_PAIR_COUNT * 5u);
-    constexpr std::array<uint8_t, 5> begin_wire{
+    CHECK(fixture.io.write_pos == kClcReadinessRecordWireBytes);
+    constexpr std::array<uint8_t, kClcSettingWireBytes> begin_wire{
         5u, 0x14u, 0x83u, 0x01u, 0x00u};
     CHECK(std::memcmp(fixture.io.data.data(), begin_wire.data(),
                       begin_wire.size()) == 0);
     constexpr std::array<uint8_t, 2> nonce_word2_wire{0x98u, 0xbau};
-    CHECK(std::memcmp(fixture.io.data.data() + 8u * 5u + 3u,
+    CHECK(std::memcmp(
+              fixture.io.data.data() +
+                  readiness_pair_index(
+                      WORR_NATIVE_READINESS_SETTING_NONCE_WORD2) *
+                      kClcSettingWireBytes +
+                  kClcSettingValueOffset,
                       nonce_word2_wire.data(),
                       nonce_word2_wire.size()) == 0);
 }
@@ -286,6 +305,7 @@ void run_handshake()
     CHECK(Worr_NativeReadinessServerInitV1(
               &server, epoch, capabilities, nonce, 100, timeout,
               &challenge) == WORR_NATIVE_READINESS_OK);
+    CHECK(challenge.snapshot_epoch == 0);
     CHECK(challenge.record_checksum == UINT32_C(0x5d6c0c0a));
     CHECK(Worr_NativeReadinessClientInitV1(
               &client, epoch, capabilities, 101, timeout) ==
@@ -294,9 +314,14 @@ void run_handshake()
     write_svc_record(fixture.io, challenge);
     constexpr std::array<uint8_t, 4> challenge_checksum_low_wire{
         0x0au, 0x0cu, 0x00u, 0x00u};
-    CHECK(std::memcmp(fixture.io.data.data() + 10u * 9u + 5u,
-                      challenge_checksum_low_wire.data(),
-                      challenge_checksum_low_wire.size()) == 0);
+    CHECK(std::memcmp(
+              fixture.io.data.data() +
+                  readiness_pair_index(
+                      WORR_NATIVE_READINESS_SETTING_CHECKSUM_LOW) *
+                      kSvcSettingWireBytes +
+                  kSvcSettingValueOffset,
+              challenge_checksum_low_wire.data(),
+              challenge_checksum_low_wire.size()) == 0);
     const auto wire_challenge = read_svc_record(fixture);
     CHECK(records_equal(challenge, wire_challenge));
     CHECK(Worr_NativeReadinessClientObserveChallengeV1(
@@ -487,6 +512,8 @@ extern "C" q2proto_error_t q2protoio_deflate_end(uintptr_t)
 int main()
 {
     run_handshake();
-    std::puts("native_readiness_q2proto_wire_test: ok svc=117 clc=65");
+    std::printf(
+        "native_readiness_q2proto_wire_test: ok svc=%zu clc=%zu\n",
+        kSvcReadinessRecordWireBytes, kClcReadinessRecordWireBytes);
     return 0;
 }

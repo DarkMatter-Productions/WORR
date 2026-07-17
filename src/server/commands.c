@@ -887,6 +887,60 @@ static void SV_WorrNativeShadowStatus_f(void)
             (unsigned long long)status.stale_cancelled_carriers,
             (unsigned long long)status.stale_cancelled_readiness_records,
             status.last_failure);
+
+        if (client->worr_native_shadow->mode ==
+            SV_NATIVE_SHADOW_MODE_SNAPSHOT) {
+            sv_native_shadow_snapshot_status_v1 snapshot_status;
+
+            memset(&snapshot_status, 0, sizeof(snapshot_status));
+            if (SV_NativeShadowGetSnapshotStatusV1(
+                    client->worr_native_shadow, svs.realtime,
+                    &snapshot_status)) {
+                Com_Printf(
+                    "WORR_NATIVE_SERVER_SNAPSHOT_STATUS_V1 schema=%u "
+                    "slot=%d snapshot_epoch=%u sender=%u retired_sender=%u "
+                    "tx_open=%u output_due=%u retained=%u "
+                    "retired_retained=%u active=%u:%u pending=%u:%u "
+                    "active_bytes=%u pending_bytes=%u confirms=%llu "
+                    "queued=%llu queue_failures=%llu superseded=%llu "
+                    "pending_coalesced=%llu acks=%llu released=%llu "
+                    "prepared=%llu confirmed=%llu rejected=%llu "
+                    "first_sends=%llu retries=%llu\n",
+                    snapshot_status.schema_version, client->number,
+                    snapshot_status.snapshot_epoch,
+                    snapshot_status.sender_initialized,
+                    snapshot_status.retired_sender_initialized,
+                    snapshot_status.tx_open, snapshot_status.output_due,
+                    snapshot_status.retained_count,
+                    snapshot_status.retired_retained_count,
+                    snapshot_status.active_snapshot.epoch,
+                    snapshot_status.active_snapshot.sequence,
+                    snapshot_status.pending_snapshot.epoch,
+                    snapshot_status.pending_snapshot.sequence,
+                    snapshot_status.active_payload_bytes,
+                    snapshot_status.pending_payload_bytes,
+                    (unsigned long long)snapshot_status.active_confirms,
+                    (unsigned long long)snapshot_status.snapshots_queued,
+                    (unsigned long long)
+                        snapshot_status.snapshot_queue_failures,
+                    (unsigned long long)
+                        snapshot_status.snapshots_superseded,
+                    (unsigned long long)
+                        snapshot_status.pending_coalesced,
+                    (unsigned long long)
+                        snapshot_status.acknowledgements_applied,
+                    (unsigned long long)
+                        snapshot_status.payloads_released,
+                    (unsigned long long)
+                        snapshot_status.packets_prepared,
+                    (unsigned long long)
+                        snapshot_status.packets_confirmed,
+                    (unsigned long long)
+                        snapshot_status.packets_rejected,
+                    (unsigned long long)snapshot_status.first_sends,
+                    (unsigned long long)snapshot_status.retries);
+            }
+        }
     }
 }
 

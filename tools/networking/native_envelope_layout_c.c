@@ -20,9 +20,14 @@ _Static_assert(offsetof(worr_native_envelope_frame_info_v1, record) == 8,
 _Static_assert(offsetof(worr_native_envelope_frame_info_v1, payload_offset) ==
                    52,
                "C native frame payload offset-field mismatch");
+_Static_assert(offsetof(worr_native_envelope_reassembly_v1, priority) == 46,
+               "C native reassembly priority offset mismatch");
 _Static_assert(offsetof(worr_native_envelope_reassembly_v1, received_bitmap) ==
-                   56,
+                   48,
                "C native reassembly bitmap offset mismatch");
+_Static_assert(
+    sizeof(((worr_native_envelope_reassembly_v1 *)0)->received_bitmap) == 16,
+    "C native reassembly bitmap width mismatch");
 _Static_assert(offsetof(worr_native_envelope_tx_queue_v1, items) == 24,
                "C native queue item offset mismatch");
 _Static_assert(offsetof(worr_native_envelope_tx_item_v1, enqueue_serial) == 24,

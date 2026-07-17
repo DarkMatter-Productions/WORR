@@ -421,6 +421,52 @@ static bool test_event_codecs(void)
         }
     }
 
+    {
+        worr_local_interaction_authority_receipt_v1 receipt;
+        memset(&receipt, 0, sizeof(receipt));
+        receipt.struct_size = sizeof(receipt);
+        receipt.schema_version = WORR_LOCAL_INTERACTION_ABI_VERSION;
+        receipt.command_id.epoch = 44;
+        receipt.command_id.sequence = 9;
+        receipt.command_hash = UINT64_C(0x0102030405060708);
+        receipt.state_hash = UINT64_C(0x1112131415161718);
+        receipt.transaction_hash = UINT64_C(0x2122232425262728);
+        receipt.action_sequence = 3;
+        receipt.state_flags = WORR_LOCAL_INTERACTION_STATE_HOOK_HELD;
+        receipt.outcome_flags =
+            WORR_LOCAL_INTERACTION_OUTCOME_HOOK_REQUESTED |
+            WORR_LOCAL_INTERACTION_OUTCOME_HOOK_REJECTED;
+        CHECK(Worr_LocalInteractionAuthorityReceiptValidateV1(&receipt));
+
+        source = make_event_base(51);
+        source.flags = WORR_EVENT_FLAG_HAS_AUTHORITY_ID |
+                       WORR_EVENT_FLAG_CRITICAL;
+        source.source_ordinal = 0;
+        source.source_entity.index = WORR_EVENT_NO_ENTITY;
+        source.source_entity.generation = 0;
+        source.subject_entity.index = WORR_EVENT_NO_ENTITY;
+        source.subject_entity.generation = 0;
+        source.event_type = WORR_EVENT_TYPE_AUTHORITY_RECEIPT;
+        source.payload_kind =
+            WORR_EVENT_PAYLOAD_LOCAL_INTERACTION_AUTHORITY_V1;
+        source.payload_size = sizeof(receipt);
+        memcpy(source.payload, &receipt, sizeof(receipt));
+        CHECK(Worr_EventRecordValidateV1(&source, TEST_MAX_ENTITIES));
+        CHECK(Worr_NativeCodecEventEncodeV1(
+                  &source, TEST_MAX_ENTITIES, encoded, sizeof(encoded),
+                  &encoded_bytes) == WORR_NATIVE_CODEC_OK);
+        CHECK(Worr_NativeCodecInspectV1(encoded, encoded_bytes, &info) ==
+              WORR_NATIVE_CODEC_OK);
+        CHECK(info.range_counts[0] == sizeof(receipt));
+        CHECK(Worr_NativeCodecEventDecodeV1(
+                  encoded, encoded_bytes, TEST_MAX_ENTITIES, &decoded) ==
+              WORR_NATIVE_CODEC_OK);
+        CHECK(memcmp(decoded.payload, &receipt, sizeof(receipt)) == 0);
+
+        source.source_entity.index = 1;
+        CHECK(!Worr_EventRecordValidateV1(&source, TEST_MAX_ENTITIES));
+    }
+
     source = make_event_kind(WORR_EVENT_PAYLOAD_U32X4, 50);
     CHECK(Worr_NativeCodecEventEncodeV1(
               &source, TEST_MAX_ENTITIES, encoded, sizeof(encoded),
@@ -675,6 +721,9 @@ static bool test_snapshot_codec(void)
     uint8_t area_sentinel[8];
     worr_snapshot_event_ref_v2 decoded_events[2];
     worr_snapshot_event_ref_v2 event_sentinel[2];
+    worr_snapshot_projection_view_v2 decoded_view;
+    worr_snapshot_projection_hashes_v2 decoded_hashes;
+    worr_snapshot_projection_hashes_v2 source_hashes;
     worr_snapshot_store_publish_v2 publication;
     worr_snapshot_store_publish_v2 publication_sentinel;
     worr_native_codec_info_v1 info;
@@ -706,6 +755,32 @@ static bool test_snapshot_codec(void)
     CHECK(info.range_counts[0] == 2);
     CHECK(info.range_counts[1] == 2);
     CHECK(info.range_counts[2] == 1);
+    CHECK(Worr_SnapshotProjectionHashesV2(
+        &view, TEST_MAX_ENTITIES, &source_hashes));
+    memset(&decoded_snapshot, 0xcc, sizeof(decoded_snapshot));
+    memset(&decoded_player, 0xcc, sizeof(decoded_player));
+    memset(decoded_entities, 0xcc, sizeof(decoded_entities));
+    memset(decoded_area, 0xcc, sizeof(decoded_area));
+    memset(decoded_events, 0xcc, sizeof(decoded_events));
+    memset(&decoded_view, 0xcc, sizeof(decoded_view));
+    memset(&decoded_hashes, 0xcc, sizeof(decoded_hashes));
+    CHECK(Worr_NativeCodecSnapshotDecodeProjectionV1(
+              encoded, encoded_bytes, TEST_MAX_ENTITIES,
+              &decoded_snapshot, &decoded_player, decoded_entities, 2,
+              decoded_area, 8, decoded_events, 2, &decoded_view,
+              &decoded_hashes) == WORR_NATIVE_CODEC_OK);
+    CHECK(decoded_view.snapshot == &decoded_snapshot &&
+          decoded_view.player == &decoded_player &&
+          decoded_view.entities == decoded_entities &&
+          decoded_view.area_bytes == decoded_area &&
+          decoded_view.event_refs == decoded_events &&
+          decoded_view.entity_count == 2 &&
+          decoded_view.area_byte_count == 2 &&
+          decoded_view.event_ref_count == 1);
+    CHECK(memcmp(&decoded_hashes, &source_hashes,
+                 sizeof(decoded_hashes)) == 0);
+    CHECK(Worr_SnapshotValidateV2(
+        &decoded_snapshot, TEST_MAX_ENTITIES));
     memset(&decoded_snapshot, 0xcc, sizeof(decoded_snapshot));
     memset(&decoded_player, 0xcc, sizeof(decoded_player));
     memset(decoded_entities, 0xcc, sizeof(decoded_entities));
@@ -886,8 +961,10 @@ static bool test_maximum_entity_snapshot_codec(void)
         WORR_NATIVE_CODEC_MAX_SNAPSHOT_AREA_BYTES];
     static uint8_t decoded_area[
         WORR_NATIVE_CODEC_MAX_SNAPSHOT_AREA_BYTES];
-    static worr_snapshot_event_ref_v2 source_events[1];
-    static worr_snapshot_event_ref_v2 decoded_events[1];
+    static worr_snapshot_event_ref_v2 source_events[
+        WORR_NATIVE_CODEC_MAX_SNAPSHOT_EVENT_REFS];
+    static worr_snapshot_event_ref_v2 decoded_events[
+        WORR_NATIVE_CODEC_MAX_SNAPSHOT_EVENT_REFS];
     static uint8_t encoded[WORR_NATIVE_CODEC_MAX_ENCODED_BYTES];
     worr_snapshot_v2 source_metadata = make_snapshot_metadata();
     worr_snapshot_v2 decoded_snapshot;
@@ -909,14 +986,20 @@ static bool test_maximum_entity_snapshot_codec(void)
               WORR_NATIVE_CODEC_MAX_SNAPSHOT_ENTITIES,
               source_area, WORR_NATIVE_CODEC_MAX_SNAPSHOT_AREA_BYTES,
               WORR_NATIVE_CODEC_MAX_SNAPSHOT_AREA_BYTES,
-              source_events, 1, 1, 1024) == WORR_SNAPSHOT_STORE_OK);
+              source_events,
+              WORR_NATIVE_CODEC_MAX_SNAPSHOT_EVENT_REFS,
+              WORR_NATIVE_CODEC_MAX_SNAPSHOT_EVENT_REFS,
+              1024) == WORR_SNAPSHOT_STORE_OK);
     CHECK(Worr_SnapshotStoreInitV2(
               &destination_store, destination_slot, 1, decoded_entities,
               WORR_NATIVE_CODEC_MAX_SNAPSHOT_ENTITIES,
               WORR_NATIVE_CODEC_MAX_SNAPSHOT_ENTITIES,
               decoded_area, WORR_NATIVE_CODEC_MAX_SNAPSHOT_AREA_BYTES,
               WORR_NATIVE_CODEC_MAX_SNAPSHOT_AREA_BYTES,
-              decoded_events, 1, 1, 1024) == WORR_SNAPSHOT_STORE_OK);
+              decoded_events,
+              WORR_NATIVE_CODEC_MAX_SNAPSHOT_EVENT_REFS,
+              WORR_NATIVE_CODEC_MAX_SNAPSHOT_EVENT_REFS,
+              1024) == WORR_SNAPSHOT_STORE_OK);
     for (index = 0;
          index < WORR_NATIVE_CODEC_MAX_SNAPSHOT_ENTITIES;
          ++index) {
@@ -978,17 +1061,27 @@ static bool test_maximum_entity_snapshot_codec(void)
     CHECK(stored_snapshot.entity_hash == view.snapshot->entity_hash);
     CHECK(stored_snapshot.area_hash == view.snapshot->area_hash);
 
-    memset(&source_events[0], 0, sizeof(source_events[0]));
-    source_events[0].struct_size = sizeof(source_events[0]);
-    source_events[0].schema_version = WORR_SNAPSHOT_ABI_VERSION;
-    source_events[0].provenance =
-        WORR_SNAPSHOT_EVENT_PROVENANCE_AUTHORITY;
-    source_events[0].semantic_version = WORR_EVENT_MODEL_REVISION;
-    source_events[0].authority_id.stream_epoch = 8;
-    source_events[0].authority_id.sequence = 1;
-    source_events[0].semantic_hash = UINT64_C(0x12345678);
+    for (index = 0;
+         index < WORR_NATIVE_CODEC_MAX_SNAPSHOT_EVENT_REFS;
+         ++index) {
+        memset(&source_events[index], 0, sizeof(source_events[index]));
+        source_events[index].struct_size =
+            sizeof(source_events[index]);
+        source_events[index].schema_version =
+            WORR_SNAPSHOT_ABI_VERSION;
+        source_events[index].provenance =
+            WORR_SNAPSHOT_EVENT_PROVENANCE_AUTHORITY;
+        source_events[index].carrier_ordinal = index;
+        source_events[index].semantic_version =
+            WORR_EVENT_MODEL_REVISION;
+        source_events[index].authority_id.stream_epoch = 8;
+        source_events[index].authority_id.sequence = index + 1u;
+        source_events[index].semantic_hash =
+            UINT64_C(0x1234567800000000) + index;
+    }
     source_publication.event_refs = source_events;
-    source_publication.event_ref_count = 1;
+    source_publication.event_ref_count =
+        WORR_NATIVE_CODEC_MAX_SNAPSHOT_EVENT_REFS;
     CHECK(Worr_SnapshotStorePublishV2(
               &source_store, &source_publication, &source_ref) ==
           WORR_SNAPSHOT_STORE_OK);
@@ -1003,11 +1096,38 @@ static bool test_maximum_entity_snapshot_codec(void)
     view.event_refs = source_events;
     view.entity_count = WORR_NATIVE_CODEC_MAX_SNAPSHOT_ENTITIES;
     view.area_byte_count = WORR_NATIVE_CODEC_MAX_SNAPSHOT_AREA_BYTES;
-    view.event_ref_count = 1;
+    view.event_ref_count =
+        WORR_NATIVE_CODEC_MAX_SNAPSHOT_EVENT_REFS;
     preflight = UINT32_C(0xdeadbeef);
     CHECK(Worr_NativeCodecSnapshotPreflightV1(
-              &view, 1024, &preflight) == WORR_NATIVE_CODEC_LIMIT);
-    CHECK(preflight == UINT32_C(0xdeadbeef));
+              &view, 1024, &preflight) == WORR_NATIVE_CODEC_OK);
+    CHECK(preflight ==
+          encoded_bytes +
+              WORR_NATIVE_CODEC_MAX_SNAPSHOT_EVENT_REFS *
+                  WORR_NATIVE_CODEC_SNAPSHOT_EVENT_REF_BYTES);
+    CHECK(preflight > UINT32_C(65536));
+    CHECK(preflight <= WORR_NATIVE_CODEC_MAX_ENCODED_BYTES);
+    CHECK(Worr_NativeCodecSnapshotEncodeV1(
+              &view, 1024, encoded, sizeof(encoded), &encoded_bytes) ==
+          WORR_NATIVE_CODEC_OK);
+    CHECK(encoded_bytes == preflight);
+    CHECK(Worr_NativeCodecSnapshotDecodeV1(
+              encoded, encoded_bytes, 1024,
+              &decoded_snapshot, &decoded_player, decoded_entities,
+              WORR_NATIVE_CODEC_MAX_SNAPSHOT_ENTITIES,
+              decoded_area, WORR_NATIVE_CODEC_MAX_SNAPSHOT_AREA_BYTES,
+              decoded_events,
+              WORR_NATIVE_CODEC_MAX_SNAPSHOT_EVENT_REFS,
+              &decoded_publication) ==
+          WORR_NATIVE_CODEC_OK);
+    CHECK(decoded_publication.event_ref_count ==
+          WORR_NATIVE_CODEC_MAX_SNAPSHOT_EVENT_REFS);
+    CHECK(decoded_events[
+              WORR_NATIVE_CODEC_MAX_SNAPSHOT_EVENT_REFS - 1u]
+              .semantic_hash ==
+          source_events[
+              WORR_NATIVE_CODEC_MAX_SNAPSHOT_EVENT_REFS - 1u]
+              .semantic_hash);
     return true;
 }
 

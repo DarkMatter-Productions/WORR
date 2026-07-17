@@ -14,7 +14,7 @@ static_assert(offsetof(worr_native_readiness_record_v1,
                        negotiated_capabilities) == 12);
 static_assert(offsetof(worr_native_readiness_record_v1, readiness_nonce) == 16);
 static_assert(offsetof(worr_native_readiness_record_v1, record_checksum) == 24);
-static_assert(offsetof(worr_native_readiness_record_v1, reserved0) == 28);
+static_assert(offsetof(worr_native_readiness_record_v1, snapshot_epoch) == 28);
 
 static_assert(std::is_standard_layout_v<worr_native_readiness_telemetry_v1>);
 static_assert(std::is_trivially_copyable_v<worr_native_readiness_telemetry_v1>);
@@ -60,7 +60,7 @@ static_assert(offsetof(worr_native_readiness_state_v1, state_flags) == 10);
 static_assert(offsetof(worr_native_readiness_state_v1, transport_epoch) == 12);
 static_assert(offsetof(worr_native_readiness_state_v1,
                        negotiated_capabilities) == 16);
-static_assert(offsetof(worr_native_readiness_state_v1, reserved0) == 20);
+static_assert(offsetof(worr_native_readiness_state_v1, snapshot_epoch) == 20);
 static_assert(offsetof(worr_native_readiness_state_v1, readiness_nonce) == 24);
 static_assert(offsetof(worr_native_readiness_state_v1, nonce_floor) == 32);
 static_assert(offsetof(worr_native_readiness_state_v1, generation) == 40);
@@ -106,6 +106,9 @@ static_assert(WORR_NET_CAP_NATIVE_EPOCH_CANCEL_V1 == UINT32_C(0x40));
 static_assert(WORR_NET_CAP_NATIVE_READINESS_REQUIRED_MASK == UINT32_C(0x50));
 static_assert(WORR_NET_CAP_NATIVE_COMMAND_PRIVATE_MASK == UINT32_C(0x53));
 static_assert(WORR_NET_CAP_NATIVE_EVENT_PRIVATE_MASK == UINT32_C(0x73));
+static_assert(WORR_NET_CAP_NATIVE_SNAPSHOT_PRIVATE_MASK == UINT32_C(0x57));
+static_assert((WORR_NET_CAP_NATIVE_EVENT_PRIVATE_MASK |
+               WORR_NET_CAP_CANONICAL_SNAPSHOT_V2) == UINT32_C(0x77));
 
 int main()
 {

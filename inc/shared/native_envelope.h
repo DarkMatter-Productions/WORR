@@ -31,8 +31,8 @@ extern "C" {
 #define WORR_NATIVE_ENVELOPE_WIRE_VERSION 1u
 #define WORR_NATIVE_ENVELOPE_WIRE_HEADER_BYTES 56u
 #define WORR_NATIVE_ENVELOPE_MAX_DATAGRAM_BYTES 1200u
-#define WORR_NATIVE_ENVELOPE_MAX_PAYLOAD_BYTES 65536u
-#define WORR_NATIVE_ENVELOPE_MAX_FRAGMENTS 64u
+#define WORR_NATIVE_ENVELOPE_MAX_PAYLOAD_BYTES 131072u
+#define WORR_NATIVE_ENVELOPE_MAX_FRAGMENTS 128u
 #define WORR_NATIVE_ENVELOPE_MAX_PRIORITY 7u
 #define WORR_NATIVE_ENVELOPE_TX_QUEUE_CAPACITY 64u
 #define WORR_NATIVE_ENVELOPE_AGING_QUANTUM 8u
@@ -147,10 +147,9 @@ typedef struct worr_native_envelope_reassembly_v1_s {
     uint16_t fragment_stride;
     uint16_t fragment_count;
     uint16_t received_fragment_count;
-    uint16_t reserved0;
     uint8_t priority;
-    uint8_t reserved1[7];
-    uint64_t received_bitmap;
+    uint8_t reserved0;
+    uint64_t received_bitmap[2];
 } worr_native_envelope_reassembly_v1;
 
 typedef enum worr_native_envelope_accept_result_v1_e {
@@ -296,8 +295,14 @@ WORR_NATIVE_ENVELOPE_STATIC_ASSERT(
     offsetof(worr_native_envelope_tx_item_v1, priority) == 40,
     "native envelope tx priority offset changed");
 WORR_NATIVE_ENVELOPE_STATIC_ASSERT(
-    offsetof(worr_native_envelope_reassembly_v1, received_bitmap) == 56,
+    offsetof(worr_native_envelope_reassembly_v1, priority) == 46,
+    "native envelope reassembly priority offset changed");
+WORR_NATIVE_ENVELOPE_STATIC_ASSERT(
+    offsetof(worr_native_envelope_reassembly_v1, received_bitmap) == 48,
     "native envelope reassembly bitmap offset changed");
+WORR_NATIVE_ENVELOPE_STATIC_ASSERT(
+    sizeof(((worr_native_envelope_reassembly_v1 *)0)->received_bitmap) == 16,
+    "native envelope reassembly bitmap width changed");
 WORR_NATIVE_ENVELOPE_STATIC_ASSERT(
     offsetof(worr_native_envelope_tx_queue_v1, items) == 24,
     "native envelope tx queue item offset changed");

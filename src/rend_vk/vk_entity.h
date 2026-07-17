@@ -41,3 +41,10 @@ void VK_Entity_ResetFlareQueries(VkCommandBuffer cmd);
 void VK_Entity_Record(VkCommandBuffer cmd, const VkExtent2D *extent);
 void VK_Entity_RecordBeforeLiquid(VkCommandBuffer cmd, const VkExtent2D *extent);
 void VK_Entity_RecordAfterLiquid(VkCommandBuffer cmd, const VkExtent2D *extent);
+void VK_Entity_RecordBloomEmission(VkCommandBuffer cmd, const VkExtent2D *extent,
+                                   bool before_liquid, bool sampled_depth_rim);
+bool VK_Entity_HasBloomEmission(void);
+bool VK_Entity_HasBloomRimDepthSampling(bool before_liquid);
+bool VK_Entity_HasDepthHackBloomEmission(void);
+void VK_Entity_RecordDepthHackBloomEmission(VkCommandBuffer cmd,
+                                            const VkExtent2D *extent);

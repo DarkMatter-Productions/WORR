@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "task_id": "FR-01-T12",
+  "scenes": [
+    {
+      "id": "adaptive_resolution_scale_downstep",
+      "config": "renderer_parity/fr01_resolution_scale_fixed.cfg",
+      "capture": "fr01_resolution_scale_fixed.tga",
+      "launch_cvars": {
+        "r_resolutionscale": "2",
+        "r_resolutionscale_gooddrawtime": "0",
+        "r_resolutionscale_targetdrawtime": "0",
+        "r_resolutionscale_lowerspeed": "0.5",
+        "r_resolutionscale_numframesbeforelowering": "1",
+        "r_resolutionscale_numframesbeforeraising": "10000"
+      },
+      "crop": [100, 100, 250, 200],
+      "metrics": {
+        "pixel_threshold": 0,
+        "max_mean_absolute_rgb": [0, 0, 0],
+        "max_pixels_over_threshold_percent": 0
+      },
+      "probes": [
+        {
+          "name": "adaptive_resolution_scale_backdrop",
+          "color": [24, 40, 72],
+          "tolerance": 0,
+          "min_pixels_per_backend": 50000,
+          "max_backend_count_delta_percent": 0,
+          "min_backend_intersection_over_union": 1
+        }
+      ]
+    }
+  ]
+}

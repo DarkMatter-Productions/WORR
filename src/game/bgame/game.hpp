@@ -423,6 +423,8 @@ enum button_t : uint8_t {
 	BUTTON_HOLSTER = bit_v<2>, // [Paril-KEX]
 	BUTTON_JUMP = bit_v<3>,
 	BUTTON_CROUCH = bit_v<4>,
+	// Must stay numerically identical to shared.h's native WORR +hook bit.
+	BUTTON_HOOK = bit_v<5>,
 	BUTTON_ANY = bit_v<7> // any key whatsoever
 };
 

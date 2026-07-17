@@ -284,6 +284,7 @@ static int test_init_layout_epoch_and_owner(void)
 static int test_semantic_commit_and_repeat_gates(void)
 {
     static const uint8_t semantic_classes[] = {
+        WORR_NATIVE_RECORD_SNAPSHOT_V1,
         WORR_NATIVE_RECORD_EVENT_V1,
         WORR_NATIVE_RECORD_EVENT_STREAM_DESCRIPTOR_V1,
     };

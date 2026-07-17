@@ -18,6 +18,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "server.h"
 #include "server/command_context.h"
+#include "server/local_interaction_authority.h"
 #include "server/nav.h"
 
 server_static_t svs;                // persistent server info
@@ -235,6 +236,7 @@ void SV_SpawnServer(const mapcmd_t *cmd)
 
     // load and spawn all other entities
     SV_EventShadowResetMap();
+    SV_LocalInteractionAuthorityResetMap();
     ge->SpawnEntities(sv.name, sv.cm.entitystring, cmd->spawnpoint);
 
     // run two frames to allow everything to settle

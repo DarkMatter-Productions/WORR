@@ -32,7 +32,68 @@ typedef enum worr_rewind_weapon_policy_v1_e {
   WORR_REWIND_WEAPON_DISRUPTOR_CONVERGENCE = 6,
   WORR_REWIND_WEAPON_PLASMA_BEAM = 7,
   WORR_REWIND_WEAPON_THUNDERBOLT = 8,
-  WORR_REWIND_WEAPON_POLICY_COUNT = 9,
+  // This is a current-world spawn-forward policy, not a historical rocket
+  // impact or splash query.
+  WORR_REWIND_WEAPON_ROCKET_SPAWN_FORWARD = 9,
+  // Plasma Gun follows the same bounded current-world spawn policy. Its
+  // direct hit and small-radius splash remain production current authority.
+  WORR_REWIND_WEAPON_PLASMA_GUN_SPAWN_FORWARD = 10,
+  // The straight Blaster bolt family (Blaster and HyperBlaster) consumes
+  // authenticated spawn delay in the current world; it has no historical
+  // projectile contact or radius authority.
+  WORR_REWIND_WEAPON_BLASTER_BOLT_SPAWN_FORWARD = 11,
+  // Chainfist uses historical player reach/FOV eligibility, bounded by a
+  // current-world displacement guard and current-world occlusion/damage.
+  WORR_REWIND_WEAPON_CHAINFIST_MELEE_HYBRID = 12,
+  // ETF flechettes may consume bounded authenticated spawn delay in the
+  // current world; direct contact and damage stay production-owned.
+  WORR_REWIND_WEAPON_ETF_FLECHETTE_SPAWN_FORWARD = 13,
+  // Phalanx consumes bounded authenticated launch delay in the current world;
+  // direct contact and splash stay on its normal projectile lifecycle.
+  WORR_REWIND_WEAPON_PHALANX_SPAWN_FORWARD = 14,
+  // Grenade Launcher advances only along its current-world gravity path. A
+  // contact during that bounded interval fails closed to the normal launch;
+  // bounce, fuse, splash, and all later interaction remain production-owned.
+  WORR_REWIND_WEAPON_GRENADE_LAUNCHER_BALLISTIC_SPAWN_FORWARD = 15,
+  // A released hand grenade consumes only the release command's accepted age
+  // through a current-world gravity path. Priming, held self-explosion,
+  // bounce, fuse, splash, and all later interaction remain production-owned.
+  WORR_REWIND_WEAPON_HAND_GRENADE_RELEASE_BALLISTIC_SPAWN_FORWARD = 16,
+  // A Proximity Launcher mine consumes bounded accepted launch delay through
+  // a clear current-world gravity path only. Landing, arming, trigger scans,
+  // explosion, and all later deployable behavior remain production-owned.
+  WORR_REWIND_WEAPON_PROX_MINE_BALLISTIC_DEPLOY_FORWARD = 17,
+  // BFG consumes bounded authenticated launch delay in the current world.
+  // Its laser ticks, touch, staged explosion, and radius effects remain
+  // production-owned current-world behavior.
+  WORR_REWIND_WEAPON_BFG_SPAWN_FORWARD = 18,
+  // Ion Ripper consumes bounded authenticated delay for each of the normal
+  // fifteen randomized current-world bolt spawns. Ricochet, contact, damage,
+  // and lifetime remain production-owned current-world behavior.
+  WORR_REWIND_WEAPON_ION_RIPPER_BURST_SPAWN_FORWARD = 19,
+  // A released Tesla Mine consumes bounded accepted delay only through its
+  // clear current-world gravity path. Landing, activation, targeting,
+  // damage, effects, and lifetime remain production-owned current-world
+  // deployable behavior.
+  WORR_REWIND_WEAPON_TESLA_MINE_RELEASE_BALLISTIC_DEPLOY_FORWARD = 20,
+  // A released Trap consumes bounded accepted delay only through its clear
+  // current-world gravity path. Landing, capture, release, destruction, and
+  // lifetime remain production-owned current-world deployable behavior.
+  WORR_REWIND_WEAPON_TRAP_RELEASE_BALLISTIC_DEPLOY_FORWARD = 21,
+  // The selected Grapple weapon consumes bounded authenticated delay only
+  // through a clear current-world fresh-hook flight. Touch, attachment, pull,
+  // damage, reset, and the legacy off-hand Hook command stay current-world.
+  WORR_REWIND_WEAPON_GRAPPLE_HOOK_SPAWN_FORWARD = 22,
+  // A ProBall Chainfist-held throw consumes only its release command's
+  // bounded age through a clear current-world gravity path. Possession,
+  // pickup, touch, goal, score, team, and reset behavior remain
+  // production-owned current-world logic.
+  WORR_REWIND_WEAPON_PROBALL_HELD_THROW_BALLISTIC_SPAWN_FORWARD = 23,
+  // The native +hook input consumes its own authenticated command age only
+  // through a clear current-world fresh-hook flight. Contact, attachment,
+  // pull, damage, reset, and the legacy `hook` string remain current-world.
+  WORR_REWIND_WEAPON_OFFHAND_HOOK_SPAWN_FORWARD = 24,
+  WORR_REWIND_WEAPON_POLICY_COUNT = 25,
 } worr_rewind_weapon_policy_v1;
 
 typedef enum worr_rewind_observation_path_v1_e {

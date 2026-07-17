@@ -136,6 +136,7 @@ static bool make_binding(uint32_t epoch,
 
 static bool make_active_readiness_pair(
     uint32_t transport_epoch,
+    uint32_t snapshot_epoch,
     uint32_t negotiated_capabilities,
     worr_native_readiness_state_v1 *server,
     worr_native_readiness_state_v1 *client)
@@ -143,25 +144,58 @@ static bool make_active_readiness_pair(
     worr_native_readiness_record_v1 challenge;
     worr_native_readiness_record_v1 client_ready;
     worr_native_readiness_record_v1 server_active;
+    worr_native_readiness_record_v1 client_confirm;
     const uint64_t nonce = UINT64_C(0x8a11000000000000) |
                            transport_epoch;
+    const bool snapshot_capable =
+        (negotiated_capabilities &
+         WORR_NET_CAP_CANONICAL_SNAPSHOT_V2) != 0;
+    const bool server_originated_semantic_data =
+        (negotiated_capabilities &
+         (WORR_NET_CAP_NATIVE_EVENT_STREAM_V1 |
+          WORR_NET_CAP_CANONICAL_SNAPSHOT_V2)) != 0;
 
-    CHECK(Worr_NativeReadinessServerInitV1(
-              server, transport_epoch, negotiated_capabilities,
-              nonce, 10, 100, &challenge) == WORR_NATIVE_READINESS_OK);
-    CHECK(Worr_NativeReadinessClientInitV1(
-              client, transport_epoch, negotiated_capabilities,
-              10, 100) == WORR_NATIVE_READINESS_OK);
+    CHECK(snapshot_capable == (snapshot_epoch != 0));
+    if (snapshot_capable) {
+        CHECK(Worr_NativeReadinessServerInitBoundV1(
+                  server, transport_epoch, snapshot_epoch,
+                  negotiated_capabilities, nonce, 10, 100,
+                  &challenge) == WORR_NATIVE_READINESS_OK);
+        CHECK(Worr_NativeReadinessClientInitBoundV1(
+                  client, transport_epoch, snapshot_epoch,
+                  negotiated_capabilities, 10, 100) ==
+              WORR_NATIVE_READINESS_OK);
+    } else {
+        CHECK(Worr_NativeReadinessServerInitV1(
+                  server, transport_epoch, negotiated_capabilities,
+                  nonce, 10, 100, &challenge) ==
+              WORR_NATIVE_READINESS_OK);
+        CHECK(Worr_NativeReadinessClientInitV1(
+                  client, transport_epoch, negotiated_capabilities,
+                  10, 100) == WORR_NATIVE_READINESS_OK);
+    }
     CHECK(Worr_NativeReadinessClientObserveChallengeV1(
               client, &challenge, 11, &client_ready) ==
           WORR_NATIVE_READINESS_OK);
     CHECK(Worr_NativeReadinessServerObserveClientReadyV1(
               server, &client_ready, 12, &server_active) ==
           WORR_NATIVE_READINESS_OK);
-    CHECK(Worr_NativeReadinessClientObserveServerActiveV1(
-              client, &server_active, 13) == WORR_NATIVE_READINESS_OK);
+    if (server_originated_semantic_data) {
+        CHECK(Worr_NativeReadinessClientObserveServerActiveWithConfirmV1(
+                  client, &server_active, 13, &client_confirm) ==
+              WORR_NATIVE_READINESS_OK);
+        CHECK(Worr_NativeReadinessServerObserveClientActiveConfirmV1(
+                  server, &client_confirm, 14) ==
+              WORR_NATIVE_READINESS_OK);
+    } else {
+        CHECK(Worr_NativeReadinessClientObserveServerActiveV1(
+                  client, &server_active, 13) ==
+              WORR_NATIVE_READINESS_OK);
+    }
     CHECK(Worr_NativeReadinessStateValidateV1(server));
     CHECK(Worr_NativeReadinessStateValidateV1(client));
+    CHECK(server->snapshot_epoch == snapshot_epoch &&
+          client->snapshot_epoch == snapshot_epoch);
     CHECK(server->role == WORR_NATIVE_READINESS_ROLE_SERVER &&
           server->phase == WORR_NATIVE_READINESS_PHASE_SERVER_ACTIVE);
     CHECK(client->role == WORR_NATIVE_READINESS_ROLE_CLIENT &&
@@ -296,7 +330,7 @@ static bool test_binding_from_active_readiness(void)
 
     CHECK(production_private_mask == UINT32_C(0x53));
     CHECK(make_active_readiness_pair(
-        70, production_private_mask, &server, &client));
+        70, 0, production_private_mask, &server, &client));
 
     /* The official live tuple may remain exactly legacy-only; the old public
      * capability initializer correctly refuses it while readiness can supply
@@ -336,7 +370,7 @@ static bool test_binding_from_active_readiness(void)
               TEST_OTHER_CONNECTION_OWNER_ID);
 
     CHECK(make_active_readiness_pair(
-        71, future_known_mask, &server, &client));
+        71, 701, future_known_mask, &server, &client));
     CHECK(Worr_NativeSessionBindingInitFromReadinessV1(
         &binding, &client, UINT64_MAX));
     CHECK(binding.transport_epoch == 71 &&
@@ -1972,6 +2006,100 @@ static bool test_rx_reassembly_commit_replay_and_conflict(void)
     return true;
 }
 
+static bool test_extended_fragment_capacity(void)
+{
+    worr_native_session_binding_v1 binding;
+    worr_native_tx_session_v1 tx;
+    worr_native_tx_session_v1 tx_before;
+    worr_native_tx_slot_v1 tx_slots[1];
+    worr_native_tx_slot_v1 tx_slots_before[1];
+    worr_native_rx_session_v1 rx;
+    worr_native_rx_slot_v1 rx_slots[1];
+    worr_native_rx_message_v1 message;
+    worr_native_ack_range_v1 acknowledgement;
+    uint32_t message_sequence = UINT32_MAX;
+    uint16_t fragment_count;
+    uint16_t index;
+
+    CHECK(make_binding(61, &binding));
+    CHECK(Worr_NativeTxSessionInitV1(
+        &tx, tx_slots, 1, &binding));
+    tx_before = tx;
+    memcpy(tx_slots_before, tx_slots, sizeof(tx_slots));
+    CHECK(Worr_NativeTxSessionEnqueueV1(
+              &tx, tx_slots, 1,
+              make_record(WORR_NATIVE_RECORD_SNAPSHOT_V1, 61, 1),
+              3, 9001, WORR_NATIVE_ENVELOPE_MAX_PAYLOAD_BYTES,
+              1079, 1, &message_sequence) ==
+          WORR_NATIVE_TX_INVALID_ARGUMENT);
+    CHECK(message_sequence == UINT32_MAX &&
+          memcmp(&tx, &tx_before, sizeof(tx)) == 0 &&
+          memcmp(tx_slots, tx_slots_before, sizeof(tx_slots)) == 0);
+    CHECK(Worr_NativeTxSessionEnqueueV1(
+              &tx, tx_slots, 1,
+              make_record(WORR_NATIVE_RECORD_SNAPSHOT_V1, 61, 1),
+              3, 9001, WORR_NATIVE_ENVELOPE_MAX_PAYLOAD_BYTES,
+              1080, 1, &message_sequence) ==
+          WORR_NATIVE_TX_RETAINED);
+    CHECK(message_sequence == 1 &&
+          tx_slots[0].payload_bytes ==
+              WORR_NATIVE_ENVELOPE_MAX_PAYLOAD_BYTES &&
+          tx_slots[0].fragment_stride == 1024 &&
+          tx_slots[0].fragment_count ==
+              WORR_NATIVE_ENVELOPE_MAX_FRAGMENTS);
+    CHECK(Worr_NativeTxSessionValidateV1(&tx, tx_slots, 1));
+
+    CHECK(Worr_NativeRxSessionInitV1(
+        &rx, rx_slots, 1, TEST_PAYLOAD_STRIDE,
+        1000, 2000, &binding));
+    fill_payload(TEST_PAYLOAD_STRIDE, 61);
+    CHECK(encode_message(
+        61, 1, make_record(WORR_NATIVE_RECORD_SNAPSHOT_V1, 61, 1),
+        TEST_PAYLOAD_STRIDE, 112, 3, &fragment_count));
+    CHECK(fragment_count == 74);
+    memset(arena, 0xa5, sizeof(arena));
+    for (index = fragment_count; index-- > 0;) {
+        const worr_native_rx_result_v1 result =
+            Worr_NativeRxSessionAcceptV1(
+                &rx, rx_slots, 1, arena, TEST_PAYLOAD_STRIDE,
+                (uint64_t)(10 + fragment_count - index),
+                datagrams[index], datagram_bytes[index],
+                &message, &repeat_ack);
+
+        CHECK(datagram_bytes[index] <= 112 &&
+              datagram_bytes[index] <=
+                  WORR_NATIVE_ENVELOPE_MAX_DATAGRAM_BYTES);
+        CHECK(result ==
+              (index == 0
+                   ? WORR_NATIVE_RX_MESSAGE_COMPLETE
+                   : WORR_NATIVE_RX_FRAGMENT_ACCEPTED));
+        if (index == (uint16_t)(fragment_count - 1u)) {
+            worr_native_rx_slot_v1 malformed_slot = rx_slots[0];
+
+            CHECK(rx_slots[0].reassembly.received_bitmap[0] == 0);
+            CHECK(rx_slots[0].reassembly.received_bitmap[1] ==
+                  (UINT64_C(1) << 9));
+            malformed_slot.reassembly.received_bitmap[1] |=
+                UINT64_C(1) << 63;
+            CHECK(!Worr_NativeRxSessionValidateV1(
+                &rx, &malformed_slot, 1));
+        }
+    }
+    CHECK(rx_slots[0].reassembly.received_bitmap[0] == UINT64_MAX &&
+          rx_slots[0].reassembly.received_bitmap[1] ==
+              ((UINT64_C(1) << 10) - 1u));
+    CHECK(message.payload_bytes == TEST_PAYLOAD_STRIDE &&
+          memcmp(arena + message.payload_offset,
+                 payload, TEST_PAYLOAD_STRIDE) == 0);
+    CHECK(Worr_NativeRxSessionValidateV1(&rx, rx_slots, 1));
+    CHECK(Worr_NativeRxSessionCommitV1(
+              &rx, rx_slots, 1, message.slot_index,
+              message.message_sequence, &acknowledgement) ==
+          WORR_NATIVE_RX_COMMITTED);
+    CHECK(Worr_NativeAckRangeValidateV1(&acknowledgement));
+    return true;
+}
+
 static bool test_rx_timeout_discard_and_capacity(void)
 {
     worr_native_session_binding_v1 binding;
@@ -2426,6 +2554,7 @@ int main(void)
         !test_tx_prepared_send_confirmation() ||
         !test_same_epoch_cross_owner_rejection() ||
         !test_rx_reassembly_commit_replay_and_conflict() ||
+        !test_extended_fragment_capacity() ||
         !test_rx_receipt_window_and_delayed_replay() ||
         !test_lost_commit_ack_releases_retained_tx() ||
         !test_rx_uint32_max_repeat_ack() ||

@@ -14,6 +14,7 @@ static_assert(
 static_assert(sizeof(worr_native_readiness_setting_pair_v1) == 4);
 static_assert(offsetof(worr_native_readiness_setting_pair_v1, index) == 0);
 static_assert(offsetof(worr_native_readiness_setting_pair_v1, value) == 2);
+static_assert(WORR_NATIVE_READINESS_SIDEBAND_PAIR_COUNT == 15u);
 
 static_assert(std::is_standard_layout_v<
               worr_native_readiness_sideband_telemetry_v1>);
@@ -87,8 +88,12 @@ static_assert(WORR_NATIVE_READINESS_SETTING_EPOCH_LOW ==
               WORR_NATIVE_READINESS_SETTING_KIND + 1);
 static_assert(WORR_NATIVE_READINESS_SETTING_EPOCH_HIGH ==
               WORR_NATIVE_READINESS_SETTING_EPOCH_LOW + 1);
-static_assert(WORR_NATIVE_READINESS_SETTING_CAPABILITIES_LOW ==
+static_assert(WORR_NATIVE_READINESS_SETTING_SNAPSHOT_EPOCH_LOW ==
               WORR_NATIVE_READINESS_SETTING_EPOCH_HIGH + 1);
+static_assert(WORR_NATIVE_READINESS_SETTING_SNAPSHOT_EPOCH_HIGH ==
+              WORR_NATIVE_READINESS_SETTING_SNAPSHOT_EPOCH_LOW + 1);
+static_assert(WORR_NATIVE_READINESS_SETTING_CAPABILITIES_LOW ==
+              WORR_NATIVE_READINESS_SETTING_SNAPSHOT_EPOCH_HIGH + 1);
 static_assert(WORR_NATIVE_READINESS_SETTING_CAPABILITIES_HIGH ==
               WORR_NATIVE_READINESS_SETTING_CAPABILITIES_LOW + 1);
 static_assert(WORR_NATIVE_READINESS_SETTING_NONCE_WORD0 ==
@@ -105,7 +110,7 @@ static_assert(WORR_NATIVE_READINESS_SETTING_CHECKSUM_HIGH ==
               WORR_NATIVE_READINESS_SETTING_CHECKSUM_LOW + 1);
 static_assert(WORR_NATIVE_READINESS_SETTING_COMMIT ==
               WORR_NATIVE_READINESS_SETTING_CHECKSUM_HIGH + 1);
-static_assert(WORR_NATIVE_READINESS_SETTING_COMMIT == -31968);
+static_assert(WORR_NATIVE_READINESS_SETTING_COMMIT == -31966);
 
 static_assert(static_cast<int>(WORR_LEGACY_COMMAND_SETTING_COMMIT) <
               static_cast<int>(WORR_NATIVE_READINESS_SETTING_BEGIN));

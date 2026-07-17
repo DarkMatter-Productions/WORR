@@ -1,6 +1,7 @@
 # FR-10-T05 Cgame Event Runtime and Direct Authority Export
 
 Date: 2026-07-14
+Last updated: 2026-07-16
 
 Tasks: `FR-10-T05`, `FR-10-T07`, `FR-10-T08`, `FR-10-T14`; supporting
 boundaries from `FR-10-T04` and `FR-10-T09`
@@ -31,12 +32,13 @@ events. It adds:
    uncertainty, and unresolved snapshot-fence loss as hard-resynchronization
    barriers.
 
-The new authority lifecycle is correctness state, not an optional diagnostic.
-Once an authority stream is active, snapshot joins, receipt progression,
-prediction reconciliation, expiry, and ordered advancement run regardless of
-`cg_event_runtime_audit`. The cvar remains a default-off, `CVAR_NOARCHIVE`
-control for comparing the legacy carrier history with the new runtime. It does
-not enable or disable authority correctness.
+Snapshot-reference and authority lifecycles are correctness state, not an
+optional diagnostic. Authoritative references require the active authority
+stream; legacy-inferred references are validated and fence snapshot chronology
+even when `cg_event_runtime_audit=0`. Receipt progression, prediction
+reconciliation, expiry, and ordered authority advancement likewise remain
+independent of that cvar. The default-off, `CVAR_NOARCHIVE` control gates only
+retention and presentation of legacy body-comparison metadata.
 
 The presentation sink is still deliberately no-effects. It records ordered,
 present-once evidence and a deterministic presentation-chain hash, but does
@@ -62,16 +64,19 @@ passed through the export is borrowed for the synchronous call only.
 | Shared journal slots | 512 | Canonical authoritative/predicted record state, generation-safe slot refs, expiry, presentation, and exact receipt tracking |
 | Authority bindings | 1,024 | Ordered authoritative identities, semantic hashes, journal bindings, snapshot fences, and presented/terminal evidence |
 | Prediction tombstones | 1,024 | Command-keyed speculative body and reconciliation/cancellation/presentation evidence that survives journal-slot reuse |
-| Snapshot event references | 2,048 | Authority-ID or legacy-carrier join metadata and snapshot tick/time fences |
+| Snapshot event references | 2,048 | Authority-ID presentation dependencies and audit-enabled legacy-carrier join metadata with snapshot tick/time fences |
 | Legacy body metadata | 2,048 | Join and fence metadata for bodies owned by the existing cgame presentation history |
 | One submitted batch | 512 | Exact public export and canonical V2 event-range ceiling |
 
 The authority binding table may reclaim only presented entries. Reference
-storage may reclaim consumed joins. Prediction tombstones are reclaimed only
-when the consumed-command retirement watermark proves their keys stale and
-their reconciliation/terminal state makes reclamation safe. Capacity pressure
-that cannot satisfy those rules fails closed instead of silently discarding a
-reliable lifecycle dependency.
+storage may reclaim consumed joins. Audit-off legacy-inferred ranges are
+validated, counted, and bound to snapshot chronology without allocating a
+reference entry, so sustained legal snapshots cannot exhaust diagnostic join
+storage. Prediction tombstones are reclaimed only when the consumed-command
+retirement watermark proves their keys stale and their
+reconciliation/terminal state makes reclamation safe. Capacity pressure that
+cannot satisfy the authority rules fails closed instead of silently
+discarding a reliable lifecycle dependency.
 
 The runtime keeps detailed, saturating private telemetry for resets, batches,
 records, duplicate/conflict/capacity results, receipt state, reconciliation,
@@ -85,8 +90,9 @@ The legacy event range, authoritative event stream, and snapshot timeline do
 not share an epoch and cannot reset each other by inference:
 
 - `CG_EventRuntimeResetLegacy(stream_epoch)` clears only legacy body metadata
-  and legacy-inferred snapshot references. It is driven by the existing V2
-  cgame event-range reset.
+  and retained legacy-inferred audit joins. The already accepted snapshot
+  chronology and exact receipt remain owned by the snapshot lifetime. The
+  reset is driven by the existing V2 cgame event-range reset.
 - `CG_EventRuntimeResetAuthority(event_stream_epoch, first_sequence)` clears
   authority bindings, prediction tombstones, authority references, the shared
   journal, retirement cursor, receipt, and authority-local health. A non-zero
@@ -101,8 +107,8 @@ not share an epoch and cannot reset each other by inference:
   safe to continue.
 
 Toggling `cg_event_runtime_audit` starts a clean legacy comparison window. It
-clears only legacy bodies and legacy references. Authority references and
-their presentation proof remain intact.
+clears only legacy bodies and retained legacy audit joins. Authority
+references, snapshot chronology, and the exact receipt remain intact.
 
 ### Legacy body ownership remains singular
 
@@ -324,7 +330,7 @@ started. The current state-focused selection passes 7/7:
 |---|---|
 | `network-event-journal` | Journal receipt, prediction matching/correction, slot lifecycle, persistent/cosmetic replacement, expiry, and failure atomicity |
 | `network-cgame-event-presentation` | Existing legacy body owner, ordered present-once history, reset and overwrite behavior |
-| `network-cgame-event-runtime` | Transactional authority, reordered gaps, join arrival orders, prediction matrix, tombstones, cancellation, retirement, source/snapshot fences, terminal skip, strict mismatch, and zero scrub |
+| `network-cgame-event-runtime` | Transactional authority, reordered gaps, join arrival orders, prediction matrix, tombstones, cancellation, retirement, source/snapshot fences, terminal skip, strict mismatch, zero scrub, 2,560 audit-off legacy-reference admissions without diagnostic-table growth, event-hash rejection, and inactive-authority fail-closed behavior |
 | `network-cgame-event-runtime-export` | Compact table/status, borrowed-input copy, selective receipt, rollback, authority operation with audit off, snapshot-loss resync, and deactivation |
 | `network-cgame-event-runtime-owner` | Pre-attach reset replay, detach/reload barriers, strict epoch high-water, table/status quarantine, callback result validation, and no callback after unload |
 | `network-cgame-event-runtime-layout-c` | C ABI sizes, offsets, enum/flag values, function-table ordering, and export name |

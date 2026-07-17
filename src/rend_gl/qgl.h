@@ -67,6 +67,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #ifndef GL_TIME_ELAPSED
 #define GL_TIME_ELAPSED 0x88BF
 #endif
+#ifndef GL_TIMESTAMP
+#define GL_TIMESTAMP 0x8E28
+#endif
 #ifndef GL_QUERY_RESULT_NO_WAIT
 #define GL_QUERY_RESULT_NO_WAIT 0x9194
 #endif
@@ -157,6 +160,7 @@ QGLAPI void (APIENTRYP qglGetQueryObjectuiv)(GLuint id, GLenum pname, GLuint *pa
 
 // GL 3.3 / GL_ARB_timer_query
 QGLAPI void (APIENTRYP qglGetQueryObjectui64v)(GLuint id, GLenum pname, GLuint64 *params);
+QGLAPI void (APIENTRYP qglQueryCounter)(GLuint id, GLenum target);
 
 // GL 2.0
 QGLAPI void (APIENTRYP qglAttachShader)(GLuint program, GLuint shader);

@@ -10,6 +10,7 @@ the Free Software Foundation; either version 2 of the License, or
 #pragma once
 
 #include "common/net/legacy_command_adapter.h"
+#include "shared/command_abi.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -20,6 +21,16 @@ void CL_CommandIdentityShutdown(void);
 bool CL_CommandIdentityFinalize(uint32_t legacy_command_number);
 bool CL_CommandIdentityForNumber(uint32_t legacy_command_number,
                                  worr_command_id_v1 *id_out);
+/*
+ * Retains the exact canonical command record at user-command finalization.
+ * The record is immutable once retained and is deliberately independent of
+ * optional native-shadow transport pilots.  Consumers may use it only as a
+ * local, value-only prediction input; it never changes legacy wire authority.
+ */
+bool CL_CommandIdentityRetainCommand(uint32_t legacy_command_number,
+                                     const worr_prediction_command_v1 *command);
+bool CL_CommandIdentityRecordForNumber(uint32_t legacy_command_number,
+                                       worr_command_record_v1 *record_out);
 bool CL_CommandIdentityGetState(uint32_t *initial_epoch_out,
                                 uint32_t *baseline_legacy_sequence_out);
 

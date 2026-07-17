@@ -4215,6 +4215,18 @@ static void SVCmd_RewindCanonicalRailDamageArm_f()
 		armed ? "pass" : "fail");
 }
 
+// Arms the real-command Railgun mover-occlusion variant. The console only
+// selects fixture geometry; the admitted client command and normal weapon
+// callback remain the sole source of trace and damage authority.
+static void SVCmd_RewindCanonicalRailMoverOcclusionArm_f()
+{
+	const bool armed =
+		LagCompensation_ArmCanonicalRailMoverOcclusionRuntimeProbe();
+	gi.Com_PrintFmt(
+		"worr_rewind_canonical_rail_mover_occlusion_arm: status={}\n",
+		armed ? "pass" : "fail");
+}
+
 // Arms only the machinegun variant of the real-command fixture. As with the
 // Railgun command, server console authority cannot construct a user command,
 // choose a rewind target, or call a weapon callback.
@@ -4249,6 +4261,195 @@ static void SVCmd_RewindCanonicalDisruptorDamageArm_f()
 {
 	const bool armed = LagCompensation_ArmCanonicalDisruptorDamageRuntimeProbe();
 	gi.Com_PrintFmt("worr_rewind_canonical_disruptor_damage_arm: status={}\n",
+		armed ? "pass" : "fail");
+}
+
+// Arms the Rocket Launcher spawn-forward seam. The real client command still
+// owns current-world rocket flight, impact, splash, and damage.
+static void SVCmd_RewindCanonicalRocketDamageArm_f()
+{
+	const bool armed = LagCompensation_ArmCanonicalRocketDamageRuntimeProbe();
+	gi.Com_PrintFmt("worr_rewind_canonical_rocket_damage_arm: status={}\n",
+		armed ? "pass" : "fail");
+}
+
+static void SVCmd_RewindCanonicalBfgDamageArm_f()
+{
+	const bool armed = LagCompensation_ArmCanonicalBfgDamageRuntimeProbe();
+	gi.Com_PrintFmt("worr_rewind_canonical_bfg_damage_arm: status={}\n",
+		armed ? "pass" : "fail");
+}
+
+static void SVCmd_RewindCanonicalIonRipperDamageArm_f()
+{
+	const bool armed =
+		LagCompensation_ArmCanonicalIonRipperDamageRuntimeProbe();
+	gi.Com_PrintFmt("worr_rewind_canonical_ion_ripper_damage_arm: status={}\n",
+		armed ? "pass" : "fail");
+}
+
+static void SVCmd_RewindCanonicalTeslaMineDamageArm_f()
+{
+	const bool armed =
+		LagCompensation_ArmCanonicalTeslaMineDamageRuntimeProbe();
+	gi.Com_PrintFmt("worr_rewind_canonical_tesla_mine_damage_arm: status={}\n",
+		armed ? "pass" : "fail");
+}
+
+static void SVCmd_RewindCanonicalTrapDamageArm_f()
+{
+	const bool armed = LagCompensation_ArmCanonicalTrapDamageRuntimeProbe();
+	gi.Com_PrintFmt("worr_rewind_canonical_trap_damage_arm: status={}\n",
+		armed ? "pass" : "fail");
+}
+
+static void SVCmd_RewindCanonicalGrappleDamageArm_f()
+{
+	const bool armed =
+		LagCompensation_ArmCanonicalGrappleDamageRuntimeProbe();
+	gi.Com_PrintFmt("worr_rewind_canonical_grapple_damage_arm: status={}\n",
+		armed ? "pass" : "fail");
+}
+
+static void SVCmd_RewindCanonicalOffhandHookArm_f()
+{
+	const bool armed = LagCompensation_ArmCanonicalOffhandHookRuntimeProbe();
+	gi.Com_PrintFmt("worr_rewind_canonical_offhand_hook_arm: status={}\n",
+		armed ? "pass" : "fail");
+}
+
+static void SVCmd_RewindCanonicalProBallThrowArm_f()
+{
+	const bool armed = LagCompensation_ArmCanonicalProBallThrowRuntimeProbe();
+	gi.Com_PrintFmt("worr_rewind_canonical_proball_throw_arm: status={}\n",
+		armed ? "pass" : "fail");
+}
+
+// Arms the Grenade Launcher ballistic seam. The fixture can neither trace a
+// trajectory nor create a bounce; the real command enters ordinary weapon and
+// Toss physics only after current-world clear-path authorization.
+static void SVCmd_RewindCanonicalGrenadeLauncherDamageArm_f()
+{
+	const bool armed = LagCompensation_ArmCanonicalGrenadeLauncherDamageRuntimeProbe();
+	gi.Com_PrintFmt("worr_rewind_canonical_grenade_launcher_damage_arm: status={}\n",
+		armed ? "pass" : "fail");
+}
+
+// The fixture only arms the real Hand Grenade release path. The no-attack
+// command must leave Throw_Generic before normal Toss physics can consume its
+// accepted release-time authority.
+static void SVCmd_RewindCanonicalHandGrenadeDamageArm_f()
+{
+	const bool armed = LagCompensation_ArmCanonicalHandGrenadeDamageRuntimeProbe();
+	gi.Com_PrintFmt("worr_rewind_canonical_hand_grenade_damage_arm: status={}\n",
+		armed ? "pass" : "fail");
+}
+
+static void SVCmd_RewindCanonicalHandGrenadeSplashArm_f()
+{
+	const bool armed = LagCompensation_ArmCanonicalHandGrenadeSplashRuntimeProbe();
+	gi.Com_PrintFmt("worr_rewind_canonical_hand_grenade_splash_arm: status={}\n",
+		armed ? "pass" : "fail");
+}
+
+// The fixture observes a normal Proximity Launcher command and clear
+// ballistic deployment only. It never calls a weapon function or mine trigger.
+static void SVCmd_RewindCanonicalProxLauncherDamageArm_f()
+{
+	const bool armed = LagCompensation_ArmCanonicalProxLauncherDamageRuntimeProbe();
+	gi.Com_PrintFmt("worr_rewind_canonical_prox_launcher_damage_arm: status={}\n",
+		armed ? "pass" : "fail");
+}
+
+// Arms the real mine lifecycle proof. The console command stages no collision,
+// target selection, trigger, explosion, or damage result.
+static void SVCmd_RewindCanonicalProxLauncherLifecycleArm_f()
+{
+	const bool armed = LagCompensation_ArmCanonicalProxLauncherLifecycleRuntimeProbe();
+	gi.Com_PrintFmt("worr_rewind_canonical_prox_launcher_lifecycle_arm: status={}\n",
+		armed ? "pass" : "fail");
+}
+
+// Arms the Rocket current-world splash seam. The fixture supplies only the
+// present-world blocker; normal rocket_touch and RadiusDamage own the result.
+static void SVCmd_RewindCanonicalRocketSplashDamageArm_f()
+{
+	const bool armed = LagCompensation_ArmCanonicalRocketSplashDamageRuntimeProbe();
+	gi.Com_PrintFmt("worr_rewind_canonical_rocket_splash_damage_arm: status={}\n",
+		armed ? "pass" : "fail");
+}
+
+// Arms the fast Plasma Gun direct-hit seam. The real command and normal
+// projectile lifecycle retain current-world direct and radius authority.
+static void SVCmd_RewindCanonicalPlasmaGunDamageArm_f()
+{
+	const bool armed = LagCompensation_ArmCanonicalPlasmaGunDamageRuntimeProbe();
+	gi.Com_PrintFmt("worr_rewind_canonical_plasma_gun_damage_arm: status={}\n",
+		armed ? "pass" : "fail");
+}
+
+// Arms the Plasma Gun current-world splash seam. Production projectile flight,
+// touch, line-of-sight, and RadiusDamage remain the only result authority.
+static void SVCmd_RewindCanonicalPlasmaGunSplashDamageArm_f()
+{
+	const bool armed =
+		LagCompensation_ArmCanonicalPlasmaGunSplashDamageRuntimeProbe();
+	gi.Com_PrintFmt(
+		"worr_rewind_canonical_plasma_gun_splash_damage_arm: status={}\n",
+		armed ? "pass" : "fail");
+}
+
+// Arms the shared Blaster/HyperBlaster direct-hit seam. Normal bolt flight,
+// contact, radius effects, and damage remain current-world authority.
+static void SVCmd_RewindCanonicalBlasterDamageArm_f()
+{
+	const bool armed = LagCompensation_ArmCanonicalBlasterDamageRuntimeProbe();
+	gi.Com_PrintFmt("worr_rewind_canonical_blaster_damage_arm: status={}\n",
+		armed ? "pass" : "fail");
+}
+
+// Arms the real held-command HyperBlaster cadence seam. The shared bolt
+// current-world flight/contact/direct/radius path remains production authority.
+static void SVCmd_RewindCanonicalHyperBlasterDamageArm_f()
+{
+	const bool armed = LagCompensation_ArmCanonicalHyperBlasterDamageRuntimeProbe();
+	gi.Com_PrintFmt("worr_rewind_canonical_hyperblaster_damage_arm: status={}\n",
+		armed ? "pass" : "fail");
+}
+
+// Arms the Chainfist hybrid melee seam. The real held command still reaches
+// normal Item::weaponThink, live CanDamage, and current-authority Damage.
+static void SVCmd_RewindCanonicalChainfistDamageArm_f()
+{
+	const bool armed = LagCompensation_ArmCanonicalChainfistDamageRuntimeProbe();
+	gi.Com_PrintFmt("worr_rewind_canonical_chainfist_damage_arm: status={}\n",
+		armed ? "pass" : "fail");
+}
+
+// Arms the ETF flechette current-world spawn-forward seam. The real command
+// and normal flechette contact remain responsible for the eventual damage.
+static void SVCmd_RewindCanonicalEtfRifleDamageArm_f()
+{
+	const bool armed = LagCompensation_ArmCanonicalEtfRifleDamageRuntimeProbe();
+	gi.Com_PrintFmt("worr_rewind_canonical_etf_rifle_damage_arm: status={}\n",
+		armed ? "pass" : "fail");
+}
+
+// Arms the Phalanx current-world spawn-forward seam. Normal flight, direct
+// contact, splash, and damage remain owned by its production projectile path.
+static void SVCmd_RewindCanonicalPhalanxDamageArm_f()
+{
+	const bool armed = LagCompensation_ArmCanonicalPhalanxDamageRuntimeProbe();
+	gi.Com_PrintFmt("worr_rewind_canonical_phalanx_damage_arm: status={}\n",
+		armed ? "pass" : "fail");
+}
+
+// Arms the Phalanx current-world splash seam. The fixture supplies only the
+// present-world blocker; normal phalanx_touch and RadiusDamage own the result.
+static void SVCmd_RewindCanonicalPhalanxSplashDamageArm_f()
+{
+	const bool armed = LagCompensation_ArmCanonicalPhalanxSplashDamageRuntimeProbe();
+	gi.Com_PrintFmt("worr_rewind_canonical_phalanx_splash_damage_arm: status={}\n",
 		armed ? "pass" : "fail");
 }
 
@@ -4393,6 +4594,9 @@ void ServerCommand()
 	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_rail_damage_arm") == 0) {
 		SVCmd_RewindCanonicalRailDamageArm_f();
 	}
+	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_rail_mover_occlusion_arm") == 0) {
+		SVCmd_RewindCanonicalRailMoverOcclusionArm_f();
+	}
 	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_machinegun_damage_arm") == 0) {
 		SVCmd_RewindCanonicalMachinegunDamageArm_f();
 	}
@@ -4404,6 +4608,72 @@ void ServerCommand()
 	}
 	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_disruptor_damage_arm") == 0) {
 		SVCmd_RewindCanonicalDisruptorDamageArm_f();
+	}
+	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_rocket_damage_arm") == 0) {
+		SVCmd_RewindCanonicalRocketDamageArm_f();
+	}
+	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_bfg_damage_arm") == 0) {
+		SVCmd_RewindCanonicalBfgDamageArm_f();
+	}
+	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_ion_ripper_damage_arm") == 0) {
+		SVCmd_RewindCanonicalIonRipperDamageArm_f();
+	}
+	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_tesla_mine_damage_arm") == 0) {
+		SVCmd_RewindCanonicalTeslaMineDamageArm_f();
+	}
+	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_trap_damage_arm") == 0) {
+		SVCmd_RewindCanonicalTrapDamageArm_f();
+	}
+	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_grapple_damage_arm") == 0) {
+		SVCmd_RewindCanonicalGrappleDamageArm_f();
+	}
+	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_offhand_hook_arm") == 0) {
+		SVCmd_RewindCanonicalOffhandHookArm_f();
+	}
+	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_proball_throw_arm") == 0) {
+		SVCmd_RewindCanonicalProBallThrowArm_f();
+	}
+	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_grenade_launcher_damage_arm") == 0) {
+		SVCmd_RewindCanonicalGrenadeLauncherDamageArm_f();
+	}
+	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_hand_grenade_damage_arm") == 0) {
+		SVCmd_RewindCanonicalHandGrenadeDamageArm_f();
+	}
+	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_hand_grenade_splash_arm") == 0) {
+		SVCmd_RewindCanonicalHandGrenadeSplashArm_f();
+	}
+	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_prox_launcher_damage_arm") == 0) {
+		SVCmd_RewindCanonicalProxLauncherDamageArm_f();
+	}
+	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_prox_launcher_lifecycle_arm") == 0) {
+		SVCmd_RewindCanonicalProxLauncherLifecycleArm_f();
+	}
+	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_rocket_splash_damage_arm") == 0) {
+		SVCmd_RewindCanonicalRocketSplashDamageArm_f();
+	}
+	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_plasma_gun_damage_arm") == 0) {
+		SVCmd_RewindCanonicalPlasmaGunDamageArm_f();
+	}
+	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_plasma_gun_splash_damage_arm") == 0) {
+		SVCmd_RewindCanonicalPlasmaGunSplashDamageArm_f();
+	}
+	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_blaster_damage_arm") == 0) {
+		SVCmd_RewindCanonicalBlasterDamageArm_f();
+	}
+	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_hyperblaster_damage_arm") == 0) {
+		SVCmd_RewindCanonicalHyperBlasterDamageArm_f();
+	}
+	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_chainfist_damage_arm") == 0) {
+		SVCmd_RewindCanonicalChainfistDamageArm_f();
+	}
+	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_etf_rifle_damage_arm") == 0) {
+		SVCmd_RewindCanonicalEtfRifleDamageArm_f();
+	}
+	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_phalanx_damage_arm") == 0) {
+		SVCmd_RewindCanonicalPhalanxDamageArm_f();
+	}
+	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_phalanx_splash_damage_arm") == 0) {
+		SVCmd_RewindCanonicalPhalanxSplashDamageArm_f();
 	}
 	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_plasma_beam_damage_arm") == 0) {
 		SVCmd_RewindCanonicalPlasmaBeamDamageArm_f();

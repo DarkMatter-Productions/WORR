@@ -46,6 +46,14 @@ enum {
     WORR_LOCAL_ACTION_OBSERVATION_WEAPON_THUNK = UINT32_C(1) << 3,
     WORR_LOCAL_ACTION_OBSERVATION_PLAYER_ALIVE = UINT32_C(1) << 4,
     WORR_LOCAL_ACTION_OBSERVATION_PLAYER_ELIGIBLE = UINT32_C(1) << 5,
+    /*
+     * Off-hand Hook is an independently mapped user-command action, not a
+     * selected-weapon attack. Keep its submission and actual hook lifecycle
+     * visible to the command-scoped oracle before any cgame prediction is
+     * allowed to infer or present it.
+     */
+    WORR_LOCAL_ACTION_OBSERVATION_OFFHAND_HOOK_HELD = UINT32_C(1) << 6,
+    WORR_LOCAL_ACTION_OBSERVATION_OFFHAND_HOOK_ACTIVE = UINT32_C(1) << 7,
 };
 
 enum {

@@ -6,14 +6,15 @@ Task ID: `FR-01-T15`
 
 Status: partial implementation. Native GPU command-buffer timing is now
 available for supported Vulkan devices, including upload, shadow, scene, and
-composition phases. Bounded frames-in-flight, reproducible cross-renderer
-performance budgets, and the remaining entity-streaming modernization remain
+composition phases. Two bounded frame contexts, a provenance-bound dense
+inline-BSP CPU budget, and native post-process draw telemetry are implemented;
+representative-map GPU budgets and broader submission modernization remain
 open.
 
 ## Outcome
 
 `vk_debug.c` now creates a native `VK_QUERY_TYPE_TIMESTAMP` pool with six
-queries per swapchain image when the graphics queue reports timestamp support.
+queries per bounded frame context when the graphics queue reports timestamp support.
 Each recorded command buffer resets its own query range, writes a timestamp at
 `TOP_OF_PIPE`, and writes `BOTTOM_OF_PIPE` checkpoints after the frame-local
 entity upload/copy barrier, after shadow recording, after the initial scene
@@ -50,11 +51,14 @@ failing renderer initialization.
 ## Diagnostics and resource lifetime
 
 The renderer-stat panel displays `GPU frame ms` and `GPU phases ms` when
-valid. `vk_stats` adds `gpu_ms`, `gpu_upload_ms`, `gpu_shadow_ms`,
-`gpu_scene_ms`, `gpu_post_ms`, `gpu_valid`, and the `gpu_timing` capability field. Query pools
-are swapchain-scoped with the command buffers, are destroyed before the
-swapchain is released, and use only native Vulkan commands. No OpenGL renderer
-function, timer, or fallback path participates.
+valid. `vk_stats` adds `gpu_ms`, `gpu_frame_ms`, `gpu_upload_ms`, `gpu_shadow_ms`,
+`gpu_scene_ms`, `gpu_post_ms`, `gpu_valid`, and the `gpu_timing` capability
+field. Its draw counters now include a dedicated `postprocess` domain, so
+fullscreen bloom, DOF, final composition, and CRT submissions cannot be
+silently omitted from a performance capture. Query pools are swapchain-scoped
+with the command buffers, are destroyed before the swapchain is released, and
+use only native Vulkan commands. No OpenGL renderer function, timer, or
+fallback path participates.
 
 Vulkan CPU submission timing now uses microsecond-resolution QPC on Windows
 (and monotonic microseconds on other platforms) before conversion to fractional
@@ -63,11 +67,18 @@ ordinary submit work to zero and could not be fairly aggregated beside
 OpenGL's microsecond profiler. The change records time only; it does not add a
 fence, queue wait, or other synchronization.
 
-The current renderer still owns a single in-flight fence because the shared
-mapped entity stream and frame uniform resources are reused each frame. The
-new measurement makes that serial boundary explicit; it does not falsely claim
-CPU/GPU overlap until `FR-01-T14` provides frame-safe transient/ring resources
-and `FR-01-T15` adds bounded frame contexts.
+The paired log analyzer aggregates each reported GPU phase to a
+warmup-trimmed mean and p95. It additionally reports the `gpu_post_ms` ratio
+when both backends provide that common field. These phase values and legacy
+`gpu_ms` remain diagnostic. The shared full-frame `gpu_frame_ms` contract is
+documented in `vulkan-opengl-full-frame-gpu-timing-2026-07-16.md`.
+
+The renderer has two bounded native frame contexts (capped by swapchain image
+count), each with its own command buffer, fence, depth attachment/framebuffer,
+and transient UI/entity/world/shadow/debug storage. Completed timestamp ranges
+are still resolved only after their owning frame fence signals; telemetry adds
+no ordinary-frame CPU wait. Frame-local post-process targets avoid a global
+drain except during rare resource replacement.
 
 ## Headless validation
 

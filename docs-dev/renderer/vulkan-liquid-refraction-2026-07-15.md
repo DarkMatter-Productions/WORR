@@ -4,9 +4,10 @@ Date: 2026-07-15
 
 Task ID: `FR-01-T10`
 
-Status: partial implementation; transparent-liquid refraction, full-screen
-underwater waterwarp, and entity alpha-phase placement are native Vulkan, while
-final paired visual evidence remains open.
+Status: transparent-liquid refraction, full-screen underwater waterwarp, and
+entity alpha-phase placement are native Vulkan. Both the owned transparent-warp
+receiver and a real-contents underwater receiver now have strict headless
+paired evidence; broader liquid material coverage remains open.
 
 ## Outcome
 
@@ -39,7 +40,8 @@ with the normal world pipeline, so it reuses the same native pipeline objects.
 
 ## Shader and cvar contract
 
-The compact per-frame world instance stream is now sixteen bytes:
+The per-frame world instance stream is 64 bytes: the first 16 bytes carry the
+animated liquid controls and the remaining bytes carry the native sky axes:
 
 ```text
 float time
@@ -67,12 +69,13 @@ scene sampler.
 `vk_postprocess.c` adds a separate native full-screen Vulkan pipeline and the
 `vk_waterwarp` cvar (default `1`). A rendered `RDF_UNDERWATER` view copies its
 completed 3D scene into the same sampled image, then overwrites the swapchain
-with a three-vertex full-screen pass. The fragment shader uses the OpenGL
-`GLS_WARP_ENABLE` formula directly in screen coordinates:
+with a three-vertex full-screen pass. The fragment shader preserves OpenGL's
+2D `GLS_WARP_ENABLE` constants and top-origin source-texture orientation:
 
 ```text
-tc = gl_FragCoord.xy / textureSize(scene)
-tc += 0.0625 * sin(tc.yx * 4.0 + time)
+tc = gl_FragCoord.xy / output_size
+warp_tc = (tc.x, 1 - tc.y)
+tc += 0.0025 * sin(warp_tc.yx * (10*pi) + time) * (1, -1)
 ```
 
 The normal UI pass is deferred until after this composition pass, so the HUD
@@ -111,7 +114,23 @@ python -m unittest tools/renderer_parity/test_vulkan_liquid_refraction_source.py
 
 The generated SPIR-V validates and the Vulkan DLL links. The source regression
 passes. The staged `.install` tree must be refreshed after the final build.
-No visual capture is claimed here: the prior visible-client capture runner is
-not compliant with the current automated-test rule. A future no-window Vulkan
-capture path must exercise both transparent water and an underwater frame with
-validation layers before this task can be marked complete.
+
+`generate_viewweapon_shell_bloom_refraction_fixture.py` adds an owned
+transparent `SURF_WARP | SURF_TRANS33 | SURF_FLOWING` receiver. It freezes the
+flow phase with `pause` before the hidden-native-surface screenshot and uses a
+water-only `[160, 120, 320, 400]` crop. The paired OpenGL/Vulkan result has
+maximum RGB error `1 / 1 / 1`, MAE `0.47960 / 0.09655 / 0.43227`, and zero
+pixels over error 1 under validation. Its real Quad view weapon also exercises
+the late depth-hack bloom load pass after liquid; that source has a separate
+strict view-weapon gate.
+
+`generate_underwater_waterwarp_fixture.py` adds the complementary real-water
+receiver. Its static checkerboard map marks the player's leaf as
+`CONTENTS_WATER`, so normal player movement produces `RDF_UNDERWATER`; it does
+not fabricate renderer state. The enabled `[160, 120, 640, 480]` crop has
+maximum RGB error `1 / 1 / 2`, MAE `0.05694 / 0.51707 / 0.80232`, and zero
+pixels over error 2 under validation. The disabled-waterwarp control retains
+the real contents and also has zero pixels over error 2. Details are in
+`vulkan-underwater-waterwarp-visual-parity-2026-07-16.md`. Broader
+transparent-material coverage remains required before this task can be
+treated as globally complete.

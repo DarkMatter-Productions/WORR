@@ -38,9 +38,16 @@ def remove_path(path: pathlib.Path) -> None:
         path.unlink()
 
 
-def clear_globbed_paths(root: pathlib.Path, patterns: tuple[str, ...]) -> None:
+def clear_globbed_paths(
+    root: pathlib.Path,
+    patterns: tuple[str, ...],
+    *,
+    preserved_paths: frozenset[pathlib.Path] = frozenset(),
+) -> None:
     for pattern in patterns:
         for path in sorted(root.glob(pattern)):
+            if path in preserved_paths:
+                continue
             remove_path(path)
 
 
@@ -55,23 +62,46 @@ def file_sha256(path: pathlib.Path) -> str:
     return digest.hexdigest()
 
 
+def copy_verified_file(source: pathlib.Path, dest: pathlib.Path, description: str) -> bool:
+    try:
+        remove_path(dest)
+    except PermissionError:
+        # A scanner or debugger can transiently deny deletion of a loaded image
+        # even when no WORR process owns it. Retaining that file is safe only
+        # when it is already byte-for-byte the requested build artifact.
+        if not dest.is_file() or file_sha256(source) != file_sha256(dest):
+            raise
+        return False
+
+    shutil.copy2(source, dest)
+    if file_sha256(source) != file_sha256(dest):
+        raise SystemExit(f'{description} staging verification failed for {source} -> {dest}')
+    return True
+
+
 def copy_runtime_files(build_dir: pathlib.Path, install_dir: pathlib.Path) -> int:
     copied = 0
     copied_paths: set[pathlib.Path] = set()
+    runtime_sources: list[pathlib.Path] = []
 
-    clear_globbed_paths(install_dir, RUNTIME_PATTERNS + LEGACY_RUNTIME_PATTERNS)
-    remove_path(install_dir / "bin")
     for pattern in RUNTIME_PATTERNS:
         for path in sorted(build_dir.glob(pattern)):
             if not should_stage_runtime_file(path) or path in copied_paths:
                 continue
-            dest = install_dir / path.name
-            remove_path(dest)
-            shutil.copy2(path, dest)
-            if file_sha256(path) != file_sha256(dest):
-                raise SystemExit(f'Runtime staging verification failed for {path} -> {dest}')
             copied_paths.add(path)
-            copied += 1
+            runtime_sources.append(path)
+
+    desired_destinations = frozenset(install_dir / path.name for path in runtime_sources)
+    clear_globbed_paths(
+        install_dir,
+        RUNTIME_PATTERNS + LEGACY_RUNTIME_PATTERNS,
+        preserved_paths=desired_destinations,
+    )
+    remove_path(install_dir / "bin")
+    for path in runtime_sources:
+        dest = install_dir / path.name
+        copy_verified_file(path, dest, "Runtime")
+        copied += 1
     return copied
 
 

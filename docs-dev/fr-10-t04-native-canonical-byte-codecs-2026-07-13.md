@@ -88,10 +88,14 @@ be converted to the existing `worr_native_record_ref_v1` with
 `Worr_NativeCodecInfoRecordRefV1`, allowing a future adapter to compare the
 payload identity with the outer envelope identity before committing it.
 
-The complete codec payload is bounded by the envelope's 65,536-byte payload
-limit. Counts are also independently bounded to 512 snapshot entities, 1,024
-area bytes, and 512 snapshot event refs. The encoded-length limit is checked in
-preflight and during inspection, before range parsing.
+The original Stage C codec payload was bounded by the envelope's 65,536-byte
+payload limit; the later Stage D envelope revision raises the complete opaque
+message ceiling to 131,072 bytes. Counts remain independently bounded to 512
+snapshot entity records, 1,024 area bytes, and 512 snapshot event refs. The
+512-record count is separate from the exclusive entity-index identity domain:
+live adapters support 1,024 legacy identities and 8,192 Rerelease identities.
+The encoded-length limit is checked in preflight and during inspection, before
+range parsing.
 
 ## Command encoding
 

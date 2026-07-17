@@ -44,6 +44,17 @@ BMODEL_RGB = (48, 220, 96)
 BACKGROUND_LIGHTMAP_RGB = (32, 32, 32)
 BACKGROUND_LIGHTMAP_WIDTH = 81
 BACKGROUND_LIGHTMAP_HEIGHT = 61
+# These are the legacy 16-unit lightmap extents for the six box faces using
+# _texinfo's Y/-Z axes. Keep them explicit so the optional inline-model
+# lightmap fixture contains exactly the byte ranges its face records address.
+BMODEL_LIGHTMAP_FACE_DIMENSIONS = (
+    (7, 9),  # -X
+    (7, 9),  # +X
+    (1, 9),  # -Y
+    (1, 9),  # +Y
+    (7, 1),  # -Z
+    (7, 1),  # +Z
+)
 
 WORLD_VERTICES = (
     (512.0, -640.0, -480.0),
@@ -64,13 +75,13 @@ def _plane(normal: tuple[float, float, float], distance: float) -> bytes:
     return struct.pack("<4fi", *normal, distance, 0)
 
 
-def _texinfo(name: str) -> bytes:
+def _texinfo(name: str, flags: int = 0) -> bytes:
     encoded = name.encode("ascii")
     if len(encoded) >= 32:
         raise ValueError(f"texture name is too long: {name}")
     axes = (0.0, 1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0)
     return struct.pack(
-        "<8fii32si", *axes, 0, 0, encoded.ljust(32, b"\0"), -1
+        "<8fii32si", *axes, flags, 0, encoded.ljust(32, b"\0"), -1
     )
 
 
@@ -130,6 +141,15 @@ def _tga(rgb: tuple[int, int, int], size: int = 16) -> bytes:
 def build_bsp(
     worldspawn_properties: tuple[str, ...] = (),
     extra_entities: tuple[str, ...] = (),
+    background_texture: str = BACKGROUND_TEXTURE,
+    bmodel_texture: str = BMODEL_TEXTURE,
+    bmodel_entity_origin: tuple[float, float, float] = BMODEL_ENTITY_ORIGIN,
+    world_lightmap_rgb: tuple[int, int, int] | None = BACKGROUND_LIGHTMAP_RGB,
+    bmodel_lightmap_rgb: tuple[int, int, int] | None = None,
+    background_surface_flags: int = 0,
+    bmodel_surface_flags: int = 0,
+    world_backdrop_texture: str | None = None,
+    world_backdrop_surface_flags: int = 0,
 ) -> bytes:
     extra_worldspawn_properties = "".join(worldspawn_properties)
     extra_entity_text = "".join(extra_entities)
@@ -142,29 +162,50 @@ def build_bsp(
         '{\n"classname" "info_player_start"\n'
         '"origin" "0 0 -22"\n"angle" "0"\n}\n'
         '{\n"classname" "func_wall"\n"model" "*1"\n'
-        f'"origin" "{BMODEL_ENTITY_ORIGIN[0]:g} '
-        f'{BMODEL_ENTITY_ORIGIN[1]:g} {BMODEL_ENTITY_ORIGIN[2]:g}"\n}}\n'
+        f'"origin" "{bmodel_entity_origin[0]:g} '
+        f'{bmodel_entity_origin[1]:g} {bmodel_entity_origin[2]:g}"\n}}\n'
         f'{extra_entity_text}\0'
     ).encode("ascii")
 
     xmin, ymin, zmin = BMODEL_MINS
     xmax, ymax, zmax = BMODEL_MAXS
-    vertices = (*WORLD_VERTICES,
+    world_face_count = 1 + int(world_backdrop_texture is not None)
+    world_vertices = list(WORLD_VERTICES)
+    if world_backdrop_texture is not None:
+        world_vertices.extend((
+            (768.0, -960.0, -720.0),
+            (768.0, -960.0, 720.0),
+            (768.0, 960.0, 720.0),
+            (768.0, 960.0, -720.0),
+        ))
+    bmodel_vertex_base = len(world_vertices)
+    vertices = (*world_vertices,
         (xmin, ymin, zmin), (xmin, ymin, zmax),
         (xmin, ymax, zmax), (xmin, ymax, zmin),
         (xmax, ymin, zmin), (xmax, ymin, zmax),
         (xmax, ymax, zmax), (xmax, ymax, zmin),
     )
 
-    face_vertices = (
-        (0, 1, 2, 3),       # world background, normal -X
-        (4, 5, 6, 7),       # box -X
-        (8, 11, 10, 9),     # box +X
-        (4, 8, 9, 5),       # box -Y
-        (7, 6, 10, 11),     # box +Y
-        (4, 7, 11, 8),      # box -Z
-        (5, 9, 10, 6),      # box +Z
+    bmodel_face_vertices = (
+        (bmodel_vertex_base + 0, bmodel_vertex_base + 1,
+         bmodel_vertex_base + 2, bmodel_vertex_base + 3),  # box -X
+        (bmodel_vertex_base + 4, bmodel_vertex_base + 7,
+         bmodel_vertex_base + 6, bmodel_vertex_base + 5),  # box +X
+        (bmodel_vertex_base + 0, bmodel_vertex_base + 4,
+         bmodel_vertex_base + 5, bmodel_vertex_base + 1),  # box -Y
+        (bmodel_vertex_base + 3, bmodel_vertex_base + 2,
+         bmodel_vertex_base + 6, bmodel_vertex_base + 7),  # box +Y
+        (bmodel_vertex_base + 0, bmodel_vertex_base + 3,
+         bmodel_vertex_base + 7, bmodel_vertex_base + 4),  # box -Z
+        (bmodel_vertex_base + 1, bmodel_vertex_base + 5,
+         bmodel_vertex_base + 6, bmodel_vertex_base + 2),  # box +Z
     )
+    face_vertices = [
+        (0, 1, 2, 3),       # world background, normal -X
+    ]
+    if world_backdrop_texture is not None:
+        face_vertices.append((4, 5, 6, 7))
+    face_vertices.extend(bmodel_face_vertices)
 
     edges = [(0, 0)]
     surfedges: list[int] = []
@@ -177,16 +218,20 @@ def build_bsp(
             edges.append((vertex, next_vertex))
             surfedges.append(len(edges) - 1)
 
-    planes = (
+    planes = [
         _plane((1.0, 0.0, 0.0), -1024.0),
         _plane((-1.0, 0.0, 0.0), -512.0),
+    ]
+    if world_backdrop_texture is not None:
+        planes.append(_plane((-1.0, 0.0, 0.0), -768.0))
+    planes.extend((
         _plane((-1.0, 0.0, 0.0), -xmin),
         _plane((1.0, 0.0, 0.0), xmax),
         _plane((0.0, -1.0, 0.0), -ymin),
         _plane((0.0, 1.0, 0.0), ymax),
         _plane((0.0, 0.0, -1.0), -zmin),
         _plane((0.0, 0.0, 1.0), zmax),
-    )
+    ))
 
     lumps: list[bytes] = [b"" for _ in range(HEADER_LUMPS)]
     lumps[LUMP_ENTITIES] = entities
@@ -204,36 +249,70 @@ def build_bsp(
         1024,
         1024,
         0,
-        1,
+        world_face_count,
     )
-    lumps[LUMP_TEXINFO] = _texinfo(BACKGROUND_TEXTURE) + _texinfo(BMODEL_TEXTURE)
+    lighting = bytearray()
+    world_light_offset = -1
+    if world_lightmap_rgb is not None:
+        lightmap_pixel = bytes(world_lightmap_rgb)
+        lighting.extend(lightmap_pixel * (
+            BACKGROUND_LIGHTMAP_WIDTH * BACKGROUND_LIGHTMAP_HEIGHT
+        ))
+        world_light_offset = 0
+    bmodel_light_offsets: tuple[int, ...] = ()
+    if bmodel_lightmap_rgb is not None:
+        bmodel_pixel = bytes(bmodel_lightmap_rgb)
+        offsets: list[int] = []
+        for width, height in BMODEL_LIGHTMAP_FACE_DIMENSIONS:
+            offsets.append(len(lighting))
+            lighting.extend(bmodel_pixel * (width * height))
+        bmodel_light_offsets = tuple(offsets)
+
+    texinfos = [_texinfo(background_texture, background_surface_flags)]
+    if world_backdrop_texture is not None:
+        texinfos.append(
+            _texinfo(world_backdrop_texture, world_backdrop_surface_flags)
+        )
+    bmodel_texinfo = len(texinfos)
+    texinfos.append(_texinfo(bmodel_texture, bmodel_surface_flags))
+    lumps[LUMP_TEXINFO] = b"".join(texinfos)
     lumps[LUMP_FACES] = b"".join(
         _face(
-            1 if index == 0 else index + 1,
+            index + 1,
             firstedge,
-            0 if index == 0 else 1,
-            (0, 255, 255, 255) if index == 0 else (255, 255, 255, 255),
-            0 if index == 0 else -1,
+            0 if index == 0 else (
+                1 if world_backdrop_texture is not None and index == 1
+                else bmodel_texinfo
+            ),
+            (0, 255, 255, 255)
+            if (index == 0 and world_lightmap_rgb is not None) or
+               bmodel_light_offsets
+            else (255, 255, 255, 255),
+            world_light_offset if index == 0 else (
+                bmodel_light_offsets[index - world_face_count]
+                if index >= world_face_count and bmodel_light_offsets else -1
+            ),
         )
         for index, firstedge in enumerate(face_firstedges)
     )
-    lightmap_pixel = bytes(BACKGROUND_LIGHTMAP_RGB)
-    lumps[LUMP_LIGHTING] = lightmap_pixel * (
-        BACKGROUND_LIGHTMAP_WIDTH * BACKGROUND_LIGHTMAP_HEIGHT
-    )
+    lumps[LUMP_LIGHTING] = bytes(lighting)
     lumps[LUMP_LEAFS] = b"".join(
         (
             _leaf(CONTENTS_SOLID, (-1024, -1024, -1024), (-1024, 1024, 1024), 0, 0),
-            _leaf(0, (-1024, -1024, -1024), (1024, 1024, 1024), 0, 1),
+            _leaf(0, (-1024, -1024, -1024), (1024, 1024, 1024),
+                  0, world_face_count),
         )
     )
-    lumps[LUMP_LEAFFACES] = struct.pack("<H", 0)
+    lumps[LUMP_LEAFFACES] = struct.pack(
+        "<" + "H" * world_face_count, *range(world_face_count)
+    )
     lumps[LUMP_EDGES] = b"".join(struct.pack("<HH", *edge) for edge in edges)
     lumps[LUMP_SURFEDGES] = b"".join(struct.pack("<i", edge) for edge in surfedges)
     lumps[LUMP_MODELS] = b"".join(
         (
-            _model((-1024.0, -1024.0, -1024.0), (1024.0, 1024.0, 1024.0), 0, 0, 1),
-            _model(BMODEL_MINS, BMODEL_MAXS, -2, 1, 6),
+            _model((-1024.0, -1024.0, -1024.0), (1024.0, 1024.0, 1024.0),
+                   0, 0, world_face_count),
+            _model(BMODEL_MINS, BMODEL_MAXS, -2, world_face_count, 6),
         )
     )
     lumps[LUMP_AREAS] = struct.pack("<ii", 0, 0)

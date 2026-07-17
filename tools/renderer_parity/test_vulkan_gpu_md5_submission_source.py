@@ -55,12 +55,24 @@ class VulkanGpuMd5SubmissionSourceTests(unittest.TestCase):
     def test_gpu_submission_batches_static_mesh_instances_and_preserves_fallbacks(self) -> None:
         self.assertIn("static bool VK_Entity_AppendGpuMd5Batch", VK_ENTITY)
         self.assertIn("batch->gpu_md5_mesh != mesh", VK_ENTITY)
+        self.assertIn("batch->vertex_flags != vertex_flags", VK_ENTITY)
         self.assertIn("batch->first_instance + batch->instance_count != instance_index", VK_ENTITY)
         self.assertIn("VK_Entity_AddGpuMD5", VK_ENTITY)
         self.assertIn("VK_Entity_ShouldUseGpuMD5", VK_ENTITY)
         self.assertIn("vk_md5_gpu_skinning", VK_ENTITY)
         self.assertIn("!(ent->flags & (RF_ITEM_COLORIZE | RF_OUTLINE))", VK_ENTITY)
+        self.assertIn("GPU MD5 residency unavailable for %s ", VK_ENTITY)
+        self.assertIn('error && *error ? error : "unknown failure"', VK_ENTITY)
         self.assertNotIn('#include "rend_gl', VK_ENTITY)
+
+    def test_model_lifetime_releases_static_gpu_resources_before_cpu_storage(self) -> None:
+        free_model = VK_ENTITY.split("static void VK_Entity_FreeModel", 1)[1].split(
+            "static void VK_Entity_FreeAllModels", 1
+        )[0]
+        self.assertLess(
+            free_model.index("VK_Entity_DestroyMd5GpuResources(&model->md5);"),
+            free_model.index("VK_MD5_Free(&model->md5);"),
+        )
 
 
 if __name__ == "__main__":
