@@ -14,12 +14,25 @@ int main(void)
                        20 &&
                    sizeof(worr_event_payload_muzzle_v1) == 8 &&
                    sizeof(worr_event_payload_spatial_audio_v1) == 40 &&
+                   sizeof(worr_event_payload_keyed_poi_v1) == 20 &&
+                   _Alignof(worr_event_payload_keyed_poi_v1) == 4 &&
+                   offsetof(worr_event_payload_keyed_poi_v1, key) == 0 &&
+                   offsetof(worr_event_payload_keyed_poi_v1, lifetime_ms) ==
+                       2 &&
+                   offsetof(worr_event_payload_keyed_poi_v1, position) == 4 &&
+                   offsetof(worr_event_payload_keyed_poi_v1, image_index) ==
+                       16 &&
+                   offsetof(worr_event_payload_keyed_poi_v1, color_index) ==
+                       18 &&
+                   offsetof(worr_event_payload_keyed_poi_v1, flags) == 19 &&
                    WORR_EVENT_PAYLOAD_LEGACY_ENTITY_V1 == 7 &&
                    WORR_EVENT_PAYLOAD_LEGACY_TEMP_V1 == 8 &&
                    WORR_EVENT_PAYLOAD_MUZZLE_V1 == 9 &&
                    WORR_EVENT_PAYLOAD_SPATIAL_AUDIO_V1 == 10 &&
                    WORR_EVENT_PAYLOAD_LOCAL_INTERACTION_AUTHORITY_V1 == 11 &&
                    WORR_EVENT_PAYLOAD_LOCAL_ACTION_SHADOW_AUTHORITY_V1 == 12 &&
+                   WORR_EVENT_PAYLOAD_KEYED_POI_V1 == 13 &&
+                   WORR_EVENT_MODEL_REVISION == 2 &&
                    sizeof(worr_local_action_shadow_authority_receipt_v1) ==
                        64 &&
                    WORR_EVENT_LEGACY_TEMP_BOSSTPORT == 22 &&
@@ -39,7 +52,7 @@ int main(void)
                    sizeof(worr_cgame_event_action_candidate_v2) == 184 &&
                    sizeof(worr_cgame_event_carrier_v2) == 12 &&
                    sizeof(worr_cgame_event_observed_v2) == 12 &&
-                   sizeof(worr_cgame_event_range_audit_status_v2) == 192
+                   sizeof(worr_cgame_event_range_audit_status_v2) == 224
                ? 0
                : 1;
 }

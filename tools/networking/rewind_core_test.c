@@ -541,6 +541,8 @@ static void test_history_discontinuity_rules(void) {
   worr_rewind_history_v1 history;
   worr_rewind_pose_v1 storage[4];
   worr_rewind_pose_v1 pose;
+  worr_rewind_pose_query_v1 query;
+  worr_rewind_pose_result_v1 result;
   worr_event_entity_ref_v1 mover = {20, 1};
   uint32_t reason;
 
@@ -562,6 +564,17 @@ static void test_history_discontinuity_rules(void) {
   pose.flags |= WORR_REWIND_POSE_DISCONTINUITY_PAUSE;
   CHECK(Worr_RewindHistoryAppendV1(&history, &pose, &reason));
   CHECK(reason == WORR_REWIND_APPEND_ACCEPTED);
+  memset(&query, 0, sizeof(query));
+  query.struct_size = sizeof(query);
+  query.schema_version = WORR_REWIND_ABI_VERSION;
+  query.entity.index = 8;
+  query.entity.generation = 1;
+  query.map_epoch = 1;
+  query.required_lifecycle = WORR_REWIND_LIFECYCLE_ALIVE;
+  query.target_time_us = 200;
+  CHECK(Worr_RewindHistoryQueryV1(&history, &query, &result));
+  CHECK(result.found == 1 && result.reason == WORR_REWIND_QUERY_EXACT);
+  CHECK(result.pose.origin[0] == 1001.0f);
 
   pose = make_pose(8, 1, 1, 12, 300, 1002.0f);
   attach_mover(&pose, mover, 4.0f);
@@ -617,6 +630,54 @@ static void test_history_hostile_layout(void) {
   CHECK(!Worr_RewindPoseValidateV1(&pose));
 }
 
+static void test_history_map_epoch_query_boundaries(void) {
+  worr_rewind_history_config_v1 config;
+  worr_rewind_history_v1 history;
+  worr_rewind_pose_v1 storage[4];
+  worr_rewind_pose_v1 pose;
+  worr_rewind_pose_query_v1 query;
+  worr_rewind_pose_result_v1 result;
+  uint32_t reason;
+
+  Worr_RewindHistoryConfigDefaultsV1(&config);
+  CHECK(Worr_RewindHistoryInitV1(&history, storage, 4, 10, &config));
+  pose = make_pose(10, 1, 1, 1, 100, 1.0f);
+  CHECK(Worr_RewindHistoryAppendV1(&history, &pose, &reason));
+  pose = make_pose(10, 1, 1, 2, 200, 2.0f);
+  CHECK(Worr_RewindHistoryAppendV1(&history, &pose, &reason));
+  pose = make_pose(10, 1, 2, 3, 300, 3.0f);
+  CHECK(Worr_RewindHistoryAppendV1(&history, &pose, &reason));
+  CHECK((storage[2].flags & WORR_REWIND_POSE_DISCONTINUITY_MAP) != 0);
+  pose = make_pose(10, 1, 2, 4, 400, 4.0f);
+  CHECK(Worr_RewindHistoryAppendV1(&history, &pose, &reason));
+
+  memset(&query, 0, sizeof(query));
+  query.struct_size = sizeof(query);
+  query.schema_version = WORR_REWIND_ABI_VERSION;
+  query.entity.index = 10;
+  query.entity.generation = 1;
+  query.required_lifecycle = WORR_REWIND_LIFECYCLE_ALIVE;
+  query.map_epoch = 1;
+  query.target_time_us = 150;
+  CHECK(Worr_RewindHistoryQueryV1(&history, &query, &result));
+  CHECK(result.found == 1 &&
+        result.reason == WORR_REWIND_QUERY_INTERPOLATED);
+  query.target_time_us = 250;
+  CHECK(Worr_RewindHistoryQueryV1(&history, &query, &result));
+  CHECK(result.found == 0 &&
+        result.reason == WORR_REWIND_QUERY_MISS_FUTURE);
+
+  query.map_epoch = 2;
+  query.target_time_us = 350;
+  CHECK(Worr_RewindHistoryQueryV1(&history, &query, &result));
+  CHECK(result.found == 1 &&
+        result.reason == WORR_REWIND_QUERY_INTERPOLATED);
+  query.target_time_us = 250;
+  CHECK(Worr_RewindHistoryQueryV1(&history, &query, &result));
+  CHECK(result.found == 0 &&
+        result.reason == WORR_REWIND_QUERY_MISS_TOO_OLD);
+}
+
 static void test_history_ring_wrap(void) {
   worr_rewind_history_config_v1 config;
   worr_rewind_history_v1 history;
@@ -649,6 +710,19 @@ static void test_history_ring_wrap(void) {
   CHECK(Worr_RewindHistoryQueryV1(&history, &query, &result));
   CHECK(result.found == 1 && result.reason == WORR_REWIND_QUERY_EXACT);
   CHECK(result.pose.origin[0] == 2.0f);
+  query.target_time_us = 250;
+  CHECK(Worr_RewindHistoryQueryV1(&history, &query, &result));
+  CHECK(result.found == 1 &&
+        result.reason == WORR_REWIND_QUERY_INTERPOLATED);
+  CHECK(fabsf(result.pose.origin[0] - 2.5f) < 0.001f);
+  query.target_time_us = 150;
+  CHECK(Worr_RewindHistoryQueryV1(&history, &query, &result));
+  CHECK(result.found == 0 &&
+        result.reason == WORR_REWIND_QUERY_MISS_TOO_OLD);
+  query.target_time_us = 350;
+  CHECK(Worr_RewindHistoryQueryV1(&history, &query, &result));
+  CHECK(result.found == 0 &&
+        result.reason == WORR_REWIND_QUERY_MISS_FUTURE);
 }
 
 static void test_scene_and_ignore_sets(void) {
@@ -698,10 +772,13 @@ static void test_scene_and_ignore_sets(void) {
   CHECK(Worr_RewindSceneValidateV1(&scene_a));
 
   CHECK(Worr_RewindSceneInitV1(&scene_b, storage_b, 4, &decision));
-  CHECK(Worr_RewindSceneAddResultV1(&scene_b, &mover_result));
-  CHECK(Worr_RewindSceneAddResultV1(&scene_b, &player_result));
+  CHECK(Worr_RewindSceneAddOwnedResultV1(&scene_b, &mover_result));
+  CHECK(Worr_RewindSceneAddOwnedResultV1(&scene_b, &player_result));
   CHECK(Worr_RewindSceneSealV1(&scene_b));
+  CHECK(Worr_RewindSceneValidateV1(&scene_b));
   CHECK(scene_a.scene_hash == scene_b.scene_hash);
+  CHECK(memcmp(scene_a.slots, scene_b.slots,
+               scene_a.count * sizeof(scene_a.slots[0])) == 0);
 
   before_scene = scene_a;
   memcpy(before_storage, storage_a, sizeof(storage_a));
@@ -795,6 +872,24 @@ static void test_scene_failures(void) {
   CHECK(memcmp(&scene, &before_scene, sizeof(scene)) == 0);
   CHECK(memcmp(storage, before_storage, sizeof(storage)) == 0);
 
+  /*
+   * The owned builder deliberately avoids rescanning prior caller-owned slots,
+   * but the mandatory seal still rejects any between-call corruption before
+   * the scene can become traceable.
+   */
+  result_b = make_result(&pose_b, target, WORR_REWIND_QUERY_EXACT,
+                         WORR_REWIND_DISCRETE_EXACT, 0);
+  CHECK(Worr_RewindSceneInitV1(&scene, storage, 4, &decision));
+  CHECK(Worr_RewindSceneAddOwnedResultV1(&scene, &result_a));
+  CHECK(Worr_RewindSceneAddOwnedResultV1(&scene, &result_b));
+  storage[0].pose.origin[0] += 1.0f;
+  before_scene = scene;
+  CHECK(!Worr_RewindSceneSealV1(&scene));
+  CHECK(memcmp(&scene, &before_scene, sizeof(scene)) == 0);
+  CHECK((scene.flags & WORR_REWIND_SCENE_SEALED) == 0);
+
+  CHECK(Worr_RewindSceneInitV1(&scene, storage, 4, &decision));
+  CHECK(Worr_RewindSceneAddResultV1(&scene, &result_a));
   attach_mover(&pose_b, pose_a.entity, 0.0f);
   result_b = make_result(&pose_b, target, WORR_REWIND_QUERY_EXACT,
                          WORR_REWIND_DISCRETE_EXACT, 0);
@@ -827,6 +922,7 @@ int main(void) {
   test_history();
   test_history_discontinuity_rules();
   test_history_hostile_layout();
+  test_history_map_epoch_query_boundaries();
   test_history_ring_wrap();
   test_scene_and_ignore_sets();
   test_scene_failures();

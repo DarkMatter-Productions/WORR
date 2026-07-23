@@ -90,7 +90,7 @@ static bool GL_LightGridPoint(const lightgrid_t *grid, const vec3_t start, vec3_
     vec3_t samples[8];
     int i, j, mask, numsamples;
 
-    if (!grid->numleafs || !gl_lightgrid->integer)
+    if (!grid->numleafs || !r_lightgrid || !r_lightgrid->integer)
         return false;
 
     point[0] = (start[0] - grid->mins[0]) * grid->scale[0];

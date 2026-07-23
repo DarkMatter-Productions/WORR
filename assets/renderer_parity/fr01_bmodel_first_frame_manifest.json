@@ -36,8 +36,8 @@
       "probes": [
         {
           "name": "authored_dark_legacy_lightmap",
-          "min_color": [1, 1, 1],
-          "max_color": [24, 32, 48],
+          "min_color": [32, 32, 32],
+          "max_color": [32, 32, 32],
           "min_pixels_per_backend": 30000,
           "max_backend_count_delta_percent": 1,
           "min_backend_intersection_over_union": 0.99

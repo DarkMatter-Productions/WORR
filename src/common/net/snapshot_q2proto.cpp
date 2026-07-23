@@ -725,6 +725,15 @@ const worr_snapshot_q2proto_lineage_v2 *slot_lineage(
            static_cast<size_t>(slot_index) * context->profile.max_entities;
 }
 
+bool generation_equal(const worr_snapshot_entity_generation_v2 &left,
+                      const worr_snapshot_entity_generation_v2 &right)
+{
+    return left.identity.index == right.identity.index &&
+           left.identity.generation == right.identity.generation &&
+           left.provenance_flags == right.provenance_flags &&
+           left.reserved0 == right.reserved0;
+}
+
 bool generation_for_add(worr_snapshot_q2proto_lineage_v2 *lineage,
                         uint32_t *generation)
 {
@@ -1098,9 +1107,63 @@ extern "C" worr_snapshot_q2proto_result_v2 Worr_SnapshotQ2ProtoPublishV2(
     /* Playerstate proves that the controlled lifecycle exists even when the
      * first-person entity is not carried in this observer's entity range. */
     controlled_lineage.present = 1;
-    const auto controlled_generation = inferred_generation(
+    auto controlled_generation = inferred_generation(
         input->controlled_entity_index, controlled_lineage.generation,
         controlled_epoch_reset);
+    worr_snapshot_entity_generation_v2 *controlled_entity_generation = nullptr;
+    for (uint32_t index = 0; index < entity_count; ++index) {
+        auto &generation =
+            context->storage.scratch_entities[index].generation;
+        if (generation.identity.index == input->controlled_entity_index) {
+            controlled_entity_generation = &generation;
+            break;
+        }
+    }
+
+    const worr_snapshot_entity_generation_v2 *retained_generation = nullptr;
+    if (base_slot != nullptr) {
+        const auto *base_entities = slot_entities(context, base_slot_index);
+        for (uint32_t index = 0; index < base_slot->entity_count; ++index) {
+            const auto &generation = base_entities[index].generation;
+            if (generation.identity.index != input->controlled_entity_index)
+                continue;
+            if (generation.identity.generation !=
+                controlled_lineage.generation) {
+                return WORR_SNAPSHOT_Q2PROTO_INVALID_ENTITY;
+            }
+            retained_generation = &generation;
+            break;
+        }
+        const auto &base_controlled = base_slot->player.controlled_entity;
+        if (base_controlled.identity.index ==
+                input->controlled_entity_index) {
+            if (base_controlled.identity.generation !=
+                    controlled_lineage.generation ||
+                (retained_generation != nullptr &&
+                 !generation_equal(*retained_generation, base_controlled))) {
+                return WORR_SNAPSHOT_Q2PROTO_INVALID_ENTITY;
+            }
+            retained_generation = &base_controlled;
+        }
+    }
+    if (controlled_entity_generation != nullptr) {
+        if (controlled_entity_generation->identity.generation !=
+            controlled_lineage.generation) {
+            return WORR_SNAPSHOT_Q2PROTO_INVALID_ENTITY;
+        }
+        /* Generation provenance belongs to the assigned lifecycle, not just
+         * the frame that assigned it. Unchanged carriers already retain the
+         * exact record; explicit deltas and generation-only keyframes inherit
+         * it here before entity, player, and snapshot hashes are calculated. */
+        if (retained_generation != nullptr)
+            *controlled_entity_generation = *retained_generation;
+        controlled_generation = *controlled_entity_generation;
+    } else if (retained_generation != nullptr) {
+        /* First-person entities are commonly omitted. Preserve the previous
+         * lifecycle's exact provenance across that omission and across a
+         * generation-only keyframe parent. */
+        controlled_generation = *retained_generation;
+    }
 
     worr_snapshot_player_v2 player{};
     const worr_snapshot_player_v2 *base_player =

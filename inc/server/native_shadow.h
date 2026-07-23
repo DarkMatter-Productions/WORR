@@ -15,6 +15,8 @@ the Free Software Foundation; either version 2 of the License, or
 #include "common/net/command_stream.h"
 #include "common/net/native_carrier_ack.h"
 #include "common/net/native_command_shadow.h"
+#include "common/net/native_input_batch.h"
+#include "common/net/native_input_batch_sideband.h"
 #include "common/net/native_readiness.h"
 #include "common/net/native_readiness_sideband.h"
 #include "server/snapshot_event_candidates.h"
@@ -45,6 +47,8 @@ extern "C" {
 #define SV_NATIVE_SHADOW_RX_SLOT_CAPACITY 1u
 #define SV_NATIVE_SHADOW_PAYLOAD_BYTES \
     WORR_NATIVE_COMMAND_SHADOW_ENCODED_BYTES
+#define SV_NATIVE_SHADOW_MAX_PAYLOAD_BYTES \
+    WORR_NATIVE_INPUT_BATCH_MAX_PAYLOAD_BYTES
 #define SV_NATIVE_SHADOW_WNE_BYTES \
     (WORR_NATIVE_ENVELOPE_WIRE_HEADER_BYTES + \
      SV_NATIVE_SHADOW_PAYLOAD_BYTES)
@@ -56,11 +60,17 @@ extern "C" {
 #define SV_NATIVE_SHADOW_STATUS_VERSION 1u
 #define SV_NATIVE_SHADOW_EVENT_STATUS_VERSION 1u
 #define SV_NATIVE_SHADOW_SNAPSHOT_STATUS_VERSION 1u
+#define SV_NATIVE_SHADOW_INPUT_BATCH_STATUS_VERSION 1u
 #define SV_NATIVE_SHADOW_EVENT_RESEND_MS 100u
 #define SV_NATIVE_SHADOW_SNAPSHOT_RESEND_MS 100u
 #define SV_NATIVE_SHADOW_EVENT_FIRST_SEQUENCE 1u
+#define SV_NATIVE_SHADOW_RELIABLE_EVENT_ENTRY_CAPACITY 32u
+/* Source compatibility for the earlier game-event-only pilot. */
+#define SV_NATIVE_SHADOW_RELIABLE_GAME_EVENT_BATCH_CAPACITY \
+    SV_NATIVE_SHADOW_RELIABLE_EVENT_ENTRY_CAPACITY
+#define SV_NATIVE_SHADOW_LIVE_APPLICATION_BUDGET 1024u
 #define SV_NATIVE_SHADOW_EVENT_MAX_DATAGRAM_BYTES                         \
-    (WORR_NATIVE_CARRIER_MAX_PACKET_BYTES -                              \
+    (SV_NATIVE_SHADOW_LIVE_APPLICATION_BUDGET -                          \
      WORR_NATIVE_CARRIER_WIRE_FOOTER_BYTES -                             \
      WORR_NATIVE_CARRIER_WIRE_ENTRY_HEADER_BYTES -                       \
      (7u *                                                              \
@@ -87,6 +97,20 @@ static inline bool SV_NativeShadowModeHasSnapshotV1(uint32_t mode)
 {
     return mode == SV_NATIVE_SHADOW_MODE_SNAPSHOT ||
            mode == SV_NATIVE_SHADOW_MODE_EVENT_SNAPSHOT;
+}
+
+static inline uint32_t
+SV_NativeShadowModePublicCapabilitiesV1(uint32_t mode)
+{
+    if (mode == SV_NATIVE_SHADOW_MODE_EVENT_SNAPSHOT)
+        return WORR_NET_CAP_NATIVE_EVENT_SNAPSHOT_PUBLIC_MASK;
+    if (mode == SV_NATIVE_SHADOW_MODE_EVENT)
+        return WORR_NET_CAP_NATIVE_EVENT_PUBLIC_MASK;
+    if (mode == SV_NATIVE_SHADOW_MODE_SNAPSHOT)
+        return WORR_NET_CAP_NATIVE_SNAPSHOT_PUBLIC_MASK;
+    if (mode == SV_NATIVE_SHADOW_MODE_COMMAND)
+        return WORR_NET_CAP_NATIVE_COMMAND_PUBLIC_MASK;
+    return 0;
 }
 
 typedef enum sv_native_shadow_lifecycle_v1_e {
@@ -121,6 +145,7 @@ typedef enum sv_native_shadow_failure_v1_e {
     SV_NATIVE_SHADOW_FAILURE_SNAPSHOT_EVENTS = 15,
     SV_NATIVE_SHADOW_FAILURE_SNAPSHOT_SENDER = 16,
     SV_NATIVE_SHADOW_FAILURE_SNAPSHOT_PROJECTION = 17,
+    SV_NATIVE_SHADOW_FAILURE_LOCAL_ACTION_AUTHORITY = 18,
 } sv_native_shadow_failure_v1;
 
 /* Failure detail remains zero for general adapter failures.  Snapshot sender
@@ -140,6 +165,16 @@ typedef enum sv_native_shadow_observe_result_v1_e {
     SV_NATIVE_SHADOW_OBSERVE_CLIENT_ACTIVE_CONFIRMED = 4,
 } sv_native_shadow_observe_result_v1;
 
+/* Reliable legacy event observation is best-effort and never changes the
+ * already accepted legacy reliable bytes. Unsupported service sequences are
+ * ordinary legacy-only traffic; bounded native pressure is explicit. */
+typedef enum sv_native_shadow_reliable_game_event_result_v1_e {
+    SV_NATIVE_SHADOW_RELIABLE_GAME_EVENT_IGNORED = 0,
+    SV_NATIVE_SHADOW_RELIABLE_GAME_EVENT_CAPTURED = 1,
+    SV_NATIVE_SHADOW_RELIABLE_GAME_EVENT_CAPACITY = 2,
+    SV_NATIVE_SHADOW_RELIABLE_GAME_EVENT_INVALID_ARGUMENT = 3,
+} sv_native_shadow_reliable_game_event_result_v1;
+
 typedef struct sv_native_shadow_event_state_v1_s
     sv_native_shadow_event_state_v1;
 typedef struct sv_native_shadow_snapshot_state_v1_s
@@ -151,7 +186,7 @@ typedef struct sv_native_shadow_transport_v1_s {
     uint32_t reserved0;
     worr_native_rx_session_v1 rx_session;
     worr_native_rx_slot_v1 rx_slots[SV_NATIVE_SHADOW_RX_SLOT_CAPACITY];
-    uint8_t payload_arena[SV_NATIVE_SHADOW_PAYLOAD_BYTES];
+    uint8_t payload_arena[SV_NATIVE_SHADOW_MAX_PAYLOAD_BYTES];
     worr_native_carrier_ack_ledger_v1 ack_ledger;
     worr_native_command_shadow_join_v1 command_join;
 } sv_native_shadow_transport_v1;
@@ -240,6 +275,8 @@ typedef struct sv_native_shadow_event_status_v1_s {
     uint64_t packets_rejected;
     uint64_t first_sends;
     uint64_t retries;
+    uint64_t schema2_batches_promoted;
+    uint64_t schema2_events_promoted;
 } sv_native_shadow_event_status_v1;
 
 /* Pointer-free canonical-snapshot-mode diagnostics. */
@@ -273,6 +310,30 @@ typedef struct sv_native_shadow_snapshot_status_v1_s {
     uint64_t retries;
 } sv_native_shadow_snapshot_status_v1;
 
+typedef struct sv_native_shadow_input_batch_status_v1_s {
+    uint32_t struct_size;
+    uint16_t schema_version;
+    uint16_t reserved0;
+    uint32_t requested;
+    uint32_t confirmed;
+    uint32_t declined;
+    uint32_t ack_blocked;
+    uint32_t pending_count;
+    uint32_t first_pending_sequence;
+    uint32_t last_pending_sequence;
+    uint32_t official_connection_epoch;
+    uint32_t transport_epoch;
+    uint32_t reserved1;
+    uint64_t confirmations_appended;
+    uint64_t batches_received;
+    uint64_t commands_received;
+    uint64_t repeat_refreshes;
+    uint64_t legacy_joins;
+    uint64_t acknowledgements_unblocked;
+    uint64_t legacy_fallbacks;
+    uint64_t failures;
+} sv_native_shadow_input_batch_status_v1;
+
 #if defined(__cplusplus)
 static_assert(sizeof(sv_native_shadow_status_v1) == 304,
               "server native shadow status V1 layout changed");
@@ -290,18 +351,20 @@ _Static_assert(offsetof(sv_native_shadow_status_v1, last_failure) == 296,
 #endif
 
 #if defined(__cplusplus)
-static_assert(sizeof(sv_native_shadow_event_status_v1) == 152,
+static_assert(sizeof(sv_native_shadow_event_status_v1) == 168,
               "server native event status V1 layout changed");
 static_assert(offsetof(sv_native_shadow_event_status_v1, active_confirms) == 56,
               "server native event status V1 counter offset changed");
-static_assert(offsetof(sv_native_shadow_event_status_v1, retries) == 144,
+static_assert(offsetof(sv_native_shadow_event_status_v1,
+                       schema2_events_promoted) == 160,
               "server native event status V1 tail offset changed");
 #else
-_Static_assert(sizeof(sv_native_shadow_event_status_v1) == 152,
+_Static_assert(sizeof(sv_native_shadow_event_status_v1) == 168,
                "server native event status V1 layout changed");
 _Static_assert(offsetof(sv_native_shadow_event_status_v1, active_confirms) == 56,
                "server native event status V1 counter offset changed");
-_Static_assert(offsetof(sv_native_shadow_event_status_v1, retries) == 144,
+_Static_assert(offsetof(sv_native_shadow_event_status_v1,
+                        schema2_events_promoted) == 160,
                "server native event status V1 tail offset changed");
 #endif
 
@@ -323,6 +386,20 @@ _Static_assert(
 _Static_assert(
     offsetof(sv_native_shadow_snapshot_status_v1, retries) == 152,
     "server native snapshot status V1 tail offset changed");
+#endif
+
+#if defined(__cplusplus)
+static_assert(sizeof(sv_native_shadow_input_batch_status_v1) == 112,
+              "server native input batch status V1 layout changed");
+static_assert(offsetof(sv_native_shadow_input_batch_status_v1,
+                       confirmations_appended) == 48,
+              "server native input batch counter offset changed");
+#else
+_Static_assert(sizeof(sv_native_shadow_input_batch_status_v1) == 112,
+               "server native input batch status V1 layout changed");
+_Static_assert(offsetof(sv_native_shadow_input_batch_status_v1,
+                        confirmations_appended) == 48,
+               "server native input batch counter offset changed");
 #endif
 
 /*
@@ -374,6 +451,16 @@ typedef struct sv_native_shadow_peer_v1_s {
     uint32_t reserved1;
     worr_command_id_v1 matched_native_highwater;
 
+    uint32_t input_batch_requested;
+    uint32_t input_batch_confirm_pending;
+    uint32_t input_batch_confirmed;
+    uint32_t input_batch_declined;
+    uint32_t input_batch_ack_blocked;
+    uint32_t input_batch_pending_count;
+    uint32_t input_batch_reserved[2];
+    worr_command_id_v1 input_batch_pending_ids[
+        WORR_NATIVE_INPUT_BATCH_MAX_COMMANDS];
+
     uint64_t challenges_queued;
     uint64_t client_ready_records;
     uint64_t duplicate_client_ready_records;
@@ -411,6 +498,14 @@ typedef struct sv_native_shadow_peer_v1_s {
     uint64_t async_wake_no_handoff;
     uint64_t next_completion_token;
     uint64_t active_completion_token;
+    uint64_t input_batch_confirmations_appended;
+    uint64_t input_batches_received;
+    uint64_t input_batch_commands_received;
+    uint64_t input_batch_repeat_refreshes;
+    uint64_t input_batch_legacy_joins;
+    uint64_t input_batch_acknowledgements_unblocked;
+    uint64_t input_batch_legacy_fallbacks;
+    uint64_t input_batch_failures;
 
     worr_native_readiness_state_v1 readiness;
     worr_native_readiness_sideband_parser_v1 sideband;
@@ -434,6 +529,10 @@ bool SV_NativeShadowPeerInitModeV1(
 bool SV_NativeShadowPeerInitV1(sv_native_shadow_peer_v1 *peer,
                                netchan_t *netchan,
                                uint32_t raw_time_ms);
+bool SV_NativeShadowConfigureInputBatchV1(
+    sv_native_shadow_peer_v1 *peer, bool requested);
+void SV_NativeShadowDisableInputBatchV1(
+    sv_native_shadow_peer_v1 *peer);
 
 /* Clearing is idempotent and must precede final messages, close, and free. */
 void SV_NativeShadowPeerDetachV1(sv_native_shadow_peer_v1 *peer);
@@ -441,11 +540,26 @@ void SV_NativeShadowPeerDestroyV1(sv_native_shadow_peer_v1 *peer);
 void SV_NativeShadowPeerDisableV1(sv_native_shadow_peer_v1 *peer,
                                   sv_native_shadow_failure_v1 failure);
 
+/* A gamemap boundary preserves the connection/netchan but invalidates the
+ * authoritative per-map legacy command stream.  Quiesce and cancel every
+ * advertised private epoch before that stream is cleared, so delayed valid
+ * carriers remain legacy-only and a later CHALLENGE can advance the same
+ * attached peer.  Healthy repeated calls before a new epoch are idempotent;
+ * an enabled peer that cannot quiesce fails closed before the caller can
+ * invalidate its legacy command stream. */
+bool SV_NativeShadowPeerQuiesceMapV1(
+    sv_native_shadow_peer_v1 *peer);
+
 bool SV_NativeShadowPeerEnabledV1(
     const sv_native_shadow_peer_v1 *peer);
 /* A pending post-bootstrap CHALLENGE may start only when no queued,
  * in-flight, or fragmented reliable generation can precede it. */
 bool SV_NativeShadowPostBootstrapQueueIdleV1(
+    const sv_native_shadow_peer_v1 *peer);
+/* A byte-offset post-bootstrap barrier may leave later reliable bytes queued
+ * behind it.  This narrower predicate admits the next sealed generation only
+ * after every previously handed-off reliable and fragment has retired. */
+bool SV_NativeShadowReliableGenerationIdleV1(
     const sv_native_shadow_peer_v1 *peer);
 /* Wrap-safe predicate for the separate pre-start queueing deadline. */
 bool SV_NativeShadowChallengeQueueExpiredV1(
@@ -474,15 +588,23 @@ bool SV_NativeShadowAppendSvcReadinessV1(
     const sizebuf_t *reliable_queue,
     int setting_opcode,
     const worr_native_readiness_record_v1 *record);
+/* Appends SERVER_ACTIVE and, when privately requested and capacity permits,
+ * its same-packet WNB1 confirmation in one final copy.  Insufficient private
+ * confirmation capacity declines only WNB1 and still appends readiness. */
+bool SV_NativeShadowAppendServerActiveV1(
+    sv_native_shadow_peer_v1 *peer,
+    sizebuf_t *message,
+    const sizebuf_t *reliable_queue,
+    int setting_opcode,
+    const worr_native_readiness_record_v1 *record);
 
 /*
  * Called only after an accepted post-bootstrap SV_Begin has requested a new
- * epoch and the send scheduler reaches a clean reliable boundary.  The public
- * legacy capability tuple must already be selected and delivered.  Its
- * supported and negotiated masks must both remain exactly
- * WORR_NET_CAP_LEGACY_STAGE_MASK.  Command mode privately binds 0x53
- * (NATIVE_ENVELOPE + NATIVE_EPOCH_CANCEL); explicit event mode privately
- * binds 0x73 (NATIVE_ENVELOPE + NATIVE_EVENT_STREAM +
+ * epoch and the send scheduler reaches a clean reliable boundary.  The exact
+ * public native bundle for this adapter mode must already be selected and
+ * delivered.  Readiness binds that same bundle a second time before WTC1 can
+ * open.  Command mode binds 0x53 (NATIVE_ENVELOPE + NATIVE_EPOCH_CANCEL);
+ * explicit event mode binds 0x73 (NATIVE_ENVELOPE + NATIVE_EVENT_STREAM +
  * NATIVE_EPOCH_CANCEL) and requires the fourth readiness confirmation before
  * native server TX opens.  Explicit snapshot mode binds 0x57
  * (NATIVE_ENVELOPE + CANONICAL_SNAPSHOT + NATIVE_EPOCH_CANCEL), independently
@@ -565,6 +687,37 @@ bool SV_NativeShadowQueueEventCandidatesV1(
     const worr_event_record_v1 *candidates,
     uint32_t candidate_count,
     uint32_t raw_time_ms);
+/* Captures a complete reliable raw temp/muzzle sequence after the legacy
+ * append. The decoded FIFO remains ID-less until the next exact final
+ * per-client snapshot is available. */
+sv_native_shadow_reliable_game_event_result_v1
+SV_NativeShadowCaptureReliableGameEventsV1(
+    sv_native_shadow_peer_v1 *peer, uint32_t spawncount,
+    const uint8_t *data, size_t data_bytes);
+/* Captures exactly one complete reliable keyed svc_poi after the legacy
+ * append. It enters the same discriminated FIFO as direct game-event batches,
+ * preserving cross-family append order. */
+sv_native_shadow_reliable_game_event_result_v1
+SV_NativeShadowCaptureReliableKeyedPOIV1(
+    sv_native_shadow_peer_v1 *peer, uint32_t spawncount,
+    const uint8_t *data, size_t data_bytes);
+/* Binds every pending entry that belongs to spawncount against this exact
+ * final-emission snapshot. Each entry is attempted once; invalid, stale, or
+ * capacity-blocked native observations are discarded without affecting the
+ * authoritative legacy stream. */
+bool SV_NativeShadowFlushReliableEventsV1(
+    sv_native_shadow_peer_v1 *peer,
+    sv_snapshot_shadow_peer_v1 *snapshot_shadow,
+    sv_snapshot_shadow_ref_v1 snapshot_ref,
+    uint32_t max_entities, uint32_t spawncount,
+    uint32_t raw_time_ms);
+/* Compatibility entry point; the generalized FIFO also flushes keyed POIs. */
+bool SV_NativeShadowFlushReliableGameEventsV1(
+    sv_native_shadow_peer_v1 *peer,
+    sv_snapshot_shadow_peer_v1 *snapshot_shadow,
+    sv_snapshot_shadow_ref_v1 snapshot_ref,
+    uint32_t max_entities, uint32_t spawncount,
+    uint32_t raw_time_ms);
 bool SV_NativeShadowEventPumpV1(
     sv_native_shadow_peer_v1 *peer,
     uint32_t raw_time_ms,
@@ -602,6 +755,9 @@ bool SV_NativeShadowGetSnapshotStatusV1(
     const sv_native_shadow_peer_v1 *peer,
     uint32_t raw_time_ms,
     sv_native_shadow_snapshot_status_v1 *status_out);
+bool SV_NativeShadowGetInputBatchStatusV1(
+    const sv_native_shadow_peer_v1 *peer,
+    sv_native_shadow_input_batch_status_v1 *status_out);
 
 /* Packet-scoped CLC sideband parser. */
 bool SV_NativeShadowPacketBeginV1(sv_native_shadow_peer_v1 *peer,

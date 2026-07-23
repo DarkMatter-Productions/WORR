@@ -15,6 +15,16 @@ the Free Software Foundation; either version 2 of the License, or
 extern "C" {
 #endif
 
+typedef enum sv_local_action_shadow_authority_failure_v1_e {
+    SV_LOCAL_ACTION_SHADOW_AUTHORITY_FAILURE_NONE = 0,
+    SV_LOCAL_ACTION_SHADOW_AUTHORITY_FAILURE_INVALID_RECEIPT = 1,
+    SV_LOCAL_ACTION_SHADOW_AUTHORITY_FAILURE_EPOCH_CHANGE = 2,
+    SV_LOCAL_ACTION_SHADOW_AUTHORITY_FAILURE_COMMAND_REGRESSION = 3,
+    SV_LOCAL_ACTION_SHADOW_AUTHORITY_FAILURE_COMMAND_CONFLICT = 4,
+    SV_LOCAL_ACTION_SHADOW_AUTHORITY_FAILURE_CAPACITY = 5,
+    SV_LOCAL_ACTION_SHADOW_AUTHORITY_FAILURE_ORDER_EXHAUSTED = 6,
+} sv_local_action_shadow_authority_failure_v1;
+
 void SV_LocalActionShadowAuthorityResetMap(void);
 void SV_LocalActionShadowAuthorityResetClient(uint32_t client_index);
 
@@ -30,6 +40,12 @@ bool SV_LocalActionShadowAuthorityPeekNextReceipt(
 bool SV_LocalActionShadowAuthorityConsumeNextReceipt(
     uint32_t client_index,
     const worr_local_action_shadow_authority_receipt_v1 *expected);
+
+/* Returns and clears the failure notification. A failed mailbox rejects all
+ * further publications until client/map reset; exact duplicates do not fail. */
+bool SV_LocalActionShadowAuthorityTakeFailure(
+    uint32_t client_index,
+    sv_local_action_shadow_authority_failure_v1 *failure_out);
 
 #ifdef __cplusplus
 }

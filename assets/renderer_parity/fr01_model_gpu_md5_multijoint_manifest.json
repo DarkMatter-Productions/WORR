@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "task_id": "FR-01-T14",
+  "scenes": [
+    {
+      "id": "gpu_md5_multijoint_skinning",
+      "config": "renderer_parity/fr01_model_gpu_md5_multijoint.cfg",
+      "capture": "fr01_model_gpu_md5_multijoint.tga",
+      "launch_cvars": {
+        "gl_md5_load": "1",
+        "gl_md5_use": "1",
+        "vk_md5_load": "1",
+        "vk_md5_use": "1",
+        "vk_md5_gpu_skinning": "1"
+      },
+      "crop": [690, 365, 75, 120],
+      "metrics": {
+        "pixel_threshold": 16,
+        "max_mean_absolute_rgb": [2, 0.1, 2],
+        "max_pixels_over_threshold_percent": 1.3
+      },
+      "probes": [
+        {
+          "name": "gpu_md5_multijoint_magenta_skin",
+          "min_color": [200, 0, 200],
+          "max_color": [255, 60, 255],
+          "min_pixels_per_backend": 1100,
+          "max_backend_count_delta_percent": 7,
+          "min_backend_intersection_over_union": 0.94
+        }
+      ]
+    }
+  ]
+}

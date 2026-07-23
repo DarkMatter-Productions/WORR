@@ -192,6 +192,14 @@ bool CL_SnapshotShadowLatest(
     worr_snapshot_projection_view_v2 *view_out,
     worr_snapshot_projection_hashes_v2 *hashes_out,
     worr_snapshot_ref_v2 *ref_out);
+typedef void (*cl_snapshot_shadow_record_observer_v1)(
+    const worr_snapshot_projection_view_v2 *view,
+    const worr_snapshot_projection_hashes_v2 *hashes,
+    worr_snapshot_ref_v2 projection_ref);
+/* Synchronous post-admission observer. It must not retain view pointers and
+ * cannot change the result of canonical snapshot admission. */
+bool CL_SnapshotShadowSetRecordObserver(
+    cl_snapshot_shadow_record_observer_v1 observer);
 cl_snapshot_shadow_native_expectation_result_v1
 CL_SnapshotShadowGetNativeExpectation(
     worr_snapshot_id_v2 snapshot_id,

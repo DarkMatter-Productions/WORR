@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "task_id": "FR-02-T05",
+  "scenes": [
+    {
+      "id": "sprite_pcx_truecolour_replacement_fixed_view",
+      "config": "renderer_parity/fr02_sprite_replacement.cfg",
+      "capture": "fr02_sprite_replacement.tga",
+      "crop": [250, 220, 460, 400],
+      "metrics": {
+        "pixel_threshold": 2,
+        "max_mean_absolute_rgb": [0.0001, 0, 0.00005],
+        "max_pixels_over_threshold_percent": 0
+      },
+      "probes": [
+        {
+          "name": "png_replacement_opaque_core",
+          "color": [188, 40, 232],
+          "tolerance": 0,
+          "min_pixels_per_backend": 123000,
+          "max_backend_count_delta_percent": 0.01,
+          "min_backend_intersection_over_union": 1.0
+        }
+      ]
+    }
+  ]
+}

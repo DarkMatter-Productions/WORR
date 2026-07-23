@@ -1,7 +1,7 @@
 # FR-10 Roadmap Completion Audit
 
 Date: 2026-07-13
-Last updated: 2026-07-17
+Last updated: 2026-07-20
 
 Project tasks: `FR-10-T01` through `FR-10-T16`
 
@@ -26,19 +26,19 @@ the supported-platform matrix.
 | `FR-10-T01` | Accepted ownership, identity, time, compatibility, budget, security, rollout, and rollback contracts | `docs-dev/progressive-networking-foundation-2026-07-11.md` plus the canonical living plan | Complete |
 | `FR-10-T02` | One deterministic client/server movement core, exact ABI/hash/replay parity, correction and wrap coverage | `docs-dev/networking-deterministic-prediction-core-2026-07-12.md` and ordinary networking tests | Complete |
 | `FR-10-T03` | Deterministic impairment model covering the declared faults, checked-in golden, staging control, and repeatability | `docs-dev/networking-deterministic-impairment-harness-2026-07-12.md` and `networking-baseline` evidence | Complete |
-| `FR-10-T04` | Negotiated native carrier, codecs for the accepted canonical models, exact receipts, live client/server adapters, downgrade/MTU/malformed/reconnect coverage, and dual-adapter parity | Private command/event modes, cancellation, mixed carrier scheduling, semantic event ACK fencing, and narrow live event producers remain valid over the unchanged public `0x03` offer. Private snapshot mode binds exact `0x57` plus an independent snapshot epoch, queues exact final projections in a bounded two-bank sender, admits them through the real client hook after the exact legacy expectation, publishes through the sole native cgame timeline owner, and returns semantic ACKs through the reverse carrier. A fixed-seed two-run production-path corpus now carries 100,000 positive projections through WNC1/WNE1/WTC1, one production `NetImpair` profile, receiver/admission, cgame timeline, locally constructed prediction resolver/selector, ACK, and release with golden `c6aee48df85341ab`; all positives accept/ACK/release and three corrupt carriers reject. The local-action continuation adds a fieldwise 64-byte private receipt as event payload kind `12`; its production-wrapper virtual link passes descriptor admission, exact cgame command correlation, semantic ACK, and release with zero presentation. Three live two-process schema-v32 repeats disconnect/reconnect the shooter and match 45/45 exact action receipts after epoch-3 rebase with zero reconciliation errors. Exact private combined `0x77` now fairly schedules event and snapshot DATA with disjoint ACK-identity lanes; three schema-v33 repeats match 99/99 action receipts and show both snapshot peers ACKing/releasing with zero endpoint failure. Public advertisement, full dual-adapter parity, complete impairment/load, broader real-socket, and cross-platform evidence remain absent | Incomplete |
-| `FR-10-T05` | Multiple typed events per tick, explicit delivery/prediction identity, reliable retention/receipt, predicted matching, and ordered at-most-once live presentation | Canonical journal, cgame authority/prediction runtime, semantic descriptor, exact receipts, epoch cancellation, and the live default-off per-peer event shadow are present. Narrow production covers final-emission legacy entities, visible or explicit-positional spatial audio, and bounded ordered temporary/player-muzzle/monster-muzzle/Rerelease-muzzle sequences. Snapshot ACK authority now uses the healthy exact cgame event-runtime fence in the live default-off snapshot adapter, including zero-event snapshots and event-carrying legacy-inferred snapshots with `cg_event_runtime_audit=0`. Audit-off legacy ranges validate without consuming the diagnostic join table. Private local-action receipt payload kind `12` is reliable ordered, authoritative only, critical, entity-free, and terminally skipped without presentation; command mismatch/conflict degrades the same authority runtime. Other direct service families, reliable/positionless audio, combined/reliable muzzle traffic, predicted local-action presentation, and presenter cutover remain absent | Incomplete |
-| `FR-10-T06` | Complete acknowledged-base snapshots, immutable reconstruction, keyframe recovery, packet budgets, and at least 100,000 accepted live shadow snapshots with zero unexplained mismatch | Offline 100,000-frame projector parity and the 115,914-frame live target-count gate remain exact. The separate serialized production corpus records 100,000 requested/accepted/acknowledged/released positive frames plus three corrupt probes across four epochs, using the complete WNC1 view, real server/client hooks, deferred expectation, semantic admission, sole cgame timeline publication, prediction selection, reverse ACK, and retention release. Sender retention now preserves an attempted frame through ordinary semantic-ACK latency, coalesces newer projections, and uses bounded expiry recovery. Three target-only private `0x57` live repeats show positive queue/ACK/release and actual safe remote-transform authority with zero semantic or transform errors. The larger matrices remain single-platform/focused; broader recovery, allocation/packet/CPU/load budgets, public authority, platform, and release gates remain pending | Incomplete |
+| `FR-10-T04` | Negotiated native carrier, codecs for the accepted canonical models, exact receipts, live client/server adapters, downgrade/MTU/malformed/reconnect coverage, and dual-adapter parity | Exact default-off `0x03`/`0x53`/`0x73`/`0x57`/`0x77` policy, cancellation, mixed scheduling, event/snapshot semantic ACKs, local-action receipts, structured event producers, sole native snapshot timeline ownership, and the 100,000-view production corpus remain valid. The bounded-lifecycle continuation adds ordered private reconciliation independent of visual fencing, callback/reentry fail-closed behavior, valid terminal `UINT32_MAX`, monotonic mailbox failure/drain, retained controlled-generation provenance, terminal-pair pruning, and a fixed 1,024-entry cgame table derived from the complete 798-entry flight bound. Final post-stage parent `.tmp/networking/fr10_t04_bounded_lifecycle_full_retry.json` passes 11/11 focused plus all five direct-numeric live lanes; combined records 15/15 damage, 30/30 receipt matches, zero reconciliation fault, preflight plus post-fire proof, and digest `f4a161bf0876e05db21499ab5c21399cc0ef87ae4881ab78ae764bc67b6789ad`. It remains deliberately `task_complete=false`. Explicit legacy demo/MVD/relay acceptance, complete service-family adapters, full dual-adapter impairment/load, broader real sockets, cross-platform, soak, rollout, and release evidence remain absent. Evidence: `docs-dev/fr-10-t04-exact-bundle-acceptance-parent-2026-07-20.md` and `docs-dev/fr-10-t04-t08-private-receipt-bounded-lifecycle-2026-07-20.md` | Incomplete |
+| `FR-10-T05` | Multiple typed events per tick, explicit delivery/prediction identity, reliable retention/receipt, predicted matching, and ordered at-most-once live presentation | The final parent gate runs 18 compiled journal, stream, cgame-runtime, native-link, prediction-correlation, and legacy-family adapter gates twice with identical results and digest `5f300c5f7f925cf5105812cf49ce108305c357790989978738e34e88058e347c`. It directly proves explicit bounded schemas, same-tick multi-event retention, loss/replay/duplicate/late/predicted/wrap at-most-once behavior, and compatible legacy temp/entity/keyed-POI mapping. Legacy packets, demos, and presenters remain authoritative; extra family/cutover/load work remains with its owning tasks. Evidence: `docs-dev/fr-10-t05-typed-event-journal-acceptance-closure-2026-07-19.md` and `.tmp/networking/fr10_t05_acceptance.json` | Complete |
+| `FR-10-T06` | Complete acknowledged-base snapshots, immutable reconstruction, keyframe recovery, packet budgets, and at least 100,000 accepted live shadow snapshots with zero unexplained mismatch | The parent gate runs 12 compiled gates twice, two identical 100,000-snapshot offline parity corpora (`6451c75bdb523477`), two identical 100,000-snapshot serialized production corpora (`ba519ae7bdd1db74`), and a maximum-capacity budget probe. It proves acknowledged-base/keyframe recovery, complete immutable generation-safe views, all declared entity/visibility/overflow/fragment/rate faults, one legacy/native canonical model, exact ACK/release/authority counts, three corrupt rejections, and zero mismatch/abandonment. A 512-entity/1,024-area-byte/512-event view uses 80,869/131,072 bytes; final aggregate build-plus-encode/decode p95 are 486,900/214,700 ns under 1,666,600 ns. History uses 5,869,696/16,777,216 bytes and fixed native owners 624,152/2,097,152 bytes. Evidence: `docs-dev/fr-10-t06-canonical-snapshot-acceptance-closure-2026-07-19.md`, `docs-dev/fr-10-networking-suite-rebaseline-and-resource-isolation-2026-07-20.md`, and `.tmp/networking/fr10_t06_acceptance.json` | Complete |
 | `FR-10-T07` | Cgame-owned immutable timeline, valid interpolation/extrapolation/discontinuity behavior, and ordered deduplicated event dispatch on live presenters | Timeline, remote-transform audit/opt-in parity promotion, present-once audit cursor, default-off event authority, and hard-resync signaling exist. Private `0x57` gives the native receiver sole canonical timeline publication ownership for the readiness epoch, with fresh receipts gating ACKs and uncertainty quarantining the epoch. The corpus extends immutable admission and pure prediction-authority selection from four focused views to 100,000 positives across four epochs. Source-gated mode 3 now uses that engine-owned timeline as actual safe remote-transform presentation authority; three hidden-client repeats record 303/303/261 samples, 84/287/189 native promotions, and zero clock/pair/alignment/parity/event-fence/endpoint/transform failures. Previous-only entities, event/effect/audio presenters, adaptive extrapolation, broad correction/load, demos, and performance evidence remain absent. Evidence: `docs-dev/fr-10-t07-t08-t09-canonical-snapshot-prediction-authority-2026-07-16.md`, `docs-dev/fr-10-t04-t06-t07-t08-t09-t14-serialized-production-snapshot-corpus-2026-07-17.md`, `docs-dev/fr-10-t04-t06-t07-t08-t09-t14-production-v2-pmove-replay-boundary-2026-07-17.md`, and `docs-dev/fr-10-t06-t07-t14-native-snapshot-presentation-authority-2026-07-18.md` | Incomplete |
-| `FR-10-T08` | Full eligible movement/weapon prediction, authoritative consumed-command replay, predicted-side-effect suppression, correction telemetry, and hard-resync behavior | Existing movement replay, fail-closed recovery, Hook request/authority receipt, and local-action audit cores remain valid. The corpus selects 100,000 exact canonical authorities and resolves 250,500 locally fabricated commands. The production-linked focused gate now executes the extracted shipped engine V2 request constructor, real `CL_PredictMovement`, and shared PMove from one admitted receipt. It proves pending/finalized state/collision/replay-hash parity, a legal 127-command replay, 128-command fail-closed ring clearing, one bounded correction, and one threshold hard reset (`v2_replays=4`, `oracle_matches=3`, digest `abf2723d5f03cbe9`). A pointer-free catalog now freezes all 22 ordinary weapons with exact sgame `Weapon`/item/ammo mappings, legacy-driver class, separate Grapple ownership, shadow-only status, per-catalog observation counters, and digest `e857eec08cfa9c00`. A second profile with digest `4f723f6fddf5bf52` freezes the complete legacy frame skeleton and is consumed by all 22 production wrappers. A third exact callback-capability descriptor with digest `a5d823b554b31ee8` classifies trigger/emission families, ammo/emission bounds, direct dependencies, and per-weapon V2 blocker masks; its audit proves zero of 22 are V2-representable. A bounded observation-only lease now gives the latest authenticated command at most one later server-frame weapon advance, expires on all frame exits, retains exact scoped/leased records, and joins them only across semantic-command equality, exact non-timer state, and equal bounded relative-timer decay. Three live hidden-client Blaster repeats prove offers, supersedes, claims, expiries, exact scoped/leased/joined records, and zero rejection. A descriptor-complete 528-byte shared shadow model binds each joined record to the exact catalog/profile/semantics facts, digests, comparable ammo delta, blocker mask, and hashes; its 22-entry golden is `1270244792631122`, and three schema-v30 live repeats prove Blaster catalog `1`, flags `127`, exact blocker mask `4367`, and nonzero record hashes. A compact 64-byte default-off receipt now crosses a bounded backpressure-safe/reconnect-reset engine mailbox and private native event payload kind `12`; the 128-entry cgame audit owner accepts command-first and receipt-first order only on exact canonical command-hash equality. A production-wrapper native virtual link proves exact match, zero presentation, ACK, and server release. Three schema-v32 live repeats now prove in-session reconnect rebase, epoch-3 exact joined Blaster shadows, 45/45 cross-process receipt matches, zero reconciliation errors, and normal 15 damage. Audiovisual suppression/de-duplication, sustained correction budgets, and legacy/native gameplay/presenter promotion remain incomplete. Evidence: `docs-dev/fr-10-t08-private-hook-authority-receipt-native-virtual-link-2026-07-16.md`, `docs-dev/fr-10-t07-t08-t09-canonical-snapshot-prediction-authority-2026-07-16.md`, `docs-dev/fr-10-t04-t06-t07-t08-t09-t14-serialized-production-snapshot-corpus-2026-07-17.md`, `docs-dev/fr-10-t04-t06-t07-t08-t09-t14-production-v2-pmove-replay-boundary-2026-07-17.md`, `docs-dev/fr-10-t08-t09-rerelease-weapon-catalog-boundary-2026-07-17.md`, `docs-dev/fr-10-t08-t09-weapon-semantics-v2-blocker-audit-2026-07-17.md`, `docs-dev/fr-10-t08-t09-post-command-weapon-observation-lease-2026-07-17.md`, `docs-dev/fr-10-t08-t09-post-command-weapon-lease-runtime-acceptance-2026-07-17.md`, `docs-dev/fr-10-t08-t09-descriptor-complete-local-action-shadow-2026-07-17.md`, `docs-dev/fr-10-t04-t05-t08-t09-local-action-shadow-authority-receipt-2026-07-17.md`, and `docs-dev/fr-10-t04-t05-t08-t09-t14-live-reconnect-local-action-authority-2026-07-18.md` | Incomplete |
-| `FR-10-T09` | Canonical command identity/timing, server-consumed watermark, idempotent duplicate handling, legacy/native mapping, and shared prediction/rewind/event correlation | Legacy carrier and live consumed cursor drive prediction/rewind; the default-off native pilot retains 453 exact mapped command/ACK/release cycles, and the dedicated large-gap report covers the reproduced 161/401-command ranges. The corpus binds 100,000 admitted snapshots to server-consumed cursors and resolves continuous ranges through 127 commands. The focused runtime continuation now builds engine history through the production identity owner, passes the exact admitted cursor into the shipped V2 resolver, replays 127 commands through cgame/PMove, and rejects 128 without packet-ACK fallback. The local-action cgame owner additionally correlates a fieldwise private authority receipt against the exact semantic hash of the canonical command in either arrival order; mismatch/conflict/expiration fail closed into shared resync. Three live reconnect repeats prove one real correlation row with epoch-3 exact command records and 45/45 receipt matches. Exhaustive native mapping, wrap/flood, long-horizon live cursor evidence, complete event correlation, and full runtime/load acceptance remain absent. Evidence: `docs-dev/fr-10-t09-t16-headless-command-gap-acceptance-gate-2026-07-15.md`, `docs-dev/fr-10-t07-t08-t09-canonical-snapshot-prediction-authority-2026-07-16.md`, `docs-dev/fr-10-t04-t06-t07-t08-t09-t14-serialized-production-snapshot-corpus-2026-07-17.md`, `docs-dev/fr-10-t04-t06-t07-t08-t09-t14-production-v2-pmove-replay-boundary-2026-07-17.md`, `docs-dev/fr-10-t04-t05-t08-t09-local-action-shadow-authority-receipt-2026-07-17.md`, and `docs-dev/fr-10-t04-t05-t08-t09-t14-live-reconnect-local-action-authority-2026-07-18.md` | Incomplete |
-| `FR-10-T10` | Server-authenticated time mapping, bounded player and mover pose history, non-mutating historical scenes, deterministic observability, and CPU/memory budgets | Player and live `SOLID_BSP` mover history, mover-relative provenance, sealed historical brush dispatch, and immutable BSP provider parity are now present. A three-run dedicated-server V5 gate loads a packaged rotating collision fixture, arms a real bot on its `MoveType::Push` brush, lets twelve normal frames invoke physical pusher motion and end-frame capture, then proves paired history has changed mover angle and rider origin with exact relative provenance. The newest real pair is also accepted as exact bot/brush candidates in a sealed immutable canonical scene. The scoped trace still proves the clear current baseline, rotation-sensitive negative control, historical provider block at fraction 0.374756, and restored authority state. A separate three-repeat real-command Railgun gate moves the live brush out of the lane after authenticated mapping, requires a clear substituted current baseline, then proves the concrete production pierce hit stops on the generation-matched sealed mover and leaves the target at exact zero damage. Broader player-on-mover/continuous-rotation/complex-map cases, engine weapon/mover fairness, and CPU/memory/load budgets remain absent | Incomplete |
-| `FR-10-T11` | Every supported hitscan weapon uses one fair authoritative rewind policy with shooter/target/mover/lifecycle scenarios, documentation, abuse/load gates, and safe fallback | Eight policy tags route through the sealed player scene and 120 common-core cases pass; a three-repeat real `fire_rail` gate proves invalid-ack no-damage fallback plus near, in-budget, and capped legacy acknowledgement historical-hit-to-current-damage rows (exactly 30 total damage and unchanged query authority). A separate three-repeat, real-command two-client fixture proves normal Railgun policy `5`/80-damage, machinegun policy `1`/8-damage, Chaingun policy `2`/18-damage (full three-round burst), Super Shotgun policy `4`/120-damage (two ten-pellet barrels), shotgun policy `3`/48-damage, Disruptor convergence policy `6`/45-damage after normal projectile and daemon lifecycle, and real held first, three-tick, bounded release, water-crossing, and bounded 32-tick modes for Plasma Beam policy `7`/8 then 24/4/256 damage and dry-world Thunderbolt policy `8`/8 then 24/4/256 de-duplicated-footprint damage, all at positive age with unchanged live query geometry. A distinct real-command Railgun mover mode passes three times at 56 ms: 64 mover samples, clear current baseline, explicit production pierce hit on the sealed mover, unchanged collision authority, and exact zero target damage. Remaining fairness, moving-target/multi-target, broader movers/lifecycle, abuse/load, platform, and release gates remain absent | Incomplete |
+| `FR-10-T08` | Full eligible movement/weapon prediction, authoritative consumed-command replay, predicted-side-effect suppression, correction telemetry, and hard-resync behavior | Existing movement replay, fail-closed recovery, Hook request/authority receipt, and local-action audit cores remain valid. The corpus selects 100,000 exact canonical authorities and resolves 250,500 locally fabricated commands. The production-linked focused gate now executes the extracted shipped engine V2 request constructor, real `CL_PredictMovement`, and shared PMove from one admitted receipt. It proves pending/finalized state/collision/replay-hash parity, a legal 127-command replay, 128-command fail-closed ring clearing, one bounded correction, and one threshold hard reset (`v2_replays=4`, `oracle_matches=3`, digest `abf2723d5f03cbe9`). A pointer-free catalog now freezes all 22 ordinary weapons with exact sgame `Weapon`/item/ammo mappings, legacy-driver class, separate Grapple ownership, shadow-only status, per-catalog observation counters, and digest `e857eec08cfa9c00`. A second profile with digest `4f723f6fddf5bf52` freezes the complete legacy frame skeleton and is consumed by all 22 production wrappers. A third exact callback-capability descriptor with digest `a5d823b554b31ee8` classifies trigger/emission families, ammo/emission bounds, direct dependencies, and per-weapon V2 blocker masks; its audit proves zero of 22 are V2-representable. A bounded observation-only lease now gives the latest authenticated command at most one later server-frame weapon advance, expires on all frame exits, retains exact scoped/leased records, and joins them only across semantic-command equality, exact non-timer state, and equal bounded relative-timer decay. Three live hidden-client Blaster repeats prove offers, supersedes, claims, expiries, exact scoped/leased/joined records, and zero rejection. A descriptor-complete 528-byte shared shadow model binds each joined record to the exact catalog/profile/semantics facts, digests, comparable ammo delta, blocker mask, and hashes; its 22-entry golden is `1270244792631122`, and three schema-v30 live repeats prove Blaster catalog `1`, flags `127`, exact blocker mask `4367`, and nonzero record hashes. A compact 64-byte default-off receipt now crosses a bounded backpressure-safe/reconnect-reset engine mailbox and private native event payload kind `12`; the cgame audit owner now uses a fixed 1,024-entry table derived from the complete 798-entry transport composition and accepts command-first and receipt-first order only on exact canonical command-hash equality. A production-wrapper native virtual link proves exact match, zero presentation, ACK, and server release. Three schema-v32 live repeats prove in-session reconnect rebase, epoch-3 exact joined Blaster shadows, 45/45 cross-process receipt matches, zero reconciliation errors, and normal 15 damage; the final post-stage T04 parent adds exact-bound focused coverage and a combined 30/30 receipt-match row with zero reconciliation faults. Audiovisual suppression/de-duplication, sustained correction budgets, and legacy/native gameplay/presenter promotion remain incomplete. Evidence: `docs-dev/fr-10-t08-private-hook-authority-receipt-native-virtual-link-2026-07-16.md`, `docs-dev/fr-10-t07-t08-t09-canonical-snapshot-prediction-authority-2026-07-16.md`, `docs-dev/fr-10-t04-t06-t07-t08-t09-t14-serialized-production-snapshot-corpus-2026-07-17.md`, `docs-dev/fr-10-t04-t06-t07-t08-t09-t14-production-v2-pmove-replay-boundary-2026-07-17.md`, `docs-dev/fr-10-t08-t09-rerelease-weapon-catalog-boundary-2026-07-17.md`, `docs-dev/fr-10-t08-t09-weapon-semantics-v2-blocker-audit-2026-07-17.md`, `docs-dev/fr-10-t08-t09-post-command-weapon-observation-lease-2026-07-17.md`, `docs-dev/fr-10-t08-t09-post-command-weapon-lease-runtime-acceptance-2026-07-17.md`, `docs-dev/fr-10-t08-t09-descriptor-complete-local-action-shadow-2026-07-17.md`, `docs-dev/fr-10-t04-t05-t08-t09-local-action-shadow-authority-receipt-2026-07-17.md`, `docs-dev/fr-10-t04-t08-private-receipt-bounded-lifecycle-2026-07-20.md`, and `docs-dev/fr-10-t04-t05-t08-t09-t14-live-reconnect-local-action-authority-2026-07-18.md` | Incomplete |
+| `FR-10-T09` | Canonical command identity/timing, server-consumed watermark, idempotent duplicate handling, legacy/native mapping, and shared prediction/rewind/event correlation | The direct task gate adds two identical one-million-command wrap/flood/idempotence probes, 100,002 legacy mappings and native codec round trips, 2,100,002 idempotent acknowledgements, 139,998 hostile rejections, and nine compiled production/correlation gates with digest `a9685d1ac8f40ef6`. Direct acceptance and all dependencies are complete, and the separate review transition closes the task. Evidence: `docs-dev/fr-10-t09-canonical-command-acceptance-gate-2026-07-19.md` and `.tmp/networking/fr10_t09_acceptance.json` | Complete |
+| `FR-10-T10` | Server-authenticated time mapping, bounded player and mover pose history, non-mutating historical scenes, deterministic observability, and CPU/memory budgets | The closure joins authenticated command-time mapping, fixed player/mover histories, lifecycle and relative-mover provenance, sealed immutable scenes, transformed brush collision, and deterministic failure telemetry to a maximum-capacity runtime gate. Five fresh dedicated processes each execute 32 warmups and 256 individually timed 96-candidate server-frame workloads at exactly 200 ms, with 27,648 queries and overwrites, no heap-backed storage, overflow, rejected append, unsealed scene, or authority mutation. Fixed production plus fixture storage is 7,950,576/8,388,608 bytes; final worst p95 is 1,075,300 ns against 1,666,600 ns, leaving 591,300 ns (35.5%) headroom. Forward/reverse semantic and 16,384-query differential gates preserve exact parity after the common-core optimization. Direct evidence: `docs-dev/fr-10-t10-bounded-rewind-acceptance-closure-2026-07-19.md` and `.tmp/networking/fr10_t10_acceptance.json` | Complete |
+| `FR-10-T11` | Every supported hitscan weapon uses one fair authoritative rewind policy with shooter/target/mover/lifecycle scenarios, documentation, abuse/load gates, and safe fallback | The artifact-bound parent gate passes all 12 decisions: 120 deterministic matrix invocations across eight weapon policies plus 36 fresh-process live repetitions. It proves exact production weapon damage, server-owned time/hit authority, mover occlusion, spectator exclusion, spawn-protection zero damage after a positive-age historical hit, lifecycle/discontinuity rejection, cap and opt-out behavior, and invalid-authority current-world fallback. All semantic projections repeat exactly with unchanged authority; user documentation covers controls and failure behavior. Concurrent 1/8/16/32-client stress, soak, and release promotion remain with T14/T15 rather than this task. Direct evidence: `docs-dev/fr-10-t11-authoritative-hitscan-acceptance-closure-2026-07-19.md` and `.tmp/networking/fr10_t11_acceptance.json` | Complete |
 | `FR-10-T12` | Explicit independent policies and deterministic scenarios for projectile, melee, beam, splash/radius, mover, deployable, trigger, and cooperative interactions | Narrow convergence and continuous-beam query coverage exist, and three-repeat real-command first-tick, three-tick, bounded release, water-crossing, and bounded 32-tick modes prove Plasma Beam policy `7` and dry-world Thunderbolt policy `8` historical selection with exact live 8 then 24 then halved 4 then 256 damage, no post-release damage over 250 ms, and no received release during the sustained hold. Three further headless real-command repeats prove Thunderbolt's distinct current-authority underwater branch: a bounded world-water `pointContents` state, all eight Cells drained, explicit production-branch observation, and exact 70 self damage; no historical beam trace is claimed for the branch that returns before tracing. Three staged real-command Disruptor repeats additionally prove a 100 ms-capped mapped-command-age spawn forward through a current-world projectile-hull trace: every run records authenticated/advanced 56 ms, no current-world block, historical convergence, and normal exact 45 current-authority delayed damage. Three more staged real-command Rocket Launcher repeats prove its separate policy `9`: after history capture the live target moves 32 units along the aim ray; each report records `canonical_historical_hit=0`, a clear authenticated/advanced 56 ms current-world hull sweep, and exact 100 current-authority direct damage. A further three-repeat Rocket splash gate creates a current-world BBOX impact blocker after history capture, moves the target off the ray, and requires the normal Rocket touch plus RadiusDamage path to cause exact reduced 58 splash damage; it binds the accepted Rocket entity and requires no historical hit plus the same unblocked 56 ms forward proof. Three staged real-command Plasma Gun direct-hit repeats prove separate policy `10`: ordinary muzzle clearance first, no historical impact, clear authenticated/advanced 56 ms current-world hull spawn-forward, and normal exact 20 direct damage. A distinct three-repeat Plasma Gun radius-execution mode creates a present-world blocker after history capture, requires exact normal Plasma touch, and stages a small clear-side damageable current-world target for unchanged `RadiusDamage`. Every run retains no historical impact, authenticated/advanced 40–56 ms current-world forward, and exact seven-damage falloff. This proves no player-hull splash, map/BSP occlusion, mover, water, multi-target, fairness, or load behavior. Evidence: `docs-dev/fr-10-t12-plasma-gun-current-world-splash-acceptance-2026-07-16.md`. Three standard-Blaster direct-hit repeats prove shared Blaster/HyperBlaster policy `11`: ordinary muzzle clearance, no historical impact, clear authenticated/advanced 56 ms current-world hull spawn-forward, and normal exact 15 direct damage. Finally, three Chainfist hybrid-melee repeats prove policy `12`: one historical reach/FOV player candidate under the accepted canonical command, then a 64-unit current displacement guard plus ordinary current-world `CanDamage`/`Damage`; each run records 56 ms authenticated age, historical eligibility, accepted 64-unit displacement, unchanged live geometry, and exact 15 normal damage. HyperBlaster cadence/radius, moving/multi-target melee, other melee weapons, mover contacts, indefinite holds, underwater-radius behavior, and most declared mechanics remain unimplemented | Incomplete |
-| `FR-10-T13` | Legacy and modern demo/MVD/GTV/spectator record/play/seek/relay matrices reproduce canonical order and reset timelines safely | Client demo cursor/clock preservation and seek lineage exist; MVD/GTV, view switching, native recording, event reproduction, and full matrices remain absent | Incomplete |
-| `FR-10-T14` | Complete telemetry catalog, 1/8/16/32-client performance profiles, 100,000 malformed cases per changed decoder/range, allocation/budget proof, stress/soak, and machine-readable evidence | Existing corpus evidence remains valid: 100,003 serialized views, exact positive ACK/release, 250,500 resolved commands, bidirectional impairment coverage, three corrupt rejections, and golden `c6aee48df85341ab`. The focused replay continuation adds engine-import result/source/flag/range diagnostics and deterministic replay/collision/correction counters, including one withheld receipt, four V2 replays, three oracle matches, 127 success, and 128 reset. The local-action receipt adds fixed 32-entry server mailboxes and 128-entry cgame correlation storage with fail-closed capacity/conflict/expiration coverage. Schema-v32 adds three machine-readable live reconnect rows with exact joined-shadow fields, receipt parity, and lifecycle counters. The final production build, 157/157 headless networking suite in 383.93 seconds (corpus row 289.24 seconds), 16/16 package tests, 1/1 release contract, and refreshed validated 524-asset Windows stage pass. The corpus still uses one profile, dynamic vectors, synthetic within-burst receive sequencing, eight entities/four area bytes, and no real sockets; allocation proof, cross-snapshot reorder, 100,000 malformed cases, 1/8/16/32 clients, load/soak, and cross-platform gates remain absent | Incomplete |
-| `FR-10-T15` | Three full matrices on every release platform, two-hour 32-client soaks, seven-day/100-server-hour opt-in evidence, rollback drills, current docs, and staged payload | User controls are current and the final Windows `.install` refresh/stage validates 16 root runtime files, one dependency, a 483-member `pak0.pkz`, 31 botfiles, 215 RmlUi assets, one loose q2aas reference BSP, and five release notice sidecars; platform matrices, durations, rollout hours, and drills remain absent | Incomplete |
-| `FR-10-T16` | Fresh-input age, loss recovery, idempotence, bandwidth, command-flood, and cadence evidence on both legacy and native adapters | Deterministic controller and default-off legacy batched integration pass a short impaired loopback, and the native command shadow retains its 453 exact sampled matches/releases. The private `0x73` event mode still uses live mixed packing and scheduler wakeups, while a fresh negotiated epoch now terminally cancels exhausted old DATA/receipt work instead of depending on unbounded ACK retries or a one-bank rollover. The wrapper gate proves bounded retry convergence for ordinary loss and explicit counted termination after all three ACK credits are spent; a second rotation has no bank overwrite. Adaptive native batching/redundancy, the full production impairment matrix, server feedback, a dedicated accepted gap report, and full bandwidth/budget/load evidence remain absent | Incomplete |
+| `FR-10-T13` | Legacy and modern demo/MVD/GTV/spectator record/play/seek/relay matrices reproduce canonical order and reset timelines safely | Client demo cursor/clock preservation and seek lineage, WDM1/WDR1 framing/scan/index/seek, an opt-in fixed-buffer snapshot recorder, and a pointer-free transactional snapshot playback cursor now exist. The core revalidates caller-owned bytes/indexes, exposes initial/seek reset generations, and steps forward without duplicate snapshots. Standalone bootstrap, file-backed/client timeline playback, command/event recording, present-once event replay, MVD/GTV, view switching, malformed-file parent evidence, and full matrices remain absent. Evidence: `docs-dev/fr-10-t13-native-demo-snapshot-playback-cursor-2026-07-20.md` | Incomplete |
+| `FR-10-T14` | Complete telemetry catalog, 1/8/16/32-client performance profiles, 100,000 malformed cases per changed decoder/range, allocation/budget proof, stress/soak, and machine-readable evidence | Existing 100,003-view/250,500-command corpus, replay/correction diagnostics, fixed snapshot/event/damage/help bounds, T09 million-command probes, T06 maximum-capacity profile, and aggregate networking/package/release/bootstrap validation remain valid. The local-action continuation now uses fixed 32-entry server mailboxes plus a fixed 1,024-entry cgame table derived from the complete 798-entry transport composition, with both arrival orders, rolling stress, and final 11-focused/5-live staged parent proof. Missing 100,000 malformed cases per changed decoder/range, live 1/8/16/32-client profiles, sustained load/soak, allocation/deadline floors, security inventory, and cross-platform parent evidence keep T14 incomplete | Incomplete |
+| `FR-10-T15` | Three full matrices on every release platform, two-hour 32-client soaks, seven-day/100-server-hour opt-in evidence, rollback drills, current docs, and staged payload | User controls are current and the final Windows `.install` refresh/stage validates 16 root runtime files, one dependency, and 601 packed assets; platform matrices, durations, rollout hours, and drills remain absent | Incomplete |
+| `FR-10-T16` | Fresh-input age, loss recovery, idempotence, bandwidth, command-flood, and cadence evidence on both legacy and native adapters | Deterministic controller and default-off legacy batched integration pass a short impaired loopback, and the native command shadow retains its 453 exact sampled matches/releases. The private `0x73` event mode still uses live mixed packing and scheduler wakeups, while a fresh negotiated epoch now terminally cancels exhausted old DATA/receipt work instead of depending on unbounded ACK retries or a one-bank rollover. The wrapper gate proves bounded retry convergence for ordinary loss and explicit counted termination after all three ACK credits are spent; a second rotation has no bank overwrite. A separate private default-off WNB1 production-hook path now encodes and retains exact contiguous groups of two through eight commands, transactionally admits them at the server, retro-joins earlier authoritative records from retained command history, blocks receipts through every exact legacy join, and handles duplicate/delayed receipts idempotently. A map-bootstrap lifecycle fix preserves the drained old WNB1 TX high-water until the fresh-challenge cancellation floor commits, while re-arming a prior clean decline; focused regressions prove both old-receipt legacy-prefix preservation and next-map activation. Authenticated received/consumed feedback, native authority, the full production impairment matrix, accepted-gap breadth, and full bandwidth/budget/load evidence remain absent. Evidence: `docs-dev/fr-10-t16-private-native-input-batch-shadow-2026-07-20.md` and `docs-dev/fr-10-t16-map-bootstrap-input-batch-ack-cancellation-2026-07-20.md` | Incomplete |
 
 ## 2026-07-16 `FR-10-T04/T05/T06/T07` Stage D addition
 
@@ -174,8 +174,9 @@ non-pending ranges, includes four `{epoch,0}` bootstraps, 99,996 nonzero
 cursors, four 127-command ranges, one deliberate 128-command rejection, and 43
 history resets. Three additional corrupt-carrier probes make 100,003 serialized
 views; all three corrupt carriers reject, and accepted positive abandonment is
-zero. The checked-in golden is `c6aee48df85341ab`, normalized JSON SHA-256 is
-`a35973b39947387d7454a45650d5f9489e0ed136158e55177d9770c904444d38`,
+zero. The current checked-in golden is `ba519ae7bdd1db74`, normalized JSON
+SHA-256 is
+`2c17ac3aaf2a5853b7eb217533df1675e3c3868910f5565314465b382ff91db3`,
 and the final registered corpus row passes inside the 149/149 headless suite in
 382.30 seconds. Evidence:
 `.tmp/networking/native_snapshot_production_corpus/evidence.json` and
@@ -495,7 +496,83 @@ event/effect/audio presenters, extrapolation/load breadth, demos, or release
 promotion. Evidence:
 `docs-dev/fr-10-t06-t07-t14-native-snapshot-presentation-authority-2026-07-18.md`.
 
-Neither addition completes a parent task. The project accounting therefore
+## 2026-07-18 `FR-10-T04/T05` reliable/local audio addition
+
+The structured production audio boundary now covers reliable
+`SV_StartSound` traffic and transient or reliable positionless
+`PF_LocalSound` cues. Reliable records use non-expiring reliable-ordered
+delivery; client-local cues bind to world with explicit local-only semantics
+while preserving the raw entity/channel override key. All paths queue native
+observation only after their exact legacy/q2proto append succeeds and bind to
+the recipient's exact final-emission snapshot. Focused headless binder,
+source-placement, sender, server-pilot, event-link, and combined snapshot-link
+coverage passes 7/7; the aggregate build, 158/158 headless networking suite,
+30/30 package/release/bootstrap contracts, and final staged-payload validation
+also pass. Raw direct-game sound, arbitrary non-local positionless audio,
+presenter cutover, and broader family/load/platform evidence remain open.
+Evidence:
+`docs-dev/fr-10-t04-t05-reliable-local-spatial-audio-native-shadow-2026-07-18.md`.
+
+## 2026-07-18 `FR-10-T04/T05` reliable mixed game-event addition
+
+Reliable direct-game messages made entirely from the established temporary-
+entity and player/monster/Rerelease-muzzle carriers now enter the default-off
+native event shadow. Observation occurs only after the authoritative legacy
+reliable append. Decoded messages wait in a fixed 32-batch/512-record native-
+only FIFO with map generation, then bind once to the next exact committed
+per-client snapshot before frame-derived and post-frame unreliable events.
+Every member becomes non-expiring reliable ordered; invalid, invisible,
+map-stale, unsupported, and capacity-blocked observations remain legacy-only.
+
+Focused decoder, binder, lifecycle, capacity, production-placement, and event-
+link coverage passes 6/6. The aggregate build and 159/159 headless networking
+suite pass, followed by 16/16 package tests, 12/12 release-unit tests, and the
+headless bootstrap contract. The final `.install` refresh validates 16 root
+runtime files, one dependency, a 532-file `pak0.pkz`, 31 botfile payloads, 215
+RmlUi assets, and 11 packaged q2aas AAS maps. Evidence:
+`docs-dev/fr-10-t04-t05-reliable-mixed-game-event-native-shadow-2026-07-18.md`.
+
+## 2026-07-18 `FR-10-T04/T05` damage-indicator addition
+
+The per-client Rerelease `svc_damage` presentation carrier now enters the
+default-off native event shadow after its complete unreliable message has
+fitted the post-snapshot datagram. A shared exact raw decoder accepts one to
+four indicators, rejects zero/excess/truncated/trailing/invalid-direction
+shapes atomically, and maps compressed magnitude, direction, and health/armor/
+shield bits into canonical damage records. Because the wire service identifies
+no attacker, the records retain world source; the final-emission binder uses
+the exact snapshot controlled-player generation as subject.
+
+Focused decoder, exact-snapshot binder, and production-placement coverage
+passes 3/3. Both production engines and the aggregate build link, and the full
+headless networking suite passes 161/161; the cold isolated build-plus-test
+command takes 599.9 seconds and its production corpus row takes 217.78 seconds.
+Package tests pass 16/16, release-unit tests pass 12/12, and the headless
+bootstrap contract passes 1/1. The final canonical Windows refresh validates
+16 root runtime files, one dependency, a 544-member `pak0.pkz`, 31 botfile
+payloads, 215 RmlUi assets, and 11 hash-audited packaged Q2AAS maps. Evidence:
+`docs-dev/fr-10-t04-t05-damage-indicator-native-shadow-2026-07-18.md`.
+
+## 2026-07-19 `FR-10-T04/T05` help-path addition
+
+The per-client Rerelease `svc_help_path` marker now enters the default-off
+native event shadow only after its complete unreliable message has fitted and
+been appended to the post-snapshot datagram. An exact allocation-free decoder
+accepts one canonical start byte, three finite multicast-float coordinates,
+and one shared packed normal; wrong, non-canonical, truncated, trailing,
+non-finite, and invalid-direction carriers reject atomically. The canonical
+record uses stable help-marker effect/variant IDs, world source, and the exact
+final snapshot controlled-player generation as subject without inventing an
+emitter identity.
+
+Focused decoder, exact-snapshot binder, and production-placement coverage
+passes 3/3. Both engines and the aggregate production build link, and the full
+headless networking suite passes 163/163 in 450.7 seconds; the production
+corpus row takes 427.31 seconds. Package tests pass 16/16, release-unit tests
+pass 12/12, and the headless bootstrap contract passes 1/1. Evidence:
+`docs-dev/fr-10-t04-t05-help-path-native-shadow-2026-07-19.md`.
+
+None of these additions completes a parent task. The project accounting therefore
 remains 74/190 Definition-of-Done checks complete, 116 open, and 3/16 parent
 tasks complete.
 
@@ -505,11 +582,13 @@ The project cannot close by independently polishing every subsystem. The
 dependency-preserving critical path is:
 
 1. Extend the live per-peer descriptor/reliable stream beyond the implemented
-   legacy entities, visible/explicit-positional audio, and bounded mixed
-   temporary/muzzle sequences to the remaining direct service families,
-   reliable/positionless audio, combined/reliable muzzle traffic, and predicted
-   local actions. Bind production events to snapshot fences before presenter
-   cutover.
+   legacy entities, visible/explicit-positional/reliable/client-local audio,
+   bounded mixed temporary/muzzle sequences, and per-client damage indicators
+   to the remaining direct
+   service families, raw or arbitrary non-local positionless audio where a
+   safe structured boundary exists, and predicted local actions. Bind
+   production events to snapshot fences before
+   presenter cutover.
 2. Extend the implemented negotiated epoch-cancellation proof from the explicit
    wrapper schedule to the production `NetImpair` model/golden, distinct events,
    rate/fragment pressure, and multi-process coverage. The snapshot lane now
@@ -539,7 +618,7 @@ against interfaces that are still changing.
 ## Evidence that is valid but not sufficient
 
 - `.tmp/networking/snapshot-parity/evidence.json` proves two identical
-  100,000-case public-API projections with digest `7b185107eeb0f6e7`; it does
+  100,000-case public-API projections with current digest `6451c75bdb523477`; it does
   not serialize datagrams or execute the live parser/cgame path.
 - `.tmp/networking/impairment-runtime.json` proves a short one-client Windows
   loopback, including exact live cgame acceptance; it does not prove the
@@ -666,6 +745,325 @@ Task status and accounting remain unchanged: overall **74/190 complete
 cross-process receipt and reconnect-rebase gaps, but closes zero project tasks.
 `FR-10-T04`, `FR-10-T05`, `FR-10-T08`, `FR-10-T09`, and `FR-10-T14` remain
 Incomplete under their published parent acceptance floors.
+
+## 2026-07-19 `FR-10-T09` acceptance addition
+
+The direct command-identity acceptance gate runs two repetitions of one million
+canonical commands through explicit timing validation, idempotent insertion/
+consumption, bounded hostile cases, and natural sequence rollover. It maps
+100,002 commands through the legacy sideband/adapter and explicit native codec,
+then runs nine compiled command-stream, cursor, prediction, rewind,
+local-action, and production-link gates. Both repetitions produce digest
+`a9685d1ac8f40ef6`; the focused combined Meson row passes in 292.53 seconds.
+
+This evidence satisfies every direct `FR-10-T09` Definition-of-Done item.
+T05 closes below and T06 closes in the later section, so every T09 dependency
+is now complete. T09 stays unchecked here as a separate task in review for the
+next explicit roadmap closure transition. Native authority promotion, adaptive
+delivery/load, and release acceptance remain assigned to `FR-10-T04`,
+`FR-10-T08`, `FR-10-T14`, and `FR-10-T16`.
+
+Evidence:
+`docs-dev/fr-10-t09-canonical-command-acceptance-gate-2026-07-19.md` and
+`.tmp/networking/fr10_t09_acceptance.json`.
+
+## 2026-07-19 `FR-10-T05` task closure
+
+The parent-level typed-event gate closes a complete dependency-ready roadmap
+task rather than another component slice. `FR-10-T02` and `FR-10-T03` are
+already complete. The current post-closure extension runs eighteen compiled
+gates twice with identical stdout, stderr, and exit status, producing digest
+`5f300c5f7f925cf5105812cf49ce108305c357790989978738e34e88058e347c`.
+
+Together they directly cover the four published criteria: explicit bounded
+event schema and identity, multiple retained events per source tick,
+loss/replay/duplicate/late/predicted/wrap at-most-once behavior, and legacy
+temp/entity/keyed-POI mapping without changing legacy traffic, demos, or
+presenters.
+Additional event families, prediction/presenter cutover, public authority, and
+load/release matrices remain under their separate roadmap tasks. `q2proto/`
+remains unchanged.
+
+The final production build and serial 165/165 headless networking suite pass;
+the T05, T09, and serialized-corpus rows take 1.01, 219.20, and 188.51 seconds.
+Package tests pass 16/16, release-unit tests pass 12/12, and the headless
+bootstrap contract passes 1/1. The refreshed, independently validated Windows
+stage contains 16 root runtime files, one dependency, and a 546-member pak
+(535 repository assets plus 11 audited Q2AAS maps).
+
+Current accounting is **75/190 complete (39.5%)** and **115/190 open
+(60.5%)**. FR-10 is **4/16 complete (25.0%)** with 12 tasks open. This
+milestone closes exactly one project task: `FR-10-T05`.
+
+Evidence:
+`docs-dev/fr-10-t05-typed-event-journal-acceptance-closure-2026-07-19.md` and
+`.tmp/networking/fr10_t05_acceptance.json`.
+
+## 2026-07-19 `FR-10-T06` task closure
+
+The snapshot parent gate closes the next complete dependency-ready roadmap
+task. Twelve compiled store/recovery/q2proto/server-shadow/native/cgame gates
+run twice with identical results. The offline final-emission/projector corpus
+then records two identical 100,000-snapshot runs with digest
+`6451c75bdb523477`; the serialized production corpus records two identical
+100,000-snapshot runs with golden `ba519ae7bdd1db74`, exact ACK/release/
+prediction-authority counts, three corrupt rejections, and zero accepted
+abandonment. The focused aggregate gate passes in 503.26 seconds and its final
+registered-suite repetition passes in 380.00 seconds.
+
+The new maximum-capacity profile covers 512 entities, 1,024 area bytes, and
+512 event references. WNC1 uses 80,869/131,072 bytes. Build-plus-encode and
+decode p95 are 486,900 and 214,700 ns against a 1,666,600 ns limit; the 64-slot
+canonical history uses 5,869,696/16,777,216 bytes and fixed native owners use
+624,152/2,097,152 bytes. This supplies the previously missing direct budget
+evidence while the existing gates cover acknowledged-base recovery, complete
+immutable generation-safe views, the declared fault matrix, and common legacy/
+native constructors. `q2proto/` remains unchanged.
+
+The final production build and serial 166/166 headless networking suite pass;
+the T05, T09, serialized-corpus, and T06 rows take 1.81, 362.58, 302.71, and
+380.00 seconds. Package tests pass 16/16, release-unit tests pass 12/12, and the
+headless bootstrap contract passes 1/1. The refreshed, independently validated
+Windows stage contains 16 root runtime files, one dependency, and a 593-member
+pak (582 repository assets plus 11 audited Q2AAS maps).
+
+Current accounting is **76/190 complete (40.0%)** and **114/190 open
+(60.0%)**. FR-10 is **5/16 complete (31.25%)** with 11 tasks open. This
+milestone closes exactly one project task: `FR-10-T06`. T09 is now in review
+with direct acceptance and all dependencies complete, but remains unchecked.
+
+Evidence:
+`docs-dev/fr-10-t06-canonical-snapshot-acceptance-closure-2026-07-19.md` and
+`.tmp/networking/fr10_t06_acceptance.json`.
+
+## 2026-07-19 `FR-10-T09` task closure
+
+The command-identity task now completes its separate review transition. Its
+direct gate already ran two one-million-command repetitions with identical
+digest `a9685d1ac8f40ef6`, 100,002 mappings through each legacy/native adapter,
+2,100,002 idempotent acknowledgements, 139,998 bounded hostile rejections, and
+nine compiled gates joining the same identity to prediction, rewind, event
+correlation, and both native production links. T05 and T06 are complete, so no
+dependency remains open.
+
+This status change does not promote native transport or presentation and does
+not absorb the adaptive-delivery, load, or release gates owned by T04, T08,
+T14, and T16. `q2proto/` remains unchanged.
+
+Current accounting is **77/190 complete (40.5%)** and **113/190 open
+(59.5%)**. FR-10 is **6/16 complete (37.5%)** with 10 tasks open. This
+milestone closes exactly one project task: `FR-10-T09`.
+
+Evidence:
+`docs-dev/fr-10-t09-canonical-command-acceptance-gate-2026-07-19.md` and
+`.tmp/networking/fr10_t09_acceptance.json`.
+
+## 2026-07-19 `FR-10-T10` task closure
+
+The bounded-rewind parent gate completes the remaining direct budget evidence.
+Five fresh dedicated processes fill the fixed 32-player/64-mover histories and
+execute 256 individually timed maximum-capacity frames each. The combined
+production-plus-fixture storage is 7,950,576/8,388,608 bytes, every run records
+27,648 exact-age queries and bounded overwrites without allocation or authority
+mutation, and worst p95 is 1,604,700 ns against the 1,666,600 ns limit. Existing
+mapping, lifecycle, immutable-scene, mover, collision, and observability gates
+complete the other published criteria. T11/T12/T14/T15 retain weapon-policy,
+interaction, concurrent-load/soak, and release obligations.
+
+Current accounting is **78/190 complete (41.1%)** and **112/190 open
+(58.9%)**. FR-10 is **7/16 complete (43.75%)** with 9 tasks open. This
+milestone closes exactly one project task: `FR-10-T10`.
+
+Evidence:
+`docs-dev/fr-10-t10-bounded-rewind-acceptance-closure-2026-07-19.md` and
+`.tmp/networking/fr10_t10_acceptance.json`.
+
+## 2026-07-19 `FR-10-T11` task closure
+
+The authoritative-hitscan parent gate joins the 120-invocation common policy
+matrix to 36 fresh-process live repetitions covering all eight production
+weapon policies, historical mover occlusion, spectator exclusion, spawn
+protection, bounded cap/disable behavior, and invalid-authority current-world
+fallback. All 12 parent decisions pass with identical repeated semantic
+projections, unchanged authority, and artifact hashes held stable throughout
+the live run. Historical collision remains default-off; projectile/melee/radius
+interactions, demo/spectator recording, concurrent-client stress/soak, and
+release promotion remain assigned to T12-T15.
+
+Current accounting is **79/190 complete (41.6%)** and **111/190 open
+(58.4%)**. FR-10 is **8/16 complete (50.0%)** with 8 tasks open. This
+milestone closes exactly one project task: `FR-10-T11`.
+
+Evidence:
+`docs-dev/fr-10-t11-authoritative-hitscan-acceptance-closure-2026-07-19.md` and
+`.tmp/networking/fr10_t11_acceptance.json`.
+
+## 2026-07-20 final verification and staged-payload refresh
+
+The final five-process `FR-10-T10` budget run records a worst p95 of 1,075,300
+ns against the 1,666,600 ns limit, leaving 591,300 ns (35.5%) headroom. The
+aggregate build and serial headless networking suite pass 170/170 on
+2026-07-20, followed by 16/16 package tests, 12/12 release-unit tests, and the
+1/1 headless bootstrap contract.
+
+The final refreshed and validated Windows `.install` stage contains 16 root
+runtime files, one dependency, and 601 packed assets. This verification does
+not change completion accounting: **79/190 complete (41.6%)** and **111/190
+open (58.4%)**. FR-10 remains **8/16 complete (50.0%)** with 8 tasks open;
+`FR-10-T10` and `FR-10-T11` remain Complete.
+
+## 2026-07-20 `FR-10-T04/T08` private receipt bounded lifecycle
+
+This section supersedes the earlier T04 table note that schema-v36 direct event
+status still awaited a package refresh. The fresh combined artifact
+`.tmp/networking/fr10_t04_combined_terminal_prune_current.json` passes schema
+v36 with normal 15/15 Blaster damage, a full exact-`0x77` preflight over both
+clients, both server slots, and both snapshot peers, and 29/29 exact private
+receipts with zero unmatched, outstanding, mismatch, conflict, or resync.
+
+The implementation separates ordered private reconciliation from visual
+presentation. Its private cursor can cross an admitted visual record without
+marking it presented, but pins on a missing event ID or rejected private
+callback. Callback-time mutation/replacement is rejected, status remains
+read-only, and a valid terminal sequence `UINT32_MAX` is consumed once through
+explicit exhausted bits. Cgame rolls command-only rows when no receipt exists
+without manufacturing a resync; a real late receipt fails closed when it is
+behind recorded coverage loss and exact V2 command history is also missing.
+The latest complete monotonic receipt remains available for exact duplicate
+identity, while lower command-only and exact matched-terminal rows are pruned.
+Receipt-only evidence is retained.
+
+The server mailbox independently enforces a per-client monotonic receipt
+frontier. Invalid, changed-epoch, regressed, conflicting, capacity, and publish-
+order failures latch the first typed reason and poison further publication until
+map/client reset. `SV_ClientThink` consumes that failure after the sgame
+callback and disables/drains the native peer with failure `18`, so overflow
+cannot become a silent missing receipt. Snapshot V2 also retains the exact
+controlled-entity generation/provenance record across explicit delta,
+omission/first-carrier, and generation-only-keyframe cases; contradictory base
+entity/player provenance rejects before final hashing.
+
+The pre-capacity full parent
+`.tmp/networking/fr10_t04_ordered_frontier_full.json` passes 10/10 focused and
+5/5 direct-numeric live lanes (`0x03`, `0x53`, `0x73`, `0x57`, `0x77`) with
+semantic digest
+`521cdaabad088cb6e89b0ad56d89cf2dcf2bcb8194ec69d3ed078b61a84a32a7`.
+Its status remains `partial` and its task gate remains `task_complete=false`.
+
+The complete correlation flight bound is 798 entries: 127 client-pending
+commands, 64 native event TX slots, 512 event-backlog rows, 63 selectively
+acknowledged successors behind one missing event, and 32 server-mailbox rows.
+A fixed 1,024-entry table is selected as the next power of two. The acceptance
+manifest now adds cgame local-action correlation as an eleventh focused child
+and binds the shared constants behind the derivation. The recorded 10-child
+artifact predates that manifest/capacity change and is retained only as
+historical evidence. Shared-constant assertions, both 798-entry arrival orders,
+more-than-two-table rolling streams, six focused Meson rows, and the production
+cgame build pass. Final post-stage parent
+`.tmp/networking/fr10_t04_bounded_lifecycle_full_retry.json` passes 11/11
+focused plus 5/5 live with combined 15/15 damage, 30/30 receipt matches, zero
+reconciliation fault, preflight plus post-fire proof, and semantic digest
+`f4a161bf0876e05db21499ab5c21399cc0ef87ae4881ab78ae764bc67b6789ad`.
+Every gate is true except deliberate `task_complete=false`.
+
+Detailed evidence and the non-overclaim boundary:
+`docs-dev/fr-10-t04-t08-private-receipt-bounded-lifecycle-2026-07-20.md`.
+
+This advances bounded default-off T04/T08 evidence only. Public release
+promotion, complete adapters/presentation, prediction/audiovisual suppression,
+fault/load/platform/demo matrices, and T14/T15 floors remain open. Completion
+accounting therefore remains **79/190 complete (41.6%)**, **111/190 open
+(58.4%)**, and FR-10 **8/16 complete (50.0%)**.
+
+## 2026-07-20 `FR-10-T07/DV-04-T02` schema-2 map-reuse evidence
+
+Damage is now the fifth client-to-cgame legacy action-message family. Its
+protocol-bounded one-to-four indicators enter one transactional V2 range, with
+controlled-player identity synchronized from the exact current canonical
+snapshot when first-person packet frames omit that entity. The fixed V2 audit
+status is consequently 208 bytes. Native EVENT schema 2 groups two to eight
+authoritative, contiguous records with exact shared producer tick/time
+coordinates into one retained ACK/retry unit while preserving logical event
+counts and ordered presentation.
+
+The strict v100 headless parent retains the dedicated server, shooter, and
+target across one same-map `gamemap` transition. Three fresh repetitions pass
+both phases, for six successful phase closures. Every phase records normal
+15/15 Blaster damage, five raw actions, the family profile
+`(0,0,2,1,1,1,0)`, one four-record schema-2 impact batch plus one earlier
+muzzle singleton, five delayed-ACK retries, five raw effects, five
+authoritative present-once/probe commits, five suppressed native effects, and
+zero native effect dispatch. Raw action, raw effect, and probe chain hashes are
+identical; peer failures, duplicate/conflicting authority, body/reference and
+presenter mismatches, degradation, resync, and queue failures remain zero.
+
+The reused-map lifecycle now quiesces prior server native state before clearing
+map-local command identity, calls retained cgame `Shutdown()` before the next
+per-map `Init()`, and rotates map generation `1 -> 2`, map-end count `0 -> 1`,
+and event stream epoch `2 -> 4`. A sealed end-of-Begin reliable prefix is handed
+off ahead of an isolated CHALLENGE, preserving later reliable bytes without
+allowing them to postpone readiness until the queue deadline. The runner proves
+new native epochs through queue-neutral status before any post-map client
+command, drains lifecycle EVENT work before each checkpoint, and closes sender
+counts before client parity.
+
+Focused verification passes 9/9 and runner units pass 96/96. The three-repeat
+artifact is
+`.tmp/networking/fr10_t07_native_event_probe_checkpoint_v100_barrier_clean_repeat3.json`
+with SHA-256
+`545C6A46BD2E6A952958945CCE2F7DF2175551AE9423D5FFAF150DD31DA841D3`.
+Detailed scope, staged binary hashes, and remaining blockers are recorded in
+`docs-dev/fr-10-t07-schema2-damage-map-reuse-present-once-evidence-2026-07-20.md`.
+The refreshed `.install/` validates 16 root runtime files, one dependency, and
+601 packaged assets.
+
+This closes one clean/delayed-ACK same-process map-reuse row only. Raw legacy
+effects remain authoritative; `DV-04-T02` inventory/cutover, exhaustive event
+families, compound fault/demo parity, prediction reconciliation, load,
+platform, soak, and rollout evidence remain open. Accounting is unchanged at
+**79/190 complete (41.6%)**, **111/190 open (58.4%)**, and FR-10 **8/16
+complete (50.0%)**. `FR-10-T07` remains In Progress.
+
+## 2026-07-20 `FR-10-T04/T05/T07` keyed-POI native-shadow addition
+
+The private event shadow now covers exact keyed Rerelease `svc_poi` actions.
+The adapter accepts one exact 21-byte carrier, maps its 20-byte value to event
+payload kind 13 under event model revision 2, binds world source and the exact
+controlled-player subject, and leaves the authoritative legacy write
+unchanged. Reliable finite, infinite, and removal actions share one FIFO with
+reliable game-event sequences and remain distinct when keys repeat. The
+unreliable path rejects only lifetime zero; finite actions and the removal
+sentinel use `TRANSIENT` delivery with `expiry_tick = source_tick + 1`.
+
+Client/cgame raw capture remains keyed-only and legacy-authoritative. Raw and
+native reliable POIs validate their own adjacent retained snapshot fences and
+controlled generations before the parity domain compares map epoch plus a
+validator-valid neutral payload value; it does not assert false equality of
+the adjacent snapshot sequence/hash/generation. Probe status is schema 3,
+336 bytes, and eight kinds, with keyed POI as kind 7.
+
+The two-phase cgame sink preflights without state mutation or resource
+registration and commits only after the present-once boundary. It preserves
+legacy disabled, capacity, infinite-lifetime, exact-key removal, and missing-
+image behavior. In particular, a missing image still stores an invisible keyed
+entry with empty name/dimensions so a later removal finds the key.
+
+Focused affected rows pass, and the post-closure T05 parent runs 18 compiled
+gates twice with digest
+`5f300c5f7f925cf5105812cf49ce108305c357790989978738e34e88058e347c`.
+The hardened T04 focused parent passes 11/11 while binding 123 stable source
+artifacts and retaining `status=partial`/`task_complete=false`. The final
+headless networking suite passes 201/201 in 1,050.7 seconds. The refreshed
+Windows stage contains 16 root runtime files, one dependency, 601 packaged
+repository assets, and 11 audited Q2AAS maps; package, release-unit, and
+headless-bootstrap checks pass 16/16, 12/12, and 1/1.
+No `q2proto/` file changed. Detailed implementation, evidence, and limitations:
+`docs-dev/fr-10-t04-t05-t07-keyed-poi-native-shadow-2026-07-20.md`.
+
+This does not add a live POI compound-fault/demo/load row or promote native
+presentation. The effect-authority gate remains default-off, T04 and T07 remain
+In Progress, T05 remains Complete, and accounting stays **79/190 complete
+(41.6%)**, **111/190 open (58.4%)**, and FR-10 **8/16 complete (50.0%)**.
 
 ## Completion rule
 

@@ -50,6 +50,6 @@ fogged scene.
 
 ## Remaining scope
 
-Global, height, sky, transparent world, particle, and beam fog receivers now
-have durable native Vulkan/OpenGL evidence. `RF_FLARE`, sprites, and remaining
-specialised effect receivers remain `FR-01-T12` work.
+Global, height, sky, transparent world, particle, beam, flare, and sprite fog
+receivers now have durable native Vulkan/OpenGL evidence. Broader specialised
+effect receivers remain `FR-01-T12` work.

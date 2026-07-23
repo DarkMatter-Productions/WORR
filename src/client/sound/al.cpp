@@ -3770,7 +3770,7 @@ static void AL_UpdateSourceVelocity(channel_t *ch)
     velocity[1] = 0.0f;
     velocity[2] = 0.0f;
 
-    if (!ch->fixed_origin && !ch->fullvolume)
+    if (!ch->fixed_origin && !ch->native_binding && !ch->fullvolume)
         AL_GetEntityVelocity(ch->entnum, velocity);
 
     qalSource3f(ch->srcnum, AL_VELOCITY, AL_UnpackVector(velocity));
@@ -3789,6 +3789,14 @@ static void AL_Spatialize(channel_t *ch)
         VectorCopy(listener_origin, origin);
     } else if (ch->fixed_origin) {
         VectorCopy(ch->origin, origin);
+    } else if (ch->native_binding) {
+        if (CL_GetEntitySoundOriginBound(ch->entnum, ch->entity_binding,
+                                         ch->origin)) {
+            VectorCopy(ch->origin, origin);
+        } else {
+            /* Keep the last bound position; never retarget a reused slot. */
+            VectorCopy(ch->origin, origin);
+        }
     } else {
         CL_GetEntitySoundOrigin(ch->entnum, origin);
     }
@@ -3972,12 +3980,17 @@ static void AL_AddLoopSoundEntity(const entity_state_t *ent, sfx_t *sfx, const s
 {
     channel_t *ch = AL_FindLoopingSound(ent->number, sfx);
     if (ch) {
-        ch->autoframe = s_framecount;
-        ch->end = s_paintedtime + sc->length;
-        ch->no_merge = no_merge;
-        ch->master_vol = S_GetEntityLoopVolume(ent) * gain_scale;
-        ch->dist_mult = S_GetEntityLoopDistMult(ent);
-        return;
+        if (!S_BindChannelEntity(ch)) {
+            AL_StopChannel(ch);
+            ch = nullptr;
+        } else {
+            ch->autoframe = s_framecount;
+            ch->end = s_paintedtime + sc->length;
+            ch->no_merge = no_merge;
+            ch->master_vol = S_GetEntityLoopVolume(ent) * gain_scale;
+            ch->dist_mult = S_GetEntityLoopDistMult(ent);
+            return;
+        }
     }
 
     ch = S_PickChannel(0, 0);
@@ -3989,6 +4002,10 @@ static void AL_AddLoopSoundEntity(const entity_state_t *ent, sfx_t *sfx, const s
     ch->no_merge = no_merge;
     ch->sfx = sfx;
     ch->entnum = ent->number;
+    if (!S_BindChannelEntity(ch)) {
+        memset(ch, 0, sizeof(*ch));
+        return;
+    }
     ch->master_vol = S_GetEntityLoopVolume(ent) * gain_scale;
     ch->dist_mult = S_GetEntityLoopDistMult(ent);
     ch->end = s_paintedtime + sc->length;
@@ -4020,8 +4037,7 @@ static void AL_MergeLoopSounds(void)
     channel_t   *ch;
     sfx_t       *sfx;
     sfxcache_t  *sc;
-    int         num;
-    entity_state_t *ent;
+    const entity_state_t *ent;
     vec3_t      origin;
     bool        occlusion_enabled;
 
@@ -4030,7 +4046,8 @@ static void AL_MergeLoopSounds(void)
     if (!S_BuildSoundList(sounds))
         return;
 
-    for (i = 0; i < cl.frame.numEntities; i++) {
+    const int entity_count = S_LoopSoundEntityCount();
+    for (i = 0; i < entity_count; i++) {
         if (!sounds[i])
             continue;
 
@@ -4042,19 +4059,20 @@ static void AL_MergeLoopSounds(void)
         if (!sc)
             continue;
 
-        num = (cl.frame.firstEntity + i) & PARSE_ENTITIES_MASK;
-        ent = &cl.entityStates[num];
+        ent = S_LoopSoundEntity(i);
+        if (!ent)
+            continue;
 
         vol = S_GetEntityLoopVolume(ent);
         att = S_GetEntityLoopDistMult(ent);
 
         bool has_doppler = AL_EntityHasDoppler(ent);
         if (!has_doppler) {
-            for (j = i + 1; j < cl.frame.numEntities; j++) {
+            for (j = i + 1; j < entity_count; j++) {
                 if (sounds[j] != sound_handle)
                     continue;
-                num = (cl.frame.firstEntity + j) & PARSE_ENTITIES_MASK;
-                if (AL_EntityHasDoppler(&cl.entityStates[num])) {
+                const entity_state_t *candidate = S_LoopSoundEntity(j);
+                if (candidate && AL_EntityHasDoppler(candidate)) {
                     has_doppler = true;
                     break;
                 }
@@ -4063,20 +4081,21 @@ static void AL_MergeLoopSounds(void)
 
         if (has_doppler) {
             int doppler_count = 0;
-            for (j = i; j < cl.frame.numEntities; j++) {
+            for (j = i; j < entity_count; j++) {
                 if (sounds[j] != sound_handle)
                     continue;
-                num = (cl.frame.firstEntity + j) & PARSE_ENTITIES_MASK;
-                if (AL_EntityHasDoppler(&cl.entityStates[num]))
+                const entity_state_t *candidate = S_LoopSoundEntity(j);
+                if (candidate && AL_EntityHasDoppler(candidate))
                     doppler_count++;
             }
 
             float doppler_gain_scale = AL_GetLoopGroupGainScale(doppler_count);
-            for (j = i; j < cl.frame.numEntities; j++) {
+            for (j = i; j < entity_count; j++) {
                 if (sounds[j] != sound_handle)
                     continue;
-                num = (cl.frame.firstEntity + j) & PARSE_ENTITIES_MASK;
-                const entity_state_t *ent_j = &cl.entityStates[num];
+                const entity_state_t *ent_j = S_LoopSoundEntity(j);
+                if (!ent_j)
+                    continue;
                 if (!AL_EntityHasDoppler(ent_j))
                     continue;
                 AL_AddLoopSoundEntity(ent_j, sfx, sc, true, doppler_gain_scale);
@@ -4136,13 +4155,14 @@ static void AL_MergeLoopSounds(void)
         right *= occ_gain;
         left_total += left;
         right_total += right;
-        for (j = i + 1; j < cl.frame.numEntities; j++) {
+        for (j = i + 1; j < entity_count; j++) {
             if (sounds[j] != sound_handle)
                 continue;
             sounds[j] = 0;  // don't check this again later
 
-            num = (cl.frame.firstEntity + j) & PARSE_ENTITIES_MASK;
-            ent = &cl.entityStates[num];
+            ent = S_LoopSoundEntity(j);
+            if (!ent)
+                continue;
 
             CL_GetEntitySoundOrigin(ent->number, origin);
             float ent_vol = S_GetEntityLoopVolume(ent);
@@ -4277,6 +4297,10 @@ static void AL_MergeLoopSounds(void)
         ch->no_merge = false;
         ch->sfx = sfx;
         ch->entnum = ent->number;
+        if (!S_BindChannelEntity(ch)) {
+            memset(ch, 0, sizeof(*ch));
+            continue;
+        }
         ch->master_vol = vol;
         ch->dist_mult = att;
         ch->end = s_paintedtime + sc->length;
@@ -4296,15 +4320,16 @@ static void AL_AddLoopSounds(void)
     channel_t   *ch;
     sfx_t       *sfx;
     sfxcache_t  *sc;
-    int         num;
-    entity_state_t *ent;
+    const entity_state_t *ent;
 
     if (cls.state != ca_active || sv_paused->integer || !s_ambient->integer)
         return;
 
-    S_BuildSoundList(sounds);
+    if (!S_BuildSoundList(sounds))
+        return;
 
-    for (i = 0; i < cl.frame.numEntities; i++) {
+    const int entity_count = S_LoopSoundEntityCount();
+    for (i = 0; i < entity_count; i++) {
         if (!sounds[i])
             continue;
 
@@ -4315,15 +4340,21 @@ static void AL_AddLoopSounds(void)
         if (!sc)
             continue;
 
-        num = (cl.frame.firstEntity + i) & PARSE_ENTITIES_MASK;
-        ent = &cl.entityStates[num];
+        ent = S_LoopSoundEntity(i);
+        if (!ent)
+            continue;
 
         ch = AL_FindLoopingSound(ent->number, sfx);
         if (ch) {
-            ch->autoframe = s_framecount;
-            ch->end = s_paintedtime + sc->length;
-            ch->no_merge = false;
-            continue;
+            if (!S_BindChannelEntity(ch)) {
+                AL_StopChannel(ch);
+                ch = nullptr;
+            } else {
+                ch->autoframe = s_framecount;
+                ch->end = s_paintedtime + sc->length;
+                ch->no_merge = false;
+                continue;
+            }
         }
 
         // allocate a channel
@@ -4336,6 +4367,10 @@ static void AL_AddLoopSounds(void)
         ch->no_merge = false;
         ch->sfx = sfx;
         ch->entnum = ent->number;
+        if (!S_BindChannelEntity(ch)) {
+            memset(ch, 0, sizeof(*ch));
+            continue;
+        }
         ch->master_vol = S_GetEntityLoopVolume(ent);
         ch->dist_mult = S_GetEntityLoopDistMult(ent);
         ch->end = s_paintedtime + sc->length;

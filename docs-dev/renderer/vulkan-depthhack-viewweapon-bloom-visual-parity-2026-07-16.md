@@ -88,6 +88,27 @@ validation error. The crop deliberately excludes the animated first-person
 model because the separate view-weapon manifest is the direct-emission visual
 gate.
 
+## 2026-07-19 deterministic-capture hardening
+
+The ordinary direct-emission config now explicitly fixes `cl_gunfov` to 90,
+the gun offsets to zero, and `hand` to zero. Most importantly, it sets
+`fixedtime 16` before loading the map and restores realtime after the capture.
+The original `wait`-only script allowed startup and map-loading hitches to
+select different first-person animation frames in the two independent
+renderer processes. That looked like a large weapon-projection difference but
+was temporal test drift, not a native Vulkan geometry or bloom defect.
+
+The retained headless validation run now measures MAE
+`0.057890 / 0.049892 / 0.050822` over the 212,800-pixel direct-emission crop;
+73 pixels exceed RGB error 16 (`0.034305%`), within the existing MAE `0.1` and
+over-threshold `0.1%` limits. The separate fixed-time refraction gate still
+holds its maximum `1 / 1 / 1` RGB difference with no pixel over one. The
+generator regression test asserts the pose/timing locks so the strict gate
+cannot silently return to realtime capture.
+
+See `vulkan-viewweapon-bloom-capture-determinism-2026-07-19.md` for the
+audit and current command evidence.
+
 ## Performance and safety
 
 - The no-refraction route adds no render-pass transition or fullscreen work.

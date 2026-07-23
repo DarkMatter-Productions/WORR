@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "task_id": "FR-01-T15",
+  "scenes": [
+    {
+      "id": "stock_md2_showorigins",
+      "config": "renderer_parity/fr01_model_origins.cfg",
+      "capture": "fr01_model_origins.tga",
+      "crop": [700, 320, 120, 130],
+      "metrics": {
+        "pixel_threshold": 1,
+        "max_mean_absolute_rgb": [0.07, 0.07, 0.001],
+        "max_pixels_over_threshold_percent": 0.03
+      },
+      "probes": [
+        {
+          "name": "showorigins_red_axis",
+          "color": [255, 0, 0],
+          "tolerance": 0,
+          "min_pixels_per_backend": 50,
+          "max_backend_count_delta_percent": 10,
+          "min_backend_intersection_over_union": 0.92
+        },
+        {
+          "name": "showorigins_green_axis",
+          "color": [0, 255, 0],
+          "tolerance": 0,
+          "min_pixels_per_backend": 80,
+          "max_backend_count_delta_percent": 5,
+          "min_backend_intersection_over_union": 0.95
+        },
+        {
+          "name": "showorigins_blue_axis",
+          "color": [0, 0, 255],
+          "tolerance": 0,
+          "min_pixels_per_backend": 90,
+          "max_backend_count_delta_percent": 0,
+          "min_backend_intersection_over_union": 1
+        }
+      ]
+    }
+  ]
+}

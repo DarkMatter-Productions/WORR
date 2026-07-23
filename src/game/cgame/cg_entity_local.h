@@ -195,6 +195,7 @@ static inline cvar_t *CG_SvPausedVar(void)
 #define V_AddLightStyle cgei->V_AddLightStyle
 
 #define S_RegisterSound cgei->S_RegisterSound
+#define S_GetPrecachedSound cgei->S_GetPrecachedSound
 #define S_StartSound cgei->S_StartSound
 
 #define LOC_AddLocationsToScene cgei->LOC_AddLocationsToScene

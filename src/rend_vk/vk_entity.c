@@ -55,12 +55,18 @@ _Static_assert(sizeof(vk_md2_gpu_instance_t) == 144,
                "GPU MD2 instance layout must match vk_entity_gpu_md2.vert");
 
 typedef struct {
+    vec3_t mins;
+    vec3_t maxs;
+} vk_md2_frame_bounds_t;
+
+typedef struct {
     uint32_t num_frames;
     uint32_t num_vertices;
     uint32_t num_indices;
     float *positions;      // [num_frames][num_vertices][3]
     float *normals;        // [num_frames][num_vertices][3]
     float *frame_radii;    // [num_frames], matches GL outline sizing
+    vk_md2_frame_bounds_t *frame_bounds; // [num_frames], source MD2 bounds
     float *uv;             // [num_vertices][2]
     uint16_t *indices;     // [num_indices]
     qhandle_t *skins;
@@ -203,6 +209,28 @@ typedef struct {
     float normal[3];
 } vk_vertex_t;
 
+// Particles use a compact instanced record instead of expanding the same
+// camera-facing triangle on the CPU for every particle every frame. The
+// vertex shader reconstructs the three legacy billboard vertices from
+// gl_VertexIndex and the current view matrix.
+typedef struct {
+    float origin_scale[4];
+    uint32_t color;
+} vk_particle_gpu_instance_t;
+
+_Static_assert(sizeof(vk_particle_gpu_instance_t) == 20,
+               "GPU particle instance layout must match vk_entity_gpu_particle.vert");
+
+typedef struct {
+    float start[3];
+    float end[3];
+    float right[3];
+    uint32_t color;
+} vk_beam_gpu_instance_t;
+
+_Static_assert(sizeof(vk_beam_gpu_instance_t) == 40,
+               "GPU beam instance layout must match vk_entity_gpu_beam.vert");
+
 // Immutable inline-BSP source data. Unlike the legacy transient entity
 // stream, positions and normals remain in model space and are transformed by
 // one compact current-frame instance record in the vertex stage.
@@ -253,6 +281,7 @@ typedef enum {
     // draw after transparent world surfaces.
     VK_ENTITY_SUBMIT_POST_LIQUID,
     VK_ENTITY_SUBMIT_ALPHA_FRONT,
+    VK_ENTITY_SUBMIT_COUNT,
 } vk_entity_submit_phase_t;
 
 typedef enum {
@@ -275,9 +304,17 @@ typedef struct {
     bool weapon_model;
     bool flare;
     bool occlusion;
+    // Alpha-tested sprites use no blending and no depth writes, matching
+    // GL_DrawSpriteModel's GLS_ALPHATEST_ENABLE | GLS_DEPTHMASK_FALSE state.
+    bool cutout;
+    // Fully opaque sprites also disable depth writes. This is a distinct
+    // native pipeline state: unlike cutouts it keeps blending disabled.
+    bool no_depth_write;
     bool indexed;
     bool gpu_md2;
     bool gpu_bmodel;
+    bool gpu_particle;
+    bool gpu_beam;
 #if USE_MD5
     bool gpu_md5;
 #endif
@@ -285,6 +322,11 @@ typedef struct {
     vk_entity_outline_stage_t outline_stage;
     bool outline_no_depth;
     uint32_t vertex_flags;
+    // Dynamic line width is draw state, rather than a vertex attribute. Keep
+    // the OpenGL-equivalent per-entity value with the batch so compatible
+    // cel instances can still coalesce without inheriting another model's
+    // camera-distance fade.
+    float cel_line_width;
     const vk_md2_t *gpu_md2_model;
     uint32_t gpu_md2_frame;
     uint32_t gpu_md2_oldframe;
@@ -310,48 +352,52 @@ typedef struct {
 } vk_entity_transform_t;
 
 typedef struct {
-    VkBuffer vertex_buffer;
-    VkDeviceMemory vertex_memory;
-    size_t vertex_buffer_bytes;
-    VkBuffer vertex_staging_buffer;
-    VkDeviceMemory vertex_staging_memory;
-    void *vertex_mapped;
+    cplane_t planes[4];
+} vk_entity_cull_frustum_t;
+
+typedef struct {
+    // CPU-expanded entity vertices and 16-bit indices share one native
+    // per-frame geometry arena. The independently grown regions preserve the
+    // existing live-byte upload accounting while reducing buffer/copy/barrier
+    // churn on the transient path.
+    VkBuffer geometry_buffer;
+    VkDeviceMemory geometry_memory;
+    size_t geometry_buffer_bytes;
+    size_t geometry_vertex_capacity;
+    size_t geometry_index_offset;
+    size_t geometry_index_capacity;
+    VkBuffer geometry_staging_buffer;
+    VkDeviceMemory geometry_staging_memory;
+    void *geometry_mapped;
     size_t vertex_upload_bytes;
-    VkBuffer index_buffer;
-    VkDeviceMemory index_memory;
-    size_t index_buffer_bytes;
-    VkBuffer index_staging_buffer;
-    VkDeviceMemory index_staging_memory;
-    void *index_mapped;
     size_t index_upload_bytes;
-    VkBuffer md2_instance_buffer;
-    VkDeviceMemory md2_instance_memory;
-    size_t md2_instance_buffer_bytes;
-    VkBuffer md2_instance_staging_buffer;
-    VkDeviceMemory md2_instance_staging_memory;
-    void *md2_instance_mapped;
+    // GPU-resident model instance records share one frame-local arena. Their
+    // independently grown regions retain native vertex/storage alignment,
+    // while one transfer and barrier make all live ranges visible together.
+    VkBuffer instance_buffer;
+    VkDeviceMemory instance_memory;
+    size_t instance_buffer_bytes;
+    VkBuffer instance_staging_buffer;
+    VkDeviceMemory instance_staging_memory;
+    void *instance_mapped;
+    size_t md2_instance_offset;
+    size_t md2_instance_capacity;
     size_t md2_instance_upload_bytes;
-    VkBuffer bmodel_instance_buffer;
-    VkDeviceMemory bmodel_instance_memory;
-    size_t bmodel_instance_buffer_bytes;
-    VkBuffer bmodel_instance_staging_buffer;
-    VkDeviceMemory bmodel_instance_staging_memory;
-    void *bmodel_instance_mapped;
+    size_t bmodel_instance_offset;
+    size_t bmodel_instance_capacity;
     size_t bmodel_instance_upload_bytes;
+    size_t particle_instance_offset;
+    size_t particle_instance_capacity;
+    size_t particle_instance_upload_bytes;
+    size_t beam_instance_offset;
+    size_t beam_instance_capacity;
+    size_t beam_instance_upload_bytes;
 #if USE_MD5
-    VkBuffer md5_instance_buffer;
-    VkDeviceMemory md5_instance_memory;
-    size_t md5_instance_buffer_bytes;
-    VkBuffer md5_instance_staging_buffer;
-    VkDeviceMemory md5_instance_staging_memory;
-    void *md5_instance_mapped;
+    size_t md5_instance_offset;
+    size_t md5_instance_capacity;
     size_t md5_instance_upload_bytes;
-    VkBuffer md5_palette_buffer;
-    VkDeviceMemory md5_palette_memory;
-    size_t md5_palette_buffer_bytes;
-    VkBuffer md5_palette_staging_buffer;
-    VkDeviceMemory md5_palette_staging_memory;
-    void *md5_palette_mapped;
+    size_t md5_palette_offset;
+    size_t md5_palette_capacity;
     size_t md5_palette_upload_bytes;
 #endif
 } vk_entity_frame_buffer_t;
@@ -373,13 +419,18 @@ typedef struct {
 
     VkPipelineLayout pipeline_layout;
     VkPipeline pipeline_opaque;
+    VkPipeline pipeline_opaque_no_depth_write;
     VkPipeline pipeline_bloom_extract;
     VkPipeline pipeline_bloom_extract_alpha;
     VkPipeline pipeline_bloom_extract_additive;
     VkPipeline pipeline_bloom_extract_additive_depth_sample;
+    VkPipeline pipeline_cutout;
     VkPipeline pipeline_alpha;
     VkPipeline pipeline_additive;
+    VkPipeline pipeline_celshading;
     VkPipeline pipeline_depthhack_opaque;
+    VkPipeline pipeline_depthhack_opaque_no_depth_write;
+    VkPipeline pipeline_depthhack_cutout;
     VkPipeline pipeline_depthhack_alpha;
     VkPipeline pipeline_depthhack_additive;
     VkPipeline pipeline_gpu_md2_opaque;
@@ -389,6 +440,7 @@ typedef struct {
     VkPipeline pipeline_gpu_md2_bloom_extract_additive_depth_sample;
     VkPipeline pipeline_gpu_md2_alpha;
     VkPipeline pipeline_gpu_md2_additive;
+    VkPipeline pipeline_gpu_md2_celshading;
     VkPipeline pipeline_gpu_md2_depthhack_opaque;
     VkPipeline pipeline_gpu_md2_depthhack_alpha;
     VkPipeline pipeline_gpu_md2_depthhack_additive;
@@ -400,6 +452,10 @@ typedef struct {
     VkPipeline pipeline_gpu_bmodel_bloom_extract;
     VkPipeline pipeline_gpu_bmodel_alpha;
     VkPipeline pipeline_gpu_bmodel_additive;
+    VkPipeline pipeline_gpu_particle_alpha;
+    VkPipeline pipeline_gpu_particle_additive;
+    VkPipeline pipeline_gpu_beam_alpha;
+    VkPipeline pipeline_gpu_beam_depthhack_alpha;
 #if USE_MD5
     VkPipeline pipeline_gpu_md5_opaque;
     VkPipeline pipeline_gpu_md5_bloom_extract;
@@ -408,6 +464,7 @@ typedef struct {
     VkPipeline pipeline_gpu_md5_bloom_extract_additive_depth_sample;
     VkPipeline pipeline_gpu_md5_alpha;
     VkPipeline pipeline_gpu_md5_additive;
+    VkPipeline pipeline_gpu_md5_celshading;
     VkPipeline pipeline_gpu_md5_depthhack_opaque;
     VkPipeline pipeline_gpu_md5_depthhack_alpha;
     VkPipeline pipeline_gpu_md5_depthhack_additive;
@@ -431,6 +488,8 @@ typedef struct {
     bool stencil_available;
     bool gpu_md2_available;
     bool gpu_bmodel_available;
+    bool gpu_particle_available;
+    bool gpu_beam_available;
 #if USE_MD5
     bool gpu_md5_available;
 #endif
@@ -454,6 +513,14 @@ typedef struct {
     vk_bmodel_gpu_instance_t *bmodel_instances;
     uint32_t bmodel_instance_count;
     uint32_t bmodel_instance_capacity;
+
+    vk_particle_gpu_instance_t *particle_instances;
+    uint32_t particle_instance_count;
+    uint32_t particle_instance_capacity;
+
+    vk_beam_gpu_instance_t *beam_instances;
+    uint32_t beam_instance_count;
+    uint32_t beam_instance_capacity;
 
 #if USE_MD5
     vk_md5_gpu_instance_t *md5_instances;
@@ -480,8 +547,19 @@ typedef struct {
     bool frame_uses_view_rect;
     bool frame_active;
     bool frame_weapon_active;
+    bool frame_has_depth_hack_batches;
+    bool frame_has_outline_batches;
     bool frame_has_flare_queries;
     bool frame_has_flares;
+    float current_cel_line_width;
+    // Entity recording is split around refractive world surfaces. Track the
+    // submit phases that actually emitted native batches so empty phases do
+    // not repeatedly traverse the complete frame batch list.
+    uint32_t frame_submit_phase_mask;
+    // Each live phase also records its normal entity order pass. This avoids
+    // three otherwise empty scans in the common opaque-only and
+    // view-weapon-only cases without changing the established pass order.
+    uint8_t frame_submit_pass_masks[VK_ENTITY_SUBMIT_COUNT];
     vk_entity_submit_phase_t current_submit_phase;
     uint32_t showtris_category;
 
@@ -523,13 +601,20 @@ static cvar_t *vk_drawentities;
 static cvar_t *vk_draworder;
 static cvar_t *vk_partscale;
 static cvar_t *vk_particle_style;
+static cvar_t *vk_particle_shape;
+static cvar_t *vk_particle_gpu_instancing;
 static cvar_t *vk_beam_style;
+static cvar_t *vk_beam_gpu_instancing;
 static cvar_t *vk_flare_fade_speed;
 static cvar_t *vk_player_outline_width;
 static cvar_t *vk_md2_gpu_lerp;
 static cvar_t *vk_bmodel_fast_lit;
 static cvar_t *vk_bmodel_fast_lit_no_fog;
 static cvar_t *vk_bmodel_texture_replace;
+static cvar_t *vk_bmodel_texture_replace_specialization;
+static cvar_t *vk_bmodel_binding_cache;
+static cvar_t *vk_cull_models;
+static cvar_t *vk_celshading;
 static cvar_t *vk_showorigins;
 #if USE_MD5
 static cvar_t *vk_md5_load;
@@ -539,11 +624,62 @@ static cvar_t *vk_md5_gpu_skinning;
 static jmp_buf vk_md5_jmpbuf;
 #endif
 
+static void VK_Entity_MarkCurrentSubmitPhase(void)
+{
+    vk_entity.frame_submit_phase_mask |= BIT(vk_entity.current_submit_phase);
+}
+
+static bool VK_Entity_HasRecordPhase(vk_entity_record_phase_t phase)
+{
+    const uint32_t phases = vk_entity.frame_submit_phase_mask;
+    switch (phase) {
+    case VK_ENTITY_RECORD_ALL:
+        return phases != 0;
+    case VK_ENTITY_RECORD_BEFORE_LIQUID:
+        return (phases & (BIT(VK_ENTITY_SUBMIT_OPAQUE) |
+                          BIT(VK_ENTITY_SUBMIT_ALPHA_BACK))) != 0;
+    case VK_ENTITY_RECORD_POST_LIQUID:
+        return (phases & BIT(VK_ENTITY_SUBMIT_POST_LIQUID)) != 0;
+    case VK_ENTITY_RECORD_ALPHA_FRONT:
+        return (phases & BIT(VK_ENTITY_SUBMIT_ALPHA_FRONT)) != 0;
+    }
+    return false;
+}
+
+static uint8_t VK_Entity_RecordPassMask(vk_entity_record_phase_t phase)
+{
+    const uint8_t *masks = vk_entity.frame_submit_pass_masks;
+    switch (phase) {
+    case VK_ENTITY_RECORD_ALL:
+        return masks[VK_ENTITY_SUBMIT_OPAQUE] |
+               masks[VK_ENTITY_SUBMIT_ALPHA_BACK] |
+               masks[VK_ENTITY_SUBMIT_POST_LIQUID] |
+               masks[VK_ENTITY_SUBMIT_ALPHA_FRONT];
+    case VK_ENTITY_RECORD_BEFORE_LIQUID:
+        return masks[VK_ENTITY_SUBMIT_OPAQUE] |
+               masks[VK_ENTITY_SUBMIT_ALPHA_BACK];
+    case VK_ENTITY_RECORD_POST_LIQUID:
+        return masks[VK_ENTITY_SUBMIT_POST_LIQUID];
+    case VK_ENTITY_RECORD_ALPHA_FRONT:
+        return masks[VK_ENTITY_SUBMIT_ALPHA_FRONT];
+    }
+    return 0;
+}
+
 static VkDescriptorSet VK_Entity_SetForImage(qhandle_t handle);
 static bool VK_Entity_EmitTriBlend(const vk_vertex_t *a, const vk_vertex_t *b,
                                    const vk_vertex_t *c, VkDescriptorSet set,
                                    bool alpha, bool additive, bool depth_hack,
                                    bool weapon_model);
+static bool VK_Entity_EmitTriCutout(const vk_vertex_t *a, const vk_vertex_t *b,
+                                    const vk_vertex_t *c, VkDescriptorSet set,
+                                    bool depth_hack, bool weapon_model);
+static bool VK_Entity_EmitTriOpaqueNoDepth(const vk_vertex_t *a,
+                                           const vk_vertex_t *b,
+                                           const vk_vertex_t *c,
+                                           VkDescriptorSet set,
+                                           bool depth_hack,
+                                           bool weapon_model);
 static bool VK_Entity_EmitTriSpecial(const vk_vertex_t *a, const vk_vertex_t *b,
                                      const vk_vertex_t *c, VkDescriptorSet set,
                                      uint32_t query_index, bool flare,
@@ -570,11 +706,25 @@ static bool VK_Entity_AppendGpuMd2Batch(const vk_md2_t *md2,
                                         bool depth_hack, bool weapon_model,
                                         uint32_t vertex_flags);
 static bool VK_Entity_EnsureMd2InstanceCapacity(uint32_t needed);
-static bool VK_Entity_EnsureMd2InstanceBuffer(vk_entity_frame_buffer_t *frame,
-                                               size_t bytes);
 static bool VK_Entity_EnsureBmodelInstanceCapacity(uint32_t needed);
-static bool VK_Entity_EnsureBmodelInstanceBuffer(vk_entity_frame_buffer_t *frame,
-                                                  size_t bytes);
+static bool VK_Entity_EnsureParticleInstanceCapacity(uint32_t needed);
+static bool VK_Entity_AppendGpuParticleBatch(uint32_t instance_index,
+                                             VkDescriptorSet set,
+                                             bool additive);
+static bool VK_Entity_EnsureBeamInstanceCapacity(uint32_t needed);
+static bool VK_Entity_AppendGpuBeamBatch(uint32_t instance_index,
+                                         VkDescriptorSet set,
+                                         bool depth_hack);
+static bool VK_Entity_EnsureInstanceBuffer(vk_entity_frame_buffer_t *frame,
+                                           size_t md2_bytes,
+                                           size_t bmodel_bytes,
+                                           size_t particle_bytes,
+                                           size_t beam_bytes
+#if USE_MD5
+                                           , size_t md5_instance_bytes,
+                                           size_t md5_palette_bytes
+#endif
+);
 static bool VK_Entity_CreateMd2GpuResources(vk_md2_t *md2);
 static void VK_Entity_DestroyMd2GpuResources(vk_md2_t *md2);
 #if USE_MD5
@@ -587,10 +737,6 @@ static bool VK_Entity_AppendGpuMd5Batch(const vk_md5_mesh_t *mesh,
 static bool VK_Entity_EnsureMd5InstanceCapacity(uint32_t needed);
 static bool VK_Entity_EnsureMd5JointCapacity(uint32_t needed);
 static bool VK_Entity_EnsureMd5WeightCapacity(uint32_t needed);
-static bool VK_Entity_EnsureMd5InstanceBuffer(vk_entity_frame_buffer_t *frame,
-                                               size_t bytes);
-static bool VK_Entity_EnsureMd5PaletteBuffer(vk_entity_frame_buffer_t *frame,
-                                              size_t bytes);
 static bool VK_Entity_CreateMd5GpuResources(vk_md5_t *md5);
 static void VK_Entity_DestroyMd5GpuResources(vk_md5_t *md5);
 static void VK_Entity_UpdateMd5DescriptorSets(void);
@@ -610,8 +756,11 @@ static bool VK_Entity_EmitOutline(uint32_t first_vertex,
 static inline float VK_Entity_Alpha(const entity_t *ent);
 static color_t VK_Entity_LitColor(const entity_t *ent, bool fullbright,
                                   bool include_dynamic_lights,
-                                  float frame_time, int rdflags);
+                                  float frame_time, int rdflags,
+                                  bool *out_no_static_lighting);
 static uint32_t VK_Entity_LightingFlags(const entity_t *ent, bool fullbright);
+static float VK_Entity_CelShadingLineWidth(const entity_t *ent,
+                                           const refdef_t *fd);
 static color_t VK_Entity_ShellColor(const entity_t *ent);
 static inline float VK_Entity_ShellScale(const entity_t *ent);
 static float VK_Entity_OutlineScale(const entity_t *ent, const refdef_t *fd,
@@ -632,6 +781,9 @@ static qhandle_t VK_Entity_SelectMD5Skin(const entity_t *ent, const vk_md5_t *md
 static bool VK_Entity_AddBspModel(const entity_t *ent, const refdef_t *fd, const bsp_t *bsp,
                                   bool depth_hack, bool weapon_model);
 static bool VK_Entity_AddParticles(const refdef_t *fd, const vec3_t view_axis[3]);
+static void VK_Entity_DestroyParticleTexture(void);
+static void VK_Entity_InitParticleTexture(void);
+static void VK_Entity_ParticleShapeChanged(cvar_t *self);
 static void VK_Entity_ClearBspTextureCache(void);
 static bool VK_Entity_EnsureBspTextureCache(const bsp_t *bsp);
 static void VK_Entity_DestroyBspGpuGeometry(void);
@@ -698,7 +850,27 @@ enum {
     // Per-batch marker only: native C submission selects the specialized
     // opaque inline-BSP texture-replace pipeline.
     VK_ENTITY_VERTEX_GPU_BMODEL_TEXTURE_REPLACE = BIT(17),
+    // Per-batch marker only: a native black silhouette wireframe replay
+    // reproduces OpenGL's alias-model cel pass after the opaque mesh draw.
+    VK_ENTITY_VERTEX_CELSHADING = BIT(18),
+    // GL_LightPoint's white no-receiver fallback bypasses GL_AdjustColor(),
+    // including gl_modulate_entities. Keep that exceptional source contract
+    // explicit for CPU-lit model vertices without weakening normal samples.
+    VK_ENTITY_VERTEX_NO_ENTITY_MODULATE = BIT(19),
 };
+
+static void VK_Entity_MarkCurrentSubmitPass(bool alpha, uint32_t vertex_flags)
+{
+    uint32_t pass = 0;
+    if (alpha) {
+        pass = (vertex_flags & VK_ENTITY_VERTEX_ITEM_COLORIZE_BASE) ? 1
+             : (vertex_flags & VK_ENTITY_VERTEX_ITEM_COLORIZE) ? 2 : 3;
+    }
+
+    VK_Entity_MarkCurrentSubmitPhase();
+    vk_entity.frame_submit_pass_masks[vk_entity.current_submit_phase] |=
+        (uint8_t)BIT(pass);
+}
 
 static bool VK_Entity_Check(VkResult result, const char *what)
 {
@@ -1722,14 +1894,19 @@ static bool VK_Entity_AddMD5(const entity_t *ent, const refdef_t *fd, const vk_m
 
     bool shell = (ent->flags & RF_SHELL_MASK) != 0;
     float shell_scale = shell ? VK_Entity_ShellScale(ent) : 0.0f;
+    bool no_static_lighting = false;
     color_t color = shell ? VK_Entity_ShellColor(ent)
                           : VK_Entity_LitColor(ent, false, false,
                                                fd ? fd->time : 0.0f,
-                                               fd ? fd->rdflags : 0);
+                                               fd ? fd->rdflags : 0,
+                                               &no_static_lighting);
     uint32_t flags = (shell
         ? (VK_ENTITY_VERTEX_FULLBRIGHT | VK_ENTITY_VERTEX_NO_SHADOW |
            VK_ENTITY_VERTEX_NO_DLIGHT | VK_ENTITY_VERTEX_BLOOM_SHELL)
-        : VK_Entity_LightingFlags(ent, false)) | VK_ENTITY_VERTEX_INTENSITY;
+         : VK_Entity_LightingFlags(ent, false)) | VK_ENTITY_VERTEX_INTENSITY;
+    if (no_static_lighting) {
+        flags |= VK_ENTITY_VERTEX_NO_ENTITY_MODULATE;
+    }
     if (shell && depth_hack) {
         flags |= VK_ENTITY_VERTEX_BLOOM_DEPTHHACK;
     }
@@ -1738,6 +1915,11 @@ static bool VK_Entity_AddMD5(const entity_t *ent, const refdef_t *fd, const vk_m
     }
     if (!shell && (ent->flags & RF_ITEM_COLORIZE)) {
         flags |= VK_ENTITY_VERTEX_ITEM_COLORIZE_BASE;
+    }
+    vk_entity.current_cel_line_width =
+        VK_Entity_CelShadingLineWidth(ent, fd);
+    if (vk_entity.current_cel_line_width > 0.0f) {
+        flags |= VK_ENTITY_VERTEX_CELSHADING;
     }
     qhandle_t preferred_skin = VK_Entity_SelectMD5Skin(ent, md5);
 
@@ -1955,19 +2137,29 @@ static bool VK_Entity_AddGpuMD5(const entity_t *ent, const refdef_t *fd,
 
     const bool shell = (ent->flags & RF_SHELL_MASK) != 0;
     const float shell_scale = shell ? VK_Entity_ShellScale(ent) : 0.0f;
+    bool no_static_lighting = false;
     const color_t color = shell ? VK_Entity_ShellColor(ent)
                                 : VK_Entity_LitColor(ent, false, false,
                                                      fd ? fd->time : 0.0f,
-                                                     fd ? fd->rdflags : 0);
+                                                     fd ? fd->rdflags : 0,
+                                                     &no_static_lighting);
     uint32_t flags = (shell
         ? (VK_ENTITY_VERTEX_FULLBRIGHT | VK_ENTITY_VERTEX_NO_SHADOW |
            VK_ENTITY_VERTEX_NO_DLIGHT | VK_ENTITY_VERTEX_BLOOM_SHELL)
-        : VK_Entity_LightingFlags(ent, false)) | VK_ENTITY_VERTEX_INTENSITY;
+         : VK_Entity_LightingFlags(ent, false)) | VK_ENTITY_VERTEX_INTENSITY;
+    if (no_static_lighting) {
+        flags |= VK_ENTITY_VERTEX_NO_ENTITY_MODULATE;
+    }
     if (shell && depth_hack) {
         flags |= VK_ENTITY_VERTEX_BLOOM_DEPTHHACK;
     }
     if (!shell && (ent->flags & RF_RIMLIGHT)) {
         flags |= VK_ENTITY_VERTEX_RIMLIGHT | VK_ENTITY_VERTEX_BLOOM_RIM;
+    }
+    vk_entity.current_cel_line_width =
+        VK_Entity_CelShadingLineWidth(ent, fd);
+    if (vk_entity.current_cel_line_width > 0.0f) {
+        flags |= VK_ENTITY_VERTEX_CELSHADING;
     }
     qhandle_t preferred_skin = VK_Entity_SelectMD5Skin(ent, md5);
     vk_entity_transform_t transform;
@@ -2034,6 +2226,7 @@ static void VK_Entity_FreeModel(vk_model_t *model)
         free(model->md2.positions);
         free(model->md2.normals);
         free(model->md2.frame_radii);
+        free(model->md2.frame_bounds);
         free(model->md2.uv);
         free(model->md2.indices);
         free(model->md2.skins);
@@ -2620,342 +2813,330 @@ static bool VK_Entity_CreateMd5GpuResources(vk_md5_t *md5)
 }
 #endif
 
-static void VK_Entity_DestroyVertexBuffer(vk_entity_frame_buffer_t *frame)
+static void VK_Entity_DestroyGeometryBuffer(vk_entity_frame_buffer_t *frame)
 {
     if (!frame) {
         return;
     }
-    VK_Entity_DestroyBuffer(&frame->vertex_staging_buffer,
-                            &frame->vertex_staging_memory,
-                            &frame->vertex_mapped);
-    VK_Entity_DestroyBuffer(&frame->vertex_buffer, &frame->vertex_memory, NULL);
-    frame->vertex_buffer_bytes = 0;
+    VK_Entity_DestroyBuffer(&frame->geometry_staging_buffer,
+                            &frame->geometry_staging_memory,
+                            &frame->geometry_mapped);
+    VK_Entity_DestroyBuffer(&frame->geometry_buffer,
+                            &frame->geometry_memory, NULL);
+    frame->geometry_buffer_bytes = 0;
+    frame->geometry_vertex_capacity = 0;
+    frame->geometry_index_offset = 0;
+    frame->geometry_index_capacity = 0;
     frame->vertex_upload_bytes = 0;
-}
-
-static void VK_Entity_DestroyIndexBuffer(vk_entity_frame_buffer_t *frame)
-{
-    if (!frame) {
-        return;
-    }
-    VK_Entity_DestroyBuffer(&frame->index_staging_buffer,
-                            &frame->index_staging_memory,
-                            &frame->index_mapped);
-    VK_Entity_DestroyBuffer(&frame->index_buffer, &frame->index_memory, NULL);
-    frame->index_buffer_bytes = 0;
     frame->index_upload_bytes = 0;
 }
 
-static void VK_Entity_DestroyMd2InstanceBuffer(vk_entity_frame_buffer_t *frame)
+static bool VK_Entity_EnsureGeometryBuffer(vk_entity_frame_buffer_t *frame,
+                                           size_t vertex_bytes,
+                                           size_t index_bytes)
+{
+    if (!frame) {
+        Com_SetLastError("Vulkan entity: active frame geometry buffer is unavailable");
+        return false;
+    }
+    if (!vertex_bytes && !index_bytes) {
+        return true;
+    }
+
+    size_t vertex_capacity = frame->geometry_vertex_capacity;
+    size_t index_capacity = frame->geometry_index_capacity;
+    if (vertex_bytes > vertex_capacity &&
+        !VK_Entity_GrowStreamBuffer(vertex_capacity, vertex_bytes,
+                                    &vertex_capacity)) {
+        return false;
+    }
+    if (index_bytes > index_capacity &&
+        !VK_Entity_GrowStreamBuffer(index_capacity, index_bytes,
+                                    &index_capacity)) {
+        return false;
+    }
+
+    // vkCmdBindIndexBuffer requires an index-aligned offset. The normal
+    // geometric capacities are powers of two, but preserve correctness in the
+    // overflow-path case where growth may select the exact requested byte size.
+    size_t index_offset = vertex_capacity;
+    if (index_offset & (sizeof(uint16_t) - 1)) {
+        if (index_offset == SIZE_MAX) {
+            Com_SetLastError("Vulkan entity: geometry index offset overflow");
+            return false;
+        }
+        index_offset++;
+    }
+    if (index_capacity > SIZE_MAX - index_offset) {
+        Com_SetLastError("Vulkan entity: geometry arena size overflow");
+        return false;
+    }
+    const size_t capacity = index_offset + index_capacity;
+    if (!capacity) {
+        return true;
+    }
+    if (frame->geometry_buffer && frame->geometry_memory &&
+        frame->geometry_staging_buffer && frame->geometry_staging_memory &&
+        frame->geometry_mapped &&
+        vertex_capacity == frame->geometry_vertex_capacity &&
+        index_capacity == frame->geometry_index_capacity &&
+        index_offset == frame->geometry_index_offset) {
+        return true;
+    }
+
+    VK_Entity_DestroyGeometryBuffer(frame);
+
+    if (!VK_Entity_CreateBuffer(capacity,
+                                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
+                                    VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+                                    VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                &frame->geometry_buffer,
+                                &frame->geometry_memory, NULL,
+                                "vkCreateBuffer(entity geometry)")) {
+        return false;
+    }
+    if (!VK_Entity_CreateBuffer(capacity, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                &frame->geometry_staging_buffer,
+                                &frame->geometry_staging_memory,
+                                &frame->geometry_mapped,
+                                "vkCreateBuffer(entity geometry staging)")) {
+        VK_Entity_DestroyGeometryBuffer(frame);
+        return false;
+    }
+    frame->geometry_buffer_bytes = capacity;
+    frame->geometry_vertex_capacity = vertex_capacity;
+    frame->geometry_index_offset = index_offset;
+    frame->geometry_index_capacity = index_capacity;
+    return true;
+}
+
+static void VK_Entity_DestroyInstanceBuffer(vk_entity_frame_buffer_t *frame)
 {
     if (!frame) {
         return;
     }
-    VK_Entity_DestroyBuffer(&frame->md2_instance_staging_buffer,
-                            &frame->md2_instance_staging_memory,
-                            &frame->md2_instance_mapped);
-    VK_Entity_DestroyBuffer(&frame->md2_instance_buffer,
-                            &frame->md2_instance_memory, NULL);
-    frame->md2_instance_buffer_bytes = 0;
+    VK_Entity_DestroyBuffer(&frame->instance_staging_buffer,
+                            &frame->instance_staging_memory,
+                            &frame->instance_mapped);
+    VK_Entity_DestroyBuffer(&frame->instance_buffer,
+                            &frame->instance_memory, NULL);
+    frame->instance_buffer_bytes = 0;
+    frame->md2_instance_offset = 0;
+    frame->md2_instance_capacity = 0;
     frame->md2_instance_upload_bytes = 0;
-}
-
-static void VK_Entity_DestroyBmodelInstanceBuffer(vk_entity_frame_buffer_t *frame)
-{
-    if (!frame) {
-        return;
-    }
-    VK_Entity_DestroyBuffer(&frame->bmodel_instance_staging_buffer,
-                            &frame->bmodel_instance_staging_memory,
-                            &frame->bmodel_instance_mapped);
-    VK_Entity_DestroyBuffer(&frame->bmodel_instance_buffer,
-                            &frame->bmodel_instance_memory, NULL);
-    frame->bmodel_instance_buffer_bytes = 0;
+    frame->bmodel_instance_offset = 0;
+    frame->bmodel_instance_capacity = 0;
     frame->bmodel_instance_upload_bytes = 0;
-}
-
-static bool VK_Entity_EnsureVertexBuffer(vk_entity_frame_buffer_t *frame,
-                                         size_t bytes)
-{
-    if (!frame) {
-        Com_SetLastError("Vulkan entity: active frame buffer is unavailable");
-        return false;
-    }
-    if (frame->vertex_buffer && frame->vertex_memory &&
-        frame->vertex_staging_buffer && frame->vertex_staging_memory &&
-        frame->vertex_mapped && bytes <= frame->vertex_buffer_bytes) {
-        return true;
-    }
-
-    size_t capacity = 0;
-    if (!VK_Entity_GrowStreamBuffer(frame->vertex_buffer_bytes, bytes,
-                                    &capacity)) {
-        return false;
-    }
-
-    VK_Entity_DestroyVertexBuffer(frame);
-
-    if (!VK_Entity_CreateBuffer(capacity,
-                                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
-                                    VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                &frame->vertex_buffer, &frame->vertex_memory,
-                                NULL, "vkCreateBuffer(entity vertex)")) {
-        return false;
-    }
-    if (!VK_Entity_CreateBuffer(capacity, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                &frame->vertex_staging_buffer,
-                                &frame->vertex_staging_memory,
-                                &frame->vertex_mapped,
-                                "vkCreateBuffer(entity vertex staging)")) {
-        VK_Entity_DestroyVertexBuffer(frame);
-        return false;
-    }
-    frame->vertex_buffer_bytes = capacity;
-    return true;
-}
-
-static bool VK_Entity_EnsureIndexBuffer(vk_entity_frame_buffer_t *frame,
-                                        size_t bytes)
-{
-    if (!frame) {
-        Com_SetLastError("Vulkan entity: active frame index buffer is unavailable");
-        return false;
-    }
-    if (frame->index_buffer && frame->index_memory &&
-        frame->index_staging_buffer && frame->index_staging_memory &&
-        frame->index_mapped && bytes <= frame->index_buffer_bytes) {
-        return true;
-    }
-
-    size_t capacity = 0;
-    if (!VK_Entity_GrowStreamBuffer(frame->index_buffer_bytes, bytes,
-                                    &capacity)) {
-        return false;
-    }
-
-    VK_Entity_DestroyIndexBuffer(frame);
-
-    if (!VK_Entity_CreateBuffer(capacity,
-                                VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
-                                    VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                &frame->index_buffer, &frame->index_memory,
-                                NULL, "vkCreateBuffer(entity index)")) {
-        return false;
-    }
-    if (!VK_Entity_CreateBuffer(capacity, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                &frame->index_staging_buffer,
-                                &frame->index_staging_memory,
-                                &frame->index_mapped,
-                                "vkCreateBuffer(entity index staging)")) {
-        VK_Entity_DestroyIndexBuffer(frame);
-        return false;
-    }
-    frame->index_buffer_bytes = capacity;
-    return true;
-}
-
-static bool VK_Entity_EnsureMd2InstanceBuffer(vk_entity_frame_buffer_t *frame,
-                                               size_t bytes)
-{
-    if (!frame || !bytes) {
-        return !bytes;
-    }
-    if (frame->md2_instance_buffer && frame->md2_instance_memory &&
-        frame->md2_instance_staging_buffer &&
-        frame->md2_instance_staging_memory && frame->md2_instance_mapped &&
-        bytes <= frame->md2_instance_buffer_bytes) {
-        return true;
-    }
-
-    size_t capacity = 0;
-    if (!VK_Entity_GrowStreamBuffer(frame->md2_instance_buffer_bytes, bytes,
-                                    &capacity)) {
-        return false;
-    }
-    VK_Entity_DestroyMd2InstanceBuffer(frame);
-
-    if (!VK_Entity_CreateBuffer(capacity,
-                                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
-                                    VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                &frame->md2_instance_buffer,
-                                &frame->md2_instance_memory, NULL,
-                                "vkCreateBuffer(entity MD2 instance)")) {
-        return false;
-    }
-    if (!VK_Entity_CreateBuffer(capacity, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                &frame->md2_instance_staging_buffer,
-                                &frame->md2_instance_staging_memory,
-                                &frame->md2_instance_mapped,
-                                "vkCreateBuffer(entity MD2 instance staging)")) {
-        VK_Entity_DestroyMd2InstanceBuffer(frame);
-        return false;
-    }
-    frame->md2_instance_buffer_bytes = capacity;
-    return true;
-}
-
-static bool VK_Entity_EnsureBmodelInstanceBuffer(vk_entity_frame_buffer_t *frame,
-                                                  size_t bytes)
-{
-    if (!frame || !bytes) {
-        return !bytes;
-    }
-    if (frame->bmodel_instance_buffer && frame->bmodel_instance_memory &&
-        frame->bmodel_instance_staging_buffer &&
-        frame->bmodel_instance_staging_memory && frame->bmodel_instance_mapped &&
-        bytes <= frame->bmodel_instance_buffer_bytes) {
-        return true;
-    }
-
-    size_t capacity = 0;
-    if (!VK_Entity_GrowStreamBuffer(frame->bmodel_instance_buffer_bytes, bytes,
-                                    &capacity)) {
-        return false;
-    }
-    VK_Entity_DestroyBmodelInstanceBuffer(frame);
-
-    if (!VK_Entity_CreateBuffer(capacity,
-                                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
-                                    VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                &frame->bmodel_instance_buffer,
-                                &frame->bmodel_instance_memory, NULL,
-                                "vkCreateBuffer(entity BSP instance)")) {
-        return false;
-    }
-    if (!VK_Entity_CreateBuffer(capacity, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                &frame->bmodel_instance_staging_buffer,
-                                &frame->bmodel_instance_staging_memory,
-                                &frame->bmodel_instance_mapped,
-                                "vkCreateBuffer(entity BSP instance staging)")) {
-        VK_Entity_DestroyBmodelInstanceBuffer(frame);
-        return false;
-    }
-    frame->bmodel_instance_buffer_bytes = capacity;
-    return true;
-}
-
+    frame->particle_instance_offset = 0;
+    frame->particle_instance_capacity = 0;
+    frame->particle_instance_upload_bytes = 0;
+    frame->beam_instance_offset = 0;
+    frame->beam_instance_capacity = 0;
+    frame->beam_instance_upload_bytes = 0;
 #if USE_MD5
-static void VK_Entity_DestroyMd5InstanceBuffer(vk_entity_frame_buffer_t *frame)
-{
-    if (!frame) {
-        return;
-    }
-    VK_Entity_DestroyBuffer(&frame->md5_instance_staging_buffer,
-                            &frame->md5_instance_staging_memory,
-                            &frame->md5_instance_mapped);
-    VK_Entity_DestroyBuffer(&frame->md5_instance_buffer,
-                            &frame->md5_instance_memory, NULL);
-    frame->md5_instance_buffer_bytes = 0;
+    frame->md5_instance_offset = 0;
+    frame->md5_instance_capacity = 0;
     frame->md5_instance_upload_bytes = 0;
+    frame->md5_palette_offset = 0;
+    frame->md5_palette_capacity = 0;
+    frame->md5_palette_upload_bytes = 0;
+#endif
 }
 
-static void VK_Entity_DestroyMd5PaletteBuffer(vk_entity_frame_buffer_t *frame)
+static bool VK_Entity_AlignInstanceOffset(size_t offset, size_t alignment,
+                                          size_t *aligned_offset)
+{
+    if (!alignment || !aligned_offset ||
+        offset > SIZE_MAX - (alignment - 1)) {
+        Com_SetLastError("Vulkan entity: instance arena alignment overflow");
+        return false;
+    }
+    const size_t rounded = offset + alignment - 1;
+    *aligned_offset = rounded - rounded % alignment;
+    return true;
+}
+
+static bool VK_Entity_InstanceArenaAlignment(size_t *alignment)
+{
+    if (!alignment || !vk_entity.ctx || !vk_entity.ctx->physical_device) {
+        Com_SetLastError("Vulkan entity: instance arena device is unavailable");
+        return false;
+    }
+
+    VkPhysicalDeviceProperties properties;
+    vkGetPhysicalDeviceProperties(vk_entity.ctx->physical_device, &properties);
+    if (properties.limits.minStorageBufferOffsetAlignment > SIZE_MAX) {
+        Com_SetLastError("Vulkan entity: storage-buffer alignment is unsupported");
+        return false;
+    }
+    *alignment = max((size_t)16,
+                     (size_t)properties.limits.minStorageBufferOffsetAlignment);
+    return true;
+}
+
+static bool VK_Entity_InstanceArenaAppendRegion(size_t *cursor,
+                                                size_t region_capacity,
+                                                size_t alignment,
+                                                size_t *region_offset)
+{
+    if (!cursor || !region_offset ||
+        !VK_Entity_AlignInstanceOffset(*cursor, alignment, region_offset)) {
+        return false;
+    }
+    if (region_capacity > SIZE_MAX - *region_offset) {
+        Com_SetLastError("Vulkan entity: instance arena size overflow");
+        return false;
+    }
+    *cursor = *region_offset + region_capacity;
+    return true;
+}
+
+static bool VK_Entity_EnsureInstanceBuffer(vk_entity_frame_buffer_t *frame,
+                                           size_t md2_bytes,
+                                           size_t bmodel_bytes,
+                                           size_t particle_bytes,
+                                           size_t beam_bytes
+#if USE_MD5
+                                           , size_t md5_instance_bytes,
+                                           size_t md5_palette_bytes
+#endif
+)
 {
     if (!frame) {
-        return;
-    }
-    VK_Entity_DestroyBuffer(&frame->md5_palette_staging_buffer,
-                            &frame->md5_palette_staging_memory,
-                            &frame->md5_palette_mapped);
-    VK_Entity_DestroyBuffer(&frame->md5_palette_buffer,
-                            &frame->md5_palette_memory, NULL);
-    frame->md5_palette_buffer_bytes = 0;
-    frame->md5_palette_upload_bytes = 0;
-}
-
-static bool VK_Entity_EnsureMd5InstanceBuffer(vk_entity_frame_buffer_t *frame,
-                                               size_t bytes)
-{
-    if (!frame || !bytes) {
-        return !bytes;
-    }
-    if (frame->md5_instance_buffer && frame->md5_instance_memory &&
-        frame->md5_instance_staging_buffer && frame->md5_instance_staging_memory &&
-        frame->md5_instance_mapped && bytes <= frame->md5_instance_buffer_bytes) {
-        return true;
-    }
-    size_t capacity = 0;
-    if (!VK_Entity_GrowStreamBuffer(frame->md5_instance_buffer_bytes, bytes,
-                                    &capacity)) {
+        Com_SetLastError("Vulkan entity: active frame instance arena is unavailable");
         return false;
     }
-    VK_Entity_DestroyMd5InstanceBuffer(frame);
-    if (!VK_Entity_CreateBuffer(capacity,
-                                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
-                                    VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                &frame->md5_instance_buffer,
-                                &frame->md5_instance_memory, NULL,
-                                "vkCreateBuffer(entity MD5 instance)")) {
-        return false;
-    }
-    if (!VK_Entity_CreateBuffer(capacity, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                &frame->md5_instance_staging_buffer,
-                                &frame->md5_instance_staging_memory,
-                                &frame->md5_instance_mapped,
-                                "vkCreateBuffer(entity MD5 instance staging)")) {
-        VK_Entity_DestroyMd5InstanceBuffer(frame);
-        return false;
-    }
-    frame->md5_instance_buffer_bytes = capacity;
-    return true;
-}
-
-static bool VK_Entity_EnsureMd5PaletteBuffer(vk_entity_frame_buffer_t *frame,
-                                              size_t bytes)
-{
-    if (!frame || !bytes) {
-        return !bytes;
-    }
-    if (frame->md5_palette_buffer && frame->md5_palette_memory &&
-        frame->md5_palette_staging_buffer && frame->md5_palette_staging_memory &&
-        frame->md5_palette_mapped && bytes <= frame->md5_palette_buffer_bytes) {
-        return true;
-    }
-    size_t capacity = 0;
-    if (!VK_Entity_GrowStreamBuffer(frame->md5_palette_buffer_bytes, bytes,
-                                    &capacity)) {
-        return false;
-    }
-    VK_Entity_DestroyMd5PaletteBuffer(frame);
-    if (!VK_Entity_CreateBuffer(capacity,
-                                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                                    VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                &frame->md5_palette_buffer,
-                                &frame->md5_palette_memory, NULL,
-                                "vkCreateBuffer(entity MD5 palette)")) {
-        return false;
-    }
-    if (!VK_Entity_CreateBuffer(capacity, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                &frame->md5_palette_staging_buffer,
-                                &frame->md5_palette_staging_memory,
-                                &frame->md5_palette_mapped,
-                                "vkCreateBuffer(entity MD5 palette staging)")) {
-        VK_Entity_DestroyMd5PaletteBuffer(frame);
-        return false;
-    }
-    frame->md5_palette_buffer_bytes = capacity;
-    VK_Entity_UpdateMd5DescriptorSets();
-    return true;
-}
+    if (!md2_bytes && !bmodel_bytes && !particle_bytes && !beam_bytes
+#if USE_MD5
+        && !md5_instance_bytes && !md5_palette_bytes
 #endif
+    ) {
+        return true;
+    }
+
+    size_t md2_capacity = frame->md2_instance_capacity;
+    size_t bmodel_capacity = frame->bmodel_instance_capacity;
+    size_t particle_capacity = frame->particle_instance_capacity;
+    size_t beam_capacity = frame->beam_instance_capacity;
+#if USE_MD5
+    size_t md5_instance_capacity = frame->md5_instance_capacity;
+    size_t md5_palette_capacity = frame->md5_palette_capacity;
+#endif
+    if ((md2_bytes > md2_capacity &&
+         !VK_Entity_GrowStreamBuffer(md2_capacity, md2_bytes, &md2_capacity)) ||
+        (bmodel_bytes > bmodel_capacity &&
+         !VK_Entity_GrowStreamBuffer(bmodel_capacity, bmodel_bytes,
+                                     &bmodel_capacity))
+        || (particle_bytes > particle_capacity &&
+            !VK_Entity_GrowStreamBuffer(particle_capacity, particle_bytes,
+                                        &particle_capacity))
+        || (beam_bytes > beam_capacity &&
+            !VK_Entity_GrowStreamBuffer(beam_capacity, beam_bytes,
+                                        &beam_capacity))
+#if USE_MD5
+        || (md5_instance_bytes > md5_instance_capacity &&
+            !VK_Entity_GrowStreamBuffer(md5_instance_capacity,
+                                        md5_instance_bytes,
+                                        &md5_instance_capacity))
+        || (md5_palette_bytes > md5_palette_capacity &&
+            !VK_Entity_GrowStreamBuffer(md5_palette_capacity, md5_palette_bytes,
+                                        &md5_palette_capacity))
+#endif
+    ) {
+        return false;
+    }
+
+    size_t alignment = 0;
+    size_t cursor = 0;
+    size_t md2_offset = 0;
+    size_t bmodel_offset = 0;
+    size_t particle_offset = 0;
+    size_t beam_offset = 0;
+#if USE_MD5
+    size_t md5_instance_offset = 0;
+    size_t md5_palette_offset = 0;
+#endif
+    if (!VK_Entity_InstanceArenaAlignment(&alignment) ||
+        !VK_Entity_InstanceArenaAppendRegion(&cursor, md2_capacity, alignment,
+                                             &md2_offset) ||
+        !VK_Entity_InstanceArenaAppendRegion(&cursor, bmodel_capacity, alignment,
+                                             &bmodel_offset)
+        || !VK_Entity_InstanceArenaAppendRegion(&cursor, particle_capacity,
+                                                alignment, &particle_offset)
+        || !VK_Entity_InstanceArenaAppendRegion(&cursor, beam_capacity,
+                                                alignment, &beam_offset)
+#if USE_MD5
+        || !VK_Entity_InstanceArenaAppendRegion(&cursor, md5_instance_capacity,
+                                                 alignment, &md5_instance_offset)
+        || !VK_Entity_InstanceArenaAppendRegion(&cursor, md5_palette_capacity,
+                                                 alignment, &md5_palette_offset)
+#endif
+    ) {
+        return false;
+    }
+
+    if (frame->instance_buffer && frame->instance_memory &&
+        frame->instance_staging_buffer && frame->instance_staging_memory &&
+        frame->instance_mapped && cursor == frame->instance_buffer_bytes &&
+        md2_capacity == frame->md2_instance_capacity &&
+        bmodel_capacity == frame->bmodel_instance_capacity &&
+        md2_offset == frame->md2_instance_offset &&
+        bmodel_offset == frame->bmodel_instance_offset
+        && particle_capacity == frame->particle_instance_capacity &&
+        particle_offset == frame->particle_instance_offset
+        && beam_capacity == frame->beam_instance_capacity &&
+        beam_offset == frame->beam_instance_offset
+#if USE_MD5
+        && md5_instance_capacity == frame->md5_instance_capacity &&
+        md5_palette_capacity == frame->md5_palette_capacity &&
+        md5_instance_offset == frame->md5_instance_offset &&
+        md5_palette_offset == frame->md5_palette_offset
+#endif
+    ) {
+        return true;
+    }
+
+    VK_Entity_DestroyInstanceBuffer(frame);
+    if (!VK_Entity_CreateBuffer(cursor,
+                                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
+                                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                    VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                &frame->instance_buffer,
+                                &frame->instance_memory, NULL,
+                                "vkCreateBuffer(entity instance arena)")) {
+        return false;
+    }
+    if (!VK_Entity_CreateBuffer(cursor, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                &frame->instance_staging_buffer,
+                                &frame->instance_staging_memory,
+                                &frame->instance_mapped,
+                                "vkCreateBuffer(entity instance arena staging)")) {
+        VK_Entity_DestroyInstanceBuffer(frame);
+        return false;
+    }
+    frame->instance_buffer_bytes = cursor;
+    frame->md2_instance_offset = md2_offset;
+    frame->md2_instance_capacity = md2_capacity;
+    frame->bmodel_instance_offset = bmodel_offset;
+    frame->bmodel_instance_capacity = bmodel_capacity;
+    frame->particle_instance_offset = particle_offset;
+    frame->particle_instance_capacity = particle_capacity;
+    frame->beam_instance_offset = beam_offset;
+    frame->beam_instance_capacity = beam_capacity;
+#if USE_MD5
+    frame->md5_instance_offset = md5_instance_offset;
+    frame->md5_instance_capacity = md5_instance_capacity;
+    frame->md5_palette_offset = md5_palette_offset;
+    frame->md5_palette_capacity = md5_palette_capacity;
+#endif
+    return true;
+}
 
 static bool VK_Entity_EnsureVertexCapacity(uint32_t needed)
 {
@@ -3042,6 +3223,49 @@ static bool VK_Entity_EnsureBmodelInstanceCapacity(uint32_t needed)
     }
     vk_entity.bmodel_instances = new_buf;
     vk_entity.bmodel_instance_capacity = cap;
+    return true;
+}
+
+static bool VK_Entity_EnsureParticleInstanceCapacity(uint32_t needed)
+{
+    if (needed <= vk_entity.particle_instance_capacity) {
+        return true;
+    }
+
+    uint32_t cap = 0;
+    if (!VK_Entity_GrowCapacity(vk_entity.particle_instance_capacity, needed,
+                                1024, &cap, "GPU particle instances")) {
+        return false;
+    }
+
+    vk_particle_gpu_instance_t *new_buf = VK_Entity_ReallocArray(
+        vk_entity.particle_instances, cap, sizeof(*new_buf),
+        "GPU particle instances");
+    if (!new_buf) {
+        return false;
+    }
+    vk_entity.particle_instances = new_buf;
+    vk_entity.particle_instance_capacity = cap;
+    return true;
+}
+
+static bool VK_Entity_EnsureBeamInstanceCapacity(uint32_t needed)
+{
+    if (needed <= vk_entity.beam_instance_capacity) {
+        return true;
+    }
+    uint32_t cap = 0;
+    if (!VK_Entity_GrowCapacity(vk_entity.beam_instance_capacity, needed, 256,
+                                &cap, "GPU beam instances")) {
+        return false;
+    }
+    vk_beam_gpu_instance_t *new_buf = VK_Entity_ReallocArray(
+        vk_entity.beam_instances, cap, sizeof(*new_buf), "GPU beam instances");
+    if (!new_buf) {
+        return false;
+    }
+    vk_entity.beam_instances = new_buf;
+    vk_entity.beam_instance_capacity = cap;
     return true;
 }
 
@@ -3152,6 +3376,13 @@ static bool VK_Entity_AppendIndexedBatch(uint32_t first_vertex,
         return false;
     }
 
+    const uint32_t vertex_flags = first_vertex < vk_entity.vertex_count
+        ? vk_entity.vertices[first_vertex].flags : 0;
+    const bool celshading =
+        (vertex_flags & VK_ENTITY_VERTEX_CELSHADING) != 0;
+    const float cel_line_width = celshading
+        ? vk_entity.current_cel_line_width : 0.0f;
+
     vk_batch_t *batch = (vk_entity.batch_count > 0)
         ? &vk_entity.batches[vk_entity.batch_count - 1]
         : NULL;
@@ -3168,7 +3399,10 @@ static bool VK_Entity_AppendIndexedBatch(uint32_t first_vertex,
         batch->first_vertex + batch->vertex_count != first_vertex ||
         first_vertex - batch->first_vertex > UINT16_MAX ||
         vertex_count > UINT16_MAX -
-            (first_vertex - batch->first_vertex) + 1u) {
+            (first_vertex - batch->first_vertex) + 1u ||
+        ((batch->vertex_flags & VK_ENTITY_VERTEX_CELSHADING) !=
+             (vertex_flags & VK_ENTITY_VERTEX_CELSHADING)) ||
+        (celshading && batch->cel_line_width != cel_line_width)) {
         if (!VK_Entity_EnsureBatchCapacity(vk_entity.batch_count + 1)) {
             return false;
         }
@@ -3186,6 +3420,8 @@ static bool VK_Entity_AppendIndexedBatch(uint32_t first_vertex,
             .weapon_model = weapon_model,
             .indexed = true,
             .submit_phase = vk_entity.current_submit_phase,
+            .vertex_flags = vertex_flags & VK_ENTITY_VERTEX_CELSHADING,
+            .cel_line_width = cel_line_width,
         };
     }
     else {
@@ -3217,6 +3453,7 @@ static bool VK_Entity_AppendIndexedBatch(uint32_t first_vertex,
     }
     batch->vertex_count += vertex_count;
     batch->index_count += index_count;
+    VK_Entity_MarkCurrentSubmitPass(alpha, vertex_flags);
     VK_Entity_QueueIndexedShowTris(batch->first_vertex, first_index,
                                    index_count);
     return true;
@@ -3235,6 +3472,10 @@ static bool VK_Entity_AppendGpuMd2Batch(const vk_md2_t *md2,
         return false;
     }
 
+    const float cel_line_width =
+        (vertex_flags & VK_ENTITY_VERTEX_CELSHADING) != 0
+            ? vk_entity.current_cel_line_width : 0.0f;
+
     vk_batch_t *batch = (vk_entity.batch_count > 0)
         ? &vk_entity.batches[vk_entity.batch_count - 1]
         : NULL;
@@ -3246,6 +3487,7 @@ static bool VK_Entity_AppendGpuMd2Batch(const vk_md2_t *md2,
         batch->submit_phase != vk_entity.current_submit_phase ||
         batch->outline_stage != VK_ENTITY_OUTLINE_NONE ||
         batch->vertex_flags != vertex_flags ||
+        batch->cel_line_width != cel_line_width ||
         batch->first_instance > UINT32_MAX - batch->instance_count ||
         batch->first_instance + batch->instance_count != instance_index) {
         if (!VK_Entity_EnsureBatchCapacity(vk_entity.batch_count + 1)) {
@@ -3265,6 +3507,7 @@ static bool VK_Entity_AppendGpuMd2Batch(const vk_md2_t *md2,
             .gpu_md2 = true,
             .submit_phase = vk_entity.current_submit_phase,
             .vertex_flags = vertex_flags,
+            .cel_line_width = cel_line_width,
             .gpu_md2_model = md2,
             .gpu_md2_frame = frame,
             .gpu_md2_oldframe = oldframe,
@@ -3277,6 +3520,7 @@ static bool VK_Entity_AppendGpuMd2Batch(const vk_md2_t *md2,
         return false;
     }
     batch->instance_count++;
+    VK_Entity_MarkCurrentSubmitPass(alpha, vertex_flags);
     return true;
 }
 
@@ -3326,6 +3570,96 @@ static bool VK_Entity_AppendGpuBmodelBatch(uint32_t first_vertex,
         return false;
     }
     batch->vertex_count += vertex_count;
+    VK_Entity_MarkCurrentSubmitPass(alpha, vertex_flags);
+    return true;
+}
+
+static bool VK_Entity_AppendGpuParticleBatch(uint32_t instance_index,
+                                             VkDescriptorSet set,
+                                             bool additive)
+{
+    const uint32_t flags = VK_ENTITY_VERTEX_FULLBRIGHT |
+        VK_ENTITY_VERTEX_NO_SHADOW | VK_ENTITY_VERTEX_NO_DLIGHT;
+    if (!set) {
+        return false;
+    }
+
+    vk_batch_t *batch = vk_entity.batch_count > 0
+        ? &vk_entity.batches[vk_entity.batch_count - 1] : NULL;
+    if (!batch || !batch->gpu_particle || batch->set != set ||
+        !batch->alpha || batch->additive != additive || batch->depth_hack ||
+        batch->weapon_model || batch->flare || batch->occlusion ||
+        batch->submit_phase != vk_entity.current_submit_phase ||
+        batch->outline_stage != VK_ENTITY_OUTLINE_NONE ||
+        batch->vertex_flags != flags ||
+        batch->first_instance > UINT32_MAX - batch->instance_count ||
+        batch->first_instance + batch->instance_count != instance_index) {
+        if (!VK_Entity_EnsureBatchCapacity(vk_entity.batch_count + 1)) {
+            return false;
+        }
+        batch = &vk_entity.batches[vk_entity.batch_count++];
+        *batch = (vk_batch_t) {
+            .vertex_count = 3,
+            .set = set,
+            .query_index = UINT32_MAX,
+            .alpha = true,
+            .additive = additive,
+            .gpu_particle = true,
+            .submit_phase = vk_entity.current_submit_phase,
+            .vertex_flags = flags,
+            .first_instance = instance_index,
+        };
+    }
+    if (batch->instance_count == UINT32_MAX) {
+        Com_SetLastError("Vulkan entity: GPU particle instance count overflow");
+        return false;
+    }
+    batch->instance_count++;
+    VK_Entity_MarkCurrentSubmitPass(true, flags);
+    return true;
+}
+
+static bool VK_Entity_AppendGpuBeamBatch(uint32_t instance_index,
+                                         VkDescriptorSet set,
+                                         bool depth_hack)
+{
+    const uint32_t flags = VK_ENTITY_VERTEX_FULLBRIGHT |
+        VK_ENTITY_VERTEX_NO_SHADOW | VK_ENTITY_VERTEX_NO_DLIGHT;
+    if (!set) {
+        return false;
+    }
+    vk_batch_t *batch = vk_entity.batch_count > 0
+        ? &vk_entity.batches[vk_entity.batch_count - 1] : NULL;
+    if (!batch || !batch->gpu_beam || batch->set != set || !batch->alpha ||
+        batch->additive || batch->depth_hack != depth_hack ||
+        batch->weapon_model || batch->flare || batch->occlusion ||
+        batch->submit_phase != vk_entity.current_submit_phase ||
+        batch->outline_stage != VK_ENTITY_OUTLINE_NONE ||
+        batch->vertex_flags != flags ||
+        batch->first_instance > UINT32_MAX - batch->instance_count ||
+        batch->first_instance + batch->instance_count != instance_index) {
+        if (!VK_Entity_EnsureBatchCapacity(vk_entity.batch_count + 1)) {
+            return false;
+        }
+        batch = &vk_entity.batches[vk_entity.batch_count++];
+        *batch = (vk_batch_t) {
+            .vertex_count = 6,
+            .set = set,
+            .query_index = UINT32_MAX,
+            .alpha = true,
+            .gpu_beam = true,
+            .depth_hack = depth_hack,
+            .submit_phase = vk_entity.current_submit_phase,
+            .vertex_flags = flags,
+            .first_instance = instance_index,
+        };
+    }
+    if (batch->instance_count == UINT32_MAX) {
+        Com_SetLastError("Vulkan entity: GPU beam instance count overflow");
+        return false;
+    }
+    batch->instance_count++;
+    VK_Entity_MarkCurrentSubmitPass(true, flags);
     return true;
 }
 
@@ -3391,6 +3725,9 @@ static bool VK_Entity_AppendGpuMd5Batch(const vk_md5_mesh_t *mesh,
         !set) {
         return false;
     }
+    const float cel_line_width =
+        (vertex_flags & VK_ENTITY_VERTEX_CELSHADING) != 0
+            ? vk_entity.current_cel_line_width : 0.0f;
     vk_batch_t *batch = (vk_entity.batch_count > 0)
         ? &vk_entity.batches[vk_entity.batch_count - 1]
         : NULL;
@@ -3401,6 +3738,7 @@ static bool VK_Entity_AppendGpuMd5Batch(const vk_md5_mesh_t *mesh,
         batch->submit_phase != vk_entity.current_submit_phase ||
         batch->outline_stage != VK_ENTITY_OUTLINE_NONE ||
         batch->vertex_flags != vertex_flags ||
+        batch->cel_line_width != cel_line_width ||
         batch->first_instance > UINT32_MAX - batch->instance_count ||
         batch->first_instance + batch->instance_count != instance_index) {
         if (!VK_Entity_EnsureBatchCapacity(vk_entity.batch_count + 1)) {
@@ -3420,6 +3758,7 @@ static bool VK_Entity_AppendGpuMd5Batch(const vk_md5_mesh_t *mesh,
             .gpu_md5 = true,
             .submit_phase = vk_entity.current_submit_phase,
             .vertex_flags = vertex_flags,
+            .cel_line_width = cel_line_width,
             .gpu_md5_mesh = mesh,
             .first_instance = instance_index,
         };
@@ -3429,6 +3768,7 @@ static bool VK_Entity_AppendGpuMd5Batch(const vk_md5_mesh_t *mesh,
         return false;
     }
     batch->instance_count++;
+    VK_Entity_MarkCurrentSubmitPass(alpha, vertex_flags);
     return true;
 }
 #endif
@@ -3437,7 +3777,8 @@ static bool VK_Entity_EmitTriMode(const vk_vertex_t *a, const vk_vertex_t *b,
                                   const vk_vertex_t *c, VkDescriptorSet set,
                                   bool alpha, bool additive, bool depth_hack,
                                   bool weapon_model, uint32_t query_index,
-                                  bool flare, bool occlusion)
+                                  bool flare, bool occlusion, bool cutout,
+                                  bool no_depth_write)
 {
     if (!set) {
         return true;
@@ -3454,6 +3795,10 @@ static bool VK_Entity_EmitTriMode(const vk_vertex_t *a, const vk_vertex_t *b,
     vk_entity.frame_has_flare_queries |= occlusion;
     vk_entity.frame_has_flares |= flare;
 
+    const bool celshading =
+        (a->flags & VK_ENTITY_VERTEX_CELSHADING) != 0;
+    const float cel_line_width = celshading
+        ? vk_entity.current_cel_line_width : 0.0f;
     vk_batch_t *batch = (vk_entity.batch_count > 0)
         ? &vk_entity.batches[vk_entity.batch_count - 1]
         : NULL;
@@ -3461,9 +3806,13 @@ static bool VK_Entity_EmitTriMode(const vk_vertex_t *a, const vk_vertex_t *b,
         batch->alpha != alpha || batch->additive != additive ||
         batch->depth_hack != depth_hack ||
         batch->weapon_model != weapon_model || batch->flare != flare ||
-        batch->occlusion != occlusion ||
+        batch->occlusion != occlusion || batch->cutout != cutout ||
+        batch->no_depth_write != no_depth_write ||
         batch->submit_phase != vk_entity.current_submit_phase ||
-        batch->outline_stage != VK_ENTITY_OUTLINE_NONE) {
+        batch->outline_stage != VK_ENTITY_OUTLINE_NONE ||
+        ((batch->vertex_flags & VK_ENTITY_VERTEX_CELSHADING) !=
+             (a->flags & VK_ENTITY_VERTEX_CELSHADING)) ||
+        (celshading && batch->cel_line_width != cel_line_width)) {
         if (!VK_Entity_EnsureBatchCapacity(vk_entity.batch_count + 1)) {
             return false;
         }
@@ -3479,10 +3828,15 @@ static bool VK_Entity_EmitTriMode(const vk_vertex_t *a, const vk_vertex_t *b,
             .weapon_model = weapon_model,
             .flare = flare,
             .occlusion = occlusion,
+            .cutout = cutout,
+            .no_depth_write = no_depth_write,
             .submit_phase = vk_entity.current_submit_phase,
+            .vertex_flags = a->flags & VK_ENTITY_VERTEX_CELSHADING,
+            .cel_line_width = cel_line_width,
         };
     }
     batch->vertex_count += 3;
+    VK_Entity_MarkCurrentSubmitPass(alpha, a->flags);
     if ((a->flags & VK_ENTITY_VERTEX_ITEM_COLORIZE) == 0) {
         if (flare) {
             VK_Debug_QueueShowTrisTriangleNoDepth(
@@ -3539,7 +3893,29 @@ static bool VK_Entity_EmitTriBlend(const vk_vertex_t *a, const vk_vertex_t *b,
                                    bool weapon_model)
 {
     return VK_Entity_EmitTriMode(a, b, c, set, alpha, additive, depth_hack,
-                                 weapon_model, UINT32_MAX, false, false);
+                                 weapon_model, UINT32_MAX, false, false, false,
+                                 false);
+}
+
+static bool VK_Entity_EmitTriCutout(const vk_vertex_t *a, const vk_vertex_t *b,
+                                    const vk_vertex_t *c, VkDescriptorSet set,
+                                    bool depth_hack, bool weapon_model)
+{
+    return VK_Entity_EmitTriMode(a, b, c, set, true, false, depth_hack,
+                                 weapon_model, UINT32_MAX, false, false, true,
+                                 true);
+}
+
+static bool VK_Entity_EmitTriOpaqueNoDepth(const vk_vertex_t *a,
+                                           const vk_vertex_t *b,
+                                           const vk_vertex_t *c,
+                                           VkDescriptorSet set,
+                                           bool depth_hack,
+                                           bool weapon_model)
+{
+    return VK_Entity_EmitTriMode(a, b, c, set, false, false, depth_hack,
+                                 weapon_model, UINT32_MAX, false, false,
+                                 false, true);
 }
 
 // OpenGL renders item colorization as an untinted base followed by a
@@ -3615,6 +3991,9 @@ static bool VK_Entity_AppendOutlineBatch(uint32_t first_vertex,
         .outline_stage = stage,
         .outline_no_depth = no_depth,
     };
+    vk_entity.frame_has_outline_batches = true;
+    vk_entity.frame_has_depth_hack_batches |= depth_hack;
+    VK_Entity_MarkCurrentSubmitPhase();
     return true;
 }
 
@@ -3679,7 +4058,7 @@ static bool VK_Entity_EmitTriSpecial(const vk_vertex_t *a, const vk_vertex_t *b,
                                      bool occlusion)
 {
     return VK_Entity_EmitTriMode(a, b, c, set, flare, flare, false, false, query_index,
-                                 flare, occlusion);
+                                 flare, occlusion, false, false);
 }
 
 static inline float VK_Entity_Alpha(const entity_t *ent)
@@ -3690,10 +4069,40 @@ static inline float VK_Entity_Alpha(const entity_t *ent)
     return Q_clipf(ent->alpha, 0.0f, 1.0f);
 }
 
+static float VK_Entity_CelShadingLineWidth(const entity_t *ent,
+                                           const refdef_t *fd)
+{
+    if (!ent || !fd || !vk_celshading || !vk_entity.ctx ||
+        !vk_entity.ctx->celshading_supported ||
+        (ent->flags & (RF_TRANSLUCENT | RF_SHELL_MASK | RF_TRACKER))) {
+        return 0.0f;
+    }
+
+    const float requested_width = Q_clipf(vk_celshading->value, 0.0f, 10.0f);
+    if (requested_width <= 0.0f) {
+        return 0.0f;
+    }
+
+    // setup_celshading() fades both OpenGL's black alpha and line width over
+    // 700 world units, then skips visually negligible replays.
+    const float scale = 1.0f - Distance(ent->origin, fd->vieworg) / 700.0f;
+    if (scale < 0.01f) {
+        return 0.0f;
+    }
+
+    const float minimum = max(vk_entity.ctx->min_line_width, 1.0f);
+    const float maximum = max(vk_entity.ctx->max_line_width, minimum);
+    return Q_clipf(requested_width * scale, minimum, maximum);
+}
+
 static color_t VK_Entity_LitColor(const entity_t *ent, bool fullbright,
                                   bool include_dynamic_lights,
-                                  float frame_time, int rdflags)
+                                  float frame_time, int rdflags,
+                                  bool *out_no_static_lighting)
 {
+    if (out_no_static_lighting) {
+        *out_no_static_lighting = false;
+    }
     float alpha = VK_Entity_Alpha(ent);
     if (ent->flags & RF_RIMLIGHT) {
         // The GL path uses a red fallback only when the packed color is zero;
@@ -3722,7 +4131,13 @@ static color_t VK_Entity_LitColor(const entity_t *ent, bool fullbright,
     }
 
     vec3_t light;
-    VK_World_LightPointEx(ent->origin, light, include_dynamic_lights);
+    bool has_static_light = false;
+    VK_World_LightPointEx(ent->origin, light, include_dynamic_lights,
+                          &has_static_light);
+    if (out_no_static_lighting && !include_dynamic_lights &&
+        !has_static_light) {
+        *out_no_static_lighting = true;
+    }
     if (ent->flags & RF_MINLIGHT) {
         light[0] = max(light[0], 0.1f);
         light[1] = max(light[1], 0.1f);
@@ -4136,6 +4551,37 @@ static void VK_Entity_AddPointToBounds(const vec3_t point,
     }
 }
 
+static bool VK_Entity_ModelBoundsForRefdef(const vk_model_t *model,
+                                           const entity_t *ent,
+                                           const refdef_t *fd,
+                                           vec3_t local_mins,
+                                           vec3_t local_maxs)
+{
+    if (!model || !ent || model->type != VK_MODEL_MD2 ||
+        !model->md2.frame_bounds || !model->md2.num_frames) {
+        return false;
+    }
+
+    uint32_t frame, oldframe;
+    float backlerp, frontlerp;
+    if (!VK_Entity_ResolveAnimationFrames(fd, model->md2.num_frames,
+                                          ent->frame, ent->oldframe,
+                                          ent->backlerp, &frame, &oldframe,
+                                          &backlerp, &frontlerp)) {
+        return false;
+    }
+
+    const vk_md2_frame_bounds_t *new_bounds =
+        &model->md2.frame_bounds[frame];
+    const vk_md2_frame_bounds_t *old_bounds =
+        &model->md2.frame_bounds[oldframe];
+    for (int axis = 0; axis < 3; axis++) {
+        local_mins[axis] = min(new_bounds->mins[axis], old_bounds->mins[axis]);
+        local_maxs[axis] = max(new_bounds->maxs[axis], old_bounds->maxs[axis]);
+    }
+    return true;
+}
+
 bool VK_Entity_ModelBounds(qhandle_t handle, const entity_t *ent,
                            vec3_t local_mins, vec3_t local_maxs)
 {
@@ -4144,37 +4590,93 @@ bool VK_Entity_ModelBounds(qhandle_t handle, const entity_t *ent,
         return false;
     }
 
-    const vk_model_t *model = &vk_entity.models[handle - 1];
-    if (!model->type || model->type != VK_MODEL_MD2 ||
-        !model->md2.positions || !model->md2.num_frames ||
-        !model->md2.num_vertices) {
+    return VK_Entity_ModelBoundsForRefdef(&vk_entity.models[handle - 1], ent,
+                                          NULL, local_mins, local_maxs);
+}
+
+// The side planes match GL_SetupFrustum.  Build them once per entity frame;
+// model culling can otherwise repeat trig and plane setup for every entity.
+static bool VK_Entity_BuildCullFrustum(const refdef_t *fd,
+                                       vk_entity_cull_frustum_t *out_frustum)
+{
+    if (!fd || !out_frustum) {
         return false;
     }
 
-    uint32_t frame, oldframe;
-    float backlerp, frontlerp;
-    if (!VK_Entity_ResolveAnimationFrames(NULL, model->md2.num_frames,
-                                          ent->frame, ent->oldframe,
-                                          ent->backlerp, &frame, &oldframe,
-                                          &backlerp, &frontlerp)) {
-        return false;
-    }
+    vec3_t view_axis[3];
+    AnglesToAxis(fd->viewangles, view_axis);
+    const float horizontal = DEG2RAD(fd->fov_x * 0.5f);
+    const float vertical = DEG2RAD(fd->fov_y * 0.5f);
+    const float horizontal_sin = sinf(horizontal);
+    const float horizontal_cos = cosf(horizontal);
+    const float vertical_sin = sinf(vertical);
+    const float vertical_cos = cosf(vertical);
 
-    ClearBounds(local_mins, local_maxs);
-    const uint32_t frames[2] = { frame, oldframe };
-    int frame_count = oldframe != frame ? 2 : 1;
-    for (int f = 0; f < frame_count; f++) {
-        for (uint32_t i = 0; i < model->md2.num_vertices; i++) {
-            size_t pos_offset = 0;
-            if (!VK_Entity_MD2VectorOffset(&model->md2, frames[f], i, &pos_offset)) {
-                return false;
-            }
+    cplane_t *planes = out_frustum->planes;
+    VectorScale(view_axis[0], horizontal_sin, planes[0].normal);
+    VectorMA(planes[0].normal, horizontal_cos, view_axis[1], planes[0].normal);
+    VectorScale(view_axis[0], horizontal_sin, planes[1].normal);
+    VectorMA(planes[1].normal, -horizontal_cos, view_axis[1], planes[1].normal);
+    VectorScale(view_axis[0], vertical_sin, planes[2].normal);
+    VectorMA(planes[2].normal, vertical_cos, view_axis[2], planes[2].normal);
+    VectorScale(view_axis[0], vertical_sin, planes[3].normal);
+    VectorMA(planes[3].normal, -vertical_cos, view_axis[2], planes[3].normal);
 
-            const float *pos = &model->md2.positions[pos_offset];
-            VK_Entity_AddPointToBounds(pos, local_mins, local_maxs);
-        }
+    for (uint32_t i = 0; i < q_countof(out_frustum->planes); i++) {
+        planes[i].dist = DotProduct(fd->vieworg, planes[i].normal);
+        planes[i].type = PLANE_NON_AXIAL;
+        SetPlaneSignbits(&planes[i]);
     }
     return true;
+}
+
+// OpenGL culls ordinary alias and inline-BSP models against the four view
+// side planes before it expands or submits their geometry. Use a transformed
+// world AABB here instead of an exact OBB: it is deliberately conservative
+// for rotated/non-uniformly scaled entities, so it can only leave additional
+// off-screen work in place and can never reject a potentially visible model.
+static bool VK_Entity_CullModelBounds(const vk_entity_cull_frustum_t *frustum,
+                                      const entity_t *ent,
+                                      const vec3_t local_mins,
+                                      const vec3_t local_maxs)
+{
+    if (!frustum || !ent || !vk_cull_models || !vk_cull_models->integer ||
+        (ent->flags & RF_WEAPONMODEL)) {
+        return false;
+    }
+
+    vk_entity_transform_t transform;
+    VK_Entity_BuildTransform(ent, &transform);
+
+    vec3_t world_mins;
+    vec3_t world_maxs;
+    if (VectorEmpty(ent->angles) &&
+        (!ent->scale[0] || ent->scale[0] == 1.0f) &&
+        (!ent->scale[1] || ent->scale[1] == 1.0f) &&
+        (!ent->scale[2] || ent->scale[2] == 1.0f)) {
+        VectorAdd(local_mins, transform.origin, world_mins);
+        VectorAdd(local_maxs, transform.origin, world_maxs);
+    } else {
+        ClearBounds(world_mins, world_maxs);
+        for (uint32_t corner = 0; corner < 8; corner++) {
+            vec3_t local = {
+                (corner & BIT(0)) ? local_maxs[0] : local_mins[0],
+                (corner & BIT(1)) ? local_maxs[1] : local_mins[1],
+                (corner & BIT(2)) ? local_maxs[2] : local_mins[2],
+            };
+            vec3_t world;
+            VK_Entity_TransformPointWithTransform(&transform, local, world);
+            VK_Entity_AddPointToBounds(world, world_mins, world_maxs);
+        }
+    }
+
+    for (uint32_t i = 0; i < q_countof(frustum->planes); i++) {
+        if (BoxOnPlaneSide(world_mins, world_maxs, &frustum->planes[i]) == BOX_BEHIND) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 const char *VK_Entity_ModelName(qhandle_t handle)
@@ -4207,11 +4709,18 @@ static bool VK_Entity_AddSprite(const entity_t *ent, const vec3_t view_axis[3], 
     VectorScale(view_axis[2], -sf->origin_y * scale, down);
     VectorScale(view_axis[2], (sf->height - sf->origin_y) * scale, up);
 
-    color_t color = VK_Entity_LitColor(ent, true, false, 0.0f, 0);
+    color_t color = VK_Entity_LitColor(ent, true, false, 0.0f, 0, NULL);
     VkDescriptorSet set = VK_Entity_SetForImage(sf->image);
-    bool alpha = (ent->flags & RF_TRANSLUCENT) || (color.a < 255) ||
-                 VK_UI_IsImageTransparent(sf->image);
+    imageflags_t image_flags = VK_UI_GetImageFlags(sf->image);
+    bool cutout = !(ent->flags & RF_TRANSLUCENT) && color.a == 255 &&
+                  (image_flags & (IF_PALETTED | IF_TRANSPARENT)) ==
+                      (IF_PALETTED | IF_TRANSPARENT);
+    bool alpha = !cutout && ((ent->flags & RF_TRANSLUCENT) || color.a < 255 ||
+                             (image_flags & IF_TRANSPARENT));
     uint32_t flags = VK_Entity_LightingFlags(ent, true);
+    if (cutout) {
+        flags |= VK_ENTITY_VERTEX_ALPHATEST;
+    }
 
     vk_vertex_t v0 = { .uv = { 0, 1 }, .color = color.u32, .flags = flags, .normal = { 0, 0, 1 } };
     vk_vertex_t v1 = { .uv = { 0, 0 }, .color = color.u32, .flags = flags, .normal = { 0, 0, 1 } };
@@ -4222,8 +4731,26 @@ static bool VK_Entity_AddSprite(const entity_t *ent, const vec3_t view_axis[3], 
     VectorAdd3(ent->origin, down, right, v2.pos);
     VectorAdd3(ent->origin, up, right, v3.pos);
 
-    return VK_Entity_EmitTri(&v0, &v1, &v2, set, alpha, depth_hack, weapon_model) &&
-           VK_Entity_EmitTri(&v2, &v1, &v3, set, alpha, depth_hack, weapon_model);
+    if (cutout) {
+        return VK_Entity_EmitTriCutout(&v0, &v1, &v2, set, depth_hack,
+                                       weapon_model) &&
+               VK_Entity_EmitTriCutout(&v2, &v1, &v3, set, depth_hack,
+                                       weapon_model);
+    }
+    // GL keeps depth testing but disables depth writes for every sprite,
+    // including completely opaque truecolour sources. Preserve that state
+    // without paying for alpha blending by selecting the pre-created native
+    // opaque/no-depth-write pipeline below.
+    if (!alpha) {
+        return VK_Entity_EmitTriOpaqueNoDepth(&v0, &v1, &v2, set, depth_hack,
+                                              weapon_model) &&
+               VK_Entity_EmitTriOpaqueNoDepth(&v2, &v1, &v3, set, depth_hack,
+                                              weapon_model);
+    }
+    return VK_Entity_EmitTri(&v0, &v1, &v2, set, alpha, depth_hack,
+                             weapon_model) &&
+           VK_Entity_EmitTri(&v2, &v1, &v3, set, alpha, depth_hack,
+                             weapon_model);
 }
 
 static vk_vertex_t VK_Entity_BeamVertex(const vec3_t position, float u, float v,
@@ -4274,6 +4801,24 @@ static bool VK_Entity_AddSimpleBeam(const vec3_t start, const vec3_t end,
     }
     VectorScale(right, width, right);
 
+    const VkDescriptorSet set = vk_entity.beam_set ? vk_entity.beam_set
+                                                    : vk_entity.white_set;
+    if (vk_beam_gpu_instancing && vk_beam_gpu_instancing->integer &&
+        vk_entity.gpu_beam_available) {
+        if (!VK_Entity_EnsureBeamInstanceCapacity(
+                vk_entity.beam_instance_count + 1)) {
+            return false;
+        }
+        const uint32_t instance_index = vk_entity.beam_instance_count++;
+        vk_beam_gpu_instance_t *instance =
+            &vk_entity.beam_instances[instance_index];
+        VectorCopy(start, instance->start);
+        VectorCopy(end, instance->end);
+        VectorCopy(right, instance->right);
+        instance->color = color.u32;
+        return VK_Entity_AppendGpuBeamBatch(instance_index, set, depth_hack);
+    }
+
     vec3_t positions[4];
     VectorAdd(start, right, positions[0]);
     VectorSubtract(start, right, positions[1]);
@@ -4287,8 +4832,6 @@ static bool VK_Entity_AddSimpleBeam(const vec3_t start, const vec3_t end,
         VK_Entity_BeamVertex(positions[3], 0.0f, 1.0f, color),
     };
 
-    VkDescriptorSet set = vk_entity.beam_set ? vk_entity.beam_set
-                                              : vk_entity.white_set;
     return VK_Entity_EmitTri(&vertices[0], &vertices[2], &vertices[3],
                              set, true, depth_hack, false) &&
            VK_Entity_EmitTri(&vertices[0], &vertices[1], &vertices[2],
@@ -5085,15 +5628,21 @@ static bool VK_Entity_AddGpuBspModel(const entity_t *ent, const refdef_t *fd,
         VK_Entity_TransformPointInverseWithTransform(&transform, fd->vieworg,
                                                       view_local);
     }
+    bool no_static_lighting = false;
     const color_t entity_color = VK_Entity_LitColor(
-        ent, false, false, fd ? fd->time : 0.0f, fd ? fd->rdflags : 0);
-    const uint32_t entity_flags = VK_Entity_LightingFlags(ent, false);
+        ent, false, false, fd ? fd->time : 0.0f, fd ? fd->rdflags : 0,
+        &no_static_lighting);
+    uint32_t entity_flags = VK_Entity_LightingFlags(ent, false);
+    if (no_static_lighting) {
+        entity_flags |= VK_ENTITY_VERTEX_NO_ENTITY_MODULATE;
+    }
     // This is intentionally frame-local rather than a material property:
     // enabling a sun receiver or dynamic light on the next frame must return
     // the same static geometry to the complete lighting pipeline.
     const bool fast_lit_receivers_inactive =
         (!vk_bmodel_fast_lit || vk_bmodel_fast_lit->integer) &&
-        !entity_flags && !VK_Shadow_HasActiveReceiverLighting();
+        (entity_flags & ~VK_ENTITY_VERTEX_NO_ENTITY_MODULATE) == 0 &&
+        !VK_Shadow_HasActiveReceiverLighting();
     const float entity_alpha = VK_Entity_Alpha(ent);
     uint32_t instance_index = UINT32_MAX;
 
@@ -5182,7 +5731,8 @@ static bool VK_Entity_AddGpuBspModel(const entity_t *ent, const refdef_t *fd,
         // entity flags still select the shared fragment program.
         const uint32_t texture_replace_ignored_entity_flags =
             VK_ENTITY_VERTEX_FULLBRIGHT | VK_ENTITY_VERTEX_NO_SHADOW |
-            VK_ENTITY_VERTEX_NO_DLIGHT;
+            VK_ENTITY_VERTEX_NO_DLIGHT |
+            VK_ENTITY_VERTEX_NO_ENTITY_MODULATE;
         if ((entity_flags & ~texture_replace_ignored_entity_flags) == 0 &&
             !alpha &&
             (gpu_face->flags & VK_ENTITY_VERTEX_TEXTURE_REPLACE) != 0 &&
@@ -5241,9 +5791,11 @@ static bool VK_Entity_AddBspModel(const entity_t *ent, const refdef_t *fd, const
     if (fd) {
         VK_Entity_TransformPointInverseWithTransform(&transform, fd->vieworg, view_local);
     }
+    bool no_static_lighting = false;
     color_t entity_color = VK_Entity_LitColor(ent, false, false,
                                               fd ? fd->time : 0.0f,
-                                              fd ? fd->rdflags : 0);
+                                              fd ? fd->rdflags : 0,
+                                              &no_static_lighting);
 
     for (int i = 0; i < model->numfaces; i++) {
         const mface_t *face = &model->firstface[i];
@@ -5312,6 +5864,9 @@ static bool VK_Entity_AddBspModel(const entity_t *ent, const refdef_t *fd, const
             face->lightmap != NULL &&
             VK_World_GetFaceLightmapUV(face, v0->point, first_lm_uv);
         uint32_t flags = VK_Entity_LightingFlags(ent, false);
+        if (no_static_lighting && !face_lightmapped) {
+            flags |= VK_ENTITY_VERTEX_NO_ENTITY_MODULATE;
+        }
         if (face_lightmapped) {
             flags |= VK_ENTITY_VERTEX_LIGHTMAP;
             if (has_glowmap) {
@@ -5384,33 +5939,61 @@ static bool VK_Entity_AddBspModel(const entity_t *ent, const refdef_t *fd, const
     return true;
 }
 
+static void VK_Entity_DestroyParticleTexture(void)
+{
+    if (vk_entity.particle_image) {
+        VK_UI_UnregisterImage(vk_entity.particle_image);
+        vk_entity.particle_image = 0;
+    }
+    vk_entity.particle_set = vk_entity.white_set;
+}
+
 static void VK_Entity_InitParticleTexture(void)
 {
     byte pixels[VK_ENTITY_PARTICLE_TEX_SIZE * VK_ENTITY_PARTICLE_TEX_SIZE * 4];
-    byte *dst = pixels;
+    const int shape = vk_particle_shape
+        ? Cvar_ClampInteger(vk_particle_shape, 0, 2) : 0;
+    int flags = IF_PERMANENT | IF_TRANSPARENT;
 
-    for (int y = 0; y < VK_ENTITY_PARTICLE_TEX_SIZE; y++) {
-        for (int x = 0; x < VK_ENTITY_PARTICLE_TEX_SIZE; x++) {
-            float fx = (float)x - (float)VK_ENTITY_PARTICLE_TEX_SIZE * 0.5f + 0.5f;
-            float fy = (float)y - (float)VK_ENTITY_PARTICLE_TEX_SIZE * 0.5f + 0.5f;
-            float dist = sqrtf(fx * fx + fy * fy);
-            float a = 1.0f - dist / ((float)VK_ENTITY_PARTICLE_TEX_SIZE * 0.5f - 0.5f);
-            a = Q_clipf(a, 0.0f, 1.0f);
+    if (shape == 0 || shape == 2) {
+        byte *dst = pixels;
+        for (int y = 0; y < VK_ENTITY_PARTICLE_TEX_SIZE; y++) {
+            for (int x = 0; x < VK_ENTITY_PARTICLE_TEX_SIZE; x++) {
+                float fx = (float)x - (float)VK_ENTITY_PARTICLE_TEX_SIZE * 0.5f + 0.5f;
+                float fy = (float)y - (float)VK_ENTITY_PARTICLE_TEX_SIZE * 0.5f + 0.5f;
+                float alpha = 1.0f - sqrtf(fx * fx + fy * fy) /
+                    (((float)(VK_ENTITY_PARTICLE_TEX_SIZE - shape) * 0.5f) - 0.5f);
+                alpha *= 1 << shape;
 
-            dst[0] = 255;
-            dst[1] = 255;
-            dst[2] = 255;
-            dst[3] = (byte)(255.0f * a + 0.5f);
-            dst += 4;
+                dst[0] = 255;
+                dst[1] = 255;
+                dst[2] = 255;
+                // Match GL_InitParticleTexture's legacy byte truncation. The
+                // additive mode compounds even one alpha level across its
+                // deterministic particle field.
+                dst[3] = (byte)(255.0f * Q_clipf(alpha, 0.0f,
+                                                   1.0f - shape * 0.2f));
+                dst += 4;
+            }
+        }
+    } else {
+        flags |= IF_NEAREST;
+        memset(pixels, 0, sizeof(pixels));
+        for (int y = 3; y <= 12; y++) {
+            for (int x = 3; x <= 12; x++) {
+                byte *dst = pixels + (y * VK_ENTITY_PARTICLE_TEX_SIZE + x) * 4;
+                dst[0] = 255;
+                dst[1] = 255;
+                dst[2] = 255;
+                dst[3] = (byte)(255.0f * 0.6f);
+            }
         }
     }
 
     vk_entity.particle_image = VK_UI_RegisterRawImage("**vk_entity_particle**",
                                                        VK_ENTITY_PARTICLE_TEX_SIZE,
                                                        VK_ENTITY_PARTICLE_TEX_SIZE,
-                                                       pixels,
-                                                       IT_SPRITE,
-                                                       IF_PERMANENT | IF_TRANSPARENT);
+                                                       pixels, IT_SPRITE, flags);
     if (!vk_entity.particle_image) {
         vk_entity.particle_set = vk_entity.white_set;
         return;
@@ -5422,6 +6005,21 @@ static void VK_Entity_InitParticleTexture(void)
         vk_entity.particle_image = 0;
         vk_entity.particle_set = vk_entity.white_set;
     }
+}
+
+static void VK_Entity_ParticleShapeChanged(cvar_t *self)
+{
+    if (!self || !vk_entity.initialized || !vk_entity.ctx ||
+        !vk_entity.ctx->device) {
+        return;
+    }
+
+    // Image descriptors can be referenced by either in-flight frame slot.
+    // Shape changes are infrequent user configuration changes, so retire that
+    // work before replacing the native particle texture.
+    vkDeviceWaitIdle(vk_entity.ctx->device);
+    VK_Entity_DestroyParticleTexture();
+    VK_Entity_InitParticleTexture();
 }
 
 static void VK_Entity_InitBeamTexture(void)
@@ -5475,6 +6073,8 @@ static bool VK_Entity_AddParticles(const refdef_t *fd, const vec3_t view_axis[3]
     extern uint32_t d_8to24table[256];
     float partscale = (vk_partscale ? max(vk_partscale->value, 0.0f) : 2.0f);
     bool additive = vk_particle_style && vk_particle_style->integer;
+    const bool gpu_particles = vk_particle_gpu_instancing &&
+        vk_particle_gpu_instancing->integer && vk_entity.gpu_particle_available;
 
     for (int i = 0; i < fd->num_particles; i++) {
         const particle_t *p = &fd->particles[i];
@@ -5491,8 +6091,6 @@ static bool VK_Entity_AddParticles(const refdef_t *fd, const vec3_t view_axis[3]
             scale += dist * 0.004f;
         }
         scale *= partscale * p->scale;
-        float scale2 = scale * VK_ENTITY_PARTICLE_SCALE;
-
         color_t color;
         if (p->color == -1) {
             color = p->rgba;
@@ -5510,6 +6108,27 @@ static bool VK_Entity_AddParticles(const refdef_t *fd, const vec3_t view_axis[3]
             continue;
         }
 
+        if (gpu_particles) {
+            if (!VK_Entity_EnsureParticleInstanceCapacity(
+                    vk_entity.particle_instance_count + 1)) {
+                return false;
+            }
+            const uint32_t instance_index = vk_entity.particle_instance_count++;
+            vk_entity.particle_instances[instance_index] =
+                (vk_particle_gpu_instance_t) {
+                    .origin_scale = {
+                        p->origin[0], p->origin[1], p->origin[2], scale,
+                    },
+                    .color = color.u32,
+                };
+            if (!VK_Entity_AppendGpuParticleBatch(instance_index, set,
+                                                  additive)) {
+                return false;
+            }
+            continue;
+        }
+
+        const float scale2 = scale * VK_ENTITY_PARTICLE_SCALE;
         uint32_t flags = VK_ENTITY_VERTEX_FULLBRIGHT |
                          VK_ENTITY_VERTEX_NO_SHADOW |
                          VK_ENTITY_VERTEX_NO_DLIGHT;
@@ -5608,14 +6227,19 @@ static bool VK_Entity_AddGpuMD2(const entity_t *ent, const refdef_t *fd,
     const bool alpha = shell || (ent->flags & RF_TRANSLUCENT) ||
                        VK_Entity_Alpha(ent) < 1.0f;
     const bool additive = alpha && (ent->flags & (RF_RIMLIGHT | RF_BRIGHTSKIN));
+    bool no_static_lighting = false;
     const color_t color = shell ? VK_Entity_ShellColor(ent)
                                 : VK_Entity_LitColor(ent, false, false,
                                                      fd ? fd->time : 0.0f,
-                                                     fd ? fd->rdflags : 0);
+                                                     fd ? fd->rdflags : 0,
+                                                     &no_static_lighting);
     uint32_t flags = (shell
         ? (VK_ENTITY_VERTEX_FULLBRIGHT | VK_ENTITY_VERTEX_NO_SHADOW |
            VK_ENTITY_VERTEX_NO_DLIGHT | VK_ENTITY_VERTEX_BLOOM_SHELL)
-        : VK_Entity_LightingFlags(ent, false)) | VK_ENTITY_VERTEX_INTENSITY;
+         : VK_Entity_LightingFlags(ent, false)) | VK_ENTITY_VERTEX_INTENSITY;
+    if (no_static_lighting) {
+        flags |= VK_ENTITY_VERTEX_NO_ENTITY_MODULATE;
+    }
     if (shell && depth_hack) {
         flags |= VK_ENTITY_VERTEX_BLOOM_DEPTHHACK;
     }
@@ -5624,6 +6248,11 @@ static bool VK_Entity_AddGpuMD2(const entity_t *ent, const refdef_t *fd,
     }
     if (has_glowmap) {
         flags |= VK_ENTITY_VERTEX_GLOWMAP;
+    }
+    vk_entity.current_cel_line_width =
+        VK_Entity_CelShadingLineWidth(ent, fd);
+    if (vk_entity.current_cel_line_width > 0.0f) {
+        flags |= VK_ENTITY_VERTEX_CELSHADING;
     }
 
     if (!VK_Entity_EnsureMd2InstanceCapacity(vk_entity.md2_instance_count + 1)) {
@@ -5683,14 +6312,19 @@ static bool VK_Entity_AddMD2(const entity_t *ent, const refdef_t *fd, const vk_m
     const bool has_glowmap = !shell && VK_UI_HasGlowmap(skin);
     bool alpha = shell || (ent->flags & RF_TRANSLUCENT) ||
                  VK_Entity_Alpha(ent) < 1.0f;
+    bool no_static_lighting = false;
     color_t color = shell ? VK_Entity_ShellColor(ent)
                           : VK_Entity_LitColor(ent, false, false,
                                                fd ? fd->time : 0.0f,
-                                               fd ? fd->rdflags : 0);
+                                               fd ? fd->rdflags : 0,
+                                               &no_static_lighting);
     uint32_t flags = (shell
         ? (VK_ENTITY_VERTEX_FULLBRIGHT | VK_ENTITY_VERTEX_NO_SHADOW |
            VK_ENTITY_VERTEX_NO_DLIGHT | VK_ENTITY_VERTEX_BLOOM_SHELL)
-        : VK_Entity_LightingFlags(ent, false)) | VK_ENTITY_VERTEX_INTENSITY;
+         : VK_Entity_LightingFlags(ent, false)) | VK_ENTITY_VERTEX_INTENSITY;
+    if (no_static_lighting) {
+        flags |= VK_ENTITY_VERTEX_NO_ENTITY_MODULATE;
+    }
     if (shell && depth_hack) {
         flags |= VK_ENTITY_VERTEX_BLOOM_DEPTHHACK;
     }
@@ -5702,6 +6336,11 @@ static bool VK_Entity_AddMD2(const entity_t *ent, const refdef_t *fd, const vk_m
     }
     if (has_glowmap) {
         flags |= VK_ENTITY_VERTEX_GLOWMAP;
+    }
+    vk_entity.current_cel_line_width =
+        VK_Entity_CelShadingLineWidth(ent, fd);
+    if (vk_entity.current_cel_line_width > 0.0f) {
+        flags |= VK_ENTITY_VERTEX_CELSHADING;
     }
     vk_entity_transform_t transform;
     VK_Entity_BuildTransform(ent, &transform);
@@ -5913,7 +6552,8 @@ static bool VK_Entity_EmitShadowMD2(const entity_t *ent, const refdef_t *fd,
             VK_Entity_TransformPointWithTransform(&transform, local, tri[j]);
         }
 
-        if (valid_tri && !emit(tri[0], tri[1], tri[2], userdata)) {
+        if (valid_tri && !emit(tri[0], tri[1], tri[2], NULL, NULL,
+                               userdata)) {
             return false;
         }
     }
@@ -5987,7 +6627,8 @@ static bool VK_Entity_EmitShadowMD5(const entity_t *ent, const refdef_t *fd,
                 VectorCopy(vk_entity.temp_md5_vertices[idx].pos, tri[j]);
             }
 
-            if (valid_tri && !emit(tri[0], tri[1], tri[2], userdata)) {
+            if (valid_tri && !emit(tri[0], tri[1], tri[2], NULL, NULL,
+                                   userdata)) {
                 return false;
             }
         }
@@ -6059,16 +6700,18 @@ static bool VK_Entity_EmitShadowBspModel(const entity_t *ent, const bsp_t *bsp,
             };
 
             vec3_t tri[3];
+            vec3_t texture_points[3];
             for (int k = 0; k < 3; k++) {
-                const vec3_t local = {
+                VectorSet(texture_points[k],
                     verts[k]->point[0],
                     verts[k]->point[1],
-                    verts[k]->point[2],
-                };
-                VK_Entity_TransformPointWithTransform(&transform, local, tri[k]);
+                    verts[k]->point[2]);
+                VK_Entity_TransformPointWithTransform(&transform,
+                                                       texture_points[k], tri[k]);
             }
 
-            if (!emit(tri[0], tri[1], tri[2], userdata)) {
+            if (!emit(tri[0], tri[1], tri[2], face, texture_points,
+                      userdata)) {
                 return false;
             }
         }
@@ -6224,6 +6867,7 @@ static bool VK_Entity_LoadMD2(vk_model_t *model, const byte *raw, size_t len)
     float *positions = NULL;
     float *normals = NULL;
     float *frame_radii = NULL;
+    vk_md2_frame_bounds_t *frame_bounds = NULL;
     float *uv = NULL;
     uint16_t *indices = NULL;
     uint16_t *vert_indices = NULL;
@@ -6313,13 +6957,16 @@ static bool VK_Entity_LoadMD2(vk_model_t *model, const byte *raw, size_t len)
     frame_radii = VK_Entity_CallocArray((size_t)num_frames,
                                         sizeof(*frame_radii),
                                         "MD2 frame radii");
+    frame_bounds = VK_Entity_CallocArray((size_t)num_frames,
+                                         sizeof(*frame_bounds),
+                                         "MD2 frame bounds");
     uv = VK_Entity_CallocArray(uv_components, sizeof(*uv), "MD2 UVs");
     indices = VK_Entity_CallocArray((size_t)num_indices, sizeof(*indices),
                                     "MD2 indices");
     skins = hdr.num_skins ?
         VK_Entity_CallocArray((size_t)hdr.num_skins, sizeof(*skins), "MD2 skins") :
         NULL;
-    if (!positions || !normals || !frame_radii || !uv || !indices ||
+    if (!positions || !normals || !frame_radii || !frame_bounds || !uv || !indices ||
         (hdr.num_skins && !skins)) {
         goto fail;
     }
@@ -6373,6 +7020,10 @@ static bool VK_Entity_LoadMD2(vk_model_t *model, const byte *raw, size_t len)
             }
         }
         frame_radii[f] = RadiusFromBounds(frame_mins, frame_maxs);
+        for (int axis = 0; axis < 3; axis++) {
+            frame_bounds[f].mins[axis] = frame_mins[axis] + translate[axis];
+            frame_bounds[f].maxs[axis] = frame_maxs[axis] + translate[axis];
+        }
     }
 
     if (skins) {
@@ -6408,6 +7059,7 @@ static bool VK_Entity_LoadMD2(vk_model_t *model, const byte *raw, size_t len)
     model->md2.positions = positions;
     model->md2.normals = normals;
     model->md2.frame_radii = frame_radii;
+    model->md2.frame_bounds = frame_bounds;
     model->md2.uv = uv;
     model->md2.indices = indices;
     model->md2.skins = skins;
@@ -6419,6 +7071,7 @@ fail:
     free(positions);
     free(normals);
     free(frame_radii);
+    free(frame_bounds);
     free(uv);
     free(indices);
     free(vert_indices);
@@ -6432,12 +7085,15 @@ fail:
 
 typedef enum {
     VK_ENTITY_BLEND_OPAQUE,
+    VK_ENTITY_BLEND_OPAQUE_NO_DEPTH_WRITE,
     VK_ENTITY_BLEND_OPAQUE_GPU_BMODEL_FAST_LIT,
     VK_ENTITY_BLEND_OPAQUE_GPU_BMODEL_FAST_LIT_NO_FOG,
     VK_ENTITY_BLEND_OPAQUE_GPU_BMODEL_TEXTURE_REPLACE,
     VK_ENTITY_BLEND_OPAQUE_GPU_BMODEL_TEXTURE_REPLACE_NO_FOG,
+    VK_ENTITY_BLEND_CUTOUT,
     VK_ENTITY_BLEND_ALPHA,
     VK_ENTITY_BLEND_ADDITIVE,
+    VK_ENTITY_BLEND_CELSHADING,
     VK_ENTITY_BLEND_FLARE,
     VK_ENTITY_BLEND_OCCLUSION,
 } vk_entity_blend_t;
@@ -6459,6 +7115,8 @@ typedef enum {
     VK_ENTITY_VERTEX_LAYOUT_DYNAMIC = 0,
     VK_ENTITY_VERTEX_LAYOUT_GPU_MD2,
     VK_ENTITY_VERTEX_LAYOUT_GPU_BMODEL,
+    VK_ENTITY_VERTEX_LAYOUT_GPU_PARTICLE,
+    VK_ENTITY_VERTEX_LAYOUT_GPU_BEAM,
 #if USE_MD5
     VK_ENTITY_VERTEX_LAYOUT_GPU_MD5,
 #endif
@@ -6482,12 +7140,21 @@ static bool VK_Entity_CreatePipelineEx(vk_context_t *ctx, vk_entity_blend_t blen
     bool gpu_bmodel_texture_replace =
         blend_mode == VK_ENTITY_BLEND_OPAQUE_GPU_BMODEL_TEXTURE_REPLACE ||
         gpu_bmodel_texture_replace_no_fog;
+    const bool gpu_bmodel_texture_replace_specialized =
+        gpu_bmodel_texture_replace &&
+        (!vk_bmodel_texture_replace_specialization ||
+         vk_bmodel_texture_replace_specialization->integer);
     bool gpu_bmodel_opaque_special =
         gpu_bmodel_fast_lit || gpu_bmodel_texture_replace;
+    bool opaque_no_depth_write =
+        blend_mode == VK_ENTITY_BLEND_OPAQUE_NO_DEPTH_WRITE;
+    bool celshading = blend_mode == VK_ENTITY_BLEND_CELSHADING;
     bool flare = blend_mode == VK_ENTITY_BLEND_FLARE;
     bool occlusion = blend_mode == VK_ENTITY_BLEND_OCCLUSION;
+    bool cutout = blend_mode == VK_ENTITY_BLEND_CUTOUT;
     bool alpha = blend_mode != VK_ENTITY_BLEND_OPAQUE &&
-                 !gpu_bmodel_opaque_special && !occlusion;
+                 !opaque_no_depth_write &&
+                 !gpu_bmodel_opaque_special && !occlusion && !cutout;
     bool additive = blend_mode == VK_ENTITY_BLEND_ADDITIVE || flare;
     bool outline_mask = stencil_mode == VK_ENTITY_STENCIL_OUTLINE_MASK ||
                         stencil_mode == VK_ENTITY_STENCIL_OUTLINE_MASK_NO_DEPTH;
@@ -6508,8 +7175,24 @@ static bool VK_Entity_CreatePipelineEx(vk_context_t *ctx, vk_entity_blend_t blen
         vert_code = vk_entity_gpu_md2_vert_spv;
         vert_code_size = vk_entity_gpu_md2_vert_spv_size;
     } else if (vertex_layout == VK_ENTITY_VERTEX_LAYOUT_GPU_BMODEL) {
-        vert_code = vk_entity_gpu_bmodel_vert_spv;
-        vert_code_size = vk_entity_gpu_bmodel_vert_spv_size;
+        vert_code = gpu_bmodel_texture_replace_no_fog &&
+            gpu_bmodel_texture_replace_specialized
+            ? vk_entity_gpu_bmodel_texture_replace_no_fog_vert_spv
+            : gpu_bmodel_texture_replace_specialized
+            ? vk_entity_gpu_bmodel_texture_replace_vert_spv
+            : vk_entity_gpu_bmodel_vert_spv;
+        vert_code_size = gpu_bmodel_texture_replace_no_fog &&
+            gpu_bmodel_texture_replace_specialized
+            ? vk_entity_gpu_bmodel_texture_replace_no_fog_vert_spv_size
+            : gpu_bmodel_texture_replace_specialized
+            ? vk_entity_gpu_bmodel_texture_replace_vert_spv_size
+            : vk_entity_gpu_bmodel_vert_spv_size;
+    } else if (vertex_layout == VK_ENTITY_VERTEX_LAYOUT_GPU_PARTICLE) {
+        vert_code = vk_entity_gpu_particle_vert_spv;
+        vert_code_size = vk_entity_gpu_particle_vert_spv_size;
+    } else if (vertex_layout == VK_ENTITY_VERTEX_LAYOUT_GPU_BEAM) {
+        vert_code = vk_entity_gpu_beam_vert_spv;
+        vert_code_size = vk_entity_gpu_beam_vert_spv_size;
     }
 #if USE_MD5
     if (vertex_layout == VK_ENTITY_VERTEX_LAYOUT_GPU_MD5) {
@@ -6527,23 +7210,27 @@ static bool VK_Entity_CreatePipelineEx(vk_context_t *ctx, vk_entity_blend_t blen
         return false;
     }
 
-    const uint32_t *frag_code = gpu_bmodel_fast_lit_no_fog
+    const uint32_t *frag_code = celshading
+        ? vk_entity_celshading_frag_spv
+        : gpu_bmodel_fast_lit_no_fog
         ? vk_entity_gpu_bmodel_fast_lit_no_fog_frag_spv
         : gpu_bmodel_fast_lit
         ? vk_entity_gpu_bmodel_fast_lit_frag_spv
-        : gpu_bmodel_texture_replace_no_fog
+        : gpu_bmodel_texture_replace_no_fog && gpu_bmodel_texture_replace_specialized
         ? vk_entity_gpu_bmodel_texture_replace_no_fog_frag_spv
-        : gpu_bmodel_texture_replace
+        : gpu_bmodel_texture_replace_specialized
         ? vk_entity_gpu_bmodel_texture_replace_frag_spv
         : bloom_depth_sample ? vk_entity_bloom_extract_depth_frag_spv
         : bloom_extract ? vk_entity_bloom_extract_frag_spv : vk_entity_frag_spv;
-    const size_t frag_code_size = gpu_bmodel_fast_lit_no_fog
+    const size_t frag_code_size = celshading
+        ? vk_entity_celshading_frag_spv_size
+        : gpu_bmodel_fast_lit_no_fog
         ? vk_entity_gpu_bmodel_fast_lit_no_fog_frag_spv_size
         : gpu_bmodel_fast_lit
         ? vk_entity_gpu_bmodel_fast_lit_frag_spv_size
-        : gpu_bmodel_texture_replace_no_fog
+        : gpu_bmodel_texture_replace_no_fog && gpu_bmodel_texture_replace_specialized
         ? vk_entity_gpu_bmodel_texture_replace_no_fog_frag_spv_size
-        : gpu_bmodel_texture_replace
+        : gpu_bmodel_texture_replace_specialized
         ? vk_entity_gpu_bmodel_texture_replace_frag_spv_size
         : bloom_depth_sample ? vk_entity_bloom_extract_depth_frag_spv_size
         : bloom_extract ? vk_entity_bloom_extract_frag_spv_size
@@ -6769,6 +7456,44 @@ static bool VK_Entity_CreatePipelineEx(vk_context_t *ctx, vk_entity_blend_t blen
             .location = 14, .binding = 1, .format = VK_FORMAT_R32_UINT,
             .offset = offsetof(vk_bmodel_gpu_instance_t, flags),
         };
+    } else if (vertex_layout == VK_ENTITY_VERTEX_LAYOUT_GPU_PARTICLE) {
+        bindings[0] = (VkVertexInputBindingDescription) {
+            .binding = 0,
+            .stride = sizeof(vk_particle_gpu_instance_t),
+            .inputRate = VK_VERTEX_INPUT_RATE_INSTANCE,
+        };
+        binding_count = 1;
+        attrs[attr_count++] = (VkVertexInputAttributeDescription) {
+            .location = 0, .binding = 0, .format = VK_FORMAT_R32G32B32A32_SFLOAT,
+            .offset = offsetof(vk_particle_gpu_instance_t, origin_scale),
+        };
+        attrs[attr_count++] = (VkVertexInputAttributeDescription) {
+            .location = 1, .binding = 0, .format = VK_FORMAT_R8G8B8A8_UNORM,
+            .offset = offsetof(vk_particle_gpu_instance_t, color),
+        };
+    } else if (vertex_layout == VK_ENTITY_VERTEX_LAYOUT_GPU_BEAM) {
+        bindings[0] = (VkVertexInputBindingDescription) {
+            .binding = 0,
+            .stride = sizeof(vk_beam_gpu_instance_t),
+            .inputRate = VK_VERTEX_INPUT_RATE_INSTANCE,
+        };
+        binding_count = 1;
+        attrs[attr_count++] = (VkVertexInputAttributeDescription) {
+            .location = 0, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT,
+            .offset = offsetof(vk_beam_gpu_instance_t, start),
+        };
+        attrs[attr_count++] = (VkVertexInputAttributeDescription) {
+            .location = 1, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT,
+            .offset = offsetof(vk_beam_gpu_instance_t, end),
+        };
+        attrs[attr_count++] = (VkVertexInputAttributeDescription) {
+            .location = 2, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT,
+            .offset = offsetof(vk_beam_gpu_instance_t, right),
+        };
+        attrs[attr_count++] = (VkVertexInputAttributeDescription) {
+            .location = 3, .binding = 0, .format = VK_FORMAT_R8G8B8A8_UNORM,
+            .offset = offsetof(vk_beam_gpu_instance_t, color),
+        };
     } else {
         bindings[0] = (VkVertexInputBindingDescription) {
             .binding = 0,
@@ -6802,8 +7527,11 @@ static bool VK_Entity_CreatePipelineEx(vk_context_t *ctx, vk_entity_blend_t blen
     };
     VkPipelineRasterizationStateCreateInfo raster = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-        .polygonMode = VK_POLYGON_MODE_FILL,
-        .cullMode = VK_CULL_MODE_NONE,
+        .polygonMode = celshading ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL,
+        // The scene viewport has negative height, which reverses the winding
+        // relative to OpenGL's GL_FRONT cull. Cull Vulkan back faces here so
+        // only the depth-visible silhouette of the original GL pass remains.
+        .cullMode = celshading ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE,
         .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
         .lineWidth = 1.0f,
     };
@@ -6836,7 +7564,8 @@ static bool VK_Entity_CreatePipelineEx(vk_context_t *ctx, vk_entity_blend_t blen
     VkPipelineDepthStencilStateCreateInfo depth = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
         .depthTestEnable = (flare || no_depth) ? VK_FALSE : VK_TRUE,
-        .depthWriteEnable = (!outline && !alpha && !occlusion && !bloom_extract)
+        .depthWriteEnable = (!outline && !alpha && !cutout &&
+                             !opaque_no_depth_write && !occlusion && !bloom_extract)
             ? VK_TRUE : VK_FALSE,
         .depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL,
         .stencilTestEnable = outline ? VK_TRUE : VK_FALSE,
@@ -6864,10 +7593,14 @@ static bool VK_Entity_CreatePipelineEx(vk_context_t *ctx, vk_entity_blend_t blen
         .attachmentCount = 1,
         .pAttachments = &blend_attachment,
     };
-    VkDynamicState states[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+    VkDynamicState states[] = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR,
+        VK_DYNAMIC_STATE_LINE_WIDTH,
+    };
     VkPipelineDynamicStateCreateInfo dynamic = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-        .dynamicStateCount = q_countof(states),
+        .dynamicStateCount = celshading ? q_countof(states) : q_countof(states) - 1,
         .pDynamicStates = states,
     };
 
@@ -6897,6 +7630,7 @@ static bool VK_Entity_CreatePipelineEx(vk_context_t *ctx, vk_entity_blend_t blen
                               outline_mask ? "vkCreateGraphicsPipelines(entity outline mask)" :
                               outline_shell ? "vkCreateGraphicsPipelines(entity outline shell)" :
                               outline_clear ? "vkCreateGraphicsPipelines(entity outline clear)" :
+                              celshading ? "vkCreateGraphicsPipelines(entity cel shading)" :
                               depth_hack ? "vkCreateGraphicsPipelines(entity depthhack)" :
                               (occlusion ? "vkCreateGraphicsPipelines(entity flare occlusion)" :
                                flare ? "vkCreateGraphicsPipelines(entity flare)" :
@@ -6908,6 +7642,9 @@ static bool VK_Entity_CreatePipelineEx(vk_context_t *ctx, vk_entity_blend_t blen
                                    ? "vkCreateGraphicsPipelines(entity inline-BSP texture replace)"
                                : additive ? "vkCreateGraphicsPipelines(entity additive)" :
                                alpha ? "vkCreateGraphicsPipelines(entity alpha)" :
+                               opaque_no_depth_write
+                                   ? "vkCreateGraphicsPipelines(entity opaque no depth write)"
+                               :
                                        "vkCreateGraphicsPipelines(entity opaque)"));
 
     // Build a compatible one-sample version for the native DOF scene pass.
@@ -6971,8 +7708,22 @@ bool VK_Entity_Init(vk_context_t *ctx)
     if (!vk_particle_style) {
         vk_particle_style = Cvar_Get("vk_particle_style", "0", 0);
     }
+    if (!vk_particle_shape) {
+        vk_particle_shape = Cvar_Get("vk_particle_shape", "0", CVAR_ARCHIVE);
+        vk_particle_shape->changed = VK_Entity_ParticleShapeChanged;
+    }
+    if (!vk_particle_gpu_instancing) {
+        // Keeps a native CPU-expanded Vulkan fallback available for driver
+        // investigations while defaulting to the compact instanced path.
+        vk_particle_gpu_instancing = Cvar_Get("vk_particle_gpu_instancing",
+                                              "1", CVAR_ARCHIVE);
+    }
     if (!vk_beam_style) {
         vk_beam_style = Cvar_Get("vk_beam_style", "0", 0);
+    }
+    if (!vk_beam_gpu_instancing) {
+        vk_beam_gpu_instancing = Cvar_Get("vk_beam_gpu_instancing", "1",
+                                          CVAR_ARCHIVE);
     }
     if (!vk_flare_fade_speed) {
         vk_flare_fade_speed = Cvar_Get("vk_flare_fade_speed", "8", 0);
@@ -7001,6 +7752,30 @@ bool VK_Entity_Init(vk_context_t *ctx)
     if (!vk_bmodel_texture_replace) {
         vk_bmodel_texture_replace = Cvar_Get("vk_bmodel_texture_replace", "1",
                                              CVAR_ARCHIVE);
+    }
+    if (!vk_bmodel_texture_replace_specialization) {
+        vk_bmodel_texture_replace_specialization = Cvar_Get(
+            "vk_bmodel_texture_replace_specialization", "1",
+            CVAR_ARCHIVE);
+    }
+    if (!vk_bmodel_binding_cache) {
+        // All ordinary inline BSP batches reference the same immutable vertex
+        // buffer and the current frame's instance stream.  Avoid redundantly
+        // rebinding that pair between adjacent compatible batches, while
+        // retaining an immediate switch for driver triage and A/B telemetry.
+        vk_bmodel_binding_cache = Cvar_Get("vk_bmodel_binding_cache", "1",
+                                           CVAR_ARCHIVE);
+    }
+    if (!vk_cull_models) {
+        // Match OpenGL's default-on frustum cull before allocating transient
+        // entity data. Keep the immediate native switch for A/B captures and
+        // for diagnosing unusual model bounds in replacement packs.
+        vk_cull_models = Cvar_Get("vk_cull_models", "1", 0);
+    }
+    if (!vk_celshading) {
+        // Mirror the OpenGL cel-pass default. This is renderer-exclusive
+        // because the Vulkan replay has independent device requirements.
+        vk_celshading = Cvar_Get("vk_celshading", "0", 0);
     }
     if (!vk_showorigins) {
         vk_showorigins = Cvar_Get("vk_showorigins", "0", CVAR_CHEAT);
@@ -7177,8 +7952,7 @@ static void VK_Entity_UpdateMd5DescriptorSets(void)
     const uint32_t frame_index = vk_entity.ctx->current_frame;
     vk_entity_frame_buffer_t *frame = &vk_entity.frame_buffers[frame_index];
     VkDescriptorSet set = vk_entity.gpu_md5_descriptor_sets[frame_index];
-    if (!set || !frame->md5_palette_buffer ||
-        !frame->md5_palette_buffer_bytes) {
+    if (!set || !frame->instance_buffer || !frame->md5_palette_capacity) {
         return;
     }
     /* The current frame fence is waited before this stream is prepared.
@@ -7188,8 +7962,9 @@ static void VK_Entity_UpdateMd5DescriptorSets(void)
         .range = vk_entity.gpu_md5_weight_buffer_bytes,
     };
     VkDescriptorBufferInfo palette_info = {
-        .buffer = frame->md5_palette_buffer,
-        .range = frame->md5_palette_buffer_bytes,
+        .buffer = frame->instance_buffer,
+        .offset = frame->md5_palette_offset,
+        .range = frame->md5_palette_capacity,
     };
     VkWriteDescriptorSet writes[2] = {
         {
@@ -7225,6 +8000,7 @@ static void VK_Entity_DestroyGpuMd2Pipelines(void)
         &vk_entity.pipeline_gpu_md2_bloom_extract_additive,
         &vk_entity.pipeline_gpu_md2_bloom_extract_alpha,
         &vk_entity.pipeline_gpu_md2_bloom_extract,
+        &vk_entity.pipeline_gpu_md2_celshading,
         &vk_entity.pipeline_gpu_md2_depthhack_additive,
         &vk_entity.pipeline_gpu_md2_depthhack_alpha,
         &vk_entity.pipeline_gpu_md2_depthhack_opaque,
@@ -7266,6 +8042,44 @@ static void VK_Entity_DestroyGpuBmodelPipelines(void)
     vk_entity.gpu_bmodel_available = false;
 }
 
+static void VK_Entity_DestroyGpuParticlePipelines(void)
+{
+    if (!vk_entity.ctx || !vk_entity.ctx->device) {
+        return;
+    }
+    VkDevice device = vk_entity.ctx->device;
+    VkPipeline *pipelines[] = {
+        &vk_entity.pipeline_gpu_particle_additive,
+        &vk_entity.pipeline_gpu_particle_alpha,
+    };
+    for (uint32_t i = 0; i < q_countof(pipelines); i++) {
+        if (*pipelines[i]) {
+            vkDestroyPipeline(device, *pipelines[i], NULL);
+            *pipelines[i] = VK_NULL_HANDLE;
+        }
+    }
+    vk_entity.gpu_particle_available = false;
+}
+
+static void VK_Entity_DestroyGpuBeamPipelines(void)
+{
+    if (!vk_entity.ctx || !vk_entity.ctx->device) {
+        return;
+    }
+    VkDevice device = vk_entity.ctx->device;
+    VkPipeline *pipelines[] = {
+        &vk_entity.pipeline_gpu_beam_depthhack_alpha,
+        &vk_entity.pipeline_gpu_beam_alpha,
+    };
+    for (uint32_t i = 0; i < q_countof(pipelines); i++) {
+        if (*pipelines[i]) {
+            vkDestroyPipeline(device, *pipelines[i], NULL);
+            *pipelines[i] = VK_NULL_HANDLE;
+        }
+    }
+    vk_entity.gpu_beam_available = false;
+}
+
 #if USE_MD5
 static void VK_Entity_DestroyGpuMd5Pipelines(void)
 {
@@ -7278,6 +8092,7 @@ static void VK_Entity_DestroyGpuMd5Pipelines(void)
         &vk_entity.pipeline_gpu_md5_bloom_extract_additive,
         &vk_entity.pipeline_gpu_md5_bloom_extract_alpha,
         &vk_entity.pipeline_gpu_md5_bloom_extract,
+        &vk_entity.pipeline_gpu_md5_celshading,
         &vk_entity.pipeline_gpu_md5_depthhack_additive,
         &vk_entity.pipeline_gpu_md5_depthhack_alpha,
         &vk_entity.pipeline_gpu_md5_depthhack_opaque,
@@ -7303,6 +8118,8 @@ void VK_Entity_DestroySwapchainResources(vk_context_t *ctx)
     }
     VK_Entity_DestroyGpuMd2Pipelines();
     VK_Entity_DestroyGpuBmodelPipelines();
+    VK_Entity_DestroyGpuParticlePipelines();
+    VK_Entity_DestroyGpuBeamPipelines();
 #if USE_MD5
     VK_Entity_DestroyGpuMd5Pipelines();
 #endif
@@ -7340,9 +8157,18 @@ void VK_Entity_DestroySwapchainResources(vk_context_t *ctx)
         vkDestroyPipeline(vk_entity.ctx->device, vk_entity.pipeline_alpha, NULL);
         vk_entity.pipeline_alpha = VK_NULL_HANDLE;
     }
+    if (vk_entity.pipeline_cutout) {
+        vkDestroyPipeline(vk_entity.ctx->device, vk_entity.pipeline_cutout, NULL);
+        vk_entity.pipeline_cutout = VK_NULL_HANDLE;
+    }
     if (vk_entity.pipeline_additive) {
         vkDestroyPipeline(vk_entity.ctx->device, vk_entity.pipeline_additive, NULL);
         vk_entity.pipeline_additive = VK_NULL_HANDLE;
+    }
+    if (vk_entity.pipeline_celshading) {
+        vkDestroyPipeline(vk_entity.ctx->device, vk_entity.pipeline_celshading,
+                          NULL);
+        vk_entity.pipeline_celshading = VK_NULL_HANDLE;
     }
     if (vk_entity.pipeline_flare) {
         vkDestroyPipeline(vk_entity.ctx->device, vk_entity.pipeline_flare, NULL);
@@ -7356,6 +8182,11 @@ void VK_Entity_DestroySwapchainResources(vk_context_t *ctx)
         vkDestroyPipeline(vk_entity.ctx->device, vk_entity.pipeline_depthhack_alpha, NULL);
         vk_entity.pipeline_depthhack_alpha = VK_NULL_HANDLE;
     }
+    if (vk_entity.pipeline_depthhack_cutout) {
+        vkDestroyPipeline(vk_entity.ctx->device,
+                          vk_entity.pipeline_depthhack_cutout, NULL);
+        vk_entity.pipeline_depthhack_cutout = VK_NULL_HANDLE;
+    }
     if (vk_entity.pipeline_depthhack_additive) {
         vkDestroyPipeline(vk_entity.ctx->device, vk_entity.pipeline_depthhack_additive, NULL);
         vk_entity.pipeline_depthhack_additive = VK_NULL_HANDLE;
@@ -7364,9 +8195,20 @@ void VK_Entity_DestroySwapchainResources(vk_context_t *ctx)
         vkDestroyPipeline(vk_entity.ctx->device, vk_entity.pipeline_depthhack_opaque, NULL);
         vk_entity.pipeline_depthhack_opaque = VK_NULL_HANDLE;
     }
+    if (vk_entity.pipeline_depthhack_opaque_no_depth_write) {
+        vkDestroyPipeline(vk_entity.ctx->device,
+                          vk_entity.pipeline_depthhack_opaque_no_depth_write,
+                          NULL);
+        vk_entity.pipeline_depthhack_opaque_no_depth_write = VK_NULL_HANDLE;
+    }
     if (vk_entity.pipeline_opaque) {
         vkDestroyPipeline(vk_entity.ctx->device, vk_entity.pipeline_opaque, NULL);
         vk_entity.pipeline_opaque = VK_NULL_HANDLE;
+    }
+    if (vk_entity.pipeline_opaque_no_depth_write) {
+        vkDestroyPipeline(vk_entity.ctx->device,
+                          vk_entity.pipeline_opaque_no_depth_write, NULL);
+        vk_entity.pipeline_opaque_no_depth_write = VK_NULL_HANDLE;
     }
     if (vk_entity.pipeline_bloom_extract) {
         vkDestroyPipeline(vk_entity.ctx->device, vk_entity.pipeline_bloom_extract, NULL);
@@ -7401,7 +8243,11 @@ bool VK_Entity_CreateSwapchainResources(vk_context_t *ctx)
     if (!VK_Entity_CreatePipeline(ctx, VK_ENTITY_BLEND_OPAQUE, false,
                                   VK_ENTITY_STENCIL_NONE,
                                   VK_ENTITY_VERTEX_LAYOUT_DYNAMIC,
-                                  &vk_entity.pipeline_opaque)) {
+                                  &vk_entity.pipeline_opaque) ||
+        !VK_Entity_CreatePipeline(ctx, VK_ENTITY_BLEND_OPAQUE_NO_DEPTH_WRITE,
+                                  false, VK_ENTITY_STENCIL_NONE,
+                                  VK_ENTITY_VERTEX_LAYOUT_DYNAMIC,
+                                  &vk_entity.pipeline_opaque_no_depth_write)) {
         return false;
     }
     if (ctx->bloom_extract_render_pass &&
@@ -7434,7 +8280,11 @@ bool VK_Entity_CreateSwapchainResources(vk_context_t *ctx)
             &vk_entity.pipeline_bloom_extract_additive_depth_sample)) {
         Com_WPrintf("Vulkan entity: sampled-depth rim bloom extraction unavailable.\n");
     }
-    if (!VK_Entity_CreatePipeline(ctx, VK_ENTITY_BLEND_ALPHA, false,
+    if (!VK_Entity_CreatePipeline(ctx, VK_ENTITY_BLEND_CUTOUT, false,
+                                  VK_ENTITY_STENCIL_NONE,
+                                  VK_ENTITY_VERTEX_LAYOUT_DYNAMIC,
+                                  &vk_entity.pipeline_cutout) ||
+        !VK_Entity_CreatePipeline(ctx, VK_ENTITY_BLEND_ALPHA, false,
                                   VK_ENTITY_STENCIL_NONE,
                                   VK_ENTITY_VERTEX_LAYOUT_DYNAMIC,
                                   &vk_entity.pipeline_alpha)) {
@@ -7447,6 +8297,15 @@ bool VK_Entity_CreateSwapchainResources(vk_context_t *ctx)
                                   &vk_entity.pipeline_additive)) {
         VK_Entity_DestroySwapchainResources(ctx);
         return false;
+    }
+    if (ctx->celshading_supported &&
+        !VK_Entity_CreatePipeline(ctx, VK_ENTITY_BLEND_CELSHADING, false,
+                                  VK_ENTITY_STENCIL_NONE,
+                                  VK_ENTITY_VERTEX_LAYOUT_DYNAMIC,
+                                  &vk_entity.pipeline_celshading)) {
+        // Normal model rendering stays usable when an optional line-mode
+        // pipeline is rejected. The cvar then remains a harmless no-op.
+        Com_WPrintf("Vulkan entity: cel-shading pipeline unavailable.\n");
     }
     if (!VK_Entity_CreatePipeline(ctx, VK_ENTITY_BLEND_FLARE, false,
                                   VK_ENTITY_STENCIL_NONE,
@@ -7465,11 +8324,19 @@ bool VK_Entity_CreateSwapchainResources(vk_context_t *ctx)
     if (!VK_Entity_CreatePipeline(ctx, VK_ENTITY_BLEND_OPAQUE, true,
                                   VK_ENTITY_STENCIL_NONE,
                                   VK_ENTITY_VERTEX_LAYOUT_DYNAMIC,
-                                  &vk_entity.pipeline_depthhack_opaque)) {
+                                  &vk_entity.pipeline_depthhack_opaque) ||
+        !VK_Entity_CreatePipeline(ctx, VK_ENTITY_BLEND_OPAQUE_NO_DEPTH_WRITE,
+                                  true, VK_ENTITY_STENCIL_NONE,
+                                  VK_ENTITY_VERTEX_LAYOUT_DYNAMIC,
+                                  &vk_entity.pipeline_depthhack_opaque_no_depth_write)) {
         VK_Entity_DestroySwapchainResources(ctx);
         return false;
     }
-    if (!VK_Entity_CreatePipeline(ctx, VK_ENTITY_BLEND_ALPHA, true,
+    if (!VK_Entity_CreatePipeline(ctx, VK_ENTITY_BLEND_CUTOUT, true,
+                                  VK_ENTITY_STENCIL_NONE,
+                                  VK_ENTITY_VERTEX_LAYOUT_DYNAMIC,
+                                  &vk_entity.pipeline_depthhack_cutout) ||
+        !VK_Entity_CreatePipeline(ctx, VK_ENTITY_BLEND_ALPHA, true,
                                   VK_ENTITY_STENCIL_NONE,
                                   VK_ENTITY_VERTEX_LAYOUT_DYNAMIC,
                                   &vk_entity.pipeline_depthhack_alpha)) {
@@ -7482,6 +8349,44 @@ bool VK_Entity_CreateSwapchainResources(vk_context_t *ctx)
                                   &vk_entity.pipeline_depthhack_additive)) {
         VK_Entity_DestroySwapchainResources(ctx);
         return false;
+    }
+
+    {
+        const bool gpu_pipelines_ok =
+            VK_Entity_CreatePipeline(ctx, VK_ENTITY_BLEND_ALPHA, false,
+                                     VK_ENTITY_STENCIL_NONE,
+                                     VK_ENTITY_VERTEX_LAYOUT_GPU_PARTICLE,
+                                     &vk_entity.pipeline_gpu_particle_alpha) &&
+            VK_Entity_CreatePipeline(ctx, VK_ENTITY_BLEND_ADDITIVE, false,
+                                     VK_ENTITY_STENCIL_NONE,
+                                     VK_ENTITY_VERTEX_LAYOUT_GPU_PARTICLE,
+                                     &vk_entity.pipeline_gpu_particle_additive);
+        if (gpu_pipelines_ok) {
+            vk_entity.gpu_particle_available = true;
+        } else {
+            Com_WPrintf("Vulkan entity: GPU particle pipelines unavailable; "
+                        "using CPU expansion\n");
+            VK_Entity_DestroyGpuParticlePipelines();
+        }
+    }
+
+    {
+        const bool gpu_pipelines_ok =
+            VK_Entity_CreatePipeline(ctx, VK_ENTITY_BLEND_ALPHA, false,
+                                     VK_ENTITY_STENCIL_NONE,
+                                     VK_ENTITY_VERTEX_LAYOUT_GPU_BEAM,
+                                     &vk_entity.pipeline_gpu_beam_alpha) &&
+            VK_Entity_CreatePipeline(ctx, VK_ENTITY_BLEND_ALPHA, true,
+                                     VK_ENTITY_STENCIL_NONE,
+                                     VK_ENTITY_VERTEX_LAYOUT_GPU_BEAM,
+                                     &vk_entity.pipeline_gpu_beam_depthhack_alpha);
+        if (gpu_pipelines_ok) {
+            vk_entity.gpu_beam_available = true;
+        } else {
+            Com_WPrintf("Vulkan entity: GPU beam pipelines unavailable; "
+                        "using CPU expansion\n");
+            VK_Entity_DestroyGpuBeamPipelines();
+        }
     }
 
     if (vk_md2_gpu_lerp && vk_md2_gpu_lerp->integer) {
@@ -7498,6 +8403,11 @@ bool VK_Entity_CreateSwapchainResources(vk_context_t *ctx)
                                      VK_ENTITY_STENCIL_NONE,
                                      VK_ENTITY_VERTEX_LAYOUT_GPU_MD2,
                                      &vk_entity.pipeline_gpu_md2_additive) &&
+            (!ctx->celshading_supported ||
+             VK_Entity_CreatePipeline(ctx, VK_ENTITY_BLEND_CELSHADING, false,
+                                      VK_ENTITY_STENCIL_NONE,
+                                      VK_ENTITY_VERTEX_LAYOUT_GPU_MD2,
+                                      &vk_entity.pipeline_gpu_md2_celshading)) &&
             VK_Entity_CreatePipeline(ctx, VK_ENTITY_BLEND_OPAQUE, true,
                                      VK_ENTITY_STENCIL_NONE,
                                      VK_ENTITY_VERTEX_LAYOUT_GPU_MD2,
@@ -7628,6 +8538,11 @@ bool VK_Entity_CreateSwapchainResources(vk_context_t *ctx)
                                      VK_ENTITY_STENCIL_NONE,
                                      VK_ENTITY_VERTEX_LAYOUT_GPU_MD5,
                                      &vk_entity.pipeline_gpu_md5_additive) &&
+            (!ctx->celshading_supported ||
+             VK_Entity_CreatePipeline(ctx, VK_ENTITY_BLEND_CELSHADING, false,
+                                      VK_ENTITY_STENCIL_NONE,
+                                      VK_ENTITY_VERTEX_LAYOUT_GPU_MD5,
+                                      &vk_entity.pipeline_gpu_md5_celshading)) &&
             VK_Entity_CreatePipeline(ctx, VK_ENTITY_BLEND_OPAQUE, true,
                                      VK_ENTITY_STENCIL_NONE,
                                      VK_ENTITY_VERTEX_LAYOUT_GPU_MD5,
@@ -7744,14 +8659,8 @@ void VK_Entity_Shutdown(vk_context_t *ctx)
 
     VK_Entity_DestroySwapchainResources(ctx);
     for (uint32_t i = 0; i < VK_MAX_FRAMES_IN_FLIGHT; ++i) {
-        VK_Entity_DestroyVertexBuffer(&vk_entity.frame_buffers[i]);
-        VK_Entity_DestroyIndexBuffer(&vk_entity.frame_buffers[i]);
-        VK_Entity_DestroyMd2InstanceBuffer(&vk_entity.frame_buffers[i]);
-        VK_Entity_DestroyBmodelInstanceBuffer(&vk_entity.frame_buffers[i]);
-#if USE_MD5
-        VK_Entity_DestroyMd5InstanceBuffer(&vk_entity.frame_buffers[i]);
-        VK_Entity_DestroyMd5PaletteBuffer(&vk_entity.frame_buffers[i]);
-#endif
+        VK_Entity_DestroyGeometryBuffer(&vk_entity.frame_buffers[i]);
+        VK_Entity_DestroyInstanceBuffer(&vk_entity.frame_buffers[i]);
     }
     VK_Entity_FreeAllModels();
     VK_Entity_ClearBspTextureCache();
@@ -7759,9 +8668,7 @@ void VK_Entity_Shutdown(vk_context_t *ctx)
     if (vk_entity.white_image) {
         VK_UI_UnregisterImage(vk_entity.white_image);
     }
-    if (vk_entity.particle_image) {
-        VK_UI_UnregisterImage(vk_entity.particle_image);
-    }
+    VK_Entity_DestroyParticleTexture();
     if (vk_entity.beam_image) {
         VK_UI_UnregisterImage(vk_entity.beam_image);
     }
@@ -7789,6 +8696,8 @@ void VK_Entity_Shutdown(vk_context_t *ctx)
     free(vk_entity.indices);
     free(vk_entity.md2_instances);
     free(vk_entity.bmodel_instances);
+    free(vk_entity.particle_instances);
+    free(vk_entity.beam_instances);
 #if USE_MD5
     free(vk_entity.md5_instances);
     free(vk_entity.md5_joints);
@@ -7938,6 +8847,8 @@ void VK_Entity_RenderFrame(const refdef_t *fd)
         frame->index_upload_bytes = 0;
         frame->md2_instance_upload_bytes = 0;
         frame->bmodel_instance_upload_bytes = 0;
+        frame->particle_instance_upload_bytes = 0;
+        frame->beam_instance_upload_bytes = 0;
 #if USE_MD5
         frame->md5_instance_upload_bytes = 0;
         frame->md5_palette_upload_bytes = 0;
@@ -7945,14 +8856,21 @@ void VK_Entity_RenderFrame(const refdef_t *fd)
     }
     vk_entity.frame_active = false;
     vk_entity.frame_weapon_active = false;
+    vk_entity.frame_has_depth_hack_batches = false;
+    vk_entity.frame_has_outline_batches = false;
     vk_entity.frame_has_flare_queries = false;
     vk_entity.frame_has_flares = false;
+    vk_entity.frame_submit_phase_mask = 0;
+    memset(vk_entity.frame_submit_pass_masks, 0,
+           sizeof(vk_entity.frame_submit_pass_masks));
     vk_entity.current_submit_phase = VK_ENTITY_SUBMIT_OPAQUE;
     vk_entity.showtris_category = 0;
     vk_entity.vertex_count = 0;
     vk_entity.index_count = 0;
     vk_entity.md2_instance_count = 0;
     vk_entity.bmodel_instance_count = 0;
+    vk_entity.particle_instance_count = 0;
+    vk_entity.beam_instance_count = 0;
 #if USE_MD5
     vk_entity.md5_instance_count = 0;
     vk_entity.md5_joint_count = 0;
@@ -7971,6 +8889,10 @@ void VK_Entity_RenderFrame(const refdef_t *fd)
 
     vec3_t view_axis[3];
     AnglesToAxis(fd->viewangles, view_axis);
+    vk_entity_cull_frustum_t cull_frustum;
+    const vk_entity_cull_frustum_t *active_cull_frustum =
+        vk_cull_models && vk_cull_models->integer &&
+        VK_Entity_BuildCullFrustum(fd, &cull_frustum) ? &cull_frustum : NULL;
     const bsp_t *world_bsp = VK_World_GetBsp();
     if (world_bsp != vk_entity.bmodel_texture_bsp) {
         VK_Entity_ClearBspTextureCache();
@@ -7987,6 +8909,7 @@ void VK_Entity_RenderFrame(const refdef_t *fd)
         bool depth_hack = (ent->flags & (RF_DEPTHHACK | RF_WEAPONMODEL)) != 0;
         bool weapon_model = (ent->flags & RF_WEAPONMODEL) != 0;
         vk_entity.frame_weapon_active |= weapon_model;
+        vk_entity.frame_has_depth_hack_batches |= depth_hack;
 
         if (ent->flags & RF_BEAM) {
             vk_entity.showtris_category = VK_DEBUG_SHOWTRIS_FX;
@@ -7998,6 +8921,16 @@ void VK_Entity_RenderFrame(const refdef_t *fd)
         }
 
         if (ent->model & BIT(31)) {
+            const int model_index = ~ent->model;
+            if (world_bsp && world_bsp->models && model_index >= 1 &&
+                model_index < world_bsp->nummodels) {
+                const mmodel_t *model = &world_bsp->models[model_index];
+                if (VK_Entity_CullModelBounds(active_cull_frustum, ent, model->mins,
+                                              model->maxs)) {
+                    VK_Debug_RecordEntityModelCull();
+                    continue;
+                }
+            }
             vk_entity.showtris_category = VK_DEBUG_SHOWTRIS_WORLD;
             vk_entity.current_submit_phase = VK_ENTITY_SUBMIT_OPAQUE;
             if (!VK_Entity_AddBspModel(ent, fd, world_bsp, depth_hack, weapon_model)) {
@@ -8016,6 +8949,22 @@ void VK_Entity_RenderFrame(const refdef_t *fd)
         }
         if (vk_showorigins && vk_showorigins->integer) {
             VK_Entity_AddOriginAxes(ent);
+        }
+
+        // GL retains show-origin axes even when the matching model is
+        // culled, so perform this after the diagnostic above. Sprites keep
+        // their billboard-specific path; only MD2/MD5 source bounds are
+        // cached by VK_Entity_ModelBounds.
+        if (model->type == VK_MODEL_MD2) {
+            vec3_t local_mins;
+            vec3_t local_maxs;
+            if (VK_Entity_ModelBoundsForRefdef(model, ent, fd, local_mins,
+                                               local_maxs) &&
+                VK_Entity_CullModelBounds(active_cull_frustum, ent, local_mins,
+                                          local_maxs)) {
+                VK_Debug_RecordEntityModelCull();
+                continue;
+            }
         }
 
         if (!(ent->flags & RF_TRANSLUCENT)) {
@@ -8074,7 +9023,8 @@ void VK_Entity_RenderFrame(const refdef_t *fd)
     VK_Entity_CoalesceGpuBmodelBatches();
 
     if (!vk_entity.vertex_count && !vk_entity.md2_instance_count &&
-        !vk_entity.bmodel_instance_count
+        !vk_entity.bmodel_instance_count && !vk_entity.particle_instance_count &&
+        !vk_entity.beam_instance_count
 #if USE_MD5
         && !vk_entity.md5_instance_count
 #endif
@@ -8082,102 +9032,134 @@ void VK_Entity_RenderFrame(const refdef_t *fd)
         return;
     }
 
-    if (vk_entity.vertex_count) {
-        size_t bytes = 0;
-        if (!VK_Entity_ArrayBytes((size_t)vk_entity.vertex_count,
-                                  sizeof(*vk_entity.vertices),
-                                  &bytes, "frame entity vertices") ||
-            !VK_Entity_EnsureVertexBuffer(frame, bytes)) {
-            return;
-        }
-        if (!frame->vertex_mapped) {
-            Com_SetLastError("Vulkan entity: vertex buffer not mapped");
-            return;
-        }
-        memcpy(frame->vertex_mapped, vk_entity.vertices, bytes);
-        frame->vertex_upload_bytes = bytes;
-        VK_Debug_RecordUpload(VK_DEBUG_DOMAIN_ENTITY, bytes);
+    size_t vertex_bytes = 0;
+    size_t index_bytes = 0;
+    if ((vk_entity.vertex_count &&
+         !VK_Entity_ArrayBytes((size_t)vk_entity.vertex_count,
+                               sizeof(*vk_entity.vertices), &vertex_bytes,
+                               "frame entity vertices")) ||
+        (vk_entity.index_count &&
+         !VK_Entity_ArrayBytes((size_t)vk_entity.index_count,
+                               sizeof(*vk_entity.indices), &index_bytes,
+                               "frame entity indices")) ||
+        !VK_Entity_EnsureGeometryBuffer(frame, vertex_bytes, index_bytes)) {
+        return;
     }
-
-    if (vk_entity.index_count) {
-        size_t index_bytes = 0;
-        if (!VK_Entity_ArrayBytes((size_t)vk_entity.index_count,
-                                  sizeof(*vk_entity.indices),
-                                  &index_bytes, "frame entity indices") ||
-            !VK_Entity_EnsureIndexBuffer(frame, index_bytes)) {
-            return;
-        }
-        if (!frame->index_mapped) {
-            Com_SetLastError("Vulkan entity: index buffer not mapped");
-            return;
-        }
-        memcpy(frame->index_mapped, vk_entity.indices, index_bytes);
+    if ((vertex_bytes || index_bytes) && !frame->geometry_mapped) {
+        Com_SetLastError("Vulkan entity: geometry arena is not mapped");
+        return;
+    }
+    if (vertex_bytes) {
+        memcpy(frame->geometry_mapped, vk_entity.vertices, vertex_bytes);
+        frame->vertex_upload_bytes = vertex_bytes;
+        VK_Debug_RecordUpload(VK_DEBUG_DOMAIN_ENTITY, vertex_bytes);
+    }
+    if (index_bytes) {
+        memcpy((byte *)frame->geometry_mapped + frame->geometry_index_offset,
+               vk_entity.indices, index_bytes);
         frame->index_upload_bytes = index_bytes;
         VK_Debug_RecordUpload(VK_DEBUG_DOMAIN_ENTITY, index_bytes);
     }
 
-    if (vk_entity.md2_instance_count) {
-        size_t instance_bytes = 0;
-        if (!VK_Entity_ArrayBytes(vk_entity.md2_instance_count,
-                                  sizeof(*vk_entity.md2_instances),
-                                  &instance_bytes, "GPU MD2 instances") ||
-            !VK_Entity_EnsureMd2InstanceBuffer(frame, instance_bytes)) {
-            return;
-        }
-        if (!frame->md2_instance_mapped) {
-            Com_SetLastError("Vulkan entity: GPU MD2 instance buffer not mapped");
-            return;
-        }
-        memcpy(frame->md2_instance_mapped, vk_entity.md2_instances,
-               instance_bytes);
-        frame->md2_instance_upload_bytes = instance_bytes;
-        VK_Debug_RecordUpload(VK_DEBUG_DOMAIN_ENTITY, instance_bytes);
-    }
-
-    if (vk_entity.bmodel_instance_count) {
-        size_t instance_bytes = 0;
-        if (!VK_Entity_ArrayBytes(vk_entity.bmodel_instance_count,
-                                  sizeof(*vk_entity.bmodel_instances),
-                                  &instance_bytes, "GPU BSP instances") ||
-            !VK_Entity_EnsureBmodelInstanceBuffer(frame, instance_bytes)) {
-            return;
-        }
-        if (!frame->bmodel_instance_mapped) {
-            Com_SetLastError("Vulkan entity: GPU BSP instance buffer not mapped");
-            return;
-        }
-        memcpy(frame->bmodel_instance_mapped, vk_entity.bmodel_instances,
-               instance_bytes);
-        frame->bmodel_instance_upload_bytes = instance_bytes;
-        VK_Debug_RecordUpload(VK_DEBUG_DOMAIN_ENTITY, instance_bytes);
-    }
-
+    size_t md2_instance_bytes = 0;
+    size_t bmodel_instance_bytes = 0;
+    size_t particle_instance_bytes = 0;
+    size_t beam_instance_bytes = 0;
 #if USE_MD5
-    if (vk_entity.md5_instance_count) {
-        size_t instance_bytes = 0;
-        size_t palette_bytes = 0;
-        if (!vk_entity.md5_joint_count ||
-            !VK_Entity_ArrayBytes(vk_entity.md5_instance_count,
-                                  sizeof(*vk_entity.md5_instances),
-                                  &instance_bytes, "GPU MD5 instances") ||
-            !VK_Entity_ArrayBytes(vk_entity.md5_joint_count,
-                                  sizeof(*vk_entity.md5_joints),
-                                  &palette_bytes, "GPU MD5 joint palette") ||
-            !VK_Entity_EnsureMd5InstanceBuffer(frame, instance_bytes) ||
-            !VK_Entity_EnsureMd5PaletteBuffer(frame, palette_bytes)) {
-            return;
-        }
-        if (!frame->md5_instance_mapped || !frame->md5_palette_mapped) {
-            Com_SetLastError("Vulkan entity: GPU MD5 frame buffers not mapped");
-            return;
-        }
-        memcpy(frame->md5_instance_mapped, vk_entity.md5_instances,
-               instance_bytes);
-        memcpy(frame->md5_palette_mapped, vk_entity.md5_joints, palette_bytes);
-        frame->md5_instance_upload_bytes = instance_bytes;
-        frame->md5_palette_upload_bytes = palette_bytes;
+    size_t md5_instance_bytes = 0;
+    size_t md5_palette_bytes = 0;
+#endif
+    if ((vk_entity.md2_instance_count &&
+         !VK_Entity_ArrayBytes(vk_entity.md2_instance_count,
+                               sizeof(*vk_entity.md2_instances),
+                               &md2_instance_bytes, "GPU MD2 instances")) ||
+        (vk_entity.bmodel_instance_count &&
+         !VK_Entity_ArrayBytes(vk_entity.bmodel_instance_count,
+                               sizeof(*vk_entity.bmodel_instances),
+                               &bmodel_instance_bytes, "GPU BSP instances"))
+        || (vk_entity.particle_instance_count &&
+            !VK_Entity_ArrayBytes(vk_entity.particle_instance_count,
+                                  sizeof(*vk_entity.particle_instances),
+                                  &particle_instance_bytes,
+                                  "GPU particle instances"))
+        || (vk_entity.beam_instance_count &&
+            !VK_Entity_ArrayBytes(vk_entity.beam_instance_count,
+                                  sizeof(*vk_entity.beam_instances),
+                                  &beam_instance_bytes,
+                                  "GPU beam instances"))
+#if USE_MD5
+        || (vk_entity.md5_instance_count &&
+            (!vk_entity.md5_joint_count ||
+             !VK_Entity_ArrayBytes(vk_entity.md5_instance_count,
+                                   sizeof(*vk_entity.md5_instances),
+                                   &md5_instance_bytes, "GPU MD5 instances") ||
+             !VK_Entity_ArrayBytes(vk_entity.md5_joint_count,
+                                   sizeof(*vk_entity.md5_joints),
+                                   &md5_palette_bytes,
+                                   "GPU MD5 joint palette")))
+#endif
+    ) {
+        return;
+    }
+    if ((md2_instance_bytes || bmodel_instance_bytes || particle_instance_bytes ||
+         beam_instance_bytes
+#if USE_MD5
+         || md5_instance_bytes || md5_palette_bytes
+#endif
+        ) &&
+        !VK_Entity_EnsureInstanceBuffer(frame, md2_instance_bytes,
+                                        bmodel_instance_bytes,
+                                        particle_instance_bytes,
+                                        beam_instance_bytes
+#if USE_MD5
+                                        , md5_instance_bytes, md5_palette_bytes
+#endif
+        )) {
+        return;
+    }
+    if ((md2_instance_bytes || bmodel_instance_bytes || particle_instance_bytes ||
+         beam_instance_bytes
+#if USE_MD5
+         || md5_instance_bytes || md5_palette_bytes
+#endif
+        ) && !frame->instance_mapped) {
+        Com_SetLastError("Vulkan entity: instance arena is not mapped");
+        return;
+    }
+    if (md2_instance_bytes) {
+        memcpy((byte *)frame->instance_mapped + frame->md2_instance_offset,
+               vk_entity.md2_instances, md2_instance_bytes);
+        frame->md2_instance_upload_bytes = md2_instance_bytes;
+        VK_Debug_RecordUpload(VK_DEBUG_DOMAIN_ENTITY, md2_instance_bytes);
+    }
+    if (bmodel_instance_bytes) {
+        memcpy((byte *)frame->instance_mapped + frame->bmodel_instance_offset,
+               vk_entity.bmodel_instances, bmodel_instance_bytes);
+        frame->bmodel_instance_upload_bytes = bmodel_instance_bytes;
+        VK_Debug_RecordUpload(VK_DEBUG_DOMAIN_ENTITY, bmodel_instance_bytes);
+    }
+    if (particle_instance_bytes) {
+        memcpy((byte *)frame->instance_mapped + frame->particle_instance_offset,
+               vk_entity.particle_instances, particle_instance_bytes);
+        frame->particle_instance_upload_bytes = particle_instance_bytes;
+        VK_Debug_RecordUpload(VK_DEBUG_DOMAIN_ENTITY, particle_instance_bytes);
+    }
+    if (beam_instance_bytes) {
+        memcpy((byte *)frame->instance_mapped + frame->beam_instance_offset,
+               vk_entity.beam_instances, beam_instance_bytes);
+        frame->beam_instance_upload_bytes = beam_instance_bytes;
+        VK_Debug_RecordUpload(VK_DEBUG_DOMAIN_ENTITY, beam_instance_bytes);
+    }
+#if USE_MD5
+    if (md5_instance_bytes) {
+        memcpy((byte *)frame->instance_mapped + frame->md5_instance_offset,
+               vk_entity.md5_instances, md5_instance_bytes);
+        memcpy((byte *)frame->instance_mapped + frame->md5_palette_offset,
+               vk_entity.md5_joints, md5_palette_bytes);
+        frame->md5_instance_upload_bytes = md5_instance_bytes;
+        frame->md5_palette_upload_bytes = md5_palette_bytes;
         VK_Debug_RecordUpload(VK_DEBUG_DOMAIN_ENTITY,
-                              instance_bytes + palette_bytes);
+                              md5_instance_bytes + md5_palette_bytes);
         VK_Entity_UpdateMd5DescriptorSets();
     }
 #endif
@@ -8213,107 +9195,130 @@ void VK_Entity_RecordUploads(VkCommandBuffer cmd)
         return;
     }
 
-    VkBufferMemoryBarrier barriers[6] = { 0 };
+    VkBufferMemoryBarrier barriers[2] = { 0 };
     uint32_t barrier_count = 0;
     VkPipelineStageFlags destination_stages = 0;
-    if (frame->vertex_upload_bytes && frame->vertex_staging_buffer &&
-        frame->vertex_buffer) {
-        const VkBufferCopy copy = { .size = frame->vertex_upload_bytes };
-        vkCmdCopyBuffer(cmd, frame->vertex_staging_buffer, frame->vertex_buffer,
-                        1, &copy);
+    if ((frame->vertex_upload_bytes || frame->index_upload_bytes) &&
+        frame->geometry_staging_buffer && frame->geometry_buffer) {
+        VkBufferCopy copies[2] = { 0 };
+        uint32_t copy_count = 0;
+        size_t geometry_bytes = 0;
+        if (frame->vertex_upload_bytes) {
+            copies[copy_count++].size = frame->vertex_upload_bytes;
+            geometry_bytes = frame->vertex_upload_bytes;
+        }
+        if (frame->index_upload_bytes) {
+            copies[copy_count++] = (VkBufferCopy) {
+                .srcOffset = frame->geometry_index_offset,
+                .dstOffset = frame->geometry_index_offset,
+                .size = frame->index_upload_bytes,
+            };
+            geometry_bytes = frame->geometry_index_offset +
+                             frame->index_upload_bytes;
+        }
+        vkCmdCopyBuffer(cmd, frame->geometry_staging_buffer,
+                        frame->geometry_buffer, copy_count, copies);
         barriers[barrier_count++] = (VkBufferMemoryBarrier) {
             .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
             .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-            .dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
+            .dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT |
+                             VK_ACCESS_INDEX_READ_BIT,
             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .buffer = frame->vertex_buffer,
-            .size = frame->vertex_upload_bytes,
+            .buffer = frame->geometry_buffer,
+            .size = geometry_bytes,
         };
         destination_stages |= VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;
     }
-    if (frame->index_upload_bytes && frame->index_staging_buffer &&
-        frame->index_buffer) {
-        const VkBufferCopy copy = { .size = frame->index_upload_bytes };
-        vkCmdCopyBuffer(cmd, frame->index_staging_buffer, frame->index_buffer,
-                        1, &copy);
-        barriers[barrier_count++] = (VkBufferMemoryBarrier) {
-            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-            .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-            .dstAccessMask = VK_ACCESS_INDEX_READ_BIT,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .buffer = frame->index_buffer,
-            .size = frame->index_upload_bytes,
-        };
-        destination_stages |= VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;
-    }
-    if (frame->md2_instance_upload_bytes && frame->md2_instance_staging_buffer &&
-        frame->md2_instance_buffer) {
-        const VkBufferCopy copy = { .size = frame->md2_instance_upload_bytes };
-        vkCmdCopyBuffer(cmd, frame->md2_instance_staging_buffer,
-                        frame->md2_instance_buffer, 1, &copy);
-        barriers[barrier_count++] = (VkBufferMemoryBarrier) {
-            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-            .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-            .dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .buffer = frame->md2_instance_buffer,
-            .size = frame->md2_instance_upload_bytes,
-        };
-        destination_stages |= VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;
-    }
-    if (frame->bmodel_instance_upload_bytes &&
-        frame->bmodel_instance_staging_buffer && frame->bmodel_instance_buffer) {
-        const VkBufferCopy copy = { .size = frame->bmodel_instance_upload_bytes };
-        vkCmdCopyBuffer(cmd, frame->bmodel_instance_staging_buffer,
-                        frame->bmodel_instance_buffer, 1, &copy);
-        barriers[barrier_count++] = (VkBufferMemoryBarrier) {
-            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-            .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-            .dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .buffer = frame->bmodel_instance_buffer,
-            .size = frame->bmodel_instance_upload_bytes,
-        };
-        destination_stages |= VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;
-    }
+    if (frame->instance_buffer && frame->instance_staging_buffer) {
+        VkBufferCopy copies[6] = { 0 };
+        uint32_t copy_count = 0;
+        size_t instance_bytes = 0;
+        VkAccessFlags instance_access = 0;
+        VkPipelineStageFlags instance_stages = 0;
+        if (frame->md2_instance_upload_bytes) {
+            copies[copy_count++] = (VkBufferCopy) {
+                .srcOffset = frame->md2_instance_offset,
+                .dstOffset = frame->md2_instance_offset,
+                .size = frame->md2_instance_upload_bytes,
+            };
+            instance_bytes = frame->md2_instance_offset +
+                             frame->md2_instance_upload_bytes;
+            instance_access |= VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
+            instance_stages |= VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;
+        }
+        if (frame->bmodel_instance_upload_bytes) {
+            copies[copy_count++] = (VkBufferCopy) {
+                .srcOffset = frame->bmodel_instance_offset,
+                .dstOffset = frame->bmodel_instance_offset,
+                .size = frame->bmodel_instance_upload_bytes,
+            };
+            instance_bytes = frame->bmodel_instance_offset +
+                             frame->bmodel_instance_upload_bytes;
+            instance_access |= VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
+            instance_stages |= VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;
+        }
+        if (frame->particle_instance_upload_bytes) {
+            copies[copy_count++] = (VkBufferCopy) {
+                .srcOffset = frame->particle_instance_offset,
+                .dstOffset = frame->particle_instance_offset,
+                .size = frame->particle_instance_upload_bytes,
+            };
+            instance_bytes = frame->particle_instance_offset +
+                             frame->particle_instance_upload_bytes;
+            instance_access |= VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
+            instance_stages |= VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;
+        }
+        if (frame->beam_instance_upload_bytes) {
+            copies[copy_count++] = (VkBufferCopy) {
+                .srcOffset = frame->beam_instance_offset,
+                .dstOffset = frame->beam_instance_offset,
+                .size = frame->beam_instance_upload_bytes,
+            };
+            instance_bytes = frame->beam_instance_offset +
+                             frame->beam_instance_upload_bytes;
+            instance_access |= VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
+            instance_stages |= VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;
+        }
 #if USE_MD5
-    if (frame->md5_instance_upload_bytes &&
-        frame->md5_instance_staging_buffer && frame->md5_instance_buffer) {
-        const VkBufferCopy copy = { .size = frame->md5_instance_upload_bytes };
-        vkCmdCopyBuffer(cmd, frame->md5_instance_staging_buffer,
-                        frame->md5_instance_buffer, 1, &copy);
-        barriers[barrier_count++] = (VkBufferMemoryBarrier) {
-            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-            .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-            .dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .buffer = frame->md5_instance_buffer,
-            .size = frame->md5_instance_upload_bytes,
-        };
-        destination_stages |= VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;
-    }
-    if (frame->md5_palette_upload_bytes &&
-        frame->md5_palette_staging_buffer && frame->md5_palette_buffer) {
-        const VkBufferCopy copy = { .size = frame->md5_palette_upload_bytes };
-        vkCmdCopyBuffer(cmd, frame->md5_palette_staging_buffer,
-                        frame->md5_palette_buffer, 1, &copy);
-        barriers[barrier_count++] = (VkBufferMemoryBarrier) {
-            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-            .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-            .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .buffer = frame->md5_palette_buffer,
-            .size = frame->md5_palette_upload_bytes,
-        };
-        destination_stages |= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
-    }
+        if (frame->md5_instance_upload_bytes) {
+            copies[copy_count++] = (VkBufferCopy) {
+                .srcOffset = frame->md5_instance_offset,
+                .dstOffset = frame->md5_instance_offset,
+                .size = frame->md5_instance_upload_bytes,
+            };
+            instance_bytes = frame->md5_instance_offset +
+                             frame->md5_instance_upload_bytes;
+            instance_access |= VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
+            instance_stages |= VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;
+        }
+        if (frame->md5_palette_upload_bytes) {
+            copies[copy_count++] = (VkBufferCopy) {
+                .srcOffset = frame->md5_palette_offset,
+                .dstOffset = frame->md5_palette_offset,
+                .size = frame->md5_palette_upload_bytes,
+            };
+            instance_bytes = frame->md5_palette_offset +
+                             frame->md5_palette_upload_bytes;
+            instance_access |= VK_ACCESS_SHADER_READ_BIT;
+            instance_stages |= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
+        }
 #endif
+        if (copy_count) {
+            vkCmdCopyBuffer(cmd, frame->instance_staging_buffer,
+                            frame->instance_buffer, copy_count, copies);
+            barriers[barrier_count++] = (VkBufferMemoryBarrier) {
+                .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+                .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                .dstAccessMask = instance_access,
+                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .buffer = frame->instance_buffer,
+                .size = instance_bytes,
+            };
+            destination_stages |= instance_stages;
+        }
+    }
     if (barrier_count) {
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
                              destination_stages, 0,
@@ -8369,7 +9374,8 @@ static uint32_t VK_Entity_BatchVertexFlags(const vk_batch_t *batch)
     if (!batch) {
         return 0;
     }
-    if (batch->gpu_md2 || batch->gpu_bmodel) {
+    if (batch->gpu_md2 || batch->gpu_bmodel || batch->gpu_particle ||
+        batch->gpu_beam) {
         return batch->vertex_flags;
     }
 #if USE_MD5
@@ -8384,13 +9390,15 @@ static uint32_t VK_Entity_BatchVertexFlags(const vk_batch_t *batch)
 static void VK_Entity_BindDynamicBuffers(VkCommandBuffer cmd,
                                          const vk_entity_frame_buffer_t *frame)
 {
-    if (!cmd || !frame || !frame->vertex_buffer) {
+    if (!cmd || !frame || !frame->geometry_buffer) {
         return;
     }
     const VkDeviceSize offset = 0;
-    vkCmdBindVertexBuffers(cmd, 0, 1, &frame->vertex_buffer, &offset);
-    if (frame->index_buffer) {
-        vkCmdBindIndexBuffer(cmd, frame->index_buffer, 0, VK_INDEX_TYPE_UINT16);
+    vkCmdBindVertexBuffers(cmd, 0, 1, &frame->geometry_buffer, &offset);
+    if (frame->geometry_index_capacity) {
+        vkCmdBindIndexBuffer(cmd, frame->geometry_buffer,
+                             frame->geometry_index_offset,
+                             VK_INDEX_TYPE_UINT16);
     }
 }
 
@@ -8398,7 +9406,7 @@ static bool VK_Entity_BindGpuMd2Batch(VkCommandBuffer cmd,
                                       const vk_entity_frame_buffer_t *frame,
                                       const vk_batch_t *batch)
 {
-    if (!cmd || !frame || !frame->md2_instance_buffer || !batch ||
+    if (!cmd || !frame || !frame->instance_buffer || !batch ||
         !batch->gpu_md2 || !batch->gpu_md2_model) {
         return false;
     }
@@ -8429,13 +9437,13 @@ static bool VK_Entity_BindGpuMd2Batch(VkCommandBuffer cmd,
         md2->gpu_frame_buffer,
         md2->gpu_frame_buffer,
         md2->gpu_uv_buffer,
-        frame->md2_instance_buffer,
+        frame->instance_buffer,
     };
     const VkDeviceSize offsets[4] = {
         frame_offset,
         oldframe_offset,
         0,
-        0,
+        frame->md2_instance_offset,
     };
     vkCmdBindVertexBuffers(cmd, 0, q_countof(buffers), buffers, offsets);
     vkCmdBindIndexBuffer(cmd, md2->gpu_index_buffer, 0, VK_INDEX_TYPE_UINT16);
@@ -8448,7 +9456,7 @@ static bool VK_Entity_BindGpuBmodelBatch(
 {
     if (!cmd || !frame || !batch || !batch->gpu_bmodel ||
         !vk_entity.bmodel_gpu_ready || !vk_entity.bmodel_gpu_vertex_buffer ||
-        !frame->bmodel_instance_buffer ||
+        !frame->instance_buffer ||
         batch->first_vertex > vk_entity.bmodel_gpu_vertex_count ||
         batch->vertex_count >
             vk_entity.bmodel_gpu_vertex_count - batch->first_vertex ||
@@ -8459,11 +9467,48 @@ static bool VK_Entity_BindGpuBmodelBatch(
     }
     const VkBuffer buffers[2] = {
         vk_entity.bmodel_gpu_vertex_buffer,
-        frame->bmodel_instance_buffer,
+        frame->instance_buffer,
     };
-    const VkDeviceSize offsets[2] = { 0, 0 };
+    const VkDeviceSize offsets[2] = { 0, frame->bmodel_instance_offset };
     vkCmdBindVertexBuffers(cmd, 0, q_countof(buffers), buffers, offsets);
     return true;
+}
+
+static bool VK_Entity_BindGpuParticleBatch(
+    VkCommandBuffer cmd, const vk_entity_frame_buffer_t *frame,
+    const vk_batch_t *batch)
+{
+    if (!cmd || !frame || !batch || !batch->gpu_particle ||
+        !frame->instance_buffer || !frame->particle_instance_capacity ||
+        batch->first_instance >= vk_entity.particle_instance_count ||
+        batch->instance_count >
+            vk_entity.particle_instance_count - batch->first_instance) {
+        return false;
+    }
+    const VkDeviceSize offset = frame->particle_instance_offset;
+    vkCmdBindVertexBuffers(cmd, 0, 1, &frame->instance_buffer, &offset);
+    return true;
+}
+
+static bool VK_Entity_BindGpuBeamBatch(
+    VkCommandBuffer cmd, const vk_entity_frame_buffer_t *frame,
+    const vk_batch_t *batch)
+{
+    if (!cmd || !frame || !batch || !batch->gpu_beam ||
+        !frame->instance_buffer || !frame->beam_instance_capacity ||
+        batch->first_instance >= vk_entity.beam_instance_count ||
+        batch->instance_count >
+            vk_entity.beam_instance_count - batch->first_instance) {
+        return false;
+    }
+    const VkDeviceSize offset = frame->beam_instance_offset;
+    vkCmdBindVertexBuffers(cmd, 0, 1, &frame->instance_buffer, &offset);
+    return true;
+}
+
+static inline bool VK_Entity_BmodelBindingCacheEnabled(void)
+{
+    return !vk_bmodel_binding_cache || vk_bmodel_binding_cache->integer;
 }
 
 #if USE_MD5
@@ -8472,8 +9517,8 @@ static bool VK_Entity_BindGpuMd5Batch(VkCommandBuffer cmd,
                                       const vk_batch_t *batch)
 {
     if (!cmd || !frame || !batch || !batch->gpu_md5 ||
-        !batch->gpu_md5_mesh || !frame->md5_instance_buffer ||
-        !frame->md5_palette_buffer || !vk_entity.gpu_md5_weight_buffer ||
+        !batch->gpu_md5_mesh || !frame->instance_buffer ||
+        !frame->md5_palette_capacity || !vk_entity.gpu_md5_weight_buffer ||
         !vk_entity.ctx ||
         vk_entity.ctx->current_frame >= VK_MAX_FRAMES_IN_FLIGHT) {
         return false;
@@ -8490,9 +9535,9 @@ static bool VK_Entity_BindGpuMd5Batch(VkCommandBuffer cmd,
     }
     const VkBuffer buffers[2] = {
         mesh->gpu_vertex_buffer,
-        frame->md5_instance_buffer,
+        frame->instance_buffer,
     };
-    const VkDeviceSize offsets[2] = { 0, 0 };
+    const VkDeviceSize offsets[2] = { 0, frame->md5_instance_offset };
     vkCmdBindVertexBuffers(cmd, 0, q_countof(buffers), buffers, offsets);
     vkCmdBindIndexBuffer(cmd, mesh->gpu_index_buffer, 0, VK_INDEX_TYPE_UINT16);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -8538,13 +9583,20 @@ static void VK_Entity_DrawBatch(VkCommandBuffer cmd, const vk_batch_t *batch)
                                                 (uint64_t)batch->index_count *
                                                     batch->instance_count)
                                 : batch->index_count);
+#if USE_MD5
+        if (batch->gpu_md5) {
+            VK_Debug_RecordEntityGpuMd5Draw(batch->instance_count);
+        }
+#endif
     } else {
+        const bool instanced = batch->gpu_bmodel || batch->gpu_particle ||
+            batch->gpu_beam;
         vkCmdDraw(cmd, batch->vertex_count,
-                  batch->gpu_bmodel ? batch->instance_count : 1,
+                  instanced ? batch->instance_count : 1,
                   batch->first_vertex,
-                  batch->gpu_bmodel ? batch->first_instance : 0);
+                  instanced ? batch->first_instance : 0);
         VK_Debug_RecordDraw(VK_DEBUG_DOMAIN_ENTITY,
-                            batch->gpu_bmodel
+                            instanced
                                 ? (uint32_t)min((uint64_t)UINT32_MAX,
                                                 (uint64_t)batch->vertex_count *
                                                     batch->instance_count)
@@ -8553,15 +9605,129 @@ static void VK_Entity_DrawBatch(VkCommandBuffer cmd, const vk_batch_t *batch)
     }
 }
 
+// Replay only the ordinary alias silhouette after opaque model work, matching
+// OpenGL's draw_celshading() ordering. The black fragment module ignores the
+// skin, lightmap, and shadow receivers; descriptors and GPU-resident model
+// buffers are still reused directly from the normal submission path.
+static void VK_Entity_RecordCelShadingPass(
+    VkCommandBuffer cmd, const vk_entity_frame_buffer_t *frame,
+    vk_entity_record_phase_t phase, bool depth_hack,
+    bool *dynamic_buffers_bound)
+{
+    if (!cmd || !frame || !vk_celshading || vk_celshading->value <= 0.0f) {
+        return;
+    }
+
+    VkPipeline bound_pipeline = VK_NULL_HANDLE;
+    VkDescriptorSet last_set = VK_NULL_HANDLE;
+    float last_line_width = -1.0f;
+    bool using_weapon_push = false;
+
+    for (uint32_t i = 0; i < vk_entity.batch_count; i++) {
+        const vk_batch_t *batch = &vk_entity.batches[i];
+        const uint32_t vertex_flags = VK_Entity_BatchVertexFlags(batch);
+        if (!VK_Entity_BatchMatchesRecordPhase(batch, phase) ||
+            !batch->vertex_count || !batch->set ||
+            batch->depth_hack != depth_hack || batch->alpha ||
+            batch->additive || batch->flare || batch->occlusion ||
+            batch->gpu_bmodel ||
+            batch->outline_stage != VK_ENTITY_OUTLINE_NONE ||
+            (vertex_flags & VK_ENTITY_VERTEX_CELSHADING) == 0 ||
+            // The OpenGL cel replay follows the base item-colorize mesh, not
+            // the separate luminance tint overlay.
+            (vertex_flags & VK_ENTITY_VERTEX_ITEM_COLORIZE) != 0 ||
+            batch->cel_line_width <= 0.0f) {
+            continue;
+        }
+
+        if (batch->gpu_md2) {
+            if (!VK_Entity_BindGpuMd2Batch(cmd, frame, batch)) {
+                continue;
+            }
+            if (dynamic_buffers_bound) {
+                *dynamic_buffers_bound = false;
+            }
+#if USE_MD5
+        } else if (batch->gpu_md5) {
+            if (!VK_Entity_BindGpuMd5Batch(cmd, frame, batch)) {
+                continue;
+            }
+            if (dynamic_buffers_bound) {
+                *dynamic_buffers_bound = false;
+            }
+#endif
+        } else if (!dynamic_buffers_bound || !*dynamic_buffers_bound) {
+            VK_Entity_BindDynamicBuffers(cmd, frame);
+            if (dynamic_buffers_bound) {
+                *dynamic_buffers_bound = true;
+            }
+        }
+
+        const bool use_weapon_push =
+            batch->weapon_model && vk_entity.frame_weapon_active;
+        if (use_weapon_push != using_weapon_push) {
+            const renderer_view_push_t *push = use_weapon_push
+                ? &vk_entity.frame_push_weapon : &vk_entity.frame_push;
+            vkCmdPushConstants(cmd, vk_entity.pipeline_layout,
+                               VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(*push),
+                               push);
+            using_weapon_push = use_weapon_push;
+        }
+
+        VkPipeline target_pipeline = batch->gpu_md2
+            ? vk_entity.pipeline_gpu_md2_celshading
+#if USE_MD5
+            : batch->gpu_md5 ? vk_entity.pipeline_gpu_md5_celshading
+#endif
+            : vk_entity.pipeline_celshading;
+        target_pipeline = VK_SelectScenePipeline(vk_entity.ctx,
+                                                 target_pipeline);
+        if (!target_pipeline) {
+            continue;
+        }
+        if (target_pipeline != bound_pipeline) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              target_pipeline);
+            bound_pipeline = target_pipeline;
+            last_set = VK_NULL_HANDLE;
+        }
+        if (batch->cel_line_width != last_line_width) {
+            vkCmdSetLineWidth(cmd, batch->cel_line_width);
+            last_line_width = batch->cel_line_width;
+        }
+        if (batch->set != last_set) {
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    vk_entity.pipeline_layout,
+                                    0, 1, &batch->set, 0, NULL);
+            last_set = batch->set;
+        }
+        VK_Entity_DrawBatch(cmd, batch);
+    }
+
+    if (using_weapon_push) {
+        vkCmdPushConstants(cmd, vk_entity.pipeline_layout,
+                           VK_SHADER_STAGE_VERTEX_BIT, 0,
+                           sizeof(vk_entity.frame_push),
+                           &vk_entity.frame_push);
+    }
+}
+
 static void VK_Entity_RecordPhase(VkCommandBuffer cmd, const VkExtent2D *extent,
                                   vk_entity_record_phase_t phase)
 {
+    if (!VK_Entity_HasRecordPhase(phase)) {
+        return;
+    }
+
     vk_entity_frame_buffer_t *frame = VK_Entity_CurrentFrameBuffer();
     if (!vk_entity.initialized || !vk_entity.swapchain_ready ||
-        !vk_entity.pipeline_opaque || !vk_entity.pipeline_alpha ||
+        !vk_entity.pipeline_opaque || !vk_entity.pipeline_opaque_no_depth_write ||
+        !vk_entity.pipeline_alpha ||
         !vk_entity.pipeline_additive || !vk_entity.pipeline_flare ||
         !vk_entity.pipeline_occlusion || !vk_entity.flare_query_pool ||
-        !vk_entity.pipeline_depthhack_opaque || !vk_entity.pipeline_depthhack_alpha ||
+        !vk_entity.pipeline_depthhack_opaque ||
+        !vk_entity.pipeline_depthhack_opaque_no_depth_write ||
+        !vk_entity.pipeline_depthhack_alpha ||
         !vk_entity.pipeline_depthhack_additive ||
         (vk_entity.stencil_available &&
          (!vk_entity.pipeline_outline_mask ||
@@ -8573,18 +9739,20 @@ static void VK_Entity_RecordPhase(VkCommandBuffer cmd, const VkExtent2D *extent,
           !vk_entity.pipeline_outline_clear)) ||
         !vk_entity.frame_active || !vk_entity.batch_count ||
         (!vk_entity.vertex_count && !vk_entity.md2_instance_count &&
-         !vk_entity.bmodel_instance_count
+         !vk_entity.bmodel_instance_count && !vk_entity.particle_instance_count &&
+         !vk_entity.beam_instance_count
 #if USE_MD5
          && !vk_entity.md5_instance_count
 #endif
          ) || !frame ||
-        (vk_entity.vertex_count && !frame->vertex_buffer) ||
-        (vk_entity.index_count && !frame->index_buffer) ||
-        (vk_entity.md2_instance_count && !frame->md2_instance_buffer) ||
-        (vk_entity.bmodel_instance_count && !frame->bmodel_instance_buffer) ||
+        ((vk_entity.vertex_count || vk_entity.index_count) &&
+         !frame->geometry_buffer) ||
+        ((vk_entity.md2_instance_count || vk_entity.bmodel_instance_count ||
+          vk_entity.particle_instance_count || vk_entity.beam_instance_count) &&
+         !frame->instance_buffer) ||
 #if USE_MD5
         (vk_entity.md5_instance_count &&
-         (!frame->md5_instance_buffer || !frame->md5_palette_buffer)) ||
+         (!frame->instance_buffer || !frame->md5_palette_capacity)) ||
 #endif
         !extent) {
         return;
@@ -8638,6 +9806,7 @@ static void VK_Entity_RecordPhase(VkCommandBuffer cmd, const VkExtent2D *extent,
     }
 
     bool dynamic_buffers_bound = false;
+    bool bmodel_buffers_bound = false;
     if (vk_entity.vertex_count) {
         VK_Entity_BindDynamicBuffers(cmd, frame);
         dynamic_buffers_bound = true;
@@ -8665,11 +9834,15 @@ static void VK_Entity_RecordPhase(VkCommandBuffer cmd, const VkExtent2D *extent,
         !vk_bmodel_texture_replace || vk_bmodel_texture_replace->integer;
     const bool bmodel_texture_replace_no_fog_enabled =
         bmodel_texture_replace_enabled && !surface_fog_active;
+    const uint8_t record_pass_mask = VK_Entity_RecordPassMask(phase);
 
     // Match GL's effective entity ordering: opaque model work, any translucent
     // item base, the item's colorize overlay, then general translucent/additive
     // entities such as the separately submitted rim.
     for (int pass = 0; pass < 4; pass++) {
+        if ((record_pass_mask & BIT(pass)) == 0) {
+            continue;
+        }
         bool alpha = pass != 0;
         VkPipeline bound_pipeline = VK_NULL_HANDLE;
         VkDescriptorSet last_set = VK_NULL_HANDLE;
@@ -8694,21 +9867,41 @@ static void VK_Entity_RecordPhase(VkCommandBuffer cmd, const VkExtent2D *extent,
                     continue;
                 }
                 dynamic_buffers_bound = false;
+                bmodel_buffers_bound = false;
             } else if (batch->gpu_bmodel) {
-                if (!VK_Entity_BindGpuBmodelBatch(cmd, frame, batch)) {
+                if (!bmodel_buffers_bound ||
+                    !VK_Entity_BmodelBindingCacheEnabled()) {
+                    if (!VK_Entity_BindGpuBmodelBatch(cmd, frame, batch)) {
+                        continue;
+                    }
+                    VK_Debug_RecordEntityBmodelBinding();
+                }
+                dynamic_buffers_bound = false;
+                bmodel_buffers_bound = true;
+            } else if (batch->gpu_particle) {
+                if (!VK_Entity_BindGpuParticleBatch(cmd, frame, batch)) {
                     continue;
                 }
                 dynamic_buffers_bound = false;
+                bmodel_buffers_bound = false;
+            } else if (batch->gpu_beam) {
+                if (!VK_Entity_BindGpuBeamBatch(cmd, frame, batch)) {
+                    continue;
+                }
+                dynamic_buffers_bound = false;
+                bmodel_buffers_bound = false;
 #if USE_MD5
             } else if (batch->gpu_md5) {
                 if (!VK_Entity_BindGpuMd5Batch(cmd, frame, batch)) {
                     continue;
                 }
                 dynamic_buffers_bound = false;
+                bmodel_buffers_bound = false;
 #endif
             } else if (!dynamic_buffers_bound) {
                 VK_Entity_BindDynamicBuffers(cmd, frame);
                 dynamic_buffers_bound = true;
+                bmodel_buffers_bound = false;
             }
 
             VkPipeline target_pipeline;
@@ -8752,6 +9945,12 @@ static void VK_Entity_RecordPhase(VkCommandBuffer cmd, const VkExtent2D *extent,
                     VK_Debug_RecordEntityTextureReplaceDraw(
                         texture_replace_no_fog);
                 }
+            } else if (batch->gpu_particle) {
+                target_pipeline = batch->additive
+                    ? vk_entity.pipeline_gpu_particle_additive
+                    : vk_entity.pipeline_gpu_particle_alpha;
+            } else if (batch->gpu_beam) {
+                target_pipeline = vk_entity.pipeline_gpu_beam_alpha;
 #if USE_MD5
             } else if (batch->gpu_md5) {
                 target_pipeline = batch->additive
@@ -8761,6 +9960,9 @@ static void VK_Entity_RecordPhase(VkCommandBuffer cmd, const VkExtent2D *extent,
 #endif
             } else {
                 target_pipeline = batch->additive ? vk_entity.pipeline_additive
+                    : batch->cutout ? vk_entity.pipeline_cutout
+                    : batch->no_depth_write
+                        ? vk_entity.pipeline_opaque_no_depth_write
                     : alpha ? vk_entity.pipeline_alpha
                             : vk_entity.pipeline_opaque;
             }
@@ -8784,9 +9986,18 @@ static void VK_Entity_RecordPhase(VkCommandBuffer cmd, const VkExtent2D *extent,
 
             VK_Entity_DrawBatch(cmd, batch);
         }
+
+        if (pass == 0) {
+            VK_Entity_RecordCelShadingPass(cmd, frame, phase, false,
+                                           &dynamic_buffers_bound);
+            // The replay may leave an alias GPU buffer bound; later alpha
+            // batches must restore the transient stream before drawing.
+            dynamic_buffers_bound = false;
+            bmodel_buffers_bound = false;
+        }
     }
 
-    {
+    if (vk_entity.frame_has_depth_hack_batches) {
         VkPipeline bound_pipeline = VK_NULL_HANDLE;
         VkDescriptorSet last_set = VK_NULL_HANDLE;
         bool using_weapon_push = false;
@@ -8817,16 +10028,25 @@ static void VK_Entity_RecordPhase(VkCommandBuffer cmd, const VkExtent2D *extent,
                         continue;
                     }
                     dynamic_buffers_bound = false;
+                    bmodel_buffers_bound = false;
+                } else if (batch->gpu_beam) {
+                    if (!VK_Entity_BindGpuBeamBatch(cmd, frame, batch)) {
+                        continue;
+                    }
+                    dynamic_buffers_bound = false;
+                    bmodel_buffers_bound = false;
 #if USE_MD5
                 } else if (batch->gpu_md5) {
                     if (!VK_Entity_BindGpuMd5Batch(cmd, frame, batch)) {
                         continue;
                     }
                     dynamic_buffers_bound = false;
+                    bmodel_buffers_bound = false;
 #endif
                 } else if (!dynamic_buffers_bound) {
                     VK_Entity_BindDynamicBuffers(cmd, frame);
                     dynamic_buffers_bound = true;
+                    bmodel_buffers_bound = false;
                 }
 
                 bool use_weapon_push = batch->weapon_model && vk_entity.frame_weapon_active;
@@ -8846,6 +10066,8 @@ static void VK_Entity_RecordPhase(VkCommandBuffer cmd, const VkExtent2D *extent,
                         : batch->alpha
                             ? vk_entity.pipeline_gpu_md2_depthhack_alpha
                             : vk_entity.pipeline_gpu_md2_depthhack_opaque;
+                } else if (batch->gpu_beam) {
+                    target_pipeline = vk_entity.pipeline_gpu_beam_depthhack_alpha;
 #if USE_MD5
                 } else if (batch->gpu_md5) {
                     target_pipeline = batch->additive
@@ -8857,6 +10079,10 @@ static void VK_Entity_RecordPhase(VkCommandBuffer cmd, const VkExtent2D *extent,
                 } else {
                     target_pipeline = batch->additive
                         ? vk_entity.pipeline_depthhack_additive
+                        : batch->cutout
+                            ? vk_entity.pipeline_depthhack_cutout
+                        : batch->no_depth_write
+                            ? vk_entity.pipeline_depthhack_opaque_no_depth_write
                         : batch->alpha
                             ? vk_entity.pipeline_depthhack_alpha
                             : vk_entity.pipeline_depthhack_opaque;
@@ -8881,6 +10107,19 @@ static void VK_Entity_RecordPhase(VkCommandBuffer cmd, const VkExtent2D *extent,
 
                 VK_Entity_DrawBatch(cmd, batch);
             }
+
+            if (pass == 0) {
+                VK_Entity_RecordCelShadingPass(cmd, frame, phase, true,
+                                               &dynamic_buffers_bound);
+                // The helper restores the normal push constants after any
+                // weapon model replay. Reset tracked state before the later
+                // depth-hack alpha passes choose their own buffers/push.
+                dynamic_buffers_bound = false;
+                bmodel_buffers_bound = false;
+                bound_pipeline = VK_NULL_HANDLE;
+                last_set = VK_NULL_HANDLE;
+                using_weapon_push = false;
+            }
         }
     }
 
@@ -8892,7 +10131,7 @@ static void VK_Entity_RecordPhase(VkCommandBuffer cmd, const VkExtent2D *extent,
         dynamic_buffers_bound = true;
     }
 
-    if (vk_entity.stencil_available) {
+    if (vk_entity.stencil_available && vk_entity.frame_has_outline_batches) {
         VkPipeline bound_pipeline = VK_NULL_HANDLE;
         VkDescriptorSet last_set = VK_NULL_HANDLE;
         bool using_depthhack_viewport = false;
@@ -9099,6 +10338,10 @@ static VkPipeline VK_Entity_GetBloomPipeline(const vk_batch_t *batch,
 static void VK_Entity_RecordDepthHackBloomEmissionPhase(
     VkCommandBuffer cmd, const VkExtent2D *extent, vk_entity_record_phase_t phase)
 {
+    if (!VK_Entity_HasRecordPhase(phase)) {
+        return;
+    }
+
     vk_entity_frame_buffer_t *frame = VK_Entity_CurrentFrameBuffer();
     if (!cmd || !extent || !vk_entity.initialized || !vk_entity.swapchain_ready ||
         !vk_entity.frame_active || !vk_entity.batch_count || !frame) {
@@ -9140,6 +10383,7 @@ static void VK_Entity_RecordDepthHackBloomEmissionPhase(
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
     bool dynamic_buffers_bound = false;
+    bool bmodel_buffers_bound = false;
     bool using_weapon_push = false;
     VkPipeline bound_pipeline = VK_NULL_HANDLE;
     VkDescriptorSet last_set = VK_NULL_HANDLE;
@@ -9163,24 +10407,32 @@ static void VK_Entity_RecordDepthHackBloomEmissionPhase(
                 continue;
             }
             dynamic_buffers_bound = false;
+            bmodel_buffers_bound = false;
         } else if (batch->gpu_bmodel) {
-            if (!VK_Entity_BindGpuBmodelBatch(cmd, frame, batch)) {
-                continue;
+            if (!bmodel_buffers_bound ||
+                !VK_Entity_BmodelBindingCacheEnabled()) {
+                if (!VK_Entity_BindGpuBmodelBatch(cmd, frame, batch)) {
+                    continue;
+                }
+                VK_Debug_RecordEntityBmodelBinding();
             }
             dynamic_buffers_bound = false;
+            bmodel_buffers_bound = true;
 #if USE_MD5
         } else if (batch->gpu_md5) {
             if (!VK_Entity_BindGpuMd5Batch(cmd, frame, batch)) {
                 continue;
             }
             dynamic_buffers_bound = false;
+            bmodel_buffers_bound = false;
 #endif
         } else if (!dynamic_buffers_bound) {
-            if (!frame->vertex_buffer || !frame->index_buffer) {
+            if (!frame->geometry_buffer) {
                 continue;
             }
             VK_Entity_BindDynamicBuffers(cmd, frame);
             dynamic_buffers_bound = true;
+            bmodel_buffers_bound = false;
         }
 
         const bool use_weapon_push =
@@ -9214,7 +10466,8 @@ static void VK_Entity_RecordDepthHackBloomEmissionPhase(
 bool VK_Entity_HasDepthHackBloomEmission(void)
 {
     if (!vk_entity.initialized || !vk_entity.swapchain_ready ||
-        !vk_entity.frame_active || !vk_entity.batch_count) {
+        !vk_entity.frame_active || !vk_entity.batch_count ||
+        !VK_Entity_HasRecordPhase(VK_ENTITY_RECORD_ALPHA_FRONT)) {
         return false;
     }
 
@@ -9272,6 +10525,9 @@ bool VK_Entity_HasBloomRimDepthSampling(bool before_liquid)
 
     const vk_entity_record_phase_t phase = before_liquid
         ? VK_ENTITY_RECORD_BEFORE_LIQUID : VK_ENTITY_RECORD_ALL;
+    if (!VK_Entity_HasRecordPhase(phase)) {
+        return false;
+    }
     for (uint32_t i = 0; i < vk_entity.batch_count; ++i) {
         const vk_batch_t *batch = &vk_entity.batches[i];
         if (!VK_Entity_BatchMatchesRecordPhase(batch, phase) ||
@@ -9351,7 +10607,11 @@ void VK_Entity_RecordBloomEmission(VkCommandBuffer cmd, const VkExtent2D *extent
 
     const vk_entity_record_phase_t phase = before_liquid
         ? VK_ENTITY_RECORD_BEFORE_LIQUID : VK_ENTITY_RECORD_ALL;
+    if (!VK_Entity_HasRecordPhase(phase)) {
+        return;
+    }
     bool dynamic_buffers_bound = false;
+    bool bmodel_buffers_bound = false;
     VkPipeline bound_pipeline = VK_NULL_HANDLE;
     VkDescriptorSet last_set = VK_NULL_HANDLE;
     for (uint32_t i = 0; i < vk_entity.batch_count; i++) {
@@ -9420,24 +10680,32 @@ void VK_Entity_RecordBloomEmission(VkCommandBuffer cmd, const VkExtent2D *extent
                 continue;
             }
             dynamic_buffers_bound = false;
+            bmodel_buffers_bound = false;
         } else if (batch->gpu_bmodel) {
-            if (!VK_Entity_BindGpuBmodelBatch(cmd, frame, batch)) {
-                continue;
+            if (!bmodel_buffers_bound ||
+                !VK_Entity_BmodelBindingCacheEnabled()) {
+                if (!VK_Entity_BindGpuBmodelBatch(cmd, frame, batch)) {
+                    continue;
+                }
+                VK_Debug_RecordEntityBmodelBinding();
             }
             dynamic_buffers_bound = false;
+            bmodel_buffers_bound = true;
 #if USE_MD5
         } else if (batch->gpu_md5) {
             if (!VK_Entity_BindGpuMd5Batch(cmd, frame, batch)) {
                 continue;
             }
             dynamic_buffers_bound = false;
+            bmodel_buffers_bound = false;
 #endif
         } else if (!dynamic_buffers_bound) {
-            if (!frame->vertex_buffer || !frame->index_buffer) {
+            if (!frame->geometry_buffer) {
                 continue;
             }
             VK_Entity_BindDynamicBuffers(cmd, frame);
             dynamic_buffers_bound = true;
+            bmodel_buffers_bound = false;
         }
 
         if (target_pipeline != bound_pipeline) {

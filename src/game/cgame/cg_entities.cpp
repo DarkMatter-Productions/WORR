@@ -18,15 +18,23 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 // cl_ents.c -- entity parsing and management
 
 #include "cg_entity_local.h"
+#include "cg_canonical_render_entities.hpp"
 #include "cg_canonical_snapshot_timeline.hpp"
 #include "cg_event_runtime.hpp"
 #include "cg_event_shadow.hpp"
 #include "cg_snapshot_timeline.hpp"
 
+#include <algorithm>
+#include <array>
+#include <bit>
+#include <cmath>
+#include <limits>
+
 extern qhandle_t cl_mod_powerscreen;
 extern qhandle_t cl_mod_laser;
 extern qhandle_t cl_mod_dmspot;
 extern qhandle_t cl_img_flare;
+float CG_Wheel_TimeScale(void);
 
 static cvar_t *cl_brightskins_custom;
 static cvar_t *cl_brightskins_enemy_color;
@@ -48,11 +56,13 @@ namespace {
  * Mode 0 keeps legacy rendering authoritative while still advancing the
  * canonical render clock.  Mode 1 performs a live transform parity audit.
  * Mode 2 promotes a sampled transform only after the same parity checks pass.
- * Mode 3 is a stricter source gate but a different time policy: it activates
- * only while the engine reports sole native timeline ownership, selects the
- * newest admitted native time, and promotes safe copied samples without
- * requiring the newer legacy frame to describe that older native instant.
- * Every rejected/missing/discontinuous entity still falls back independently.
+ * Mode 3 is a stricter source gate with an independent time policy: it
+ * remains legacy-authoritative while waiting for the engine's first sole
+ * native timeline ownership bind, then renders behind the canonical clock by
+ * an explicit interpolation delay and permits only the configured bounded
+ * extrapolation interval.  Once bound, native authority enumerates a
+ * value-owned canonical identity union and fails closed on ownership loss
+ * instead of falling back to mutable legacy frame storage.
  */
 enum canonical_snapshot_render_mode_t {
     CANONICAL_SNAPSHOT_RENDER_LEGACY = 0,
@@ -72,6 +82,21 @@ struct canonical_snapshot_render_stats_t {
     std::uint64_t pair_frames;
     std::uint64_t pair_failures;
     std::uint64_t alignment_failures;
+    std::uint64_t interpolation_frames;
+    std::uint64_t extrapolation_frames;
+    std::uint64_t extrapolation_time_us;
+    std::uint64_t clamped_frames;
+    std::uint64_t adaptive_delay_failures;
+    std::uint64_t enumeration_frames;
+    std::uint64_t enumeration_failures;
+    std::uint64_t enumerated_current_entities;
+    std::uint64_t enumerated_removed_entities;
+    std::uint64_t selected_visible_previous_only_sources;
+    std::uint64_t enumeration_generation_resets;
+    std::uint64_t renderer_submission_calls;
+    std::uint64_t renderer_submitted_sources;
+    std::uint64_t renderer_previous_only_submitted_sources;
+    std::uint64_t renderer_submission_hash;
     std::uint64_t sample_attempts;
     std::uint64_t sample_failures;
     std::uint64_t sample_invisible;
@@ -93,16 +118,143 @@ struct canonical_snapshot_render_stats_t {
 struct canonical_snapshot_render_frame_t {
     worr_snapshot_timeline_policy_v1 policy;
     worr_snapshot_timeline_pair_v1 pair;
+    std::uint32_t requested_mode;
     std::uint32_t mode;
+    std::uint32_t prepared_realtime_ms;
     bool pair_valid;
+    bool prepared;
+};
+
+struct canonical_interpolation_pair_feedback_t {
+    std::uint32_t valid;
+    std::uint32_t mode;
+    std::uint64_t extrapolation_us;
+};
+
+static_assert(CG_CANONICAL_RENDER_SNAPSHOT_ENTITY_CAPACITY ==
+                  CG_CANONICAL_SNAPSHOT_TIMELINE_ENTITY_CAPACITY,
+              "native render copy capacity must cover one timeline slot");
+
+struct canonical_native_render_cache_entry_t {
+    centity_t entity;
+    std::uint32_t generation;
+    std::uint32_t provenance;
+    std::uint32_t pending_discontinuity_blocks;
+    std::uint64_t pending_discontinuity_key;
+    std::uint64_t handled_discontinuity_key;
+    bool valid;
+};
+
+enum canonical_native_render_result_t : std::uint32_t {
+    CANONICAL_NATIVE_RENDER_UNINITIALIZED = 0,
+    CANONICAL_NATIVE_RENDER_OK = 1,
+    CANONICAL_NATIVE_RENDER_INVALID_LIMITS = 2,
+    CANONICAL_NATIVE_RENDER_COPY_PREVIOUS = 3,
+    CANONICAL_NATIVE_RENDER_COPY_CURRENT = 4,
+    CANONICAL_NATIVE_RENDER_COPY_PLAYER = 5,
+    CANONICAL_NATIVE_RENDER_BUILD_UNION = 6,
+    CANONICAL_NATIVE_RENDER_SAMPLE_ENTITY = 7,
+    CANONICAL_NATIVE_RENDER_ADAPT_ENTITY = 8,
+    CANONICAL_NATIVE_RENDER_ID_EXHAUSTED = 9,
+};
+
+struct canonical_native_render_view_t {
+    std::array<worr_snapshot_entity_v2,
+               CG_CANONICAL_RENDER_SNAPSHOT_ENTITY_CAPACITY>
+        previous_entities;
+    std::array<worr_snapshot_entity_v2,
+               CG_CANONICAL_RENDER_SNAPSHOT_ENTITY_CAPACITY>
+        current_entities;
+    std::array<cg_canonical_render_entity_v1,
+               CG_CANONICAL_RENDER_ENTITY_UNION_CAPACITY>
+        records;
+    std::array<std::uint16_t,
+               CG_CANONICAL_RENDER_ENTITY_UNION_CAPACITY>
+        render_identities;
+    std::array<std::uint32_t,
+               CG_CANONICAL_RENDER_ENTITY_UNION_CAPACITY>
+        render_generations;
+    std::array<std::uint32_t,
+               CG_CANONICAL_RENDER_ENTITY_UNION_CAPACITY>
+        render_provenances;
+    std::array<std::uint32_t,
+               CG_CANONICAL_RENDER_ENTITY_UNION_CAPACITY>
+        render_blocks;
+    std::array<std::uint32_t,
+               CG_CANONICAL_RENDER_ENTITY_UNION_CAPACITY>
+        render_modes;
+    std::array<std::uint8_t,
+               CG_CANONICAL_RENDER_ENTITY_UNION_CAPACITY>
+        render_previous_only;
+    std::array<std::uint32_t,
+               CG_CANONICAL_RENDER_ENTITY_UNION_CAPACITY>
+        render_pending_discontinuity_blocks;
+    std::array<std::uint64_t,
+               CG_CANONICAL_RENDER_ENTITY_UNION_CAPACITY>
+        render_pending_discontinuity_keys;
+    std::array<std::uint64_t,
+               CG_CANONICAL_RENDER_ENTITY_UNION_CAPACITY>
+        render_handled_discontinuity_keys;
+    std::array<std::uint8_t,
+               CG_CANONICAL_RENDER_ENTITY_UNION_CAPACITY>
+        render_lifecycle_resets;
+    std::array<entity_state_t,
+               CG_CANONICAL_RENDER_ENTITY_UNION_CAPACITY>
+        render_states;
+    std::array<canonical_native_render_cache_entry_t,
+               CG_CANONICAL_SNAPSHOT_MAX_ENTITY_IDENTITIES>
+        cache;
+    std::uint32_t record_count;
+    std::uint32_t current_count;
+    std::uint32_t render_count;
+    std::uint32_t removed_count;
+    std::uint32_t selected_previous_only_count;
+    std::uint32_t controlled_entity;
+    std::uint8_t team_id;
+    std::int32_t movement_type;
+    std::uint32_t last_result;
+    int next_entity_id;
+    bool valid;
+    bool authority_latched;
 };
 
 cvar_t *cg_snapshot_timeline_render;
 cvar_t *cg_snapshot_timeline_render_epsilon;
+cvar_t *cg_snapshot_timeline_interpolation_delay_ms;
+cvar_t *cg_snapshot_timeline_adaptive_interpolation;
+cvar_t *cg_snapshot_timeline_max_interpolation_delay_ms;
+cvar_t *cg_snapshot_timeline_max_extrapolation_ms;
 cvar_t *cg_event_runtime_audit;
+cvar_t *cl_worr_native_event_presentation_owned;
 cvar_t *cl_worr_native_snapshot_timeline_owned;
 canonical_snapshot_render_stats_t canonical_render_stats;
 canonical_snapshot_render_frame_t canonical_render_frame;
+canonical_native_render_view_t canonical_native_render_view;
+cg_canonical_host_time_extender_v1 canonical_host_time_extender;
+cg_canonical_native_authority_state_v1 canonical_native_authority_state;
+cg_canonical_interpolation_delay_state_v1 canonical_interpolation_delay_state;
+cg_canonical_interpolation_delay_status_v1 canonical_interpolation_delay_status;
+canonical_interpolation_pair_feedback_t canonical_interpolation_pair_feedback;
+
+int effective_canonical_snapshot_render_mode()
+{
+    const int configured_mode = cg_snapshot_timeline_render
+        ? Q_clip(cg_snapshot_timeline_render->integer,
+                 static_cast<int>(CANONICAL_SNAPSHOT_RENDER_LEGACY),
+                 static_cast<int>(
+                     CANONICAL_SNAPSHOT_RENDER_NATIVE_AUTHORITY))
+        : CANONICAL_SNAPSHOT_RENDER_LEGACY;
+
+    /* Legacy demos do not carry the canonical snapshot timeline.  Select one
+     * authority for the entire playback/seek stream instead of entering mode
+     * 3 and producing an entity-empty frame when live timeline ownership is
+     * intentionally revoked. */
+    if (configured_mode == CANONICAL_SNAPSHOT_RENDER_NATIVE_AUTHORITY &&
+        (cls.demo.playback || cls.demo.seeking)) {
+        return CANONICAL_SNAPSHOT_RENDER_LEGACY;
+    }
+    return configured_mode;
+}
 
 void event_runtime_audit_changed(cvar_t *self)
 {
@@ -115,7 +267,7 @@ void increment_saturated(std::uint64_t &value)
         ++value;
 }
 
-void add_saturated(std::uint64_t &value, std::uint32_t amount)
+void add_saturated(std::uint64_t &value, std::uint64_t amount)
 {
     if (value > UINT64_MAX - amount)
         value = UINT64_MAX;
@@ -149,7 +301,407 @@ void reset_canonical_render_stats(std::uint32_t epoch)
 {
     canonical_render_stats = {};
     canonical_render_stats.epoch = epoch;
+    canonical_render_stats.renderer_submission_hash =
+        UINT64_C(1469598103934665603);
     canonical_render_stats.last_debug_time_ms = cls.realtime;
+}
+
+void canonical_submission_hash_u32(std::uint32_t value)
+{
+    for (unsigned byte = 0; byte < 4u; ++byte) {
+        canonical_render_stats.renderer_submission_hash ^=
+            static_cast<std::uint8_t>(value >> (byte * 8u));
+        canonical_render_stats.renderer_submission_hash *=
+            UINT64_C(1099511628211);
+    }
+}
+
+void canonical_submission_hash_u64(std::uint64_t value)
+{
+    canonical_submission_hash_u32(static_cast<std::uint32_t>(value));
+    canonical_submission_hash_u32(
+        static_cast<std::uint32_t>(value >> 32u));
+}
+
+void record_canonical_renderer_submission(
+    const canonical_native_render_cache_entry_t &entry,
+    const entity_state_t &state, const entity_t &render_entity,
+    bool previous_only_source, bool &source_already_submitted)
+{
+    increment_saturated(canonical_render_stats.renderer_submission_calls);
+    if (!source_already_submitted) {
+        increment_saturated(
+            canonical_render_stats.renderer_submitted_sources);
+        if (previous_only_source) {
+            increment_saturated(
+                canonical_render_stats
+                    .renderer_previous_only_submitted_sources);
+        }
+        source_already_submitted = true;
+        Q_assert(CG_CanonicalPreviousOnlyEvidenceOrderedV1(
+            canonical_render_stats.enumerated_removed_entities,
+            canonical_render_stats.selected_visible_previous_only_sources,
+            canonical_render_stats
+                .renderer_previous_only_submitted_sources));
+    }
+    canonical_submission_hash_u32(static_cast<std::uint32_t>(state.number));
+    canonical_submission_hash_u32(entry.generation);
+    canonical_submission_hash_u32(entry.provenance);
+    canonical_submission_hash_u64(static_cast<std::uint64_t>(state.effects));
+    canonical_submission_hash_u64(static_cast<std::uint64_t>(state.renderfx));
+    canonical_submission_hash_u32(static_cast<std::uint32_t>(state.frame));
+    canonical_submission_hash_u32(
+        static_cast<std::uint32_t>(render_entity.id));
+    canonical_submission_hash_u32(
+        static_cast<std::uint32_t>(render_entity.owner_entity));
+    for (unsigned axis = 0; axis < 3u; ++axis) {
+        canonical_submission_hash_u32(
+            std::bit_cast<std::uint32_t>(render_entity.origin[axis]));
+        canonical_submission_hash_u32(
+            std::bit_cast<std::uint32_t>(render_entity.angles[axis]));
+    }
+}
+
+void reset_canonical_native_render_view()
+{
+    for (auto &entry : canonical_native_render_view.cache)
+        entry = {};
+    canonical_native_render_view.render_previous_only.fill(0u);
+    canonical_native_render_view.record_count = 0;
+    canonical_native_render_view.current_count = 0;
+    canonical_native_render_view.render_count = 0;
+    canonical_native_render_view.removed_count = 0;
+    canonical_native_render_view.selected_previous_only_count = 0;
+    canonical_native_render_view.controlled_entity = 0;
+    canonical_native_render_view.team_id = 0;
+    canonical_native_render_view.movement_type = 0;
+    canonical_native_render_view.last_result =
+        CANONICAL_NATIVE_RENDER_UNINITIALIZED;
+    // Keep render lifecycle IDs process-monotonic across epoch, clock and
+    // ownership resets. Persistent audio tokens include this ID, so resetting
+    // it could make a recovered entity indistinguishable from an old channel.
+    canonical_native_render_view.valid = false;
+    canonical_native_render_view.authority_latched = false;
+}
+
+bool fail_canonical_native_render_view(canonical_native_render_result_t result)
+{
+    canonical_native_render_view.render_previous_only.fill(0u);
+    canonical_native_render_view.record_count = 0;
+    canonical_native_render_view.current_count = 0;
+    canonical_native_render_view.render_count = 0;
+    canonical_native_render_view.removed_count = 0;
+    canonical_native_render_view.selected_previous_only_count = 0;
+    canonical_native_render_view.controlled_entity = 0;
+    canonical_native_render_view.team_id = 0;
+    canonical_native_render_view.movement_type = 0;
+    canonical_native_render_view.last_result = result;
+    canonical_native_render_view.valid = false;
+    increment_saturated(canonical_render_stats.enumeration_failures);
+    return false;
+}
+
+void canonical_native_update_bounds(centity_t &entity)
+{
+    if (entity.current.solid && entity.current.solid != PACKED_BSP) {
+        cgei->Q2Proto_UnpackSolid(entity.current.solid, entity.mins,
+                                 entity.maxs);
+        entity.radius = Distance(entity.maxs, entity.mins) * 0.5f;
+    } else {
+        VectorClear(entity.mins);
+        VectorClear(entity.maxs);
+        entity.radius = 0.0f;
+    }
+}
+
+void canonical_native_initialize_cache_entry(
+    canonical_native_render_cache_entry_t &entry,
+    const entity_state_t &state, std::uint32_t generation,
+    std::uint32_t provenance)
+{
+    entry = {};
+    centity_t &entity = entry.entity;
+    entity.id = ++canonical_native_render_view.next_entity_id;
+    entity.current = state;
+    entity.prev = state;
+    entity.serverframe = cl.frame.number;
+    entity.trailcount = 1024;
+    entity.flashlightfrac = 1.0f;
+    VectorCopy(state.origin, entity.lerp_origin);
+#if USE_FPS
+    entity.prev_frame = state.frame;
+    entity.event_frame = cl.frame.number;
+#endif
+    entity.current_frame = state.frame;
+    entity.last_frame = state.frame;
+    entity.frame_servertime = cl.servertime;
+    entity.stair_time = cls.realtime;
+    canonical_native_update_bounds(entity);
+    entry.generation = generation;
+    entry.provenance = provenance;
+    entry.valid = true;
+    increment_saturated(canonical_render_stats.enumeration_generation_resets);
+}
+
+void canonical_native_update_cache_entry(
+    canonical_native_render_cache_entry_t &entry,
+    const entity_state_t &state)
+{
+    centity_t &entity = entry.entity;
+    const entity_state_t previous = entity.current;
+#if USE_FPS
+    if (state.frame != previous.frame) {
+        entity.prev_frame = previous.frame;
+        entity.anim_start = cl.servertime - cl.frametime.time;
+    }
+#endif
+    if (entity.current_frame != state.frame) {
+        entity.last_frame = entity.current_frame;
+        entity.current_frame = state.frame;
+        entity.frame_servertime = cl.servertime;
+    }
+    entity.prev = previous;
+    entity.current = state;
+    entity.serverframe = cl.frame.number;
+    canonical_native_update_bounds(entity);
+}
+
+bool prepare_canonical_native_render_view()
+{
+    auto &view = canonical_native_render_view;
+    view.valid = false;
+    view.record_count = 0;
+    view.current_count = 0;
+    view.render_count = 0;
+    view.removed_count = 0;
+    view.selected_previous_only_count = 0;
+    view.render_previous_only.fill(0u);
+    increment_saturated(canonical_render_stats.enumeration_frames);
+
+    if (!cgei || !cgei->Q2Proto_UnpackSolid || cl.csr.max_edicts <= 1 ||
+        cl.csr.max_edicts > CG_CANONICAL_SNAPSHOT_MAX_ENTITY_IDENTITIES ||
+        cl.csr.max_models <= 0 || cl.csr.max_models > MAX_MODELS ||
+        cl.csr.max_sounds <= 0 || cl.csr.max_sounds > MAX_SOUNDS) {
+        return fail_canonical_native_render_view(
+            CANONICAL_NATIVE_RENDER_INVALID_LIMITS);
+    }
+
+    std::uint32_t previous_count = 0;
+    if (canonical_render_frame.pair.previous.slot !=
+        WORR_SNAPSHOT_TIMELINE_REF_NONE_SLOT) {
+        const auto result = CG_CanonicalSnapshotTimelineCopyEntities(
+            canonical_render_frame.pair.previous,
+            view.previous_entities.data(),
+            static_cast<std::uint32_t>(view.previous_entities.size()),
+            &previous_count);
+        if (result != WORR_SNAPSHOT_TIMELINE_OK) {
+            return fail_canonical_native_render_view(
+                CANONICAL_NATIVE_RENDER_COPY_PREVIOUS);
+        }
+    }
+
+    std::uint32_t current_count = 0;
+    if (CG_CanonicalSnapshotTimelineCopyEntities(
+            canonical_render_frame.pair.current,
+            view.current_entities.data(),
+            static_cast<std::uint32_t>(view.current_entities.size()),
+            &current_count) != WORR_SNAPSHOT_TIMELINE_OK) {
+        return fail_canonical_native_render_view(
+            CANONICAL_NATIVE_RENDER_COPY_CURRENT);
+    }
+
+    worr_snapshot_player_v2 player{};
+    if (CG_CanonicalSnapshotTimelineCopyPlayer(
+            canonical_render_frame.pair.current, &player) !=
+        WORR_SNAPSHOT_TIMELINE_OK) {
+        return fail_canonical_native_render_view(
+            CANONICAL_NATIVE_RENDER_COPY_PLAYER);
+    }
+
+    const cg_canonical_entity_adapter_limits_v1 limits = {
+        static_cast<std::uint32_t>(cl.csr.max_edicts),
+        static_cast<std::uint32_t>(cl.csr.max_models),
+        static_cast<std::uint32_t>(cl.csr.max_sounds),
+    };
+    std::uint32_t record_count = 0;
+    if (CG_BuildCanonicalRenderEntitiesV1(
+            view.previous_entities.data(), previous_count,
+            view.current_entities.data(), current_count, limits,
+            view.records.data(),
+            static_cast<std::uint32_t>(view.records.size()),
+            &record_count) != CG_CANONICAL_RENDER_ENTITIES_OK) {
+        return fail_canonical_native_render_view(
+            CANONICAL_NATIVE_RENDER_BUILD_UNION);
+    }
+    const std::uint64_t discontinuity_endpoint_key =
+        CG_CanonicalRenderEndpointKeyV1(
+            canonical_render_frame.pair.current);
+    if (discontinuity_endpoint_key == 0u) {
+        return fail_canonical_native_render_view(
+            CANONICAL_NATIVE_RENDER_ADAPT_ENTITY);
+    }
+
+    std::uint32_t render_count = 0;
+    std::uint32_t removed_count = 0;
+    std::uint32_t selected_previous_only_count = 0;
+    for (std::uint32_t record_index = 0; record_index < record_count;
+         ++record_index) {
+        const auto &record = view.records[record_index];
+        const bool previous_only =
+            (record.flags & CG_CANONICAL_RENDER_ENTITY_PREVIOUS) != 0u &&
+            (record.flags & CG_CANONICAL_RENDER_ENTITY_CURRENT) == 0u;
+        if (previous_only) {
+            ++removed_count;
+        }
+
+        increment_saturated(canonical_render_stats.sample_attempts);
+        worr_snapshot_timeline_entity_sample_v1 sample{};
+        const auto sample_result = CG_CanonicalSnapshotTimelineSampleEntity(
+            &canonical_render_frame.policy, &canonical_render_frame.pair,
+            record.identity, &sample);
+        if (sample_result != WORR_SNAPSHOT_TIMELINE_OK) {
+            increment_saturated(canonical_render_stats.sample_failures);
+            return fail_canonical_native_render_view(
+                CANONICAL_NATIVE_RENDER_SAMPLE_ENTITY);
+        }
+        if (!sample.visible) {
+            increment_saturated(canonical_render_stats.sample_invisible);
+            continue;
+        }
+        if (sample.blocking_reasons != 0u)
+            increment_saturated(canonical_render_stats.sample_discontinuities);
+
+        cg_canonical_render_sample_v1 selected{};
+        if (CG_SelectCanonicalRenderSampleV1(&record, &sample, limits,
+                                             &selected) !=
+            CG_CANONICAL_RENDER_SAMPLE_OK) {
+            return fail_canonical_native_render_view(
+                CANONICAL_NATIVE_RENDER_ADAPT_ENTITY);
+        }
+        view.render_identities[render_count] =
+            static_cast<std::uint16_t>(record.identity);
+        view.render_generations[render_count] =
+            selected.generation;
+        view.render_provenances[render_count] = selected.provenance;
+        view.render_blocks[render_count] = sample.blocking_reasons;
+        view.render_modes[render_count] = sample.mode;
+        view.render_previous_only[render_count] =
+            previous_only ? 1u : 0u;
+        view.render_states[render_count] = selected.state;
+        if (previous_only)
+            ++selected_previous_only_count;
+        ++render_count;
+    }
+
+    std::uint32_t resets = 0;
+    for (std::uint32_t index = 0; index < render_count; ++index) {
+        const std::uint32_t identity = view.render_identities[index];
+        const auto &entry = view.cache[identity];
+        const bool cache_identity_continuous = entry.valid &&
+            entry.generation == view.render_generations[index] &&
+            entry.provenance == view.render_provenances[index];
+        const entity_state_t &cached_state = cache_identity_continuous
+            ? entry.entity.current
+            : view.render_states[index];
+        cg_canonical_render_lifecycle_decision_v1 lifecycle{};
+        if (CG_ResolveCanonicalRenderLifecycleV1(
+                &cached_state, &view.render_states[index],
+                cache_identity_continuous
+                    ? entry.pending_discontinuity_blocks
+                    : 0u,
+                cache_identity_continuous
+                    ? entry.pending_discontinuity_key
+                    : 0u,
+                cache_identity_continuous
+                    ? entry.handled_discontinuity_key
+                    : 0u,
+                view.render_modes[index], view.render_blocks[index],
+                discontinuity_endpoint_key,
+                &lifecycle) != CG_CANONICAL_RENDER_LIFECYCLE_OK) {
+            return fail_canonical_native_render_view(
+                CANONICAL_NATIVE_RENDER_ADAPT_ENTITY);
+        }
+        const bool reset =
+            !cache_identity_continuous || lifecycle.reset != 0u;
+        view.render_pending_discontinuity_blocks[index] =
+            lifecycle.pending_blocking_reasons;
+        view.render_pending_discontinuity_keys[index] =
+            lifecycle.pending_discontinuity_key;
+        view.render_handled_discontinuity_keys[index] =
+            lifecycle.handled_discontinuity_key;
+        view.render_lifecycle_resets[index] = reset ? 1u : 0u;
+        if (reset) {
+            ++resets;
+        }
+    }
+    if (resets > static_cast<std::uint32_t>(
+                     std::numeric_limits<int>::max() -
+                     view.next_entity_id)) {
+        return fail_canonical_native_render_view(
+            CANONICAL_NATIVE_RENDER_ID_EXHAUSTED);
+    }
+
+    std::uint32_t visible_cursor = 0;
+    for (std::uint32_t identity = 0;
+         identity < static_cast<std::uint32_t>(view.cache.size());
+         ++identity) {
+        while (visible_cursor < render_count &&
+               view.render_identities[visible_cursor] < identity) {
+            ++visible_cursor;
+        }
+        if (visible_cursor >= render_count ||
+            view.render_identities[visible_cursor] != identity) {
+            view.cache[identity].valid = false;
+        }
+    }
+
+    for (std::uint32_t index = 0; index < render_count; ++index) {
+        const std::uint32_t identity = view.render_identities[index];
+        auto &entry = view.cache[identity];
+        const bool reset = view.render_lifecycle_resets[index] != 0u;
+        if (reset) {
+            canonical_native_initialize_cache_entry(
+                entry, view.render_states[index],
+                view.render_generations[index],
+                view.render_provenances[index]);
+        } else {
+            canonical_native_update_cache_entry(
+                entry, view.render_states[index]);
+        }
+        entry.pending_discontinuity_blocks =
+            view.render_pending_discontinuity_blocks[index];
+        entry.pending_discontinuity_key =
+            view.render_pending_discontinuity_keys[index];
+        entry.handled_discontinuity_key =
+            view.render_handled_discontinuity_keys[index];
+    }
+
+    view.record_count = record_count;
+    view.current_count = current_count;
+    view.render_count = render_count;
+    view.removed_count = removed_count;
+    view.selected_previous_only_count = selected_previous_only_count;
+    view.controlled_entity = player.controlled_entity.identity.index;
+    view.team_id = player.team_id;
+    view.movement_type = player.movement.movement_type;
+    view.last_result = CANONICAL_NATIVE_RENDER_OK;
+    view.valid = true;
+    add_saturated(canonical_render_stats.enumerated_current_entities,
+                  render_count);
+    add_saturated(canonical_render_stats.enumerated_removed_entities,
+                  removed_count);
+    add_saturated(
+        canonical_render_stats.selected_visible_previous_only_sources,
+        selected_previous_only_count);
+    Q_assert(CG_CanonicalPreviousOnlyEvidenceOrderedV1(
+        canonical_render_stats.enumerated_removed_entities,
+        canonical_render_stats.selected_visible_previous_only_sources,
+        canonical_render_stats.renderer_previous_only_submitted_sources));
+    add_saturated(canonical_render_stats.native_authority_samples,
+                  render_count);
+    add_saturated(canonical_render_stats.promoted_transforms,
+                  render_count);
+    return true;
 }
 
 bool canonical_desired_render_time_us(std::uint64_t *time_out)
@@ -183,41 +735,213 @@ worr_snapshot_timeline_result_v1 advance_canonical_render_clock(
     const cg_canonical_snapshot_timeline_diagnostics_v1 &diagnostics,
     worr_snapshot_timeline_clock_state_v1 *clock_out)
 {
-    worr_snapshot_timeline_clock_request_v1 request{};
-    request.struct_size = sizeof(request);
-    request.schema_version = WORR_SNAPSHOT_TIMELINE_VERSION;
-    request.reset_reason = WORR_SNAPSHOT_TIMELINE_CLOCK_RESET_NONE;
-    request.host_time_us =
-        static_cast<std::uint64_t>(cls.realtime) * UINT64_C(1000);
-    if (request.host_time_us < diagnostics.clock.host_time_us)
-        request.host_time_us = diagnostics.clock.host_time_us;
+    std::uint64_t host_time_us = 0;
+    if (cgei && cgei->host_realtime_us) {
+        host_time_us = *cgei->host_realtime_us;
+    } else {
+        std::uint64_t host_time_ms = 0;
+        if (CG_ExtendCanonicalHostTimeV1(
+                &canonical_host_time_extender, cls.realtime,
+                &host_time_ms) != CG_CANONICAL_HOST_TIME_OK ||
+            host_time_ms > UINT64_MAX / UINT64_C(1000)) {
+            return WORR_SNAPSHOT_TIMELINE_CLOCK_OVERFLOW;
+        }
+        host_time_us = host_time_ms * UINT64_C(1000);
+    }
+    const cvar_t *timescale_var = Cvar_FindVar("timescale");
+    double effective_rate = timescale_var ? timescale_var->value : 1.0;
+    effective_rate *= static_cast<double>(CG_Wheel_TimeScale());
+    if (!std::isfinite(effective_rate) || effective_rate <= 0.0)
+        effective_rate = 1.0;
+    effective_rate = std::min(
+        effective_rate,
+        static_cast<double>(WORR_SNAPSHOT_TIMELINE_RATE_MAX_Q16) /
+            WORR_SNAPSHOT_TIMELINE_RATE_ONE_Q16);
+    std::uint32_t rate_q16 = static_cast<std::uint32_t>(
+        effective_rate * WORR_SNAPSHOT_TIMELINE_RATE_ONE_Q16 + 0.5);
+    if (rate_q16 == 0u)
+        rate_q16 = 1u;
 
     const cvar_t *paused = CG_SvPausedVar();
     const bool should_pause = paused && paused->integer != 0;
-    if (should_pause && !diagnostics.clock.paused)
-        request.operation = WORR_SNAPSHOT_TIMELINE_CLOCK_PAUSE;
-    else if (!should_pause && diagnostics.clock.paused)
-        request.operation = WORR_SNAPSHOT_TIMELINE_CLOCK_RESUME;
-    else
-        request.operation = WORR_SNAPSHOT_TIMELINE_CLOCK_ADVANCE;
+    cg_canonical_render_clock_plan_v1 plan{};
+    if (CG_BuildCanonicalRenderClockPlanV1(
+            &diagnostics.clock, host_time_us, rate_q16, should_pause,
+            &plan) != CG_CANONICAL_RENDER_CLOCK_PLAN_OK) {
+        return WORR_SNAPSHOT_TIMELINE_CORRUPT;
+    }
 
-    return CG_CanonicalSnapshotTimelineClockApply(&request, clock_out);
+    worr_snapshot_timeline_clock_state_v1 state{};
+    for (std::uint32_t index = 0; index < plan.request_count; ++index) {
+        const auto result = CG_CanonicalSnapshotTimelineClockApply(
+            &plan.requests[index], &state);
+        if (result != WORR_SNAPSHOT_TIMELINE_OK)
+            return result;
+    }
+    *clock_out = state;
+    return WORR_SNAPSHOT_TIMELINE_OK;
+}
+
+std::uint64_t update_canonical_interpolation_delay(
+    const cg_canonical_snapshot_timeline_diagnostics_v1 &diagnostics,
+    std::uint64_t baseline_us)
+{
+    const float configured_maximum_ms =
+        cg_snapshot_timeline_max_interpolation_delay_ms
+            ? Cvar_ClampValue(
+                  cg_snapshot_timeline_max_interpolation_delay_ms,
+                  0.0f, 1000.0f)
+            : 150.0f;
+    const std::uint64_t maximum_us = std::max(
+        baseline_us, static_cast<std::uint64_t>(
+                         configured_maximum_ms * 1000.0f));
+    const cg_canonical_interpolation_delay_config_v1 config{
+        baseline_us,
+        maximum_us,
+        cg_snapshot_timeline_adaptive_interpolation &&
+                cg_snapshot_timeline_adaptive_interpolation->integer != 0
+            ? 1u
+            : 0u,
+        0u,
+    };
+
+    worr_cgame_snapshot_timeline_status_v2 timeline_status{};
+    const auto *timeline_api = CG_GetCanonicalSnapshotTimelineAPI();
+    if (!timeline_api || !timeline_api->GetStatus ||
+        !timeline_api->GetStatus(&timeline_status) ||
+        timeline_status.active_epoch != diagnostics.active_epoch) {
+        increment_saturated(canonical_render_stats.adaptive_delay_failures);
+        canonical_interpolation_pair_feedback = {};
+        canonical_interpolation_delay_status = {};
+        canonical_interpolation_delay_status.delay_us = baseline_us;
+        canonical_interpolation_delay_status.baseline_delay_us = baseline_us;
+        canonical_interpolation_delay_status.maximum_delay_us = maximum_us;
+        canonical_interpolation_delay_status.adaptive_enabled =
+            config.adaptive_enabled;
+        return baseline_us;
+    }
+
+    cg_canonical_interpolation_delay_observation_v1 observation{};
+    observation.epoch = diagnostics.active_epoch;
+    observation.stream_reset_count = timeline_status.resets;
+    observation.accepted_snapshot_count = timeline_status.accepted;
+    if (diagnostics.latest_ref.slot !=
+        WORR_SNAPSHOT_TIMELINE_REF_NONE_SLOT) {
+        worr_snapshot_v2 latest{};
+        if (CG_CanonicalSnapshotTimelineCopySnapshot(
+                diagnostics.latest_ref, &latest) ==
+            WORR_SNAPSHOT_TIMELINE_OK) {
+            observation.snapshot_valid = 1u;
+            observation.snapshot_server_time_us = latest.server_time_us;
+            observation.snapshot_receive_time_us =
+                timeline_status.last_receive_time_us;
+        }
+    }
+    observation.pair_valid = canonical_interpolation_pair_feedback.valid;
+    observation.pair_mode = canonical_interpolation_pair_feedback.mode;
+    observation.pair_extrapolation_us =
+        canonical_interpolation_pair_feedback.extrapolation_us;
+    canonical_interpolation_pair_feedback = {};
+
+    const auto result = CG_UpdateCanonicalInterpolationDelayV1(
+        &canonical_interpolation_delay_state, &config, &observation,
+        &canonical_interpolation_delay_status);
+    if (result != CG_CANONICAL_INTERPOLATION_DELAY_OK) {
+        increment_saturated(canonical_render_stats.adaptive_delay_failures);
+        CG_ResetCanonicalInterpolationDelayV1(
+            &canonical_interpolation_delay_state);
+        canonical_interpolation_delay_status = {};
+        canonical_interpolation_delay_status.delay_us = baseline_us;
+        canonical_interpolation_delay_status.baseline_delay_us = baseline_us;
+        canonical_interpolation_delay_status.maximum_delay_us = maximum_us;
+        canonical_interpolation_delay_status.adaptive_enabled =
+            config.adaptive_enabled;
+        return baseline_us;
+    }
+    return canonical_interpolation_delay_status.delay_us;
 }
 
 void begin_canonical_snapshot_render_frame()
 {
     canonical_render_frame = {};
+    const int requested_mode = effective_canonical_snapshot_render_mode();
+    const bool native_requested = requested_mode ==
+        CANONICAL_SNAPSHOT_RENDER_NATIVE_AUTHORITY;
+    const bool native_ownership_present =
+        cl_worr_native_snapshot_timeline_owned &&
+        cl_worr_native_snapshot_timeline_owned->integer != 0;
+    const auto native_authority_phase =
+        CG_ResolveCanonicalNativeAuthorityV1(
+            &canonical_native_authority_state, native_requested,
+            native_ownership_present);
+    const bool first_native_bind = native_authority_phase ==
+        CG_CANONICAL_NATIVE_AUTHORITY_FIRST_BIND;
+    const bool native_authority =
+        first_native_bind ||
+        native_authority_phase == CG_CANONICAL_NATIVE_AUTHORITY_OWNED ||
+        native_authority_phase ==
+            CG_CANONICAL_NATIVE_AUTHORITY_POST_BIND_LOSS;
+    const int resolved_mode = native_authority_phase ==
+            CG_CANONICAL_NATIVE_AUTHORITY_PREBIND_LEGACY
+        ? CANONICAL_SNAPSHOT_RENDER_LEGACY
+        : requested_mode;
+    canonical_render_frame.requested_mode =
+        static_cast<std::uint32_t>(requested_mode);
+    canonical_render_frame.mode = static_cast<std::uint32_t>(resolved_mode);
+    canonical_render_frame.prepared_realtime_ms = cls.realtime;
+    canonical_render_frame.prepared = true;
+    if (first_native_bind) {
+        CG_ResetCanonicalInterpolationDelayV1(
+            &canonical_interpolation_delay_state);
+        canonical_interpolation_delay_status = {};
+        canonical_interpolation_pair_feedback = {};
+    }
+    if (native_authority) {
+        if (first_native_bind ||
+            !canonical_native_render_view.authority_latched) {
+            reset_canonical_native_render_view();
+            canonical_native_render_view.authority_latched = true;
+        }
+        canonical_native_render_view.valid = false;
+        canonical_native_render_view.render_count = 0;
+    } else if (canonical_native_render_view.authority_latched) {
+        reset_canonical_native_render_view();
+    }
+
     CG_EventRuntimeSetAuditEnabled(
         cg_event_runtime_audit && cg_event_runtime_audit->integer != 0);
+
+    /* Before the first ownership bind, requested mode 3 deliberately remains
+     * legacy-authoritative.  After that one-way edge, ownership loss is an
+     * observable native-authority fault on every affected frame. */
+    if (native_authority_phase ==
+        CG_CANONICAL_NATIVE_AUTHORITY_POST_BIND_LOSS) {
+        increment_saturated(canonical_render_stats.native_authority_blocks);
+        reset_canonical_native_render_view();
+        canonical_native_render_view.authority_latched = true;
+        return;
+    }
 
     cg_canonical_snapshot_timeline_diagnostics_v1 diagnostics{};
     if (!CG_CanonicalSnapshotTimelineGetDiagnostics(&diagnostics) ||
         !diagnostics.active || diagnostics.pending_clock_reset) {
+        if (first_native_bind)
+            reset_canonical_render_stats(0u);
+        if (native_authority) {
+            reset_canonical_native_render_view();
+            canonical_native_render_view.authority_latched = true;
+        }
         return;
     }
 
-    if (canonical_render_stats.epoch != diagnostics.active_epoch)
+    if (first_native_bind ||
+        canonical_render_stats.epoch != diagnostics.active_epoch) {
         reset_canonical_render_stats(diagnostics.active_epoch);
+        if (native_authority) {
+            reset_canonical_native_render_view();
+            canonical_native_render_view.authority_latched = true;
+        }
+    }
 
     worr_snapshot_timeline_clock_state_v1 clock{};
     const auto clock_result =
@@ -226,70 +950,98 @@ void begin_canonical_snapshot_render_frame()
     increment_saturated(canonical_render_stats.clock_frames);
     if (clock_result != WORR_SNAPSHOT_TIMELINE_OK) {
         increment_saturated(canonical_render_stats.clock_failures);
+        if (native_authority) {
+            reset_canonical_native_render_view();
+            canonical_native_render_view.authority_latched = true;
+        }
         return;
     }
 
-    const int configured_mode = cg_snapshot_timeline_render
-        ? Q_clip(cg_snapshot_timeline_render->integer,
-                 static_cast<int>(CANONICAL_SNAPSHOT_RENDER_LEGACY),
-                 static_cast<int>(
-                     CANONICAL_SNAPSHOT_RENDER_NATIVE_AUTHORITY))
-        : CANONICAL_SNAPSHOT_RENDER_LEGACY;
-    canonical_render_frame.mode = static_cast<std::uint32_t>(configured_mode);
     const bool event_runtime_enabled =
         cg_event_runtime_audit && cg_event_runtime_audit->integer != 0;
     cg_event_runtime_status_v1 event_status{};
     const bool authority_runtime_active =
         CG_EventRuntimeGetStatus(&event_status) &&
         event_status.authority_epoch != 0;
-    if (configured_mode == CANONICAL_SNAPSHOT_RENDER_LEGACY &&
+    if (resolved_mode == CANONICAL_SNAPSHOT_RENDER_LEGACY &&
         !event_runtime_enabled && !authority_runtime_active) {
         return;
     }
 
-    const bool native_authority = configured_mode ==
-        CANONICAL_SNAPSHOT_RENDER_NATIVE_AUTHORITY;
-    if (native_authority &&
-        (!cl_worr_native_snapshot_timeline_owned ||
-         !cl_worr_native_snapshot_timeline_owned->integer)) {
-        increment_saturated(canonical_render_stats.native_authority_blocks);
-        return;
-    }
-
     std::uint64_t desired_time_us = 0;
+    std::uint64_t max_extrapolation_us = 0;
     if (native_authority) {
-        worr_snapshot_v2 latest{};
-        if (CG_CanonicalSnapshotTimelineCopySnapshot(
-                diagnostics.latest_ref, &latest) !=
-                WORR_SNAPSHOT_TIMELINE_OK) {
-            increment_saturated(
-                canonical_render_stats.native_authority_blocks);
+        const float interpolation_delay_ms =
+            cg_snapshot_timeline_interpolation_delay_ms
+                ? Cvar_ClampValue(
+                      cg_snapshot_timeline_interpolation_delay_ms,
+                      0.0f, 1000.0f)
+                : 50.0f;
+        const float max_extrapolation_ms =
+            cg_snapshot_timeline_max_extrapolation_ms
+                ? Cvar_ClampValue(
+                      cg_snapshot_timeline_max_extrapolation_ms,
+                      0.0f, 250.0f)
+                : 50.0f;
+        const std::uint64_t baseline_interpolation_delay_us =
+            static_cast<std::uint64_t>(
+                interpolation_delay_ms * 1000.0f);
+        const std::uint64_t interpolation_delay_us =
+            update_canonical_interpolation_delay(
+                diagnostics, baseline_interpolation_delay_us);
+        max_extrapolation_us = static_cast<std::uint64_t>(
+            max_extrapolation_ms * 1000.0f);
+
+        /* The canonical clock is anchored to authoritative server time. A
+         * baseline render delay is raised deterministically from accepted
+         * arrival jitter and recent extrapolation/clamp pressure, then recovers
+         * toward that baseline under stable cadence.  The timeline's
+         * discontinuity, generation, teleport and velocity checks still have
+         * to admit every bounded extrapolation. */
+        desired_time_us =
+            clock.render_time_us >= interpolation_delay_us
+                ? clock.render_time_us - interpolation_delay_us
+                : 0;
+    } else {
+        if (!canonical_desired_render_time_us(&desired_time_us)) {
+            increment_saturated(canonical_render_stats.alignment_failures);
             return;
         }
-        /* Semantic ACK pacing can make the native view older than the legacy
-         * frame received beside it. Select the newest admitted native instant
-         * rather than comparing two different points on the server clock. */
-        desired_time_us = min(clock.render_time_us, latest.server_time_us);
-    } else if (!canonical_desired_render_time_us(&desired_time_us) ||
-               desired_time_us > clock.render_time_us ||
-               clock.render_time_us - desired_time_us >
-                   WORR_SNAPSHOT_TIMELINE_MAX_INTERPOLATION_DELAY_US) {
-        increment_saturated(canonical_render_stats.alignment_failures);
-        return;
+        std::uint64_t aligned_time_us = 0;
+        const auto alignment_result =
+            CG_ResolveCanonicalLegacyAlignmentV1(
+                clock.render_time_us, desired_time_us,
+                WORR_SNAPSHOT_TIMELINE_MAX_INTERPOLATION_DELAY_US,
+                &aligned_time_us);
+        if (alignment_result ==
+                CG_CANONICAL_LEGACY_ALIGNMENT_INVALID_ARGUMENT ||
+            alignment_result ==
+                CG_CANONICAL_LEGACY_ALIGNMENT_PAST_LIMIT) {
+            increment_saturated(canonical_render_stats.alignment_failures);
+            return;
+        }
+        if (alignment_result != CG_CANONICAL_LEGACY_ALIGNMENT_OK) {
+            /* A process hitch may temporarily separate the legacy render
+             * clock from the independently monotonic canonical clock. A
+             * future legacy target resolves conservatively to canonical now,
+             * allowing authority to keep advancing without presenting early. */
+            increment_saturated(canonical_render_stats.alignment_failures);
+        }
+        desired_time_us = aligned_time_us;
     }
 
     auto &policy = canonical_render_frame.policy;
     policy.struct_size = sizeof(policy);
     policy.schema_version = WORR_SNAPSHOT_TIMELINE_VERSION;
     policy.interpolation_delay_us = clock.render_time_us - desired_time_us;
-    policy.max_extrapolation_us = 0;
+    policy.max_extrapolation_us = max_extrapolation_us;
     /* Legacy cgame rejects any individual-axis jump above 512 units.  The
      * Euclidean bound below admits exactly that axis-aligned cube; the parity
      * promotion gate remains the final authority for model/event discontinuities. */
     policy.teleport_distance = 887.0f;
     policy.max_linear_velocity = WORR_SNAPSHOT_TIMELINE_MAX_LINEAR_VELOCITY;
     policy.max_angular_velocity = WORR_SNAPSHOT_TIMELINE_MAX_ANGULAR_VELOCITY;
-    policy.allow_extrapolation = 0;
+    policy.allow_extrapolation = max_extrapolation_us != 0 ? 1u : 0u;
 
     const auto pair_result = CG_CanonicalSnapshotTimelineSelectPair(
         &policy, &canonical_render_frame.pair);
@@ -297,6 +1049,10 @@ void begin_canonical_snapshot_render_frame()
     increment_saturated(canonical_render_stats.pair_frames);
     if (pair_result != WORR_SNAPSHOT_TIMELINE_OK) {
         increment_saturated(canonical_render_stats.pair_failures);
+        if (native_authority) {
+            reset_canonical_native_render_view();
+            canonical_native_render_view.authority_latched = true;
+        }
         return;
     }
 
@@ -304,8 +1060,33 @@ void begin_canonical_snapshot_render_frame()
         canonical_render_frame.pair.mode;
     canonical_render_stats.last_pair_blocks =
         canonical_render_frame.pair.blocking_reasons;
+    switch (canonical_render_frame.pair.mode) {
+    case WORR_SNAPSHOT_TIMELINE_PAIR_INTERPOLATE:
+        increment_saturated(canonical_render_stats.interpolation_frames);
+        break;
+    case WORR_SNAPSHOT_TIMELINE_PAIR_EXTRAPOLATE:
+        increment_saturated(canonical_render_stats.extrapolation_frames);
+        add_saturated(canonical_render_stats.extrapolation_time_us,
+                      canonical_render_frame.pair.extrapolation_us);
+        break;
+    case WORR_SNAPSHOT_TIMELINE_PAIR_CLAMP_EARLIEST:
+    case WORR_SNAPSHOT_TIMELINE_PAIR_CLAMP_LATEST:
+        increment_saturated(canonical_render_stats.clamped_frames);
+        break;
+    default:
+        break;
+    }
+    if (native_authority) {
+        canonical_interpolation_pair_feedback.valid = 1u;
+        canonical_interpolation_pair_feedback.mode =
+            canonical_render_frame.pair.mode;
+        canonical_interpolation_pair_feedback.extrapolation_us =
+            canonical_render_frame.pair.extrapolation_us;
+    }
     canonical_render_frame.pair_valid =
-        configured_mode != CANONICAL_SNAPSHOT_RENDER_LEGACY;
+        resolved_mode != CANONICAL_SNAPSHOT_RENDER_LEGACY;
+    if (native_authority)
+        (void)prepare_canonical_native_render_view();
 
     std::uint32_t ready_events = 0;
     cg_event_runtime_result_v1 runtime_result = CG_EVENT_RUNTIME_OK;
@@ -382,6 +1163,7 @@ bool sample_canonical_entity_transform(
         WORR_SNAPSHOT_TIMELINE_ENTITY_BLOCK_TELEPORT |
         WORR_SNAPSHOT_TIMELINE_ENTITY_BLOCK_LINEAR_SPEED |
         WORR_SNAPSHOT_TIMELINE_ENTITY_BLOCK_ANGULAR_SPEED |
+        WORR_SNAPSHOT_TIMELINE_ENTITY_BLOCK_DISCRETE_TRANSITION |
         WORR_SNAPSHOT_TIMELINE_ENTITY_BLOCK_POLICY;
     if (sample.blocking_reasons & unsafe_blocks) {
         increment_saturated(canonical_render_stats.sample_discontinuities);
@@ -465,7 +1247,11 @@ void end_canonical_snapshot_render_frame()
             "samples=%llu fail=%llu invisible=%llu discontinuity=%llu "
             "parity=%llu/%llu native=%llu/%llu promoted=%llu "
             "events=%llu/%llu/%llu "
-            "max_error=%.4f/%.4f/%.4f\n",
+            "max_error=%.4f/%.4f/%.4f "
+            "timeline_modes=%llu/%llu/%llu extrap_us=%llu "
+            "enumeration=%llu/%llu/%llu/%llu resets=%llu "
+            "previous_only=%llu/%llu/%llu "
+            "view=%u/%u/%u submission=%llu/%llu/%016llx\n",
             canonical_render_stats.epoch, canonical_render_frame.mode,
             static_cast<unsigned long long>(canonical_render_stats.clock_frames),
             static_cast<unsigned long long>(canonical_render_stats.clock_failures),
@@ -490,7 +1276,71 @@ void end_canonical_snapshot_render_frame()
             static_cast<unsigned long long>(canonical_render_stats.event_audit_failures),
             canonical_render_stats.max_origin_error,
             canonical_render_stats.max_old_origin_error,
-            canonical_render_stats.max_angle_error);
+            canonical_render_stats.max_angle_error,
+            static_cast<unsigned long long>(
+                canonical_render_stats.interpolation_frames),
+            static_cast<unsigned long long>(
+                canonical_render_stats.extrapolation_frames),
+            static_cast<unsigned long long>(
+                canonical_render_stats.clamped_frames),
+            static_cast<unsigned long long>(
+                canonical_render_stats.extrapolation_time_us),
+            static_cast<unsigned long long>(
+                canonical_render_stats.enumeration_frames),
+            static_cast<unsigned long long>(
+                canonical_render_stats.enumeration_failures),
+            static_cast<unsigned long long>(
+                canonical_render_stats.enumerated_current_entities),
+            static_cast<unsigned long long>(
+                canonical_render_stats.enumerated_removed_entities),
+            static_cast<unsigned long long>(
+                canonical_render_stats.enumeration_generation_resets),
+            static_cast<unsigned long long>(
+                canonical_render_stats.enumerated_removed_entities),
+            static_cast<unsigned long long>(
+                canonical_render_stats
+                    .selected_visible_previous_only_sources),
+            static_cast<unsigned long long>(
+                canonical_render_stats
+                    .renderer_previous_only_submitted_sources),
+            canonical_native_render_view.last_result,
+            canonical_native_render_view.render_count,
+            canonical_native_render_view.record_count,
+            static_cast<unsigned long long>(
+                canonical_render_stats.renderer_submission_calls),
+            static_cast<unsigned long long>(
+                canonical_render_stats.renderer_submitted_sources),
+            static_cast<unsigned long long>(
+                canonical_render_stats.renderer_submission_hash));
+        Com_LPrintf(
+            PRINT_ALL,
+            "cg_snapshot_timeline_adaptive: enabled=%u adjustment=%u "
+            "delay_us=%llu/%llu/%llu arrival_us=%llu/%llu/%llu "
+            "counts=%llu/%llu/%llu/%llu failures=%llu\n",
+            canonical_interpolation_delay_status.adaptive_enabled,
+            canonical_interpolation_delay_status.last_adjustment,
+            static_cast<unsigned long long>(
+                canonical_interpolation_delay_status.delay_us),
+            static_cast<unsigned long long>(
+                canonical_interpolation_delay_status.baseline_delay_us),
+            static_cast<unsigned long long>(
+                canonical_interpolation_delay_status.maximum_delay_us),
+            static_cast<unsigned long long>(
+                canonical_interpolation_delay_status.cadence_us),
+            static_cast<unsigned long long>(
+                canonical_interpolation_delay_status.jitter_us),
+            static_cast<unsigned long long>(
+                canonical_interpolation_delay_status.last_jitter_us),
+            static_cast<unsigned long long>(
+                canonical_interpolation_delay_status.rise_adjustments),
+            static_cast<unsigned long long>(
+                canonical_interpolation_delay_status.recovery_adjustments),
+            static_cast<unsigned long long>(
+                canonical_interpolation_delay_status.pressure_observations),
+            static_cast<unsigned long long>(
+                canonical_interpolation_delay_status.reset_count),
+            static_cast<unsigned long long>(
+                canonical_render_stats.adaptive_delay_failures));
     }
     if (event_runtime_enabled) {
         cg_event_runtime_status_v1 status{};
@@ -526,6 +1376,18 @@ void end_canonical_snapshot_render_frame()
 
 } // namespace
 
+void CG_CanonicalSnapshotRender_ResetStream(void)
+{
+    CG_ResetCanonicalNativeAuthorityV1(&canonical_native_authority_state);
+    CG_ResetCanonicalInterpolationDelayV1(
+        &canonical_interpolation_delay_state);
+    canonical_interpolation_delay_status = {};
+    canonical_interpolation_pair_feedback = {};
+    canonical_render_frame = {};
+    reset_canonical_native_render_view();
+    reset_canonical_render_stats(0u);
+}
+
 void CG_CanonicalSnapshotRender_InitCvars(void)
 {
     if (!cgei)
@@ -534,8 +1396,23 @@ void CG_CanonicalSnapshotRender_InitCvars(void)
         "cg_snapshot_timeline_render", "0", CVAR_NOARCHIVE);
     cg_snapshot_timeline_render_epsilon = Cvar_Get(
         "cg_snapshot_timeline_render_epsilon", "0.125", CVAR_NOARCHIVE);
+    cg_snapshot_timeline_interpolation_delay_ms = Cvar_Get(
+        "cg_snapshot_timeline_interpolation_delay_ms", "50",
+        CVAR_NOARCHIVE);
+    cg_snapshot_timeline_adaptive_interpolation = Cvar_Get(
+        "cg_snapshot_timeline_adaptive_interpolation", "1",
+        CVAR_NOARCHIVE);
+    cg_snapshot_timeline_max_interpolation_delay_ms = Cvar_Get(
+        "cg_snapshot_timeline_max_interpolation_delay_ms", "150",
+        CVAR_NOARCHIVE);
+    cg_snapshot_timeline_max_extrapolation_ms = Cvar_Get(
+        "cg_snapshot_timeline_max_extrapolation_ms", "50",
+        CVAR_NOARCHIVE);
     cg_event_runtime_audit = Cvar_Get(
         "cg_event_runtime_audit", "0", CVAR_NOARCHIVE);
+    cl_worr_native_event_presentation_owned = Cvar_Get(
+        "cl_worr_native_event_presentation_owned", "0",
+        CVAR_ROM | CVAR_NOARCHIVE);
     cl_worr_native_snapshot_timeline_owned = Cvar_Get(
         "cl_worr_native_snapshot_timeline_owned", "0",
         CVAR_ROM | CVAR_NOARCHIVE);
@@ -1032,6 +1909,121 @@ static void parse_entity_update(const entity_state_t *state)
     }
 }
 
+static void present_entity_impulse_event(int number, int event,
+                                         const vec3_t fixed_origin,
+                                         qhandle_t prepared_sound = 0)
+{
+    const vec_t *origin = fixed_origin;
+    if (!origin)
+        origin = cl_entities[number].current.origin;
+
+    switch (event) {
+    case EV_ITEM_RESPAWN:
+        S_StartSound(fixed_origin, number, CHAN_WEAPON,
+                     prepared_sound ? prepared_sound
+                                    : S_RegisterSound("items/respawn1.wav"),
+                     1, ATTN_IDLE, 0);
+        CL_ItemRespawnParticles(origin);
+        break;
+    case EV_PLAYER_TELEPORT:
+        S_StartSound(fixed_origin, number, CHAN_WEAPON,
+                     prepared_sound ? prepared_sound
+                                    : S_RegisterSound("misc/tele1.wav"),
+                     1, ATTN_IDLE, 0);
+        CL_TeleportParticles(origin);
+        break;
+    case EV_FOOTSTEP:
+        if (cl_footsteps->integer) {
+            if (fixed_origin)
+                CL_PlayFootstepSfxAt(-1, number, fixed_origin, 1.0f,
+                                     ATTN_NORM);
+            else
+                CL_PlayFootstepSfx(-1, number, 1.0f, ATTN_NORM);
+        }
+        break;
+    case EV_OTHER_FOOTSTEP:
+        if (cl.csr.extended && cl_footsteps->integer) {
+            if (fixed_origin)
+                CL_PlayFootstepSfxAt(-1, number, fixed_origin, 0.5f,
+                                     ATTN_IDLE);
+            else
+                CL_PlayFootstepSfx(-1, number, 0.5f, ATTN_IDLE);
+        }
+        break;
+    case EV_LADDER_STEP:
+        if (cl.csr.extended && cl_footsteps->integer) {
+            if (fixed_origin)
+                CL_PlayFootstepSfxAt(FOOTSTEP_ID_LADDER, number,
+                                     fixed_origin, 0.5f, ATTN_IDLE);
+            else
+                CL_PlayFootstepSfx(FOOTSTEP_ID_LADDER, number, 0.5f,
+                                   ATTN_IDLE);
+        }
+        break;
+    case EV_FALLSHORT:
+        S_StartSound(fixed_origin, number, CHAN_AUTO,
+                     prepared_sound ? prepared_sound
+                                    : S_RegisterSound("player/land1.wav"),
+                     1, ATTN_NORM, 0);
+        break;
+    case EV_FALL:
+        S_StartSound(fixed_origin, number, CHAN_AUTO,
+                     prepared_sound ? prepared_sound
+                                    : S_RegisterSound("*fall2.wav"),
+                     1, ATTN_NORM, 0);
+        break;
+    case EV_FALLFAR:
+        S_StartSound(fixed_origin, number, CHAN_AUTO,
+                     prepared_sound ? prepared_sound
+                                    : S_RegisterSound("*fall1.wav"),
+                     1, ATTN_NORM, 0);
+        break;
+    }
+}
+
+bool CL_CanPresentLegacyEntityEventValue(
+    int number, int raw_event, const entity_state_t *source_state)
+{
+    if (!source_state || !cgei || !cl_footsteps || number <= 0 ||
+        number >= cl.csr.max_edicts || source_state->number != number ||
+        raw_event <= EV_NONE || raw_event > EV_LADDER_STEP) {
+        return false;
+    }
+
+    switch (raw_event) {
+    case EV_ITEM_RESPAWN:
+    case EV_PLAYER_TELEPORT:
+    case EV_FALLSHORT:
+    case EV_FALL:
+    case EV_FALLFAR:
+        return CL_NativeLegacyEntityEventSound(raw_event) != 0;
+    case EV_FOOTSTEP:
+        return !cl_footsteps->integer ||
+               CL_CanPresentFootstepValue(FOOTSTEP_ID_DEFAULT);
+    case EV_OTHER_FOOTSTEP:
+        return !cl.csr.extended || !cl_footsteps->integer ||
+               CL_CanPresentFootstepValue(FOOTSTEP_ID_DEFAULT);
+    case EV_LADDER_STEP:
+        return !cl.csr.extended || !cl_footsteps->integer ||
+               CL_CanPresentFootstepValue(FOOTSTEP_ID_LADDER);
+    default:
+        return false;
+    }
+}
+
+void CL_PresentLegacyEntityEventValue(int number, int raw_event,
+                                      const entity_state_t *source_state)
+{
+    if (!source_state || number <= 0 || number >= cl.csr.max_edicts ||
+        source_state->number != number || raw_event <= EV_NONE ||
+        raw_event > EV_LADDER_STEP) {
+        return;
+    }
+    present_entity_impulse_event(
+        number, raw_event, source_state->origin,
+        CL_NativeLegacyEntityEventSound(raw_event));
+}
+
 // an entity has just been parsed that has an event value
 static void parse_entity_event(int number)
 {
@@ -1061,37 +2053,17 @@ static void parse_entity_event(int number)
         return;
     }
 
-    switch (cent->current.event) {
-    case EV_ITEM_RESPAWN:
-        S_StartSound(NULL, number, CHAN_WEAPON, S_RegisterSound("items/respawn1.wav"), 1, ATTN_IDLE, 0);
-        CL_ItemRespawnParticles(cent->current.origin);
-        break;
-    case EV_PLAYER_TELEPORT:
-        S_StartSound(NULL, number, CHAN_WEAPON, S_RegisterSound("misc/tele1.wav"), 1, ATTN_IDLE, 0);
-        CL_TeleportParticles(cent->current.origin);
-        break;
-    case EV_FOOTSTEP:
-        if (cl_footsteps->integer)
-            CL_PlayFootstepSfx(-1, number, 1.0f, ATTN_NORM);
-        break;
-    case EV_OTHER_FOOTSTEP:
-        if (cl.csr.extended && cl_footsteps->integer)
-            CL_PlayFootstepSfx(-1, number, 0.5f, ATTN_IDLE);
-        break;
-    case EV_LADDER_STEP:
-        if (cl.csr.extended && cl_footsteps->integer)
-            CL_PlayFootstepSfx(FOOTSTEP_ID_LADDER, number, 0.5f, ATTN_IDLE);
-        break;
-    case EV_FALLSHORT:
-        S_StartSound(NULL, number, CHAN_AUTO, S_RegisterSound("player/land1.wav"), 1, ATTN_NORM, 0);
-        break;
-    case EV_FALL:
-        S_StartSound(NULL, number, CHAN_AUTO, S_RegisterSound("*fall2.wav"), 1, ATTN_NORM, 0);
-        break;
-    case EV_FALLFAR:
-        S_StartSound(NULL, number, CHAN_AUTO, S_RegisterSound("*fall1.wav"), 1, ATTN_NORM, 0);
-        break;
+    /* The raw frame remains decoded for capture/audit, but once the native
+     * event epoch owns presentation its fenced journal is the only one-shot
+     * effect source for this map.  The ownership ROM latch survives a
+     * transport drain and is released only at a whole-stream boundary. */
+    if (cent->current.event &&
+        cl_worr_native_event_presentation_owned &&
+        cl_worr_native_event_presentation_owned->integer) {
+        return;
     }
+
+    present_entity_impulse_event(number, cent->current.event, nullptr);
 }
 
 static void set_active_state(void)
@@ -1477,9 +2449,11 @@ static color_t CL_SelectBrightskinColor(bool use_custom, bool is_enemy, bool is_
     return brightskin_team_color;
 }
 
-static bool CL_IsThirdPersonSelf(const entity_state_t *state)
+static bool CL_IsThirdPersonSelf(const entity_state_t *state,
+                                 int controlled_entity)
 {
-    return cl.thirdPersonView && state->number == cl.frame.clientNum + 1;
+    return cl.thirdPersonView && controlled_entity > 0 &&
+           state->number == controlled_entity;
 }
 
 static uint8_t CL_ShellColorToByte(float value)
@@ -1588,6 +2562,9 @@ static void CL_AddPacketEntities(void)
     bool                    brightskins_custom;
     bool                    brightskins_hide_dead;
     bool                    viewer_is_spectator;
+    bool                    native_authority;
+    int                     controlled_entity_number;
+    int                     packet_entity_count;
 
     // bonus items rotate at a fixed rate
     autorotate = anglemod(cl.time * 0.1f);
@@ -1597,7 +2574,20 @@ static void CL_AddPacketEntities(void)
 
     autobob = 5 * sinf(cl.time / 400.0f);
 
-    viewer_is_spectator = CL_IsSpectatorView();
+    native_authority = canonical_render_frame.mode ==
+        CANONICAL_SNAPSHOT_RENDER_NATIVE_AUTHORITY;
+    if (native_authority && !canonical_native_render_view.valid)
+        return;
+    controlled_entity_number = native_authority
+        ? static_cast<int>(canonical_native_render_view.controlled_entity)
+        : cl.frame.clientNum + 1;
+    packet_entity_count = native_authority
+        ? static_cast<int>(canonical_native_render_view.render_count)
+        : cl.frame.numEntities;
+    viewer_is_spectator = native_authority
+        ? canonical_native_render_view.movement_type == PM_SPECTATOR ||
+              canonical_native_render_view.movement_type == PM_FREEZE
+        : CL_IsSpectatorView();
     enemy_outline_alpha = Cvar_ClampValue(cl_player_outline_enemy, 0.0f, 1.0f);
     team_outline_alpha = Cvar_ClampValue(cl_player_outline_team, 0.0f, 1.0f);
     enemy_outline_enabled = enemy_outline_alpha > 0.0f;
@@ -1607,7 +2597,9 @@ static void CL_AddPacketEntities(void)
     enemy_rim_enabled = enemy_rim_alpha > 0.0f;
     team_rim_enabled = team_rim_alpha > 0.0f;
     shell_rim_scale = cl_player_rimlight_shell ? Cvar_ClampValue(cl_player_rimlight_shell, 0.0f, 1.0f) : 0.0f;
-    my_team = cl.frame.ps.team_id;
+    my_team = native_authority
+        ? canonical_native_render_view.team_id
+        : cl.frame.ps.team_id;
     teamplay = my_team != 0;
     brightskins_custom = cl_brightskins_custom->integer != 0 && !viewer_is_spectator;
     brightskins_hide_dead = cl_brightskins_dead->integer != 0;
@@ -1615,24 +2607,56 @@ static void CL_AddPacketEntities(void)
 
     memset(&ent, 0, sizeof(ent));
 
-    for (pnum = 0; pnum < cl.frame.numEntities; pnum++) {
-        i = (cl.frame.firstEntity + pnum) & PARSE_ENTITIES_MASK;
-        s1 = &cl.entityStates[i];
+    for (pnum = 0; pnum < packet_entity_count; pnum++) {
+        canonical_native_render_cache_entry_t *native_entry = nullptr;
+        bool native_previous_only_source = false;
+        if (native_authority) {
+            const std::uint32_t identity =
+                canonical_native_render_view.render_identities[pnum];
+            auto &entry = canonical_native_render_view.cache[identity];
+            if (!entry.valid)
+                continue;
+            cent = &entry.entity;
+            s1 = &cent->current;
+            native_entry = &entry;
+            native_previous_only_source =
+                canonical_native_render_view.render_previous_only[pnum] !=
+                0u;
+        } else {
+            i = (cl.frame.firstEntity + pnum) & PARSE_ENTITIES_MASK;
+            s1 = &cl.entityStates[i];
+            cent = &cl_entities[s1->number];
+        }
+        bool native_source_submitted = false;
+        const auto submit_packet_entity = [&](const entity_t *submitted) {
+            V_AddEntity(submitted);
+            if (native_authority && native_entry) {
+                record_canonical_renderer_submission(
+                    *native_entry, *s1, *submitted,
+                    native_previous_only_source,
+                    native_source_submitted);
+            }
+        };
 
         // handled elsewhere
         if (s1->renderfx & RF_CASTSHADOW) {
             continue;
         }
 
-        cent = &cl_entities[s1->number];
         ent.id = cent->id + RESERVED_ENTITY_COUNT;
         ent.owner_entity = s1->number;
 
         worr_snapshot_timeline_entity_sample_v1 canonical_sample{};
-        const bool canonical_transform =
-            s1->number != cl.frame.clientNum + 1 &&
-            sample_canonical_entity_transform(
+        bool canonical_transform = native_authority;
+        if (native_authority) {
+            VectorCopy(s1->origin, canonical_sample.entity.origin);
+            VectorCopy(s1->old_origin,
+                       canonical_sample.entity.old_origin);
+            VectorCopy(s1->angles, canonical_sample.entity.angles);
+        } else if (s1->number != controlled_entity_number) {
+            canonical_transform = sample_canonical_entity_transform(
                 s1, cent, &canonical_sample);
+        }
 
         has_trail = false;
         bool is_player = CL_IsPlayerEntity(s1);
@@ -1698,11 +2722,19 @@ static void CL_AddPacketEntities(void)
         if (cl_noglow->integer && !(renderfx & RF_BEAM))
             renderfx &= ~RF_GLOW;
 
-        ent.oldframe = cent->prev.frame;
-        ent.backlerp = 1.0f - cl.lerpfrac;
+        if (native_authority) {
+            ent.oldframe = s1->old_frame >= 0
+                ? s1->old_frame
+                : s1->frame;
+            ent.backlerp = 0.0f;
+        } else {
+            ent.oldframe = cent->prev.frame;
+            ent.backlerp = 1.0f - cl.lerpfrac;
+        }
 
 // KEX
-        if (cl.csr.extended && CL_UsesExtendedModelFrameLerp(s1)) {
+        if (!native_authority && cl.csr.extended &&
+            CL_UsesExtendedModelFrameLerp(s1)) {
             if (cent->last_frame != cent->current_frame) {
                 ent.backlerp = Q_clipf(1.0f - ((cl.time - ((float) cent->frame_servertime - cl.frametime.time)) / 100.f), 0.0f, 1.0f);
                 ent.frame = cent->current_frame;
@@ -1723,7 +2755,7 @@ static void CL_AddPacketEntities(void)
                            cl.lerpfrac, ent.oldorigin);
             }
         } else {
-            if (s1->number == cl.frame.clientNum + 1) {
+            if (s1->number == controlled_entity_number) {
                 // use predicted origin
                 VectorCopy(cl.playerEntityOrigin, ent.origin);
                 VectorCopy(cl.playerEntityOrigin, ent.oldorigin);
@@ -1738,7 +2770,7 @@ static void CL_AddPacketEntities(void)
             }
 #if USE_FPS
             // run alias model animation
-            if (cent->prev_frame != s1->frame) {
+            if (!native_authority && cent->prev_frame != s1->frame) {
                 int delta = cl.time - cent->anim_start;
                 float frac;
 
@@ -1810,7 +2842,7 @@ static void CL_AddPacketEntities(void)
                 else
                     ent.rgba.u32 = BigLong(s1->skinnum);
                 ent.skinnum = s1->number;
-                V_AddEntity(&ent);
+                submit_packet_entity(&ent);
                 goto skip;
             }
 
@@ -1914,7 +2946,7 @@ static void CL_AddPacketEntities(void)
             AngleVectors(ent.angles, forward, NULL, NULL);
             VectorMA(ent.origin, 64, forward, start);
             CL_AddEntityLight(s1, effects, start, 100, 1, 0, 0);
-        } else if (s1->number == cl.frame.clientNum + 1) {
+        } else if (s1->number == controlled_entity_number) {
             VectorCopy(cl.playerEntityAngles, ent.angles);      // use predicted angles
         } else if (canonical_transform) {
             VectorCopy(canonical_sample.entity.angles, ent.angles);
@@ -1937,7 +2969,7 @@ static void CL_AddPacketEntities(void)
             if (!is_per_pixel)
                 mask |= CONTENTS_MONSTER | CONTENTS_PLAYER;
 
-            if (s1->number == cl.frame.clientNum + 1) {
+            if (s1->number == controlled_entity_number) {
                 float dist = is_per_pixel ? FLASHLIGHT_SHADOW_DISTANCE : FLASHLIGHT_CLASSIC_DISTANCE;
                 VectorCopy(cl.refdef.vieworg, start);
                 VectorCopy(cl.v_forward, forward);
@@ -1984,7 +3016,7 @@ static void CL_AddPacketEntities(void)
         if (effects & EF_GRENADE_LIGHT)
             CL_AddEntityLight(s1, effects, ent.origin, 100, 1, 1, 0);
 
-        if (s1->number == cl.frame.clientNum + 1 && !cl.thirdPersonView) {
+        if (s1->number == controlled_entity_number && !cl.thirdPersonView) {
             if (effects & EF_FLAG1)
                 CL_AddEntityLight(s1, effects, ent.origin, 225, 1.0f, 0.1f, 0.1f);
             else if (effects & EF_FLAG2)
@@ -2037,11 +3069,13 @@ static void CL_AddPacketEntities(void)
         has_alpha = false;
 
         if (s1->alpha) {
-            custom_alpha = lerp_entity_alpha(cent);
+            custom_alpha = native_authority
+                ? s1->alpha
+                : lerp_entity_alpha(cent);
             has_alpha = true;
         }
 
-        if (s1->number == cl.frame.clientNum + 1 && cl.thirdPersonView && cl.thirdPersonAlpha != 1.0f) {
+        if (s1->number == controlled_entity_number && cl.thirdPersonView && cl.thirdPersonAlpha != 1.0f) {
             custom_alpha *= cl.thirdPersonAlpha;
             has_alpha = true;
         }
@@ -2064,7 +3098,8 @@ static void CL_AddPacketEntities(void)
 
         VectorSet(ent.scale, s1->scale, s1->scale, s1->scale);
 
-        is_self = is_player && CL_IsThirdPersonSelf(s1);
+        is_self = is_player &&
+            CL_IsThirdPersonSelf(s1, controlled_entity_number);
         other_team = 0;
         is_dead = false;
         has_team_info = is_player && CL_GetPlayerTeamInfo(s1, &other_team, &is_dead);
@@ -2163,7 +3198,7 @@ static void CL_AddPacketEntities(void)
         }
 
         // add to renderer list
-        V_AddEntity(&ent);
+        submit_packet_entity(&ent);
 
         if (is_player && brightskin && (!brightskins_hide_dead || !is_dead)) {
             uint8_t team_index = is_self ? my_team : other_team;
@@ -2230,7 +3265,7 @@ static void CL_AddPacketEntities(void)
             }
             ent.flags = renderfx | RF_TRANSLUCENT;
             ent.alpha = custom_alpha * 0.30f;
-            V_AddEntity(&ent);
+            submit_packet_entity(&ent);
         }
 
         ent.skin = 0;       // never use a custom skin on others
@@ -2273,7 +3308,7 @@ static void CL_AddPacketEntities(void)
                 ent.flags = RF_TRANSLUCENT;
             }
 
-            V_AddEntity(&ent);
+            submit_packet_entity(&ent);
 
             if (shell_rim_active) {
                 entity_t rim = ent;
@@ -2290,12 +3325,12 @@ static void CL_AddPacketEntities(void)
 
         if (s1->modelindex3) {
             ent.model = cl.model_draw[s1->modelindex3];
-            V_AddEntity(&ent);
+            submit_packet_entity(&ent);
         }
 
         if (s1->modelindex4) {
             ent.model = cl.model_draw[s1->modelindex4];
-            V_AddEntity(&ent);
+            submit_packet_entity(&ent);
         }
 
         if (effects & EF_POWERSCREEN) {
@@ -2316,11 +3351,11 @@ static void CL_AddPacketEntities(void)
                 float s = cent->radius * 0.8f;
                 VectorSet(ent.scale, s, s, s);
                 ent.flags |= RF_FULLBRIGHT;
-                V_AddEntity(&ent);
+                submit_packet_entity(&ent);
                 VectorCopy(tmp, ent.origin);
             } else {
                 ent.flags |= RF_SHELL_GREEN;
-                V_AddEntity(&ent);
+                submit_packet_entity(&ent);
             }
         }
 
@@ -2436,6 +3471,21 @@ skip:
 
 static const centity_t *get_player_entity(void)
 {
+    if (canonical_render_frame.mode ==
+        CANONICAL_SNAPSHOT_RENDER_NATIVE_AUTHORITY) {
+        if (!canonical_native_render_view.valid ||
+            canonical_native_render_view.controlled_entity == 0u ||
+            canonical_native_render_view.controlled_entity >=
+                canonical_native_render_view.cache.size()) {
+            return NULL;
+        }
+        const auto &entry = canonical_native_render_view.cache[
+            canonical_native_render_view.controlled_entity];
+        if (!entry.valid || !entry.entity.current.modelindex)
+            return NULL;
+        return &entry.entity;
+    }
+
     const centity_t *ent = &cl_entities[cl.frame.clientNum + 1];
 
     if (ent->serverframe != cl.frame.number)
@@ -2557,7 +3607,13 @@ static void CL_AddViewWeapon(void)
     }
 
     gun.flags = RF_MINLIGHT | RF_DEPTHHACK | RF_WEAPONMODEL;
-    gun.owner_entity = cl.frame.clientNum + 1;
+    gun.owner_entity = canonical_render_frame.mode ==
+            CANONICAL_SNAPSHOT_RENDER_NATIVE_AUTHORITY
+        ? (canonical_native_render_view.valid
+               ? static_cast<int>(
+                     canonical_native_render_view.controlled_entity)
+               : 0)
+        : cl.frame.clientNum + 1;
     gun.alpha = Cvar_ClampValue(cl_gunalpha, 0.1f, 1.0f);
 
     ent = get_player_entity();
@@ -2879,7 +3935,13 @@ void CL_CalcViewValues(void)
     VectorCopy(cl.v_forward, listener_forward);
     VectorCopy(cl.v_right, listener_right);
     VectorCopy(cl.v_up, listener_up);
-    listener_entnum = cl.frame.clientNum + 1;
+    listener_entnum = canonical_render_frame.mode ==
+            CANONICAL_SNAPSHOT_RENDER_NATIVE_AUTHORITY
+        ? (canonical_native_render_view.valid
+               ? static_cast<int>(
+                     canonical_native_render_view.controlled_entity)
+               : 0)
+        : cl.frame.clientNum + 1;
 }
 
 /*
@@ -2916,6 +3978,8 @@ void CL_GetEntitySoundOrigin(unsigned entnum, vec3_t org)
     const centity_t *ent;
     const mmodel_t  *mod;
     vec3_t          mid;
+    const bool native_authority = canonical_render_frame.mode ==
+        CANONICAL_SNAPSHOT_RENDER_NATIVE_AUTHORITY;
 
     if (entnum >= cl.csr.max_edicts)
         Com_Error(ERR_DROP, "%s: bad entity", __func__);
@@ -2926,9 +3990,20 @@ void CL_GetEntitySoundOrigin(unsigned entnum, vec3_t org)
         return;
     }
 
-    // interpolate origin
-    ent = &cl_entities[entnum];
-    LerpVector(ent->prev.origin, ent->current.origin, cl.lerpfrac, org);
+    if (native_authority) {
+        if (!canonical_native_render_view.valid ||
+            entnum >= canonical_native_render_view.cache.size() ||
+            !canonical_native_render_view.cache[entnum].valid) {
+            VectorClear(org);
+            return;
+        }
+        ent = &canonical_native_render_view.cache[entnum].entity;
+        VectorCopy(ent->current.origin, org);
+    } else {
+        // interpolate origin
+        ent = &cl_entities[entnum];
+        LerpVector(ent->prev.origin, ent->current.origin, cl.lerpfrac, org);
+    }
 
     // use re-releases algorithm for bmodels & beams
     if (cl.csr.extended) {
@@ -2951,7 +4026,12 @@ void CL_GetEntitySoundOrigin(unsigned entnum, vec3_t org)
             // for beams, we use the nearest point on the line
             // between the two origins
             vec3_t old_origin;
-            LerpVector(ent->prev.old_origin, ent->current.old_origin, cl.lerpfrac, old_origin);
+            if (native_authority)
+                VectorCopy(ent->current.old_origin, old_origin);
+            else
+                LerpVector(ent->prev.old_origin,
+                           ent->current.old_origin, cl.lerpfrac,
+                           old_origin);
 
             vec3_t vec, p;
             VectorSubtract(old_origin, org, vec);
@@ -2970,4 +4050,86 @@ void CL_GetEntitySoundOrigin(unsigned entnum, vec3_t org)
             }
         }
     }
+}
+
+/*
+ * Supplies the sound system with the exact value-owned entity phase used by
+ * native rendering.  Returning -1 is an explicit non-native ownership signal;
+ * once mode 3 is selected, an unavailable/invalid view returns an empty range
+ * and cannot fall back to mutable legacy frame storage.
+ */
+int CL_CopyLoopSoundEntities(entity_state_t *states, int capacity)
+{
+    if (canonical_render_frame.mode !=
+        CANONICAL_SNAPSHOT_RENDER_NATIVE_AUTHORITY) {
+        return -1;
+    }
+    if (!canonical_native_render_view.valid || capacity < 0)
+        return 0;
+    const int count = static_cast<int>(
+        canonical_native_render_view.render_count);
+    if (count > capacity || (count != 0 && !states))
+        return 0;
+    if (count != 0) {
+        std::memcpy(states, canonical_native_render_view.render_states.data(),
+                    static_cast<std::size_t>(count) * sizeof(*states));
+    }
+    return count;
+}
+
+void CL_PrepareLoopSoundEntities(void)
+{
+    const int configured_mode = effective_canonical_snapshot_render_mode();
+    if (canonical_render_frame.prepared &&
+        canonical_render_frame.prepared_realtime_ms == cls.realtime &&
+        canonical_render_frame.requested_mode ==
+            static_cast<std::uint32_t>(configured_mode)) {
+        return;
+    }
+    begin_canonical_snapshot_render_frame();
+}
+
+int CL_GetEntitySoundBinding(unsigned entnum, uint64_t *binding_out)
+{
+    if (canonical_render_frame.mode !=
+        CANONICAL_SNAPSHOT_RENDER_NATIVE_AUTHORITY) {
+        return -1;
+    }
+    if (!binding_out || !canonical_native_render_view.valid ||
+        entnum >= canonical_native_render_view.cache.size()) {
+        return 0;
+    }
+    const auto &entry = canonical_native_render_view.cache[entnum];
+    if (!entry.valid || entry.entity.id <= 0)
+        return 0;
+    const uint64_t binding =
+        (static_cast<uint64_t>(static_cast<uint32_t>(entry.entity.id)) << 32u) |
+        entry.generation;
+    if (binding == 0u)
+        return 0;
+    *binding_out = binding;
+    return 1;
+}
+
+bool CL_GetEntitySoundOriginBound(unsigned entnum, uint64_t binding,
+                                  vec3_t org)
+{
+    if (!org || binding == 0u ||
+        canonical_render_frame.mode !=
+            CANONICAL_SNAPSHOT_RENDER_NATIVE_AUTHORITY ||
+        !canonical_native_render_view.valid ||
+        entnum >= canonical_native_render_view.cache.size()) {
+        return false;
+    }
+    const auto &entry = canonical_native_render_view.cache[entnum];
+    if (!entry.valid || entry.entity.id <= 0) {
+        return false;
+    }
+    const uint64_t current =
+        (static_cast<uint64_t>(static_cast<uint32_t>(entry.entity.id)) << 32u) |
+        entry.generation;
+    if (current != binding)
+        return false;
+    CL_GetEntitySoundOrigin(entnum, org);
+    return true;
 }

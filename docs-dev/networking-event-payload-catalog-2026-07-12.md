@@ -151,11 +151,13 @@ native producers, while legacy adapters use pitch 1.
 the full event hash while ignoring exactly:
 
 - `event_id.stream_epoch` and `event_id.sequence`;
-- `WORR_EVENT_FLAG_HAS_AUTHORITY_ID`.
+- `WORR_EVENT_FLAG_HAS_AUTHORITY_ID`; and
+- `WORR_EVENT_FLAG_SNAPSHOT_FENCED`.
 
 It uses the unique `ESM1` domain tag (`0x45534d31`); full event hashes retain
-the existing `EVT1` domain and golden unchanged. The semantic golden is
-`12433297410386378852` for the pinned teleport fixture.
+the existing `EVT1` domain. Event-model revision 2, introduced with the
+keyed-POI payload, intentionally changes the pinned fixture hashes. The
+semantic golden is `459024801986651691` for the pinned teleport fixture.
 
 The semantic API accepts an otherwise valid authority candidate with zero ID
 and no authority flag, allowing pre-allocation and post-allocation shadows to

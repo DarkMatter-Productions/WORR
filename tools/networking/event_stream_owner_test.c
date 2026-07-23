@@ -94,6 +94,9 @@ static bool test_validation_matrix(void)
     const worr_event_stream_descriptor_v1 descriptor =
         make_descriptor(17, 4);
     worr_event_stream_owner_v1 valid = make_owner(2001);
+    worr_event_stream_owner_v1 batch_owner = make_owner(2004);
+    worr_event_stream_descriptor_v1 batch_descriptor =
+        make_descriptor(18, 5);
     worr_event_stream_owner_v1 malformed;
     uint32_t index;
 
@@ -139,7 +142,7 @@ static bool test_validation_matrix(void)
             malformed.epoch_high_water++;
             break;
         case 10:
-            malformed.descriptor.flags = 1;
+            malformed.descriptor.flags = UINT16_C(0x8000);
             break;
         case 11:
             memset(&malformed.descriptor, 0,
@@ -162,6 +165,14 @@ static bool test_validation_matrix(void)
     CHECK(!Worr_EventStreamOwnerValidateV1(&malformed));
     malformed.state_flags |= WORR_EVENT_STREAM_OWNER_REQUIRES_RESYNC;
     CHECK(Worr_EventStreamOwnerValidateV1(&malformed));
+
+    batch_descriptor.flags = WORR_EVENT_STREAM_FLAG_BATCH_SCHEMA2;
+    CHECK(Worr_EventStreamOwnerObserveV1(
+              &batch_owner, &batch_descriptor) ==
+          WORR_EVENT_STREAM_OWNER_ACTIVATED);
+    CHECK(Worr_EventStreamOwnerValidateV1(&batch_owner));
+    CHECK(Worr_EventStreamDescriptorEqualV1(
+        &batch_owner.descriptor, &batch_descriptor));
     return true;
 }
 
@@ -322,7 +333,7 @@ static bool test_alias_and_failure_atomicity(void)
           WORR_EVENT_STREAM_OWNER_INVALID_ARGUMENT);
     CHECK(memcmp(&owner, &before, sizeof(owner)) == 0);
 
-    invalid.flags = 1;
+    invalid.flags = UINT16_C(0x8000);
     CHECK(Worr_EventStreamOwnerObserveV1(&owner, &invalid) ==
           WORR_EVENT_STREAM_OWNER_INVALID_DESCRIPTOR);
     CHECK(memcmp(&owner, &before, sizeof(owner)) == 0);

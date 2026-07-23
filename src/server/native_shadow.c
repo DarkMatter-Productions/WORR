@@ -9,10 +9,14 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "server/native_shadow.h"
 
+#include "common/net/legacy_poi_event_candidate.h"
 #include "common/net/native_event_sender.h"
+#include "common/net/native_input_batch.h"
+#include "common/net/native_input_batch_sideband.h"
 #include "common/net/native_snapshot_sender.h"
 
 #include <limits.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -25,6 +29,11 @@ static uint64_t next_connection_owner_id;
 static uint32_t next_private_transport_epoch;
 static uint32_t next_event_stream_epoch;
 static uint64_t next_readiness_nonce;
+
+_Static_assert(SV_NATIVE_SHADOW_PAYLOAD_BYTES == 110u,
+               "legacy WNC1 payload size changed");
+_Static_assert(SV_NATIVE_SHADOW_MAX_PAYLOAD_BYTES == 912u,
+               "WNB1 payload arena size changed");
 
 enum {
     SV_NATIVE_SHADOW_TX_EMIT_NONE = 0,
@@ -39,6 +48,28 @@ enum {
     SV_NATIVE_SHADOW_DATA_LANE_SNAPSHOT = 2,
 };
 
+typedef enum sv_native_reliable_event_kind_v1_e {
+    SV_NATIVE_RELIABLE_EVENT_GAME_SEQUENCE = 1,
+    SV_NATIVE_RELIABLE_EVENT_KEYED_POI = 2,
+} sv_native_reliable_event_kind_v1;
+
+typedef struct sv_native_reliable_game_event_batch_v1_s {
+    uint32_t carrier_count;
+    worr_legacy_game_event_candidate_carrier_v1
+        carriers[WORR_LEGACY_GAME_EVENT_CANDIDATE_SEQUENCE_MAX];
+} sv_native_reliable_game_event_batch_v1;
+
+typedef struct sv_native_reliable_event_entry_v1_s {
+    uint32_t spawncount;
+    uint32_t kind;
+    uint32_t record_count;
+    uint32_t reserved0;
+    union {
+        sv_native_reliable_game_event_batch_v1 game_sequence;
+        q2proto_svc_poi_t keyed_poi;
+    } value;
+} sv_native_reliable_event_entry_v1;
+
 struct sv_native_shadow_event_state_v1_s {
     uint32_t current_sender_initialized;
     uint32_t retired_sender_initialized;
@@ -46,10 +77,16 @@ struct sv_native_shadow_event_state_v1_s {
     uint32_t reserved0;
     uint64_t snapshots_queued;
     uint64_t snapshot_queue_failures;
+    uint32_t reliable_event_head;
+    uint32_t reliable_event_count;
+    uint32_t reliable_event_record_count;
+    uint32_t reserved1;
     worr_native_event_sender_v1 current_sender;
     worr_native_event_sender_v1 retired_sender;
     worr_event_record_v1
         candidate_scratch[WORR_NATIVE_EVENT_SENDER_BACKLOG_CAPACITY];
+    sv_native_reliable_event_entry_v1
+        reliable_events[SV_NATIVE_SHADOW_RELIABLE_EVENT_ENTRY_CAPACITY];
 };
 
 struct sv_native_shadow_snapshot_state_v1_s {
@@ -88,21 +125,20 @@ static void saturating_add(uint64_t *value, uint64_t amount)
         *value += amount;
 }
 
+static void clear_reliable_events(
+    sv_native_shadow_event_state_v1 *state)
+{
+    if (state == NULL)
+        return;
+    state->reliable_event_head = 0;
+    state->reliable_event_count = 0;
+    state->reliable_event_record_count = 0;
+}
+
 static bool mode_has_server_data(uint32_t mode)
 {
     return SV_NativeShadowModeHasEventV1(mode) ||
            SV_NativeShadowModeHasSnapshotV1(mode);
-}
-
-static uint32_t mode_private_capabilities(uint32_t mode)
-{
-    if (mode == SV_NATIVE_SHADOW_MODE_EVENT_SNAPSHOT)
-        return WORR_NET_CAP_NATIVE_EVENT_SNAPSHOT_PRIVATE_MASK;
-    if (SV_NativeShadowModeHasEventV1(mode))
-        return WORR_NET_CAP_NATIVE_EVENT_PRIVATE_MASK;
-    if (SV_NativeShadowModeHasSnapshotV1(mode))
-        return WORR_NET_CAP_NATIVE_SNAPSHOT_PRIVATE_MASK;
-    return WORR_NET_CAP_NATIVE_COMMAND_PRIVATE_MASK;
 }
 
 static bool allocate_owner(uint64_t *owner_out)
@@ -180,6 +216,25 @@ static bool peer_structural_valid(const sv_native_shadow_peer_v1 *peer)
            (peer->matched_native_highwater_valid == 0 ||
             (peer->matched_native_highwater.epoch != 0 &&
              peer->matched_native_highwater.sequence != 0)) &&
+           peer->input_batch_requested <= 1 &&
+           peer->input_batch_confirm_pending <= 1 &&
+           peer->input_batch_confirmed <= 1 &&
+           peer->input_batch_declined <= 1 &&
+           peer->input_batch_ack_blocked <= 1 &&
+           peer->input_batch_pending_count <=
+               WORR_NATIVE_INPUT_BATCH_MAX_COMMANDS &&
+           peer->input_batch_reserved[0] == 0 &&
+           peer->input_batch_reserved[1] == 0 &&
+           (peer->input_batch_requested == 0 ||
+            peer->mode == SV_NATIVE_SHADOW_MODE_COMMAND) &&
+           (peer->input_batch_confirm_pending == 0 ||
+            (peer->input_batch_requested != 0 &&
+             peer->input_batch_confirmed == 0 &&
+             peer->input_batch_declined == 0)) &&
+           (peer->input_batch_pending_count == 0 ||
+            (peer->input_batch_confirmed != 0 &&
+             peer->input_batch_ack_blocked != 0 &&
+             peer->pending_native_valid == 0)) &&
            peer->ack_emit_active <= 1 &&
            peer->ack_emit_bank <=
                SV_NATIVE_SHADOW_TRANSPORT_BANK_RETIRED &&
@@ -228,6 +283,8 @@ static bool peer_structural_valid(const sv_native_shadow_peer_v1 *peer)
 static bool event_state_valid(const sv_native_shadow_peer_v1 *peer)
 {
     const sv_native_shadow_event_state_v1 *state;
+    uint32_t record_count = 0;
+    uint32_t index;
 
     if (!peer_structural_valid(peer))
         return false;
@@ -235,8 +292,64 @@ static bool event_state_valid(const sv_native_shadow_peer_v1 *peer)
         return true;
     state = peer->event_state;
     if (state->current_sender_initialized > 1 ||
-        state->retired_sender_initialized > 1 || state->reserved0 != 0)
+        state->retired_sender_initialized > 1 || state->reserved0 != 0 ||
+        state->reserved1 != 0 ||
+        state->reliable_event_head >=
+            SV_NATIVE_SHADOW_RELIABLE_EVENT_ENTRY_CAPACITY ||
+        state->reliable_event_count >
+            SV_NATIVE_SHADOW_RELIABLE_EVENT_ENTRY_CAPACITY ||
+        state->reliable_event_record_count >
+            WORR_NATIVE_EVENT_SENDER_BACKLOG_CAPACITY)
         return false;
+    if (state->reliable_event_count == 0) {
+        if (state->reliable_event_head != 0 ||
+            state->reliable_event_record_count != 0)
+            return false;
+    } else {
+        for (index = 0; index < state->reliable_event_count; ++index) {
+            const sv_native_reliable_event_entry_v1 *entry =
+                &state->reliable_events[
+                    (state->reliable_event_head + index) %
+                    SV_NATIVE_SHADOW_RELIABLE_EVENT_ENTRY_CAPACITY];
+            uint32_t axis;
+
+            if (entry->reserved0 != 0 || entry->record_count == 0)
+                return false;
+            switch (entry->kind) {
+            case SV_NATIVE_RELIABLE_EVENT_GAME_SEQUENCE:
+                if (entry->record_count !=
+                        entry->value.game_sequence.carrier_count ||
+                    entry->value.game_sequence.carrier_count == 0 ||
+                    entry->value.game_sequence.carrier_count >
+                        WORR_LEGACY_GAME_EVENT_CANDIDATE_SEQUENCE_MAX) {
+                    return false;
+                }
+                break;
+            case SV_NATIVE_RELIABLE_EVENT_KEYED_POI:
+                if (entry->record_count != 1 ||
+                    entry->value.keyed_poi.key == 0 ||
+                    (entry->value.keyed_poi.flags &
+                     ~WORR_EVENT_KEYED_POI_KNOWN_FLAGS) != 0) {
+                    return false;
+                }
+                for (axis = 0; axis < 3; ++axis) {
+                    if (!isfinite(entry->value.keyed_poi.pos[axis]))
+                        return false;
+                }
+                break;
+            default:
+                return false;
+            }
+            if (record_count >
+                WORR_NATIVE_EVENT_SENDER_BACKLOG_CAPACITY -
+                    entry->record_count) {
+                return false;
+            }
+            record_count += entry->record_count;
+        }
+        if (record_count != state->reliable_event_record_count)
+            return false;
+    }
     if (state->current_sender_initialized) {
         if (state->stream_epoch == 0 ||
             !Worr_NativeEventSenderValidateV1(&state->current_sender) ||
@@ -337,7 +450,8 @@ static bool ack_due_at_tick(
 
     if (!peer_structural_valid(peer) || due_out == NULL)
         return false;
-    current = peer->transport_initialized
+    current = peer->transport_initialized &&
+                      !peer->input_batch_ack_blocked
         ? Worr_NativeCarrierAckPeekDueV1(
               &peer->transport.ack_ledger, now_tick,
               SV_NATIVE_SHADOW_ACK_RETRY_MS)
@@ -583,6 +697,7 @@ static bool cancel_prior_native_epochs(
                sizeof(event_state->retired_sender));
         event_state->current_sender_initialized = 0;
         event_state->retired_sender_initialized = 0;
+        clear_reliable_events(event_state);
     }
     if (SV_NativeShadowModeHasSnapshotV1(peer->mode)) {
         memset(&snapshot_state->current_sender, 0,
@@ -637,6 +752,8 @@ static void enter_drain(sv_native_shadow_peer_v1 *peer,
 {
     if (!peer_structural_valid(peer))
         return;
+    if (SV_NativeShadowModeHasEventV1(peer->mode))
+        clear_reliable_events(peer->event_state);
     if (peer->lifecycle != SV_NATIVE_SHADOW_LIFECYCLE_DRAIN)
         saturating_increment(&peer->drain_entries);
     peer->lifecycle = SV_NATIVE_SHADOW_LIFECYCLE_DRAIN;
@@ -705,7 +822,9 @@ static bool carrier_command_shape(
         return true;
     }
     if (
-        entry->data_bytes != SV_NATIVE_SHADOW_WNE_BYTES ||
+        entry->data_bytes <= WORR_NATIVE_ENVELOPE_WIRE_HEADER_BYTES ||
+        entry->data_bytes > WORR_NATIVE_ENVELOPE_WIRE_HEADER_BYTES +
+                                SV_NATIVE_SHADOW_MAX_PAYLOAD_BYTES ||
         entry->data_offset > view->packet_bytes ||
         entry->data_bytes > view->packet_bytes - entry->data_offset ||
         Worr_NativeEnvelopeDecodeV1(
@@ -716,16 +835,27 @@ static bool carrier_command_shape(
     if (frame.transport_epoch != view->transport_epoch ||
         frame.record.record_class != WORR_NATIVE_RECORD_COMMAND_V1 ||
         frame.record.reserved0 != 0 ||
-        frame.record.record_schema_version != WORR_COMMAND_ABI_VERSION ||
-        frame.total_payload_bytes != SV_NATIVE_SHADOW_PAYLOAD_BYTES ||
         frame.fragment_offset != 0 ||
-        frame.fragment_payload_bytes != SV_NATIVE_SHADOW_PAYLOAD_BYTES ||
+        frame.fragment_payload_bytes != frame.total_payload_bytes ||
         frame.fragment_index != 0 || frame.fragment_count != 1 ||
-        frame.fragment_stride != SV_NATIVE_SHADOW_PAYLOAD_BYTES ||
+        frame.fragment_stride != frame.total_payload_bytes ||
         frame.fragment_flags !=
             (WORR_NATIVE_ENVELOPE_FRAGMENT_FIRST |
              WORR_NATIVE_ENVELOPE_FRAGMENT_LAST) ||
         frame.payload_offset != WORR_NATIVE_ENVELOPE_WIRE_HEADER_BYTES) {
+        return false;
+    }
+    if (frame.record.record_schema_version == WORR_COMMAND_ABI_VERSION) {
+        if (frame.total_payload_bytes != SV_NATIVE_SHADOW_PAYLOAD_BYTES)
+            return false;
+    } else if (frame.record.record_schema_version ==
+               WORR_NATIVE_INPUT_BATCH_RECORD_SCHEMA) {
+        /* Schema 2 is an optional, privately confirmed payload.  Keep outer
+         * carrier/WNE shape classification independent of WNB1 framing so an
+         * unconfirmed or explicitly declined batch can expose its legacy
+         * prefix transactionally.  Strict WNB1 validation runs only after
+         * that legacy-only gate in native_shadow_rx. */
+    } else {
         return false;
     }
     *has_data_out = true;
@@ -791,23 +921,48 @@ static worr_native_snapshot_sender_v1 *snapshot_sender_for_bank(
     return NULL;
 }
 
-static bool decode_completed_command(
+static bool decode_completed_commands(
     const sv_native_shadow_transport_v1 *transport,
     const worr_native_rx_message_v1 *message,
-    worr_command_record_v1 *record_out)
+    worr_command_record_v1 *records_out,
+    uint32_t *record_count_out,
+    bool *batch_out)
 {
     worr_native_codec_info_v1 codec_info;
     worr_native_record_ref_v1 codec_record;
+    worr_native_input_batch_info_v1 batch_info;
     const byte *payload;
 
-    if (transport == NULL || message == NULL || record_out == NULL ||
-        message->payload_bytes != SV_NATIVE_SHADOW_PAYLOAD_BYTES ||
+    if (transport == NULL || message == NULL || records_out == NULL ||
+        record_count_out == NULL || batch_out == NULL ||
         message->payload_offset > sizeof(transport->payload_arena) ||
         message->payload_bytes >
             sizeof(transport->payload_arena) - message->payload_offset) {
         return false;
     }
     payload = transport->payload_arena + message->payload_offset;
+    if (message->record.record_schema_version ==
+        WORR_NATIVE_INPUT_BATCH_RECORD_SCHEMA) {
+        memset(&batch_info, 0, sizeof(batch_info));
+        if (Worr_NativeInputBatchDecodeV1(
+                payload, message->payload_bytes,
+                WORR_COMMAND_MAX_NEGOTIATED_DURATION_MS, records_out,
+                WORR_NATIVE_INPUT_BATCH_MAX_COMMANDS, &batch_info) !=
+                WORR_NATIVE_INPUT_BATCH_OK ||
+            batch_info.command_epoch != message->record.object_epoch ||
+            batch_info.last_sequence !=
+                message->record.object_sequence) {
+            return false;
+        }
+        *record_count_out = batch_info.command_count;
+        *batch_out = true;
+        return true;
+    }
+    if (message->record.record_schema_version !=
+            WORR_COMMAND_ABI_VERSION ||
+        message->payload_bytes != SV_NATIVE_SHADOW_PAYLOAD_BYTES) {
+        return false;
+    }
     if (Worr_NativeCodecInspectV1(
             payload, message->payload_bytes, &codec_info) !=
             WORR_NATIVE_CODEC_OK ||
@@ -817,12 +972,14 @@ static bool decode_completed_command(
         Worr_NativeCodecCommandDecodeV1(
             payload, message->payload_bytes,
             WORR_COMMAND_MAX_NEGOTIATED_DURATION_MS,
-            record_out) != WORR_NATIVE_CODEC_OK ||
-        record_out->command_id.epoch != message->record.object_epoch ||
-        record_out->command_id.sequence !=
+            &records_out[0]) != WORR_NATIVE_CODEC_OK ||
+        records_out[0].command_id.epoch != message->record.object_epoch ||
+        records_out[0].command_id.sequence !=
             message->record.object_sequence) {
         return false;
     }
+    *record_count_out = 1;
+    *batch_out = false;
     return true;
 }
 
@@ -996,7 +1153,8 @@ static netchan_app_tx_prepare_result_t native_shadow_tx_prepare(
         peer->readiness = readiness;
     }
 
-    current_due = peer->transport_initialized
+    current_due = peer->transport_initialized &&
+                          !peer->input_batch_ack_blocked
         ? Worr_NativeCarrierAckPeekDueV1(
               &peer->transport.ack_ledger, peer->clock_ticks,
               SV_NATIVE_SHADOW_ACK_RETRY_MS)
@@ -1329,11 +1487,14 @@ static bool apply_server_data_ack_entries(
     worr_native_event_sender_result_v1 result;
     worr_native_snapshot_sender_result_v1 snapshot_result;
     uint32_t acknowledged;
-    uint32_t promoted;
     uint32_t ack_lane = SV_NATIVE_SHADOW_DATA_LANE_NONE;
 
     if (!event_state_valid(peer) || !snapshot_state_valid(peer))
         return false;
+    /* ACK processing releases transport credit only.  Promotion is deferred
+     * until OutputDue or TX selection so another capture site at the same
+     * snapshot fence can still join the same schema-2 batch. */
+    (void)now_tick;
     if (!has_ack)
         return true;
     if (peer->mode == SV_NATIVE_SHADOW_MODE_EVENT_SNAPSHOT) {
@@ -1383,16 +1544,6 @@ static bool apply_server_data_ack_entries(
                 sender, packet, packet_bytes, &acknowledged);
             if (result != WORR_NATIVE_EVENT_SENDER_ACK_APPLIED)
                 return false;
-            if (bank == SV_NATIVE_SHADOW_TRANSPORT_BANK_CURRENT) {
-                promoted = 0;
-                result = Worr_NativeEventSenderPumpV1(
-                    sender, now_tick, &promoted);
-                if (result != WORR_NATIVE_EVENT_SENDER_OK &&
-                    result != WORR_NATIVE_EVENT_SENDER_PROMOTED &&
-                    result != WORR_NATIVE_EVENT_SENDER_CAPACITY) {
-                    return false;
-                }
-            }
         }
     }
     if (SV_NativeShadowModeHasSnapshotV1(peer->mode) &&
@@ -1429,14 +1580,17 @@ static netchan_app_rx_result_t native_shadow_rx(
     worr_native_carrier_session_result_v1 bridge_result;
     worr_native_rx_result_v1 rx_result;
     worr_native_rx_message_v1 message;
-    worr_command_record_v1 record;
+    worr_command_record_v1 records[WORR_NATIVE_INPUT_BATCH_MAX_COMMANDS];
     worr_native_command_shadow_compare_report_v1 report;
     worr_native_command_shadow_join_result_v1 join_result;
     uint16_t data_entry;
     bool has_data;
     bool has_ack;
+    bool is_batch = false;
     bool readiness_staged = false;
     uint32_t pruned;
+    uint32_t record_count = 0;
+    uint32_t record_index;
 
     if (!peer_structural_valid(peer) || !info || !output ||
         info->abi_version != NETCHAN_APP_RX_HOOK_ABI_V1 ||
@@ -1543,6 +1697,32 @@ static netchan_app_rx_result_t native_shadow_rx(
         return NETCHAN_APP_RX_EXPOSE_LEGACY;
     }
 
+    if (frame.record.record_schema_version ==
+            WORR_NATIVE_INPUT_BATCH_RECORD_SCHEMA &&
+        (!peer->input_batch_confirmed || peer->input_batch_declined ||
+         peer->mode != SV_NATIVE_SHADOW_MODE_COMMAND)) {
+        saturating_increment(&peer->input_batch_legacy_fallbacks);
+        expose_legacy(output, view.legacy_bytes);
+        return NETCHAN_APP_RX_EXPOSE_LEGACY;
+    }
+
+    if (frame.record.record_schema_version ==
+        WORR_NATIVE_INPUT_BATCH_RECORD_SCHEMA) {
+        const worr_native_carrier_entry_v1 *entry =
+            &view.entries[data_entry];
+        worr_native_input_batch_info_v1 batch_info;
+        memset(&batch_info, 0, sizeof(batch_info));
+        if (Worr_NativeInputBatchInspectV1(
+                application + entry->data_offset + frame.payload_offset,
+                frame.total_payload_bytes, &batch_info) !=
+                WORR_NATIVE_INPUT_BATCH_OK ||
+            batch_info.command_epoch != frame.record.object_epoch ||
+            batch_info.last_sequence != frame.record.object_sequence) {
+            carrier_reject(peer, SV_NATIVE_SHADOW_FAILURE_CODEC);
+            return NETCHAN_APP_RX_REJECT;
+        }
+    }
+
     staged = *transport;
     memset(&message, 0, sizeof(message));
     bridge_result = Worr_NativeCarrierSessionAcceptDataRetainedV1(
@@ -1569,11 +1749,16 @@ static netchan_app_rx_result_t native_shadow_rx(
         if (readiness_staged)
             peer->readiness = readiness;
         saturating_increment(&peer->rx_repeat_refreshes);
+        if (frame.record.record_schema_version ==
+            WORR_NATIVE_INPUT_BATCH_RECORD_SCHEMA) {
+            saturating_increment(&peer->input_batch_repeat_refreshes);
+        }
         expose_legacy(output, view.legacy_bytes);
         return NETCHAN_APP_RX_EXPOSE_LEGACY;
     }
     if (rx_result != WORR_NATIVE_RX_MESSAGE_COMPLETE ||
-        !decode_completed_command(&staged, &message, &record) ||
+        !decode_completed_commands(
+            &staged, &message, records, &record_count, &is_batch) ||
         !record_ref_equal(frame.record, message.record)) {
         carrier_reject(
             peer, rx_result == WORR_NATIVE_RX_MESSAGE_COMPLETE
@@ -1581,11 +1766,13 @@ static netchan_app_rx_result_t native_shadow_rx(
                       : SV_NATIVE_SHADOW_FAILURE_SESSION);
         return NETCHAN_APP_RX_REJECT;
     }
-    if (record.command_id.epoch !=
-        transport->official_connection_epoch) {
-        carrier_reject(
-            peer, SV_NATIVE_SHADOW_FAILURE_COMMAND_SHADOW);
-        return NETCHAN_APP_RX_REJECT;
+    for (record_index = 0; record_index < record_count; ++record_index) {
+        if (records[record_index].command_id.epoch !=
+            transport->official_connection_epoch) {
+            carrier_reject(
+                peer, SV_NATIVE_SHADOW_FAILURE_COMMAND_SHADOW);
+            return NETCHAN_APP_RX_REJECT;
+        }
     }
 
     if (peer->lifecycle != SV_NATIVE_SHADOW_LIFECYCLE_ACTIVE) {
@@ -1602,9 +1789,9 @@ static netchan_app_rx_result_t native_shadow_rx(
         return NETCHAN_APP_RX_EXPOSE_LEGACY;
     }
     if (peer->matched_native_highwater_valid &&
-        (record.command_id.epoch !=
+        (records[0].command_id.epoch !=
              peer->matched_native_highwater.epoch ||
-         record.command_id.sequence <=
+         records[0].command_id.sequence <=
              peer->matched_native_highwater.sequence)) {
         /* A new native message identity may not replay an already reconciled
          * command ID.  Leave the staged RX/ACK mutation uncommitted, preserve
@@ -1616,7 +1803,8 @@ static netchan_app_rx_result_t native_shadow_rx(
         expose_legacy(output, view.legacy_bytes);
         return NETCHAN_APP_RX_EXPOSE_LEGACY;
     }
-    if (peer->pending_native_valid) {
+    if (peer->pending_native_valid ||
+        peer->input_batch_pending_count != 0) {
         /* The authoritative legacy half has not joined the previous native
          * command yet.  Never replace or queue behind that exact identity:
          * strip this distinct carrier, preserve its legacy prefix, and stop
@@ -1635,11 +1823,19 @@ static netchan_app_rx_result_t native_shadow_rx(
         carrier_reject(peer, SV_NATIVE_SHADOW_FAILURE_COMMAND_SHADOW);
         return NETCHAN_APP_RX_REJECT;
     }
-    join_result = Worr_NativeCommandShadowJoinObserveV1(
-        &staged.command_join, WORR_NATIVE_COMMAND_SHADOW_JOIN_NATIVE,
-        &record, peer->clock_ticks, &report);
-    if (join_result != WORR_NATIVE_COMMAND_SHADOW_JOIN_STORED_NATIVE ||
-        Worr_NativeCarrierSessionCommitRetainedV1(
+    for (record_index = 0; record_index < record_count; ++record_index) {
+        join_result = Worr_NativeCommandShadowJoinObserveV1(
+            &staged.command_join,
+            WORR_NATIVE_COMMAND_SHADOW_JOIN_NATIVE,
+            &records[record_index], peer->clock_ticks, &report);
+        if (join_result !=
+            WORR_NATIVE_COMMAND_SHADOW_JOIN_STORED_NATIVE) {
+            carrier_reject(
+                peer, SV_NATIVE_SHADOW_FAILURE_COMMAND_SHADOW);
+            return NETCHAN_APP_RX_REJECT;
+        }
+    }
+    if (Worr_NativeCarrierSessionCommitRetainedV1(
             &staged.rx_session, staged.rx_slots,
             SV_NATIVE_SHADOW_RX_SLOT_CAPACITY,
             message.slot_index, message.message_sequence,
@@ -1659,9 +1855,23 @@ static netchan_app_rx_result_t native_shadow_rx(
     *transport = staged;
     if (readiness_staged)
         peer->readiness = readiness;
-    saturating_increment_u32(&peer->native_commands_accepted);
-    peer->pending_native_id = record.command_id;
-    peer->pending_native_valid = 1;
+    for (record_index = 0; record_index < record_count; ++record_index)
+        saturating_increment_u32(&peer->native_commands_accepted);
+    if (is_batch) {
+        peer->input_batch_pending_count = record_count;
+        for (record_index = 0; record_index < record_count;
+             ++record_index) {
+            peer->input_batch_pending_ids[record_index] =
+                records[record_index].command_id;
+        }
+        peer->input_batch_ack_blocked = 1;
+        saturating_increment(&peer->input_batches_received);
+        saturating_add(
+            &peer->input_batch_commands_received, record_count);
+    } else {
+        peer->pending_native_id = records[0].command_id;
+        peer->pending_native_valid = 1;
+    }
     saturating_increment(&peer->rx_commits);
     expose_legacy(output, view.legacy_bytes);
     return NETCHAN_APP_RX_EXPOSE_LEGACY;
@@ -1766,6 +1976,38 @@ bool SV_NativeShadowPeerInitV1(sv_native_shadow_peer_v1 *peer,
         peer, netchan, raw_time_ms, SV_NATIVE_SHADOW_MODE_COMMAND);
 }
 
+bool SV_NativeShadowConfigureInputBatchV1(
+    sv_native_shadow_peer_v1 *peer, bool requested)
+{
+    if (!peer_structural_valid(peer) || peer->readiness_initialized ||
+        peer->transport_initialized ||
+        (requested && peer->mode != SV_NATIVE_SHADOW_MODE_COMMAND)) {
+        return false;
+    }
+    peer->input_batch_requested = requested ? 1u : 0u;
+    peer->input_batch_confirm_pending = 0;
+    peer->input_batch_confirmed = 0;
+    peer->input_batch_declined = 0;
+    peer->input_batch_ack_blocked = 0;
+    peer->input_batch_pending_count = 0;
+    memset(peer->input_batch_pending_ids, 0,
+           sizeof(peer->input_batch_pending_ids));
+    return peer_structural_valid(peer);
+}
+
+void SV_NativeShadowDisableInputBatchV1(
+    sv_native_shadow_peer_v1 *peer)
+{
+    if (!peer_structural_valid(peer) || !peer->input_batch_requested)
+        return;
+    peer->input_batch_requested = 0;
+    peer->input_batch_declined = 1;
+    peer->input_batch_confirm_pending = 0;
+    if (peer->input_batch_pending_count != 0)
+        peer->input_batch_ack_blocked = 1;
+    saturating_increment(&peer->input_batch_legacy_fallbacks);
+}
+
 void SV_NativeShadowPeerDetachV1(sv_native_shadow_peer_v1 *peer)
 {
     netchan_t *netchan;
@@ -1779,6 +2021,8 @@ void SV_NativeShadowPeerDetachV1(sv_native_shadow_peer_v1 *peer)
         return;
     }
     netchan = peer->netchan;
+    if (SV_NativeShadowModeHasEventV1(peer->mode))
+        clear_reliable_events(peer->event_state);
     if (netchan->type == NETCHAN_NEW) {
         if (netchan->app_tx_opaque == peer) {
             (void)Netchan_SetApplicationTxHook(
@@ -1805,6 +2049,8 @@ void SV_NativeShadowPeerDisableV1(sv_native_shadow_peer_v1 *peer,
     }
     if (peer->enabled != 0)
         saturating_increment(&peer->failures);
+    if (SV_NativeShadowModeHasEventV1(peer->mode))
+        clear_reliable_events(peer->event_state);
     peer->enabled = 0;
     peer->readiness_initialized = 0;
     peer->activation_pending = 0;
@@ -1813,6 +2059,76 @@ void SV_NativeShadowPeerDisableV1(sv_native_shadow_peer_v1 *peer,
     memset(&peer->readiness, 0, sizeof(peer->readiness));
     memset(&peer->sideband, 0, sizeof(peer->sideband));
     SV_NativeShadowPeerDetachV1(peer);
+}
+
+bool SV_NativeShadowPeerQuiesceMapV1(
+    sv_native_shadow_peer_v1 *peer)
+{
+    uint32_t epoch_highwater;
+
+    if (!SV_NativeShadowPeerEnabledV1(peer))
+        return false;
+    if (peer->last_failure != SV_NATIVE_SHADOW_FAILURE_NONE ||
+        peer->packet_open || peer->async_wake_active ||
+        peer->ack_emit_active ||
+        peer->tx_emit_kind != SV_NATIVE_SHADOW_TX_EMIT_NONE) {
+        SV_NativeShadowPeerDisableV1(
+            peer, SV_NATIVE_SHADOW_FAILURE_SESSION);
+        return false;
+    }
+
+    epoch_highwater = peer->cancelled_through_transport_epoch;
+    if (peer->private_transport_epoch > epoch_highwater)
+        epoch_highwater = peer->private_transport_epoch;
+    if (peer->transport_initialized &&
+        peer->transport.binding.transport_epoch > epoch_highwater) {
+        epoch_highwater = peer->transport.binding.transport_epoch;
+    }
+    if (peer->retired_transport_initialized &&
+        peer->retired_transport.binding.transport_epoch > epoch_highwater) {
+        epoch_highwater =
+            peer->retired_transport.binding.transport_epoch;
+    }
+
+    /* A prior healthy call has already canceled the most recently advertised
+     * epoch.  Preserve its single barrier count and repeat only the cheap
+     * per-map state cleanup below. */
+    if (epoch_highwater != 0 &&
+        (peer->transport_initialized ||
+         peer->retired_transport_initialized ||
+         peer->cancelled_through_transport_epoch <
+             peer->private_transport_epoch)) {
+        if (epoch_highwater == UINT32_MAX ||
+            !cancel_prior_native_epochs(peer, epoch_highwater + 1u)) {
+            SV_NativeShadowPeerDisableV1(
+                peer, SV_NATIVE_SHADOW_FAILURE_SESSION);
+            return false;
+        }
+    }
+
+    peer->activation_pending = 0;
+    peer->input_batch_confirm_pending = 0;
+    peer->input_batch_confirmed = 0;
+    peer->input_batch_ack_blocked = 0;
+    peer->input_batch_pending_count = 0;
+    memset(peer->input_batch_pending_ids, 0,
+           sizeof(peer->input_batch_pending_ids));
+    memset(&peer->pending_native_id, 0,
+           sizeof(peer->pending_native_id));
+    peer->pending_native_valid = 0;
+    memset(&peer->matched_native_highwater, 0,
+           sizeof(peer->matched_native_highwater));
+    peer->matched_native_highwater_valid = 0;
+    peer->native_commands_accepted = 0;
+    if (SV_NativeShadowModeHasEventV1(peer->mode))
+        clear_reliable_events(peer->event_state);
+    peer->lifecycle = SV_NATIVE_SHADOW_LIFECYCLE_WAIT_READINESS;
+    if (!peer_structural_valid(peer) || !native_shadow_hooks_exact(peer)) {
+        SV_NativeShadowPeerDisableV1(
+            peer, SV_NATIVE_SHADOW_FAILURE_SESSION);
+        return false;
+    }
+    return true;
 }
 
 void SV_NativeShadowPeerDestroyV1(sv_native_shadow_peer_v1 *peer)
@@ -1856,6 +2172,20 @@ bool SV_NativeShadowPostBootstrapQueueIdleV1(
     netchan = peer->netchan;
     return netchan->message.cursize == 0 &&
            !netchan->message.overflowed &&
+           netchan->reliable_length == 0 &&
+           !netchan->fragment_pending &&
+           netchan->fragment_out.cursize == 0;
+}
+
+bool SV_NativeShadowReliableGenerationIdleV1(
+    const sv_native_shadow_peer_v1 *peer)
+{
+    const netchan_t *netchan;
+
+    if (!SV_NativeShadowPeerEnabledV1(peer))
+        return false;
+    netchan = peer->netchan;
+    return !netchan->message.overflowed &&
            netchan->reliable_length == 0 &&
            !netchan->fragment_pending &&
            netchan->fragment_out.cursize == 0;
@@ -1915,9 +2245,10 @@ static bool backing_ranges_overlap(const sizebuf_t *left,
     return left_begin < right_end && right_begin < left_end;
 }
 
-bool SV_NativeShadowCanAppendSvcReadinessV1(
+static bool can_append_svc_bytes(
     const sizebuf_t *message,
-    const sizebuf_t *reliable_queue)
+    const sizebuf_t *reliable_queue,
+    uint32_t append_bytes)
 {
     uint32_t eventual_message_bytes;
 
@@ -1925,14 +2256,20 @@ bool SV_NativeShadowCanAppendSvcReadinessV1(
         !append_buffer_valid(reliable_queue) ||
         message == reliable_queue ||
         backing_ranges_overlap(message, reliable_queue) ||
-        message->maxsize - message->cursize <
-            SV_NATIVE_SHADOW_SVC_WIRE_BYTES) {
+        append_bytes > message->maxsize - message->cursize) {
         return false;
     }
-    eventual_message_bytes = message->cursize +
-                             SV_NATIVE_SHADOW_SVC_WIRE_BYTES;
+    eventual_message_bytes = message->cursize + append_bytes;
     return reliable_queue->maxsize - reliable_queue->cursize >=
            eventual_message_bytes;
+}
+
+bool SV_NativeShadowCanAppendSvcReadinessV1(
+    const sizebuf_t *message,
+    const sizebuf_t *reliable_queue)
+{
+    return can_append_svc_bytes(
+        message, reliable_queue, SV_NATIVE_SHADOW_SVC_WIRE_BYTES);
 }
 
 static void write_i32_le(byte *destination, int32_t value)
@@ -1984,6 +2321,88 @@ bool SV_NativeShadowAppendSvcReadinessV1(
     return true;
 }
 
+bool SV_NativeShadowAppendServerActiveV1(
+    sv_native_shadow_peer_v1 *peer,
+    sizebuf_t *message,
+    const sizebuf_t *reliable_queue,
+    int setting_opcode,
+    const worr_native_readiness_record_v1 *record)
+{
+    enum {
+        combined_bytes = SV_NATIVE_SHADOW_SVC_WIRE_BYTES +
+                         WORR_NATIVE_INPUT_BATCH_SIDEBAND_WIRE_BYTES
+    };
+    worr_native_readiness_setting_pair_v1 readiness_pairs[
+        WORR_NATIVE_READINESS_SIDEBAND_PAIR_COUNT];
+    worr_native_input_batch_setting_pair_v1 batch_pairs[
+        WORR_NATIVE_INPUT_BATCH_SIDEBAND_PAIR_COUNT];
+    worr_native_input_batch_confirm_v1 confirm;
+    byte staging[combined_bytes];
+    uint32_t pair_index;
+    uint32_t staging_offset = 0;
+
+    if (!peer_structural_valid(peer) || record == NULL ||
+        setting_opcode < 0 || setting_opcode > UINT8_MAX ||
+        record->record_kind !=
+            WORR_NATIVE_READINESS_RECORD_SERVER_ACTIVE) {
+        return false;
+    }
+    if (!peer->input_batch_requested ||
+        peer->input_batch_confirmed || peer->input_batch_declined) {
+        return SV_NativeShadowAppendSvcReadinessV1(
+            message, reliable_queue, setting_opcode, record);
+    }
+    if (!can_append_svc_bytes(
+            message, reliable_queue, combined_bytes)) {
+        if (!SV_NativeShadowAppendSvcReadinessV1(
+                message, reliable_queue, setting_opcode, record)) {
+            return false;
+        }
+        peer->input_batch_declined = 1;
+        saturating_increment(&peer->input_batch_legacy_fallbacks);
+        return true;
+    }
+    if (record->transport_epoch != peer->private_transport_epoch ||
+        !Worr_NativeReadinessSidebandEncodeV1(
+            record, readiness_pairs,
+            WORR_NATIVE_READINESS_SIDEBAND_PAIR_COUNT) ||
+        !Worr_NativeInputBatchConfirmInitV1(
+            &confirm, peer->official_connection_epoch,
+            peer->private_transport_epoch) ||
+        !Worr_NativeInputBatchConfirmEncodeV1(
+            &confirm, batch_pairs,
+            WORR_NATIVE_INPUT_BATCH_SIDEBAND_PAIR_COUNT)) {
+        return false;
+    }
+    for (pair_index = 0;
+         pair_index < WORR_NATIVE_READINESS_SIDEBAND_PAIR_COUNT;
+         ++pair_index) {
+        staging[staging_offset] = (byte)setting_opcode;
+        write_i32_le(staging + staging_offset + 1,
+                     readiness_pairs[pair_index].index);
+        write_i32_le(staging + staging_offset + 5,
+                     readiness_pairs[pair_index].value);
+        staging_offset += 9;
+    }
+    for (pair_index = 0;
+         pair_index < WORR_NATIVE_INPUT_BATCH_SIDEBAND_PAIR_COUNT;
+         ++pair_index) {
+        staging[staging_offset] = (byte)setting_opcode;
+        write_i32_le(staging + staging_offset + 1,
+                     batch_pairs[pair_index].index);
+        write_i32_le(staging + staging_offset + 5,
+                     batch_pairs[pair_index].value);
+        staging_offset += 9;
+    }
+    if (staging_offset != combined_bytes)
+        return false;
+    memcpy(message->data + message->cursize, staging, sizeof(staging));
+    message->cursize += combined_bytes;
+    peer->input_batch_confirm_pending = 1;
+    saturating_increment(&peer->input_batch_confirmations_appended);
+    return true;
+}
+
 bool SV_NativeShadowBeginEpochBoundV1(
     sv_native_shadow_peer_v1 *peer,
     uint32_t official_connection_epoch,
@@ -2006,9 +2425,11 @@ bool SV_NativeShadowBeginEpochBoundV1(
 
     if (!SV_NativeShadowPeerEnabledV1(peer) || challenge_out == NULL)
         return false;
-    if (official_connection_epoch == 0 ||
-        official_supported != WORR_NET_CAP_LEGACY_STAGE_MASK ||
-        official_negotiated != WORR_NET_CAP_LEGACY_STAGE_MASK ||
+    private_capabilities =
+        SV_NativeShadowModePublicCapabilitiesV1(peer->mode);
+    if (official_connection_epoch == 0 || private_capabilities == 0 ||
+        official_supported != private_capabilities ||
+        official_negotiated != private_capabilities ||
         (SV_NativeShadowModeHasSnapshotV1(peer->mode) !=
          (snapshot_epoch != 0))) {
         SV_NativeShadowPeerDisableV1(
@@ -2032,7 +2453,6 @@ bool SV_NativeShadowBeginEpochBoundV1(
         return false;
     }
 
-    private_capabilities = mode_private_capabilities(peer->mode);
     memset(&readiness, 0, sizeof(readiness));
     if (peer->readiness_initialized == 0) {
         result = Worr_NativeReadinessServerInitBoundV1(
@@ -2073,6 +2493,14 @@ bool SV_NativeShadowBeginEpochBoundV1(
         peer->event_state->stream_epoch = event_stream_epoch;
     if (SV_NativeShadowModeHasSnapshotV1(peer->mode))
         peer->snapshot_state->snapshot_epoch = snapshot_epoch;
+    peer->input_batch_confirm_pending = 0;
+    peer->input_batch_confirmed = 0;
+    peer->input_batch_declined =
+        peer->input_batch_requested ? 0u : peer->input_batch_declined;
+    peer->input_batch_ack_blocked = 0;
+    peer->input_batch_pending_count = 0;
+    memset(peer->input_batch_pending_ids, 0,
+           sizeof(peer->input_batch_pending_ids));
     memset(&peer->pending_native_id, 0,
            sizeof(peer->pending_native_id));
     peer->pending_native_valid = 0;
@@ -2122,7 +2550,7 @@ static bool transport_init(
     if (!Worr_NativeRxSessionInitV1(
             &transport.rx_session, transport.rx_slots,
             SV_NATIVE_SHADOW_RX_SLOT_CAPACITY,
-            SV_NATIVE_SHADOW_PAYLOAD_BYTES,
+            SV_NATIVE_SHADOW_MAX_PAYLOAD_BYTES,
             SV_NATIVE_SHADOW_RX_FRAGMENT_TIMEOUT_MS,
             SV_NATIVE_SHADOW_RX_COMPLETE_TIMEOUT_MS, binding) ||
         !Worr_NativeCarrierAckLedgerInitV1(
@@ -2184,6 +2612,10 @@ bool SV_NativeShadowServerActiveQueuedV1(
             return false;
         }
         peer->activation_pending = 0;
+        if (peer->input_batch_confirm_pending) {
+            peer->input_batch_confirm_pending = 0;
+            peer->input_batch_confirmed = 1;
+        }
         return true;
     }
     if (!peer->activation_pending ||
@@ -2214,7 +2646,16 @@ bool SV_NativeShadowServerActiveQueuedV1(
             peer->event_state->current_sender_initialized ||
             !Worr_EventStreamDescriptorInitV1(
                 &descriptor, peer->event_state->stream_epoch,
-                SV_NATIVE_SHADOW_EVENT_FIRST_SEQUENCE) ||
+                SV_NATIVE_SHADOW_EVENT_FIRST_SEQUENCE)) {
+            SV_NativeShadowPeerDisableV1(
+                peer, SV_NATIVE_SHADOW_FAILURE_EVENT_SENDER);
+            return false;
+        }
+        /* The private event lane is activated only after both endpoints run
+         * the same readiness handshake.  Declare schema-2 batching in the
+         * reliable semantic descriptor before any batch can be emitted. */
+        descriptor.flags |= WORR_EVENT_STREAM_FLAG_BATCH_SCHEMA2;
+        if (!Worr_EventStreamDescriptorValidateV1(&descriptor) ||
             Worr_NativeEventSenderInitV1(
                 &peer->event_state->current_sender, &binding,
                 &descriptor, MAX_EDICTS,
@@ -2255,6 +2696,10 @@ bool SV_NativeShadowServerActiveQueuedV1(
     memset(&peer->matched_native_highwater, 0,
            sizeof(peer->matched_native_highwater));
     peer->matched_native_highwater_valid = 0;
+    if (peer->input_batch_confirm_pending) {
+        peer->input_batch_confirm_pending = 0;
+        peer->input_batch_confirmed = 1;
+    }
     peer->lifecycle = SV_NATIVE_SHADOW_LIFECYCLE_ACTIVE;
     return true;
 }
@@ -2458,8 +2903,35 @@ static bool prune_pending_native(
         return false;
     }
     peer->transport.command_join = join;
-    if (!peer->pending_native_valid)
+    if (!peer->pending_native_valid &&
+        peer->input_batch_pending_count == 0)
         return true;
+
+    if (peer->input_batch_pending_count != 0) {
+        uint32_t index;
+        for (index = 0; index < peer->input_batch_pending_count;
+             ++index) {
+            result = Worr_NativeCommandShadowJoinFindV1(
+                &join, peer->input_batch_pending_ids[index], &slot);
+            if (result == WORR_NATIVE_COMMAND_SHADOW_JOIN_NOT_FOUND) {
+                saturating_increment(&peer->join_expiries);
+                saturating_increment(&peer->input_batch_failures);
+                enter_drain(
+                    peer, SV_NATIVE_SHADOW_FAILURE_COMMAND_SHADOW,
+                    false);
+                return true;
+            }
+            if (result != WORR_NATIVE_COMMAND_SHADOW_JOIN_FOUND ||
+                (slot.state_flags &
+                 WORR_NATIVE_COMMAND_SHADOW_JOIN_SLOT_NATIVE) == 0) {
+                enter_drain(
+                    peer, SV_NATIVE_SHADOW_FAILURE_COMMAND_SHADOW,
+                    true);
+                return false;
+            }
+        }
+        return true;
+    }
 
     result = Worr_NativeCommandShadowJoinFindV1(
         &join, peer->pending_native_id, &slot);
@@ -2490,6 +2962,8 @@ bool SV_NativeShadowObserveLegacyCommandV1(
     worr_native_command_shadow_join_v1 join;
     worr_native_command_shadow_compare_report_v1 report;
     worr_native_command_shadow_join_result_v1 result;
+    worr_command_id_v1 pending_id;
+    bool batch_pending;
     uint64_t now_tick;
 
     if (!peer_structural_valid(peer) || !record)
@@ -2506,10 +2980,15 @@ bool SV_NativeShadowObserveLegacyCommandV1(
     }
     if (!prune_pending_native(peer, now_tick))
         return false;
-    if (!peer->pending_native_valid ||
-        record->command_id.epoch != peer->pending_native_id.epoch ||
+    batch_pending = peer->input_batch_pending_count != 0;
+    if (!batch_pending && !peer->pending_native_valid)
+        return true;
+    pending_id = batch_pending
+        ? peer->input_batch_pending_ids[0]
+        : peer->pending_native_id;
+    if (record->command_id.epoch != pending_id.epoch ||
         record->command_id.sequence !=
-            peer->pending_native_id.sequence) {
+            pending_id.sequence) {
         return true;
     }
 
@@ -2531,29 +3010,55 @@ bool SV_NativeShadowObserveLegacyCommandV1(
     if (result ==
         WORR_NATIVE_COMMAND_SHADOW_JOIN_MATCHED_WATERMARK_UNVERIFIED) {
         if (Worr_NativeCommandShadowJoinRetireComparedV1(
-                &join, peer->pending_native_id) !=
+                &join, pending_id) !=
             WORR_NATIVE_COMMAND_SHADOW_JOIN_RETIRED) {
             enter_drain(
                 peer, SV_NATIVE_SHADOW_FAILURE_COMMAND_SHADOW, true);
             return false;
         }
         peer->transport.command_join = join;
-        peer->matched_native_highwater = peer->pending_native_id;
+        peer->matched_native_highwater = pending_id;
         peer->matched_native_highwater_valid = 1;
-        memset(&peer->pending_native_id, 0,
-               sizeof(peer->pending_native_id));
-        peer->pending_native_valid = 0;
+        if (batch_pending) {
+            --peer->input_batch_pending_count;
+            if (peer->input_batch_pending_count != 0) {
+                memmove(
+                    &peer->input_batch_pending_ids[0],
+                    &peer->input_batch_pending_ids[1],
+                    peer->input_batch_pending_count *
+                        sizeof(peer->input_batch_pending_ids[0]));
+            }
+            memset(
+                &peer->input_batch_pending_ids[
+                    peer->input_batch_pending_count],
+                0, sizeof(peer->input_batch_pending_ids[0]));
+            saturating_increment(&peer->input_batch_legacy_joins);
+            if (peer->input_batch_pending_count == 0 &&
+                !peer->input_batch_declined) {
+                peer->input_batch_ack_blocked = 0;
+                saturating_increment(
+                    &peer->input_batch_acknowledgements_unblocked);
+            }
+        } else {
+            memset(&peer->pending_native_id, 0,
+                   sizeof(peer->pending_native_id));
+            peer->pending_native_valid = 0;
+        }
         saturating_increment(&peer->command_matches);
     } else if (result ==
                WORR_NATIVE_COMMAND_SHADOW_JOIN_COMMAND_MISMATCH) {
         peer->transport.command_join = join;
         saturating_increment(&peer->command_mismatches);
+        if (batch_pending)
+            saturating_increment(&peer->input_batch_failures);
         enter_drain(
             peer, SV_NATIVE_SHADOW_FAILURE_COMMAND_SHADOW, false);
     } else if (result ==
                WORR_NATIVE_COMMAND_SHADOW_JOIN_SAMPLE_OFFSET_MISMATCH) {
         peer->transport.command_join = join;
         saturating_increment(&peer->sample_offset_mismatches);
+        if (batch_pending)
+            saturating_increment(&peer->input_batch_failures);
         enter_drain(
             peer, SV_NATIVE_SHADOW_FAILURE_COMMAND_SHADOW, false);
     } else {
@@ -2574,7 +3079,9 @@ bool SV_NativeShadowReconcileCommandStreamV1(
 
     if (!peer_structural_valid(peer))
         return false;
-    if (!peer->transport_initialized || !peer->pending_native_valid ||
+    if (!peer->transport_initialized ||
+        (!peer->pending_native_valid &&
+         peer->input_batch_pending_count == 0) ||
         (peer->lifecycle != SV_NATIVE_SHADOW_LIFECYCLE_ACTIVE &&
          peer->lifecycle != SV_NATIVE_SHADOW_LIFECYCLE_DRAIN)) {
         return true;
@@ -2589,10 +3096,28 @@ bool SV_NativeShadowReconcileCommandStreamV1(
             peer, SV_NATIVE_SHADOW_FAILURE_COMMAND_SHADOW, true);
         return false;
     }
-    if (stream != NULL && Worr_CommandStreamCopyRecordV1(
-            stream, peer->pending_native_id, &record)) {
-        return SV_NativeShadowObserveLegacyCommandV1(
-            peer, &record, raw_time_ms);
+    while (stream != NULL &&
+           (peer->pending_native_valid ||
+            peer->input_batch_pending_count != 0)) {
+        const worr_command_id_v1 pending_id =
+            peer->input_batch_pending_count != 0
+                ? peer->input_batch_pending_ids[0]
+                : peer->pending_native_id;
+        const uint32_t batch_count_before =
+            peer->input_batch_pending_count;
+        const uint32_t base_before = peer->pending_native_valid;
+        if (!Worr_CommandStreamCopyRecordV1(
+                stream, pending_id, &record)) {
+            break;
+        }
+        if (!SV_NativeShadowObserveLegacyCommandV1(
+                peer, &record, raw_time_ms)) {
+            return false;
+        }
+        if (batch_count_before == peer->input_batch_pending_count &&
+            base_before == peer->pending_native_valid) {
+            break;
+        }
     }
     return prune_pending_native(peer, now_tick);
 }
@@ -2605,7 +3130,6 @@ static bool queue_event_candidates_at_tick(
 {
     worr_native_event_sender_v1 *sender;
     worr_native_event_sender_result_v1 queue_result;
-    uint32_t promoted;
 
     if (!event_state_valid(peer) || candidates == NULL ||
         candidate_count == 0 ||
@@ -2629,8 +3153,11 @@ static bool queue_event_candidates_at_tick(
             peer, SV_NATIVE_SHADOW_FAILURE_EVENT_SENDER, true);
         return false;
     }
-    promoted = 0;
-    return pump_event_sender_at_tick(peer, now_tick, &promoted);
+    /* Candidate capture can be invoked more than once for one server frame.
+     * Leave the complete same-fence set in the FIFO until OutputDue or the
+     * explicit pump boundary coalesces it atomically. */
+    (void)now_tick;
+    return true;
 }
 
 bool SV_NativeShadowQueueEventCandidatesV1(
@@ -2653,6 +3180,184 @@ bool SV_NativeShadowQueueEventCandidatesV1(
         peer, candidates, candidate_count, now_tick);
 }
 
+static sv_native_shadow_reliable_game_event_result_v1
+append_reliable_event_entry(
+    sv_native_shadow_peer_v1 *peer,
+    const sv_native_reliable_event_entry_v1 *entry)
+{
+    sv_native_shadow_event_state_v1 *state = peer->event_state;
+    uint32_t tail;
+
+    if (state->reliable_event_count >=
+            SV_NATIVE_SHADOW_RELIABLE_EVENT_ENTRY_CAPACITY ||
+        entry->record_count >
+            WORR_NATIVE_EVENT_SENDER_BACKLOG_CAPACITY -
+                state->reliable_event_record_count) {
+        return SV_NATIVE_SHADOW_RELIABLE_GAME_EVENT_CAPACITY;
+    }
+    tail = (state->reliable_event_head + state->reliable_event_count) %
+           SV_NATIVE_SHADOW_RELIABLE_EVENT_ENTRY_CAPACITY;
+    state->reliable_events[tail] = *entry;
+    ++state->reliable_event_count;
+    state->reliable_event_record_count += entry->record_count;
+    return SV_NATIVE_SHADOW_RELIABLE_GAME_EVENT_CAPTURED;
+}
+
+sv_native_shadow_reliable_game_event_result_v1
+SV_NativeShadowCaptureReliableGameEventsV1(
+    sv_native_shadow_peer_v1 *peer, uint32_t spawncount,
+    const uint8_t *data, size_t data_bytes)
+{
+    sv_native_reliable_event_entry_v1 entry;
+    uint32_t carrier_count;
+
+    if (peer == NULL || data == NULL)
+        return SV_NATIVE_SHADOW_RELIABLE_GAME_EVENT_INVALID_ARGUMENT;
+    if (data_bytes == 0 || !native_shadow_hooks_exact(peer) ||
+        !SV_NativeShadowModeHasEventV1(peer->mode) ||
+        peer->lifecycle != SV_NATIVE_SHADOW_LIFECYCLE_ACTIVE ||
+        !event_state_valid(peer) ||
+        !peer->event_state->current_sender_initialized) {
+        return SV_NATIVE_SHADOW_RELIABLE_GAME_EVENT_IGNORED;
+    }
+
+    memset(&entry, 0, sizeof(entry));
+    if (Worr_LegacyGameEventDecodeRawSequenceV1(
+            data, data_bytes, entry.value.game_sequence.carriers,
+            WORR_LEGACY_GAME_EVENT_CANDIDATE_SEQUENCE_MAX,
+            &carrier_count) !=
+        WORR_LEGACY_GAME_EVENT_CANDIDATE_OK) {
+        return SV_NATIVE_SHADOW_RELIABLE_GAME_EVENT_IGNORED;
+    }
+    entry.spawncount = spawncount;
+    entry.kind = SV_NATIVE_RELIABLE_EVENT_GAME_SEQUENCE;
+    entry.record_count = carrier_count;
+    entry.value.game_sequence.carrier_count = carrier_count;
+    return append_reliable_event_entry(peer, &entry);
+}
+
+sv_native_shadow_reliable_game_event_result_v1
+SV_NativeShadowCaptureReliableKeyedPOIV1(
+    sv_native_shadow_peer_v1 *peer, uint32_t spawncount,
+    const uint8_t *data, size_t data_bytes)
+{
+    sv_native_reliable_event_entry_v1 entry;
+
+    if (peer == NULL || data == NULL)
+        return SV_NATIVE_SHADOW_RELIABLE_GAME_EVENT_INVALID_ARGUMENT;
+    if (data_bytes == 0 || !native_shadow_hooks_exact(peer) ||
+        !SV_NativeShadowModeHasEventV1(peer->mode) ||
+        peer->lifecycle != SV_NATIVE_SHADOW_LIFECYCLE_ACTIVE ||
+        !event_state_valid(peer) ||
+        !peer->event_state->current_sender_initialized) {
+        return SV_NATIVE_SHADOW_RELIABLE_GAME_EVENT_IGNORED;
+    }
+
+    memset(&entry, 0, sizeof(entry));
+    if (Worr_LegacyKeyedPOIEventDecodeRawV1(
+            data, data_bytes, &entry.value.keyed_poi) !=
+        WORR_LEGACY_KEYED_POI_EVENT_CANDIDATE_OK) {
+        return SV_NATIVE_SHADOW_RELIABLE_GAME_EVENT_IGNORED;
+    }
+    entry.spawncount = spawncount;
+    entry.kind = SV_NATIVE_RELIABLE_EVENT_KEYED_POI;
+    entry.record_count = 1;
+    return append_reliable_event_entry(peer, &entry);
+}
+
+bool SV_NativeShadowFlushReliableEventsV1(
+    sv_native_shadow_peer_v1 *peer,
+    sv_snapshot_shadow_peer_v1 *snapshot_shadow,
+    sv_snapshot_shadow_ref_v1 snapshot_ref,
+    uint32_t max_entities, uint32_t spawncount,
+    uint32_t raw_time_ms)
+{
+    sv_native_shadow_event_state_v1 *state;
+    worr_native_event_sender_v1 *sender;
+    uint32_t candidate_count = 0;
+    uint32_t entry_index;
+
+    if (peer == NULL || snapshot_shadow == NULL || max_entities == 0 ||
+        !native_shadow_hooks_exact(peer) ||
+        !SV_NativeShadowModeHasEventV1(peer->mode) ||
+        !event_state_valid(peer)) {
+        return false;
+    }
+    state = peer->event_state;
+    if (state->reliable_event_count == 0)
+        return true;
+    if (peer->lifecycle != SV_NATIVE_SHADOW_LIFECYCLE_ACTIVE ||
+        !state->current_sender_initialized) {
+        clear_reliable_events(state);
+        return false;
+    }
+
+    /* The queue is single-threaded and snapshot-fenced. Build each complete
+     * legacy entry atomically, retain FIFO order across families, and
+     * consume every observation after this one exact snapshot attempt. */
+    for (entry_index = 0;
+         entry_index < state->reliable_event_count;
+         ++entry_index) {
+        const sv_native_reliable_event_entry_v1 *entry =
+            &state->reliable_events[
+                (state->reliable_event_head + entry_index) %
+                SV_NATIVE_SHADOW_RELIABLE_EVENT_ENTRY_CAPACITY];
+        sv_snapshot_event_candidates_result_v1 build_result;
+
+        if (entry->spawncount != spawncount)
+            continue;
+        switch (entry->kind) {
+        case SV_NATIVE_RELIABLE_EVENT_GAME_SEQUENCE:
+            build_result =
+                SV_SnapshotShadowBuildGameEventCandidatesWithDeliveryV1(
+                    snapshot_shadow, snapshot_ref, max_entities,
+                    entry->value.game_sequence.carriers,
+                    entry->value.game_sequence.carrier_count,
+                    SV_SNAPSHOT_GAME_EVENT_RELIABLE,
+                    &state->candidate_scratch[candidate_count]);
+            break;
+        case SV_NATIVE_RELIABLE_EVENT_KEYED_POI:
+            build_result =
+                SV_SnapshotShadowBuildKeyedPOICandidateWithDeliveryV1(
+                    snapshot_shadow, snapshot_ref, max_entities,
+                    &entry->value.keyed_poi,
+                    SV_SNAPSHOT_KEYED_POI_RELIABLE,
+                    &state->candidate_scratch[candidate_count]);
+            break;
+        default:
+            build_result = SV_SNAPSHOT_EVENT_CANDIDATES_INVALID_CANDIDATE;
+            break;
+        }
+        if (build_result == SV_SNAPSHOT_EVENT_CANDIDATES_OK)
+            candidate_count += entry->record_count;
+    }
+    clear_reliable_events(state);
+    if (candidate_count == 0)
+        return true;
+
+    /* Native-only pressure cannot retroactively reject or drain the reliable
+     * bytes already accepted by the legacy netchan. */
+    sender = &state->current_sender;
+    if (candidate_count >
+        WORR_NATIVE_EVENT_SENDER_BACKLOG_CAPACITY - sender->backlog_count) {
+        return true;
+    }
+    return SV_NativeShadowQueueEventCandidatesV1(
+        peer, state->candidate_scratch, candidate_count, raw_time_ms);
+}
+
+bool SV_NativeShadowFlushReliableGameEventsV1(
+    sv_native_shadow_peer_v1 *peer,
+    sv_snapshot_shadow_peer_v1 *snapshot_shadow,
+    sv_snapshot_shadow_ref_v1 snapshot_ref,
+    uint32_t max_entities, uint32_t spawncount,
+    uint32_t raw_time_ms)
+{
+    return SV_NativeShadowFlushReliableEventsV1(
+        peer, snapshot_shadow, snapshot_ref, max_entities, spawncount,
+        raw_time_ms);
+}
+
 bool SV_NativeShadowQueueSnapshotEventsV1(
     sv_native_shadow_peer_v1 *peer,
     const sv_snapshot_shadow_peer_v1 *snapshot_shadow,
@@ -2664,6 +3369,7 @@ bool SV_NativeShadowQueueSnapshotEventsV1(
     sv_snapshot_event_candidates_result_v1 copy_result;
     uint32_t candidate_count = 0;
     uint32_t copied_count = 0;
+    uint32_t candidate_index;
     uint64_t now_tick;
 
     if (!native_shadow_hooks_exact(peer) || snapshot_shadow == NULL ||
@@ -2711,6 +3417,24 @@ bool SV_NativeShadowQueueSnapshotEventsV1(
         enter_drain(
             peer, SV_NATIVE_SHADOW_FAILURE_SNAPSHOT_EVENTS, true);
         return false;
+    }
+    /* The snapshot projection keeps entity-frame event refs legacy-inferred so
+     * their canonical semantic hashes remain byte-for-byte compatible with the
+     * legacy frame.  Those refs cannot serve as native authority joins, so give
+     * the transport copies the immutable final-emission fence they need to
+     * terminalize or present against the observed snapshot in either mode. */
+    for (candidate_index = 0; candidate_index < candidate_count;
+         ++candidate_index) {
+        state->candidate_scratch[candidate_index].flags |=
+            WORR_EVENT_FLAG_SNAPSHOT_FENCED;
+        if (!Worr_EventRecordCandidateValidateV1(
+                &state->candidate_scratch[candidate_index],
+                sender->max_entities)) {
+            saturating_increment(&state->snapshot_queue_failures);
+            enter_drain(
+                peer, SV_NATIVE_SHADOW_FAILURE_SNAPSHOT_EVENTS, true);
+            return false;
+        }
     }
     if (!queue_event_candidates_at_tick(
             peer, state->candidate_scratch, candidate_count,
@@ -2820,6 +3544,12 @@ static bool server_data_due_at_tick(
         result = Worr_NativeEventSenderDataDuePeekV1(
             &peer->event_state->current_sender, now_tick,
             SV_NATIVE_SHADOW_EVENT_RESEND_MS, &lane_due);
+        if (result == WORR_NATIVE_EVENT_SENDER_SEQUENCE_LIMIT) {
+            /* Make the mutating OutputDue path runnable; its pump converts
+             * the terminal sequence condition into the normal drain fault. */
+            lane_due = true;
+            result = WORR_NATIVE_EVENT_SENDER_OK;
+        }
         if (result != WORR_NATIVE_EVENT_SENDER_OK &&
             result != WORR_NATIVE_EVENT_SENDER_NOT_DUE)
             return false;
@@ -3016,7 +3746,7 @@ bool SV_NativeShadowGetStatusV1(
     status.official_connection_epoch = peer->official_connection_epoch;
     status.transport_epoch = peer->private_transport_epoch;
     status.public_capabilities = peer->official_connection_epoch != 0
-        ? WORR_NET_CAP_LEGACY_STAGE_MASK : 0;
+        ? SV_NativeShadowModePublicCapabilitiesV1(peer->mode) : 0;
     status.private_capabilities = peer->readiness_initialized
         ? peer->readiness.negotiated_capabilities
         : (peer->transport_initialized
@@ -3060,6 +3790,48 @@ bool SV_NativeShadowGetStatusV1(
         peer->stale_cancelled_readiness_records;
     status.last_failure = peer->last_failure;
     status.last_failure_detail = peer->last_failure_detail;
+    *status_out = status;
+    return true;
+}
+
+bool SV_NativeShadowGetInputBatchStatusV1(
+    const sv_native_shadow_peer_v1 *peer,
+    sv_native_shadow_input_batch_status_v1 *status_out)
+{
+    sv_native_shadow_input_batch_status_v1 status;
+
+    if (!peer_structural_valid(peer) || status_out == NULL)
+        return false;
+    memset(&status, 0, sizeof(status));
+    status.struct_size = sizeof(status);
+    status.schema_version =
+        SV_NATIVE_SHADOW_INPUT_BATCH_STATUS_VERSION;
+    status.requested = peer->input_batch_requested;
+    status.confirmed = peer->input_batch_confirmed;
+    status.declined = peer->input_batch_declined;
+    status.ack_blocked = peer->input_batch_ack_blocked;
+    status.pending_count = peer->input_batch_pending_count;
+    if (peer->input_batch_pending_count != 0) {
+        status.first_pending_sequence =
+            peer->input_batch_pending_ids[0].sequence;
+        status.last_pending_sequence =
+            peer->input_batch_pending_ids[
+                peer->input_batch_pending_count - 1u].sequence;
+    }
+    status.official_connection_epoch =
+        peer->official_connection_epoch;
+    status.transport_epoch = peer->private_transport_epoch;
+    status.confirmations_appended =
+        peer->input_batch_confirmations_appended;
+    status.batches_received = peer->input_batches_received;
+    status.commands_received =
+        peer->input_batch_commands_received;
+    status.repeat_refreshes = peer->input_batch_repeat_refreshes;
+    status.legacy_joins = peer->input_batch_legacy_joins;
+    status.acknowledgements_unblocked =
+        peer->input_batch_acknowledgements_unblocked;
+    status.legacy_fallbacks = peer->input_batch_legacy_fallbacks;
+    status.failures = peer->input_batch_failures;
     *status_out = status;
     return true;
 }
@@ -3131,6 +3903,10 @@ bool SV_NativeShadowGetEventStatusV1(
     status.packets_rejected = sender->telemetry.packets_rejected;
     status.first_sends = sender->telemetry.first_sends;
     status.retries = sender->telemetry.retries;
+    status.schema2_batches_promoted =
+        sender->telemetry.schema2_batches_promoted;
+    status.schema2_events_promoted =
+        sender->telemetry.schema2_events_promoted;
     *status_out = status;
     return true;
 }

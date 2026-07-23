@@ -365,8 +365,10 @@ typedef struct client_s {
     uint32_t        worr_capability_epoch;
     bool            worr_capability_confirm_sent;
     bool            worr_capability_failed;
+    bool            worr_native_input_batch_requested;
     bool            worr_native_shadow_challenge_pending;
     uint32_t        worr_native_shadow_challenge_requested_at;
+    uint32_t        worr_native_shadow_challenge_barrier_bytes;
     bool            worr_command_parser_initialized;
     bool            worr_command_sideband_started;
     bool            worr_command_stream_initialized;
@@ -704,7 +706,17 @@ void SV_BroadcastPrintf(int level, const char *fmt, ...) q_printf(2, 3);
 void SV_ClientCommand(client_t *cl, const char *fmt, ...) q_printf(2, 3);
 void SV_BroadcastCommand(const char *fmt, ...) q_printf(1, 2);
 void SV_ClientAddMessage(client_t *client, int flags);
-bool SV_TryQueueNativeShadowChallenge(client_t *client);
+void SV_QueueNativeSpatialAudio(
+    client_t *client, const q2proto_svc_sound_t *sound_message,
+    uint32_t delivery_flags);
+typedef enum {
+    SV_NATIVE_SHADOW_CHALLENGE_SERVICE_NONE = 0,
+    SV_NATIVE_SHADOW_CHALLENGE_SERVICE_BOOTSTRAP_DRAIN = 1,
+    SV_NATIVE_SHADOW_CHALLENGE_SERVICE_CHALLENGE = 2,
+} sv_native_shadow_challenge_service_result_t;
+sv_native_shadow_challenge_service_result_t
+SV_ServiceNativeShadowChallenge(
+    client_t *client, int numpackets, int *cursize_out);
 /* Validates and expires a pending request without queueing or transmitting. */
 bool SV_MaintainNativeShadowChallengePending(client_t *client);
 void SV_ShutdownClientSend(client_t *client);

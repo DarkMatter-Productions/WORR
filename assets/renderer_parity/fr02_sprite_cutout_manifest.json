@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "task_id": "FR-02-T05",
+  "scenes": [
+    {
+      "id": "sprite_paletted_cutout_fixed_view",
+      "config": "renderer_parity/fr02_sprite_cutout.cfg",
+      "capture": "fr02_sprite_cutout.tga",
+      "crop": [440, 220, 360, 400],
+      "metrics": {
+        "pixel_threshold": 1,
+        "max_mean_absolute_rgb": [0, 0, 0.001],
+        "max_pixels_over_threshold_percent": 0
+      },
+      "probes": [
+        {
+          "name": "visible_paletted_bfg_sprite_cutout",
+          "color": [48, 220, 96],
+          "tolerance": 0,
+          "min_pixels_per_backend": 34000,
+          "max_backend_count_delta_percent": 0.01,
+          "min_backend_intersection_over_union": 1.0
+        }
+      ]
+    }
+  ]
+}

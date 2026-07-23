@@ -8,6 +8,7 @@ the Free Software Foundation; either version 2 of the License, or
 */
 
 #include "cg_event_runtime.hpp"
+#include "cg_canonical_snapshot_timeline.hpp"
 
 #include <array>
 #include <cstdint>
@@ -578,4 +579,24 @@ int main()
     test_snapshot_reset_requires_authority_resync(runtime_api);
     test_deactivate_and_scrub(runtime_api);
     return 0;
+}
+
+worr_snapshot_timeline_result_v1 CG_CanonicalSnapshotTimelineFindSnapshot(
+    worr_snapshot_id_v2,
+    worr_snapshot_timeline_ref_v1 *)
+{
+    return WORR_SNAPSHOT_TIMELINE_NOT_FOUND;
+}
+
+worr_snapshot_timeline_result_v1 CG_CanonicalSnapshotTimelineCopySnapshot(
+    worr_snapshot_timeline_ref_v1,
+    worr_snapshot_v2 *)
+{
+    return WORR_SNAPSHOT_TIMELINE_STALE_REF;
+}
+
+bool CG_CanonicalSnapshotTimelineGetDiagnostics(
+    cg_canonical_snapshot_timeline_diagnostics_v1 *)
+{
+    return false;
 }

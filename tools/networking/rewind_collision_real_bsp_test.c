@@ -556,6 +556,36 @@ static void run_identity_rejection_cases(
     puts("  rejection stale-epoch/hash/map-epoch/map-checksum transactional");
 }
 
+static void run_gameplay_visibility_case(void)
+{
+    const vec3_t shooter_origin = {96.0f, 192.0f, 64.0f};
+    const vec3_t target_origin = {352.0f, 192.0f, 64.0f};
+    const mleaf_t *shooter_leaf;
+    const mleaf_t *target_leaf;
+    visrow_t pvs;
+    visrow_t phs;
+
+    shooter_leaf = CM_PointLeaf(&sv.cm, shooter_origin);
+    target_leaf = CM_PointLeaf(&sv.cm, target_origin);
+    CHECK(shooter_leaf != NULL);
+    CHECK(target_leaf != NULL);
+    CHECK(shooter_leaf->area == 1);
+    CHECK(target_leaf->area == 1);
+    CHECK(shooter_leaf->cluster == 0);
+    CHECK(target_leaf->cluster == 0);
+    CHECK(CM_AreasConnected(
+        &sv.cm, shooter_leaf->area, target_leaf->area));
+
+    memset(&pvs, 0, sizeof(pvs));
+    memset(&phs, 0, sizeof(phs));
+    BSP_ClusterVis(sv.cm.cache, &pvs, shooter_leaf->cluster, DVIS_PVS);
+    BSP_ClusterVis(sv.cm.cache, &phs, shooter_leaf->cluster, DVIS_PHS);
+    CHECK(Q_IsBitSet(pvs.b, target_leaf->cluster));
+    CHECK(Q_IsBitSet(phs.b, target_leaf->cluster));
+
+    puts("  gameplay visibility area=1 cluster=0 PVS/PHS connected");
+}
+
 int main(int argc, char **argv)
 {
     const worr_rewind_collision_import_v1 *api;
@@ -589,6 +619,11 @@ int main(int argc, char **argv)
     /* One world-water brush plus the solid and water inline model brushes. */
     CHECK(sv.cm.cache->numbrushes == 3);
     CHECK(sv.cm.cache->numtexinfo == 2);
+    CHECK(sv.cm.cache->numareas == 2);
+    CHECK(sv.cm.cache->vis != NULL);
+    CHECK(sv.cm.cache->vis->numclusters == 1);
+
+    run_gameplay_visibility_case();
 
     sv.state = ss_game;
     sv.worr_snapshot_epoch = FIXTURE_EPOCH;

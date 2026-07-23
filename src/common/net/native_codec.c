@@ -707,6 +707,8 @@ static uint32_t event_payload_wire_bytes(uint16_t payload_kind)
     case WORR_EVENT_PAYLOAD_LOCAL_ACTION_SHADOW_AUTHORITY_V1:
         return (uint32_t)sizeof(
             worr_local_action_shadow_authority_receipt_v1);
+    case WORR_EVENT_PAYLOAD_KEYED_POI_V1:
+        return 20;
     default:
         return UINT32_MAX;
     }
@@ -846,6 +848,17 @@ static void write_event_payload(byte_writer *writer,
         put_u64(writer, payload.command_hash);
         put_u64(writer, payload.descriptor_hash);
         put_u64(writer, payload.record_hash);
+        break;
+    }
+    case WORR_EVENT_PAYLOAD_KEYED_POI_V1: {
+        worr_event_payload_keyed_poi_v1 payload;
+        memcpy(&payload, record->payload, sizeof(payload));
+        put_u16(writer, payload.key);
+        put_u16(writer, payload.lifetime_ms);
+        put_float_array(writer, payload.position, 3);
+        put_u16(writer, payload.image_index);
+        put_u8(writer, payload.color_index);
+        put_u8(writer, payload.flags);
         break;
     }
     default:
@@ -1019,6 +1032,20 @@ static bool read_event_payload(byte_reader *reader,
             !get_u64(reader, &payload.command_hash) ||
             !get_u64(reader, &payload.descriptor_hash) ||
             !get_u64(reader, &payload.record_hash)) {
+            return false;
+        }
+        memcpy(record->payload, &payload, sizeof(payload));
+        return true;
+    }
+    case WORR_EVENT_PAYLOAD_KEYED_POI_V1: {
+        worr_event_payload_keyed_poi_v1 payload;
+        memset(&payload, 0, sizeof(payload));
+        if (!get_u16(reader, &payload.key) ||
+            !get_u16(reader, &payload.lifetime_ms) ||
+            !get_float_array(reader, payload.position, 3) ||
+            !get_u16(reader, &payload.image_index) ||
+            !get_u8(reader, &payload.color_index) ||
+            !get_u8(reader, &payload.flags)) {
             return false;
         }
         memcpy(record->payload, &payload, sizeof(payload));
@@ -1381,7 +1408,8 @@ static bool event_id_equal(worr_event_id_v1 left,
 static uint32_t snapshot_entity_wire_bytes(uint64_t component_mask)
 {
     uint32_t bytes = SNAPSHOT_ENTITY_BASE_BYTES;
-    if ((component_mask & ~WORR_SNAPSHOT_ENTITY_COMPONENTS_V2) != 0 ||
+    if ((component_mask &
+         ~(uint64_t)WORR_SNAPSHOT_ENTITY_COMPONENTS_V2) != 0 ||
         (component_mask & WORR_SNAPSHOT_ENTITY_TRANSFORM) == 0) {
         return UINT32_MAX;
     }
@@ -2107,6 +2135,41 @@ static worr_native_codec_result_v1 validate_snapshot_wire(
     return WORR_NATIVE_CODEC_OK;
 }
 
+worr_native_codec_result_v1 Worr_NativeCodecSnapshotMetadataV1(
+    const void *encoded,
+    size_t encoded_bytes,
+    uint32_t max_entities,
+    worr_native_codec_snapshot_metadata_v1 *metadata_out)
+{
+    worr_native_codec_info_v1 info;
+    worr_native_codec_snapshot_metadata_v1 metadata;
+    snapshot_decode_validation validation;
+    worr_native_codec_result_v1 result;
+
+    if (metadata_out == NULL || max_entities == 0 ||
+        ranges_overlap(encoded, encoded_bytes, metadata_out,
+                       sizeof(*metadata_out))) {
+        return WORR_NATIVE_CODEC_INVALID_ARGUMENT;
+    }
+    result = Worr_NativeCodecInspectV1(encoded, encoded_bytes, &info);
+    if (result != WORR_NATIVE_CODEC_OK)
+        return result;
+    if (info.record_class != WORR_NATIVE_RECORD_SNAPSHOT_V1)
+        return WORR_NATIVE_CODEC_UNSUPPORTED;
+    result = validate_snapshot_wire(encoded, encoded_bytes, &info,
+                                    max_entities, &validation);
+    if (result != WORR_NATIVE_CODEC_OK)
+        return result;
+    memset(&metadata, 0, sizeof(metadata));
+    metadata.struct_size = sizeof(metadata);
+    metadata.schema_version = WORR_NATIVE_CODEC_ABI_VERSION;
+    metadata.codec = info;
+    metadata.snapshot = validation.snapshot;
+    metadata.hashes = validation.hashes;
+    *metadata_out = metadata;
+    return WORR_NATIVE_CODEC_OK;
+}
+
 worr_native_codec_result_v1 Worr_NativeCodecSnapshotPreflightV1(
     const worr_snapshot_projection_view_v2 *view,
     uint32_t max_entities,
@@ -2521,4 +2584,40 @@ worr_native_codec_result_v1 Worr_NativeCodecSnapshotDecodeV1(
     *player_out = validation.player;
     *publication_out = publication;
     return WORR_NATIVE_CODEC_OK;
+}
+
+worr_native_codec_result_v1 Worr_NativeCodecValidateV1(
+    const void *encoded,
+    size_t encoded_bytes,
+    uint32_t max_entities)
+{
+    worr_native_codec_info_v1 info;
+    worr_native_codec_result_v1 result;
+
+    if (max_entities == 0)
+        return WORR_NATIVE_CODEC_INVALID_ARGUMENT;
+    result = Worr_NativeCodecInspectV1(encoded, encoded_bytes, &info);
+    if (result != WORR_NATIVE_CODEC_OK)
+        return result;
+
+    switch (info.record_class) {
+    case WORR_NATIVE_RECORD_COMMAND_V1: {
+        worr_command_record_v1 command;
+        return Worr_NativeCodecCommandDecodeV1(
+            encoded, encoded_bytes,
+            WORR_COMMAND_MAX_NEGOTIATED_DURATION_MS, &command);
+    }
+    case WORR_NATIVE_RECORD_EVENT_V1: {
+        worr_event_record_v1 event;
+        return Worr_NativeCodecEventDecodeV1(
+            encoded, encoded_bytes, max_entities, &event);
+    }
+    case WORR_NATIVE_RECORD_SNAPSHOT_V1: {
+        snapshot_decode_validation validation;
+        return validate_snapshot_wire(encoded, encoded_bytes, &info,
+                                      max_entities, &validation);
+    }
+    default:
+        return WORR_NATIVE_CODEC_UNSUPPORTED;
+    }
 }

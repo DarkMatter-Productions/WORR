@@ -24,8 +24,9 @@ extern "C" {
  * pointers, transport, storage, clock, or random-number generator and does
  * not advertise native capabilities.  The caller supplies every nonzero
  * readiness nonce and is responsible for carrying records reliably.  Every
- * private binding requires both NATIVE_ENVELOPE_V1 and
- * NATIVE_EPOCH_CANCEL_V1; the public legacy-stage offer remains independent.
+ * binding requires both NATIVE_ENVELOPE_V1 and NATIVE_EPOCH_CANCEL_V1.  The
+ * production adapter requires that exact bundle in public negotiation before
+ * this second-stage proof begins.
  */
 #define WORR_NATIVE_READINESS_ABI_VERSION 1u
 

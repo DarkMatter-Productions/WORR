@@ -88,8 +88,24 @@ void CL_AdaptiveInputReset(void)
     Worr_AdaptiveInputResetV1(&adaptive_input.state);
 }
 
+bool CL_AdaptiveInputGetOutputV1(worr_adaptive_input_output_v1 *output_out)
+{
+    if (!output_out || !adaptive_input.active ||
+        !adaptive_input.decision_valid ||
+        (adaptive_input.output.flags &
+         WORR_ADAPTIVE_INPUT_OUTPUT_VALID) == 0) {
+        return false;
+    }
+    *output_out = adaptive_input.output;
+    return true;
+}
+
 static void CL_AdaptiveInputStatus_f(void);
 static void CL_NativeReadinessPilotStatus_f(void);
+static void CL_NativeInputDeliveryStatus_f(void);
+static void CL_NativeEventProbeStatus_f(void);
+static void CL_NativeEventProbeCheckpoint_f(void);
+static void CL_WorrCapabilityStatus_f(void);
 
 /*
 ===============================================================================
@@ -1027,7 +1043,13 @@ static const cmdreg_t c_input[] = {
     { "cl_adaptive_input_status", CL_AdaptiveInputStatus_f },
     { "cl_snapshot_shadow_status", CL_SnapshotShadowStatus_f },
     { "cl_snapshot_recovery_status", CL_SnapshotRecoveryStatus_f },
+    { "cl_worr_capability_status", CL_WorrCapabilityStatus_f },
     { "cl_worr_native_shadow_status", CL_NativeReadinessPilotStatus_f },
+    { "cl_worr_native_input_delivery_status",
+      CL_NativeInputDeliveryStatus_f },
+    { "cl_worr_native_event_probe_status", CL_NativeEventProbeStatus_f },
+    { "cl_worr_native_event_probe_checkpoint",
+      CL_NativeEventProbeCheckpoint_f },
     { NULL }
 };
 
@@ -1396,6 +1418,217 @@ static void CL_NativeReadinessPilotStatus_f(void)
         (unsigned long long)status.failures,
         (unsigned)status.last_failure);
     CL_NativeReadinessPilotSnapshotStatus_f();
+}
+
+static void CL_WorrCapabilityStatus_f(void)
+{
+    worr_net_capability_state_v1 state = {};
+    const bool valid = CL_NetCapabilityGetState(&state);
+
+    Com_Printf(
+        "WORR_CAPABILITY_CLIENT_STATUS_V1 schema=1 valid=%u phase=%u "
+        "protocol=%d epoch=%u offered=0x%02x supported=0x%02x "
+        "peer_supported=0x%02x negotiated=0x%02x\n",
+        valid ? 1u : 0u,
+        valid ? (unsigned)state.phase : 0u,
+        cls.serverProtocol,
+        valid ? (unsigned)state.connection_epoch : 0u,
+        valid ? (unsigned)state.offered : 0u,
+        valid ? (unsigned)state.supported : 0u,
+        valid ? (unsigned)state.peer_supported : 0u,
+        valid ? (unsigned)state.negotiated : 0u);
+}
+
+static void CL_NativeInputDeliveryStatus_f(void)
+{
+    cl_native_input_batch_status_v1 status = {};
+    if (!CL_NativeReadinessPilotGetInputBatchStatusV1(&status)) {
+        Com_Printf("WORR_NATIVE_INPUT_DELIVERY_STATUS_V1 schema=1 "
+                   "failures=1\n");
+        return;
+    }
+    Com_Printf(
+        "WORR_NATIVE_INPUT_DELIVERY_STATUS_V1 schema=%u requested=%u "
+        "confirmed=%u enabled=%u drained=%u official_epoch=%u "
+        "transport_epoch=%u received_sequence=%u candidates=%u "
+        "active_first=%u active_last=%u active_commands=%u "
+        "active_handoffs=%u candidates_collected=%llu plans=%llu "
+        "batches_encoded=%llu prepare_fallbacks=%llu "
+        "first_handoffs=%llu retry_handoffs=%llu "
+        "batches_acknowledged=%llu commands_acknowledged=%llu "
+        "retry_exhaustions=%llu failures=%llu\n",
+        (unsigned)status.schema_version, (unsigned)status.requested,
+        (unsigned)status.confirmed, (unsigned)status.enabled,
+        (unsigned)status.drained, (unsigned)status.official_epoch,
+        (unsigned)status.transport_epoch,
+        (unsigned)status.received_sequence,
+        (unsigned)status.candidate_count,
+        (unsigned)status.active_first_sequence,
+        (unsigned)status.active_last_sequence,
+        (unsigned)status.active_command_count,
+        (unsigned)status.active_handoffs,
+        (unsigned long long)status.candidates_collected,
+        (unsigned long long)status.plans,
+        (unsigned long long)status.batches_encoded,
+        (unsigned long long)status.prepare_fallbacks,
+        (unsigned long long)status.first_handoffs,
+        (unsigned long long)status.retry_handoffs,
+        (unsigned long long)status.batches_acknowledged,
+        (unsigned long long)status.commands_acknowledged,
+        (unsigned long long)status.retry_exhaustions,
+        (unsigned long long)status.failures);
+}
+
+static void CL_NativeEventProbeStatus_f(void)
+{
+    worr_cgame_native_event_probe_status_v1 status = {};
+    if (!CL_CGameNativeEventProbeGetStatus(&status) ||
+        status.struct_size != sizeof(status) ||
+        status.schema_version !=
+            WORR_CGAME_NATIVE_EVENT_PROBE_STATUS_VERSION ||
+        status.kind_count != WORR_CGAME_NATIVE_EVENT_PROBE_KIND_COUNT) {
+        Com_Printf("WORR_NATIVE_EVENT_PROBE_STATUS_V1 valid=0\n");
+        return;
+    }
+
+    Com_Printf(
+        "WORR_NATIVE_EVENT_PROBE_STATUS_V1 valid=1 schema=%u size=%u "
+        "kind_count=%u map_generation=%u map_end_count=%u map_active=%u "
+        "probe_requested=%u probe_latched=%u probe_active=%u "
+        "effect_authority_enabled=%u resources_required=%u "
+        "legacy_owner_active=%u raw_pending_count=%u authority_epoch=%u "
+        "authority_requires_resync=%u authority_degraded=%u "
+        "raw_action_records=%llu raw_action_chain_hash=%016llx "
+        "raw_effect_dispatches=%llu raw_effect_chain_hash=%016llx "
+        "raw_effect_suppressions=%llu raw_pair_failures=%llu "
+        "probe_action_commits=%llu probe_action_chain_hash=%016llx "
+        "probe_effects_suppressed=%llu probe_nonvisual_commits=%llu "
+        "native_effect_dispatches=%llu native_effect_chain_hash=%016llx "
+        "presenter_commit_mismatches=%llu "
+        "authoritative_presentations=%llu authoritative_duplicates=%llu "
+        "authoritative_conflicts=%llu authority_ref_body_joins=%llu "
+        "legacy_ref_body_mismatches=%llu "
+        "raw_k0=%llu raw_k1=%llu raw_k2=%llu raw_k3=%llu raw_k4=%llu "
+        "raw_k5=%llu raw_k6=%llu raw_k7=%llu probe_k0=%llu probe_k1=%llu "
+        "probe_k2=%llu probe_k3=%llu probe_k4=%llu probe_k5=%llu "
+        "probe_k6=%llu probe_k7=%llu\n",
+        (unsigned)status.schema_version, (unsigned)status.struct_size,
+        (unsigned)status.kind_count, (unsigned)status.map_generation,
+        (unsigned)status.map_end_count, (unsigned)status.map_active,
+        (unsigned)status.probe_requested, (unsigned)status.probe_latched,
+        (unsigned)status.probe_active,
+        (unsigned)status.effect_authority_enabled,
+        (unsigned)status.resources_required,
+        (unsigned)status.legacy_owner_active,
+        (unsigned)status.raw_pending_count, (unsigned)status.authority_epoch,
+        (unsigned)status.authority_requires_resync,
+        (unsigned)status.authority_degraded,
+        (unsigned long long)status.raw_action_records,
+        (unsigned long long)status.raw_action_chain_hash,
+        (unsigned long long)status.raw_effect_dispatches,
+        (unsigned long long)status.raw_effect_chain_hash,
+        (unsigned long long)status.raw_effect_suppressions,
+        (unsigned long long)status.raw_pair_failures,
+        (unsigned long long)status.probe_action_commits,
+        (unsigned long long)status.probe_action_chain_hash,
+        (unsigned long long)status.probe_effects_suppressed,
+        (unsigned long long)status.probe_nonvisual_commits,
+        (unsigned long long)status.native_effect_dispatches,
+        (unsigned long long)status.native_effect_chain_hash,
+        (unsigned long long)status.presenter_commit_mismatches,
+        (unsigned long long)status.authoritative_presentations,
+        (unsigned long long)status.authoritative_duplicates,
+        (unsigned long long)status.authoritative_conflicts,
+        (unsigned long long)status.authority_ref_body_joins,
+        (unsigned long long)status.legacy_ref_body_mismatches,
+        (unsigned long long)status.raw_action_by_kind[0],
+        (unsigned long long)status.raw_action_by_kind[1],
+        (unsigned long long)status.raw_action_by_kind[2],
+        (unsigned long long)status.raw_action_by_kind[3],
+        (unsigned long long)status.raw_action_by_kind[4],
+        (unsigned long long)status.raw_action_by_kind[5],
+        (unsigned long long)status.raw_action_by_kind[6],
+        (unsigned long long)status.raw_action_by_kind[7],
+        (unsigned long long)status.probe_action_by_kind[0],
+        (unsigned long long)status.probe_action_by_kind[1],
+        (unsigned long long)status.probe_action_by_kind[2],
+        (unsigned long long)status.probe_action_by_kind[3],
+        (unsigned long long)status.probe_action_by_kind[4],
+        (unsigned long long)status.probe_action_by_kind[5],
+        (unsigned long long)status.probe_action_by_kind[6],
+        (unsigned long long)status.probe_action_by_kind[7]);
+}
+
+static bool CL_ParseNativeEventProbeDecimal(
+    const char *text, uint64_t maximum, uint64_t *value_out)
+{
+    if (!text || !text[0] || !value_out)
+        return false;
+    uint64_t value = 0;
+    for (const unsigned char *cursor =
+             reinterpret_cast<const unsigned char *>(text);
+         *cursor; ++cursor) {
+        if (*cursor < '0' || *cursor > '9')
+            return false;
+        const uint64_t digit = *cursor - '0';
+        if (value > (maximum - digit) / 10u)
+            return false;
+        value = value * 10u + digit;
+    }
+    *value_out = value;
+    return true;
+}
+
+static void CL_PrintNativeEventProbeCheckpoint(
+    bool valid,
+    const worr_cgame_native_event_probe_checkpoint_receipt_v1 *receipt)
+{
+    const worr_cgame_native_event_probe_checkpoint_receipt_v1 invalid = {
+        sizeof(worr_cgame_native_event_probe_checkpoint_receipt_v1),
+        WORR_CGAME_NATIVE_EVENT_PROBE_CHECKPOINT_VERSION,
+        WORR_CGAME_NATIVE_EVENT_PROBE_CHECKPOINT_INVALID_ARGUMENT,
+        0,
+        0,
+        0,
+        0,
+    };
+    const auto *row = receipt ? receipt : &invalid;
+    Com_Printf(
+        "WORR_NATIVE_EVENT_PROBE_CHECKPOINT_V1 valid=%u schema=%u "
+        "size=%u result=%u map_generation=%u authority_epoch=%u "
+        "checkpoint_id=%llu\n",
+        valid ? 1u : 0u, (unsigned)row->schema_version,
+        (unsigned)row->struct_size, (unsigned)row->result,
+        (unsigned)row->observed_map_generation,
+        (unsigned)row->observed_authority_epoch,
+        (unsigned long long)row->checkpoint_id);
+}
+
+static void CL_NativeEventProbeCheckpoint_f(void)
+{
+    uint64_t map_generation = 0;
+    uint64_t authority_epoch = 0;
+    uint64_t checkpoint_id = 0;
+    if (Cmd_Argc() != 4 ||
+        !CL_ParseNativeEventProbeDecimal(
+            Cmd_Argv(1), UINT32_MAX, &map_generation) ||
+        !CL_ParseNativeEventProbeDecimal(
+            Cmd_Argv(2), UINT32_MAX, &authority_epoch) ||
+        !CL_ParseNativeEventProbeDecimal(
+            Cmd_Argv(3), UINT64_MAX, &checkpoint_id)) {
+        CL_PrintNativeEventProbeCheckpoint(false, NULL);
+        return;
+    }
+
+    worr_cgame_native_event_probe_checkpoint_receipt_v1 receipt = {};
+    const bool invoked = CL_CGameNativeEventProbeCheckpoint(
+        (uint32_t)map_generation, (uint32_t)authority_epoch,
+        checkpoint_id, &receipt);
+    const bool valid = invoked && receipt.struct_size == sizeof(receipt) &&
+        receipt.schema_version ==
+            WORR_CGAME_NATIVE_EVENT_PROBE_CHECKPOINT_VERSION &&
+        receipt.reserved0 == 0;
+    CL_PrintNativeEventProbeCheckpoint(valid, valid ? &receipt : NULL);
 }
 
 static void CL_AdaptiveInputStatus_f(void)

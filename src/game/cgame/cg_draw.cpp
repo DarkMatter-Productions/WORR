@@ -2,11 +2,14 @@
 // Licensed under the GNU General Public License 2.0.
 // cg_draw.cpp -- HUD/screen drawing (Quake 3-style layout)
 #include "cg_local.h"
+#include "cg_native_event_presenter.hpp"
 #include "cg_wheel.h"
 
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+
+static_assert(CG_KEYED_POI_IMAGE_NAME_CAPACITY == MAX_QPATH);
 
 // Shared engine helpers without pulling shared.h into game-side headers.
 static inline int Q_clip(int a, int b, int c)
@@ -2169,6 +2172,7 @@ static std::array<cg_crosshair_state_t, MAX_SPLIT_PLAYERS> crosshair_state;
 struct cg_poi_t {
     int id = 0;
     uint64_t time = 0;
+    bool infinite = false;
     int color_index = 0;
     int flags = 0;
     int image_index = 0;
@@ -2463,6 +2467,17 @@ void CG_AddDamageDisplay(int32_t isplit, int damage, const Vector3 &color, const
     entry->time = cgi.CL_ClientRealTime() + (uint64_t)cl_damage_indicator_time->integer;
 }
 
+extern "C" void CL_PresentDamageDisplayValue(int damage,
+                                               const float *color,
+                                               const float *direction)
+{
+    if (!color || !direction)
+        return;
+    CG_AddDamageDisplay(
+        0, damage, Vector3{color[0], color[1], color[2]},
+        Vector3{direction[0], direction[1], direction[2]});
+}
+
 static void CG_DrawDamageDisplays(cg_crosshair_state_t &state, const rgba_t &base_color)
 {
     if (!cl_damage_indicators || !cl_damage_indicators->integer)
@@ -2511,22 +2526,40 @@ static void CG_DrawDamageDisplays(cg_crosshair_state_t &state, const rgba_t &bas
     }
 }
 
-static void CG_SetPOIImage(cg_poi_t &poi, int image_index)
+static bool CG_POIActive(const cg_poi_t &poi, uint64_t now)
+{
+    return CG_KeyedPOISlotActiveV1(poi, now);
+}
+
+static cg_poi_t *CG_FindPOIUpsertSlot(
+    std::array<cg_poi_t, MAX_TRACKED_POIS> &pois, int id, uint64_t now)
+{
+    const std::uint32_t slot = CG_SelectKeyedPOISlotV1(
+        pois, id, now);
+    return slot == CG_KEYED_POI_NO_SLOT_V1 ? nullptr : &pois[slot];
+}
+
+static bool CG_SetPOIImage(cg_poi_t &poi, int image_index)
 {
     poi.image_index = image_index;
     poi.image_name[0] = '\0';
     poi.width = 0;
     poi.height = 0;
 
-    if (!cgi.CL_GetImageConfigString || !cgi.Draw_GetPicSize)
-        return;
+    if (!cgi.CL_GetPrecachedImageInfo)
+        return false;
 
-    const char *name = cgi.CL_GetImageConfigString(image_index);
-    if (!name || !*name)
-        return;
+    const char *name = nullptr;
+    if (!cgi.CL_GetPrecachedImageInfo(
+            image_index, &name, &poi.width, &poi.height) ||
+        !name || !*name) {
+        poi.width = 0;
+        poi.height = 0;
+        return false;
+    }
 
     Q_strlcpy(poi.image_name, name, sizeof(poi.image_name));
-    cgi.Draw_GetPicSize(&poi.width, &poi.height, poi.image_name);
+    return true;
 }
 
 void CG_RemovePOI(int32_t isplit, int id)
@@ -2562,51 +2595,7 @@ void CG_AddPOI(int32_t isplit, int id, int time, const Vector3 &pos, int image, 
 
     uint64_t now = cgi.CL_ClientTime();
     auto &pois = poi_state[isplit];
-    cg_poi_t *poi = nullptr;
-
-    if (id == 0) {
-        cg_poi_t *oldest_poi = nullptr;
-
-        for (auto &candidate : pois) {
-            if (candidate.time > now) {
-                if (candidate.id) {
-                    continue;
-                }
-                if (!oldest_poi || candidate.time < oldest_poi->time) {
-                    oldest_poi = &candidate;
-                }
-            } else {
-                poi = &candidate;
-                break;
-            }
-        }
-
-        if (!poi)
-            poi = oldest_poi;
-    } else {
-        cg_poi_t *oldest_poi = nullptr;
-        cg_poi_t *free_poi = nullptr;
-
-        for (auto &candidate : pois) {
-            if (candidate.id == id) {
-                poi = &candidate;
-                break;
-            }
-
-            if (candidate.time <= now) {
-                if (!free_poi) {
-                    free_poi = &candidate;
-                }
-            } else if (!candidate.id) {
-                if (!oldest_poi || candidate.time < oldest_poi->time) {
-                    oldest_poi = &candidate;
-                }
-            }
-        }
-
-        if (!poi)
-            poi = free_poi ? free_poi : oldest_poi;
-    }
+    cg_poi_t *poi = CG_FindPOIUpsertSlot(pois, id, now);
 
     if (!poi) {
         if (cgi.Com_Print)
@@ -2615,11 +2604,66 @@ void CG_AddPOI(int32_t isplit, int id, int time, const Vector3 &pos, int image, 
     }
 
     poi->id = id;
-    poi->time = now + static_cast<uint64_t>(time);
+    poi->infinite = time == 0;
+    poi->time = poi->infinite ? 0 : now + static_cast<uint64_t>(time);
     poi->position = pos;
     poi->color_index = color;
     poi->flags = flags;
-    CG_SetPOIImage(*poi, image);
+    (void)CG_SetPOIImage(*poi, image);
+}
+
+bool CG_CanPresentKeyedPOIValue(
+    const worr_event_payload_keyed_poi_v1 *payload,
+    cg_prepared_keyed_poi_v1 *prepared_out)
+{
+    if (!payload || !prepared_out)
+        return false;
+
+    auto &pois = poi_state[0];
+    const bool enabled = cl_pois && cl_pois->integer;
+    const bool clock_available = cgi.CL_ClientTime != nullptr;
+    const bool needs_clock =
+        enabled && payload->lifetime_ms !=
+                       WORR_EVENT_KEYED_POI_REMOVE_LIFETIME_MS;
+    const uint64_t now = needs_clock && clock_available
+                             ? cgi.CL_ClientTime()
+                             : 0;
+    if (!CG_PrepareKeyedPOIStateV1(
+            pois, payload, enabled, clock_available, now,
+            prepared_out)) {
+        return false;
+    }
+    if (prepared_out->disposition !=
+            CG_KEYED_POI_PRESENTATION_UPSERT_V1 ||
+        !cgi.CL_GetPrecachedImageInfo) {
+        return true;
+    }
+
+    const char *name = nullptr;
+    int width = 0;
+    int height = 0;
+    if (cgi.CL_GetPrecachedImageInfo(
+            payload->image_index, &name, &width, &height) &&
+        name && *name && width > 0 && height > 0) {
+        prepared_out->width = width;
+        prepared_out->height = height;
+        Q_strlcpy(prepared_out->image_name, name,
+                  sizeof(prepared_out->image_name));
+    }
+    return true;
+}
+
+void CG_PresentKeyedPOIValue(const cg_prepared_keyed_poi_v1 *prepared)
+{
+    if (!prepared)
+        return;
+
+    if (prepared->disposition ==
+        CG_KEYED_POI_PRESENTATION_NOOP_CAPACITY_V1) {
+        if (cgi.Com_Print)
+            cgi.Com_Print("couldn't add a POI\n");
+    }
+    (void)CG_CommitKeyedPOIStateV1(poi_state[0], prepared);
 }
 
 static void CG_DrawPOIs(int32_t isplit)
@@ -2659,7 +2703,7 @@ static void CG_DrawPOIs(int32_t isplit)
 
     auto &pois = poi_state[isplit];
     for (auto &poi : pois) {
-        if (poi.time <= now)
+        if (!CG_POIActive(poi, now))
             continue;
         if (!poi.image_name[0] || poi.width <= 0 || poi.height <= 0)
             continue;

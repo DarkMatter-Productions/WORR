@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "task_id": "FR-01-T14",
+  "scenes": [
+    {
+      "id": "gpu_md5_skinning",
+      "config": "renderer_parity/fr01_model_gpu_md5.cfg",
+      "capture": "fr01_model_gpu_md5.tga",
+      "launch_cvars": {
+        "gl_md5_load": "1",
+        "gl_md5_use": "1",
+        "vk_md5_load": "1",
+        "vk_md5_use": "1",
+        "vk_md5_gpu_skinning": "1"
+      },
+      "crop": [570, 470, 310, 110],
+      "metrics": {
+        "pixel_threshold": 16,
+        "max_mean_absolute_rgb": [1, 0.3, 0.3],
+        "max_pixels_over_threshold_percent": 0.8
+      },
+      "probes": [
+        {
+          "name": "gpu_md5_skin_glow_emission",
+          "min_color": [160, 0, 0],
+          "max_color": [255, 60, 30],
+          "min_pixels_per_backend": 1800,
+          "max_backend_count_delta_percent": 4,
+          "min_backend_intersection_over_union": 0.92
+        }
+      ]
+    }
+  ]
+}

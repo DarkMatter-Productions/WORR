@@ -2430,10 +2430,42 @@ static const char *VK_UI_PathExtension(const char *path)
     return dot;
 }
 
-static bool VK_UI_LoadRgbaFromFile(const char *path, int *out_w, int *out_h, byte **out_rgba)
+// Preserve the source encoding class that affects legacy draw-state choices.
+// The uploaded texture is always RGBA, but OpenGL still distinguishes indexed
+// image encodings when it chooses alpha test versus blending for sprites.
+static imageflags_t VK_UI_EncodedImageFlags(const char *path,
+                                            const byte *file_data,
+                                            size_t file_len)
+{
+    const char *ext = VK_UI_PathExtension(path);
+    if (ext && (!Q_stricmp(ext, ".pcx") || !Q_stricmp(ext, ".wal"))) {
+        return IF_PALETTED;
+    }
+
+    // TGA image types 1 and 9 use a color map.  PNG stores its color type in
+    // the IHDR data byte after the eight-byte signature, length, type, width,
+    // height, and bit-depth fields.  Keep this lightweight detection local to
+    // the loader so a truecolour override of a legacy PCX remains truecolour.
+    if (ext && !Q_stricmp(ext, ".tga") && file_len >= 3 &&
+        (file_data[2] == 1 || file_data[2] == 9)) {
+        return IF_PALETTED;
+    }
+    if (ext && !Q_stricmp(ext, ".png") && file_len >= 26 &&
+        !memcmp(file_data, "\x89PNG\r\n\x1a\n", 8) && file_data[25] == 3) {
+        return IF_PALETTED;
+    }
+
+    return IF_NONE;
+}
+
+static bool VK_UI_LoadRgbaFromFile(const char *path, int *out_w, int *out_h,
+                                   byte **out_rgba, imageflags_t *out_flags)
 {
     if (!path || !*path || !out_w || !out_h || !out_rgba) {
         return false;
+    }
+    if (out_flags) {
+        *out_flags = IF_NONE;
     }
 
     byte *file_data = NULL;
@@ -2441,6 +2473,9 @@ static bool VK_UI_LoadRgbaFromFile(const char *path, int *out_w, int *out_h, byt
     if (file_len < 0 || !file_data) {
         return false;
     }
+
+    imageflags_t encoded_flags = VK_UI_EncodedImageFlags(
+        path, file_data, (size_t)file_len);
 
     int width = 0;
     int height = 0;
@@ -2453,6 +2488,9 @@ static bool VK_UI_LoadRgbaFromFile(const char *path, int *out_w, int *out_h, byt
             *out_w = width;
             *out_h = height;
             *out_rgba = native_rgba;
+            if (out_flags) {
+                *out_flags = encoded_flags;
+            }
             return true;
         }
     } else if (ext && !Q_stricmp(ext, ".wal")) {
@@ -2461,6 +2499,9 @@ static bool VK_UI_LoadRgbaFromFile(const char *path, int *out_w, int *out_h, byt
             *out_w = width;
             *out_h = height;
             *out_rgba = native_rgba;
+            if (out_flags) {
+                *out_flags = encoded_flags;
+            }
             return true;
         }
     } else if (ext && !Q_stricmp(ext, ".dds")) {
@@ -2473,6 +2514,9 @@ static bool VK_UI_LoadRgbaFromFile(const char *path, int *out_w, int *out_h, byt
             *out_w = width;
             *out_h = height;
             *out_rgba = native_rgba;
+            if (out_flags) {
+                *out_flags = encoded_flags;
+            }
             return true;
         }
     }
@@ -2506,6 +2550,9 @@ static bool VK_UI_LoadRgbaFromFile(const char *path, int *out_w, int *out_h, byt
     *out_w = width;
     *out_h = height;
     *out_rgba = rgba_copy;
+    if (out_flags) {
+        *out_flags = encoded_flags;
+    }
     return true;
 }
 
@@ -2579,8 +2626,12 @@ static bool VK_UI_ReplaceExtension(char *path, size_t path_size, const char *ext
 }
 
 static bool VK_UI_LoadImageData(const char *normalized_name,
-                                int *out_w, int *out_h, byte **out_rgba)
+                                int *out_w, int *out_h, byte **out_rgba,
+                                imageflags_t *out_flags)
 {
+    if (out_flags) {
+        *out_flags = IF_NONE;
+    }
     const char *ext = VK_UI_PathExtension(normalized_name);
     bool paletted = ext && (!Q_stricmp(ext, ".pcx") || !Q_stricmp(ext, ".wal"));
     char candidate[MAX_QPATH];
@@ -2597,13 +2648,15 @@ static bool VK_UI_LoadImageData(const char *normalized_name,
                 continue;
             }
 
-            if (VK_UI_LoadRgbaFromFile(candidate, out_w, out_h, out_rgba)) {
+            if (VK_UI_LoadRgbaFromFile(candidate, out_w, out_h, out_rgba,
+                                       out_flags)) {
                 return true;
             }
         }
     }
 
-    if (VK_UI_LoadRgbaFromFile(normalized_name, out_w, out_h, out_rgba)) {
+    if (VK_UI_LoadRgbaFromFile(normalized_name, out_w, out_h, out_rgba,
+                               out_flags)) {
         return true;
     }
 
@@ -2617,7 +2670,8 @@ static bool VK_UI_LoadImageData(const char *normalized_name,
             continue;
         }
 
-        if (VK_UI_LoadRgbaFromFile(candidate, out_w, out_h, out_rgba)) {
+        if (VK_UI_LoadRgbaFromFile(candidate, out_w, out_h, out_rgba,
+                                   out_flags)) {
             return true;
         }
     }
@@ -2639,12 +2693,13 @@ static bool VK_UI_LoadGlowmapData(const char *canonical_name,
         if (!VK_UI_ReplaceExtension(candidate, sizeof(candidate), override_exts[i])) {
             continue;
         }
-        if (VK_UI_LoadRgbaFromFile(candidate, out_w, out_h, out_rgba)) {
+        if (VK_UI_LoadRgbaFromFile(candidate, out_w, out_h, out_rgba, NULL)) {
             return true;
         }
     }
 
-    return VK_UI_LoadRgbaFromFile(canonical_name, out_w, out_h, out_rgba);
+    return VK_UI_LoadRgbaFromFile(canonical_name, out_w, out_h, out_rgba,
+                                  NULL);
 }
 
 static qhandle_t VK_UI_CreateImage(const char *name, imagetype_t type, imageflags_t flags,
@@ -4012,15 +4067,19 @@ qhandle_t VK_UI_RegisterImage(const char *name, imagetype_t type, imageflags_t f
     int width = 0;
     int height = 0;
     byte *rgba = NULL;
+    imageflags_t loaded_flags = IF_NONE;
 
-    if (!VK_UI_LoadImageData(normalized, &width, &height, &rgba)) {
+    if (!VK_UI_LoadImageData(normalized, &width, &height, &rgba,
+                             &loaded_flags)) {
         if (flags & IF_OPTIONAL) {
             return 0;
         }
         return vk_ui.missing_image;
     }
 
-    qhandle_t handle = VK_UI_CreateImage(normalized, type, flags, width, height, rgba);
+    qhandle_t handle = VK_UI_CreateImage(normalized, type,
+                                         flags | loaded_flags,
+                                         width, height, rgba);
     free(rgba);
 
     if (!handle) {

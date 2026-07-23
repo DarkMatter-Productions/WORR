@@ -39,6 +39,9 @@ profiles retain their previous memory footprint.
   `2 / 4 / 5` over 50,000 pixels, with no pixel above five codes. The remaining
   bounded difference is from backend mip-filter reduction, not presentation
   quantization or a fallback renderer path.
+- A 2026-07-18 validation-enabled rerun on the staged Windows runtime recorded
+  maximum RGB error `0 / 1 / 1` and mean absolute RGB error `0 / 1 / 1` across
+  the same 50,000 pixels, remaining well inside that cross-driver gate.
 - The validation-layer capture at
   `.tmp/renderer-parity/hdr-auto-exposure-single-reduction-fix/` has no VUID
   or validation errors after the multi-mip image-view, descriptor-validity,

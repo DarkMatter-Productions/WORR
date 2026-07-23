@@ -90,6 +90,11 @@ enum class cg_local_action_shadow_receipt_result_v1 : std::uint32_t {
     requires_resync = 7,
 };
 
+/* One local client owns this process-local evidence table. Its capacity covers
+ * the complete compositional command/receipt flight bound; cg_local_interaction
+ * keeps the derivation tied to the contributing shared transport constants. */
+constexpr std::uint32_t CG_LOCAL_ACTION_SHADOW_EVIDENCE_CAPACITY = 1024u;
+
 void CG_LocalActionShadowObserveCommands(
     const worr_cgame_prediction_input_range_v1 &prediction_range);
 cg_local_action_shadow_receipt_result_v1
@@ -112,6 +117,13 @@ struct cg_local_action_shadow_status_v1 {
     std::uint64_t exact_lookup_attempts;
     std::uint64_t exact_lookup_hits;
     std::uint64_t exact_lookup_misses;
+    std::uint64_t command_frontier_prunes;
+    std::uint64_t terminal_frontier_prunes;
+    std::uint64_t receipt_frontier_advances;
+    std::uint64_t command_cache_evictions;
+    std::uint64_t coverage_loss_failures;
+    worr_command_id_v1 command_coverage_lost_through;
+    worr_command_id_v1 receipt_frontier;
     std::uint32_t requires_resync;
 };
 

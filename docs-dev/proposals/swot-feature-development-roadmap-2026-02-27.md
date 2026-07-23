@@ -17,8 +17,81 @@ Create a repository-grounded SWOT and convert it into actionable, task-based pro
     its 170,000-pixel fullbright/bmodel crop and 34,000-pixel authored-lightmap
     crop, with equal feature masks, IoU `1.0`, no process failures, and clean
     Vulkan validation.
+  - Completed the `FR-01-T06` shared `r_lightmap` diagnostic-world parity
+    slice. Vulkan now uses dedicated native opaque and alpha pipelines that
+    preserve the authored lightmap over a white base while suppressing glow
+    emission and intensity, matching OpenGL without a renderer redirect. The
+    strengthened legacy-v38 probe requires exactly RGB `32 / 32 / 32` across
+    34,000 pixels per backend at IoU `1.0`; the complete three-scene matrix is
+    RGB-exact under validation. Details:
+    `docs-dev/renderer/vulkan-shared-lightmap-debug-parity-2026-07-19.md`.
   - Converted every known partial/missing parity or modernization row into
     `FR-01-T08..T15` or the existing `FR-02-T13..T15` tasks.
+  - Repaired the OpenGL world-refraction reference path: its bit-38 shader
+    flag had been truncated in common BSP face state, so prior paired captures
+    compared active Vulkan refraction against inactive OpenGL refraction.
+    The full 64-bit state and batching hash are now retained, the paired
+    configs activate refraction after map registration, and validation-backed
+    MSAA/DOF, standard/HDR viewweapon, and liquid/entity captures use the
+    real effect. Details:
+    `docs-dev/renderer/opengl-refraction-state-width-vulkan-parity-2026-07-19.md`.
+  - Completed the `FR-01-T04` native Vulkan alias-model cel-shading slice:
+    `vk_celshading` now replays eligible MD2/MD5 meshes through native black
+    silhouette-line pipelines, reusing CPU and GPU-resident model submissions
+    without an OpenGL route. Optional non-solid-fill/wide-line capability is
+    negotiated at device creation, and a per-batch dynamic width preserves the
+    OpenGL 700-unit distance fade. The validation fixture's black contour mask
+    is exact (280 pixels per backend, IoU `1.0`) and its 144,000-pixel crop has
+    only two pixels above RGB error 20. Details:
+    `docs-dev/renderer/vulkan-alias-celshading-parity-2026-07-19.md`.
+  - Advanced `FR-01-T14` with native instanced billboard particles. Default-on
+    `vk_particle_gpu_instancing` stores one compact 20-byte origin/scale/colour
+    record per particle in the existing frame-local instance arena and expands
+    the legacy three-vertex billboard in the Vulkan vertex shader. The existing
+    CPU-expanded fallback remains native Vulkan for diagnostic A/B work or a
+    pipeline-creation failure. Validation-enabled fog plus radial/square/soft
+    additive gates all pass; the square lane is exact and the 8,192-particle
+    record volume falls from 1,179,648 to 163,840 bytes before any timing claim.
+    Details: `docs-dev/renderer/vulkan-instanced-particle-submission-2026-07-20.md`.
+  - Advanced `FR-01-T14` with native instanced simple-beam submission.
+    Default-on `vk_beam_gpu_instancing` stores the CPU-selected legacy
+    start/end/facing vector and colour in one 40-byte Vulkan instance, then
+    recreates the original six-vertex billboard winding in the vertex stage.
+    Polygonal beams and the diagnostic CPU fallback remain native Vulkan. The
+    validation-enabled fogged target-laser gate passes at maximum RGB
+    `2 / 1 / 2` with no pixel above RGB error seven. Details:
+    `docs-dev/renderer/vulkan-instanced-simple-beam-submission-2026-07-20.md`.
+  - Advanced `FR-01-T14`/`FR-01-T15` with a native inline-BSP binding cache:
+    compatible batches now reuse their shared immutable vertex and current-frame
+    instance bindings within an entity recording pass, without changing order,
+    draws, uploads, or any CPU fallback. The same-binary 100-sample dense lane
+    reduces `entity_bmodel_bindings` from 16 to 1 and CPU render mean from
+    `0.94617 ms` to `0.62051 ms` (34.42%); GPU p50 is unchanged. Details:
+    `docs-dev/renderer/vulkan-inline-bsp-binding-cache-2026-07-19.md`.
+  - Advanced `FR-01-T14`/`FR-01-T15` with native conservative model frustum
+    culling. Default-on `vk_cull_models` tests transformed inline-BSP and
+    cached MD2/MD5 frame bounds against the same four side planes as OpenGL,
+    preserving view weapons and diagnostics. The mixed 52-inline-model lane
+    exact-compares both enabled and disabled Vulkan paths with OpenGL; culling
+    rejects 42 models/frame, reduces Vulkan entity draws 15 to 9 and uploads
+    6,720 to 1,344 bytes (80%), and reduces CPU render mean 7.9%. The
+    provenance-bound fixture is a localized performance result rather than a
+    broad product budget claim. Details:
+    `docs-dev/renderer/vulkan-entity-frustum-culling-2026-07-19.md`.
+  - Completed the shared raster-model-lighting portion of `FR-01-T14` with
+    `r_lightgrid`
+    control. OpenGL retains a synchronized `gl_lightgrid` alias and Vulkan
+    natively mirrors OpenGL's nearest-inline-BSP lightmap fallback when the
+    grid is disabled. The generated BSPX map family strict-compares green grid
+    sampling (maximum RGB `0 / 1 / 0`, zero pixels above 16 across 84,000 model
+    pixels, and an exact 38,928-pixel green mask), red world-receiver fallback
+    (`1 / 0 / 0`), white no-receiver fallback (`1 / 1 / 1`), and a hidden
+    transformed inline-BSP blue receiver (`0 / 0 / 1`, exact 30,559-pixel
+    mask). Native Vulkan marks only the exceptional white source so it bypasses
+    entity modulation exactly as OpenGL does. Same-backend functional
+    transitions change 48,217, 44,679, and 46,641 pixels. Details:
+    `docs-dev/renderer/vulkan-shared-lightgrid-control-parity-2026-07-19.md`
+    and `docs-dev/renderer/vulkan-inline-bsp-lightgrid-fallback-parity-2026-07-19.md`.
   - Completed the `FR-01-T14` shared material-desaturation slice: Video
     settings now use renderer-neutral `r_texture_saturation`, while
     `gl_saturation` remains a synchronized compatibility alias. Vulkan applies
@@ -1219,7 +1292,10 @@ o_merge` Doppler channels in `src/client/sound/al.cpp`.
 ## Weaknesses
 - Scope breadth is high enough to fragment focus without enforced project governance.
 - Automated quality gates are underdeveloped for core engine/gameplay paths (CI is release-centric, not full PR validation-centric).
-- Vulkan parity is still incomplete in multiple high-visibility areas (particle styles, beam styles, flare behavior, post-process parity).
+- Vulkan parity is still incomplete in multiple high-visibility areas (broader
+  effect/map coverage, renderer-neutral presentation, and product performance
+  budgets), while particle, beam, and flare base contracts now have native
+  paired evidence.
 - Bot behavior is not yet production-capable despite plumbing being present.
 - Technical debt markers are spread across gameplay, client, renderer, and server paths.
 - Cvar namespace modernization is only partially applied (`g_` still dominates many new sgame controls despite `sg_` preference).
@@ -1308,8 +1384,14 @@ Tasks:
   Progress: Native Vulkan now exposes `vk_particle_style` with the same blended (`0`)
   and saturating/additive (nonzero) behavior as OpenGL `gl_partstyle`. Particle
   batches select between prebuilt alpha and additive Vulkan pipelines without
-  rebuilding pipelines or adding per-particle draw submissions.
-  Implementation log: `docs-dev/renderer/vulkan-particle-style-parity-2026-07-12.md`.
+  rebuilding pipelines or adding per-particle draw submissions. Native
+  `vk_particle_shape` now reproduces the three `gl_partshape` texture forms,
+  including legacy alpha-byte truncation; its rare runtime image replacement
+  retires in-flight work safely. The initialized 8,192-particle matrix covers
+  all shapes under additive blending and the authored non-additive fog
+  receiver under validation. Implementation logs:
+  `docs-dev/renderer/vulkan-particle-style-parity-2026-07-12.md` and
+  `docs-dev/renderer/vulkan-particle-shape-additive-visual-parity-2026-07-19.md`.
 - [x] `FR-01-T02` Implement Vulkan beam style parity (`gl_beamstyle` behavior equivalents).
   Dependency: `FR-01-T01`. Priority: P0.
   Progress: Native Vulkan now exposes `vk_beam_style`, reproduces OpenGL's
@@ -1413,12 +1495,27 @@ Tasks:
   one under validation. A generated `CONTENTS_WATER` receiver now isolates
   the full-screen waterwarp from material animation and locks 307,200 paired
   pixels to maximum RGB error `1 / 1 / 2`, with zero pixels above error 2
-  under validation. Broader material coverage remains open. Partial
+  under validation. The ordinary no-refraction route now uses the same native
+  phase boundary as the liquid route: opaque world, opaque/alpha-back
+  entities, transparent world, then effects/alpha-front entities. This fixes
+  the prior alpha-back-after-world ordering mismatch without adding any
+  OpenGL path. A generated `SURF_WARP | SURF_TRANS33 | SURF_FLOWING` map adds
+  normal `misc_model` BFG sprites on opposite sides of the explicit `0.5`
+  draw-order threshold, enables refraction only after the world registers,
+  and pairs that live scene with an unrefracted control. The final
+  validation-enabled 307,200-pixel live crop is bounded to MAE
+  `0.885107 / 0.636576 / 0.732604` and `1.067057%` over RGB error 12; the
+  unrefracted control is maximum RGB `1 / 1 / 1` with zero pixels over one.
+  Both backends show a material enabled/disabled image delta, proving live
+  refraction rather than a dormant cvar. Broader material coverage remains
+  open. Partial
   implementation logs:
   `docs-dev/renderer/vulkan-transparent-world-ordering-2026-07-14.md` and
   `docs-dev/renderer/vulkan-world-animation-device-local-2026-07-14.md`,
   `docs-dev/renderer/vulkan-liquid-refraction-2026-07-15.md`, and
-  `docs-dev/renderer/vulkan-underwater-waterwarp-visual-parity-2026-07-16.md`.
+  `docs-dev/renderer/vulkan-underwater-waterwarp-visual-parity-2026-07-16.md`,
+  `docs-dev/renderer/vulkan-liquid-entity-ordering-parity-2026-07-19.md`, and
+  `docs-dev/renderer/opengl-refraction-state-width-vulkan-parity-2026-07-19.md`.
 - [x] `FR-01-T11` Implement native Vulkan glowmap/emissive texture parity, including replacement lookup, intensity control, and paired model/world scenes.
   Dependency: `FR-01-T07`. Priority: P1.
   Progress: Native Vulkan now discovers canonical `_glow.pcx` companions for
@@ -1449,10 +1546,18 @@ Tasks:
   OpenGL/Vulkan evidence plus an identical 187,900-pixel authored-fog mask
   under validation. The companion height-fog map exact-compares another
   235,200 pixels and an identical 106,004-pixel gradient mask. The real
-  six-face sky route also has a bounded 77,000-pixel fog capture. A fogged
-  two-layer transparent-world scene locks its 50,400-pixel blend within the
+  six-face sky route now has a strict 77,000-pixel fog capture that passes at
+  maximum RGB `1 / 1 / 1`, mean absolute RGB
+  `0.000454545 / 0.000090909 / 0.000207792`, and zero pixels above the
+  RGB-two threshold. Its fog-coloured coverage is exactly 75,379 pixels on
+  both renderers at IoU `1.0`, under Vulkan validation. Compatible array sky
+  sources now pack and render native BSP sky portals in one draw while the
+  static cube is retained only as the native incompatible-source fallback. A fogged two-layer transparent-world scene locks
+  its 50,400-pixel blend within the
   observed one-level RGB rounding envelope. The debug-build deterministic
-  8,192-particle field exact-compares a 320,000-pixel fogged receiver crop.
+  initialized 8,192-particle field holds its 320,000-pixel fogged receiver to
+  maximum RGB `1 / 1 / 1`, no pixels above one, and an exact-colour mask at
+  IoU `0.998929` under validation.
   A generated start-on, fat `target_laser` with a uniform packed palette now
   exercises the native `RF_BEAM` path in a deterministic 128,000-pixel fogged
   crop: its final validation capture stays within `2 / 1 / 2` maximum and
@@ -1476,9 +1581,11 @@ Tasks:
   Details are in
   `docs-dev/renderer/vulkan-authored-global-fog-parity-2026-07-15.md` and
   `docs-dev/renderer/vulkan-authored-height-fog-parity-2026-07-15.md`, plus
-  `docs-dev/renderer/vulkan-authored-sky-fog-parity-2026-07-15.md` and
+  `docs-dev/renderer/vulkan-authored-sky-fog-parity-2026-07-15.md`,
+  `docs-dev/renderer/vulkan-bsp-sky-portal-parity-2026-07-19.md`, and
   `docs-dev/renderer/vulkan-transparent-world-fog-parity-2026-07-15.md`, plus
-  `docs-dev/renderer/vulkan-particle-fog-parity-2026-07-15.md`, and
+  `docs-dev/renderer/vulkan-particle-fog-parity-2026-07-15.md`,
+  `docs-dev/renderer/vulkan-particle-shape-additive-visual-parity-2026-07-19.md`, and
   `docs-dev/renderer/vulkan-beam-fog-parity-2026-07-15.md`, plus
   `docs-dev/renderer/vulkan-sprite-fog-parity-2026-07-15.md`,
   `docs-dev/renderer/vulkan-flare-fog-contract-2026-07-15.md`, and
@@ -1542,6 +1649,12 @@ Tasks:
   each exact-compare all 50,000 crop pixels under clean validation. A forced
   adaptive downscale smoke also exact-compares a 50,000-pixel output crop and
   backdrop probe after its resource rebuild, with no Vulkan validation errors.
+  A same-device 100-sample timing pair at the newly shared 10% floor reduces
+  Vulkan completed GPU-frame mean from `0.43457 ms` to `0.22956 ms` (47.2%)
+  and GPU scene mean from `0.39541 ms` to `0.06906 ms` (82.5%) on the recorded
+  Iris Xe workload; the full-resolution native composite costs `0.13189 ms`
+  but remains smaller than the avoided scene work. This is scoped local
+  evidence rather than a cross-driver budget.
   Once Vulkan is already rendering to offscreen scene targets, later scale
   extent changes retire only submitted frame slots and rebuild their native
   scene/bloom/post-process resource family; output swapchain/UI resources,
@@ -1619,11 +1732,17 @@ Tasks:
   submitted-frame fence has signalled. Vulkan also now has a
   native `r_crt*` presentation pass with OpenGL-equivalent scanline,
   phosphor, gamma, and shadow-mask controls; it filters only the completed
-  3D scene and leaves the HUD/menu overlay sharp. A one-pixel scanline-phase
+  3D scene and leaves the HUD/menu overlay sharp. A scale-aware scanline-phase
   correction for the negative-height native presentation viewport now gives
   the unmasked and shadow-mask-layout-2 fixed-control CRT scenes zero-error
   50,000-pixel paired gates, including 25,000-pixel dark-scanline and
-  8,400-pixel green-mask probes at IoU `1.0`. Vulkan now also exposes the
+  8,400-pixel green-mask probes at IoU `1.0`; a lazy, frame-safe native
+  presentation copy also makes fixed half-, quarter-, and ten-percent-
+  resolution CRT exact over their 50,000-pixel gates; a forced adaptive
+  ten-percent CRT gate records the same exact result while retaining the
+  no-CRT scaled blit fast path. Vulkan now shares OpenGL's 10% fixed/adaptive
+  resolution-scale minimum, avoiding unnecessary 3D shading work on the
+  lowest user-selected quality tier. Vulkan now also exposes the
   native archived `vk_bloom_levels` control and a hardware-linear-blit mip
   pyramid, blending up to six levels with OpenGL's normalised `1, 1/2, 1/4`
   weighting. Its dedicated validation-backed level-three shell fixture has no
@@ -1681,8 +1800,9 @@ Tasks:
   six-face sky is now also immutable device-local local geometry: a 64-byte
   current-frame record carries animation controls and three sky-rotation rows,
   replacing the old 1,728-byte sky-cube upload each frame. Compatible faces
-  copy once into a six-layer native texture array and record in one sky draw;
-  incompatible sets retain the six-face Vulkan fallback. The liquid load
+  copy once into a six-layer native texture array; their immutable BSP portal
+  ranges then pack once into a device-local stream and record in one sky draw.
+  Incompatible sets retain the six-face Vulkan fallback. The liquid load
   pass now remains compatible with base scene pipelines/framebuffers, with
   explicit native scene-copy/depth barriers and stencil-aware depth
   transitions. See
@@ -1721,18 +1841,89 @@ Tasks:
   gl_anisotropy, vk_anisotropy, and gl_texturemode as compatibility aliases
   plus a 1x fallback. Shared r_picmip now reduces eligible native wall/skin
   material uploads before Vulkan mip generation, matching OpenGL's quality
-  policy while reducing residency. A general transient ring allocator, broader bmodel/MD5
+  policy while reducing residency. The native entity recorder now also tracks
+  depth-hack and outline batch presence per frame, eliminating their otherwise
+  empty full-batch traversals in normal gameplay scenes without changing
+  pipelines or ordering; normal, outline, and depth-hack headless receivers
+  remain validation-clean. Refractive scenes now also track every native
+  submit phase and elide scene/bloom setup plus batch scans for empty
+  before-liquid, post-liquid, or alpha-front regions, while nonempty regions
+  skip their three inactive opaque/item-colourize/alpha batch scans; the active
+  viewweapon/refraction gate remains validation-clean at maximum RGB
+  `1 / 1 / 1` with zero pixels over one. See
+  `docs-dev/renderer/vulkan-entity-phase-elision-2026-07-19.md`. Opaque
+  texture-replace inline-BSP pipelines now also use dedicated native
+  vertex/fragment pairs, preserving global/height fog exactly while the
+  no-fog variant omits unused receiver inputs. A same-binary 100-sample A/B
+  reduces opaque-entity GPU mean from `0.29725` to `0.17040` ms (42.7%) and
+  GPU-frame mean from `0.42585` to `0.36495` ms (14.3%) with the same 16
+  texture-replace draws. See
+  `docs-dev/renderer/vulkan-bmodel-texture-replace-shader-specialization-2026-07-19.md`.
+  World texture-replace pipelines likewise use dedicated native shader pairs:
+  no-fog and global-fog captures are exact, while a same-binary control lowers
+  local GPU-frame mean by 5.1% with unchanged draw/upload counts. See
+  `docs-dev/renderer/vulkan-world-texture-replace-shader-specialization-2026-07-19.md`.
+  Compatible inline-BSP batches now also reuse their already-bound immutable
+  vertex/current-frame instance pair for the remainder of each native entity
+  or bloom recording pass. `vk_bmodel_binding_cache` keeps the old behavior
+  available for A/B and driver triage; a same-binary 100-sample dense-instance
+  control reduces the observable native binding count from 16 to 1 and CPU
+  render mean from `0.94617 ms` to `0.62051 ms` (34.42%), with the same 17
+  draws, 4,800 upload bytes, and unchanged GPU p50. See
+  `docs-dev/renderer/vulkan-inline-bsp-binding-cache-2026-07-19.md`.
+  Ordinary inline BSP and source-model submissions now also perform native
+  conservative CPU frustum culling before batching. The default-on
+  `vk_cull_models` path transforms all eight local-bound corners and evaluates
+  the OpenGL-equivalent four side planes; weapons and diagnostic axes preserve
+  their established behavior. The generated 52-model view proves enabled and
+  disabled paths exact with OpenGL, while its 100-sample enabled A/B rejects
+  42 models/frame and reduces Vulkan entity uploads from 6,720 to 1,344 bytes.
+  Its optimized plane-cache path reduces CPU render mean 7.9%; that fixed
+  lane remains a localized result rather than a product budget. See
+  `docs-dev/renderer/vulkan-entity-frustum-culling-2026-07-19.md`.
+  The normal eligible GPU-MD5 lane now has a dedicated paired, validation-clean
+  staged capture rather than relying on its outline-only CPU fallback scene.
+  It records one actual native GPU-MD5 draw/instance, has zero model-crop
+  pixels above RGB error 16 with an exact 1,864-pixel glow mask, and reports
+  no GPU-residency fallback. The matching headless GPU-off control changes
+  entity upload from 336 to 17,480 bytes in this fixed one-mesh lane, a 98.08%
+  transfer-volume reduction; it is not a renderer-wide timing claim. See
+  `docs-dev/renderer/vulkan-gpu-md5-runtime-parity-2026-07-19.md`.
+  The ordinary GPU-MD5 runtime lane now also covers the registered
+  `players/male/tris.md2` replacement with one mesh, 17 joints, 198 frames,
+  and non-zero source frame 100. Its staged paired capture retains one actual
+  native GPU-MD5 draw/instance with the visible skin mask at IoU `0.942387`.
+  See `docs-dev/renderer/vulkan-gpu-md5-multijoint-runtime-parity-2026-07-20.md`.
+  The ordinary CPU-expanded vertex/index path now also uses one bounded
+  per-frame native geometry arena with independently grown, index-aligned
+  regions. It preserves every dynamic batch and live upload byte count while
+  reducing the active path from two allocation/staging pairs, copies, and
+  barriers to one. The existing outlined MD2/MD5 validation matrix passes
+  after the consolidation. See
+  `docs-dev/renderer/vulkan-entity-geometry-arena-2026-07-19.md`.
+  The GPU-model current-frame streams now likewise share one aligned native
+  instance arena: MD2, inline-BSP, MD5-instance, and MD5 joint-palette regions
+  retain independent capacities while one multi-region copy and one barrier
+  replace the four separate paths. The frame-indexed MD5 descriptor preserves
+  its palette offset; staged MD2, dense inline-BSP, and normal GPU-MD5 lanes
+  remain validation-clean. See
+  `docs-dev/renderer/vulkan-entity-instance-arena-2026-07-20.md`.
+  A general
+  transient ring allocator, broader bmodel/MD5
   runtime coverage, and any measured decision on GPU joint interpolation
   remain open. Details and
   headless coverage are in
   `docs-dev/renderer/vulkan-entity-stream-capacity-2026-07-15.md`,
   `docs-dev/renderer/vulkan-gpu-md2-submission-2026-07-15.md`, and
   `docs-dev/renderer/vulkan-gpu-md5-skinning-2026-07-15.md`, plus
+  `docs-dev/renderer/vulkan-gpu-md5-multijoint-runtime-parity-2026-07-20.md`,
   `docs-dev/renderer/vulkan-static-inline-bsp-residency-2026-07-15.md`,
+  `docs-dev/renderer/vulkan-entity-instance-arena-2026-07-20.md`,
   `docs-dev/renderer/vulkan-gpu-md2-residency-material-parity-2026-07-17.md`,
   `docs-dev/renderer/vulkan-shared-anisotropy-control-parity-2026-07-17.md`,
   `docs-dev/renderer/vulkan-shared-texture-filter-control-parity-2026-07-17.md`,
-  and `docs-dev/renderer/vulkan-picmip-upload-residency-parity-2026-07-17.md`.
+  `docs-dev/renderer/vulkan-picmip-upload-residency-parity-2026-07-17.md`,
+  and `docs-dev/renderer/vulkan-entity-optional-pass-elision-2026-07-19.md`.
 - [ ] `FR-01-T15` Add bounded Vulkan frames-in-flight, CPU/GPU phase telemetry, upload/draw counters, and reproducible performance budgets proving gains over the OpenGL baseline.
   Dependency: `FR-01-T08`, `FR-01-T13`, `FR-01-T14`. Priority: P0.
   Progress: Native `VK_QUERY_TYPE_TIMESTAMP` instrumentation brackets every
@@ -1827,11 +2018,13 @@ Tasks:
   UI visual parity. Details are in
   `docs-dev/renderer/vulkan-rmlui-overlay-matrix-expansion-2026-07-15.md`.
   Native `vk_showorigins` now queues the intended scaled, depth-tested RGB
-  entity axes without an OpenGL route. Its structural gate and validation-clean
-  Vulkan headless capture pass, but its paired gate exposed an OpenGL baseline
-  defect: `gl_showorigins` enters `GL_DrawNullModel` with the cvar enabled yet
-  emits no RGB axis pixels in the current headless backend. This remains
-  `FR-01-T15` work rather than a completed parity claim; see
+  entity axes without an OpenGL route. The paired gate also repaired its
+  OpenGL baseline: `GL_DrawNullModel` had submitted world-space endpoints
+  through an entity matrix, double-transforming them off-screen. It now
+  submits local sixteen-unit axes through that matrix. The retained stock-MD2
+  gate passes under Vulkan validation with red/green/blue IoUs `0.92857`,
+  `0.95556`, and `1.0`; four endpoint pixels remain within the explicit
+  rasterization bound. See
   `docs-dev/renderer/vulkan-origin-diagnostic-parity-status-2026-07-16.md`.
   Native `vk_showbloom` now directly presents the completed level-zero native
   blurred image when bloom is active, bypassing final display transforms as
@@ -1950,10 +2143,23 @@ Tasks:
   backdrop has 219,459 matching pixels and the inline-BSP probe has 15,741,
   both at IoU 1.0. The opaque fast paths continue to exclude alpha-tested
   materials, so the coverage protects their complete-fragment fallback
-  boundary as well as visual parity. Fences, sprite cutouts, and alpha-tested
-  shadow casters remain follow-up coverage rather than a claim that the broad
-  material family is closed. Details:
-  docs-dev/renderer/vulkan-alpha-test-world-bmodel-parity-2026-07-16.md.
+  boundary as well as visual parity. Fences remain follow-up coverage rather
+  than a claim that the broad material family is closed; paletted sprite
+  cutouts and alpha-tested shadow casters now have their own validation-backed
+  coverage. Details: docs-dev/renderer/vulkan-alpha-test-world-bmodel-parity-2026-07-16.md,
+  docs-dev/renderer/vulkan-sprite-paletted-cutout-parity-2026-07-19.md, and
+  docs-dev/renderer/vulkan-alpha-tested-shadow-casters-2026-07-19.md.
+  Vulkan and OpenGL now publish a comparable `cpu_render_ms` telemetry scope:
+  Vulkan keeps end-to-end `cpu_ms` but separates acquire/present/ownership
+  waits as `cpu_sync_wait_ms`, while OpenGL aliases its existing render scope.
+  Two validation-enabled, 100-sample dense inline-BSP captures record Vulkan
+  CPU render mean/p95 of `1.384/2.647 ms` and `1.209/2.709 ms`, against
+  OpenGL `2.990/6.779 ms` and `2.839/6.266 ms`. The new provenance-bound CPU
+  submission budget retains the 18-draw/4,800-byte native contract and
+  requires Vulkan to remain within `0.6x` of OpenGL for both CPU render
+  metrics. It deliberately makes no GPU claim: full-frame Vulkan GPU time is
+  about `1.58x` OpenGL in this lane. Details:
+  `docs-dev/renderer/vulkan-comparable-cpu-submission-telemetry-2026-07-19.md`.
   Additional representative-map and GPU budgets, show-tris/origins, broader
   batching/indirect model submission, and renderer-wide proof of gains over
   OpenGL remain open. Details and headless coverage are in
@@ -2004,6 +2210,15 @@ Tasks:
   plus `docs-dev/renderer/vulkan-blur-kernel-uniform-optimization-2026-07-16.md`,
   `docs-dev/renderer/vulkan-bloom-emission-replay-elision-2026-07-16.md`, and
   `docs-dev/renderer/vulkan-bloom-mip-pyramid-parity-2026-07-16.md`.
+  Active bloom now also selects stage-specialized native prefilter, horizontal
+  blur, and vertical blur pipelines instead of fragment-level mode/direction
+  dispatch in the generic shader. Its validation-backed shell-bloom and
+  focused-DOF receivers retain their existing visual contracts. Two
+  current-binary 100-sample Iris Xe release captures lower Vulkan bloom post
+  mean to `0.93980` and `0.93767 ms` from the preceding `0.94958 ms`
+  baseline, with the same eight total/four post draws and no GPU budget or
+  cross-renderer superiority claim. Details:
+  `docs-dev/renderer/vulkan-bloom-stage-pipeline-specialization-2026-07-19.md`.
   Adaptive Vulkan resolution scaling now consumes each completed native GPU
   timestamp once, waiting for the first GPU result instead of mixing CPU
   submission duration into a timestamp-capable device's controller. The
@@ -2076,6 +2291,73 @@ Tasks:
   `docs-dev/renderer/vulkan-rmlui-overlay-matrix-expansion-2026-07-15.md`.
   HUD implementation and evidence are in
   `docs-dev/renderer/vulkan-hud-filter-parity-2026-07-15.md`.
+  The nightly renderer map sequence now also owns an initialized
+  8,192-particle additive matrix for all three legacy shapes plus the authored
+  global-fog receiver; its staged Vulkan captures are validation-clean and
+  documented in
+  `docs-dev/renderer/vulkan-particle-shape-additive-visual-parity-2026-07-19.md`.
+  The renderer-neutral archived `r_polyblend` control now closes the remaining
+  OpenGL/Vulkan screen-blend toggle mismatch: `gl_polyblend` remains a
+  synchronized legacy alias and native Vulkan skips its own UI blend/vignette
+  queue when the shared value is zero. The enabled deterministic receiver has
+  an exact 252,072-pixel blend mask at IoU `1.0`; the disabled full-frame
+  691,200-pixel receiver is RGB-exact under validation, and both backends
+  visibly change across the control. Details are in
+  `docs-dev/renderer/shared-polyblend-vulkan-parity-2026-07-19.md`.
+  The sequence now also has a native paletted-sprite cutout gate: resolved
+  PCX/WAL/colour-map image metadata reaches native sprite submission, which
+  selects a pre-created no-blend/no-depth-write alpha-test pipeline like
+  OpenGL. Its validation-enabled unfogged BFG capture holds 144,000 pixels to
+  maximum RGB `0 / 0 / 1`, with an exact 34,650-pixel visible cutout mask at
+  IoU `1.0`. Details are in
+  `docs-dev/renderer/vulkan-sprite-paletted-cutout-parity-2026-07-19.md`.
+  The same nightly lane now adds binary-alpha fence coverage: its generated
+  235,200-pixel world-material capture is RGB-exact and locks both the
+  109,737-pixel opaque-fence and 109,722-pixel revealed-backdrop masks to IoU
+  `1.0` under Vulkan validation. See
+  `docs-dev/renderer/vulkan-fence-cutout-parity-2026-07-19.md`.
+  The sprite lane now additionally stages a generated truecolour RGBA SP2
+  plus a stock BFG `misc_model` authored with `alpha 0.5` and
+  `renderFX 32` (`RF_TRANSLUCENT`) through the ordinary game snapshot path.
+  Its 304,000-pixel validation capture permits no pixel above RGB error two
+  and retains exact `53,824`-pixel opaque-source, `60,296`-pixel 50%-source,
+  and `1,984`-pixel explicit-entity-alpha masks at IoU `1.0`. The lane now
+  also stages an SP2 that requests a green legacy PCX while a same-stem purple
+  RGBA PNG replacement is present: both native renderers resolve the PNG, and
+  its 184,000-pixel validation crop allows no pixel above RGB error two while
+  retaining the exact `123,904`-pixel PNG core at IoU `1.0`. Fully opaque
+  truecolour sprites now use a pre-created native no-depth-write/no-blend
+  pipeline, matching OpenGL's sprite state: the overlap gate is RGB-exact over
+  158,400 pixels and locks the `56,000`-pixel opaque outer area plus the
+  `102,400`-pixel far translucent overlay at IoU `1.0`. Broader gameplay-
+  emitter sprite variety remains for this lane. Details are in
+  `docs-dev/renderer/vulkan-sprite-truecolour-translucency-parity-2026-07-19.md`,
+  `docs-dev/renderer/vulkan-sprite-replacement-source-parity-2026-07-19.md`,
+  and `docs-dev/renderer/vulkan-sprite-opaque-depth-write-parity-2026-07-19.md`.
+  The same lane now retains two validation-backed native viewweapon
+  shell/bloom captures. The 212,800-pixel direct-emission gate pins the gun
+  pose cvars and a 16 ms fixed simulation timestep so independent renderer
+  startup durations cannot select different viewmodel animation frames; it
+  passes at MAE `0.057890 / 0.049892 / 0.050822` with `0.034305%` of pixels
+  above RGB error 16. The companion transparent-warp receiver keeps its
+  maximum RGB `1 / 1 / 1`, zero-over-one bound and validates the late native
+  bloom load pass. Details are in
+  `docs-dev/renderer/vulkan-viewweapon-bloom-capture-determinism-2026-07-19.md`.
+  The retained gameplay-effect sequence also reran its beam and flare
+  manifests under validation: the real `target_laser` receiver holds its
+  128,000-pixel crop to maximum RGB `2 / 1 / 2` with no pixel over seven and
+  0.989610 beam-mask IoU, while the real occlusion-query `misc_flare` crop is
+  RGB-exact over 160,000 pixels with an exact 98,550-pixel flare mask. See
+  `docs-dev/renderer/vulkan-beam-fog-parity-2026-07-15.md` and
+  `docs-dev/renderer/vulkan-flare-fog-visual-parity-2026-07-15.md`.
+  The same fixed-time nightly lane now locks both native full-screen blend
+  primitives with cgame-owned screen and damage values: its 960x720 capture
+  stays within maximum RGB `1 / 2 / 1`, has no pixel above error two, and
+  retains an exact 252,072-pixel inner screen-blend mask at IoU `1.0` under
+  validation. Its real `q2dm1` lava companion locks a 383,047/382,803-pixel
+  exact-orange screen-blend receiver at IoU `0.999363` while retaining an
+  explicit animated-underlay bound. Details are in
+  `docs-dev/renderer/vulkan-screen-blend-visual-parity-2026-07-19.md`.
 - [ ] `FR-02-T06` Publish renderer support policy page under `docs-user/` for end users.
   Dependency: `FR-02-T01`. Priority: P2.
 - [x] `FR-02-T07` Add SDL/MoltenVK Vulkan window/surface support for macOS and other SDL-backed platforms.
@@ -2165,6 +2447,11 @@ Tasks:
   now serializes before post-process time, so GPU-validity values are no longer
   shifted, while `vk_stats_log=1` confirms both scaled and DOF companion-path
   counters on the native 4x fixed-half frame.
+  The next static float-HDR coverage adds the same 4x fixed-half active-DOF
+  scene plus its disabled control. Both exact-compare 307,200 pixels with
+  clean validation after the fixture explicitly applies matching OpenGL and
+  Vulkan HDR controls after its shared defaults. Details are in
+  `docs-dev/renderer/vulkan-hdr-msaa-depth-dof-resolution-scale-parity-2026-07-18.md`.
 - [ ] `FR-02-T14` Replace fixed worst-case shadow arrays with budgeted active capacity/resolution buckets, transactional allocation, capability-correct samplers, dirty-layer mip generation, and alpha-tested caster materials.
   Dependency: `FR-02-T12`. Priority: P1.
   Progress: The transient native shadow-caster stream starts at 64 KiB and
@@ -2172,11 +2459,60 @@ Tasks:
   reallocation stalls while retaining live-range upload accounting. It now uses
   frame-local host-visible staging and device-local Vulkan vertex storage with
   an explicit transfer-to-vertex-input dependency; the completed flashlight
-  scene is clean under `VK_LAYER_KHRONOS_validation`. Fixed page arrays, active
-  capacity/resolution buckets, transactional allocation, capability-correct
-  samplers, dirty-layer mips, and alpha-tested casters remain open. Details are
-  in `docs-dev/renderer/vulkan-shadow-stream-capacity-2026-07-15.md` and
-  `docs-dev/renderer/vulkan-shadow-device-local-stream-validation-2026-07-15.md`.
+  scene is clean under `VK_LAYER_KHRONOS_validation`. Moment-shadow mip
+  generation now deduplicates and processes only pages with live render jobs;
+  a descriptor-wide shader-read layout is initialized once after allocation so
+  validation remains correct without restoring per-frame 64-layer work. The
+  512px/10-mip EVSM flashlight validation reduced recurring blit regions from
+  576 to 225 for 25 active views, with clean validation. The same completed
+  frontend view set reserves a geometric 32-layer native image bucket for its
+  25 referenced pages rather than the former fixed 64 layers, with clean
+  Vulkan validation and a matching OpenGL smoke. Alpha-tested static-world and
+  inline-BSP casters now use the visible-material `<= 0.666` cutoff in native
+  Vulkan depth/moment subdraws and matching OpenGL depth/moment programs. The
+  opaque Vulkan page stream remains one descriptor-free draw; only cutout
+  materials bind their image descriptors. The dedicated flashlight fixture is
+  exact across all 235,200 captured pixels and clean under Vulkan validation.
+  Shared shadow-page reuse now compares exact projection content and selected
+  caster state rather than permanently dirtying broad dynamic/animated
+  categories. A settled headless world-only EVSM probe reports five reused
+  views out of six in both OpenGL and Vulkan, with a single expected eviction
+  render and clean Vulkan validation. Native Vulkan now prefers shadow depth
+  and moment formats with linear sampled-image filtering, and safely creates
+  nearest-filter samplers when an otherwise usable format lacks that feature;
+  moment mip filtering follows the selected capability. Delayed native
+  shrinking now recreates a lower geometric array bucket only after sustained
+  low demand; its validation smoke records a `32>1` transition with a clean
+  final one-page moment array. The same hysteretic policy now reclaims a
+  high-water homogeneous array resolution from the completed frame peak; that
+  transitional policy has now been superseded by five native 64/128/256/512/
+  1024px pools. Global frontend page IDs map to compact generation-stable
+  local layers, while world/entity receiver descriptors and shaders route
+  depth, compare-depth, and moment sampling through the exact pool. Each pool
+  grows immediately and shrinks independently after the same conservative
+  delay. Sustained zero demand releases all higher-resolution pools; the 64px
+  pool instead retains one descriptor-safe layer so the static receiver
+  descriptor arrays never retain a destroyed image view. Validation-backed
+  EVSM evidence retires a `1024:4` pool to `0` after a 64px transition, while
+  the PCF case retains simultaneous `64:1` and `1024:4` pools with no
+  validation findings. Resource-family replacement is transactional: a deterministic
+  injected failure restores the valid prior array and later completes a normal
+  moment replacement. The alpha-tested caster gate remains exact over 235,200
+  pixels under validation. The bounded 64-page ABI/budget and representative
+  performance-budget evidence remain open.
+  Details are in
+  `docs-dev/renderer/vulkan-shadow-stream-capacity-2026-07-15.md`,
+  `docs-dev/renderer/vulkan-shadow-device-local-stream-validation-2026-07-15.md`,
+  `docs-dev/renderer/vulkan-shadow-active-moment-mips-2026-07-18.md`, and
+  `docs-dev/renderer/vulkan-shadow-active-capacity-2026-07-18.md`, and
+  `docs-dev/renderer/vulkan-alpha-tested-shadow-casters-2026-07-19.md`, and
+  `docs-dev/renderer/vulkan-shadow-content-hash-reuse-2026-07-19.md`, and
+  `docs-dev/renderer/vulkan-shadow-sampler-capabilities-2026-07-19.md`, and
+  `docs-dev/renderer/vulkan-shadow-delayed-capacity-shrink-2026-07-19.md`, and
+  `docs-dev/renderer/vulkan-shadow-delayed-resolution-shrink-2026-07-19.md`, and
+  `docs-dev/renderer/vulkan-shadow-transactional-allocation-2026-07-19.md`, and
+  `docs-dev/renderer/vulkan-shadow-resolution-pools-2026-07-19.md`, and
+  `docs-dev/renderer/vulkan-shadow-descriptor-fallback-parity-2026-07-19.md`.
 - [ ] `FR-02-T15` Separate direct sun lighting from baked/ambient light before enabling sun shadows by default.
   Dependency: `FR-02-T12`, `FR-02-T13`. Priority: P1.
 
@@ -4644,6 +4980,18 @@ delivery, resilient snapshots, and fair authoritative lag compensation.
 Primary Areas: `src/client/*`, `src/server/*`, `src/game/bgame/*`,
 `src/game/cgame/*`, `src/game/sgame/network/*`, and `tools/networking/*`.
 
+Current completion accounting (2026-07-20): the strategic roadmap is
+`79/190` complete (`41.6%`) with `111` tasks open, and FR-10 is `8/16`
+complete (`50.0%`) with `8` tasks open. The completed FR-10 set is T01, T02,
+T03, T05, T06, T09, T10, and T11; immediate open work therefore remains T04,
+T07, T08, and T12 through T16. The configured networking inventory is now
+`170` tests after adding four T10/T11 budget and parent-acceptance parser/
+contract rows. The final serial headless networking run passes `170/170` on
+2026-07-20. Package tests pass `16/16`, release-unit tests pass `12/12`, and
+the release bootstrap headless contract passes `1/1`. The refreshed
+`.install/` validates 16 root runtime files, one dependency, and 601 packaged
+assets.
+
 Architecture decision: retain `q2proto/` as a read-only legacy wire adapter.
 Validated protocol data is translated above the wire into canonical snapshot,
 input, event, and clock records. The engine owns decode validation and bounded
@@ -4725,9 +5073,11 @@ Tasks:
   fencing. A separate default-off private `0x73` mode now adds exact per-peer
   legacy-entity event production, descriptor-before-ID reliable retention,
   live full-duplex mixed packing, transactional epoch cancellation, and
-  scheduler liveness. Command mode binds private `0x53`, event mode binds
-  private `0x73`, snapshot mode binds private `0x57`, and the implemented
-  combined mode binds exact private `0x77`; public `0x03` remains unchanged. A
+  scheduler liveness. An unarmed endpoint still offers exact legacy `0x03`.
+  An armed command endpoint offers and readiness-binds exact `0x53`, event
+  mode exact `0x73`, snapshot mode exact `0x57`, and the implemented combined
+  mode exact `0x77`; endpoint mismatch, partial intersection, or unavailable
+  native readiness falls back to exact `0x03`. A
   deterministic in-process virtual link now drives the real client/server
   production hook callbacks through directional DATA loss, reorder,
   duplication, one-way ACK loss, corruption, and lifecycle traffic. Its first
@@ -4762,13 +5112,33 @@ Tasks:
   exact final projection, WNC1/WNE1/WTC1, production `NetImpair`, client
   receiver/admission, sole cgame timeline publication, cursor-bound prediction
   authority selection, semantic ACK, and server release. Two normalized runs
-  match golden digest `c6aee48df85341ab`; all 100,000 positive frames are
+  match golden digest `ba519ae7bdd1db74`; all 100,000 positive frames are
   accepted, acknowledged, prediction-selected, and released, with three
   additional corrupt-carrier probes rejected. Legacy-inferred event
   references earn the correctness fence independently of the optional
-  comparison audit. Other remaining event producers, raw direct-game
-  `svc_sound` byte spans, native gameplay/render authority, and advertisement
-  are not implemented.
+  comparison audit. A third direct producer now observes an exact per-client
+  `svc_damage` carrier only after it fits the post-snapshot datagram, decodes
+  its bounded four-indicator wire order into canonical damage records, retains
+  world as source because the attacker is not encoded, and binds the exact
+  controlled-player generation as subject. A fourth direct producer observes
+  the exact per-client `svc_help_path` carrier at the same accepted-write
+  boundary, maps its canonical start flag, finite float position, and packed
+  normal to a stable help-marker effect, and binds the controlled-player
+  generation without inventing an emitter. A fifth direct producer now
+  decodes an exact 21-byte keyed `svc_poi`, preserves the 20-byte value,
+  binds world source plus the exact controlled-player generation, and retains
+  reliable POIs in one discriminated FIFO with reliable game-event sequences.
+  Unreliable POIs reject only the zero-lifetime infinite form; every other
+  lifetime, including the keyed-removal sentinel, uses a one-tick transient
+  journal lifetime. Reliable finite, zero-lifetime, and removal forms remain
+  ordered actions rather than persistent journal state. Slice closeout passes
+  the 11/11 T04 focused parent with 123 stable source bindings, the final
+  201/201 headless networking suite, 16/16 package tests, 12/12 release-unit
+  tests, and the 1/1 headless bootstrap contract; T04 correctly remains
+  partial. Other
+  remaining event producers, raw direct-game
+  `svc_sound` byte spans, native gameplay/render authority, and default-on or
+  release promotion are not implemented.
   Map-quiesced client `DRAIN` still services authorized semantic
   ACKs while DATA stays frozen before a fresh challenge. Negotiated bit `0x40`
   now makes that challenge a monotonic barrier: a deterministic diagnostic
@@ -4779,14 +5149,12 @@ Tasks:
   MTU, malformed-input, reconnect, and modern/legacy matrices pass.
   Progress: a pointer-free capability core, userinfo offer, server-owned
   session epoch, adjacent confirmation tuple, packet-boundary validation,
-  downgrade/failure handling, and reconnect lifecycle are live. Only the
-  legacy command-sideband and consumed-cursor bits are advertised;
-  `WORR_NET_CAP_NATIVE_ENVELOPE_V1`,
-  `WORR_NET_CAP_NATIVE_EVENT_STREAM_V1`, and
-  `WORR_NET_CAP_NATIVE_EPOCH_CANCEL_V1` remain excluded from the public mask.
-  Cancellation bit `0x40` is mandatory in exact private command `0x53`, event
-  `0x73`, and snapshot `0x57` readiness; the event and snapshot bits
-  participate only in their respective exclusive modes. An
+  downgrade/failure handling, reconnect lifecycle, and exact default-off
+  public bundles are live. Disabled endpoints advertise only legacy `0x03`;
+  armed endpoints freeze one exact `0x53`, `0x73`, `0x57`, or `0x77` offer for
+  the connection. Cancellation bit `0x40` is mandatory in each exact native
+  public/readiness bundle; event and snapshot bits participate only in their
+  selected exact lane. An
   allocation-free transport-only V1 core now frames opaque canonical
   command/snapshot/event references, enforces a 1,200-byte datagram ceiling,
   fragments/reassembles up to 131,072 bytes/128 fragments with datagram and
@@ -4804,7 +5172,7 @@ Tasks:
   timeouts, epoch reset, and receipt-window scheduling harden ACK loss,
   corruption, and hostile retry order without changing a live path. A `WNC1`
   common header and transactional allocation-free fieldwise codecs now cover
-  command V1, all eleven event V1 payload kinds, and snapshot V2 within the
+  command V1, all fourteen event V1 payload kinds, and snapshot V2 within the
   131,072-byte payload ceiling. The 512 entity-record cap is independent of
   the 1,024-identity legacy and 8,192-identity Rerelease index domains. The
   65,509-byte maximum-512-record/no-event projection, formerly rejected
@@ -4970,17 +5338,29 @@ Tasks:
   pass reversed multi-fragment delivery with exact server/cgame parity; a
   mismatched independent expectation leaves transport and cgame uncommitted.
   Legacy commands, snapshots, demos, and effect/audio presentation remain
-  authoritative. The staged writer now also observes accepted visible or
-   explicit-positional off-frame spatial-audio writes and one bounded ordered sequence of supported
+  authoritative. The staged writer now also observes accepted visible,
+   explicit-positional off-frame, reliable, and client-local positionless
+   spatial-audio writes and one bounded ordered sequence of supported
    temporary-entity and player/monster/rerelease-muzzle carriers of up to 16
-   records after final per-client snapshot emission. It binds a visible audio
+   records. It binds a visible audio
    source generation from that exact view or an explicit off-frame position to
-   world with `POSITION_FORCED` semantics before default-off native queueing;
-   the temporary-entity path also binds a visible subject or an explicit world
-   source and queues only if the entire sequence binds. Reliable and
-   positionless-off-frame audio, raw direct-game `svc_sound` byte spans,
-   combined/reliable muzzle traffic, malformed, unsupported-service,
-   over-capacity, reliable, and non-visible paths remain legacy-only. A
+   world with `POSITION_FORCED` semantics before default-off native queueing.
+   Reliable audio becomes non-expiring `RELIABLE_ORDERED`; a client-local cue
+   binds to world with `LOCAL_ONLY` while retaining its raw override key. Every
+   structured path queues only after the legacy/q2proto append succeeds;
+   the direct-game path also binds a visible subject or an explicit world
+   source and queues only if the entire sequence binds. Unreliable batches run
+   after fitting the post-snapshot datagram. Reliable batches are decoded only
+   after legacy append, held in a native-only 32-batch/512-record FIFO with map
+   generation, and rebound once to the next exact snapshot as non-expiring
+   reliable-ordered events before frame-derived and unreliable candidates.
+   Per-client damage carriers are accepted only after the complete unreliable
+   message fits the post-snapshot datagram. Their bounded ordered indicators
+   retain compressed magnitude, direction, and health/armor/shield flags,
+   world source, and the exact final snapshot's controlled-entity subject.
+   Arbitrary non-local positionless audio, raw direct-game `svc_sound` byte
+   spans, malformed, unsupported-service, over-capacity, map-stale, and
+   non-visible game-event paths remain legacy-only. A
    deterministic in-process production-wrapper virtual link
   drives these real hooks through accepted-but-lost S2C descriptor DATA,
   accepted-but-lost C2S mixed command DATA, delayed/reordered descriptor retry,
@@ -5020,7 +5400,7 @@ Tasks:
   broader full-matrix impairment breadth,
   ACK-exhaustion/map-rotation evidence,
   broader event-family production, comprehensive demo/spectator policy, load/
-  cross-platform parity, public advertisement, and release-scale dual-adapter
+  cross-platform parity, default-on/release promotion, and release-scale dual-adapter
   evidence remain open. A later
   schema-v32 local-action slice now proves the private event carrier across a
   real in-session shooter reconnect: three two-process repeats rebase to
@@ -5034,7 +5414,59 @@ Tasks:
   dispatch. Three schema-v33 two-process runs match 99/99 exact local-action
   receipts while both snapshot peers ACK and release retained frames with zero
   client/server failure. This closes the narrow simultaneous-lane proof, not
-  public advertisement, sustained load, or the full fault/platform matrix, so
+  default-on/release promotion, sustained load, or the full fault/platform
+  matrix. The first exact-bundle task parent passed ten fixed focused children
+  and four real-process lanes from one isolated staged runtime (run
+  `20260720T035616.104289Z-41896`, semantic digest
+  `a73979dfe68b99388159583d8b4eebfe91ed29c0c0f54ee3a4332b3dc4184706`).
+  Its strict zero-block gate first exposed and then retained coverage for a
+  production ownership-edge bug: requested mode 3 now stays legacy during the
+  initial pre-bind wait, latches only on positive engine ownership, fails closed
+  after same-stream loss, and resets at `InitCGame` for a new connection/map.
+  Exact `0x57` presents 1,024 native samples with zero authority block, and
+  exact `0x77` completes a real reconnect while both snapshot peers ACK/release
+  without queue, rejection, or retirement faults. A later schema-v36 lifecycle
+  continuation gives private reconciliation its own ordered application cursor
+  which can cross admitted visual gaps without presenting them, fails closed
+  on callback rejection or mutation reentry, and consumes `UINT32_MAX` exactly
+  once through explicit exhausted bits. Cgame now rolls receipt-absent
+  command-only history without false resync, fails closed only when a real late
+  receipt has lost both local coverage and exact V2 history, preserves the
+  latest full receipt frontier for duplicate identity, and prunes lower matched
+  terminal pairs behind a newer receipt. The server mailbox independently
+  enforces a per-client monotonic frontier, latches the first typed failure,
+  stays poisoned until reset, and makes `SV_ClientThink` disable/drain the
+  native peer with failure `18`. Snapshot projection retains exact controlled-
+  generation provenance across explicit delta, omission, first-carrier, and
+  generation-only keyframe cases and rejects contradictory retained entity/
+  player provenance before hashing. The combined runner now requires both
+  clients, both server slots, and both snapshot peers to pass exact `0x77`
+  preflight before gameplay is armed. Fresh combined artifact
+  `.tmp/networking/fr10_t04_combined_terminal_prune_current.json` passes with
+  15/15 damage and 29/29 exact receipts with zero reconciliation fault. Fresh
+  pre-capacity parent `.tmp/networking/fr10_t04_ordered_frontier_full.json`
+  passes
+  10/10 focused plus 5/5 direct numeric live lanes (`0x03`, `0x53`, `0x73`,
+  `0x57`, `0x77`), semantic digest
+  `521cdaabad088cb6e89b0ad56d89cf2dcf2bcb8194ec69d3ed078b61a84a32a7`.
+  The parent intentionally remains partial/`task_complete=false`; the child is
+  bounded live evidence only. A fixed 1,024-entry cgame evidence table is
+  derived from a 798-entry
+  compositional flight bound (127 client pending + 64 event TX + 512 backlog +
+  63 selective successors + 32 mailbox). Compile-time shared-constant
+  assertions, command-first and receipt-first 798-entry tests,
+  more-than-two-table rolling streams, six focused Meson rows, and the
+  production cgame build pass. The corrected command timing oracle excludes
+  process teardown from its bounded evidence clock while retaining the live-
+  grace deadline, and the affected Python contracts pass 117/117. Final
+  post-stage parent `.tmp/networking/fr10_t04_bounded_lifecycle_full_retry.json`
+  passes 11/11 focused and all five live masks with combined 15/15 damage,
+  30/30 receipt matches, zero reconciliation fault, preflight plus post-fire
+  proof, and semantic digest
+  `f4a161bf0876e05db21499ab5c21399cc0ef87ae4881ab78ae764bc67b6789ad`.
+  The six production targets build; refreshed `.install/` validates 16 root
+  runtime files, one dependency, and 601 assets; all parent gates are true
+  except deliberate `task_complete=false`. Therefore
   `FR-10-T04` remains In Progress. No `q2proto/` file changed. Evidence:
   `docs-dev/fr-10-t04-native-envelope-foundation-2026-07-13.md`,
   `docs-dev/fr-10-t04-native-transport-session-retention-2026-07-13.md`,
@@ -5082,6 +5514,16 @@ Tasks:
    `docs-dev/fr-10-t04-t05-mixed-game-event-native-shadow-2026-07-15.md`, and
    explicit-positional off-frame audio evidence in
    `docs-dev/fr-10-t04-t05-positional-offframe-spatial-audio-native-shadow-2026-07-15.md`,
+   followed by reliable and client-local positionless audio evidence in
+   `docs-dev/fr-10-t04-t05-reliable-local-spatial-audio-native-shadow-2026-07-18.md`,
+   and reliable mixed/multi-muzzle snapshot-fence evidence in
+   `docs-dev/fr-10-t04-t05-reliable-mixed-game-event-native-shadow-2026-07-18.md`,
+   followed by per-client damage-indicator evidence in
+   `docs-dev/fr-10-t04-t05-damage-indicator-native-shadow-2026-07-18.md`,
+   and per-client help-path marker evidence in
+   `docs-dev/fr-10-t04-t05-help-path-native-shadow-2026-07-19.md`,
+   followed by keyed-POI adapter, FIFO, fence-parity, and presenter evidence in
+   `docs-dev/fr-10-t04-t05-t07-keyed-poi-native-shadow-2026-07-20.md`,
    with the raw direct-sound boundary recorded in
    `docs-dev/fr-10-t04-t05-raw-direct-sound-adapter-decision-2026-07-15.md`,
   and the Stage D snapshot transaction in
@@ -5093,11 +5535,21 @@ Tasks:
   plus live reconnect receipt evidence in
   `docs-dev/fr-10-t04-t05-t08-t09-t14-live-reconnect-local-action-authority-2026-07-18.md`,
   and combined-lane evidence in
-  `docs-dev/fr-10-t04-t06-t14-combined-native-event-snapshot-shadow-2026-07-18.md`.
-- [ ] `FR-10-T05` Implement the typed, sequenced event journal with predictable,
+  `docs-dev/fr-10-t04-t06-t14-combined-native-event-snapshot-shadow-2026-07-18.md`,
+  followed by the exact public-bundle acceptance parent and explicit open-row
+  audit in
+  `docs-dev/fr-10-t04-exact-bundle-acceptance-parent-2026-07-20.md`. A bounded
+  schema-v36 continuation requires the event-only canonical child to capture
+  both client scalar rows and both server-peer rows after live reconnect and
+  receipt parity; the fresh full parent satisfies exact public/private `0x73`
+  at every endpoint. Historical v35 evidence remains unchanged. Detailed
+  lifecycle, derived-bound, and verification-state evidence:
+  `docs-dev/fr-10-t04-live-event-0x73-status-evidence-gate-2026-07-20.md` and
+  `docs-dev/fr-10-t04-t08-private-receipt-bounded-lifecycle-2026-07-20.md`.
+- [x] `FR-10-T05` Implement the typed, sequenced event journal with predictable,
   authoritative, reliable, and persistent delivery classes.
   Area: `bgame/cgame/sgame/client/server`. Priority: P0.
-  Dependencies: `FR-10-T02`, `FR-10-T03`. State: In Progress.
+  Dependencies: `FR-10-T02`, `FR-10-T03`. State: Done on 2026-07-19.
   Definition of Done: multiple events per tick retain order, event IDs and
   prediction correlation suppress duplicates, acknowledgement controls
   retention, and legacy one-byte events translate without changing q2proto.
@@ -5105,8 +5557,10 @@ Tasks:
   now implement validation, authoritative/prediction identities, delivery
   classes, selective receipt, sequence wrap, matching, coalescing, expiry, and
   at-most-once state. Stable typed payloads cover legacy entity events,
-  temporary entities, player/monster muzzle flashes, and spatial audio with
-  padding-independent semantic comparison. Named optional extensions shadow
+  temporary entities, player/monster muzzle flashes, spatial audio, and
+  per-client damage indicators/help-path markers with padding-independent
+  semantic comparison.
+  Named optional extensions shadow
   final authoritative legacy entity events into an engine-owned 4096-record
   journal. The V2 client/cgame range now captures typed temporary entities,
   player/monster muzzle flashes, normalized spatial sounds, and accepted-frame
@@ -5116,17 +5570,30 @@ Tasks:
   plus raw source/subject indices, and cgame resolves those indices to observed
    entity generations only at range delivery. The shared spatial-audio and
    player/monster muzzle mappers now feed one narrow mixed server consumer. The
-   audio path runs after an unreliable visible-source or explicit-positional
-   off-frame write succeeds; the direct game-event path accepts one bounded ordered temporary-entity/player/monster/
-   rerelease-muzzle sequence after it fitted the client's post-snapshot datagram
-   and publishes only when every member binds. It binds world or visible source/
+   audio path runs after an unreliable visible-source, explicit-positional
+   off-frame, reliable engine, or transient/reliable client-local positionless
+   write succeeds. Reliable audio is non-expiring `RELIABLE_ORDERED`; local
+   cues are world-bound `LOCAL_ONLY` records that retain their raw override key.
+   The direct game-event path accepts one bounded ordered temporary-entity/player/monster/
+   rerelease-muzzle sequence after it either fits the client's post-snapshot
+   datagram or is appended to the reliable netchan. Reliable batches wait in a
+   fixed native-only FIFO and bind once to the next exact snapshot before
+   frame-derived and unreliable candidates. It binds world or visible source/
    subject generations only from that exact sent view; the full sequence
    publishes atomically only when every member binds. All three rebind their
    template to the exact final snapshot generation before native queueing; an
    off-frame position uses world identity and `POSITION_FORCED` semantics.
-   Reliable and positionless off-frame sounds, combined/reliable muzzle traffic,
-   malformed/unsupported-service/over-capacity/reliable traffic, and
-   non-visible sources remain legacy-only. Packets, demos, legacy presenters, and rendered
+   An exact per-client `svc_damage` message now follows the same accepted-write
+   rule on the post-snapshot unreliable path. At most four indicators preserve
+   wire order, compressed magnitude/direction/type flags, world source, and the
+   exact controlled-player subject generation before atomic native queueing.
+   Exact per-client `svc_help_path` messages now follow the same post-snapshot
+   accepted-write rule: the canonical start flag, finite float position, and
+   packed direction become a stable world-sourced marker effect bound to that
+   controlled-player generation.
+   Arbitrary non-local positionless sounds,
+   malformed/unsupported-service/over-capacity/map-stale traffic, and non-visible game-
+   event sources remain legacy-only. Packets, demos, legacy presenters, and rendered
   behavior are unchanged. Cgame now owns a 2,048-record value-only legacy
   presentation journal plus a fixed-capacity authority/prediction runtime with
   independent legacy, authority, snapshot-reference, and prediction-tombstone
@@ -5174,9 +5641,15 @@ Tasks:
   zero-event snapshots and event-carrying legacy-inferred snapshots with
   `cg_event_runtime_audit=0`. This closes a cross-stream fail-open seam but does not
   cut over any event presenter. Other direct sgame service families, raw
-  direct-game sound, reliable/positionless off-frame audio, combined/reliable
-  muzzle traffic, live predicted side-effect submission/presentation,
-  production snapshot fencing, and authority cutover remain.
+  direct-game sound, arbitrary non-local positionless audio,
+  live predicted side-effect submission/presentation,
+  production snapshot fencing, and authority cutover remain with their owning
+  tasks rather than expanding T05's published acceptance scope. The final
+  task-level acceptance gate executes 18 compiled journal, stream, cgame-
+  runtime, native-link, prediction-correlation, and legacy-family adapter gates
+  twice with byte-identical results. Its digest
+  `5f300c5f7f925cf5105812cf49ce108305c357790989978738e34e88058e347c`
+  directly proves the four Definition-of-Done criteria.
   Evidence:
   `docs-dev/networking-canonical-event-journal-core-2026-07-12.md`,
   `docs-dev/networking-legacy-entity-event-shadow-2026-07-12.md`,
@@ -5204,6 +5677,7 @@ Tasks:
   and
    `docs-dev/fr-10-t04-t05-visible-spatial-audio-native-shadow-2026-07-15.md`,
    `docs-dev/fr-10-t04-t05-positional-offframe-spatial-audio-native-shadow-2026-07-15.md`,
+   `docs-dev/fr-10-t04-t05-reliable-local-spatial-audio-native-shadow-2026-07-18.md`,
    `docs-dev/fr-10-t04-t05-raw-direct-sound-adapter-decision-2026-07-15.md`,
    and
    `docs-dev/fr-10-t04-t05-visible-muzzle-native-shadow-2026-07-15.md`, plus
@@ -5211,28 +5685,21 @@ Tasks:
    `docs-dev/fr-10-t04-t05-bounded-temp-sequence-native-shadow-2026-07-15.md`,
    `docs-dev/fr-10-t04-t05-bounded-muzzle-sequence-native-shadow-2026-07-15.md`,
    `docs-dev/fr-10-t04-t05-mixed-game-event-native-shadow-2026-07-15.md`, and
+   `docs-dev/fr-10-t04-t05-reliable-mixed-game-event-native-shadow-2026-07-18.md`,
+   `docs-dev/fr-10-t04-t05-damage-indicator-native-shadow-2026-07-18.md`,
+   `docs-dev/fr-10-t04-t05-help-path-native-shadow-2026-07-19.md`,
+   `docs-dev/fr-10-t04-t05-t07-keyed-poi-native-shadow-2026-07-20.md`,
    `docs-dev/fr-10-t04-t06-native-snapshot-semantic-admission-2026-07-16.md`,
    plus
-   `docs-dev/fr-10-t04-t06-t07-production-native-snapshot-adapters-2026-07-16.md`.
-- [ ] `FR-10-T06` Build canonical acknowledged-baseline snapshot history,
+   `docs-dev/fr-10-t04-t06-t07-production-native-snapshot-adapters-2026-07-16.md`,
+   and final closure evidence in
+   `docs-dev/fr-10-t05-typed-event-journal-acceptance-closure-2026-07-19.md`.
+- [x] `FR-10-T06` Build canonical acknowledged-baseline snapshot history,
   keyframe recovery, removals/PVS rules, component deltas, packet budgets, and
   legacy shadow-parity validation.
   Area: `client/server`. Priority: P0.
   Dependencies: `FR-10-T02`, `FR-10-T03`, `FR-10-T05`.
-  State: In Progress at live client/server legacy shadows, exact sent
-  references, repeatable 100,000-snapshot offline final-emission/projector
-  evidence, default-off keyframe recovery, a staged schema-v3 live cgame parity
-  gate, a current-build 115,914-frame target-count live gate, and exact final-
-  emission legacy-event candidate copy-out into the default-off per-peer event
-  shadow, plus a bounded Stage D native serialized snapshot semantic-admission
-  transaction and default-off production final-emission TX/client RX
-  integration through the real netchan hooks, combined private `0x77` delivery,
-  and source-gated remote-transform presentation authority. A deterministic
-  two-run corpus now carries 100,000 positive final projections through serialization,
-  impairment, client admission, cgame prediction-authority selection, semantic
-  ACK, and exact server release with golden digest `c6aee48df85341ab`.
-  Broader semantic/keyframe recovery, previous-only presentation,
-  load/budget/release evidence, public authority, and broad promotion remain open.
+  State: Done on 2026-07-19.
   Definition of Done: distinct packet/snapshot/tick/baseline IDs are validated;
   acknowledged baselines recover under loss; no entity or payload limit
   truncates silently; and zero unexplained semantic mismatches occur across the
@@ -5279,7 +5746,7 @@ Tasks:
   invalid-base recovery, entity lifecycle/visibility, transport discontinuity
   causes, chronology, authoritative tick wrap, and the signed wire-frame
   boundary. Two executions are byte-identical with digest
-  `7b185107eeb0f6e7` and record 100,000/100,000 endpoint, legacy, component,
+  `6451c75bdb523477` and record 100,000/100,000 endpoint, legacy, component,
   and chronology matches. It also caught and now
   covers the legacy unchanged non-beam `old_origin` rule without mutating a
   retained base. That corpus remains explicitly public-API/offline. A separate
@@ -5365,9 +5832,18 @@ Tasks:
   authority. Every run records positive queue/ACK/release and
   clock/pair/sample/native/promotion counters, exact `promoted == native`, and
   zero clock, pair, alignment, parity, event-fence, endpoint, or transform-error
-  failures. Other event families, broader keyframe impairment/promotion
-  evidence, previous-only rendering, load/budget gates, public authority, and
-  broad promotion remain open. Evidence:
+  failures. The final parent-level acceptance gate runs 12 compiled snapshot
+  gates twice, two identical 100,000-snapshot offline parity corpora, two
+  identical 100,000-snapshot serialized production corpora, and a maximum-
+  capacity budget probe. It verifies digests `6451c75bdb523477` and
+  `ba519ae7bdd1db74`, zero unexplained mismatch or accepted abandonment, exact
+  ACK/release/authority counts, and all three corrupt rejections. At 512
+  entities, 1,024 area bytes, and 512 event references, WNC1 uses 80,869 of
+  131,072 bytes; final aggregate build-plus-encode/decode p95 are
+  486,900/214,700 ns against a 1,666,600 ns limit. Maximum canonical history uses 5,869,696 bytes under
+  16 MiB and fixed native owners use 624,152 bytes under 2 MiB. Presenter,
+  public-carrier, multi-client load/soak, platform, and release work remains
+  assigned to `FR-10-T04/T07/T14/T15`, not T06. Evidence:
   `docs-dev/networking-canonical-snapshot-stage-a-2026-07-12.md` and
   `docs-dev/networking-canonical-snapshot-stage-b-q2proto-projection-2026-07-12.md`,
   `docs-dev/networking-live-client-snapshot-prediction-and-demo-clock-2026-07-12.md`,
@@ -5383,8 +5859,10 @@ Tasks:
   `docs-dev/fr-10-t04-t06-t07-production-native-snapshot-adapters-2026-07-16.md`,
   and
   `docs-dev/fr-10-t04-t06-t07-t08-t09-t14-serialized-production-snapshot-corpus-2026-07-17.md`,
-  plus `docs-dev/fr-10-t04-t06-t14-combined-native-event-snapshot-shadow-2026-07-18.md`
-  and `docs-dev/fr-10-t06-t07-t14-native-snapshot-presentation-authority-2026-07-18.md`.
+  plus `docs-dev/fr-10-t04-t06-t14-combined-native-event-snapshot-shadow-2026-07-18.md`,
+  `docs-dev/fr-10-t06-t07-t14-native-snapshot-presentation-authority-2026-07-18.md`,
+  and final closure evidence in
+  `docs-dev/fr-10-t06-canonical-snapshot-acceptance-closure-2026-07-19.md`.
 - [ ] `FR-10-T07` Move cgame to an immutable snapshot timeline with explicit
   transitions, discontinuities, adaptive interpolation, bounded extrapolation,
   and event playback.
@@ -5411,7 +5889,9 @@ Tasks:
   canceled-epoch DATA cannot invoke the consumer. The production-wrapper virtual
   link reaches this real endpoint, records exactly one presentation, and proves
   corrupt current traffic plus delayed canceled DATA cannot invoke cgame.
-  It remains a no-effects event authority sink rather than event-presenter proof.
+  That historical link remains audit-only evidence; a later real presenter
+  continuation supplies the effect boundary but still needs live fault/parity
+  evidence.
   Stage D adds an exact snapshot admission generation, ID/hash/time,
   endpoint/legacy-parity hashes, and separate timeline/event-fence flags to the
   V2 status receipt. Exact identity plus five cross-endpoint parity/semantic
@@ -5464,13 +5944,86 @@ Tasks:
   a timeline publication without its event fence cannot seed prediction. The
   result records `receipt_fence_blocks=1`, `v2_replays=4`,
   `oracle_matches=3`, and digest `abf2723d5f03cbe9`. This remains focused
-  replay evidence rather than sustained impairment/load, weapon prediction, or
-  presenter proof.
-  Legacy effect/audio presentation and default rendering remain authoritative.
-  Source-gated remote-transform snapshot authority is now proven, but
-  previous-only entities, event/effect/audio presenters, impairment/load
-  breadth, adaptive extrapolation, budgets, demos, and classic-cgame migration
-  remain open. Evidence:
+  replay evidence rather than sustained impairment/load or weapon prediction.
+  A 2026-07-20 continuation installs a synchronous two-phase native event
+  presenter. Side-effect-free preflight resolves exact snapshot identity and
+  entity generation into cgame-owned values, validates resources prepared at
+  map precache, and rejects missing-resource or busy-lifecycle cases before the
+  present-once journal mark. Post-mark presentation consumes only copied values
+  and cached handles, and runtime mutation/presenter replacement cannot reenter
+  either callback phase. A separate cgame effect-authority gate defaults false
+  and is not connected to native ACTIVE: recognized legacy entity/temp, muzzle,
+  projected spatial-audio, damage, and help-path records retain exact identity
+  validation, ordering, audit, and terminal consumption without invoking value
+  effects, leaving raw legacy presentation authoritative. Unknown effects and
+  generic local-action audio still reject with resync instead of guessing a
+  resource. Direct tests cover explicit dispatch enablement, default-off audit-
+  only behavior, exact-fenced families, missing resources, lifecycle rejection,
+  prepared-plan scrubbing, stale identity, unsupported payloads, and callback
+  reentry; timeline-copy and source-contract tests remain independently
+  registered in the networking suite.
+  A second 2026-07-20 slice adds default-off
+  `cg_native_event_preflight_probe`. It is sampled once in cgame map startup
+  before sound/model registration and remains immutable for that map, so a
+  live cvar change cannot arm a partially prepared presenter. The active probe
+  prepares the same cached resources and executes the exact effect-authority
+  `CanPresent` resource/lifecycle path. After the runtime's present-once mark
+  and accounting, its prepared dispatch kind is always `none`: no entity,
+  temp-event, muzzle, sound, damage, or help-path effect callback runs, and no
+  raw ownership latch changes. Fixed version-1 status uses saturating per-map
+  commit, suppressed/nonvisual, and seven-family counters. Focused tests prove
+  missing-resource pre-commit rejection, map-latch deferral, zero effect
+  dispatch, single-use accounting, and explicit effect-authority precedence.
+  Callback non-reentrancy remains enforced by the shared runtime boundary.
+  A third 2026-07-20 slice carries a scrubbed previous-only classification in
+  the value-owned render view and records cumulative
+  `previous_only=observed/selected/submitted` evidence. Submission advances
+  only after the actual `V_AddEntity` boundary, and focused/live validation
+  enforces `submitted <= selected <= observed`. The version-38 hidden-client
+  parent also seals adaptive interpolation at a 50 ms baseline and 150 ms
+  ceiling, requiring real arrival cadence, a bounded delay rise, and zero
+  controller failures. Three fresh repeats submitted previous-only sources
+  with phase-local `2/2/2`, `3/3/3`, and `2/2/2` deltas from zero, and
+  selected 57.8--67.1 ms after 4--6 phase-local rises. This is one
+  live cadence, not the outstanding fault/demo/parity/load/platform matrix.
+  A fourth bounded 2026-07-20 slice adds damage as the fifth legacy action-
+  message family. Its one-to-four protocol indicators enter one transactional
+  V2 range, and first-person omission synchronizes only controlled-player
+  lineage from the exact current canonical snapshot. Native EVENT schema 2 now
+  retains two to eight same-coordinate records as one ACK/retry unit. The v100
+  three-repeat same-process Blaster parent passes both phases around one
+  `gamemap` transition: every one of six phases records five raw actions, the
+  exact family profile `(0,0,2,1,1,1,0)`, one four-record schema-2 impact batch
+  plus one muzzle singleton, five delayed-ACK retries, five present-once/probe
+  commits, exact raw/probe/effect chain parity, and zero native effects,
+  failures, duplicates, or mismatches. Server map quiesce precedes map-local
+  command reset, retained cgame shutdown precedes the next init, and a sealed
+  end-of-Begin reliable prefix prevents later messages from starving the
+  isolated native CHALLENGE. Map generation advances `1 -> 2`, map-end count
+  `0 -> 1`, and event stream epoch `2 -> 4`. Focused verification passes 9/9,
+  runner units pass 96/96, and the parent SHA-256 is
+  `545C6A46BD2E6A952958945CCE2F7DF2175551AE9423D5FFAF150DD31DA841D3`.
+  This is one clean/delayed-ACK map-reuse profile and does not close the
+  ownership or compound fault/demo/parity matrices.
+  A fifth bounded 2026-07-20 slice adds keyed POI as presenter/probe kind 7
+  and advances the fixed probe status to schema 3/336 bytes/eight kinds. Raw
+  capture remains keyed-only and legacy authoritative. Each raw/native lane
+  independently validates its exact retained snapshot and controlled identity;
+  because a reliable raw service is parsed before the following frame while
+  its native copy binds to that following committed frame, POI parity hashes a
+  validator-valid neutral value plus the shared map epoch rather than claiming
+  false snapshot-sequence/hash equality. Same-key actions remain FIFO and
+  distinct. Native preflight/commit reproduces legacy infinite lifetime,
+  removal, capacity, disabled, and missing-image state behavior without
+  resource registration or mutation during preflight. Event effect authority
+  remains behind the existing dormant cutover gate.
+  Legacy effect/audio presentation and default rendering remain authoritative
+  without native opt-in. Source-gated remote transforms, previous-only
+  renderer submission, one live adaptive cadence, and bounded native event
+  authority are now implemented, but the live loss/rate/pause/demo presenter
+  and adaptive-policy matrix, predicted audiovisual reconciliation,
+  impairment/load breadth, budgets, demos, and classic-cgame migration remain
+  open. Evidence:
   `docs-dev/networking-snapshot-timeline-core-t07-2026-07-12.md`,
   `docs-dev/networking-live-client-snapshot-prediction-and-demo-clock-2026-07-12.md`,
   `docs-dev/networking-live-cgame-canonical-render-promotion-2026-07-13.md`,
@@ -5489,7 +6042,14 @@ Tasks:
   `docs-dev/fr-10-t04-t06-t07-t08-t09-t14-serialized-production-snapshot-corpus-2026-07-17.md`,
   and
   `docs-dev/fr-10-t04-t06-t07-t08-t09-t14-production-v2-pmove-replay-boundary-2026-07-17.md`,
-  plus `docs-dev/fr-10-t06-t07-t14-native-snapshot-presentation-authority-2026-07-18.md`.
+  plus `docs-dev/fr-10-t06-t07-t14-native-snapshot-presentation-authority-2026-07-18.md`
+  and `docs-dev/fr-10-t07-native-present-once-event-effects-2026-07-20.md`,
+  plus `docs-dev/fr-10-t07-native-event-preflight-probe-2026-07-20.md`, and
+  `docs-dev/fr-10-t07-previous-only-render-and-adaptive-live-evidence-2026-07-20.md`,
+  plus
+  `docs-dev/fr-10-t07-schema2-damage-map-reuse-present-once-evidence-2026-07-20.md`,
+  plus keyed-POI slice details and its explicit no-closure boundary in
+  `docs-dev/fr-10-t04-t05-t07-keyed-poi-native-shadow-2026-07-20.md`.
 - [ ] `FR-10-T08` Complete client prediction, input replay, reconciliation,
   predicted-state caching, and predicted-side-effect suppression.
   Area: `bgame/cgame/client`. Priority: P0.
@@ -5621,8 +6181,25 @@ Tasks:
   proves in-session shooter reconnect rebase plus cross-process parity over
   three repeats: epoch-3 exact command correlation, 45/45 receipt matches,
   zero unmatched/outstanding/mismatch/conflict/resync, exact joined Blaster
-  shadow metadata, and normal 15 damage. Audiovisual suppression, broad parity,
-  correction auditing, and correction budgets remain open.
+  shadow metadata, and normal 15 damage. The 2026-07-20 lifecycle continuation
+  removes false no-receipt resync under command-cache pressure, retains real
+  late-receipt fail-closed behavior when exact history is gone, applies private
+  receipts on an ordered cursor independent of visual fencing, protects all
+  mutation entry points during reconciliation callbacks, and explicitly
+  terminalizes sequence `UINT32_MAX`. A monotonic latest-receipt frontier keeps
+  exact duplicate bytes while pruning lower command-only and already-matched
+  terminal rows; receipt-only evidence remains non-evictable. The server
+  mailbox latches invalid/regressed/conflicting/capacity failures until reset
+  and drains native authority with failure `18`. Fresh combined schema-v36
+  standalone evidence matches 29/29 receipts with zero reconciliation fault.
+  The final post-capacity T04 parent passes 11/11 focused and all five exact
+  live masks; its combined child records 30/30 exact matches, zero fault, and
+  preflight plus post-fire proof while the parent remains partial. A
+  1,024-entry fixed table is separately derived from the complete 798-entry
+  compositional flight bound and is now covered by both arrival orders,
+  more-than-two-table rolling streams, production/stage validation, and that
+  integrated parent. Audiovisual suppression, broad parity, correction
+  auditing, and correction budgets remain open.
   Evidence:
   `docs-dev/networking-authoritative-prediction-input-range-2026-07-12.md`,
   `docs-dev/networking-canonical-local-action-transaction-v2-2026-07-13.md`,
@@ -5663,13 +6240,14 @@ Tasks:
   plus
   `docs-dev/fr-10-t04-t05-t08-t09-local-action-shadow-authority-receipt-2026-07-17.md`,
   and
-  `docs-dev/fr-10-t04-t05-t08-t09-t14-live-reconnect-local-action-authority-2026-07-18.md`.
-- [ ] `FR-10-T09` Establish wrap-safe canonical command identity, validated
+  `docs-dev/fr-10-t04-t05-t08-t09-t14-live-reconnect-local-action-authority-2026-07-18.md`,
+  plus
+  `docs-dev/fr-10-t04-t08-private-receipt-bounded-lifecycle-2026-07-20.md`.
+- [x] `FR-10-T09` Establish wrap-safe canonical command identity, validated
   timing, and authoritative consumed-input acknowledgement.
   Area: `bgame/cgame/client/server`. Priority: P0.
   Dependencies: `FR-10-T02`, `FR-10-T03`, `FR-10-T05`, `FR-10-T06`.
-  State: In Progress at live negotiated legacy-carrier, authoritative
-  consumed-cursor, prediction, and rewind integration scope.
+  State: Done on 2026-07-19.
   Definition of Done: the consumed-command watermark drives prediction, rewind,
   and event correlation; duplicate input is idempotent; legacy mapping and
   sequence-wrap behavior pass the fault matrix.
@@ -5731,17 +6309,22 @@ Tasks:
   serialized production corpus additionally binds 100,000 admitted
   snapshots to their exact server-consumed cursors across four epochs and
   resolves continuous nonempty canonical ranges through the 127-command
-  capacity boundary. It is locally constructed resolver/selector evidence,
-  not exhaustive engine-import, native command authority, or wrap/flood/event-
-  correlation acceptance. A later live local-action slice uses the exact
+  capacity boundary. A later live local-action slice uses the exact
   finalized command-record V2 import and input-only semantic hash to pair
   epoch-3 commands with 45/45 cross-process receipts after an in-session
   reconnect, with zero mismatch, conflict, or resync. This closes one narrow
-  real event-correlation row, not exhaustive identity mapping. Live
-  producer/consumer cutover, native exact render
-  watermarks, exhaustive command
-  coverage, native authority, and full impairment/runtime acceptance remain
-  open.
+  real event-correlation row. Final task-level acceptance runs two identical
+  one-million-command probes across natural sequence rollover, maps 100,002
+  commands through the legacy sideband/adapter and explicit native codec,
+  records 2,100,002 idempotent acknowledgements and 139,998 bounded hostile
+  rejections, and reproduces digest `a9685d1ac8f40ef6`. Nine compiled gates
+  connect the same identity to production consumed-cursor prediction,
+  authoritative rewind context, local-action event correlation, and the native
+  event/snapshot links. This meets the direct published acceptance criteria,
+  and the completion of `FR-10-T06` satisfies the final dependency. The
+  separate review transition therefore closes T09. Authority promotion and broader
+  transport/load/release matrices remain with their owning tasks rather than
+  `FR-10-T09`.
   Evidence:
   `docs-dev/networking-canonical-command-stream-core-2026-07-12.md` and
   `docs-dev/networking-legacy-command-adapter-core-2026-07-12.md`,
@@ -5761,13 +6344,14 @@ Tasks:
   with current repeated-stream evidence in
   `docs-dev/fr-10-t04-repeated-command-shadow-and-mixed-carrier-core-2026-07-14.md`,
   plus live reconnect correlation evidence in
-  `docs-dev/fr-10-t04-t05-t08-t09-t14-live-reconnect-local-action-authority-2026-07-18.md`.
-- [ ] `FR-10-T10` Establish server clock mapping and bounded timestamped
+  `docs-dev/fr-10-t04-t05-t08-t09-t14-live-reconnect-local-action-authority-2026-07-18.md`,
+  and final direct-acceptance evidence in
+  `docs-dev/fr-10-t09-canonical-command-acceptance-gate-2026-07-19.md`.
+- [x] `FR-10-T10` Establish server clock mapping and bounded timestamped
   full-collision-pose history with a non-mutating historical query scene.
   Area: `server/sgame/network`. Priority: P0.
-  Dependencies: `FR-10-T02`, `FR-10-T06`, `FR-10-T09`. State: In Progress at
-  authenticated player/mover history, observation, immutable inline-BSP
-  collision-provider, and sealed historical brush-dispatch scope.
+  Dependencies: `FR-10-T02`, `FR-10-T06`, `FR-10-T09`. State: Done on
+  2026-07-19.
   Definition of Done: commands use a server-validated snapshot-to-simulation
   watermark, history stores time/frame/origin/bounds/angles/validity, samples
   interpolate without crossing discontinuities, and historical collision
@@ -5833,11 +6417,20 @@ Tasks:
   generation-matched sealed historical mover. Three headless two-client
   repeats apply 56 ms of rewind from 64 mover samples, preserve collision
   authority, and leave the target behind the brush at exactly zero damage.
-  Broader player-on-mover physics and
-  continuously rotating-mover fairness scenarios,
-  broader BSP/BSPX geometry, historical-brush audit/load budgets, live
-  promotion, broader engine weapon/mover scenarios, sustained load, and
-  release-platform evidence remain open. Evidence:
+  The final production-bound gate fills all 32 player and 64 mover histories,
+  executes 32 warmups plus 256 individually timed one-frame workloads at an
+  exact 200 ms age, and runs in five fresh dedicated processes. Each records
+  exactly 27,648 bounded queries/overwrites, full rings, 96-candidate sealed
+  scenes, zero overflow, allocation-free fixed storage, unchanged authority,
+  and workload hash `4973674365086484083`. Production storage is 4,370,192
+  bytes and the stronger production-plus-fixture total is
+  7,950,576/8,388,608 bytes. Worst p95 is 1,075,300 ns under the 1,666,600 ns
+  limit, leaving 591,300 ns (35.5%) headroom. Division-free one-wrap indexing
+  and newest-first ordered selection
+  retain exact duplicate, wrap, map/generation/discontinuity, matrix, and
+  16,384-query differential semantics. Broader gameplay interactions,
+  concurrent stress/soak, and release-platform evidence remain with T12, T14,
+  and T15. Evidence:
   `docs-dev/networking-authenticated-command-context-2026-07-12.md`,
   `docs-dev/networking-live-canonical-rewind-scene-and-hitscan-2026-07-12.md`,
   `docs-dev/networking-rewind-observability-acceptance-evidence-2026-07-13.md`,
@@ -5849,11 +6442,14 @@ Tasks:
   `docs-dev/fr-10-t10-live-player-on-mover-provenance-gate-2026-07-15.md`,
   `docs-dev/fr-10-t10-normal-frame-rider-continuity-gate-2026-07-15.md`, and
   `docs-dev/fr-10-t10-normal-frame-canonical-scene-gate-2026-07-15.md`, and
-  `docs-dev/fr-10-t10-t11-canonical-rail-historical-mover-occlusion-acceptance-2026-07-16.md`.
-- [ ] `FR-10-T11` Ship fair hitscan lag compensation with validation, rewind
+  `docs-dev/fr-10-t10-t11-canonical-rail-historical-mover-occlusion-acceptance-2026-07-16.md`,
+  and
+  `docs-dev/fr-10-t10-bounded-rewind-acceptance-closure-2026-07-19.md`.
+- [x] `FR-10-T11` Ship fair hitscan lag compensation with validation, rewind
   caps, diagnostics, and weapon-specific acceptance coverage.
   Area: `sgame/network`, `sgame/player`. Priority: P0.
-  Dependencies: `FR-10-T10`. State: In Progress.
+  Dependencies: `FR-10-T10`. State: Done on 2026-07-19; historical collision
+  remains default-off.
   Definition of Done: hitscan traces use scoped interpolated history, cannot
   trust client-authored time, do not cross spawn/teleport discontinuities, and
   pass zero/low/high-latency fairness scenarios.
@@ -5892,9 +6488,10 @@ Tasks:
   historical mover with exact zero target damage. The earlier muzzle-projection
   query cannot satisfy the terminal proof. Three headless repeats pass at
   56 ms applied age with 64 mover samples and unchanged collision authority.
-  The remaining
-  fairness scenarios, moving-target/multi-target beam and other
-  movers/lifecycle, abuse/load gates, and release promotion remain open.
+  At that preceding milestone, fairness scenarios, moving-target/multi-target
+  beam and other mover/lifecycle coverage, abuse/load gates, and release
+  promotion remained open; the final parent closure below resolves T11's
+  direct criteria and assigns the broader work to T12 through T15.
   Evidence:
   `docs-dev/networking-live-canonical-rewind-scene-and-hitscan-2026-07-12.md`,
   `docs-dev/networking-rewind-observability-acceptance-evidence-2026-07-13.md`,
@@ -5927,7 +6524,9 @@ Tasks:
   and
   `docs-dev/fr-10-t12-sustained-continuous-beam-acceptance-2026-07-15.md`,
   and
-  `docs-dev/fr-10-t10-t11-canonical-rail-historical-mover-occlusion-acceptance-2026-07-16.md`.
+  `docs-dev/fr-10-t10-t11-canonical-rail-historical-mover-occlusion-acceptance-2026-07-16.md`,
+  and final parent evidence in
+  `docs-dev/fr-10-t11-authoritative-hitscan-acceptance-closure-2026-07-19.md`.
   The canonical-command two-client gate passes three headless UDP repeats for
   Railgun, machinegun, Chaingun, Super Shotgun, and shotgun: scope admission,
   genuine attack delivery, retained history, positive-age canonical historical
@@ -5950,9 +6549,19 @@ Tasks:
   Shotgun, shotgun, Disruptor, and first/three-tick/release/water-crossing/
   bounded-32-tick Plasma Beam/Thunderbolt seams plus the bounded
   current-authority Thunderbolt underwater self-discharge seam and one
-  real-command Railgun historical-mover occlusion seam only;
-  `FR-10-T11` remains open for fairness, moving-target/multi-target beam and
-  broader mover/lifecycle, abuse/load, and release-promotion work.
+  real-command Railgun historical-mover occlusion seam. The final parent gate
+  adds a 40-case/120-invocation deterministic matrix, three fresh live repeats
+  for all eight production policies, historical-mover occlusion, three-client
+  spectator exclusion, current-authority spawn protection, and the invalid-
+  authority plus near/in-budget/capped fallback fixture. Its 33 policy/scope
+  live executions plus three fallback executions total 36. All live runs and
+  12 parent gates pass with zero orchestration retries, identical repeated
+  semantics, unchanged authority, exact damage/fallback results, and digest
+  `aa8aba98e1bc4e514badf7aed8a04e7e026afa2bc4f26d333d022cb9b5364bc1`.
+  User guidance documents server-owned hit/time authority, all eight policies,
+  caps, lifecycle, spectators, disable/opt-out, and fail-closed fallback.
+  Broader gameplay interactions, demo recording, concurrent stress/soak,
+  platform breadth, and release promotion remain with T12 through T15.
 - [ ] `FR-10-T12` Extend declared compensation policies to projectile spawn /
   fast-forward, melee, continuous beams, splash, movers, and triggers.
   Area: `sgame/network`, `sgame/gameplay`. Priority: P1.
@@ -5969,7 +6578,11 @@ Tasks:
   ballistic deploy-forward, plus Trap release-bound ballistic deploy-forward
   and Grapple fresh-hook current-world spawn-forward, plus ProBall
   Chainfist-held release current-world ballistic spawn-forward, plus native
-  off-hand Hook fresh current-world spawn-forward.
+  off-hand Hook fresh current-world spawn-forward, one bounded mover-relative
+  Rocket interaction, and independent Rocket splash visibility across a clear
+  player path, exact real BSP blocker, and exact real water boundary, plus
+  exact Rocket owner/single-touch retirement and target-free scheduled-expiry
+  lifecycle cells.
   Definition of Done: each interaction class has an explicit fairness/collision
   policy and deterministic tests; world state is never globally left rewound.
   Progress: plasma/heat-beam and thunderbolt main, water-retrace, and side-ray
@@ -6199,13 +6812,52 @@ Tasks:
   and
   `docs-dev/fr-10-t12-proball-held-throw-current-world-ballistic-acceptance-2026-07-16.md`,
   and
-  `docs-dev/fr-10-t12-offhand-hook-authenticated-current-world-acceptance-2026-07-16.md`.
+  `docs-dev/fr-10-t12-offhand-hook-authenticated-current-world-acceptance-2026-07-16.md`,
+  and
+  `docs-dev/fr-10-t12-mover-relative-projectile-current-world-acceptance-2026-07-20.md`,
+  and
+  `docs-dev/fr-10-t12-splash-occlusion-player-bsp-water-acceptance-2026-07-20.md`,
+  and
+  `docs-dev/fr-10-t12-rocket-projectile-lifecycle-current-world-acceptance-2026-07-20.md`.
+  The 2026-07-20 completion audit confirms that the fixed 39-mode,
+  policies-`6`-through-`24`, three-repeat aggregate gate is correctly bounded
+  and its 12 parent, 54 canonical-runner, and 51 lag-compensation contract tests
+  pass, but it remains explicitly partial. It now contains one bounded Rocket
+  mover-relative current-world direct-impact mode. Three fresh-process rows
+  prove paired moving rider/mover history, preserved translated relative pose,
+  exact production contact and 100 damage, and unchanged live collision
+  authority without a historical projectile hit. Three independent splash
+  modes also pass three fresh-process rows each, binding the exact production
+  `RadiusDamage`/`CanDamage` outcomes for clear-player (58), real BSP-blocked
+  (zero), and real water-boundary (58) cases without a historical hit.
+  Two further Rocket lifecycle modes pass three final-binary rows each. The
+  direct mode retains owner identity, records one current-world touch and
+  exact 100 damage, retires the exact generation through production
+  `FreeEntity`, and proves a 250 ms no-double-damage hold. The target-free mode
+  records zero touch/damage and production expiry at 9,952 ms plus the 56 ms
+  authenticated spawn advance against its exact 10,000 ms base schedule.
+  Coop/monster and broader moving/multi-target/fairness matrices remain absent;
+  launch-only seams do not cover complete projectile/deployable ownership,
+  lifetime, collision, trigger, or destruction lifecycles. A live
+  117-repetition run of that six-open-class manifest cannot satisfy these
+  missing cells, so
+  `FR-10-T12` remains unchecked.
+  Evidence:
+  `docs-dev/fr-10-t12-completion-audit-and-partial-gate-evidence-2026-07-20.md`
+  and
+  `docs-dev/fr-10-t12-mover-relative-projectile-current-world-acceptance-2026-07-20.md`,
+  and
+  `docs-dev/fr-10-t12-splash-occlusion-player-bsp-water-acceptance-2026-07-20.md`,
+  and
+  `docs-dev/fr-10-t12-rocket-projectile-lifecycle-current-world-acceptance-2026-07-20.md`.
 - [ ] `FR-10-T13` Preserve modern and legacy demo, MVD, spectator, GTV, seeking,
   and replay semantics across snapshot/event transitions.
   Area: `client/server/mvd`. Priority: P1.
   Dependencies: `FR-10-T04` through `FR-10-T07`, plus `FR-10-T09`.
-  State: In Progress at client-demo capability/cursor preservation and
-  canonical seek-lineage scope.
+  State: In Progress at client-demo capability/cursor preservation, canonical
+  seek lineage, a versioned native WDM1/WDR1 stream-index/seek core, an
+  allocation-free native snapshot playback cursor/decoder, and an opt-in
+  bounded production client snapshot recorder.
   Definition of Done: record/play/seek/relay matrices preserve ordered commands,
   events, discontinuities, and canonical snapshot identities.
   Progress: new client recordings rebuild the confirmed capability tuple, emit
@@ -6219,10 +6871,32 @@ Tasks:
   forward skipping retains continuity. Focused codec corruption/order,
   frame-match, C/C++ layout, arming, legacy-fallback, and serverdata-lifecycle
   checks pass. Legacy demos and protocols without the private tuple retain the
-  stateful fallback. MVD/GTV, spectator switching, native
-  demo schema/versioning, canonical event-order reproduction, and full record/
-  play/seek/relay matrices remain open. Evidence:
-  `docs-dev/networking-live-client-snapshot-prediction-and-demo-clock-2026-07-12.md`.
+  stateful fallback. A filesystem-agnostic WDM1/WDR1 core now frames exact WNC1
+  command/snapshot/event records, validates complete body semantics and global
+  order into a caller-owned checksummed index, and revalidates that index for
+  deterministic snapshot-at-or-before seeking. A separate opt-in production
+  path now records parity-qualified immutable snapshots with fixed WNC1/WDR1
+  staging and exact-write accounting, then publishes `.wdm.tmp` as `.wdm` only
+  after a complete bounded rescan. Canonical ID/hash deduplication spans changed
+  projection refs; conflicting/regressive IDs, epoch/POV changes, codec limits,
+  and short writes fail closed. A pointer-free cursor additionally binds an
+  immutable caller-owned stream/index, revalidates both completely per
+  operation, and transactionally decodes selected WNC1 snapshots into fixed
+  caller buffers. Initial position and at-or-before seek expose explicit reset
+  generations; forward stepping starts after the current entry and cannot emit
+  a duplicate. Header-only streams are valid, while mutation, WDR ordinal gaps,
+  class/epoch/time mismatch, overflow, capacity, and alias faults fail
+  unchanged. DM2/MVD/GTV/q2proto remain unchanged. Standalone bootstrap and
+  file-backed/client playback/seek, command/event records, timeline
+  publication/reset, event-present-once playback, MVD/GTV, spectator switching,
+  and full native/legacy record/play/seek/relay matrices remain open. Evidence:
+  `docs-dev/networking-live-client-snapshot-prediction-and-demo-clock-2026-07-12.md`
+  and
+  `docs-dev/fr-10-t13-native-demo-stream-index-seek-core-2026-07-20.md`
+  and
+  `docs-dev/fr-10-t13-native-demo-snapshot-playback-cursor-2026-07-20.md`
+  and
+  `docs-dev/fr-10-t13-client-native-snapshot-recording-2026-07-20.md`.
 - [ ] `FR-10-T14` Add network telemetry, diagnostics, security/load tests, and
   enforceable CPU, memory, bandwidth, correction, and rewind budgets.
   Area: `client/server/cgame/sgame/tools`. Priority: P1.
@@ -6242,6 +6916,11 @@ Tasks:
    Client `+set win_headless 1` now also suppresses the in-process updater
    bootstrapper UI, including the worker/relaunch path. Evidence:
    `docs-dev/fr-10-t14-bootstrapper-headless-propagation-2026-07-16.md`.
+   The Windows mouse backend also independently rejects headless raw-input,
+   capture, cursor clipping, and pointer-warp requests, so focus or resize
+   paths cannot claim a developer's mouse if a caller bypasses client input
+   setup. Evidence:
+   `docs-dev/headless-input-free-automated-launch-policy-2026-07-15.md`.
   Full telemetry/load/security gates remain open.
   Definition of Done: mandatory 1/8/16/32-client profiles include separate
   10-minute 32-client super-shotgun and chaingun runs with at least 5,000
@@ -6280,7 +6959,7 @@ Tasks:
   admissions with digest `7176afa3d4eb62b2`. The final headless suite passes
   157/157 in 383.93 seconds; its serialized snapshot corpus row passes in
   289.24 seconds and
-  verifies two exact 100,000-frame runs against golden `c6aee48df85341ab`.
+  verifies two exact 100,000-frame runs against golden `ba519ae7bdd1db74`.
   The runner requires the real golden, removes stale evidence, publishes
   atomically, binds evidence to executable/manifest/runner hashes, and records
   explicit no-window/no-input/no-mouse policy; its focused contract passes
@@ -6351,11 +7030,16 @@ Tasks:
   final cancellation-focused gate passes 8/8, the focused Stage D gate passes
   6/6 through the real cgame receipt boundary, the production-hook snapshot
   gate passes twice, the focused prediction-authority set passes 5/5, and the
-  two-run 100,000-frame serialized production corpus passes inside the final
-  157/157 suite. The final full production build passes, package tests pass
-  16/16, the release bootstrap headless contract passes 1/1, and the refreshed
-  Windows x86-64 stage validates 16 root files, one dependency, a 524-file pak,
-  one q2aas reference map, 31 botfile payloads, and 215 RmlUi assets.
+  two-run 100,000-frame serialized production corpus, the direct T09 command
+  gate, the final task-level T05 gate, and the T06 parent snapshot gate pass
+  inside the final serial 170/170 headless suite on 2026-07-20. The final full
+  production build passes, package tests pass 16/16, release-unit tests pass
+  12/12, the release bootstrap headless contract passes 1/1, and the refreshed
+  Windows x86-64 `.install/` validates 16 root runtime files, one dependency,
+  and 601 packaged assets in `basew/pak0.pkz`, plus one loose q2aas reference
+  map,
+  11 packaged q2aas AAS maps, 31 botfile
+  payloads, and 215 RmlUi assets.
   Focused native proof also covers connection-
   incarnation owner mismatch, exact packet-bound ACK outcomes, unsafe alias
   rejection, and end-to-end one-way receipt recovery. Focused carrier proof
@@ -6390,15 +7074,15 @@ Tasks:
   The prior
   one-command slice also retains strict, sanitizer, analyzer, and snapshot-
   runtime evidence for its narrower surface.
-  The local-action prediction/authority ring now has a measured maximum-
-  capacity cheap/deep audit split, and the immutable brush provider has narrow
-  real-IBSP38 geometric parity. They remain diagnostic/foundation scope because
-  live cgame/sgame correction integration and mover history are absent. These
-  focused, single-platform results do not provide the
-  mandatory live collision/damage, 100,000-malformed-case,
-  1/8/16/32-client, stress, soak, budget, native-adapter, broader BSP/BSPX and
-  mover coverage, or cross-platform evidence; all such acceptance gates remain
-  open. The latest production-wrapper lifecycle diagnostic records exactly
+  The local-action prediction/authority ring retains its measured maximum-
+  capacity cheap/deep audit split. T10 now closes bounded player/mover history,
+  immutable historical collision, and the fixed-memory/five-process rewind
+  budget; T11 closes authoritative live damage for all eight declared hitscan
+  policies plus spectator exclusion and current-authority spawn protection.
+  The remaining T14/T15 acceptance surface still includes the mandatory
+  100,000-malformed-case, 1/8/16/32-client, concurrent stress/soak,
+  native-adapter, broader BSP/BSPX, cross-platform, and release-promotion gates.
+  The latest production-wrapper lifecycle diagnostic records exactly
   three exhausted ACK handoffs followed by counted client/server disposition,
   zero retired receipt/retention, a second rotation without a retired bank,
   valid-old ACK/DATA stripping, and two corrupt-old rejections. Client/server
@@ -6482,7 +7166,8 @@ Tasks:
   does not promote a default, advertise the native envelope, prove dual-stack
   rollout, authorize legacy removal, or satisfy any release-duration gate.
   The refreshed local Windows stage validates 16 root runtime files, one
-  dependency, a 483-member `basew/pak0.pkz`, 31 botfiles, 215 RmlUi assets,
+  dependency, 601 packaged assets in `basew/pak0.pkz`, 31 botfiles, 215 RmlUi
+  assets,
   one loose q2aas reference BSP, and five release notice sidecars; it is local
   evidence only and does not satisfy cross-platform release acceptance.
 - [ ] `FR-10-T16` Add adaptive input pacing, batching, selective redundancy,
@@ -6490,9 +7175,11 @@ Tasks:
   Area: `client/server/common/net`. Priority: P1.
   Dependencies: `FR-10-T03`, `FR-10-T04`, `FR-10-T08`, `FR-10-T09`.
   State: In Progress at deterministic controller, default-off live client
-  integration, repeated stop-and-wait native command shadow, and default-off
-  live full-duplex mixed command/event carrier use with scheduler wakeups;
-  adaptive native delivery and acceptance gates remain open.
+  integration, bounded native batch selection, a private default-off
+  two-to-eight-command WNB1 production-hook shadow, repeated stop-and-wait
+  native command shadow, and default-off live full-duplex mixed command/event
+  carrier use with scheduler wakeups; native authority, feedback, and parent
+  acceptance gates remain open.
   Definition of Done: fresh-input age, bounded-loss recovery, idempotence, and
   bandwidth gates pass on legacy and WORR adapters. Progress: a pointer-free,
   allocation-free integer V1 controller consumes separately normalized
@@ -6542,10 +7229,32 @@ Tasks:
   a fresh challenge. Negotiated bit `0x40` then cancels and counts every lower
   epoch; the three-credit/two-rotation diagnostic proves zero retired state and
   no overwrite.
-  It does not yet provide adaptive native
-  batching/redundancy, server feedback, native authority, production-model/
-  golden impairment, production-model ACK-
-  exhaustion/map-rotation breadth, or broad dual-adapter impairment evidence.
+  A pointer-free native-input delivery core now consumes exact received and
+  consumed cursors, adaptive redundancy depth, and up to 64 contiguous retained
+  command identities. It plans at most eight ordered fresh/retry selections
+  under a 1,200-byte ceiling while reserving newest input and the receive
+  frontier; feedback rollback, gaps, malformed inputs, and overlap fail
+  transactionally. A separate private, default-off WNB1 production-hook slice
+  now binds that policy to exact contiguous groups of two through eight retained
+  WNC1 commands. The client sends one immutable batch beside authoritative
+  legacy input with 100 ms retry and eight-handoff ceilings. Its same-packet
+  private confirmation is capacity-atomic and does not change any public
+  capability mask. The server transactionally admits the complete batch,
+  retro-joins older authoritative commands from its retained canonical stream
+  before parsing the current packet, and blocks its receipt until every nested
+  command exactly joins. Pre-confirm or capacity-declined malformed schema-2
+  traffic stays legacy-only; confirmed malformed traffic rejects
+  transactionally. Duplicate receipts and delayed receipts from batch N during
+  batch N+1 are idempotent at the client. Map bootstrap preserves the drained
+  old WNB1 TX high-water until the fresh-challenge cancellation floor commits,
+  preventing proactive old receipts from entering the clean schema-1 ACK bank
+  and rejecting their legacy prefix. Focused regressions also prove that a
+  prior clean decline re-arms for next-map confirmation and that a delayed old
+  receipt cannot touch the new WNB1 bank. This closes the private production
+  batch codec/handoff and identified bootstrap race, but does not yet provide authenticated live
+  received/consumed cursor feedback, native authority, production-model/golden
+  impairment, production-model ACK-exhaustion/map-rotation breadth, or broad
+  dual-adapter impairment evidence.
   Legacy canonical
   intake has bounded over-retention loss recovery. A scoped 50,001-frame rate-
   shaped diagnostic reached its marker after 24 fast-forwards and 10,229 skips,
@@ -6577,7 +7286,13 @@ Tasks:
   and implemented barrier evidence in
   `docs-dev/fr-10-t04-t05-negotiated-epoch-cancellation-barrier-2026-07-14.md`,
   plus distinct-event selective-receipt evidence in
-  `docs-dev/fr-10-t04-t05-multi-event-selective-receipt-virtual-link-2026-07-15.md`.
+  `docs-dev/fr-10-t04-t05-multi-event-selective-receipt-virtual-link-2026-07-15.md`,
+  and bounded native selection-policy evidence in
+  `docs-dev/fr-10-t16-native-input-delivery-policy-core-2026-07-20.md`, plus the
+  private production-hook batch evidence in
+  `docs-dev/fr-10-t16-private-native-input-batch-shadow-2026-07-20.md`, and the
+  map-bootstrap receipt/cancellation evidence in
+  `docs-dev/fr-10-t16-map-bootstrap-input-batch-ack-cancellation-2026-07-20.md`.
 
 FR-10 release contract: `tools/release/targets.py` is the authoritative platform
 matrix; its current targets are `windows-x86_64`, `linux-x86_64`, and

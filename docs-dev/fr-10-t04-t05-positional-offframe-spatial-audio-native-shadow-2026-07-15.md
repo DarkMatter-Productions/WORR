@@ -72,7 +72,10 @@ reference map, 342 packaged assets, 31 botfile payloads, and 215 RmlUi assets.
 
 ## Remaining scope
 
-This does not promote reliable audio, positionless off-frame audio, local or
-unicast sound paths, raw direct-sgame `svc_sound` messages outside `emit_snd`,
-native authority, cgame/sgame prediction integration, or presenter cutover.
-Those remain open `FR-10-T04/T05/T07/T08/T09` work.
+The 2026-07-18 continuation in
+`docs-dev/fr-10-t04-t05-reliable-local-spatial-audio-native-shadow-2026-07-18.md`
+now covers structured reliable engine sounds and positionless client-local
+sound paths. Raw direct-sgame `svc_sound` messages outside the structured
+boundaries, arbitrary non-local positionless sources, native presenter
+authority, cgame/sgame prediction integration, and presenter cutover remain
+open `FR-10-T04/T05/T07/T08/T09` work.

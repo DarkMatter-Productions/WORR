@@ -40,6 +40,8 @@ typedef struct callback_state_v2_s {
     worr_cgame_event_range_builder_v2 *builder;
     worr_cgame_event_range_audit_v2 *audit;
     const worr_cgame_event_action_candidate_v2 *reentrant_candidate;
+    const worr_cgame_event_action_candidate_v2 *reentrant_batch_candidates;
+    uint32_t reentrant_batch_count;
     worr_cgame_event_range_v2 ranges[V2_CAPTURED_RANGES];
     worr_event_record_v1 records[V2_CAPTURED_RECORDS];
     uint32_t calls;
@@ -47,6 +49,7 @@ typedef struct callback_state_v2_s {
     bool all_audited;
     bool try_reentrant;
     worr_cgame_event_range_build_result_v2 reentrant_action_result;
+    worr_cgame_event_range_build_result_v2 reentrant_batch_result;
     worr_cgame_event_range_build_result_v2 reentrant_frame_result;
 } callback_state_v2;
 
@@ -156,6 +159,58 @@ static worr_cgame_event_action_candidate_v2 make_sound_candidate_v2(
     return candidate;
 }
 
+static worr_cgame_event_action_candidate_v2 make_damage_candidate_v2(
+    uint32_t tick, uint64_t time_us, uint32_t subject_entity,
+    uint32_t source_ordinal, uint32_t amount)
+{
+    worr_cgame_event_action_candidate_v2 candidate;
+    worr_event_payload_damage_v1 payload;
+
+    memset(&payload, 0, sizeof(payload));
+    payload.amount = (float)amount;
+    payload.direction[source_ordinal % 3u] = 1.0f;
+    payload.damage_flags =
+        source_ordinal % 2u == 0
+            ? WORR_EVENT_DAMAGE_FLAG_HEALTH
+            : WORR_EVENT_DAMAGE_FLAG_ARMOR | WORR_EVENT_DAMAGE_FLAG_SHIELD;
+    initialize_candidate_v2(
+        &candidate, tick, time_us, 0, subject_entity,
+        WORR_EVENT_TYPE_DAMAGE, WORR_EVENT_PAYLOAD_DAMAGE,
+        sizeof(payload));
+    candidate.record.source_ordinal = source_ordinal;
+    memcpy(candidate.record.payload, &payload, sizeof(payload));
+    return candidate;
+}
+
+static worr_cgame_event_action_candidate_v2 make_keyed_poi_candidate_v2(
+    uint32_t tick, uint64_t time_us, uint32_t subject_entity,
+    uint16_t key, uint16_t lifetime_ms)
+{
+    worr_cgame_event_action_candidate_v2 candidate;
+    worr_event_payload_keyed_poi_v1 payload;
+
+    memset(&payload, 0, sizeof(payload));
+    payload.key = key;
+    payload.lifetime_ms = lifetime_ms;
+    if (lifetime_ms != WORR_EVENT_KEYED_POI_REMOVE_LIFETIME_MS) {
+        payload.position[0] = 11.25f;
+        payload.position[1] = -22.5f;
+        payload.position[2] = 33.75f;
+        payload.image_index = 7;
+        payload.color_index = 3;
+        payload.flags = WORR_EVENT_KEYED_POI_FLAG_HIDE_ON_AIM;
+    }
+    initialize_candidate_v2(
+        &candidate, tick, time_us, 0, subject_entity,
+        WORR_EVENT_TYPE_STATE_CHANGE, WORR_EVENT_PAYLOAD_KEYED_POI_V1,
+        sizeof(payload));
+    candidate.record.delivery_class =
+        WORR_EVENT_DELIVERY_RELIABLE_ORDERED;
+    candidate.record.expiry_tick = 0;
+    memcpy(candidate.record.payload, &payload, sizeof(payload));
+    return candidate;
+}
+
 static void consume_v2(void *context,
                        const worr_cgame_event_range_v2 *range)
 {
@@ -186,6 +241,15 @@ static void consume_v2(void *context,
                 state->builder, state->reentrant_candidate,
                 WORR_CGAME_EVENT_CARRIER_PLAYER_MUZZLE_V2, 0,
                 consume_v2, state);
+        if (state->reentrant_batch_candidates &&
+            state->reentrant_batch_count != 0) {
+            state->reentrant_batch_result =
+                Worr_CGameEventRangeDeliverActionBatchV2(
+                    state->builder, state->reentrant_batch_candidates,
+                    state->reentrant_batch_count,
+                    WORR_CGAME_EVENT_CARRIER_DAMAGE_V2, 0,
+                    consume_v2, state);
+        }
         state->reentrant_frame_result =
             Worr_CGameEventRangeDeliverFrameV2(
                 state->builder, 999, 0, NULL, 0, 0,
@@ -980,6 +1044,512 @@ static int test_v2_failure_atomicity_and_aliases(void)
     return 0;
 }
 
+static int test_v2_damage_action_batches_and_audit(void)
+{
+    worr_cgame_event_observed_v2 observed[8];
+    uint32_t markers[8];
+    worr_event_record_v1 scratch[WORR_CGAME_EVENT_DAMAGE_BATCH_MAX_V2];
+    worr_cgame_event_range_builder_v2 builder;
+    worr_cgame_event_range_audit_v2 audit;
+    worr_cgame_event_range_audit_v2 exact_audit;
+    worr_cgame_event_range_audit_status_v2 status;
+    callback_state_v2 callback;
+    worr_cgame_event_action_candidate_v2
+        candidates[WORR_CGAME_EVENT_DAMAGE_BATCH_MAX_V2];
+    worr_cgame_event_range_v2 audit_range;
+    worr_event_record_v1
+        audit_records[WORR_CGAME_EVENT_DAMAGE_BATCH_MAX_V2];
+    uint32_t batch_count;
+    uint32_t index;
+
+    memset(&builder, 0, sizeof(builder));
+    memset(&audit, 0, sizeof(audit));
+    memset(&exact_audit, 0, sizeof(exact_audit));
+    CHECK(Worr_CGameEventRangeBuilderInitV2(
+        &builder, observed, markers, 8, scratch,
+        WORR_CGAME_EVENT_DAMAGE_BATCH_MAX_V2, 50));
+    Worr_CGameEventRangeAuditResetV2(&audit, 50);
+    initialize_callback_v2(&callback, &builder, &audit, NULL);
+
+    /* Every legal svc_damage cardinality is one atomic action range. Across
+     * consecutive carriers, arrival ordinals advance by the complete batch
+     * size while source ordinals restart at zero inside each carrier. */
+    for (batch_count = 1;
+         batch_count <= WORR_CGAME_EVENT_DAMAGE_BATCH_MAX_V2;
+         ++batch_count) {
+        const uint32_t tick = 100u + batch_count;
+        const uint64_t time_us = UINT64_C(100000) + batch_count * 1000u;
+        const uint32_t record_offset =
+            (batch_count - 1u) * batch_count / 2u;
+        const uint64_t first_arrival = 1u + record_offset;
+        const worr_cgame_event_range_v2 *range;
+
+        for (index = 0; index < batch_count; ++index) {
+            candidates[index] = make_damage_candidate_v2(
+                tick, time_us, 2, index, batch_count * 10u + index);
+        }
+        CHECK(Worr_CGameEventRangeDeliverActionBatchV2(
+                  &builder, candidates, batch_count,
+                  WORR_CGAME_EVENT_CARRIER_DAMAGE_V2, 0,
+                  consume_v2, &callback) ==
+              WORR_CGAME_EVENT_RANGE_BUILD_DELIVERED_V2);
+        CHECK(callback.calls == batch_count && callback.all_audited);
+
+        range = &callback.ranges[batch_count - 1u];
+        CHECK(range->stream_epoch == 50 &&
+              range->batch_generation == batch_count &&
+              range->carrier_sequence == batch_count &&
+              range->first_arrival_ordinal == first_arrival &&
+              range->carrier_tick == tick &&
+              range->carrier_time_us == time_us &&
+              range->count == batch_count &&
+              range->phase ==
+                  WORR_CGAME_EVENT_RANGE_PHASE_ACTION_PRE_PRESENT_V2 &&
+              range->carrier_kind == WORR_CGAME_EVENT_CARRIER_DAMAGE_V2 &&
+              range->adapter_status == WORR_CGAME_EVENT_ADAPTER_OK_V2 &&
+              range->chunk_index == 0 && range->chunk_count == 1);
+        CHECK((range->flags &
+               (WORR_CGAME_EVENT_RANGE_SOURCE_TIME_INFERRED_V2 |
+                WORR_CGAME_EVENT_RANGE_ROUTING_UNKNOWN_V2 |
+                WORR_CGAME_EVENT_RANGE_ENTITY_GENERATION_OBSERVED_V2 |
+                WORR_CGAME_EVENT_RANGE_FIRST_CHUNK_V2 |
+                WORR_CGAME_EVENT_RANGE_LAST_CHUNK_V2 |
+                WORR_CGAME_EVENT_RANGE_LEGACY_PRESENTER_AUTHORITATIVE_V2)) ==
+              (WORR_CGAME_EVENT_RANGE_SOURCE_TIME_INFERRED_V2 |
+               WORR_CGAME_EVENT_RANGE_ROUTING_UNKNOWN_V2 |
+               WORR_CGAME_EVENT_RANGE_ENTITY_GENERATION_OBSERVED_V2 |
+               WORR_CGAME_EVENT_RANGE_FIRST_CHUNK_V2 |
+               WORR_CGAME_EVENT_RANGE_LAST_CHUNK_V2 |
+               WORR_CGAME_EVENT_RANGE_LEGACY_PRESENTER_AUTHORITATIVE_V2));
+
+        for (index = 0; index < batch_count; ++index) {
+            worr_event_payload_damage_v1 payload;
+            const worr_event_record_v1 *record =
+                &callback.records[record_offset + index];
+            memcpy(&payload, record->payload, sizeof(payload));
+            CHECK(record->source_tick == tick &&
+                  record->source_time_us == time_us &&
+                  record->source_ordinal == index &&
+                  record->source_entity.index == 0 &&
+                  record->source_entity.generation == 1 &&
+                  record->subject_entity.index == 2 &&
+                  record->subject_entity.generation == 1 &&
+                  record->event_type == WORR_EVENT_TYPE_DAMAGE &&
+                  record->payload_kind == WORR_EVENT_PAYLOAD_DAMAGE &&
+                  record->payload_size == sizeof(payload) &&
+                  record->expiry_tick == tick + 1u &&
+                  payload.amount == (float)(batch_count * 10u + index));
+        }
+        for (index = 0; index < batch_count; ++index)
+            CHECK(scratch[index].struct_size == 0);
+    }
+
+    CHECK(builder.batch_generation == 4 &&
+          builder.carrier_sequence == 4 &&
+          builder.next_arrival_ordinal == 11 &&
+          observed[0].present && observed[0].generation == 1 &&
+          observed[2].provisional && !observed[2].present &&
+          observed[2].generation == 1);
+    CHECK(Worr_CGameEventRangeAuditStatusV2(&audit, &status));
+    CHECK(status.struct_size == sizeof(status) &&
+          status.stream_epoch == 50 &&
+          status.last_batch_generation == 4 &&
+          status.last_carrier_sequence == 4 &&
+          status.last_arrival_ordinal == 10 &&
+          status.last_carrier_kind == WORR_CGAME_EVENT_CARRIER_DAMAGE_V2 &&
+          status.accepted_carriers == 4 &&
+          status.accepted_ranges == 4 &&
+          status.accepted_records == 10 &&
+          status.rejected_carriers == 0 &&
+          status.rejected_ranges == 0 &&
+          status.accepted_carriers_by_kind[
+              WORR_CGAME_EVENT_CARRIER_DAMAGE_V2 - 1u] == 4);
+
+    /* The public audit independently enforces the same in-carrier ordinal and
+     * controlled-subject identity contract, not merely builder output. */
+    audit_range = callback.ranges[3];
+    memcpy(audit_records, &callback.records[6], sizeof(audit_records));
+    audit_range.records = audit_records;
+    audit_range.batch_generation = 1;
+    audit_range.carrier_sequence = 1;
+    audit_range.first_arrival_ordinal = 1;
+    Worr_CGameEventRangeAuditResetV2(&exact_audit, 50);
+    CHECK(Worr_CGameEventRangeAuditConsumeV2(&exact_audit, &audit_range));
+    CHECK(Worr_CGameEventRangeAuditStatusV2(&exact_audit, &status));
+    CHECK(status.accepted_carriers == 1 && status.accepted_records == 4 &&
+          status.last_arrival_ordinal == 4);
+
+    audit_records[3].source_ordinal = 2;
+    Worr_CGameEventRangeAuditResetV2(&exact_audit, 50);
+    CHECK(!Worr_CGameEventRangeAuditConsumeV2(&exact_audit, &audit_range));
+    CHECK(Worr_CGameEventRangeAuditStatusV2(&exact_audit, &status));
+    CHECK(status.accepted_ranges == 0 && status.rejected_ranges == 1);
+    audit_records[3].source_ordinal = 3;
+
+    audit_records[3].subject_entity.generation = 2;
+    Worr_CGameEventRangeAuditResetV2(&exact_audit, 50);
+    CHECK(!Worr_CGameEventRangeAuditConsumeV2(&exact_audit, &audit_range));
+    CHECK(Worr_CGameEventRangeAuditStatusV2(&exact_audit, &status));
+    CHECK(status.accepted_ranges == 0 && status.rejected_ranges == 1);
+    return 0;
+}
+
+static int test_v2_damage_preserves_omitted_controlled_lineage(void)
+{
+    worr_cgame_event_observed_v2 observed[8];
+    uint32_t markers[8];
+    worr_event_record_v1 scratch[WORR_CGAME_EVENT_DAMAGE_BATCH_MAX_V2];
+    worr_cgame_event_range_builder_v2 builder;
+    worr_cgame_event_range_audit_v2 audit;
+    callback_state_v2 callback;
+    const worr_cgame_event_carrier_v2 controlled_frame[] = {{1, 0, 0}};
+    const worr_cgame_event_carrier_v2 omitted_player_frame[] = {{2, 0, 0}};
+    worr_cgame_event_action_candidate_v2 damage;
+
+    memset(&builder, 0, sizeof(builder));
+    memset(&audit, 0, sizeof(audit));
+    CHECK(Worr_CGameEventRangeBuilderInitV2(
+        &builder, observed, markers, 8, scratch,
+        WORR_CGAME_EVENT_DAMAGE_BATCH_MAX_V2, 55));
+    Worr_CGameEventRangeAuditResetV2(&audit, 55);
+    initialize_callback_v2(&callback, &builder, &audit, NULL);
+
+    CHECK(Worr_CGameEventRangeDeliverFrameV2(
+              &builder, 1, 1000, controlled_frame, 1, 0,
+              consume_v2, &callback) ==
+          WORR_CGAME_EVENT_RANGE_BUILD_DELIVERED_V2);
+    CHECK(observed[1].generation == 1 && observed[1].present &&
+          !observed[1].provisional);
+
+    CHECK(Worr_CGameEventRangeDeliverFrameV2(
+              &builder, 2, 2000, omitted_player_frame, 1, 0,
+              consume_v2, &callback) ==
+          WORR_CGAME_EVENT_RANGE_BUILD_DELIVERED_V2);
+    CHECK(observed[1].generation == 1 && !observed[1].present &&
+          !observed[1].provisional);
+    CHECK(observed[2].generation == 1 && observed[2].present);
+
+    /* The validated canonical snapshot still carries controlled generation 1.
+     * Mirror the client integration's targeted synchronization before binding
+     * an implicitly addressed damage carrier.  The unrelated packet entity
+     * remains under ordinary frame-lifecycle ownership. */
+    observed[1].generation = 1;
+    observed[1].present = 1;
+    observed[1].provisional = 0;
+    observed[1].last_seen_batch = builder.batch_generation;
+
+    damage = make_damage_candidate_v2(2, 2000, 1, 0, 20);
+    CHECK(Worr_CGameEventRangeDeliverActionBatchV2(
+              &builder, &damage, 1,
+              WORR_CGAME_EVENT_CARRIER_DAMAGE_V2, 0,
+              consume_v2, &callback) ==
+          WORR_CGAME_EVENT_RANGE_BUILD_DELIVERED_V2);
+    CHECK(callback.calls == 3 && callback.record_count == 1 &&
+          callback.all_audited);
+    CHECK(callback.records[0].subject_entity.index == 1 &&
+          callback.records[0].subject_entity.generation == 1);
+    CHECK(observed[1].generation == 1 && observed[1].present &&
+          !observed[1].provisional);
+    CHECK(observed[2].generation == 1 && observed[2].present &&
+          !observed[2].provisional);
+    return 0;
+}
+
+static int test_v2_damage_batch_failure_atomicity(void)
+{
+    worr_cgame_event_observed_v2 observed[8];
+    worr_cgame_event_observed_v2 observed_before[8];
+    uint32_t markers[8];
+    uint32_t markers_before[8];
+    worr_event_record_v1 scratch[5];
+    worr_event_record_v1 scratch_before[5];
+    worr_cgame_event_range_builder_v2 builder;
+    worr_cgame_event_range_builder_v2 builder_before;
+    worr_cgame_event_range_audit_v2 audit;
+    worr_cgame_event_range_audit_status_v2 status;
+    callback_state_v2 callback;
+    worr_cgame_event_action_candidate_v2 candidates[5];
+    worr_cgame_event_action_candidate_v2 muzzle;
+    uint32_t calls_before;
+    uint32_t index;
+
+    memset(&builder, 0, sizeof(builder));
+    memset(&audit, 0, sizeof(audit));
+    CHECK(Worr_CGameEventRangeBuilderInitV2(
+        &builder, observed, markers, 8, scratch, 5, 60));
+    Worr_CGameEventRangeAuditResetV2(&audit, 60);
+    muzzle = make_muzzle_candidate_v2(
+        81, 81000, 1, WORR_EVENT_MUZZLE_FAMILY_PLAYER,
+        WORR_EVENT_PLAYER_MUZZLE_BLASTER);
+    initialize_callback_v2(&callback, &builder, &audit, &muzzle);
+    for (index = 0; index < 5; ++index) {
+        candidates[index] = make_damage_candidate_v2(
+            80, 80000, 2, index, 20u + index);
+    }
+
+#define SNAPSHOT_DAMAGE_BATCH_V2()                                          \
+    do {                                                                     \
+        builder_before = builder;                                            \
+        memcpy(observed_before, observed, sizeof(observed));                 \
+        memcpy(markers_before, markers, sizeof(markers));                    \
+        memcpy(scratch_before, scratch, sizeof(scratch));                    \
+        calls_before = callback.calls;                                       \
+    } while (0)
+#define CHECK_DAMAGE_BATCH_SNAPSHOT_V2()                                    \
+    do {                                                                     \
+        CHECK(memcmp(&builder, &builder_before, sizeof(builder)) == 0);       \
+        CHECK(memcmp(observed, observed_before, sizeof(observed)) == 0);      \
+        CHECK(memcmp(markers, markers_before, sizeof(markers)) == 0);         \
+        CHECK(memcmp(scratch, scratch_before, sizeof(scratch)) == 0);         \
+        CHECK(callback.calls == calls_before);                               \
+    } while (0)
+
+    SNAPSHOT_DAMAGE_BATCH_V2();
+    CHECK(Worr_CGameEventRangeDeliverActionBatchV2(
+              &builder, candidates, 0,
+              WORR_CGAME_EVENT_CARRIER_DAMAGE_V2, 0,
+              consume_v2, &callback) ==
+          WORR_CGAME_EVENT_RANGE_BUILD_INVALID_V2);
+    CHECK_DAMAGE_BATCH_SNAPSHOT_V2();
+
+    SNAPSHOT_DAMAGE_BATCH_V2();
+    CHECK(Worr_CGameEventRangeDeliverActionBatchV2(
+              &builder, candidates, 5,
+              WORR_CGAME_EVENT_CARRIER_DAMAGE_V2, 0,
+              consume_v2, &callback) ==
+          WORR_CGAME_EVENT_RANGE_BUILD_INVALID_V2);
+    CHECK_DAMAGE_BATCH_SNAPSHOT_V2();
+
+    /* Scratch insufficiency is rejected before any prefix can be retained. */
+    builder.scratch_capacity = 3;
+    SNAPSHOT_DAMAGE_BATCH_V2();
+    CHECK(Worr_CGameEventRangeDeliverActionBatchV2(
+              &builder, candidates, 4,
+              WORR_CGAME_EVENT_CARRIER_DAMAGE_V2, 0,
+              consume_v2, &callback) ==
+          WORR_CGAME_EVENT_RANGE_BUILD_INVALID_V2);
+    CHECK_DAMAGE_BATCH_SNAPSHOT_V2();
+    builder.scratch_capacity = 5;
+
+    candidates[3].record.payload_kind = WORR_EVENT_PAYLOAD_EFFECT;
+    SNAPSHOT_DAMAGE_BATCH_V2();
+    CHECK(Worr_CGameEventRangeDeliverActionBatchV2(
+              &builder, candidates, 4,
+              WORR_CGAME_EVENT_CARRIER_DAMAGE_V2, 0,
+              consume_v2, &callback) ==
+          WORR_CGAME_EVENT_RANGE_BUILD_INVALID_V2);
+    CHECK_DAMAGE_BATCH_SNAPSHOT_V2();
+    candidates[3] = make_damage_candidate_v2(80, 80000, 2, 3, 23);
+
+    candidates[3].record.source_ordinal = 2;
+    SNAPSHOT_DAMAGE_BATCH_V2();
+    CHECK(Worr_CGameEventRangeDeliverActionBatchV2(
+              &builder, candidates, 4,
+              WORR_CGAME_EVENT_CARRIER_DAMAGE_V2, 0,
+              consume_v2, &callback) ==
+          WORR_CGAME_EVENT_RANGE_BUILD_INVALID_V2);
+    CHECK_DAMAGE_BATCH_SNAPSHOT_V2();
+    candidates[3].record.source_ordinal = 3;
+
+    candidates[3].record.source_tick = 81;
+    candidates[3].record.expiry_tick = 82;
+    SNAPSHOT_DAMAGE_BATCH_V2();
+    CHECK(Worr_CGameEventRangeDeliverActionBatchV2(
+              &builder, candidates, 4,
+              WORR_CGAME_EVENT_CARRIER_DAMAGE_V2, 0,
+              consume_v2, &callback) ==
+          WORR_CGAME_EVENT_RANGE_BUILD_INVALID_V2);
+    CHECK_DAMAGE_BATCH_SNAPSHOT_V2();
+    candidates[3].record.source_tick = 80;
+    candidates[3].record.expiry_tick = 81;
+
+    candidates[3].record.source_time_us = 81000;
+    SNAPSHOT_DAMAGE_BATCH_V2();
+    CHECK(Worr_CGameEventRangeDeliverActionBatchV2(
+              &builder, candidates, 4,
+              WORR_CGAME_EVENT_CARRIER_DAMAGE_V2, 0,
+              consume_v2, &callback) ==
+          WORR_CGAME_EVENT_RANGE_BUILD_INVALID_V2);
+    CHECK_DAMAGE_BATCH_SNAPSHOT_V2();
+    candidates[3].record.source_time_us = 80000;
+
+    candidates[3].subject_entity_index = 3;
+    SNAPSHOT_DAMAGE_BATCH_V2();
+    CHECK(Worr_CGameEventRangeDeliverActionBatchV2(
+              &builder, candidates, 4,
+              WORR_CGAME_EVENT_CARRIER_DAMAGE_V2, 0,
+              consume_v2, &callback) ==
+          WORR_CGAME_EVENT_RANGE_BUILD_INVALID_V2);
+    CHECK_DAMAGE_BATCH_SNAPSHOT_V2();
+    candidates[3].subject_entity_index = 2;
+
+    candidates[3].source_entity_index = 1;
+    SNAPSHOT_DAMAGE_BATCH_V2();
+    CHECK(Worr_CGameEventRangeDeliverActionBatchV2(
+              &builder, candidates, 4,
+              WORR_CGAME_EVENT_CARRIER_DAMAGE_V2, 0,
+              consume_v2, &callback) ==
+          WORR_CGAME_EVENT_RANGE_BUILD_INVALID_V2);
+    CHECK_DAMAGE_BATCH_SNAPSHOT_V2();
+    candidates[3].source_entity_index = 0;
+
+    observed[2].generation = UINT32_MAX;
+    SNAPSHOT_DAMAGE_BATCH_V2();
+    CHECK(Worr_CGameEventRangeDeliverActionBatchV2(
+              &builder, candidates, 4,
+              WORR_CGAME_EVENT_CARRIER_DAMAGE_V2, 0,
+              consume_v2, &callback) ==
+          WORR_CGAME_EVENT_RANGE_BUILD_GENERATION_EXHAUSTED_V2);
+    CHECK_DAMAGE_BATCH_SNAPSHOT_V2();
+    observed[2].generation = 0;
+
+    builder.next_arrival_ordinal = UINT64_MAX - 2u;
+    SNAPSHOT_DAMAGE_BATCH_V2();
+    CHECK(Worr_CGameEventRangeDeliverActionBatchV2(
+              &builder, candidates, 4,
+              WORR_CGAME_EVENT_CARRIER_DAMAGE_V2, 0,
+              consume_v2, &callback) ==
+          WORR_CGAME_EVENT_RANGE_BUILD_ORDER_EXHAUSTED_V2);
+    CHECK_DAMAGE_BATCH_SNAPSHOT_V2();
+    builder.next_arrival_ordinal = 1;
+
+    CHECK(Worr_CGameEventRangeAuditStatusV2(&audit, &status));
+    CHECK(status.accepted_ranges == 0 && status.rejected_ranges == 0 &&
+          callback.calls == 0);
+
+    /* A callback cannot recursively commit either a single action, another
+     * damage batch, or an entity-frame carrier. The outer batch remains one
+     * complete audited transaction. */
+    callback.try_reentrant = true;
+    callback.reentrant_batch_candidates = candidates;
+    callback.reentrant_batch_count = 4;
+    CHECK(Worr_CGameEventRangeDeliverActionBatchV2(
+              &builder, candidates, 4,
+              WORR_CGAME_EVENT_CARRIER_DAMAGE_V2, 0,
+              consume_v2, &callback) ==
+          WORR_CGAME_EVENT_RANGE_BUILD_DELIVERED_V2);
+    CHECK(callback.calls == 1 && callback.record_count == 4 &&
+          callback.all_audited &&
+          callback.reentrant_action_result ==
+              WORR_CGAME_EVENT_RANGE_BUILD_REENTRANT_V2 &&
+          callback.reentrant_batch_result ==
+              WORR_CGAME_EVENT_RANGE_BUILD_REENTRANT_V2 &&
+          callback.reentrant_frame_result ==
+              WORR_CGAME_EVENT_RANGE_BUILD_REENTRANT_V2);
+    CHECK(builder.batch_generation == 1 && builder.carrier_sequence == 1 &&
+          builder.next_arrival_ordinal == 5 &&
+          observed[2].generation == 1 && observed[2].provisional);
+    CHECK(Worr_CGameEventRangeAuditStatusV2(&audit, &status));
+    CHECK(status.accepted_carriers == 1 && status.accepted_ranges == 1 &&
+          status.accepted_records == 4 &&
+          status.last_arrival_ordinal == 4 &&
+          status.accepted_carriers_by_kind[
+              WORR_CGAME_EVENT_CARRIER_DAMAGE_V2 - 1u] == 1);
+
+#undef CHECK_DAMAGE_BATCH_SNAPSHOT_V2
+#undef SNAPSHOT_DAMAGE_BATCH_V2
+    return 0;
+}
+
+static int test_v2_keyed_poi_shape_and_audit(void)
+{
+    worr_cgame_event_observed_v2 observed[8];
+    uint32_t markers[8];
+    worr_event_record_v1 scratch[2];
+    worr_cgame_event_range_builder_v2 builder;
+    worr_cgame_event_range_audit_v2 audit;
+    worr_cgame_event_range_audit_status_v2 status;
+    callback_state_v2 callback;
+    worr_cgame_event_action_candidate_v2 candidate;
+    worr_event_payload_keyed_poi_v1 payload;
+
+    memset(&builder, 0, sizeof(builder));
+    memset(&audit, 0, sizeof(audit));
+    CHECK(sizeof(status) == 224u);
+    CHECK(Worr_CGameEventRangeBuilderInitV2(
+        &builder, observed, markers, 8, scratch, 2, 65));
+    Worr_CGameEventRangeAuditResetV2(&audit, 65);
+    initialize_callback_v2(&callback, &builder, &audit, NULL);
+
+    candidate = make_keyed_poi_candidate_v2(90, 90000, 2, 41, 2000);
+    CHECK(Worr_CGameEventRangeDeliverActionV2(
+              &builder, &candidate,
+              WORR_CGAME_EVENT_CARRIER_KEYED_POI_V2, 0,
+              consume_v2, &callback) ==
+          WORR_CGAME_EVENT_RANGE_BUILD_DELIVERED_V2);
+    CHECK(callback.calls == 1 && callback.record_count == 1 &&
+          callback.all_audited);
+    CHECK(callback.ranges[0].carrier_kind ==
+              WORR_CGAME_EVENT_CARRIER_KEYED_POI_V2 &&
+          callback.ranges[0].count == 1 &&
+          callback.records[0].source_entity.index == 0 &&
+          callback.records[0].source_entity.generation == 1 &&
+          callback.records[0].subject_entity.index == 2 &&
+          callback.records[0].subject_entity.generation == 1 &&
+          callback.records[0].delivery_class ==
+              WORR_EVENT_DELIVERY_RELIABLE_ORDERED &&
+          callback.records[0].expiry_tick == 0);
+    memcpy(&payload, callback.records[0].payload, sizeof(payload));
+    CHECK(payload.key == 41 && payload.lifetime_ms == 2000 &&
+          payload.image_index == 7 && payload.color_index == 3 &&
+          payload.flags == WORR_EVENT_KEYED_POI_FLAG_HIDE_ON_AIM);
+
+    candidate.source_entity_index = 1;
+    CHECK(Worr_CGameEventRangeDeliverActionV2(
+              &builder, &candidate,
+              WORR_CGAME_EVENT_CARRIER_KEYED_POI_V2, 0,
+              consume_v2, &callback) ==
+          WORR_CGAME_EVENT_RANGE_BUILD_INVALID_V2);
+    candidate.source_entity_index = 0;
+    candidate.subject_entity_index = WORR_EVENT_NO_ENTITY;
+    CHECK(Worr_CGameEventRangeDeliverActionV2(
+              &builder, &candidate,
+              WORR_CGAME_EVENT_CARRIER_KEYED_POI_V2, 0,
+              consume_v2, &callback) ==
+          WORR_CGAME_EVENT_RANGE_BUILD_INVALID_V2);
+    candidate.subject_entity_index = 2;
+    CHECK(Worr_CGameEventRangeDeliverActionV2(
+              &builder, &candidate,
+              WORR_CGAME_EVENT_CARRIER_DAMAGE_V2, 0,
+              consume_v2, &callback) ==
+          WORR_CGAME_EVENT_RANGE_BUILD_INVALID_V2);
+    memcpy(&payload, candidate.record.payload, sizeof(payload));
+    payload.key = 0;
+    memcpy(candidate.record.payload, &payload, sizeof(payload));
+    CHECK(Worr_CGameEventRangeDeliverActionV2(
+              &builder, &candidate,
+              WORR_CGAME_EVENT_CARRIER_KEYED_POI_V2, 0,
+              consume_v2, &callback) ==
+          WORR_CGAME_EVENT_RANGE_BUILD_INVALID_V2);
+
+    candidate = make_keyed_poi_candidate_v2(
+        91, 91000, 2, 41,
+        WORR_EVENT_KEYED_POI_REMOVE_LIFETIME_MS);
+    memcpy(&payload, candidate.record.payload, sizeof(payload));
+    payload.image_index = 1;
+    memcpy(candidate.record.payload, &payload, sizeof(payload));
+    CHECK(Worr_CGameEventRangeDeliverActionV2(
+              &builder, &candidate,
+              WORR_CGAME_EVENT_CARRIER_KEYED_POI_V2, 0,
+              consume_v2, &callback) ==
+          WORR_CGAME_EVENT_RANGE_BUILD_INVALID_V2);
+    payload.image_index = 0;
+    memcpy(candidate.record.payload, &payload, sizeof(payload));
+    CHECK(Worr_CGameEventRangeDeliverActionV2(
+              &builder, &candidate,
+              WORR_CGAME_EVENT_CARRIER_KEYED_POI_V2, 0,
+              consume_v2, &callback) ==
+          WORR_CGAME_EVENT_RANGE_BUILD_DELIVERED_V2);
+    CHECK(callback.calls == 2 && callback.record_count == 2 &&
+          callback.all_audited);
+    CHECK(Worr_CGameEventRangeAuditStatusV2(&audit, &status));
+    CHECK(status.accepted_carriers == 2 &&
+          status.accepted_records == 2 &&
+          status.accepted_carriers_by_kind[
+              WORR_CGAME_EVENT_CARRIER_KEYED_POI_V2 - 1u] == 2);
+    return 0;
+}
+
 static int test_v2_audit_exactness_and_muzzle_boundaries(void)
 {
     worr_cgame_event_observed_v2 observed[8];
@@ -1098,6 +1668,10 @@ int main(void)
     CHECK(test_v2_actions_lifecycle_and_audit() == 0);
     CHECK(test_v2_chunking_and_reentrancy() == 0);
     CHECK(test_v2_failure_atomicity_and_aliases() == 0);
+    CHECK(test_v2_damage_action_batches_and_audit() == 0);
+    CHECK(test_v2_damage_preserves_omitted_controlled_lineage() == 0);
+    CHECK(test_v2_damage_batch_failure_atomicity() == 0);
+    CHECK(test_v2_keyed_poi_shape_and_audit() == 0);
     CHECK(test_v2_audit_exactness_and_muzzle_boundaries() == 0);
     printf("cgame event shadow: immutable range checks passed\n");
     return 0;

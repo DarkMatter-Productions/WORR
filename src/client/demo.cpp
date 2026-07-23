@@ -24,6 +24,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "client/cgame_event_shadow_runtime.h"
 #include "client/consumed_cursor.h"
 #include "client/demo_clock.h"
+#include "client/native_demo_recorder.h"
 #include "client/net_capability.h"
 #include "client/snapshot_shadow.h"
 
@@ -1449,7 +1450,7 @@ static void CL_Seek_f(void)
     CL_DemoClockReset();
     (void)CL_SnapshotShadowNotifyResetEx(
         WORR_CGAME_SNAPSHOT_RESET_DEMO_SEEK,
-        static_cast<uint64_t>(cls.realtime) * UINT64_C(1000),
+        com_unscaledTimeUs,
         0);
 
     // disable effects processing
@@ -1488,7 +1489,7 @@ static void CL_Seek_f(void)
              * that can carry the private setting tuple. */
             if (!CL_SnapshotShadowNotifyResetEx(
                     WORR_CGAME_SNAPSHOT_RESET_DEMO_SEEK,
-                    static_cast<uint64_t>(cls.realtime) * UINT64_C(1000),
+                    com_unscaledTimeUs,
                     CL_SNAPSHOT_SHADOW_RESET_PROJECTION_EPOCH)) {
                 Com_Error(ERR_DROP,
                           "%s: failed to reset canonical seek lineage",
@@ -1723,6 +1724,8 @@ fail:
 
 void CL_CleanupDemos(void)
 {
+    CL_NativeDemoRecorderCleanup();
+
     if (cls.demo.recording) {
         CL_Stop_f();
     }
@@ -1816,4 +1819,5 @@ void CL_InitDemos(void)
     cl_demosuspendtoggle = Cvar_Get("cl_demosuspendtoggle", "1", 0);
 
     Cmd_Register(c_demo);
+    CL_NativeDemoRecorderInit();
 }

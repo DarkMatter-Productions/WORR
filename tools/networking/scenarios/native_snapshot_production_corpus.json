@@ -8,7 +8,7 @@
   "seed": 1369948382,
   "repeat": 2,
   "timeout_seconds": 900,
-  "golden_corpus_digest": "c6aee48df85341ab",
+  "golden_corpus_digest": "ba519ae7bdd1db74",
   "negative_probe_fields": [
     "corrupt_server_to_client",
     "corrupt_client_to_server"

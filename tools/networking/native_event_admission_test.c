@@ -1,6 +1,7 @@
 /* Deterministic transactional native event-admission tests (FR-10-T05). */
 
 #include "common/net/native_event_admission.h"
+#include "common/net/native_event_batch.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -16,7 +17,7 @@
 
 enum {
     TEST_RX_CAPACITY = 4,
-    TEST_PAYLOAD_STRIDE = 256,
+    TEST_PAYLOAD_STRIDE = WORR_NATIVE_EVENT_BATCH_MAX_PAYLOAD_BYTES,
 };
 
 #define TEST_OWNER_ID UINT64_C(0x1020304050607080)
@@ -26,6 +27,8 @@ enum {
 typedef struct fake_consumer_s {
     worr_cgame_event_runtime_status_v1 status;
     worr_event_record_v1 last_record;
+    worr_event_record_v1 last_batch[WORR_NATIVE_EVENT_BATCH_MAX_EVENTS];
+    uint32_t last_batch_count;
     uint32_t first_sequence;
     uint32_t reset_calls;
     uint32_t scrub_calls;
@@ -103,26 +106,40 @@ static worr_cgame_event_runtime_result_v1 fake_submit(
     void *opaque, const worr_event_record_v1 *records, uint32_t count)
 {
     fake_consumer *fake = (fake_consumer *)opaque;
+    worr_event_receipt_ack_v1 staged_receipt;
     worr_event_receipt_result_v1 receipt_result;
+    uint32_t accepted = 0;
+    uint32_t index;
+    bool all_duplicate = true;
 
     ++fake->submit_calls;
     if (fake->force_submit_result)
         return fake->forced_submit_result;
-    if (count != 1 || records == NULL)
+    if (count == 0 || count > WORR_NATIVE_EVENT_BATCH_MAX_EVENTS ||
+        records == NULL)
         return WORR_CGAME_EVENT_RUNTIME_INVALID_ARGUMENT;
-    if (Worr_EventReceiptContainsV1(
-            &fake->status.receipt, records[0].event_id)) {
+    staged_receipt = fake->status.receipt;
+    for (index = 0; index < count; ++index) {
+        if (Worr_EventReceiptContainsV1(
+                &staged_receipt, records[index].event_id))
+            continue;
+        all_duplicate = false;
+        ++accepted;
+        if (!fake->omit_receipt) {
+            receipt_result = Worr_EventReceiptMarkV1(
+                &staged_receipt, records[index].event_id);
+            if (receipt_result != WORR_EVENT_RECEIPT_ACCEPTED)
+                return WORR_CGAME_EVENT_RUNTIME_INVALID_RECORD;
+        }
+    }
+    memcpy(fake->last_batch, records, count * sizeof(*records));
+    fake->last_batch_count = count;
+    fake->last_record = records[count - 1u];
+    fake->status.authority_count += accepted;
+    if (!fake->omit_receipt)
+        fake->status.receipt = staged_receipt;
+    if (all_duplicate)
         return WORR_CGAME_EVENT_RUNTIME_DUPLICATE;
-    }
-
-    fake->last_record = records[0];
-    ++fake->status.authority_count;
-    if (!fake->omit_receipt) {
-        receipt_result = Worr_EventReceiptMarkV1(
-            &fake->status.receipt, records[0].event_id);
-        if (receipt_result != WORR_EVENT_RECEIPT_ACCEPTED)
-            return WORR_CGAME_EVENT_RUNTIME_INVALID_RECORD;
-    }
     if (fake->report_degraded) {
         fake->status.state_flags |=
             WORR_CGAME_EVENT_RUNTIME_STATE_DEGRADED;
@@ -386,6 +403,29 @@ static int stage_event_with_ref(
         override_ref == NULL ? codec_ref : *override_ref, message_out);
 }
 
+static int stage_event_batch(
+    test_fixture *fixture, const worr_event_record_v1 *events,
+    uint32_t event_count, uint8_t *encoded_out,
+    size_t *encoded_bytes_out, worr_native_record_ref_v1 *ref_out,
+    worr_native_rx_message_v1 *message_out)
+{
+    worr_native_event_batch_info_v1 info;
+
+    CHECK(Worr_NativeEventBatchEncodeV1(
+              events, event_count, WORR_EVENT_STREAM_MAX_ENTITIES_V1,
+              encoded_out, WORR_NATIVE_EVENT_BATCH_MAX_PAYLOAD_BYTES,
+              encoded_bytes_out, &info) == WORR_NATIVE_EVENT_BATCH_OK);
+    memset(ref_out, 0, sizeof(*ref_out));
+    ref_out->record_class = WORR_NATIVE_RECORD_EVENT_V1;
+    ref_out->record_schema_version =
+        WORR_NATIVE_EVENT_BATCH_RECORD_SCHEMA;
+    ref_out->object_epoch = info.stream_epoch;
+    ref_out->object_sequence = info.last_sequence;
+    return stage_payload_with_ref(
+        fixture, encoded_out, (uint32_t)*encoded_bytes_out, *ref_out,
+        message_out);
+}
+
 static int encode_descriptor_repeat_packet(
     const test_fixture *fixture,
     const worr_event_stream_descriptor_v1 *descriptor,
@@ -571,6 +611,22 @@ static int activate_default_descriptor(test_fixture *fixture)
     CHECK(Worr_EventStreamOwnerValidateV1(&fixture->owner));
     CHECK((fixture->owner.state_flags &
            WORR_EVENT_STREAM_OWNER_ACTIVE) != 0);
+    return 0;
+}
+
+static int activate_batch_descriptor(test_fixture *fixture)
+{
+    worr_event_stream_descriptor_v1 descriptor;
+    worr_native_rx_message_v1 message;
+
+    CHECK(Worr_EventStreamDescriptorInitV1(
+        &descriptor, TEST_STREAM_EPOCH, 1));
+    descriptor.flags |= WORR_EVENT_STREAM_FLAG_BATCH_SCHEMA2;
+    CHECK(Worr_EventStreamDescriptorValidateV1(&descriptor));
+    CHECK(stage_descriptor_with_ref(
+              fixture, &descriptor, NULL, &message) == 0);
+    CHECK(admit(fixture, &message) ==
+          WORR_NATIVE_EVENT_ADMISSION_DESCRIPTOR_ACTIVATED);
     return 0;
 }
 
@@ -1496,6 +1552,116 @@ static int test_repeat_transactional_rejections(void)
     return 0;
 }
 
+static void make_same_fence_events(worr_event_record_v1 *events,
+                                   uint32_t count)
+{
+    uint32_t index;
+    for (index = 0; index < count; ++index) {
+        events[index] = make_event(TEST_STREAM_EPOCH, index + 1u);
+        events[index].source_tick = 2222;
+        events[index].source_time_us = UINT64_C(3333000);
+    }
+}
+
+static int test_schema2_batch_atomic_admission_and_repeat_range(void)
+{
+    test_fixture fixture;
+    test_fixture fallback;
+    test_fixture backpressure;
+    state_snapshot before;
+    worr_event_record_v1 events[5];
+    worr_native_rx_message_v1 message;
+    worr_native_record_ref_v1 ref;
+    worr_native_carrier_ack_receipt_v1 *receipt;
+    uint8_t encoded[WORR_NATIVE_EVENT_BATCH_MAX_PAYLOAD_BYTES];
+    uint8_t repeat_packet[WORR_NATIVE_CARRIER_MAX_PACKET_BYTES];
+    size_t encoded_bytes;
+    size_t repeat_bytes;
+    uint32_t submit_calls;
+    uint32_t status_calls;
+    uint32_t index;
+
+    make_same_fence_events(events, 5);
+    CHECK(fixture_init(&fixture) == 0);
+    CHECK(activate_batch_descriptor(&fixture) == 0);
+    CHECK(stage_event_batch(&fixture, events, 5, encoded, &encoded_bytes,
+                            &ref, &message) == 0);
+    CHECK(admit(&fixture, &message) ==
+          WORR_NATIVE_EVENT_ADMISSION_EVENT_ACCEPTED);
+    CHECK(fixture.fake.submit_calls == 1 &&
+          fixture.fake.last_batch_count == 5 &&
+          fixture.fake.status.authority_count == 5);
+    for (index = 0; index < 5; ++index) {
+      CHECK(fixture.fake.last_batch[index].event_id.sequence == index + 1u);
+      CHECK(Worr_EventReceiptContainsV1(
+          &fixture.fake.status.receipt, events[index].event_id));
+    }
+    receipt = find_transport_receipt(&fixture, message.message_sequence);
+    CHECK(receipt != NULL && receipt->semantic_first_sequence == 1);
+
+    CHECK(encode_one_data_packet(
+              &fixture, message.message_sequence, ref, encoded,
+              (uint32_t)encoded_bytes, repeat_packet, &repeat_bytes) == 0);
+    submit_calls = fixture.fake.submit_calls;
+    status_calls = fixture.fake.status_calls;
+    CHECK(revalidate_repeat(&fixture, repeat_packet, repeat_bytes) ==
+          WORR_NATIVE_EVENT_ADMISSION_EVENT_REPEAT_REVALIDATED);
+    CHECK(fixture.fake.submit_calls == submit_calls &&
+          fixture.fake.status_calls == status_calls + 1u);
+    receipt = find_transport_receipt(&fixture, message.message_sequence);
+    CHECK(receipt != NULL && receipt->semantic_first_sequence == 1);
+
+    /* Remove only nested sequence 2 while retaining 1 and 3..5.  Repeat
+     * revalidation must inspect the persisted full batch range, not merely
+     * the outer last-ID reference. */
+    fixture.fake.status.receipt.highest_contiguous = 1;
+    fixture.fake.status.receipt.selective_mask = UINT64_C(0x0e);
+    CHECK(Worr_EventReceiptContainsV1(
+        &fixture.fake.status.receipt, events[0].event_id));
+    CHECK(!Worr_EventReceiptContainsV1(
+        &fixture.fake.status.receipt, events[1].event_id));
+    CHECK(Worr_EventReceiptContainsV1(
+        &fixture.fake.status.receipt, events[4].event_id));
+    CHECK(revalidate_repeat(&fixture, repeat_packet, repeat_bytes) ==
+          WORR_NATIVE_EVENT_ADMISSION_RESYNC_UNCOMMITTED);
+    CHECK(check_owner_resync(&fixture, TEST_STREAM_EPOCH) == 0);
+
+    /* Schema 2 is rejected before transport or semantic mutation unless the
+     * acknowledged descriptor explicitly opted in. */
+    CHECK(fixture_init(&fallback) == 0);
+    CHECK(activate_default_descriptor(&fallback) == 0);
+    CHECK(stage_event_batch(&fallback, events, 5, encoded, &encoded_bytes,
+                            &ref, &message) == 0);
+    capture_state(&fallback, &before);
+    submit_calls = fallback.fake.submit_calls;
+    status_calls = fallback.fake.status_calls;
+    CHECK(admit(&fallback, &message) ==
+          WORR_NATIVE_EVENT_ADMISSION_UNSUPPORTED);
+    CHECK(state_equal(&fallback, &before) &&
+          fallback.fake.submit_calls == submit_calls &&
+          fallback.fake.status_calls == status_calls);
+
+    /* A consumer backpressure result cannot publish the transport commit or
+     * a prefix of the logical batch.  The existing fail-closed contract then
+     * enters semantic resync because a callback was invoked. */
+    CHECK(fixture_init(&backpressure) == 0);
+    CHECK(activate_batch_descriptor(&backpressure) == 0);
+    CHECK(stage_event_batch(&backpressure, events, 5, encoded,
+                            &encoded_bytes, &ref, &message) == 0);
+    backpressure.fake.force_submit_result = true;
+    backpressure.fake.forced_submit_result =
+        WORR_CGAME_EVENT_RUNTIME_CAPACITY;
+    capture_state(&backpressure, &before);
+    CHECK(admit(&backpressure, &message) ==
+          WORR_NATIVE_EVENT_ADMISSION_RESYNC_UNCOMMITTED);
+    CHECK(rx_storage_equal(&backpressure, &before) &&
+          backpressure.fake.status.authority_count == 0 &&
+          backpressure.fake.last_batch_count == 0 &&
+          backpressure.fake.submit_calls == 1);
+    CHECK(check_owner_resync(&backpressure, TEST_STREAM_EPOCH) == 0);
+    return 0;
+}
+
 int main(void)
 {
     if (test_descriptor_lifecycle_and_precommit() != 0 ||
@@ -1511,6 +1677,7 @@ int main(void)
         test_alias_and_invalid_state_rollback() != 0 ||
         test_descriptor_repeat_revalidation_and_generic_gate() != 0 ||
         test_event_repeat_revalidation_and_multifragment() != 0 ||
+        test_schema2_batch_atomic_admission_and_repeat_range() != 0 ||
         test_repeat_resync_retires_semantic_receipts() != 0 ||
         test_repeat_transactional_rejections() != 0) {
         return 1;

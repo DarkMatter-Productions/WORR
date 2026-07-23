@@ -19,7 +19,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "server.h"
 #include "server/native_shadow.h"
+#include "common/net/legacy_damage_event_candidate.h"
 #include "common/net/legacy_game_event_candidate.h"
+#include "common/net/legacy_poi_event_candidate.h"
 
 #include <limits.h>
 
@@ -407,12 +409,17 @@ unless told otherwise.
 void SV_ClientAddMessage(client_t *client, int flags)
 {
     int len;
+    const byte *native_reliable_data;
+    size_t native_reliable_bytes;
 
     Q_assert(!msg_write.overflowed);
 
     if (!msg_write.cursize) {
         return;
     }
+
+    native_reliable_data = msg_write.data;
+    native_reliable_bytes = msg_write.cursize;
 
     bool compress = (flags & MSG_COMPRESS_AUTO) && can_auto_compress(client);
 
@@ -424,6 +431,18 @@ void SV_ClientAddMessage(client_t *client, int flags)
         client->AddMessage(client, msg_write.data, msg_write.cursize, flags & MSG_RELIABLE);
         SV_DPrintf(2, "Added %sreliable message to %s: %u bytes\n",
                    (flags & MSG_RELIABLE) ? "" : "un", client->name, msg_write.cursize);
+    }
+
+    /* Observe only after the authoritative reliable append. Unsupported raw
+     * service sequences remain legacy-only, while recognized temp/muzzle
+     * batches and keyed POIs wait for the next exact final snapshot. */
+    if (flags & MSG_RELIABLE) {
+        (void)SV_NativeShadowCaptureReliableGameEventsV1(
+            client->worr_native_shadow, (uint32_t)sv.spawncount,
+            native_reliable_data, native_reliable_bytes);
+        (void)SV_NativeShadowCaptureReliableKeyedPOIV1(
+            client->worr_native_shadow, (uint32_t)sv.spawncount,
+            native_reliable_data, native_reliable_bytes);
     }
 
     if (flags & MSG_CLEAR) {
@@ -549,35 +568,40 @@ static bool check_entity(const client_t *client, int entnum)
 /*
  * The native event path observes only audio that the real per-client writer
  * just accepted. Visible sources keep exact snapshot lineage; an off-frame
- * source is admitted only when the writer has explicitly forced a position,
- * which binds the native record to world without inventing entity lineage.
+ * source is admitted only when the writer has explicitly forced a position.
+ * Client-local cues are world-anchored because their raw entity/channel is a
+ * local override key, not an authoritative spatial-lineage claim.
  */
-static void queue_native_spatial_audio(
-    client_t *client, const q2proto_svc_sound_t *sound_message)
+void SV_QueueNativeSpatialAudio(
+    client_t *client, const q2proto_svc_sound_t *sound_message,
+    uint32_t delivery_flags)
 {
     q2proto_sound_t sound;
     worr_event_record_v1 candidate;
     sv_snapshot_shadow_ref_v1 snapshot_ref;
+    sv_snapshot_shadow_result_v1 find_result;
+    sv_snapshot_event_candidates_result_v1 build_result;
 
-    if (!client->worr_native_shadow || !client->worr_snapshot_shadow ||
+    if (!client || !sound_message || !client->worr_native_shadow ||
+        !client->worr_snapshot_shadow ||
         !SV_NativeShadowModeHasEventV1(
             client->worr_native_shadow->mode) ||
         !client->csr || client->csr->max_edicts <= 0 ||
         client->framenum < 0) {
         return;
     }
-    if (SV_SnapshotShadowFindWireV1(
-            client->worr_snapshot_shadow, client->framenum,
-            &snapshot_ref) != SV_SNAPSHOT_SHADOW_OK) {
+    find_result = SV_SnapshotShadowFindWireV1(
+        client->worr_snapshot_shadow, client->framenum, &snapshot_ref);
+    if (find_result != SV_SNAPSHOT_SHADOW_OK)
         return;
-    }
     q2proto_sound_decode_message(sound_message, &sound);
-    if (SV_SnapshotShadowBuildSpatialAudioCandidateV1(
+    build_result =
+        SV_SnapshotShadowBuildSpatialAudioCandidateWithDeliveryV1(
             client->worr_snapshot_shadow, snapshot_ref,
-            (uint32_t)client->csr->max_edicts, &sound,
-            &candidate) != SV_SNAPSHOT_EVENT_CANDIDATES_OK) {
+            (uint32_t)client->csr->max_edicts, &sound, delivery_flags,
+            &candidate);
+    if (build_result != SV_SNAPSHOT_EVENT_CANDIDATES_OK)
         return;
-    }
     (void)SV_NativeShadowQueueEventCandidatesV1(
         client->worr_native_shadow, &candidate, 1, svs.realtime);
 }
@@ -596,16 +620,59 @@ static void queue_visible_native_game_events(client_t *client,
         candidates[WORR_LEGACY_GAME_EVENT_CANDIDATE_SEQUENCE_MAX];
     sv_snapshot_shadow_ref_v1 snapshot_ref;
     uint32_t carrier_count;
+    worr_legacy_game_event_candidate_result_v1 decode_result;
+    sv_snapshot_shadow_result_v1 find_result;
+    sv_snapshot_event_candidates_result_v1 build_result;
 
     if (!client || !msg || client->netchan.type != NETCHAN_NEW ||
         !client->worr_native_shadow || !client->worr_snapshot_shadow ||
         !SV_NativeShadowModeHasEventV1(
             client->worr_native_shadow->mode) ||
         !client->csr || client->csr->max_edicts <= 0 ||
+        client->framenum < 0 || msg->cursize == SOUND_PACKET) {
+        return;
+    }
+    decode_result = Worr_LegacyGameEventDecodeRawSequenceV1(
+        msg->data, msg->cursize, carriers, q_countof(carriers),
+        &carrier_count);
+    if (decode_result != WORR_LEGACY_GAME_EVENT_CANDIDATE_OK) {
+        return;
+    }
+    find_result = SV_SnapshotShadowFindWireV1(
+        client->worr_snapshot_shadow, client->framenum, &snapshot_ref);
+    if (find_result != SV_SNAPSHOT_SHADOW_OK)
+        return;
+    build_result = SV_SnapshotShadowBuildGameEventCandidatesV1(
+        client->worr_snapshot_shadow, snapshot_ref,
+        (uint32_t)client->csr->max_edicts, carriers, carrier_count,
+        candidates);
+    if (build_result != SV_SNAPSHOT_EVENT_CANDIDATES_OK)
+        return;
+    (void)SV_NativeShadowQueueEventCandidatesV1(
+        client->worr_native_shadow, candidates, carrier_count, svs.realtime);
+}
+
+/* svc_damage is a client-local presentation carrier, not a multicast game
+ * event. Observe it only after the complete legacy message has fitted the
+ * post-snapshot datagram, then bind its implicit recipient to that exact
+ * frame's controlled-entity generation. The carrier exposes no attacker, so
+ * the canonical records deliberately retain their world source. */
+static void queue_native_damage_indicators(client_t *client,
+                                           const message_packet_t *msg)
+{
+    q2proto_svc_damage_t damage;
+    worr_event_record_v1 candidates[Q2PROTO_MAX_DAMAGE_INDICATORS];
+    sv_snapshot_shadow_ref_v1 snapshot_ref;
+    uint32_t candidate_count;
+
+    if (!client || !msg || client->netchan.type != NETCHAN_NEW ||
+        !client->worr_native_shadow || !client->worr_snapshot_shadow ||
+        !SV_NativeShadowModeHasEventV1(client->worr_native_shadow->mode) ||
+        !client->csr || client->csr->max_edicts <= 0 ||
         client->framenum < 0 || msg->cursize == SOUND_PACKET ||
-        Worr_LegacyGameEventDecodeRawSequenceV1(
-            msg->data, msg->cursize, carriers, q_countof(carriers),
-            &carrier_count) != WORR_LEGACY_GAME_EVENT_CANDIDATE_OK) {
+        Worr_LegacyDamageEventDecodeRawV1(
+            msg->data, msg->cursize, &damage) !=
+            WORR_LEGACY_DAMAGE_EVENT_CANDIDATE_OK) {
         return;
     }
     if (SV_SnapshotShadowFindWireV1(
@@ -613,14 +680,89 @@ static void queue_visible_native_game_events(client_t *client,
             &snapshot_ref) != SV_SNAPSHOT_SHADOW_OK) {
         return;
     }
-    if (SV_SnapshotShadowBuildGameEventCandidatesV1(
+    if (SV_SnapshotShadowBuildDamageCandidatesV1(
             client->worr_snapshot_shadow, snapshot_ref,
-            (uint32_t)client->csr->max_edicts, carriers, carrier_count,
-            candidates) != SV_SNAPSHOT_EVENT_CANDIDATES_OK) {
+            (uint32_t)client->csr->max_edicts, &damage, candidates,
+            q_countof(candidates), &candidate_count) !=
+        SV_SNAPSHOT_EVENT_CANDIDATES_OK) {
         return;
     }
     (void)SV_NativeShadowQueueEventCandidatesV1(
-        client->worr_native_shadow, candidates, carrier_count, svs.realtime);
+        client->worr_native_shadow, candidates, candidate_count,
+        svs.realtime);
+}
+
+/* svc_help_path is an unreliable client-local marker carrier. Observe it only
+ * after its complete legacy bytes fit the post-snapshot datagram, then bind
+ * the implicit recipient to the exact final frame. The position is world
+ * data, but the carrier exposes no emitter identity. */
+static void queue_native_help_path_marker(client_t *client,
+                                          const message_packet_t *msg)
+{
+    q2proto_svc_help_path_t help_path;
+    worr_event_record_v1 candidate;
+    sv_snapshot_shadow_ref_v1 snapshot_ref;
+
+    if (!client || !msg || client->netchan.type != NETCHAN_NEW ||
+        !client->worr_native_shadow || !client->worr_snapshot_shadow ||
+        !SV_NativeShadowModeHasEventV1(client->worr_native_shadow->mode) ||
+        !client->csr || client->csr->max_edicts <= 0 ||
+        client->framenum < 0 || msg->cursize == SOUND_PACKET ||
+        Worr_LegacyHelpPathEventDecodeRawV1(
+            msg->data, msg->cursize, &help_path) !=
+            WORR_LEGACY_HELP_PATH_EVENT_CANDIDATE_OK) {
+        return;
+    }
+    if (SV_SnapshotShadowFindWireV1(
+            client->worr_snapshot_shadow, client->framenum,
+            &snapshot_ref) != SV_SNAPSHOT_SHADOW_OK) {
+        return;
+    }
+    if (SV_SnapshotShadowBuildHelpPathCandidateV1(
+            client->worr_snapshot_shadow, snapshot_ref,
+            (uint32_t)client->csr->max_edicts, &help_path, &candidate) !=
+        SV_SNAPSHOT_EVENT_CANDIDATES_OK) {
+        return;
+    }
+    (void)SV_NativeShadowQueueEventCandidatesV1(
+        client->worr_native_shadow, &candidate, 1, svs.realtime);
+}
+
+/* svc_poi pings are unreliable per-client state carriers. Observe one only
+ * after its entire legacy message has fitted the post-snapshot datagram, then
+ * bind the implicit recipient to that exact final frame. A zero lifetime is
+ * reliable-only and therefore remains legacy-only here. The key is a UI state
+ * namespace, not an entity/source identity. */
+static void queue_native_keyed_poi(client_t *client,
+                                   const message_packet_t *msg)
+{
+    q2proto_svc_poi_t poi;
+    worr_event_record_v1 candidate;
+    sv_snapshot_shadow_ref_v1 snapshot_ref;
+
+    if (!client || !msg || client->netchan.type != NETCHAN_NEW ||
+        !client->worr_native_shadow || !client->worr_snapshot_shadow ||
+        !SV_NativeShadowModeHasEventV1(client->worr_native_shadow->mode) ||
+        !client->csr || client->csr->max_edicts <= 0 ||
+        client->framenum < 0 || msg->cursize == SOUND_PACKET ||
+        Worr_LegacyKeyedPOIEventDecodeRawV1(
+            msg->data, msg->cursize, &poi) !=
+            WORR_LEGACY_KEYED_POI_EVENT_CANDIDATE_OK) {
+        return;
+    }
+    if (SV_SnapshotShadowFindWireV1(
+            client->worr_snapshot_shadow, client->framenum,
+            &snapshot_ref) != SV_SNAPSHOT_SHADOW_OK) {
+        return;
+    }
+    if (SV_SnapshotShadowBuildKeyedPOICandidateV1(
+            client->worr_snapshot_shadow, snapshot_ref,
+            (uint32_t)client->csr->max_edicts, &poi, &candidate) !=
+        SV_SNAPSHOT_EVENT_CANDIDATES_OK) {
+        return;
+    }
+    (void)SV_NativeShadowQueueEventCandidatesV1(
+        client->worr_native_shadow, &candidate, 1, svs.realtime);
 }
 
 // sounds relative to entities are handled specially
@@ -643,7 +785,7 @@ static void emit_snd(client_t *client, const message_packet_t *msg)
     if (q2proto_server_write(&client->q2proto_ctx,
                              (uintptr_t)&client->io_data,
                              &message) == Q2P_ERR_SUCCESS) {
-        queue_native_spatial_audio(client, &message.sound);
+        SV_QueueNativeSpatialAudio(client, &message.sound, 0);
     }
 }
 
@@ -662,6 +804,9 @@ static inline void write_msg(client_t *client, message_packet_t *msg, unsigned m
     // if this msg fits, write it
     if (msg_write.cursize + msg->cursize <= maxsize) {
         MSG_WriteData(msg->data, msg->cursize);
+        queue_native_damage_indicators(client, msg);
+        queue_native_help_path_marker(client, msg);
+        queue_native_keyed_poi(client, msg);
         queue_visible_native_game_events(client, msg);
     }
     free_msg_packet(client, msg);
@@ -981,6 +1126,7 @@ void SV_SendClientMessages(void)
 {
     client_t    *client;
     int         cursize;
+    sv_native_shadow_challenge_service_result_t challenge_result;
 
     // send a message to each connected client
     FOR_EACH_CLIENT(client) {
@@ -1034,17 +1180,16 @@ void SV_SendClientMessages(void)
             goto advance;
         }
 
-        /* A post-bootstrap readiness request starts its deadline only at the
-         * first clean, rate-admitted boundary.  Transmit the fixed
-         * count-derived reliable record alone so no later frame or game-start
-         * output can delay visibility behind a fragmented application
-         * message. */
-        if (SV_TryQueueNativeShadowChallenge(client)) {
+        /* Service the fixed end-of-Begin precedence barrier before building a
+         * frame.  The helper either hands off its sealed bootstrap prefix or
+         * the isolated CHALLENGE; the 10-second protocol deadline begins only
+         * in the latter transaction immediately before this packet send. */
+        challenge_result = SV_ServiceNativeShadowChallenge(
+            client, client->numpackets, &cursize);
+        if (challenge_result !=
+            SV_NATIVE_SHADOW_CHALLENGE_SERVICE_NONE) {
             client->frameflags |= FF_SUPPRESSED;
             client->suppress_count++;
-            cursize = Netchan_Transmit(
-                &client->netchan, 0, msg_write.data,
-                client->numpackets);
             SV_CalcSendTime(client, cursize, false);
             goto advance;
         }
@@ -1121,6 +1266,7 @@ void SV_SendAsyncPackets(void)
     bool        native_output_eligible;
     bool        native_output_due;
     bool        native_async_wake_started;
+    sv_native_shadow_challenge_service_result_t challenge_result;
     client_t    *client;
     netchan_t   *netchan;
     int         cursize;
@@ -1160,15 +1306,22 @@ void SV_SendAsyncPackets(void)
             goto calctime;
         }
 
-        /* A paused active client has no synchronous snapshot pass.  Service
-         * the same clean-boundary transaction here and send the challenge as
-         * its own reliable generation, with no application payload. */
-        if (CLIENT_ACTIVE(client) && SV_PAUSED &&
-            SV_TryQueueNativeShadowChallenge(client)) {
-            cursize = Netchan_Transmit(netchan, 0, NULL, 1);
-            SV_DPrintf(2, "%s: native challenge: %d\n",
-                       client->name, cursize);
-            goto calctime;
+        /* Service active clients here as well as in the synchronous frame
+         * path.  This pass stays live under pause and can reach a rate-admitted
+         * boundary between sparse/suppressed simulation sends. */
+        if (CLIENT_ACTIVE(client)) {
+            challenge_result = SV_ServiceNativeShadowChallenge(
+                client, 1, &cursize);
+            if (challenge_result !=
+                SV_NATIVE_SHADOW_CHALLENGE_SERVICE_NONE) {
+                SV_DPrintf(
+                    2, "%s: native %s: %d\n", client->name,
+                    challenge_result ==
+                            SV_NATIVE_SHADOW_CHALLENGE_SERVICE_CHALLENGE
+                        ? "challenge" : "bootstrap drain",
+                    cursize);
+                goto calctime;
+            }
         }
 
         native_output_due = client->worr_native_shadow &&

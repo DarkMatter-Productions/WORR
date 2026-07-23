@@ -9,6 +9,8 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "client.h"
 #include "client/cgame_event_runtime.h"
+#include "client/consumed_cursor.h"
+#include "client/net_capability.h"
 #include "client/native_readiness_pilot.h"
 #include "client/snapshot_shadow.h"
 
@@ -18,6 +20,10 @@ the Free Software Foundation; either version 2 of the License, or
 #include "common/net/native_carrier_session.h"
 #include "common/net/native_command_shadow.h"
 #include "common/net/native_event_admission.h"
+#include "common/net/native_event_batch.h"
+#include "common/net/native_input_batch.h"
+#include "common/net/native_input_batch_sideband.h"
+#include "common/net/native_input_delivery.h"
 #include "common/net/native_readiness.h"
 #include "common/net/native_readiness_sideband.h"
 #include "common/net/native_session.h"
@@ -62,11 +68,17 @@ constexpr uint16_t kCommandDatagramBytes =
 constexpr uint16_t kCommandCarrierOverhead =
     WORR_NATIVE_CARRIER_WIRE_ENTRY_HEADER_BYTES +
     kCommandDatagramBytes + WORR_NATIVE_CARRIER_WIRE_FOOTER_BYTES;
+constexpr uint32_t kInputBatchMaximumHandoffs = UINT32_C(8);
+constexpr uint32_t kInputBatchSharedOverhead =
+    WORR_NATIVE_INPUT_BATCH_WIRE_HEADER_BYTES +
+    WORR_NATIVE_ENVELOPE_WIRE_HEADER_BYTES +
+    WORR_NATIVE_CARRIER_WIRE_ENTRY_HEADER_BYTES +
+    WORR_NATIVE_CARRIER_WIRE_FOOTER_BYTES;
 constexpr size_t kEncodedClientReadyBytes =
     WORR_NATIVE_READINESS_SIDEBAND_PAIR_COUNT * 5u;
 constexpr size_t kScratchBytes = 128u;
 constexpr uint32_t kEventPayloadStride =
-    WORR_NATIVE_CODEC_MAX_EVENT_ENCODED_BYTES;
+    WORR_NATIVE_EVENT_BATCH_MAX_PAYLOAD_BYTES;
 constexpr size_t kEventPayloadArenaBytes =
     static_cast<size_t>(kEventRxSlotCapacity) * kEventPayloadStride;
 
@@ -79,10 +91,12 @@ static_assert(kEncodedClientReadyBytes == 75u);
 static_assert(kCommandPayloadBytes == 110u);
 static_assert(kCommandDatagramBytes == 166u);
 static_assert(kCommandCarrierOverhead == 206u);
+static_assert(kInputBatchSharedOverhead == 128u);
+static_assert(WORR_NATIVE_INPUT_BATCH_MAX_PAYLOAD_BYTES == 912u);
 static_assert(818u + kCommandCarrierOverhead == 1024u);
 static_assert(819u + kCommandCarrierOverhead > 1024u);
-static_assert(kEventPayloadStride == 192u);
-static_assert(kEventPayloadArenaBytes == 3072u);
+static_assert(kEventPayloadStride == 1568u);
+static_assert(kEventPayloadArenaBytes == 25088u);
 static_assert((CMD_BACKUP & (CMD_BACKUP - 1u)) == 0u);
 
 enum class pilot_mode_t : uint32_t {
@@ -161,6 +175,12 @@ struct client_native_readiness_telemetry_t {
 struct client_native_readiness_pilot_t {
     bool enabled{};
     bool event_enabled{};
+    /* The current event capability proves transport/admission semantics only.
+     * It does not promise that every legacy effect service was captured and
+     * queued transactionally.  A later, explicit exhaustive cutover contract
+     * must set this field before the client may suppress raw presenters. */
+    bool event_effect_cutover_confirmed{};
+    bool event_presentation_owned{};
     bool snapshot_enabled{};
     bool snapshot_timeline_owned{};
     bool tx_hook_registered{};
@@ -223,9 +243,60 @@ struct client_native_readiness_pilot_t {
     std::array<command_ring_entry_t, CMD_BACKUP> command_ring{};
 };
 
+struct input_batch_candidate_t {
+    worr_command_record_v1 record{};
+    worr_native_input_delivery_candidate_v1 delivery{};
+};
+
+struct input_batch_active_t {
+    bool valid{};
+    uint32_t payload_handle{};
+    uint32_t handoffs{};
+    uint16_t payload_bytes{};
+    uint16_t reserved0{};
+    worr_native_input_batch_info_v1 info{};
+    worr_native_input_delivery_plan_v1 plan{};
+    std::array<byte, WORR_NATIVE_INPUT_BATCH_MAX_PAYLOAD_BYTES> payload{};
+};
+
+struct client_input_batch_runtime_t {
+    bool requested{};
+    bool confirmed{};
+    bool eligible{};
+    bool drained{};
+    bool server_active_this_packet{};
+    bool parser_initialized{};
+    uint32_t next_payload_handle{};
+    uint32_t coverage_floor_sequence{};
+    uint32_t acknowledged_sequence{};
+    worr_native_input_batch_sideband_parser_v1 parser{};
+    worr_native_input_batch_confirm_v1 confirm{};
+    worr_native_tx_session_v1 tx{};
+    std::array<worr_native_tx_slot_v1, kTxSlotCapacity> tx_slots{};
+    worr_native_carrier_tx_gate_v1 tx_gate{};
+    worr_native_carrier_dispatch_v1 dispatch{};
+    worr_native_input_delivery_config_v1 delivery_config{};
+    worr_native_input_delivery_state_v1 delivery_state{};
+    std::array<input_batch_candidate_t,
+               WORR_NATIVE_INPUT_DELIVERY_MAX_CANDIDATES> candidates{};
+    uint32_t candidate_count{};
+    input_batch_active_t active{};
+    uint64_t candidates_collected{};
+    uint64_t plans{};
+    uint64_t batches_encoded{};
+    uint64_t prepare_fallbacks{};
+    uint64_t first_handoffs{};
+    uint64_t retry_handoffs{};
+    uint64_t batches_acknowledged{};
+    uint64_t commands_acknowledged{};
+    uint64_t retry_exhaustions{};
+    uint64_t failures{};
+};
+
 struct client_native_cancellation_stage_t {
     bool current_initialized{};
     bool retired_initialized{};
+    bool input_batch_initialized{};
     uint32_t cancelled_through_transport_epoch{};
     uint32_t cancelled_transports{};
     uint32_t cancelled_commands{};
@@ -247,6 +318,11 @@ struct client_native_cancellation_stage_t {
         retired_tx_slots{};
     worr_native_command_shadow_payload_registry_v1
         retired_payload_registry{};
+    worr_native_tx_session_v1 input_batch_tx{};
+    std::array<worr_native_tx_slot_v1, kTxSlotCapacity>
+        input_batch_tx_slots{};
+    worr_native_carrier_tx_gate_v1 input_batch_tx_gate{};
+    worr_native_carrier_dispatch_v1 input_batch_dispatch{};
     worr_native_rx_session_v1 retired_event_rx{};
     std::array<worr_native_rx_slot_v1, kEventRxSlotCapacity>
         retired_event_rx_slots{};
@@ -256,13 +332,26 @@ struct client_native_cancellation_stage_t {
 };
 
 cvar_t *cl_worr_native_shadow{};
+cvar_t *cl_worr_native_input_batch{};
 cvar_t *cl_worr_native_event_shadow{};
 cvar_t *cl_worr_native_snapshot_shadow{};
+cvar_t *cl_worr_native_event_presentation_owned{};
 cvar_t *cl_worr_native_snapshot_timeline_owned{};
 cvar_t *cl_worr_native_shadow_probe_hold{};
 client_native_readiness_pilot_t pilot{};
 client_native_readiness_telemetry_t telemetry{};
+client_input_batch_runtime_t input_batch{};
 uint64_t next_connection_owner_id{1};
+
+void set_event_presentation_owned(bool owned)
+{
+    pilot.event_presentation_owned = owned;
+    if (cl_worr_native_event_presentation_owned) {
+        Cvar_SetByVar(
+            cl_worr_native_event_presentation_owned,
+            owned ? "1" : "0", FROM_CODE);
+    }
+}
 
 netchan_app_tx_prepare_result_t pilot_tx_prepare(
     void *, const netchan_app_tx_prepare_info_v1_t *, const byte *, byte *,
@@ -336,6 +425,32 @@ void counter_add(uint64_t &counter, uint64_t amount)
         counter = UINT64_MAX;
     else
         counter += amount;
+}
+
+void input_batch_fail()
+{
+    counter_increment(input_batch.failures);
+    input_batch.eligible = false;
+    input_batch.drained = true;
+}
+
+void input_batch_prepare_map_bootstrap()
+{
+    /* Keep the drained transport bank and its sequence high-water alive until
+     * the fresh challenge publishes the cancellation floor.  The old server
+     * can still hand off proactive WNB1 receipts during map bootstrap; clearing
+     * this bank here would misroute them to the clean schema-1 bank as future
+     * ACKs and reject the authoritative legacy prefix. */
+    input_batch.server_active_this_packet = false;
+    /* A clean missing confirmation or an earlier WNB-only failure may have
+     * made the previous map ineligible.  Re-arm parsing before the fresh
+     * challenge packet begins; its cancellation commit will reset the rest of
+     * the per-map state without discarding the retained old ACK tombstone. */
+    input_batch.eligible = input_batch.requested;
+    input_batch.parser_initialized =
+        Worr_NativeInputBatchSidebandParserInitV1(&input_batch.parser);
+    if (!input_batch.parser_initialized && input_batch.requested)
+        input_batch_fail();
 }
 
 snapshot_receiver_ptr_t allocate_snapshot_receiver()
@@ -588,6 +703,62 @@ bool stage_prior_native_epoch_cancellation(
         ++stage.cancelled_transports;
     }
 
+    if (input_batch.confirmed) {
+        if (!pilot.session_initialized ||
+            input_batch.tx.transport_epoch !=
+                pilot.binding.transport_epoch ||
+            input_batch.tx_gate.transport_epoch !=
+                pilot.binding.transport_epoch ||
+            !Worr_NativeTxSessionValidateV1(
+                &input_batch.tx, input_batch.tx_slots.data(),
+                kTxSlotCapacity) ||
+            !Worr_NativeCarrierTxGateValidateV1(
+                &input_batch.tx_gate) ||
+            (input_batch.tx_gate.state_flags &
+             WORR_NATIVE_CARRIER_TX_GATE_PACKET_PENDING) != 0 ||
+            (input_batch.active.valid !=
+             (input_batch.tx.retained_count != 0))) {
+            return false;
+        }
+        stage.input_batch_initialized = true;
+        stage.input_batch_tx = input_batch.tx;
+        stage.input_batch_tx_slots = input_batch.tx_slots;
+        stage.input_batch_tx_gate = input_batch.tx_gate;
+        stage.input_batch_dispatch = input_batch.dispatch;
+        if ((stage.input_batch_tx_gate.state_flags &
+             WORR_NATIVE_CARRIER_TX_GATE_ACTIVE) != 0 &&
+            Worr_NativeCarrierSessionDispatchAbortV1(
+                &stage.input_batch_tx_gate,
+                &stage.input_batch_dispatch) !=
+                WORR_NATIVE_CARRIER_SESSION_OK) {
+            return false;
+        }
+        uint32_t cancelled = 0;
+        if ((stage.input_batch_tx_gate.state_flags &
+             WORR_NATIVE_CARRIER_TX_GATE_ACTIVE) != 0 ||
+            Worr_NativeTxSessionCancelRetainedV1(
+                &stage.input_batch_tx,
+                stage.input_batch_tx_slots.data(), kTxSlotCapacity,
+                &cancelled) != WORR_NATIVE_TX_CANCELLED ||
+            cancelled > 1 ||
+            !Worr_NativeTxSessionValidateV1(
+                &stage.input_batch_tx,
+                stage.input_batch_tx_slots.data(), kTxSlotCapacity) ||
+            stage.input_batch_tx.retained_count != 0) {
+            return false;
+        }
+        if (cancelled != 0) {
+            const uint32_t commands =
+                input_batch.active.info.command_count;
+            if (commands >
+                UINT32_MAX - stage.cancelled_commands) {
+                stage.cancelled_commands = UINT32_MAX;
+            } else {
+                stage.cancelled_commands += commands;
+            }
+        }
+    }
+
     if (pilot.retired_session_initialized) {
         if (pilot.retired_tx.transport_epoch >= new_transport_epoch ||
             (pilot.session_initialized &&
@@ -699,6 +870,12 @@ void commit_prior_native_epoch_cancellation(
                 stage.retired_event_ack_ledger;
         }
     }
+    if (stage.input_batch_initialized) {
+        input_batch.tx = stage.input_batch_tx;
+        input_batch.tx_slots = stage.input_batch_tx_slots;
+        input_batch.tx_gate = stage.input_batch_tx_gate;
+        input_batch.dispatch = stage.input_batch_dispatch;
+    }
 
     pilot.binding = {};
     pilot.tx = {};
@@ -732,6 +909,22 @@ void commit_prior_native_epoch_cancellation(
     pilot.prepared_application = {};
     pilot.mixed_token = {};
     pilot.ack_emit_token = {};
+    input_batch.confirmed = false;
+    input_batch.eligible = input_batch.requested;
+    input_batch.drained = false;
+    input_batch.confirm = {};
+    input_batch.tx = {};
+    input_batch.tx_slots = {};
+    input_batch.tx_gate = {};
+    input_batch.dispatch = {};
+    input_batch.delivery_config = {};
+    input_batch.delivery_state = {};
+    input_batch.candidates = {};
+    input_batch.candidate_count = 0;
+    input_batch.active = {};
+    input_batch.next_payload_handle = 0;
+    input_batch.coverage_floor_sequence = 0;
+    input_batch.acknowledged_sequence = 0;
     pilot.cancelled_through_transport_epoch =
         stage.cancelled_through_transport_epoch;
     counter_increment(telemetry.cancellation_barriers);
@@ -772,7 +965,9 @@ void disable_pilot()
 {
     const bool reset_event_connection = pilot.event_enabled;
     detach_owned_hooks();
+    set_event_presentation_owned(false);
     pilot = {};
+    input_batch = {};
     if (cl_worr_native_snapshot_timeline_owned) {
         Cvar_SetByVar(
             cl_worr_native_snapshot_timeline_owned, "0", FROM_CODE);
@@ -802,10 +997,10 @@ void detach_transport_fail_closed()
         return;
 
     /*
-     * Once a native snapshot epoch owns the cgame timeline, transport loss
-     * cannot authorize a mid-epoch return to legacy publication.  Quarantine
-     * the semantic receiver, abandon any non-pending dispatch, and detach
-     * only hooks that are still ours.  The ownership latch survives until an
+     * Once a native event or snapshot epoch owns presentation, transport loss
+     * cannot authorize a mid-epoch return to the parallel legacy stream.
+     * Quarantine semantic receivers, abandon any non-pending dispatch, and
+     * detach only hooks that are still ours.  Ownership survives until an
      * explicit map or connection boundary.
      */
     enter_drain(true);
@@ -818,16 +1013,15 @@ bool live_pilot()
         return false;
     if (cls.demo.playback || cls.demo.seeking) {
         /* Native carrier traffic is deliberately absent from demo paths. */
-        if (pilot.snapshot_timeline_owned && !pilot.map_quiesced)
-            detach_transport_fail_closed();
-        else
-            disable_pilot();
+        disable_pilot();
         return false;
     }
     if (!hooks_attached_exact()) {
-        if (pilot.snapshot_timeline_owned && !pilot.map_quiesced)
+        if (!pilot.map_quiesced &&
+            (pilot.snapshot_timeline_owned ||
+             pilot.event_presentation_owned)) {
             detach_transport_fail_closed();
-        else
+        } else
             disable_pilot();
         return false;
     }
@@ -842,6 +1036,16 @@ void enter_drain(bool diagnostic_failure)
         counter_increment(telemetry.drains);
     const bool first_entry = pilot.mode != pilot_mode_t::drain;
     pilot.mode = pilot_mode_t::drain;
+    if (input_batch.confirmed) {
+        input_batch.drained = true;
+        if ((input_batch.tx_gate.state_flags &
+             WORR_NATIVE_CARRIER_TX_GATE_ACTIVE) != 0 &&
+            (input_batch.tx_gate.state_flags &
+             WORR_NATIVE_CARRIER_TX_GATE_PACKET_PENDING) == 0) {
+            (void)Worr_NativeCarrierSessionDispatchAbortV1(
+                &input_batch.tx_gate, &input_batch.dispatch);
+        }
+    }
 
     if (first_entry && pilot.event_enabled) {
         if (pilot.event_owner.epoch_high_water != 0)
@@ -874,10 +1078,12 @@ bool enter_map_boundary()
         return false;
 
     /*
-     * This is the first boundary allowed to release snapshot timeline
-     * ownership.  If transport ownership was already lost, finish disabling
-     * the pilot without disturbing a foreign replacement hook.
+     * This is the first map boundary allowed to release native event and
+     * snapshot presentation ownership.  If transport ownership was already
+     * lost, finish disabling the pilot without disturbing a foreign
+     * replacement hook.
      */
+    set_event_presentation_owned(false);
     pilot.snapshot_timeline_owned = false;
     if (cl_worr_native_snapshot_timeline_owned) {
         Cvar_SetByVar(
@@ -902,15 +1108,15 @@ void pilot_failure()
         disable_pilot();
 }
 
-bool capability_is_exact_legacy_confirmation(
+bool capability_is_exact_native_confirmation(
     const worr_net_capability_state_v1 *state)
 {
     return state && Worr_NetCapabilityStateValidateV1(state) &&
            state->phase == WORR_NET_CAPABILITY_CONFIRMED &&
-           state->offered == WORR_NET_CAP_LEGACY_STAGE_MASK &&
-           state->supported == WORR_NET_CAP_LEGACY_STAGE_MASK &&
-           state->peer_supported == WORR_NET_CAP_LEGACY_STAGE_MASK &&
-           state->negotiated == WORR_NET_CAP_LEGACY_STAGE_MASK;
+           state->offered == pilot.private_capabilities &&
+           state->supported == pilot.private_capabilities &&
+           state->peer_supported == pilot.private_capabilities &&
+           state->negotiated == pilot.private_capabilities;
 }
 
 bool queue_readiness_record(
@@ -1254,7 +1460,17 @@ bool observe_server_active(
         return false;
     if (result == WORR_NATIVE_READINESS_OK)
         counter_increment(telemetry.server_active);
+    if (result == WORR_NATIVE_READINESS_OK)
+        input_batch.server_active_this_packet = true;
     pilot.readiness = next;
+    if (result == WORR_NATIVE_READINESS_OK && pilot.event_enabled) {
+        /* Never infer effect ownership from ACTIVE alone.  Unsupported or
+         * capacity-rejected server candidates remain legacy-only, so family-
+         * wide suppression is unsafe until an exhaustive/per-carrier contract
+         * is separately negotiated. */
+        set_event_presentation_owned(
+            pilot.event_effect_cutover_confirmed);
+    }
     return true;
 }
 
@@ -1299,6 +1515,110 @@ bool accepted_observe_result(
 {
     return result == WORR_NATIVE_READINESS_SIDEBAND_NOT_SIDEBAND ||
            result == WORR_NATIVE_READINESS_SIDEBAND_FIELD_ACCEPTED;
+}
+
+bool observe_input_batch_setting(int32_t index, int32_t value)
+{
+    if (!input_batch.requested || !input_batch.parser_initialized ||
+        !input_batch.eligible) {
+        return Worr_NativeInputBatchSettingRecognizedV1(index);
+    }
+    const auto result =
+        Worr_NativeInputBatchSidebandObserveSettingV1(
+            &input_batch.parser, index, value);
+    if (result == WORR_NATIVE_INPUT_BATCH_SIDEBAND_NOT_SIDEBAND ||
+        result == WORR_NATIVE_INPUT_BATCH_SIDEBAND_FIELD_ACCEPTED) {
+        return Worr_NativeInputBatchSettingRecognizedV1(index);
+    }
+    if (result != WORR_NATIVE_INPUT_BATCH_SIDEBAND_RECORD_COMMITTED) {
+        input_batch_fail();
+        return Worr_NativeInputBatchSettingRecognizedV1(index);
+    }
+
+    worr_native_input_batch_confirm_v1 confirm{};
+    if (Worr_NativeInputBatchSidebandTakeRecordV1(
+            &input_batch.parser, &confirm) !=
+        WORR_NATIVE_INPUT_BATCH_SIDEBAND_RECORD_TAKEN) {
+        input_batch_fail();
+        return true;
+    }
+    if (input_batch.confirmed) {
+        if (!Worr_NativeInputBatchConfirmEqualV1(
+                &input_batch.confirm, &confirm)) {
+            input_batch_fail();
+        }
+        return true;
+    }
+    const bool current_bank_clean =
+        Worr_NativeTxSessionValidateV1(
+            &pilot.tx, pilot.tx_slots.data(), kTxSlotCapacity) &&
+        Worr_NativeCommandShadowPayloadRegistryValidateV1(
+            &pilot.payload_registry) &&
+        Worr_NativeCarrierTxGateValidateV1(&pilot.tx_gate) &&
+        pilot.tx.retained_count == 0 &&
+        pilot.payload_registry.occupied_count == 0 &&
+        pilot.tx_slots[0].state_flags == 0 &&
+        (pilot.tx_gate.state_flags &
+         (WORR_NATIVE_CARRIER_TX_GATE_ACTIVE |
+          WORR_NATIVE_CARRIER_TX_GATE_PACKET_PENDING)) == 0 &&
+        pilot.tx_packet_kind == tx_packet_kind_t::none &&
+        pilot.active_completion_token == 0;
+    const bool retired_bank_clean =
+        !pilot.retired_session_initialized ||
+        (Worr_NativeTxSessionValidateV1(
+             &pilot.retired_tx, pilot.retired_tx_slots.data(),
+             kTxSlotCapacity) &&
+         Worr_NativeCommandShadowPayloadRegistryValidateV1(
+             &pilot.retired_payload_registry) &&
+         pilot.retired_tx.retained_count == 0 &&
+         pilot.retired_payload_registry.occupied_count == 0 &&
+         pilot.retired_tx_slots[0].state_flags == 0);
+    if (!input_batch.server_active_this_packet ||
+        semantic_ack_enabled() || !pilot.session_initialized ||
+        pilot.mode != pilot_mode_t::active ||
+        !pilot.builder_initialized ||
+        confirm.official_connection_epoch !=
+            pilot.builder.command_epoch ||
+        confirm.transport_epoch != pilot.binding.transport_epoch ||
+        input_batch.candidate_count != 0 ||
+        !current_bank_clean || !retired_bank_clean ||
+        !Worr_NativeSessionBindingValidateV1(&pilot.binding) ||
+        !Worr_NativeTxSessionInitV1(
+            &input_batch.tx, input_batch.tx_slots.data(),
+            kTxSlotCapacity, &pilot.binding) ||
+        !Worr_NativeCarrierTxGateInitV1(
+            &input_batch.tx_gate, &pilot.binding) ||
+        !Worr_NativeInputDeliveryResetV1(
+            &input_batch.delivery_state,
+            confirm.official_connection_epoch)) {
+        input_batch_fail();
+        return true;
+    }
+    Worr_NativeInputDeliveryDefaultConfigV1(
+        &input_batch.delivery_config);
+    input_batch.delivery_config.maximum_batch_commands =
+        WORR_NATIVE_INPUT_BATCH_MAX_COMMANDS;
+    input_batch.delivery_config.maximum_redundant_commands = 0;
+    input_batch.delivery_config.batch_overhead_bytes =
+        kInputBatchSharedOverhead;
+    input_batch.delivery_config.per_command_overhead_bytes = 0;
+    input_batch.delivery_config.maximum_transmissions_per_command =
+        kInputBatchMaximumHandoffs;
+    input_batch.confirm = confirm;
+    input_batch.confirmed = true;
+    input_batch.next_payload_handle = 1;
+    return true;
+}
+
+worr_native_record_ref_v1 input_batch_record_ref(
+    const worr_native_input_batch_info_v1 &info)
+{
+    worr_native_record_ref_v1 ref{};
+    ref.record_class = WORR_NATIVE_RECORD_COMMAND_V1;
+    ref.record_schema_version = WORR_NATIVE_INPUT_BATCH_RECORD_SCHEMA;
+    ref.object_epoch = info.command_epoch;
+    ref.object_sequence = info.last_sequence;
+    return ref;
 }
 
 worr_native_record_ref_v1 command_record_ref(
@@ -1956,11 +2276,330 @@ void pilot_tx_completion_event(
         pilot_failure();
 }
 
+void abort_input_batch_dispatch()
+{
+    if ((input_batch.tx_gate.state_flags &
+         WORR_NATIVE_CARRIER_TX_GATE_ACTIVE) == 0)
+        return;
+    if ((input_batch.tx_gate.state_flags &
+         WORR_NATIVE_CARRIER_TX_GATE_PACKET_PENDING) != 0) {
+        (void)Worr_NativeCarrierSessionDispatchRejectPacketV1(
+            &input_batch.tx_gate, &input_batch.dispatch);
+    }
+    (void)Worr_NativeCarrierSessionDispatchAbortV1(
+        &input_batch.tx_gate, &input_batch.dispatch);
+}
+
+bool stage_input_batch(uint32_t available_bytes, uint64_t now)
+{
+    if (input_batch.active.valid || input_batch.tx.retained_count != 0)
+        return input_batch.active.valid &&
+               input_batch.tx.retained_count == 1;
+    if (!input_batch.confirmed || !input_batch.eligible ||
+        input_batch.drained || input_batch.candidate_count <
+            WORR_NATIVE_INPUT_BATCH_MIN_COMMANDS ||
+        available_bytes <
+            kInputBatchSharedOverhead +
+                WORR_NATIVE_INPUT_BATCH_MIN_COMMANDS *
+                    WORR_NATIVE_INPUT_BATCH_COMMAND_BYTES) {
+        return false;
+    }
+
+    const uint32_t fit = std::min<uint32_t>(
+        WORR_NATIVE_INPUT_BATCH_MAX_COMMANDS,
+        (available_bytes - kInputBatchSharedOverhead) /
+            WORR_NATIVE_INPUT_BATCH_COMMAND_BYTES);
+    const uint32_t window = std::min<uint32_t>(
+        fit, input_batch.candidate_count);
+    if (window < WORR_NATIVE_INPUT_BATCH_MIN_COMMANDS)
+        return false;
+
+    worr_adaptive_input_output_v1 adaptive{};
+    if (!CL_AdaptiveInputGetOutputV1(&adaptive))
+        return false;
+    auto delivery_state = input_batch.delivery_state;
+    auto config = input_batch.delivery_config;
+    config.datagram_budget_bytes = available_bytes;
+    worr_native_input_delivery_feedback_v1 feedback{};
+    feedback.struct_size = sizeof(feedback);
+    feedback.schema_version = WORR_NATIVE_INPUT_DELIVERY_VERSION;
+    feedback.received_cursor.epoch =
+        input_batch.confirm.official_connection_epoch;
+    feedback.received_cursor.contiguous_sequence =
+        input_batch.acknowledged_sequence != 0
+            ? input_batch.acknowledged_sequence
+            : input_batch.coverage_floor_sequence;
+    feedback.consumed_cursor = feedback.received_cursor;
+    worr_command_cursor_v1 consumed{};
+    if (CL_ConsumedCursorGetLatestV1(&consumed) &&
+        consumed.epoch == feedback.received_cursor.epoch) {
+        feedback.consumed_cursor.contiguous_sequence =
+            std::min<uint32_t>(
+                consumed.contiguous_sequence,
+                feedback.received_cursor.contiguous_sequence);
+    } else {
+        feedback.consumed_cursor.contiguous_sequence = 0;
+    }
+    feedback.observed_at_ms = now;
+
+    std::array<worr_native_input_delivery_candidate_v1,
+               WORR_NATIVE_INPUT_BATCH_MAX_COMMANDS> delivery_candidates{};
+    std::array<worr_command_record_v1,
+               WORR_NATIVE_INPUT_BATCH_MAX_COMMANDS> records{};
+    for (uint32_t index = 0; index < window; ++index) {
+        delivery_candidates[index] = input_batch.candidates[index].delivery;
+        records[index] = input_batch.candidates[index].record;
+    }
+    worr_native_input_delivery_plan_v1 plan{};
+    if (Worr_NativeInputDeliveryPlanV1(
+            &delivery_state, &config, &feedback, &adaptive,
+            delivery_candidates.data(), window, now, &plan) !=
+            WORR_NATIVE_INPUT_DELIVERY_PLANNED ||
+        plan.selection_count != window || plan.fresh_count != window ||
+        plan.redundant_count != 0) {
+        input_batch_fail();
+        return false;
+    }
+    for (uint32_t index = 0; index < window; ++index) {
+        if (plan.selections[index].candidate_index != index ||
+            plan.selections[index].command_id.epoch !=
+                records[index].command_id.epoch ||
+            plan.selections[index].command_id.sequence !=
+                records[index].command_id.sequence) {
+            input_batch_fail();
+            return false;
+        }
+    }
+
+    input_batch_active_t active{};
+    size_t payload_bytes = 0;
+    if (Worr_NativeInputBatchEncodeV1(
+            records.data(), window,
+            WORR_COMMAND_MAX_NEGOTIATED_DURATION_MS,
+            active.payload.data(), active.payload.size(),
+            &payload_bytes, &active.info) !=
+            WORR_NATIVE_INPUT_BATCH_OK ||
+        payload_bytes > UINT16_MAX ||
+        payload_bytes + WORR_NATIVE_ENVELOPE_WIRE_HEADER_BYTES >
+            UINT16_MAX ||
+        input_batch.next_payload_handle == 0) {
+        input_batch_fail();
+        return false;
+    }
+    active.valid = true;
+    active.payload_handle = input_batch.next_payload_handle;
+    active.payload_bytes = static_cast<uint16_t>(payload_bytes);
+    active.plan = plan;
+
+    auto tx = input_batch.tx;
+    auto slots = input_batch.tx_slots;
+    uint32_t message_sequence = 0;
+    if (Worr_NativeTxSessionEnqueueV1(
+            &tx, slots.data(), kTxSlotCapacity,
+            input_batch_record_ref(active.info), kProofPriority,
+            active.payload_handle, active.payload_bytes,
+            static_cast<uint16_t>(
+                WORR_NATIVE_ENVELOPE_WIRE_HEADER_BYTES +
+                active.payload_bytes),
+            now, &message_sequence) != WORR_NATIVE_TX_RETAINED ||
+        message_sequence == 0 || tx.retained_count != 1) {
+        input_batch_fail();
+        return false;
+    }
+    input_batch.tx = tx;
+    input_batch.tx_slots = slots;
+    input_batch.delivery_state = delivery_state;
+    input_batch.active = active;
+    if (input_batch.next_payload_handle == UINT32_MAX)
+        input_batch.next_payload_handle = 0;
+    else
+        ++input_batch.next_payload_handle;
+    counter_increment(input_batch.plans);
+    counter_increment(input_batch.batches_encoded);
+    return true;
+}
+
+netchan_app_tx_prepare_result_t pilot_tx_prepare_input_batch(
+    void *opaque, const netchan_app_tx_prepare_info_v1_t *info,
+    const byte *legacy_application, byte *candidate_application,
+    netchan_app_tx_prepare_output_v1_t *output)
+{
+    if (opaque != &pilot || !live_pilot() || !input_batch.confirmed ||
+        pilot.mode != pilot_mode_t::active || pilot.map_quiesced ||
+        !info || !output || !candidate_application ||
+        info->abi_version != NETCHAN_APP_TX_HOOK_ABI_V1 ||
+        info->struct_size != sizeof(*info) ||
+        info->reliable_bytes > UINT32_MAX - info->unreliable_bytes ||
+        info->reliable_bytes + info->unreliable_bytes !=
+            info->legacy_application_bytes ||
+        info->legacy_application_bytes > info->max_application_bytes ||
+        (info->legacy_application_bytes != 0 && !legacy_application)) {
+        counter_increment(input_batch.prepare_fallbacks);
+        return NETCHAN_APP_TX_PREPARE_BYPASS;
+    }
+    const uint32_t budget = std::min<uint32_t>(
+        info->max_application_bytes,
+        WORR_NATIVE_CARRIER_MAX_PACKET_BYTES);
+    if (info->legacy_application_bytes > budget) {
+        counter_increment(input_batch.prepare_fallbacks);
+        return NETCHAN_APP_TX_PREPARE_BYPASS;
+    }
+    uint64_t now = 0;
+    if (!current_tick(now) ||
+        !Worr_NativeReadinessCanTransmitNativeV1(
+            &pilot.readiness, now)) {
+        input_batch_fail();
+        return NETCHAN_APP_TX_PREPARE_BYPASS;
+    }
+    const uint32_t available = budget - info->legacy_application_bytes;
+    if (!input_batch.active.valid &&
+        !stage_input_batch(available, now)) {
+        counter_increment(input_batch.prepare_fallbacks);
+        return NETCHAN_APP_TX_PREPARE_BYPASS;
+    }
+    if (!input_batch.active.valid || input_batch.drained ||
+        input_batch.active.handoffs >= kInputBatchMaximumHandoffs ||
+        (input_batch.tx_gate.state_flags &
+         WORR_NATIVE_CARRIER_TX_GATE_ACTIVE) != 0) {
+        counter_increment(input_batch.prepare_fallbacks);
+        return NETCHAN_APP_TX_PREPARE_BYPASS;
+    }
+
+    const auto begun = Worr_NativeCarrierSessionDispatchBeginV1(
+        &input_batch.tx_gate, &input_batch.tx,
+        input_batch.tx_slots.data(), kTxSlotCapacity, now,
+        kResendIntervalMilliseconds, static_cast<uint16_t>(budget),
+        static_cast<uint16_t>(info->legacy_application_bytes),
+        &input_batch.dispatch);
+    if (begun == WORR_NATIVE_CARRIER_SESSION_NOT_DUE ||
+        begun == WORR_NATIVE_CARRIER_SESSION_LIMIT) {
+        counter_increment(input_batch.prepare_fallbacks);
+        return NETCHAN_APP_TX_PREPARE_BYPASS;
+    }
+    if (begun != WORR_NATIVE_CARRIER_SESSION_OK ||
+        input_batch.dispatch.send_ticket.pre_send_slot.payload_handle !=
+            input_batch.active.payload_handle ||
+        input_batch.dispatch.send_ticket.pre_send_slot.record
+                .record_schema_version !=
+            WORR_NATIVE_INPUT_BATCH_RECORD_SCHEMA ||
+        Worr_NativeCarrierSessionDispatchBindPayloadV1(
+            &input_batch.tx_gate, &input_batch.dispatch,
+            input_batch.active.payload_handle,
+            input_batch.active.payload.data(),
+            input_batch.active.payload_bytes) !=
+            WORR_NATIVE_CARRIER_SESSION_OK) {
+        abort_input_batch_dispatch();
+        input_batch_fail();
+        return NETCHAN_APP_TX_PREPARE_BYPASS;
+    }
+    size_t packet_bytes = 0;
+    const auto prepared =
+        Worr_NativeCarrierSessionDispatchPreparePacketV1(
+            &input_batch.tx_gate, &input_batch.tx,
+            input_batch.tx_slots.data(), kTxSlotCapacity,
+            &input_batch.dispatch, input_batch.active.payload_handle,
+            input_batch.active.payload.data(),
+            input_batch.active.payload_bytes, legacy_application,
+            static_cast<uint16_t>(info->legacy_application_bytes),
+            candidate_application, info->max_application_bytes,
+            &packet_bytes);
+    const size_t expected_bytes =
+        info->legacy_application_bytes +
+        WORR_NATIVE_CARRIER_WIRE_ENTRY_HEADER_BYTES +
+        WORR_NATIVE_ENVELOPE_WIRE_HEADER_BYTES +
+        input_batch.active.payload_bytes +
+        WORR_NATIVE_CARRIER_WIRE_FOOTER_BYTES;
+    if (prepared != WORR_NATIVE_CARRIER_SESSION_OK ||
+        packet_bytes != expected_bytes || packet_bytes > UINT32_MAX) {
+        abort_input_batch_dispatch();
+        counter_increment(input_batch.prepare_fallbacks);
+        if (prepared != WORR_NATIVE_CARRIER_SESSION_LIMIT &&
+            prepared != WORR_NATIVE_CARRIER_SESSION_OUTPUT_TOO_SMALL)
+            input_batch_fail();
+        return NETCHAN_APP_TX_PREPARE_BYPASS;
+    }
+    *output = {};
+    output->abi_version = NETCHAN_APP_TX_HOOK_ABI_V1;
+    output->struct_size = sizeof(*output);
+    output->application_bytes = static_cast<uint32_t>(packet_bytes);
+    output->token = input_batch.dispatch.token_id;
+    return NETCHAN_APP_TX_PREPARE_PREPARED;
+}
+
+void pilot_tx_completion_input_batch(
+    void *opaque, const netchan_app_tx_completion_info_v1_t *info,
+    const byte *application)
+{
+    if (opaque != &pilot || !live_pilot() || !input_batch.active.valid)
+        return;
+    if (!info || info->abi_version != NETCHAN_APP_TX_HOOK_ABI_V1 ||
+        info->struct_size != sizeof(*info) || info->token == 0 ||
+        info->token != input_batch.dispatch.token_id ||
+        (info->application_bytes != 0 && !application) ||
+        (input_batch.tx_gate.state_flags &
+         WORR_NATIVE_CARRIER_TX_GATE_PACKET_PENDING) == 0) {
+        input_batch_fail();
+        return;
+    }
+    if (info->result == NETCHAN_APP_TX_COMPLETION_ACCEPTED) {
+        uint64_t now = 0;
+        if (!current_tick(now) ||
+            Worr_NativeCarrierSessionDispatchConfirmPacketV1(
+                &input_batch.tx_gate, &input_batch.tx,
+                input_batch.tx_slots.data(), kTxSlotCapacity,
+                &input_batch.dispatch, now, application,
+                info->application_bytes) !=
+                WORR_NATIVE_CARRIER_SESSION_DISPATCH_COMMITTED ||
+            input_batch.candidate_count <
+                input_batch.active.info.command_count) {
+            input_batch_fail();
+            return;
+        }
+        const bool retry = input_batch.active.handoffs != 0;
+        for (uint32_t index = 0;
+             index < input_batch.active.info.command_count; ++index) {
+            input_batch.candidates[index].delivery.last_transmit_time_ms =
+                now;
+            if (input_batch.candidates[index].delivery.transmit_count !=
+                UINT32_MAX)
+                ++input_batch.candidates[index].delivery.transmit_count;
+        }
+        ++input_batch.active.handoffs;
+        counter_increment(retry ? input_batch.retry_handoffs
+                                : input_batch.first_handoffs);
+        if (input_batch.active.handoffs >=
+            kInputBatchMaximumHandoffs) {
+            input_batch.drained = true;
+            counter_increment(input_batch.retry_exhaustions);
+        }
+        return;
+    }
+    if (info->result == NETCHAN_APP_TX_COMPLETION_NOT_ACCEPTED ||
+        info->result == NETCHAN_APP_TX_COMPLETION_PREPARE_INVALID) {
+        const bool rejected =
+            Worr_NativeCarrierSessionDispatchRejectPacketV1(
+                &input_batch.tx_gate, &input_batch.dispatch) ==
+            WORR_NATIVE_CARRIER_SESSION_OK;
+        const bool aborted = rejected &&
+            Worr_NativeCarrierSessionDispatchAbortV1(
+                &input_batch.tx_gate, &input_batch.dispatch) ==
+            WORR_NATIVE_CARRIER_SESSION_OK;
+        if (!aborted)
+            input_batch_fail();
+        return;
+    }
+    input_batch_fail();
+}
+
 netchan_app_tx_prepare_result_t pilot_tx_prepare(
     void *opaque, const netchan_app_tx_prepare_info_v1_t *info,
     const byte *legacy_application, byte *candidate_application,
     netchan_app_tx_prepare_output_v1_t *output)
 {
+    if (!semantic_ack_enabled() && input_batch.confirmed)
+        return pilot_tx_prepare_input_batch(
+            opaque, info, legacy_application, candidate_application,
+            output);
     return semantic_ack_enabled()
         ? pilot_tx_prepare_event(
               opaque, info, legacy_application, candidate_application,
@@ -1974,6 +2613,10 @@ void pilot_tx_completion(
     void *opaque, const netchan_app_tx_completion_info_v1_t *info,
     const byte *application)
 {
+    if (!semantic_ack_enabled() && input_batch.confirmed) {
+        pilot_tx_completion_input_batch(opaque, info, application);
+        return;
+    }
     if (semantic_ack_enabled())
         pilot_tx_completion_event(opaque, info, application);
     else
@@ -2021,6 +2664,121 @@ bool apply_ack_to_bank(
     tx = next_tx;
     slots = next_slots;
     registry = next_registry;
+    acknowledged_out = acknowledged;
+    return true;
+}
+
+bool apply_input_batch_ack(const byte *application,
+                           uint32_t application_bytes,
+                           uint32_t &acknowledged_out)
+{
+    if (!input_batch.confirmed ||
+        !Worr_NativeTxSessionValidateV1(
+            &input_batch.tx, input_batch.tx_slots.data(),
+            kTxSlotCapacity)) {
+        return false;
+    }
+
+    /* Server receipts are proactively handed off more than once.  Once the
+     * first exact ACK retires the sole WNB1 slot, later valid duplicate or
+     * unrelated ranges for this transport epoch are idempotent.  Still run
+     * the strict carrier/session parser transactionally, and require it to
+     * acknowledge nothing and leave the empty bank empty. */
+    if (input_batch.tx.retained_count == 0) {
+        if (input_batch.active.valid ||
+            input_batch.tx_slots[0].state_flags != 0) {
+            return false;
+        }
+        auto next_tx = input_batch.tx;
+        auto next_slots = input_batch.tx_slots;
+        uint32_t acknowledged = 0;
+        if (Worr_NativeCarrierSessionApplyAcksV1(
+                &next_tx, next_slots.data(), kTxSlotCapacity,
+                application, application_bytes, &acknowledged) !=
+                WORR_NATIVE_CARRIER_SESSION_OK ||
+            acknowledged != 0 || next_tx.retained_count != 0 ||
+            next_slots[0].state_flags != 0 ||
+            !Worr_NativeTxSessionValidateV1(
+                &next_tx, next_slots.data(), kTxSlotCapacity)) {
+            return false;
+        }
+        input_batch.tx = next_tx;
+        input_batch.tx_slots = next_slots;
+        acknowledged_out = 0;
+        return true;
+    }
+
+    const worr_native_record_ref_v1 active_ref =
+        input_batch_record_ref(input_batch.active.info);
+    if (!input_batch.active.valid ||
+        input_batch.tx.retained_count != 1 ||
+        input_batch.tx_slots[0].state_flags == 0 ||
+        input_batch.tx_slots[0].payload_handle !=
+            input_batch.active.payload_handle ||
+        std::memcmp(&input_batch.tx_slots[0].record,
+                    &active_ref,
+                    sizeof(input_batch.tx_slots[0].record)) != 0) {
+        return false;
+    }
+
+    auto next_tx = input_batch.tx;
+    auto next_slots = input_batch.tx_slots;
+    uint32_t acknowledged = 0;
+    if (Worr_NativeCarrierSessionApplyAcksV1(
+            &next_tx, next_slots.data(), kTxSlotCapacity,
+            application, application_bytes, &acknowledged) !=
+            WORR_NATIVE_CARRIER_SESSION_OK ||
+        acknowledged > 1 ||
+        (acknowledged == 1 &&
+         (next_tx.retained_count != 0 ||
+          next_slots[0].state_flags != 0)) ||
+        (acknowledged == 0 &&
+         (next_tx.retained_count != 1 ||
+          next_slots[0].state_flags == 0)) ||
+        !Worr_NativeTxSessionValidateV1(
+            &next_tx, next_slots.data(), kTxSlotCapacity)) {
+        return false;
+    }
+
+    if (acknowledged != 0) {
+        const uint32_t count = input_batch.active.info.command_count;
+        if (count < WORR_NATIVE_INPUT_BATCH_MIN_COMMANDS ||
+            count > WORR_NATIVE_INPUT_BATCH_MAX_COMMANDS ||
+            input_batch.candidate_count < count) {
+            return false;
+        }
+        for (uint32_t index = 0; index < count; ++index) {
+            const worr_command_id_v1 id =
+                input_batch.candidates[index].record.command_id;
+            if (id.epoch != input_batch.active.info.command_epoch ||
+                id.sequence !=
+                    input_batch.active.info.first_sequence + index) {
+                return false;
+            }
+        }
+
+        const uint32_t remaining = input_batch.candidate_count - count;
+        if (remaining != 0) {
+            std::memmove(
+                input_batch.candidates.data(),
+                input_batch.candidates.data() + count,
+                static_cast<size_t>(remaining) *
+                    sizeof(input_batch.candidates[0]));
+        }
+        for (uint32_t index = remaining;
+             index < input_batch.candidate_count; ++index) {
+            input_batch.candidates[index] = {};
+        }
+        input_batch.candidate_count = remaining;
+        input_batch.acknowledged_sequence =
+            input_batch.active.info.last_sequence;
+        counter_increment(input_batch.batches_acknowledged);
+        counter_add(input_batch.commands_acknowledged, count);
+        input_batch.active = {};
+    }
+
+    input_batch.tx = next_tx;
+    input_batch.tx_slots = next_slots;
     acknowledged_out = acknowledged;
     return true;
 }
@@ -2095,6 +2853,20 @@ netchan_app_rx_result_t pilot_rx_command_only(
             enter_drain(true);
             return NETCHAN_APP_RX_REJECT;
         }
+    }
+
+    if (input_batch.confirmed &&
+        view.transport_epoch == input_batch.tx.transport_epoch) {
+        uint32_t acknowledged = 0;
+        if (!apply_input_batch_ack(
+                application, info->application_bytes, acknowledged)) {
+            input_batch_fail();
+            expose_legacy(output, view.legacy_bytes);
+            return NETCHAN_APP_RX_EXPOSE_LEGACY;
+        }
+        counter_increment(telemetry.ack_carriers);
+        expose_legacy(output, view.legacy_bytes);
+        return NETCHAN_APP_RX_EXPOSE_LEGACY;
     }
 
     const bool current_epoch =
@@ -2276,8 +3048,10 @@ bool event_data_entry_shape_valid(
         return false;
     }
     return (frame.record.record_class == WORR_NATIVE_RECORD_EVENT_V1 &&
-            frame.record.record_schema_version ==
-                WORR_EVENT_ABI_VERSION) ||
+            (frame.record.record_schema_version ==
+                 WORR_EVENT_ABI_VERSION ||
+             frame.record.record_schema_version ==
+                 WORR_NATIVE_EVENT_BATCH_RECORD_SCHEMA)) ||
            (frame.record.record_class ==
                 WORR_NATIVE_RECORD_EVENT_STREAM_DESCRIPTOR_V1 &&
             frame.record.record_schema_version ==
@@ -2785,10 +3559,17 @@ netchan_app_rx_result_t pilot_rx(
 extern "C" void CL_NativeReadinessPilotRegisterCvar(void)
 {
     cl_worr_native_shadow = Cvar_Get("cl_worr_native_shadow", "0", 0);
+    cl_worr_native_input_batch = Cvar_Get(
+        "cl_worr_native_input_batch", "0", 0);
     cl_worr_native_event_shadow = Cvar_Get(
         "cl_worr_native_event_shadow", "0", 0);
     cl_worr_native_snapshot_shadow = Cvar_Get(
         "cl_worr_native_snapshot_shadow", "0", 0);
+    cl_worr_native_event_presentation_owned = Cvar_Get(
+        "cl_worr_native_event_presentation_owned", "0",
+        CVAR_ROM | CVAR_NOARCHIVE);
+    Cvar_SetByVar(
+        cl_worr_native_event_presentation_owned, "0", FROM_CODE);
     cl_worr_native_snapshot_timeline_owned = Cvar_Get(
         "cl_worr_native_snapshot_timeline_owned", "0",
         CVAR_ROM | CVAR_NOARCHIVE);
@@ -2796,6 +3577,25 @@ extern "C" void CL_NativeReadinessPilotRegisterCvar(void)
         cl_worr_native_snapshot_timeline_owned, "0", FROM_CODE);
     cl_worr_native_shadow_probe_hold = Cvar_Get(
         "cl_worr_native_shadow_probe_hold", "0", CVAR_NOARCHIVE);
+}
+
+extern "C" uint32_t
+CL_NativeReadinessPilotRequestedPublicCapabilities(void)
+{
+    return Worr_NetCapabilityPublicOfferV1(
+        cl_worr_native_shadow && cl_worr_native_shadow->integer != 0,
+        cl_worr_native_event_shadow &&
+            cl_worr_native_event_shadow->integer != 0,
+        cl_worr_native_snapshot_shadow &&
+            cl_worr_native_snapshot_shadow->integer != 0);
+}
+
+extern "C" bool CL_NativeReadinessPilotRequestedInputBatchV1(void)
+{
+    return cl_worr_native_input_batch &&
+           cl_worr_native_input_batch->integer != 0 &&
+           CL_NativeReadinessPilotRequestedPublicCapabilities() ==
+               WORR_NET_CAP_NATIVE_COMMAND_PRIVATE_MASK;
 }
 
 extern "C" bool CL_NativeReadinessPilotBeginConnection(netchan_t *channel)
@@ -2811,15 +3611,20 @@ extern "C" bool CL_NativeReadinessPilotBeginConnection(netchan_t *channel)
         return false;
     }
 
-    /* The opt-in is sampled exactly once per fresh NEW netchan. */
-    if (!cl_worr_native_shadow || !cl_worr_native_shadow->integer)
+    /* Bind this fresh NEW netchan to the exact offer already serialized by
+     * the connectionless connect request. */
+    const uint32_t requested_capabilities =
+        CL_NetCapabilityOffered();
+    if (!Worr_NetCapabilityIsPublicNativeMaskV1(
+            requested_capabilities)) {
         return false;
+    }
     const bool event_enabled =
-        cl_worr_native_event_shadow &&
-        cl_worr_native_event_shadow->integer;
+        (requested_capabilities &
+         WORR_NET_CAP_NATIVE_EVENT_STREAM_V1) != 0;
     const bool snapshot_enabled =
-        cl_worr_native_snapshot_shadow &&
-        cl_worr_native_snapshot_shadow->integer;
+        (requested_capabilities &
+         WORR_NET_CAP_CANONICAL_SNAPSHOT_V2) != 0;
 
     uint64_t owner;
     if (!allocate_connection_owner(owner))
@@ -2829,16 +3634,19 @@ extern "C" bool CL_NativeReadinessPilotBeginConnection(netchan_t *channel)
     pilot.snapshot_enabled = snapshot_enabled;
     pilot.channel = channel;
     pilot.connection_owner_id = owner;
-    pilot.private_capabilities =
-        pilot.event_enabled && pilot.snapshot_enabled
-            ? kEventSnapshotPrivateCapabilities
-            : (pilot.event_enabled
-                   ? kEventPrivateCapabilities
-                   : (pilot.snapshot_enabled
-                          ? kSnapshotPrivateCapabilities
-                          : kCommandPrivateCapabilities));
+    pilot.private_capabilities = requested_capabilities;
     pilot.map_quiesced = true;
     pilot.mode = pilot_mode_t::arming;
+    input_batch.requested =
+        CL_NativeReadinessPilotRequestedInputBatchV1() &&
+        !event_enabled && !snapshot_enabled;
+    input_batch.eligible = input_batch.requested;
+    input_batch.parser_initialized =
+        Worr_NativeInputBatchSidebandParserInitV1(&input_batch.parser);
+    if (input_batch.requested && !input_batch.parser_initialized) {
+        disable_pilot();
+        return false;
+    }
     pilot.ack_next_bank = event_ack_bank_t::current;
     pilot.ack_next_lane = first_enabled_semantic_lane();
     uint64_t ignored_tick;
@@ -2892,6 +3700,7 @@ extern "C" void CL_NativeReadinessPilotServerDataReset(void)
     pilot.builder_initialized = false;
     pilot.builder = {};
     pilot.command_ring = {};
+    input_batch_prepare_map_bootstrap();
     if (!Worr_NativeReadinessSidebandParserInitV1(&pilot.parser))
         pilot_failure();
 }
@@ -2910,6 +3719,17 @@ extern "C" void CL_NativeReadinessPilotPacketBegin(void)
     if (result != WORR_NATIVE_READINESS_SIDEBAND_PACKET_STARTED) {
         pilot_failure();
         return;
+    }
+    input_batch.server_active_this_packet = false;
+    if (input_batch.requested && input_batch.parser_initialized &&
+        input_batch.eligible) {
+        const auto batch_result =
+            Worr_NativeInputBatchSidebandPacketBeginV1(
+                &input_batch.parser);
+        if (batch_result !=
+            WORR_NATIVE_INPUT_BATCH_SIDEBAND_PACKET_STARTED) {
+            input_batch_fail();
+        }
     }
 
     if (pilot.readiness_initialized) {
@@ -2931,6 +3751,22 @@ extern "C" void CL_NativeReadinessPilotPacketEnd(void)
         Worr_NativeReadinessSidebandPacketEndV1(&pilot.parser);
     if (result != WORR_NATIVE_READINESS_SIDEBAND_PACKET_ENDED)
         pilot_failure();
+    if (input_batch.requested && input_batch.parser_initialized &&
+        input_batch.eligible) {
+        const auto batch_result =
+            Worr_NativeInputBatchSidebandPacketEndV1(
+                &input_batch.parser);
+        if (batch_result !=
+            WORR_NATIVE_INPUT_BATCH_SIDEBAND_PACKET_ENDED) {
+            input_batch_fail();
+        }
+        if (input_batch.server_active_this_packet &&
+            !input_batch.confirmed) {
+            /* Confirmation is intentionally same-packet-only.  Falling back
+             * here leaves the established T04 one-command pilot untouched. */
+            input_batch.eligible = false;
+        }
+    }
 }
 
 extern "C" bool CL_NativeReadinessPilotObserveSetting(
@@ -2939,6 +3775,8 @@ extern "C" bool CL_NativeReadinessPilotObserveSetting(
     const bool carrier = CL_NativeReadinessPilotIsCarrierSetting(index);
     if (!live_pilot())
         return carrier;
+
+    (void)observe_input_batch_setting(index, value);
 
     const auto result = Worr_NativeReadinessSidebandObserveSvcSettingV1(
         &pilot.parser, index, value);
@@ -2966,6 +3804,16 @@ extern "C" void CL_NativeReadinessPilotObserveInterveningService(void)
             &pilot.parser);
     if (result != WORR_NATIVE_READINESS_SIDEBAND_NOT_SIDEBAND)
         pilot_failure();
+    if (input_batch.requested && input_batch.parser_initialized &&
+        input_batch.eligible) {
+        const auto batch_result =
+            Worr_NativeInputBatchSidebandObserveInterveningServiceV1(
+                &input_batch.parser);
+        if (batch_result !=
+            WORR_NATIVE_INPUT_BATCH_SIDEBAND_NOT_SIDEBAND) {
+            input_batch_fail();
+        }
+    }
 }
 
 extern "C" void CL_NativeReadinessPilotCapabilityConfirmed(
@@ -2973,7 +3821,18 @@ extern "C" void CL_NativeReadinessPilotCapabilityConfirmed(
 {
     if (!live_pilot())
         return;
-    if (!capability_is_exact_legacy_confirmation(capability_state)) {
+    if (capability_state &&
+        Worr_NetCapabilityStateValidateV1(capability_state) &&
+        capability_state->phase == WORR_NET_CAPABILITY_CONFIRMED &&
+        capability_state->negotiated ==
+            WORR_NET_CAP_LEGACY_STAGE_MASK) {
+        /* An older, disabled, or differently configured server selected the
+         * complete legacy bundle.  Remove only our hooks; the admitted legacy
+         * stream continues byte-for-byte without a readiness timeout. */
+        disable_pilot();
+        return;
+    }
+    if (!capability_is_exact_native_confirmation(capability_state)) {
         pilot_failure();
         return;
     }
@@ -3025,12 +3884,93 @@ extern "C" void CL_NativeReadinessPilotObserveFinalizedCommand(
     entry.record = record;
 }
 
+bool collect_input_batch_range(uint32_t first_legacy_command_number,
+                               uint32_t command_count)
+{
+    if (!input_batch.confirmed || !input_batch.eligible ||
+        input_batch.drained)
+        return true;
+    for (uint32_t offset = 0; offset < command_count; ++offset) {
+        const uint32_t legacy_number =
+            first_legacy_command_number + offset;
+        const command_ring_entry_t &entry =
+            pilot.command_ring[legacy_number & CMD_MASK];
+        if (!entry.valid || entry.legacy_command_number != legacy_number ||
+            !Worr_CommandIdValidV1(entry.record.command_id, false)) {
+            input_batch_fail();
+            return false;
+        }
+        const worr_command_id_v1 id = entry.record.command_id;
+        if (input_batch.candidate_count == 0 &&
+            input_batch.acknowledged_sequence != 0 &&
+            id.epoch == input_batch.confirm.official_connection_epoch &&
+            id.sequence <= input_batch.acknowledged_sequence) {
+            continue;
+        }
+        if (input_batch.candidate_count != 0) {
+            const worr_command_id_v1 tail =
+                input_batch.candidates[
+                    input_batch.candidate_count - 1u].record.command_id;
+            if (id.epoch != tail.epoch) {
+                input_batch_fail();
+                return false;
+            }
+            if (id.sequence <= tail.sequence)
+                continue;
+            if (tail.sequence == UINT32_MAX ||
+                id.sequence != tail.sequence + 1u) {
+                input_batch_fail();
+                return false;
+            }
+        } else if (input_batch.acknowledged_sequence != 0) {
+            if (id.epoch != input_batch.confirm.official_connection_epoch ||
+                input_batch.acknowledged_sequence == UINT32_MAX ||
+                id.sequence != input_batch.acknowledged_sequence + 1u) {
+                input_batch_fail();
+                return false;
+            }
+        } else {
+            if (id.sequence == 0) {
+                input_batch_fail();
+                return false;
+            }
+            input_batch.coverage_floor_sequence = id.sequence - 1u;
+        }
+        if (input_batch.candidate_count >=
+            WORR_NATIVE_INPUT_DELIVERY_MAX_CANDIDATES) {
+            input_batch_fail();
+            return false;
+        }
+        input_batch_candidate_t &candidate =
+            input_batch.candidates[input_batch.candidate_count++];
+        candidate = {};
+        candidate.record = entry.record;
+        candidate.delivery.command_id = id;
+        candidate.delivery.sample_time_us = entry.record.sample_time_us;
+        counter_increment(input_batch.candidates_collected);
+    }
+    return true;
+}
+
 extern "C" void CL_NativeReadinessPilotObserveEncodedCommandRange(
     uint32_t first_legacy_command_number, uint32_t command_count)
 {
-    if (!live_pilot() || pilot.mode != pilot_mode_t::active ||
+    if (!live_pilot())
+        return;
+    if (pilot.mode != pilot_mode_t::active ||
         !pilot.session_initialized)
         return;
+    if (input_batch.confirmed) {
+        if (first_legacy_command_number == 0 || command_count == 0 ||
+            command_count - 1u >
+                UINT32_MAX - first_legacy_command_number) {
+            input_batch_fail();
+            return;
+        }
+        (void)collect_input_batch_range(
+            first_legacy_command_number, command_count);
+        return;
+    }
     if (pilot.tx.retained_count > kTxSlotCapacity) {
         pilot_failure();
         return;
@@ -3143,6 +4083,22 @@ extern "C" bool CL_NativeReadinessPilotOwnsSnapshotTimeline(void)
     (void)live_pilot();
     return pilot.enabled && pilot.snapshot_timeline_owned &&
            !pilot.map_quiesced;
+}
+
+extern "C" bool CL_NativeReadinessPilotOwnsEventPresentation(void)
+{
+    /* Demo playback/seeking is a whole-stream legacy boundary, never a
+     * transport failure inside a live native epoch. */
+    if (cls.demo.playback || cls.demo.seeking) {
+        if (pilot.enabled)
+            disable_pilot();
+        return false;
+    }
+
+    /* Do not consult live_pilot(): transport DRAIN and foreign hook
+     * replacement must remain fail-closed for the bound map epoch. */
+    return pilot.enabled && pilot.event_enabled &&
+           pilot.event_presentation_owned;
 }
 
 extern "C" void
@@ -3268,6 +4224,36 @@ extern "C" bool CL_NativeReadinessPilotOutputDue(void)
     if (drain_ack_service)
         return false;
 
+    if (!semantic_ack_enabled() && input_batch.confirmed) {
+        if (!input_batch.eligible || input_batch.drained ||
+            !input_batch.active.valid ||
+            input_batch.active.handoffs >=
+                kInputBatchMaximumHandoffs ||
+            input_batch.tx.retained_count != 1 ||
+            (input_batch.tx_gate.state_flags &
+             WORR_NATIVE_CARRIER_TX_GATE_PACKET_PENDING) != 0) {
+            return false;
+        }
+        if ((input_batch.tx_gate.state_flags &
+             WORR_NATIVE_CARRIER_TX_GATE_ACTIVE) != 0) {
+            return true;
+        }
+        const uint16_t application_budget = static_cast<uint16_t>(
+            pilot.channel->maxpacketlen >
+                    WORR_NATIVE_CARRIER_MAX_PACKET_BYTES
+                ? WORR_NATIVE_CARRIER_MAX_PACKET_BYTES
+                : pilot.channel->maxpacketlen);
+        if (application_budget == 0)
+            return false;
+        auto gate = input_batch.tx_gate;
+        worr_native_carrier_dispatch_v1 dispatch{};
+        return Worr_NativeCarrierSessionDispatchBeginV1(
+                   &gate, &input_batch.tx,
+                   input_batch.tx_slots.data(), kTxSlotCapacity, now,
+                   kResendIntervalMilliseconds, application_budget, 0,
+                   &dispatch) == WORR_NATIVE_CARRIER_SESSION_OK;
+    }
+
     if (pilot.tx.retained_count == 0)
         return false;
     if ((pilot.tx_gate.state_flags &
@@ -3300,8 +4286,9 @@ extern "C" bool CL_NativeReadinessPilotOutputDue(void)
 
 extern "C" bool CL_NativeReadinessPilotIsCarrierSetting(int32_t index)
 {
-    return index >= WORR_NATIVE_READINESS_SETTING_BEGIN &&
-           index <= WORR_NATIVE_READINESS_SETTING_COMMIT;
+    return (index >= WORR_NATIVE_READINESS_SETTING_BEGIN &&
+            index <= WORR_NATIVE_READINESS_SETTING_COMMIT) ||
+           Worr_NativeInputBatchSettingRecognizedV1(index);
 }
 
 extern "C" bool CL_NativeReadinessPilotGetStatusV1(
@@ -3326,7 +4313,9 @@ extern "C" bool CL_NativeReadinessPilotGetStatusV1(
                                  ? pilot.readiness.transport_epoch
                                  : 0u;
     status.protocol = static_cast<uint32_t>(cls.serverProtocol);
-    status.public_mask = WORR_NET_CAP_LEGACY_STAGE_MASK;
+    status.public_mask = pilot.enabled
+                             ? pilot.private_capabilities
+                             : WORR_NET_CAP_LEGACY_STAGE_MASK;
     status.private_mask = pilot.enabled
                               ? pilot.private_capabilities
                               : kCommandPrivateCapabilities;
@@ -3365,6 +4354,54 @@ extern "C" bool CL_NativeReadinessPilotGetStatusV1(
     status.stale_cancelled_readiness_records =
         telemetry.stale_cancelled_readiness_records;
     status.last_failure = telemetry.last_failure;
+    *status_out = status;
+    return true;
+}
+
+extern "C" bool CL_NativeReadinessPilotGetInputBatchStatusV1(
+    cl_native_input_batch_status_v1 *status_out)
+{
+    if (!status_out)
+        return false;
+
+    cl_native_input_batch_status_v1 status{};
+    status.struct_size = sizeof(status);
+    status.schema_version = CL_NATIVE_INPUT_BATCH_STATUS_ABI_V1;
+    status.requested = input_batch.requested ? 1u : 0u;
+    status.confirmed = input_batch.confirmed ? 1u : 0u;
+    status.enabled = input_batch.confirmed && input_batch.eligible &&
+                             !input_batch.drained
+                         ? 1u
+                         : 0u;
+    status.drained = input_batch.drained ? 1u : 0u;
+    status.official_epoch = input_batch.confirmed
+                                ? input_batch.confirm
+                                      .official_connection_epoch
+                                : 0u;
+    status.transport_epoch = input_batch.confirmed
+                                 ? input_batch.confirm.transport_epoch
+                                 : 0u;
+    status.received_sequence = input_batch.acknowledged_sequence;
+    status.candidate_count = input_batch.candidate_count;
+    if (input_batch.active.valid) {
+        status.active_first_sequence =
+            input_batch.active.info.first_sequence;
+        status.active_last_sequence =
+            input_batch.active.info.last_sequence;
+        status.active_command_count =
+            input_batch.active.info.command_count;
+        status.active_handoffs = input_batch.active.handoffs;
+    }
+    status.candidates_collected = input_batch.candidates_collected;
+    status.plans = input_batch.plans;
+    status.batches_encoded = input_batch.batches_encoded;
+    status.prepare_fallbacks = input_batch.prepare_fallbacks;
+    status.first_handoffs = input_batch.first_handoffs;
+    status.retry_handoffs = input_batch.retry_handoffs;
+    status.batches_acknowledged = input_batch.batches_acknowledged;
+    status.commands_acknowledged = input_batch.commands_acknowledged;
+    status.retry_exhaustions = input_batch.retry_exhaustions;
+    status.failures = input_batch.failures;
     *status_out = status;
     return true;
 }

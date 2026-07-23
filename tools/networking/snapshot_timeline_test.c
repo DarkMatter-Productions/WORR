@@ -846,6 +846,25 @@ static bool test_legacy_dedup_and_removal_visibility(void)
           sample.visible &&
           sample.mode == WORR_SNAPSHOT_TIMELINE_ENTITY_PREVIOUS);
     request = clock_request(WORR_SNAPSHOT_TIMELINE_CLOCK_DEMO_SEEK, 1,
+                            199999, 0,
+                            WORR_SNAPSHOT_TIMELINE_CLOCK_RESET_USER);
+    CHECK(Worr_SnapshotTimelineClockApplyV1(&value.timeline, &request,
+                                            &state) ==
+          WORR_SNAPSHOT_TIMELINE_OK);
+    CHECK(Worr_SnapshotTimelineSelectPairV1(&value.timeline, &policy,
+                                            &pair) ==
+          WORR_SNAPSHOT_TIMELINE_OK);
+    CHECK(pair.target_time_us == 199999 &&
+          pair.phase_numerator_us == 99999 &&
+          pair.phase_denominator_us == 100000);
+    CHECK(Worr_SnapshotTimelineSampleEntityV1(
+              &value.timeline, &policy, &pair, 2, &sample) ==
+          WORR_SNAPSHOT_TIMELINE_OK);
+    CHECK(sample.visibility ==
+              WORR_SNAPSHOT_TIMELINE_VISIBILITY_REMOVED_AT_CURRENT &&
+          sample.visible &&
+          sample.mode == WORR_SNAPSHOT_TIMELINE_ENTITY_PREVIOUS);
+    request = clock_request(WORR_SNAPSHOT_TIMELINE_CLOCK_DEMO_SEEK, 1,
                             200000, 0,
                             WORR_SNAPSHOT_TIMELINE_CLOCK_RESET_USER);
     CHECK(Worr_SnapshotTimelineClockApplyV1(&value.timeline, &request,
@@ -974,6 +993,133 @@ static bool test_alias_envelopes_zero_payload_and_hashes(void)
     return true;
 }
 
+static bool check_motion_guard_direct_endpoints(
+    float current_origin, float current_angle, float teleport_distance,
+    float max_linear_velocity, float max_angular_velocity,
+    uint32_t expected_block)
+{
+    fixture value;
+    projection previous;
+    projection current;
+    worr_snapshot_timeline_ref_v1 ref;
+    worr_snapshot_timeline_clock_request_v1 request;
+    worr_snapshot_timeline_clock_state_v1 state;
+    worr_snapshot_timeline_policy_v1 policy = default_policy();
+    worr_snapshot_timeline_pair_v1 pair;
+    worr_snapshot_timeline_entity_sample_v1 sample;
+    worr_snapshot_timeline_stats_v1 stats;
+
+    CHECK(init_fixture(&value));
+    CHECK(finalize_projection(
+        &previous, 1, 1, 100000, 0.0f, 0.0f, 1, 10,
+        UINT64_C(0x1111), WORR_SNAPSHOT_DISCONTINUITY_INITIAL,
+        WORR_SNAPSHOT_DISCONTINUITY_REASON_INITIAL));
+    CHECK(finalize_projection(
+        &current, 1, 2, 200000, current_origin, current_angle, 1, 10,
+        UINT64_C(0x1111), 0,
+        WORR_SNAPSHOT_DISCONTINUITY_REASON_NONE));
+    CHECK(memcmp(&previous.entities[0], &current.entities[0],
+                 sizeof(previous.entities[0])) != 0);
+    CHECK(publish(&value, &previous, 1, &ref));
+    CHECK(publish(&value, &current, 2, &ref));
+
+    policy.teleport_distance = teleport_distance;
+    policy.max_linear_velocity = max_linear_velocity;
+    policy.max_angular_velocity = max_angular_velocity;
+    request = clock_request(WORR_SNAPSHOT_TIMELINE_CLOCK_ANCHOR, 0,
+                            150000,
+                            WORR_SNAPSHOT_TIMELINE_RATE_ONE_Q16,
+                            WORR_SNAPSHOT_TIMELINE_CLOCK_RESET_INITIAL);
+    CHECK(Worr_SnapshotTimelineClockApplyV1(&value.timeline, &request,
+                                            &state) ==
+          WORR_SNAPSHOT_TIMELINE_OK);
+    CHECK(Worr_SnapshotTimelineSelectPairV1(&value.timeline, &policy,
+                                            &pair) ==
+          WORR_SNAPSHOT_TIMELINE_OK);
+    CHECK(pair.mode == WORR_SNAPSHOT_TIMELINE_PAIR_INTERPOLATE &&
+          pair.blocking_reasons == 0 &&
+          pair.phase_numerator_us == 50000 &&
+          pair.phase_denominator_us == 100000);
+    CHECK(Worr_SnapshotTimelineSampleEntityV1(
+              &value.timeline, &policy, &pair, 2, &sample) ==
+          WORR_SNAPSHOT_TIMELINE_OK);
+    CHECK(sample.visible &&
+          sample.visibility == WORR_SNAPSHOT_TIMELINE_VISIBILITY_PRESENT &&
+          sample.mode == WORR_SNAPSHOT_TIMELINE_ENTITY_PREVIOUS &&
+          sample.blocking_reasons == expected_block);
+    CHECK(sample.interpolated_component_mask == 0 &&
+          sample.extrapolated_component_mask == 0);
+    CHECK(sample.linear_velocity[0] == 0.0f &&
+          sample.linear_velocity[1] == 0.0f &&
+          sample.linear_velocity[2] == 0.0f &&
+          sample.angular_velocity[0] == 0.0f &&
+          sample.angular_velocity[1] == 0.0f &&
+          sample.angular_velocity[2] == 0.0f);
+    CHECK(memcmp(&sample.entity, &previous.entities[0],
+                 sizeof(sample.entity)) == 0);
+
+    request = clock_request(WORR_SNAPSHOT_TIMELINE_CLOCK_DEMO_SEEK, 1,
+                            225000, 0,
+                            WORR_SNAPSHOT_TIMELINE_CLOCK_RESET_USER);
+    CHECK(Worr_SnapshotTimelineClockApplyV1(&value.timeline, &request,
+                                            &state) ==
+          WORR_SNAPSHOT_TIMELINE_OK);
+    CHECK(Worr_SnapshotTimelineSelectPairV1(&value.timeline, &policy,
+                                            &pair) ==
+          WORR_SNAPSHOT_TIMELINE_OK);
+    CHECK(pair.mode == WORR_SNAPSHOT_TIMELINE_PAIR_EXTRAPOLATE &&
+          pair.blocking_reasons == 0 &&
+          pair.extrapolation_us == 25000 &&
+          pair.phase_denominator_us == 100000);
+    CHECK(Worr_SnapshotTimelineSampleEntityV1(
+              &value.timeline, &policy, &pair, 2, &sample) ==
+          WORR_SNAPSHOT_TIMELINE_OK);
+    CHECK(sample.visible &&
+          sample.visibility == WORR_SNAPSHOT_TIMELINE_VISIBILITY_PRESENT &&
+          sample.mode == WORR_SNAPSHOT_TIMELINE_ENTITY_CURRENT &&
+          sample.blocking_reasons == expected_block);
+    CHECK(sample.interpolated_component_mask == 0 &&
+          sample.extrapolated_component_mask == 0);
+    CHECK(sample.linear_velocity[0] == 0.0f &&
+          sample.linear_velocity[1] == 0.0f &&
+          sample.linear_velocity[2] == 0.0f &&
+          sample.angular_velocity[0] == 0.0f &&
+          sample.angular_velocity[1] == 0.0f &&
+          sample.angular_velocity[2] == 0.0f);
+    CHECK(memcmp(&sample.entity, &current.entities[0],
+                 sizeof(sample.entity)) == 0);
+
+    CHECK(Worr_SnapshotTimelineGetStatsV1(&value.timeline, &stats) ==
+          WORR_SNAPSHOT_TIMELINE_OK);
+    CHECK(stats.publish_count == 2 && stats.clock_update_count == 2 &&
+          stats.clock_seek_count == 1 && stats.selection_count == 2 &&
+          stats.interpolation_pair_count == 1 &&
+          stats.extrapolation_pair_count == 1 &&
+          stats.clamped_pair_count == 0);
+    return true;
+}
+
+static bool test_teleport_discontinuity_direct_endpoints(void)
+{
+    return check_motion_guard_direct_endpoints(
+        20.0f, 0.0f, 10.0f, 1000.0f, 1000.0f,
+        WORR_SNAPSHOT_TIMELINE_ENTITY_BLOCK_TELEPORT);
+}
+
+static bool test_linear_speed_guard_direct_endpoints(void)
+{
+    return check_motion_guard_direct_endpoints(
+        10.0f, 0.0f, 128.0f, 50.0f, 1000.0f,
+        WORR_SNAPSHOT_TIMELINE_ENTITY_BLOCK_LINEAR_SPEED);
+}
+
+static bool test_angular_speed_guard_direct_endpoints(void)
+{
+    return check_motion_guard_direct_endpoints(
+        0.0f, 20.0f, 128.0f, 1000.0f, 100.0f,
+        WORR_SNAPSHOT_TIMELINE_ENTITY_BLOCK_ANGULAR_SPEED);
+}
+
 int main(void)
 {
     if (!test_clock_fraction_pause_seek_and_atomicity() ||
@@ -982,7 +1128,10 @@ int main(void)
         !test_boundaries_conflicts_generations_and_clamps() ||
         !test_clock_overflow_and_init_overlap() ||
         !test_legacy_dedup_and_removal_visibility() ||
-        !test_alias_envelopes_zero_payload_and_hashes()) {
+        !test_alias_envelopes_zero_payload_and_hashes() ||
+        !test_teleport_discontinuity_direct_endpoints() ||
+        !test_linear_speed_guard_direct_endpoints() ||
+        !test_angular_speed_guard_direct_endpoints()) {
         return EXIT_FAILURE;
     }
     puts("snapshot timeline tests passed");

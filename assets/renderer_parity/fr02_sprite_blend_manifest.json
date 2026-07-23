@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "task_id": "FR-02-T05",
+  "scenes": [
+    {
+      "id": "sprite_truecolour_and_explicit_translucency_fixed_view",
+      "config": "renderer_parity/fr02_sprite_blend.cfg",
+      "capture": "fr02_sprite_blend.tga",
+      "crop": [100, 220, 760, 400],
+      "metrics": {
+        "pixel_threshold": 2,
+        "max_mean_absolute_rgb": [0.003, 0, 0.002],
+        "max_pixels_over_threshold_percent": 0
+      },
+      "probes": [
+        {
+          "name": "truecolour_alpha_opaque_core",
+          "color": [232, 88, 40],
+          "tolerance": 0,
+          "min_pixels_per_backend": 53000,
+          "max_backend_count_delta_percent": 0.01,
+          "min_backend_intersection_over_union": 1.0
+        },
+        {
+          "name": "truecolour_alpha_half_coverage",
+          "color": [128, 76, 76],
+          "tolerance": 0,
+          "min_pixels_per_backend": 60000,
+          "max_backend_count_delta_percent": 0.01,
+          "min_backend_intersection_over_union": 1.0
+        },
+        {
+          "name": "explicit_entity_translucency_bfg_core",
+          "color": [139, 159, 179],
+          "tolerance": 0,
+          "min_pixels_per_backend": 1900,
+          "max_backend_count_delta_percent": 0.01,
+          "min_backend_intersection_over_union": 1.0
+        }
+      ]
+    }
+  ]
+}

@@ -94,6 +94,7 @@ uint64_t shadow_connection_resets;
 cvar_t *cl_snapshot_shadow;
 cvar_t *cl_snapshot_shadow_debug;
 const worr_cgame_snapshot_timeline_export_v2 *snapshot_consumer;
+cl_snapshot_shadow_record_observer_v1 snapshot_record_observer;
 uintptr_t snapshot_consumer_lifetime_cookie = 1;
 bool snapshot_consumer_lifetime_exhausted;
 
@@ -105,7 +106,7 @@ void increment_saturating(uint64_t *value)
 
 uint64_t host_time_us()
 {
-    return static_cast<uint64_t>(cls.realtime) * UINT64_C(1000);
+    return com_unscaledTimeUs;
 }
 
 void initialize_status()
@@ -1364,6 +1365,8 @@ extern "C" bool CL_SnapshotShadowAcceptFrameEx(
     if (promotion_eligible)
         increment_saturating(&shadow.status.frames_promotion_eligible);
     record_native_expectation(view, hashes, ref, promotion_eligible);
+    if (promotion_eligible && snapshot_record_observer)
+        snapshot_record_observer(&view, &hashes, ref);
 
     if ((accept_flags & CL_SNAPSHOT_SHADOW_ACCEPT_DELIVER_CONSUMER) == 0) {
         increment_saturating(&shadow.status.frames_lineage_only);
@@ -1419,6 +1422,9 @@ extern "C" bool CL_SnapshotShadowPromoteLatestFrame(
         (view.snapshot->flags & WORR_SNAPSHOT_FLAG_PROMOTION_ELIGIBLE) != 0;
     record_native_expectation(
         view, hashes, shadow.latest_ref, promotion_eligible);
+    if (promotion_eligible && snapshot_record_observer) {
+        snapshot_record_observer(&view, &hashes, shadow.latest_ref);
+    }
     shadow.latest_promotion_attempted = true;
     if (!promotion_eligible) {
         increment_saturating(&shadow.status.promotion_blocks);
@@ -1453,6 +1459,13 @@ extern "C" bool CL_SnapshotShadowLatest(
     if (result != WORR_SNAPSHOT_Q2PROTO_OK)
         return false;
     *ref_out = shadow.latest_ref;
+    return true;
+}
+
+extern "C" bool CL_SnapshotShadowSetRecordObserver(
+    cl_snapshot_shadow_record_observer_v1 observer)
+{
+    snapshot_record_observer = observer;
     return true;
 }
 

@@ -100,6 +100,8 @@ typedef struct {
     float       attenuation;
     int         entnum;
     int         entchannel;
+    uint64_t    entity_binding;
+    bool        native_binding;
     bool        fixed_origin;   // use origin field instead of entnum's origin
     vec3_t      origin;
     int         begin;          // begin on this sample
@@ -120,6 +122,8 @@ typedef struct {
     int         pos;            // sample position in sfx
     int         entnum;         // to allow overriding a specific sound
     int         entchannel;     //
+    uint64_t    entity_binding; // canonical lifecycle, never just slot number
+    bool        native_binding;
     vec3_t      origin;         // only use if fixed_origin is set
     vec_t       dist_mult;      // distance multiplier (attenuation/clipK)
     float       master_vol;     // 0.0-1.0 master volume
@@ -249,6 +253,9 @@ sfxcache_t *S_LoadSound(sfx_t *s);
 channel_t *S_PickChannel(int entnum, int entchannel);
 void S_IssuePlaysound(playsound_t *ps);
 int S_BuildSoundList(int *sounds);
+int S_LoopSoundEntityCount(void);
+const entity_state_t *S_LoopSoundEntity(int index);
+bool S_BindChannelEntity(channel_t *channel);
 void S_SpatializeOrigin(const vec3_t origin, float master_vol, float dist_mult, float *left_vol, float *right_vol, bool stereo);
 const qboolean S_SetEAXEnvironmentProperties(const sfx_eax_properties_t *properties);
 float S_GetEntityLoopDistMult(const entity_state_t *ent);

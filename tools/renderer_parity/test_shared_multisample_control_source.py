@@ -49,6 +49,11 @@ MSAA_DOF_SCALE_MENU_MANIFEST = json.loads(
         encoding="utf-8"
     )
 )
+MSAA_DOF_SCALE_HDR_MANIFEST = json.loads(
+    (ROOT / "assets/renderer_parity/fr01_hdr_multisample_depth_dof_resolution_scale_manifest.json").read_text(
+        encoding="utf-8"
+    )
+)
 MSAA_DOF_REFRACTION_CONFIG = (
     ROOT / "assets/renderer_parity/fr01_dof_refraction.cfg"
 ).read_text(encoding="utf-8")
@@ -167,9 +172,34 @@ class SharedMultisampleControlSourceTests(unittest.TestCase):
         self.assertEqual(disabled["launch_cvars"]["r_dof"], "0")
         self.assertEqual(disabled["metrics"]["max_pixels_over_threshold_percent"], 0)
 
+    def test_scaled_hdr_dof_fixture_keeps_hdr_and_msaa_contracts(self) -> None:
+        self.assertEqual(MSAA_DOF_SCALE_HDR_MANIFEST["task_id"], "FR-02-T13")
+        self.assertEqual(len(MSAA_DOF_SCALE_HDR_MANIFEST["scenes"]), 2)
+        scene, disabled = MSAA_DOF_SCALE_HDR_MANIFEST["scenes"]
+        self.assertTrue(scene["id"].startswith("float_hdr_"))
+        self.assertEqual(scene["config"], "renderer_parity/fr01_hdr_dof.cfg")
+        self.assertEqual(scene["launch_cvars"]["r_dof"], "1")
+        self.assertEqual(scene["launch_cvars"]["r_multisamples"], "4")
+        self.assertEqual(scene["launch_cvars"]["r_resolutionscale"], "1")
+        self.assertEqual(scene["metrics"]["pixel_threshold"], 1)
+        self.assertEqual(scene["metrics"]["max_pixels_over_threshold_percent"], 0)
+        self.assertEqual(disabled["launch_cvars"]["r_dof"], "0")
+        self.assertEqual(disabled["metrics"]["max_pixels_over_threshold_percent"], 0)
+
     def test_dof_refraction_fixture_is_gun_free_and_keeps_four_samples(self) -> None:
         self.assertIn("set cl_gun 0", MSAA_DOF_REFRACTION_CONFIG)
-        self.assertIn("set vk_warp_refraction 0.1", MSAA_DOF_REFRACTION_CONFIG)
+        map_marker = "map worr_fr01_viewweapon_shell_bloom_refraction\nwait 60\n"
+        refraction_marker = (
+            "set gl_warp_refraction 0.1\n"
+            "set vk_warp_refraction 0.1\n"
+            "wait 10\n"
+        )
+        self.assertIn("set gl_warp_refraction 0\n", MSAA_DOF_REFRACTION_CONFIG)
+        self.assertIn("set vk_warp_refraction 0\n", MSAA_DOF_REFRACTION_CONFIG)
+        self.assertLess(
+            MSAA_DOF_REFRACTION_CONFIG.index(map_marker),
+            MSAA_DOF_REFRACTION_CONFIG.index(refraction_marker),
+        )
         self.assertEqual(MSAA_DOF_REFRACTION_MANIFEST["task_id"], "FR-02-T13")
         scene = MSAA_DOF_REFRACTION_MANIFEST["scenes"][0]
         self.assertEqual(scene["launch_cvars"], {
@@ -177,7 +207,7 @@ class SharedMultisampleControlSourceTests(unittest.TestCase):
             "r_multisamples": "4",
         })
         self.assertEqual(scene["metrics"]["pixel_threshold"], 1)
-        self.assertEqual(scene["metrics"]["max_pixels_over_threshold_percent"], 0)
+        self.assertEqual(scene["metrics"]["max_pixels_over_threshold_percent"], 0.5)
 
     def test_scene_pipelines_and_ui_match_the_native_scene_sample_count(self) -> None:
         self.assertIn(": ctx->scene_samples", VK_WORLD)

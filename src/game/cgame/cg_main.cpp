@@ -7,6 +7,7 @@
 #include "cg_event_shadow.hpp"
 #include "cg_event_runtime.hpp"
 #include "cg_canonical_snapshot_timeline.hpp"
+#include "cg_native_event_presenter.hpp"
 #include "client/cgame_entity_ext.h"
 #include "client/cgame_ui_ext.h"
 #include "shared/cgame_prediction.h"
@@ -29,6 +30,7 @@ using cgame_entity_import_t = cgame_entity_import_s;
 using cgame_entity_export_t = cgame_entity_export_s;
 extern "C" const cgame_entity_export_t *CG_GetEntityAPI(void);
 void CG_Entity_SetImport(const cgame_entity_import_t *import);
+void CG_CanonicalSnapshotRender_ResetStream(void);
 extern "C" void CG_PredictionInputSetImport(
 	const worr_cgame_prediction_input_import_v1 *import);
 extern "C" void CG_PredictionInputSetImportV2(
@@ -49,6 +51,10 @@ static void *CG_GetExtension(const char *name)
 		return (void *)CG_GetEventRangeAPIv2();
 	if (!strcmp(name, WORR_CGAME_EVENT_RUNTIME_EXPORT_V1))
 		return (void *)CG_GetEventRuntimeAPI();
+	if (!strcmp(name, WORR_CGAME_NATIVE_EVENT_PROBE_EXPORT_V1))
+		return (void *)CG_GetNativeEventProbeAPI();
+	if (!strcmp(name, WORR_CGAME_NATIVE_EVENT_PROBE_EXPORT_V2))
+		return (void *)CG_GetNativeEventProbeAPIv2();
 	if (!strcmp(name, WORR_CGAME_SNAPSHOT_TIMELINE_EXPORT_V2))
 		return (void *)CG_GetCanonicalSnapshotTimelineAPI();
 
@@ -61,6 +67,8 @@ uint64_t cgame_init_time = 0;
 
 static void InitCGame()
 {
+	CG_NativeEventPresenterBeginMap();
+	CG_CanonicalSnapshotRender_ResetStream();
 	(void)CG_CanonicalSnapshotTimelineInitialize();
 	CG_InitScreen();
 	CG_Wheel_Init();
@@ -82,6 +90,7 @@ static void ShutdownCGame()
 	 * exact command-record lookup for the new connection.  Keep the immutable
 	 * engine imports for the DLL lifetime and clear only connection-scoped
 	 * reconciliation state. */
+	CG_NativeEventPresenterEndMap();
 	CG_LocalInteractionReset();
 }
 

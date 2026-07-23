@@ -142,6 +142,7 @@ unsigned    com_eventTime;
 unsigned    com_localTime;
 unsigned    com_localTime2;
 unsigned    com_localTime3;
+uint64_t    com_unscaledTimeUs;
 bool        com_initialized;
 time_t      com_startTime;
 
@@ -1103,7 +1104,7 @@ void Qcommon_Frame(void)
     unsigned time_before, time_event, time_between, time_after;
     unsigned clientrem;
 #endif
-    unsigned oldtime, msec;
+    unsigned oldtime, msec, unscaled_msec;
     static unsigned remaining;
     static float frac;
 
@@ -1145,6 +1146,10 @@ void Qcommon_Frame(void)
     }
 #endif
 
+    /* Preserve the real monotonic host delta before the legacy simulation
+     * hitch clamp.  Canonical render clocks must not permanently lose wall
+     * time merely because simulation advances by a bounded recovery step. */
+    unscaled_msec = msec;
     if (msec > 250) {
         Com_DPrintf("Hitch warning: %u msec frame time\n", msec);
         msec = 100; // time was unreasonable
@@ -1160,8 +1165,17 @@ void Qcommon_Frame(void)
         Cvar_ClampInteger(fixedtime, 1, 1000);
         msec = fixedtime->integer;
         com_localTime3 += msec;
+        if (com_unscaledTimeUs <= UINT64_MAX - (uint64_t)msec * 1000u)
+            com_unscaledTimeUs += (uint64_t)msec * 1000u;
+        else
+            com_unscaledTimeUs = UINT64_MAX;
     } else if (ts > 0) {
         com_localTime3 += msec;
+        if (com_unscaledTimeUs <=
+            UINT64_MAX - (uint64_t)unscaled_msec * 1000u)
+            com_unscaledTimeUs += (uint64_t)unscaled_msec * 1000u;
+        else
+            com_unscaledTimeUs = UINT64_MAX;
         frac += msec * ts;
         msec = frac;
         frac -= msec;

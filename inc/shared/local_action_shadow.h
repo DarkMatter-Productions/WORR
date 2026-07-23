@@ -33,6 +33,10 @@ extern "C" {
 #define WORR_LOCAL_ACTION_SHADOW_AUTHORITY_IMPORT_V1                           \
   "WORR_LOCAL_ACTION_SHADOW_AUTHORITY_IMPORT_V1"
 #define WORR_LOCAL_ACTION_SHADOW_AUTHORITY_API_VERSION 1u
+/* Process-local sgame -> server receipt staging. The client evidence bound
+ * includes this full published capacity rather than relying on current drain
+ * cadence. */
+#define WORR_LOCAL_ACTION_SHADOW_AUTHORITY_MAILBOX_CAPACITY 32u
 
 enum {
   WORR_LOCAL_ACTION_SHADOW_DESCRIPTORS_COMPLETE = UINT32_C(1) << 0,

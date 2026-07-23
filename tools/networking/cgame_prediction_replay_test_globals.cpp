@@ -8,7 +8,13 @@
 
 #include "shared/shared.h"
 
+#include <cstdint>
+
 cvar_t *cl_predict{};
+
+extern "C" {
+std::uint64_t com_unscaledTimeUs{};
+}
 
 extern "C" void Worr_TestSetCGamePredictCvar(cvar_t *value)
 {

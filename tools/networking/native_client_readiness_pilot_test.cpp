@@ -7,6 +7,8 @@
 
 #include "common/net/native_carrier.h"
 #include "common/net/native_codec.h"
+#include "common/net/native_input_batch.h"
+#include "common/net/native_input_batch_sideband.h"
 #include "common/net/native_readiness.h"
 #include "common/net/native_readiness_sideband.h"
 #include "common/net/native_snapshot_receiver.h"
@@ -53,10 +55,13 @@ constexpr uint32_t kSnapshotAreaBytesPerSlot = 8;
 constexpr uint32_t kSnapshotEventsPerSlot = 2;
 
 cvar_t pilot_cvar{};
+cvar_t input_batch_pilot_cvar{};
 cvar_t event_pilot_cvar{};
 cvar_t snapshot_pilot_cvar{};
 cvar_t probe_hold_cvar{};
+cvar_t event_presentation_owned_cvar{};
 cvar_t snapshot_timeline_owned_cvar{};
+uint32_t advertised_public_mask_override{};
 std::array<byte, 512> reliable_storage{};
 
 struct fake_event_runtime_t {
@@ -294,6 +299,15 @@ cl_native_readiness_pilot_status_v1 pilot_status()
     return status;
 }
 
+cl_native_input_batch_status_v1 input_batch_status()
+{
+    cl_native_input_batch_status_v1 status{};
+    CHECK(CL_NativeReadinessPilotGetInputBatchStatusV1(&status));
+    CHECK(status.struct_size == sizeof(status));
+    CHECK(status.schema_version == CL_NATIVE_INPUT_BATCH_STATUS_ABI_V1);
+    return status;
+}
+
 worr_snapshot_entity_generation_v2 snapshot_generation(
     uint32_t index, uint32_t generation)
 {
@@ -506,10 +520,15 @@ void reset_environment(uint32_t raw_time, size_t reliable_capacity)
     std::memset(&cls, 0, sizeof(cls));
     std::memset(&cl, 0, sizeof(cl));
     std::memset(&pilot_cvar, 0, sizeof(pilot_cvar));
+    std::memset(&input_batch_pilot_cvar, 0,
+                sizeof(input_batch_pilot_cvar));
     std::memset(&event_pilot_cvar, 0, sizeof(event_pilot_cvar));
     std::memset(&snapshot_pilot_cvar, 0,
                 sizeof(snapshot_pilot_cvar));
     std::memset(&probe_hold_cvar, 0, sizeof(probe_hold_cvar));
+    std::memset(&event_presentation_owned_cvar, 0,
+                sizeof(event_presentation_owned_cvar));
+    advertised_public_mask_override = 0;
     fake_event_runtime = {};
     fake_snapshot_shadow = {};
     fake_snapshot_shadow.bind_ok = true;
@@ -544,6 +563,16 @@ bool begin_event_enabled(
     return CL_NativeReadinessPilotBeginConnection(&cls.netchan);
 }
 
+bool begin_input_batch_enabled(
+    uint32_t raw_time,
+    size_t reliable_capacity = reliable_storage.size())
+{
+    reset_environment(raw_time, reliable_capacity);
+    pilot_cvar.integer = 1;
+    input_batch_pilot_cvar.integer = 1;
+    return CL_NativeReadinessPilotBeginConnection(&cls.netchan);
+}
+
 bool begin_snapshot_enabled(
     uint32_t raw_time,
     size_t reliable_capacity = reliable_storage.size(),
@@ -573,15 +602,17 @@ bool begin_combined_enabled(
 worr_net_capability_state_v1 confirmed_capability(uint32_t epoch)
 {
     worr_net_capability_state_v1 state{};
+    const uint32_t public_mask =
+        CL_NativeReadinessPilotRequestedPublicCapabilities();
+    CHECK(Worr_NetCapabilityIsPublicNativeMaskV1(public_mask));
     CHECK(Worr_NetCapabilityStateInitV1(
-        &state, epoch, WORR_NET_CAP_LEGACY_STAGE_MASK,
-        WORR_NET_CAP_LEGACY_STAGE_MASK));
+        &state, epoch, public_mask, public_mask));
     worr_net_capability_confirm_v1 confirm{};
     confirm.struct_size = sizeof(confirm);
     confirm.schema_version = WORR_NET_CAPABILITY_VERSION;
     confirm.connection_epoch = epoch;
-    confirm.supported = WORR_NET_CAP_LEGACY_STAGE_MASK;
-    confirm.negotiated = WORR_NET_CAP_LEGACY_STAGE_MASK;
+    confirm.supported = public_mask;
+    confirm.negotiated = public_mask;
     CHECK(Worr_NetCapabilityConfirmV1(&state, &confirm) ==
           WORR_NET_CAPABILITY_OK);
     return state;
@@ -713,6 +744,42 @@ void complete_handshake(
     const auto state = pilot_state();
     CHECK(state.mode == 2u && state.hooks_installed);
     CHECK(state.transport_epoch == server_active.transport_epoch);
+}
+
+void feed_input_batch_confirmation(uint32_t official_epoch,
+                                   uint32_t transport_epoch)
+{
+    worr_native_input_batch_confirm_v1 confirm{};
+    std::array<worr_native_input_batch_setting_pair_v1,
+               WORR_NATIVE_INPUT_BATCH_SIDEBAND_PAIR_COUNT> pairs{};
+    CHECK(Worr_NativeInputBatchConfirmInitV1(
+        &confirm, official_epoch, transport_epoch));
+    CHECK(Worr_NativeInputBatchConfirmEncodeV1(
+        &confirm, pairs.data(), static_cast<uint32_t>(pairs.size())));
+    for (const auto &pair : pairs) {
+        CHECK(CL_NativeReadinessPilotObserveSetting(
+            pair.index, pair.value));
+    }
+}
+
+void complete_input_batch_handshake(
+    const worr_native_readiness_record_v1 &server_active,
+    uint32_t official_epoch)
+{
+    CL_NativeReadinessPilotPacketBegin();
+    feed_svc_record(server_active);
+    feed_input_batch_confirmation(
+        official_epoch, server_active.transport_epoch);
+    CL_NativeReadinessPilotPacketEnd();
+    const auto state = pilot_state();
+    const auto status = input_batch_status();
+    CHECK(state.mode == 2u && state.hooks_installed);
+    CHECK(state.transport_epoch == server_active.transport_epoch);
+    CHECK(status.requested == 1u && status.confirmed == 1u &&
+          status.enabled == 1u && status.drained == 0u &&
+          status.official_epoch == official_epoch &&
+          status.transport_epoch == server_active.transport_epoch &&
+          status.candidate_count == 0u && status.failures == 0u);
 }
 
 void complete_event_handshake(
@@ -914,6 +981,59 @@ worr_native_envelope_frame_info_v1 inspect_command_packet(
     CHECK(command.sample_time_us ==
           static_cast<uint64_t>(expected_command_sequence) * 10000u);
     return frame;
+}
+
+worr_native_input_batch_info_v1 inspect_input_batch_packet(
+    const tx_attempt_t &attempt, uint32_t expected_transport_epoch,
+    uint32_t expected_command_epoch, uint32_t expected_first_sequence,
+    uint32_t expected_count, uint32_t expected_message_sequence = 1u)
+{
+    CHECK(attempt.result == NETCHAN_APP_TX_PREPARE_PREPARED);
+    worr_native_carrier_view_v1 view{};
+    CHECK(Worr_NativeCarrierDecodeV1(
+              attempt.candidate.data(), attempt.output.application_bytes,
+              &view) == WORR_NATIVE_CARRIER_OK);
+    CHECK(view.transport_epoch == expected_transport_epoch);
+    CHECK(view.legacy_bytes == attempt.legacy_bytes);
+    CHECK(view.entry_count == 1);
+    CHECK(view.entries[0].entry_type == WORR_NATIVE_CARRIER_ENTRY_DATA_V1);
+
+    const byte *datagram =
+        attempt.candidate.data() + view.entries[0].data_offset;
+    worr_native_envelope_frame_info_v1 frame{};
+    CHECK(Worr_NativeEnvelopeDecodeV1(
+              datagram, view.entries[0].data_bytes, &frame) ==
+          WORR_NATIVE_ENVELOPE_DECODE_OK);
+    CHECK(frame.transport_epoch == expected_transport_epoch);
+    CHECK(frame.message_sequence == expected_message_sequence);
+    CHECK(frame.record.record_class == WORR_NATIVE_RECORD_COMMAND_V1);
+    CHECK(frame.record.record_schema_version ==
+          WORR_NATIVE_INPUT_BATCH_RECORD_SCHEMA);
+    CHECK(frame.record.object_epoch == expected_command_epoch);
+    CHECK(frame.record.object_sequence ==
+          expected_first_sequence + expected_count - 1u);
+    CHECK(frame.fragment_count == 1u && frame.fragment_index == 0u);
+
+    std::array<worr_command_record_v1,
+               WORR_NATIVE_INPUT_BATCH_MAX_COMMANDS> records{};
+    worr_native_input_batch_info_v1 info{};
+    CHECK(Worr_NativeInputBatchDecodeV1(
+              datagram + frame.payload_offset,
+              frame.fragment_payload_bytes,
+              WORR_COMMAND_MAX_NEGOTIATED_DURATION_MS,
+              records.data(), static_cast<uint32_t>(records.size()),
+              &info) == WORR_NATIVE_INPUT_BATCH_OK);
+    CHECK(info.command_epoch == expected_command_epoch);
+    CHECK(info.first_sequence == expected_first_sequence);
+    CHECK(info.command_count == expected_count);
+    CHECK(info.last_sequence ==
+          expected_first_sequence + expected_count - 1u);
+    for (uint32_t index = 0; index < expected_count; ++index) {
+        CHECK(records[index].command_id.epoch == expected_command_epoch);
+        CHECK(records[index].command_id.sequence ==
+              expected_first_sequence + index);
+    }
+    return info;
 }
 
 packet_t ack_packet(uint32_t transport_epoch, uint32_t first,
@@ -1184,8 +1304,21 @@ void test_default_off_demo_and_hook_ownership()
     CHECK(!CL_NativeReadinessPilotBeginConnection(&cls.netchan));
     CHECK(!cls.netchan.app_tx_prepare && !cls.netchan.app_rx);
 
-    /* Combined mode is an explicit private capability tuple.  The two S2C
-     * semantic lanes use disjoint transport-sequence partitions under one
+    /* The accepted connect offer, not a cvar mutation between the connect
+     * request and response, owns the fresh netchan's readiness mode. */
+    reset_environment(10, reliable_storage.size());
+    pilot_cvar.integer = 1;
+    advertised_public_mask_override =
+        WORR_NET_CAP_NATIVE_COMMAND_PUBLIC_MASK;
+    event_pilot_cvar.integer = 1;
+    CHECK(CL_NativeReadinessPilotBeginConnection(&cls.netchan));
+    CHECK(!pilot_state().event_enabled &&
+          !pilot_state().snapshot_enabled &&
+          pilot_state().private_capabilities ==
+              WORR_NET_CAP_NATIVE_COMMAND_PUBLIC_MASK);
+
+    /* Combined mode is one exact public/readiness capability tuple.  The two
+     * S2C semantic lanes use disjoint transport-sequence partitions under one
      * readiness epoch. */
     reset_environment(10, reliable_storage.size());
     pilot_cvar.integer = 1;
@@ -1235,6 +1368,87 @@ void test_default_off_demo_and_hook_ownership()
     cls.netchan.app_rx = saved_rx;
     cls.netchan.app_rx_opaque = saved_rx_opaque;
     CHECK(pilot_status().hooks == 1u);
+}
+
+void test_public_capability_legacy_downgrade_detaches_hooks()
+{
+    CHECK(begin_enabled(50));
+    const uint32_t offered =
+        CL_NativeReadinessPilotRequestedPublicCapabilities();
+    CHECK(offered == WORR_NET_CAP_NATIVE_COMMAND_PUBLIC_MASK);
+
+    worr_net_capability_state_v1 state{};
+    worr_net_capability_confirm_v1 confirm{};
+    CHECK(Worr_NetCapabilityStateInitV1(
+        &state, 5, offered, offered));
+    CHECK(Worr_NetCapabilitySelectV1(
+              5, offered, WORR_NET_CAP_LEGACY_STAGE_MASK,
+              &confirm) == WORR_NET_CAPABILITY_OK);
+    CHECK(confirm.negotiated == WORR_NET_CAP_LEGACY_STAGE_MASK);
+    CHECK(Worr_NetCapabilityConfirmV1(&state, &confirm) ==
+          WORR_NET_CAPABILITY_OK);
+
+    CL_NativeReadinessPilotCapabilityConfirmed(&state);
+    const auto status = pilot_status();
+    CHECK(status.enabled == 0u && status.hooks == 0u &&
+          status.capability_confirmed == 0u &&
+          status.public_mask == WORR_NET_CAP_LEGACY_STAGE_MASK &&
+          status.failures == 0u);
+    CHECK(!cls.netchan.app_tx_prepare &&
+          !cls.netchan.app_tx_completion &&
+          !cls.netchan.app_tx_opaque && !cls.netchan.app_rx &&
+          !cls.netchan.app_rx_opaque);
+}
+
+void test_event_presentation_cutover_requires_separate_confirmation()
+{
+    constexpr uint32_t kTransportEpoch = 61;
+
+    CHECK(begin_event_enabled(60));
+    CHECK(!CL_NativeReadinessPilotOwnsEventPresentation());
+    CHECK(event_presentation_owned_cvar.integer == 0);
+    confirm_capability(6);
+    worr_native_readiness_state_v1 server{};
+    const auto active = begin_handshake(
+        server, kTransportEpoch, 600, false);
+    CHECK(!CL_NativeReadinessPilotOwnsEventPresentation());
+    complete_event_handshake(server, active);
+    /* Event ACTIVE proves the carrier and semantic admission contract.  It
+     * cannot suppress raw effect families because capture/queue coverage is
+     * not yet exhaustive or correlated per carrier. */
+    CHECK(!CL_NativeReadinessPilotOwnsEventPresentation());
+    CHECK(event_presentation_owned_cvar.integer == 0);
+
+    /* With no effect/timeline ownership to preserve, a foreign hook
+     * replacement can disable the pilot immediately; raw presentation stays
+     * authoritative and the foreign hook is untouched. */
+    cls.netchan.app_rx = occupied_rx;
+    cls.netchan.app_rx_opaque = &reliable_storage;
+    CHECK(!CL_NativeReadinessPilotOwnsEventPresentation());
+    CL_NativeReadinessPilotPacketBegin();
+    CHECK(pilot_status().enabled == 0u);
+    CHECK(!CL_NativeReadinessPilotOwnsEventPresentation());
+    CHECK(event_presentation_owned_cvar.integer == 0);
+    CHECK(!cls.netchan.app_tx_prepare &&
+          cls.netchan.app_rx == occupied_rx);
+
+    CL_NativeReadinessPilotQuiesceMap();
+    CHECK(!CL_NativeReadinessPilotOwnsEventPresentation());
+    CHECK(event_presentation_owned_cvar.integer == 0);
+    CHECK(pilot_status().enabled == 0u);
+    CHECK(cls.netchan.app_rx == occupied_rx);
+
+    /* Demo playback is a whole-stream boundary and clears the live latch. */
+    CHECK(begin_event_enabled(70));
+    confirm_capability(7);
+    server = {};
+    const auto demo_active = begin_handshake(server, 71, 700, false);
+    complete_event_handshake(server, demo_active);
+    CHECK(!CL_NativeReadinessPilotOwnsEventPresentation());
+    cls.demo.playback = 1;
+    CHECK(!CL_NativeReadinessPilotOwnsEventPresentation());
+    CHECK(event_presentation_owned_cvar.integer == 0);
+    CHECK(pilot_status().enabled == 0u);
 }
 
 void test_initial_exact_boundary_loss_retry_ack_release()
@@ -1322,7 +1536,7 @@ void test_initial_exact_boundary_loss_retry_ack_release()
     CHECK(status.readiness_phase == WORR_NATIVE_READINESS_PHASE_CLIENT_ACTIVE);
     CHECK(status.official_epoch == 7u && status.transport_epoch == 101u);
     CHECK(status.protocol == PROTOCOL_VERSION_RERELEASE);
-    CHECK(status.public_mask == WORR_NET_CAP_LEGACY_STAGE_MASK &&
+    CHECK(status.public_mask == WORR_NET_CAP_NATIVE_COMMAND_PUBLIC_MASK &&
           status.private_mask == kPrivateCapabilities);
     CHECK(status.challenges == 1u && status.client_ready_queued == 1u &&
           status.server_active == 1u && status.proof_enqueued == 1u);
@@ -1353,6 +1567,358 @@ void test_initial_exact_boundary_loss_retry_ack_release()
     CL_NativeReadinessPilotObserveEncodedCommandRange(1, 3);
     CHECK(pilot_state().message_sequence_highwater == 2u);
     CHECK(prepare_tx(0).result == NETCHAN_APP_TX_PREPARE_BYPASS);
+}
+
+void test_input_batch_duplicate_proactive_ack_is_idempotent()
+{
+    constexpr uint32_t kCommandEpoch = 18;
+    constexpr uint32_t kTransportEpoch = 401;
+
+    CHECK(begin_input_batch_enabled(400));
+    confirm_capability(kCommandEpoch);
+    worr_native_readiness_state_v1 server{};
+    const auto active = begin_handshake(
+        server, kTransportEpoch, 800, false);
+
+    /* Finalized commands may exist before SERVER_ACTIVE, but candidate
+     * collection begins only after the same-packet private confirmation. */
+    build_commands(kCommandEpoch, 3);
+    CHECK(input_batch_status().candidate_count == 0u);
+    complete_input_batch_handshake(active, kCommandEpoch);
+    CHECK(input_batch_status().candidate_count == 0u);
+
+    CL_NativeReadinessPilotObserveEncodedCommandRange(1, 3);
+    auto batch_status = input_batch_status();
+    CHECK(batch_status.candidate_count == 3u &&
+          batch_status.candidates_collected == 3u &&
+          batch_status.batches_encoded == 0u);
+    const auto outgoing = prepare_tx(0);
+    inspect_input_batch_packet(
+        outgoing, kTransportEpoch, kCommandEpoch, 1, 3);
+    complete_tx(outgoing, NETCHAN_APP_TX_COMPLETION_ACCEPTED);
+    batch_status = input_batch_status();
+    CHECK(batch_status.active_first_sequence == 1u &&
+          batch_status.active_last_sequence == 3u &&
+          batch_status.active_command_count == 3u &&
+          batch_status.active_handoffs == 1u &&
+          batch_status.batches_encoded == 1u &&
+          batch_status.first_handoffs == 1u &&
+          batch_status.failures == 0u);
+
+    const auto receipt = ack_packet(kTransportEpoch, 1, 1, 2);
+    netchan_app_rx_output_v1_t output{};
+    CHECK(receive_packet(receipt, output) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    CHECK(output.legacy_bytes == 2u);
+    batch_status = input_batch_status();
+    CHECK(batch_status.enabled == 1u && batch_status.drained == 0u &&
+          batch_status.received_sequence == 3u &&
+          batch_status.candidate_count == 0u &&
+          batch_status.active_command_count == 0u &&
+          batch_status.batches_acknowledged == 1u &&
+          batch_status.commands_acknowledged == 3u &&
+          batch_status.failures == 0u);
+
+    /* The server proactively hands the same receipt off three times.  The
+     * empty but validated WNB1 TX bank must parse both duplicates as
+     * acknowledged=0 without mutating candidates or draining the pilot. */
+    for (uint32_t duplicate = 0; duplicate < 2; ++duplicate) {
+        CHECK(receive_packet(receipt, output) ==
+              NETCHAN_APP_RX_EXPOSE_LEGACY);
+        batch_status = input_batch_status();
+        CHECK(batch_status.enabled == 1u &&
+              batch_status.drained == 0u &&
+              batch_status.received_sequence == 3u &&
+              batch_status.candidate_count == 0u &&
+              batch_status.active_command_count == 0u &&
+              batch_status.batches_acknowledged == 1u &&
+              batch_status.commands_acknowledged == 3u &&
+              batch_status.failures == 0u);
+    }
+
+    /* A still later duplicate can arrive after batch N+1 is already active.
+     * It must not retire or perturb N+1 merely because both batches share the
+     * same private transport epoch. */
+    build_command(kCommandEpoch, 4);
+    build_command(kCommandEpoch, 5);
+    CL_NativeReadinessPilotObserveEncodedCommandRange(4, 2);
+    const auto next_outgoing = prepare_tx(0);
+    inspect_input_batch_packet(
+        next_outgoing, kTransportEpoch, kCommandEpoch, 4, 2, 2);
+    complete_tx(
+        next_outgoing, NETCHAN_APP_TX_COMPLETION_ACCEPTED);
+    const auto next_before = input_batch_status();
+    CHECK(next_before.candidate_count == 2u &&
+          next_before.active_first_sequence == 4u &&
+          next_before.active_last_sequence == 5u &&
+          next_before.active_command_count == 2u &&
+          next_before.active_handoffs == 1u &&
+          next_before.first_handoffs == 2u &&
+          next_before.batches_acknowledged == 1u &&
+          next_before.commands_acknowledged == 3u);
+    CHECK(receive_packet(receipt, output) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    batch_status = input_batch_status();
+    CHECK(batch_status.enabled == 1u && batch_status.drained == 0u &&
+          batch_status.candidate_count == next_before.candidate_count &&
+          batch_status.active_first_sequence ==
+              next_before.active_first_sequence &&
+          batch_status.active_last_sequence ==
+              next_before.active_last_sequence &&
+          batch_status.active_command_count ==
+              next_before.active_command_count &&
+          batch_status.active_handoffs == next_before.active_handoffs &&
+          batch_status.first_handoffs == next_before.first_handoffs &&
+          batch_status.batches_acknowledged == 1u &&
+          batch_status.commands_acknowledged == 3u &&
+          batch_status.failures == 0u);
+
+    const auto next_receipt = ack_packet(kTransportEpoch, 2, 2);
+    CHECK(receive_packet(next_receipt, output) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    batch_status = input_batch_status();
+    CHECK(batch_status.enabled == 1u && batch_status.drained == 0u &&
+          batch_status.received_sequence == 5u &&
+          batch_status.candidate_count == 0u &&
+          batch_status.active_command_count == 0u &&
+          batch_status.batches_acknowledged == 2u &&
+          batch_status.commands_acknowledged == 5u &&
+          batch_status.failures == 0u);
+    const auto status = pilot_status();
+    CHECK(status.ack_carriers == 5u && status.drains == 0u &&
+          status.failures == 0u && status.last_failure == 0u);
+}
+
+void test_input_batch_map_bootstrap_preserves_old_ack_routing()
+{
+    constexpr uint32_t kOldCommandEpoch = 28;
+    constexpr uint32_t kNewCommandEpoch = 29;
+    constexpr uint32_t kOldTransportEpoch = 451;
+    constexpr uint32_t kNewTransportEpoch = 452;
+
+    CHECK(begin_input_batch_enabled(500));
+    confirm_capability(kOldCommandEpoch);
+    worr_native_readiness_state_v1 server{};
+    auto active = begin_handshake(
+        server, kOldTransportEpoch, 850, false);
+    complete_input_batch_handshake(active, kOldCommandEpoch);
+
+    build_commands(kOldCommandEpoch, 4);
+    CL_NativeReadinessPilotObserveEncodedCommandRange(1, 2);
+    auto outgoing = prepare_tx(0);
+    inspect_input_batch_packet(
+        outgoing, kOldTransportEpoch, kOldCommandEpoch, 1, 2, 1);
+    complete_tx(outgoing, NETCHAN_APP_TX_COMPLETION_ACCEPTED);
+
+    netchan_app_rx_output_v1_t output{};
+    const auto first_receipt = ack_packet(kOldTransportEpoch, 1, 1);
+    CHECK(receive_packet(first_receipt, output) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    CL_NativeReadinessPilotObserveEncodedCommandRange(3, 2);
+    outgoing = prepare_tx(0);
+    inspect_input_batch_packet(
+        outgoing, kOldTransportEpoch, kOldCommandEpoch, 3, 2, 2);
+    complete_tx(outgoing, NETCHAN_APP_TX_COMPLETION_ACCEPTED);
+
+    CL_NativeReadinessPilotQuiesceMap();
+    CL_NativeReadinessPilotServerDataReset();
+    auto batch_before = input_batch_status();
+    CHECK(batch_before.confirmed == 1u && batch_before.enabled == 0u &&
+          batch_before.drained == 1u &&
+          batch_before.transport_epoch == kOldTransportEpoch &&
+          batch_before.candidate_count == 2u &&
+          batch_before.active_first_sequence == 3u &&
+          batch_before.active_last_sequence == 4u &&
+          batch_before.active_command_count == 2u &&
+          batch_before.batches_acknowledged == 1u &&
+          batch_before.commands_acknowledged == 2u);
+
+    confirm_capability(kNewCommandEpoch);
+
+    /* The old peer may keep proactively handing off receipt 1 while the new
+     * map is still bootstrapping.  It must be parsed against the drained WNB1
+     * high-water, not the clean schema-1 bank, and the legacy prefix survives. */
+    const auto bootstrap_receipt =
+        ack_packet(kOldTransportEpoch, 1, 1, 7);
+    const auto pilot_before = pilot_status();
+    CHECK(receive_packet(bootstrap_receipt, output) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    CHECK(output.legacy_bytes == 7u);
+    auto batch_after = input_batch_status();
+    CHECK(batch_after.confirmed == batch_before.confirmed &&
+          batch_after.drained == batch_before.drained &&
+          batch_after.candidate_count == batch_before.candidate_count &&
+          batch_after.active_first_sequence ==
+              batch_before.active_first_sequence &&
+          batch_after.active_last_sequence ==
+              batch_before.active_last_sequence &&
+          batch_after.active_command_count ==
+              batch_before.active_command_count &&
+          batch_after.batches_acknowledged ==
+              batch_before.batches_acknowledged &&
+          batch_after.commands_acknowledged ==
+              batch_before.commands_acknowledged &&
+          batch_after.failures == 0u);
+    auto pilot_after = pilot_status();
+    CHECK(pilot_after.mode == 3u &&
+          pilot_after.ack_carriers == pilot_before.ack_carriers + 1u &&
+          pilot_after.drains == pilot_before.drains &&
+          pilot_after.failures == pilot_before.failures &&
+          pilot_after.last_failure == pilot_before.last_failure);
+
+    ++com_localTime;
+    active = begin_handshake(
+        server, kNewTransportEpoch, 851, true);
+    const auto cancelled = pilot_state();
+    batch_after = input_batch_status();
+    CHECK(cancelled.cancelled_through_transport_epoch ==
+              kOldTransportEpoch &&
+          cancelled.cancelled_commands == 2u &&
+          batch_after.confirmed == 0u && batch_after.drained == 0u &&
+          batch_after.candidate_count == 0u &&
+          batch_after.active_command_count == 0u);
+    complete_input_batch_handshake(active, kNewCommandEpoch);
+
+    build_commands(kNewCommandEpoch, 2);
+    CL_NativeReadinessPilotObserveEncodedCommandRange(1, 2);
+    outgoing = prepare_tx(0);
+    inspect_input_batch_packet(
+        outgoing, kNewTransportEpoch, kNewCommandEpoch, 1, 2, 1);
+    complete_tx(outgoing, NETCHAN_APP_TX_COMPLETION_ACCEPTED);
+    batch_before = input_batch_status();
+
+    /* Once the new bank is active, the committed cancellation floor consumes
+     * a delayed receipt for old batch 2 before it can alias message 1 here. */
+    const auto delayed_old_receipt =
+        ack_packet(kOldTransportEpoch, 2, 2, 9);
+    const auto stale_before = pilot_status();
+    CHECK(receive_packet(delayed_old_receipt, output) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    CHECK(output.legacy_bytes == 9u);
+    batch_after = input_batch_status();
+    CHECK(batch_after.enabled == 1u && batch_after.drained == 0u &&
+          batch_after.candidate_count == batch_before.candidate_count &&
+          batch_after.active_first_sequence ==
+              batch_before.active_first_sequence &&
+          batch_after.active_last_sequence ==
+              batch_before.active_last_sequence &&
+          batch_after.active_command_count ==
+              batch_before.active_command_count &&
+          batch_after.batches_acknowledged ==
+              batch_before.batches_acknowledged &&
+          batch_after.commands_acknowledged ==
+              batch_before.commands_acknowledged &&
+          batch_after.failures == 0u);
+    pilot_after = pilot_status();
+    CHECK(pilot_after.stale_cancelled_carriers ==
+              stale_before.stale_cancelled_carriers + 1u &&
+          pilot_after.drains == stale_before.drains &&
+          pilot_after.failures == stale_before.failures);
+
+    const auto current_receipt = ack_packet(kNewTransportEpoch, 1, 1);
+    CHECK(receive_packet(current_receipt, output) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    batch_after = input_batch_status();
+    CHECK(batch_after.enabled == 1u && batch_after.drained == 0u &&
+          batch_after.candidate_count == 0u &&
+          batch_after.active_command_count == 0u &&
+          batch_after.batches_acknowledged == 2u &&
+          batch_after.commands_acknowledged == 4u &&
+          batch_after.failures == 0u);
+}
+
+void test_input_batch_prior_decline_rearms_next_map_parser()
+{
+    constexpr uint32_t kOldCommandEpoch = 30;
+    constexpr uint32_t kNewCommandEpoch = 31;
+    constexpr uint32_t kOldTransportEpoch = 453;
+    constexpr uint32_t kNewTransportEpoch = 454;
+
+    CHECK(begin_input_batch_enabled(550));
+    confirm_capability(kOldCommandEpoch);
+    worr_native_readiness_state_v1 server{};
+    auto active = begin_handshake(
+        server, kOldTransportEpoch, 860, false);
+
+    /* A valid SERVER_ACTIVE without the private same-packet confirmation is a
+     * clean per-map decline.  It must not make WNB1 permanently ineligible for
+     * a later epoch on the same connection. */
+    complete_handshake(active);
+    auto batch = input_batch_status();
+    CHECK(batch.requested == 1u && batch.confirmed == 0u &&
+          batch.enabled == 0u && batch.drained == 0u &&
+          batch.candidate_count == 0u && batch.failures == 0u);
+
+    CL_NativeReadinessPilotQuiesceMap();
+    CL_NativeReadinessPilotServerDataReset();
+    confirm_capability(kNewCommandEpoch);
+    ++com_localTime;
+    active = begin_handshake(
+        server, kNewTransportEpoch, 861, true);
+    CHECK(pilot_status().failures == 0u);
+    complete_input_batch_handshake(active, kNewCommandEpoch);
+
+    build_commands(kNewCommandEpoch, 2);
+    CL_NativeReadinessPilotObserveEncodedCommandRange(1, 2);
+    const auto outgoing = prepare_tx(0);
+    inspect_input_batch_packet(
+        outgoing, kNewTransportEpoch, kNewCommandEpoch, 1, 2, 1);
+    complete_tx(outgoing, NETCHAN_APP_TX_COMPLETION_ACCEPTED);
+    netchan_app_rx_output_v1_t output{};
+    const auto receipt = ack_packet(kNewTransportEpoch, 1, 1);
+    CHECK(receive_packet(receipt, output) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    batch = input_batch_status();
+    CHECK(batch.enabled == 1u && batch.drained == 0u &&
+          batch.candidate_count == 0u &&
+          batch.active_command_count == 0u &&
+          batch.batches_acknowledged == 1u &&
+          batch.commands_acknowledged == 2u && batch.failures == 0u);
+}
+
+void test_input_batch_delayed_confirmation_preserves_baseline()
+{
+    constexpr uint32_t kCommandEpoch = 19;
+    constexpr uint32_t kTransportEpoch = 402;
+
+    CHECK(begin_input_batch_enabled(450));
+    confirm_capability(kCommandEpoch);
+    worr_native_readiness_state_v1 server{};
+    const auto active = begin_handshake(
+        server, kTransportEpoch, 801, false);
+    build_commands(kCommandEpoch, 2);
+
+    /* An encoded legacy range before confirmation belongs to the established
+     * one-command T04 bank.  It must not be collected as WNB1 candidates. */
+    CL_NativeReadinessPilotObserveEncodedCommandRange(1, 2);
+    CHECK(input_batch_status().candidate_count == 0u);
+    CHECK(pilot_state().retained_messages == 0u);
+
+    /* SERVER_ACTIVE opens the baseline session first; a deliberately delayed
+     * range then retains schema 1.  The private confirmation refuses this
+     * non-clean handoff instead of replacing or aliasing the retained proof. */
+    CL_NativeReadinessPilotPacketBegin();
+    feed_svc_record(active);
+    CL_NativeReadinessPilotObserveEncodedCommandRange(1, 2);
+    CHECK(pilot_state().retained_messages == 1u);
+    CHECK(input_batch_status().candidate_count == 0u);
+    feed_input_batch_confirmation(kCommandEpoch, kTransportEpoch);
+    CL_NativeReadinessPilotPacketEnd();
+    const auto batch_status = input_batch_status();
+    CHECK(batch_status.requested == 1u && batch_status.confirmed == 0u &&
+          batch_status.enabled == 0u && batch_status.drained == 1u &&
+          batch_status.candidate_count == 0u &&
+          batch_status.failures == 1u);
+
+    const auto baseline = prepare_tx(0);
+    inspect_command_packet(baseline, kTransportEpoch, 2);
+    complete_tx(baseline, NETCHAN_APP_TX_COMPLETION_ACCEPTED);
+    const auto receipt = ack_packet(kTransportEpoch, 1, 1);
+    netchan_app_rx_output_v1_t output{};
+    CHECK(receive_packet(receipt, output) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    CHECK(pilot_state().retained_messages == 0u);
+    CHECK(pilot_status().failures == 0u);
 }
 
 void test_repeated_stop_and_wait_loss_retry_ack_release()
@@ -2646,6 +3212,8 @@ extern "C" cvar_t *Cvar_Get(const char *name, const char *, int)
 {
     if (name && std::strcmp(name, "cl_worr_native_shadow_probe_hold") == 0)
         return &probe_hold_cvar;
+    if (name && std::strcmp(name, "cl_worr_native_input_batch") == 0)
+        return &input_batch_pilot_cvar;
     if (name &&
         std::strcmp(name, "cl_worr_native_snapshot_shadow") == 0) {
         return &snapshot_pilot_cvar;
@@ -2654,10 +3222,39 @@ extern "C" cvar_t *Cvar_Get(const char *name, const char *, int)
         return &event_pilot_cvar;
     if (name &&
         std::strcmp(
+            name, "cl_worr_native_event_presentation_owned") == 0) {
+        return &event_presentation_owned_cvar;
+    }
+    if (name &&
+        std::strcmp(
             name, "cl_worr_native_snapshot_timeline_owned") == 0) {
         return &snapshot_timeline_owned_cvar;
     }
     return &pilot_cvar;
+}
+
+extern "C" bool CL_AdaptiveInputGetOutputV1(
+    worr_adaptive_input_output_v1 *output_out)
+{
+    if (!output_out)
+        return false;
+    *output_out = {};
+    output_out->struct_size = sizeof(*output_out);
+    output_out->schema_version = WORR_ADAPTIVE_INPUT_VERSION;
+    output_out->result = WORR_ADAPTIVE_INPUT_OK;
+    output_out->evaluated_at_ms = com_localTime;
+    output_out->packets_per_second = 60;
+    output_out->send_interval_ms = 16;
+    output_out->flags = WORR_ADAPTIVE_INPUT_OUTPUT_VALID;
+    return true;
+}
+
+extern "C" bool CL_ConsumedCursorGetLatestV1(
+    worr_command_cursor_v1 *cursor_out)
+{
+    if (cursor_out)
+        *cursor_out = {};
+    return false;
 }
 
 extern "C" void Cvar_SetByVar(cvar_t *var, const char *value, from_t)
@@ -2665,6 +3262,13 @@ extern "C" void Cvar_SetByVar(cvar_t *var, const char *value, from_t)
     CHECK(var != nullptr && value != nullptr);
     var->integer = value[0] == '1' ? 1 : 0;
     var->value = static_cast<float>(var->integer);
+}
+
+extern "C" uint32_t CL_NetCapabilityOffered(void)
+{
+    if (advertised_public_mask_override != 0)
+        return advertised_public_mask_override;
+    return CL_NativeReadinessPilotRequestedPublicCapabilities();
 }
 
 extern "C" bool Netchan_SetApplicationTxHook(
@@ -2749,7 +3353,13 @@ extern "C" q2proto_error_t q2proto_client_write(
 int main()
 {
     test_default_off_demo_and_hook_ownership();
+    test_public_capability_legacy_downgrade_detaches_hooks();
+    test_event_presentation_cutover_requires_separate_confirmation();
     test_initial_exact_boundary_loss_retry_ack_release();
+    test_input_batch_duplicate_proactive_ack_is_idempotent();
+    test_input_batch_map_bootstrap_preserves_old_ack_routing();
+    test_input_batch_prior_decline_rearms_next_map_parser();
+    test_input_batch_delayed_confirmation_preserves_baseline();
     test_repeated_stop_and_wait_loss_retry_ack_release();
     test_map_cancellation_barrier_epoch_switch_and_reconnect();
     test_pending_handshake_epoch_enters_cancellation_floor();

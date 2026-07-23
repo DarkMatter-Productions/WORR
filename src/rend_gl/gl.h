@@ -427,6 +427,7 @@ extern cvar_t *r_lightmap;
 extern cvar_t *gl_fullbright;
 extern cvar_t *gl_vertexlight;
 extern cvar_t *gl_lightgrid;
+extern cvar_t *r_lightgrid;
 extern cvar_t *gl_showerrors;
 extern cvar_t *gl_per_pixel_lighting; // use_shaders only
 
@@ -846,6 +847,7 @@ typedef enum {
     VA_EFFECT,
     VA_NULLMODEL,
     VA_OCCLUDE,
+    VA_SHADOW_ALPHA,
     VA_POSTPROCESS,
     VA_MESH_SHADE,
     VA_MESH_FLAT,  // also used for per-pixel lighting
@@ -1238,7 +1240,8 @@ extern cvar_t *gl_intensity;
 void GL_Shadow_Init(void);
 void GL_Shadow_Shutdown(void);
 void GL_Shadow_BeginFrame(void *userdata,
-                          const shadow_frontend_policy_t *policy);
+                          const shadow_frontend_policy_t *policy,
+                          uint32_t required_page_count);
 bool GL_Shadow_EnsurePage(void *userdata, const shadow_view_desc_t *view);
 bool GL_Shadow_RenderView(void *userdata, const shadow_view_desc_t *view,
                           const shadow_caster_t *casters,

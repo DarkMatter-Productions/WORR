@@ -4,29 +4,32 @@ Task: `FR-10-T05`
 
 Date: 2026-07-12
 
-Status: typed client decode-order audit slice implemented and tested;
-`FR-10-T05` remains in progress.
+Status: typed client decode-order range implemented and tested; `FR-10-T05`
+closed on 2026-07-19. Production presentation ownership remains with
+`FR-10-T07`/`DV-04-T02`.
 
 ## Outcome
 
-The client now projects four legacy action-message families and accepted-frame
+The client now projects five legacy action-message families and accepted-frame
 entity events into one allocation-free, decode-ordered canonical event range:
 
 - typed temporary entities;
 - player muzzle flashes;
 - monster muzzle flashes;
 - normalized spatial sounds;
+- per-client damage indicators; and
 - typed legacy entity events from accepted frames.
 
-This is an audit-only migration stage. Existing temp-entity, muzzle, sound,
-and entity-event presenters remain authoritative and execute at their original
-sites. Action ranges are delivered immediately before their legacy presenter;
-entity-frame ranges are delivered after the existing cgame entity-event pass.
-Failure or absence of the optional audit consumer cannot suppress, duplicate,
-or reorder presentation.
+This range began as an audit-only migration stage. Existing temp-entity,
+muzzle, sound, damage, and entity-event presenters remain authoritative and
+execute at their original sites. Action ranges are delivered immediately before
+their legacy presenter; entity-frame ranges are delivered after the existing
+cgame entity-event pass. Failure or absence of the optional consumer cannot
+suppress, duplicate, or reorder raw presentation.
 
-No `q2proto/` source, packet byte, snapshot byte, reliable/unreliable ordering,
-demo byte, MVD byte, or server producer changed in this slice.
+The client-range extension itself changes no `q2proto/` source, legacy packet or
+snapshot byte, reliable/unreliable ordering, demo/MVD byte, or legacy server
+producer. Later private native schema-2 carriage is a separate T04/T07 boundary.
 
 ## Frozen V1 and Named V2 Extension
 
@@ -49,9 +52,10 @@ no presentation hook.
 
 V2 has two explicit phases:
 
-1. `ACTION_PRE_PRESENT` is an immediate, one-record range for a successfully
-   adapted action message, or an immediate empty rejected range when adaptation
-   is impossible.
+1. `ACTION_PRE_PRESENT` is an immediate range for a successfully adapted action
+   message. Temp, muzzle, and sound carriers contain one record; damage contains
+   one to four ordered records. Adaptation failure produces one immediate empty
+   rejected range.
 2. `ENTITY_FRAME_POST_PRESENT` is an accepted-frame carrier split into chunks
    of at most 512 records. Every chunk shares the same epoch, batch, carrier
    sequence, tick, time, kind, status, and chunk count.
@@ -62,7 +66,8 @@ Every range carries a bounded `carrier_kind`:
 - temp entity;
 - player muzzle;
 - monster muzzle;
-- spatial sound.
+- spatial sound; and
+- damage.
 
 Rejected carriers contain no records and carry one bounded `adapter_status`:
 unsupported ID, invalid shape, entity out of range, or invalid payload. The
@@ -127,6 +132,21 @@ position, origin, volume, attenuation, and time offset, and assigns pitch 1.
 Only routing facts present in the decoded client message are claimed. Reliable,
 PHS, local-only, and forced-position routing cannot be reconstructed at this
 boundary, so action ranges explicitly carry `ROUTING_UNKNOWN`.
+
+### Damage indicators
+
+The damage adapter accepts the protocol-bounded one-to-four indicator array and
+maps every indicator to one `DAMAGE_INDICATOR_V1` record in wire order. The
+records share one carrier identity, source tick/time, and callback; validation
+and delivery are all-or-nothing. Zero, excess, malformed, truncated, or
+unrepresentable input produces an empty rejected damage carrier.
+
+Damage is implicitly addressed to the controlled player. First-person frames
+may omit that entity, so the client synchronizes only its observed slot from
+the latest exact canonical snapshot/player identity before binding the range.
+Current tick, entity index, generation, and provenance must agree. Unavailable,
+stale, mismatched, or rewinding lineage rejects instead of fabricating a new
+generation; other observed slots are never changed by this synchronization.
 
 ### Legacy entity events
 
@@ -202,6 +222,8 @@ immediately after every callback.
 
 - all V2 carrier kinds and adapter statuses;
 - typed temp, muzzle, sound, and legacy-entity records;
+- bounded one-to-four damage batches, ordered per-indicator ordinals, and
+  exact controlled-player canonical lineage across first-person omission;
 - immediate action provenance and post-present frame provenance;
 - source ordinal versus arrival ordinal;
 - unique arrival slots for empty accepted and rejected carriers;
@@ -215,18 +237,17 @@ immediately after every callback.
 - monster muzzle boundaries 0, 1, 288, 289, 293, and 294;
 - per-kind audit counters, record counts, and deterministic hashes.
 
-The C11/C++20 layout checks pin the new 184-byte action candidate, 12-byte
-carrier, 12-byte observed state, and 192-byte audit status. The event-journal
+The C11/C++20 layout checks pin the 184-byte action candidate, 12-byte carrier,
+12-byte observed state, and 208-byte audit status. The event-journal
 harness directly covers candidate-only validation in addition to authoritative
 record validation.
 
-## Remaining `FR-10-T05` Work
+## Subsequent Ownership Work
 
-This slice deliberately stops before presentation or transport cutover.
-Remaining work includes direct multi-event producer submission, command-derived
-prediction keys, journal reconciliation, authoritative snapshot carriage,
-receipt/retention policy, impairment parity comparison, and finally moving
-cgame presentation to canonical records after equivalence is proven.
+The accepted T05 contract stops before production presentation or transport
+cutover. Direct native carriage, present-once effects, raw/native ownership,
+prediction correlation, and impairment parity continue under T04, T07, T08,
+and `DV-04-T02`; they are not retroactive T05 closure criteria.
 
 No `.install/` refresh is performed by this focused slice; the integrating
 build owns distributable staging after concurrent networking work settles. The

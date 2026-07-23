@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 LAG = (ROOT / "src/game/sgame/network/lag_compensation.cpp").read_text(encoding="utf-8")
 LAG_HEADER = (ROOT / "src/game/sgame/network/lag_compensation.hpp").read_text(encoding="utf-8")
 WEAPON = (ROOT / "src/game/sgame/gameplay/g_weapon.cpp").read_text(encoding="utf-8")
+COMBAT = (ROOT / "src/game/sgame/gameplay/g_combat.cpp").read_text(encoding="utf-8")
 PLAYER_WEAPON = (ROOT / "src/game/sgame/player/p_weapon.cpp").read_text(encoding="utf-8")
 PROBALL = (ROOT / "src/game/sgame/gameplay/g_proball.cpp").read_text(encoding="utf-8")
 CLIENT_THINK = (ROOT / "src/game/sgame/client/client_session_service_impl.cpp").read_text(encoding="utf-8")
@@ -133,6 +134,15 @@ class CanonicalRailDamageContractTests(unittest.TestCase):
         self.assertIn("worr_rewind_canonical_super_shotgun_damage_arm", SVCMDS)
         self.assertIn("worr_rewind_canonical_disruptor_damage_arm", SVCMDS)
         self.assertIn("worr_rewind_canonical_rocket_damage_arm", SVCMDS)
+        self.assertIn(
+            "worr_rewind_canonical_rocket_mover_relative_arm", SVCMDS
+        )
+        self.assertIn(
+            "worr_rewind_canonical_rocket_lifecycle_touch_arm", SVCMDS
+        )
+        self.assertIn(
+            "worr_rewind_canonical_rocket_lifetime_expiry_arm", SVCMDS
+        )
         self.assertIn("worr_rewind_canonical_bfg_damage_arm", SVCMDS)
         self.assertIn("worr_rewind_canonical_ion_ripper_damage_arm", SVCMDS)
         self.assertIn("worr_rewind_canonical_tesla_mine_damage_arm", SVCMDS)
@@ -140,6 +150,12 @@ class CanonicalRailDamageContractTests(unittest.TestCase):
         self.assertIn("worr_rewind_canonical_grapple_damage_arm", SVCMDS)
         self.assertIn("worr_rewind_canonical_proball_throw_arm", SVCMDS)
         self.assertIn("worr_rewind_canonical_rocket_splash_damage_arm", SVCMDS)
+        self.assertIn(
+            "worr_rewind_canonical_rocket_splash_bsp_occlusion_arm", SVCMDS
+        )
+        self.assertIn(
+            "worr_rewind_canonical_rocket_splash_water_boundary_arm", SVCMDS
+        )
         self.assertIn("worr_rewind_canonical_plasma_gun_damage_arm", SVCMDS)
         self.assertIn("worr_rewind_canonical_plasma_gun_splash_damage_arm", SVCMDS)
         self.assertIn("worr_rewind_canonical_blaster_damage_arm", SVCMDS)
@@ -373,6 +389,131 @@ class CanonicalRailDamageContractTests(unittest.TestCase):
         self.assertIn("return nullptr;", rocket)
         self.assertIn("rocket->nextThink = std::max(level.time, rocket->nextThink - elapsed)", rocket)
 
+    def test_rocket_lifecycle_observers_wrap_only_production_touch_and_expiry(self) -> None:
+        rocket = WEAPON[
+            WEAPON.index("static THINK(rocket_expire)") :
+            WEAPON.index("using search_callback_t")
+        ]
+        expiry = rocket[
+            rocket.index("static THINK(rocket_expire)") :
+            rocket.index("static TOUCH(rocket_touch)")
+        ]
+        self.assertLess(
+            expiry.index("LagCompensation_ObserveRocketLifecyclePreRetirement"),
+            expiry.index("FreeEntity(ent)"),
+        )
+        self.assertLess(
+            expiry.index("FreeEntity(ent)"),
+            expiry.index("LagCompensation_ObserveRocketLifecyclePostRetirement"),
+        )
+        touch = rocket[
+            rocket.index("static TOUCH(rocket_touch)") :
+            rocket.index("gentity_t *fire_rocket")
+        ]
+        self.assertLess(
+            touch.index("if (tr.surface && (tr.surface->flags & SURF_SKY))"),
+            touch.index("LagCompensation_ObserveRocketLifecycleTouch"),
+        )
+        self.assertLess(
+            touch.index("LagCompensation_ObserveRocketLifecycleTouch"),
+            touch.index("Damage(other"),
+        )
+        normal_pre = touch.rindex(
+            "LagCompensation_ObserveRocketLifecyclePreRetirement"
+        )
+        normal_free = touch.rindex("FreeEntity(ent)")
+        normal_post = touch.rindex(
+            "LagCompensation_ObserveRocketLifecyclePostRetirement"
+        )
+        self.assertLess(normal_pre, normal_free)
+        self.assertLess(normal_free, normal_post)
+        spawn = rocket[rocket.index("gentity_t *fire_rocket") :]
+        self.assertIn("rocket->think = rocket_expire;", spawn)
+        self.assertLess(
+            spawn.index("gi.linkEntity(rocket);"),
+            spawn.index("LagCompensation_ObserveRocketLifecycleSpawn"),
+        )
+        self.assertLess(
+            spawn.index("LagCompensation_ObserveRocketLifecycleSpawn"),
+            spawn.index("LagCompensation_ResolveProjectileSpawnForward"),
+        )
+
+    def test_rocket_lifecycle_generation_timing_and_status_contract_is_exact(self) -> None:
+        self.assertIn(
+            "WORR_LAG_COMPENSATION_ROCKET_LIFECYCLE_TOUCH_RETIREMENT = 1",
+            LAG_HEADER,
+        )
+        self.assertIn(
+            "WORR_LAG_COMPENSATION_ROCKET_LIFECYCLE_LIFETIME_EXPIRY = 2",
+            LAG_HEADER,
+        )
+        observer = LAG[
+            LAG.index("void LagCompensation_ObserveRocketLifecycleSpawn") :
+            LAG.index("void LagCompensation_ObserveCurrentWorldSplashCanDamage")
+        ]
+        self.assertIn("projectile->owner != owner", observer)
+        self.assertIn("(projectile->nextThink - level.time).milliseconds()", observer)
+        self.assertIn("rocket_touch_count", observer)
+        # EntityRef stores non-client generation as pre-free spawn_count + 1;
+        # FreeEntity writes that same value back to spawn_count. Equality here
+        # therefore proves the exact old generation was invalidated.
+        self.assertIn("projectile->spawn_count != identity.generation", observer)
+        self.assertIn('Q_strcasecmp(projectile->className, "freed")', observer)
+
+        capture = LAG[
+            LAG.rindex("void CanonicalRailProbeCaptureFrame") :
+            LAG.rindex("void CanonicalRailProbeObserveTrace")
+        ]
+        self.assertIn("kCanonicalRocketPostTouchHoldUs", capture)
+        self.assertIn("rocket_post_touch_hold_verified = true", capture)
+        self.assertIn("kCanonicalRocketLifetimeScheduledMs", capture)
+        self.assertIn("projectile_forward_advanced_age_us", capture)
+        self.assertIn("rocketLifecycleProof", capture)
+        self.assertIn("failure = 36", capture)
+        prepare = LAG[
+            LAG.rindex("void CanonicalRailProbePrepareCommand") :
+            LAG.rindex("bool CanonicalHitscanProbeArm")
+        ]
+        self.assertIn(
+            "WORR_LAG_COMPENSATION_ROCKET_LIFECYCLE_LIFETIME_EXPIRY",
+            prepare,
+        )
+
+        publish = LAG[
+            LAG.index("void CanonicalRailProbePublish") :
+            LAG.index("void CanonicalRailProbeFail")
+        ]
+        ordered_suffix = (
+            "rocket_lifecycle_required",
+            "rocket_lifecycle_policy",
+            "rocket_owner_identity_retained",
+            "rocket_touch_count",
+            "rocket_touch_current_world",
+            "rocket_retired",
+            "rocket_retired_by_touch",
+            "rocket_retired_by_expiry",
+            "rocket_post_touch_hold_verified",
+            "rocket_no_double_damage",
+            "rocket_lifetime_scheduled_ms",
+            "rocket_lifetime_elapsed_ms",
+        )
+        offsets = [publish.index(name) for name in ordered_suffix]
+        self.assertEqual(offsets, sorted(offsets))
+        self.assertIn(
+            "sg_worr_rewind_canonical_rocket_lifecycle_touch_status", publish
+        )
+        self.assertIn(
+            "sg_worr_rewind_canonical_rocket_lifetime_expiry_status", publish
+        )
+        self.assertIn(
+            "LagCompensation_ArmCanonicalRocketLifecycleTouchRuntimeProbe",
+            LAG_HEADER,
+        )
+        self.assertIn(
+            "LagCompensation_ArmCanonicalRocketLifetimeExpiryRuntimeProbe",
+            LAG_HEADER,
+        )
+
         capture = LAG[LAG.rindex("void CanonicalRailProbeCaptureFrame"):LAG.rindex("void CanonicalRailProbeObserveTrace")]
         self.assertIn("currentAuthorityProjectileProof", capture)
         self.assertIn("projectile_current_authority_required", capture)
@@ -381,6 +522,77 @@ class CanonicalRailDamageContractTests(unittest.TestCase):
             LAG.rindex("void CanonicalRailProbePrepareCommand")
         ]
         self.assertIn("SameCommand(result.command_id, canonicalRailProbe.command_id)", observer)
+
+    def test_rocket_mover_relative_policy_is_paired_and_never_globally_rewinds(self) -> None:
+        arm = LAG[
+            LAG.rindex("bool CanonicalRocketMoverRelativeProbeArm") :
+            LAG.rindex("bool CanonicalBfgProbeArm")
+        ]
+        for required in (
+            "WORR_REWIND_WEAPON_ROCKET_SPAWN_FORWARD",
+            "mover_relative_projectile_required = true",
+            "CanonicalRailProbeSelectHistoricalMover",
+            "CanonicalRailProbePlaceMoverRelativeTarget",
+            "Vector3{canonicalRailProbe.target_distance, 0.0f, 0.0f}",
+        ):
+            self.assertIn(required, arm)
+
+        resolver = LAG[
+            LAG.index("LagCompensation_ResolveProjectileSpawnForward") :
+            LAG.index("LagCompensation_ResolveMeleePlayerCandidate")
+        ]
+        self.assertIn(
+            "WORR_LAG_COMPENSATION_MOVER_RELATIVE_CURRENT_WORLD", resolver
+        )
+        self.assertIn("AuthoritativeCollisionHash()", resolver)
+        self.assertIn("authority_guard_checked = true", resolver)
+        self.assertIn("authority_guard_unchanged", resolver)
+        self.assertNotIn("TraceHistoricalScene", resolver)
+
+        history = LAG[
+            LAG.index("CanonicalRailProbeValidateMoverRelativeHistory") :
+            LAG.index("void CanonicalRailProbePrepareCommand")
+        ]
+        self.assertIn("WORR_REWIND_POSE_HAS_MOVER", history)
+        self.assertIn("mover_relative_origin", history)
+        self.assertIn("mover_relative_angles", history)
+        self.assertIn("targetMoved", history)
+        self.assertIn("moverMoved", history)
+        self.assertIn("Vector3{32.0f, 0.0f, 0.0f}", history)
+        self.assertIn("(relativeAfter - relativeBefore).lengthSquared()", history)
+
+        impact_observer = LAG[
+            LAG.index("void LagCompensation_ObserveCurrentWorldProjectileSplashImpact") :
+            LAG.index("void LagCompensation_ObserveProxMineLanded")
+        ]
+        self.assertIn("mover_relative_projectile_identity", impact_observer)
+        self.assertIn("canonicalRailProbe.target_identity", impact_observer)
+        self.assertIn("mover_relative_current_world_impact = true", impact_observer)
+        rocket_touch = WEAPON[
+            WEAPON.index("static TOUCH(rocket_touch)") :
+            WEAPON.index("gentity_t *fire_rocket")
+        ]
+        self.assertLess(
+            rocket_touch.index(
+                "LagCompensation_ObserveCurrentWorldProjectileSplashImpact"
+            ),
+            rocket_touch.index("Damage(other"),
+        )
+
+        capture = LAG[
+            LAG.rindex("void CanonicalRailProbeCaptureFrame") :
+            LAG.rindex("void CanonicalRailProbeObserveTrace")
+        ]
+        self.assertIn("moverRelativeProjectileProof", capture)
+        self.assertIn("mover_relative_current_world_impact", capture)
+        self.assertIn("mover_relative_authority_unchanged", capture)
+        self.assertIn(
+            "LagCompensation_ArmCanonicalRocketMoverRelativeRuntimeProbe",
+            LAG_HEADER,
+        )
+        self.assertIn(
+            "sg_worr_rewind_canonical_rocket_mover_relative_status", LAG
+        )
 
     def test_bfg_spawn_forward_is_bound_to_its_normal_windup_and_current_world_launch(self) -> None:
         arm = LAG[
@@ -715,7 +927,17 @@ class CanonicalRailDamageContractTests(unittest.TestCase):
         self.assertIn("WORR_REWIND_WEAPON_ROCKET_SPAWN_FORWARD", arm)
         self.assertIn("kCanonicalRocketSplashProbeExpectedDamage", arm)
         self.assertIn("{-64.0f, 48.0f, 0.0f}", arm)
-        self.assertIn("true);", arm)
+        self.assertIn(
+            "WORR_LAG_COMPENSATION_SPLASH_OCCLUSION_CLEAR_PLAYER", arm
+        )
+        self.assertIn("CanonicalRocketSplashBspOcclusionProbeArm", arm)
+        self.assertIn(
+            "WORR_LAG_COMPENSATION_SPLASH_OCCLUSION_BSP_BLOCKED", arm
+        )
+        self.assertIn("CanonicalRocketSplashWaterBoundaryProbeArm", arm)
+        self.assertIn(
+            "WORR_LAG_COMPENSATION_SPLASH_OCCLUSION_WATER_BOUNDARY", arm
+        )
 
         fixture = LAG[
             LAG.index("CanonicalRailProbePlaceCurrentWorldSplashImpact"):
@@ -725,6 +947,13 @@ class CanonicalRailDamageContractTests(unittest.TestCase):
         self.assertIn("SOLID_BBOX", fixture)
         self.assertIn("current_world_splash_impact_damageable", fixture)
         self.assertIn("if (impact->takeDamage)", fixture)
+        self.assertIn("CanonicalRailProbeStageSplashOcclusion", fixture)
+        self.assertIn('Q_strcasecmp(mover->className, "func_rotating")', fixture)
+        self.assertIn('Q_strcasecmp(water->className, "func_water")', fixture)
+        self.assertIn("gi.traceLine(", fixture)
+        self.assertIn("impactCenter, targetCenter, projectile, MASK_WATER", fixture)
+        self.assertIn("waterTrace.startSolid", fixture)
+        self.assertIn("!waterTrace.allSolid", fixture)
 
         observer = LAG[
             LAG.rindex("void LagCompensation_ObserveCurrentWorldProjectileSplashImpact"):
@@ -734,10 +963,35 @@ class CanonicalRailDamageContractTests(unittest.TestCase):
         self.assertIn("current_world_splash_projectile_identity", observer)
         self.assertIn("current_world_splash_impact_observed = true", observer)
         self.assertIn("weaponPolicy != canonicalRailProbe.weapon_policy", observer)
+        self.assertLess(
+            observer.index("current_world_splash_impact_observed = true"),
+            observer.index("CanonicalRailProbeStageSplashOcclusion(projectile)"),
+        )
+        self.assertIn(
+            "void LagCompensation_ObserveCurrentWorldSplashCanDamage", observer
+        )
+        self.assertIn("splash_can_damage_observed = true", observer)
+        self.assertIn("splash_bsp_blocker_verified", observer)
+
+        radius = COMBAT[
+            COMBAT.index("bool RadiusDamage(gentity_t *inflictor") :
+            COMBAT.index("void RadiusNukeDamage")
+        ]
+        self.assertIn("const bool canDamage = CanDamage(ent, inflictor);", radius)
+        self.assertIn(
+            "LagCompensation_ObserveCurrentWorldSplashCanDamage(inflictor, ent,",
+            radius,
+        )
+        self.assertLess(
+            radius.index("const bool canDamage = CanDamage(ent, inflictor);"),
+            radius.index("if (canDamage)"),
+        )
 
         capture = LAG[LAG.rindex("void CanonicalRailProbeCaptureFrame"):LAG.rindex("void CanonicalRailProbeObserveTrace")]
         self.assertIn("currentWorldSplashProof", capture)
         self.assertIn("!canonicalRailProbe.canonical_historical_hit", capture)
+        self.assertIn("splashOcclusionProof", capture)
+        self.assertIn("splash_target_undamaged", capture)
 
     def test_plasma_gun_spawn_forward_keeps_direct_and_splash_current_authority(self) -> None:
         arm = LAG[LAG.rindex("bool CanonicalPlasmaGunProbeArm"):LAG.rindex("} // namespace")]
@@ -823,12 +1077,16 @@ class CanonicalRailDamageContractTests(unittest.TestCase):
         self.assertIn("ModID::PlasmaGun_Splash", plasma_touch)
 
     def test_blaster_bolt_spawn_forward_keeps_direct_and_radius_current_authority(self) -> None:
-        arm = LAG[LAG.rindex("bool CanonicalBlasterProbeArm"):LAG.rindex("} // namespace")]
+        arm = LAG[
+            LAG.rindex("bool CanonicalBlasterProbeArm") :
+            LAG.rindex("bool CanonicalHyperBlasterProbeArm")
+        ]
         self.assertIn("WORR_REWIND_WEAPON_BLASTER_BOLT_SPAWN_FORWARD", arm)
         self.assertIn("IT_WEAPON_BLASTER", arm)
         self.assertIn("kCanonicalBlasterProbeExpectedDamage", arm)
         self.assertIn("9, 224.0f", arm)
         self.assertIn("{32.0f, 0.0f, 0.0f}", arm)
+        self.assertIn("{320.0f, 192.0f, 64.0f}", arm)
 
         blaster = WEAPON[
             WEAPON.index("void fire_blaster") :
@@ -841,6 +1099,27 @@ class CanonicalRailDamageContractTests(unittest.TestCase):
         self.assertLess(
             blaster.index("gi.traceLine(self->s.origin"),
             blaster.index("LagCompensation_ResolveProjectileSpawnForward"),
+        )
+
+        blaster_callback = PLAYER_WEAPON[
+            PLAYER_WEAPON.index("static void Weapon_Blaster_DoFire") :
+            PLAYER_WEAPON.index("\nvoid Weapon_Blaster(gentity_t")
+        ]
+        self.assertIn(
+            "LagCompensation_ObserveCanonicalWeaponCallback(",
+            blaster_callback,
+        )
+        self.assertIn(
+            "WORR_REWIND_WEAPON_BLASTER_BOLT_SPAWN_FORWARD",
+            blaster_callback,
+        )
+        self.assertLess(
+            blaster_callback.index(
+                "LagCompensation_ObserveCanonicalWeaponCallback("
+            ),
+            blaster_callback.index(
+                "Weapon_Blaster_Fire(ent, vec3_origin, damage, false, EF_BLASTER)"
+            ),
         )
 
         prepare = LAG[
@@ -1005,6 +1284,14 @@ class CanonicalRailDamageContractTests(unittest.TestCase):
             LAG.index("LagCompensation_ResolveMeleePlayerCandidate")
         ]
         self.assertIn("ResolveDeferredProjectileForwardDecision(", resolver)
+        # A delayed Generic callback may execute inside a later accepted
+        # zero-input command scope. The retained attack-edge authorization is
+        # causally narrower and must be selected before that active command.
+        self.assertLess(
+            resolver.index("const bool resolvedDeferred"),
+            resolver.index("const bool resolvedActive"),
+        )
+        self.assertIn("!resolvedDeferred &&", resolver)
 
     def test_grenade_launcher_uses_clear_current_world_ballistic_forward(self) -> None:
         arm = LAG[

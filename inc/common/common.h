@@ -208,6 +208,7 @@ extern unsigned     com_eventTime; // system time of the last event
 extern unsigned     com_localTime; // milliseconds since Q2 startup
 extern unsigned     com_localTime2; // milliseconds since Q2 startup, but doesn't run if paused
 extern unsigned     com_localTime3; // milliseconds since Q2 startup, not affected by timescale
+extern uint64_t     com_unscaledTimeUs; // non-wrapping canonical host clock
 extern bool         com_initialized;
 extern time_t       com_startTime;
 

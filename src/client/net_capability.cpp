@@ -11,6 +11,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "client/command_identity.h"
 #include "client/net_capability.h"
 #include "client/native_readiness_pilot.h"
+#include "common/net/native_input_batch_sideband.h"
 
 #include <cstring>
 
@@ -26,6 +27,28 @@ worr_net_capability_state_v1 capability_state{};
 worr_net_capability_confirm_v1 pending_confirm{};
 confirm_phase_t confirm_phase = confirm_idle;
 bool packet_active{};
+cvar_t *capability_offer_cvar{};
+cvar_t *input_batch_offer_cvar{};
+uint32_t capability_offer = WORR_NET_CAP_LEGACY_STAGE_MASK;
+
+bool refresh_offer()
+{
+    char value[11];
+    const uint32_t requested =
+        CL_NativeReadinessPilotRequestedPublicCapabilities();
+    if (!Worr_NetCapabilitiesFormatV1(requested, value, sizeof(value)))
+        return false;
+    capability_offer = requested;
+    if (capability_offer_cvar)
+        Cvar_SetByVar(capability_offer_cvar, value, FROM_CODE);
+    if (input_batch_offer_cvar) {
+        Cvar_SetByVar(input_batch_offer_cvar,
+                      CL_NativeReadinessPilotRequestedInputBatchV1()
+                          ? "1" : "0",
+                      FROM_CODE);
+    }
+    return true;
+}
 
 void fail_confirmation()
 {
@@ -45,12 +68,32 @@ void fail_confirmation()
 extern "C" void CL_NetCapabilityRegisterOffer(void)
 {
     char value[11];
-    if (!Worr_NetCapabilitiesFormatV1(WORR_NET_CAP_LEGACY_STAGE_MASK,
-                                      value, sizeof(value))) {
+    const uint32_t requested =
+        CL_NativeReadinessPilotRequestedPublicCapabilities();
+    if (!Worr_NetCapabilitiesFormatV1(requested, value, sizeof(value))) {
         Com_Error(ERR_FATAL, "failed to format WORR capability offer");
     }
-    Cvar_Get(WORR_NET_CAPABILITY_USERINFO_KEY, value,
-             CVAR_USERINFO | CVAR_ROM);
+    capability_offer_cvar = Cvar_Get(
+        WORR_NET_CAPABILITY_USERINFO_KEY, value,
+        CVAR_USERINFO | CVAR_ROM);
+    capability_offer = requested;
+    /* Override a command-line/user-created value: this userinfo field is a
+     * derived connection contract, not a user-editable bitmask. */
+    Cvar_SetByVar(capability_offer_cvar, value, FROM_CODE);
+    input_batch_offer_cvar = Cvar_Get(
+        WORR_NATIVE_INPUT_BATCH_USERINFO_KEY,
+        CL_NativeReadinessPilotRequestedInputBatchV1() ? "1" : "0",
+        CVAR_USERINFO | CVAR_ROM);
+    Cvar_SetByVar(input_batch_offer_cvar,
+                  CL_NativeReadinessPilotRequestedInputBatchV1()
+                      ? "1" : "0",
+                  FROM_CODE);
+}
+
+extern "C" void CL_NetCapabilityRefreshOffer(void)
+{
+    if (!refresh_offer())
+        Com_Error(ERR_FATAL, "failed to refresh WORR capability offer");
 }
 
 extern "C" void CL_NetCapabilityReset(uint32_t connection_epoch)
@@ -66,8 +109,7 @@ extern "C" void CL_NetCapabilityReset(uint32_t connection_epoch)
         connection_epoch != 0 ? connection_epoch : 1u;
     if (!Worr_NetCapabilityStateInitV1(
             &capability_state, provisional_epoch,
-            WORR_NET_CAP_LEGACY_STAGE_MASK,
-            WORR_NET_CAP_LEGACY_STAGE_MASK)) {
+            capability_offer, capability_offer)) {
         capability_state.struct_size = sizeof(capability_state);
         capability_state.schema_version = WORR_NET_CAPABILITY_VERSION;
         capability_state.phase = WORR_NET_CAPABILITY_FAILED;
@@ -120,8 +162,7 @@ extern "C" bool CL_NetCapabilityObserveSetting(int32_t index,
             capability_state.phase != WORR_NET_CAPABILITY_OFFERED ||
             !Worr_NetCapabilityStateInitV1(
                 &offered, session_epoch,
-                WORR_NET_CAP_LEGACY_STAGE_MASK,
-                WORR_NET_CAP_LEGACY_STAGE_MASK)) {
+                capability_offer, capability_offer)) {
             fail_confirmation();
             return true;
         }
@@ -156,6 +197,9 @@ extern "C" bool CL_NetCapabilityObserveSetting(int32_t index,
             CL_NativeReadinessPilotCapabilityConfirmed(&capability_state);
         } else {
             CL_CommandIdentityShutdown();
+            /* Retire a staged native endpoint before any readiness carrier
+             * can follow a malformed or contradictory public tuple. */
+            CL_NativeReadinessPilotCapabilityConfirmed(&capability_state);
         }
         pending_confirm = {};
         confirm_phase = confirm_idle;
@@ -180,6 +224,11 @@ extern "C" uint32_t CL_NetCapabilityNegotiated(void)
                    capability_state.phase == WORR_NET_CAPABILITY_CONFIRMED
                ? capability_state.negotiated
                : 0;
+}
+
+extern "C" uint32_t CL_NetCapabilityOffered(void)
+{
+    return capability_offer;
 }
 
 extern "C" bool CL_NetCapabilityHas(uint32_t capability)

@@ -108,6 +108,11 @@ bool LagCompensation_RunRailDamageRuntimeProbe(
 // Railgun weapon callback then owns the trace and damage.
 bool LagCompensation_ArmCanonicalRailDamageRuntimeProbe();
 
+// Arms the equivalent real-command Railgun fixture with current-authority
+// target spawn protection. The historical trace must still hit the target,
+// while normal Damage policy must leave health unchanged.
+bool LagCompensation_ArmCanonicalRailSpawnProtectionRuntimeProbe();
+
 // Arms the equivalent real-command Railgun fixture with the packaged rotating
 // inline BSP between shooter and target at the selected historical instant.
 // The live mover is displaced only after the command mapping selects that
@@ -137,6 +142,23 @@ bool LagCompensation_ArmCanonicalDisruptorDamageRuntimeProbe();
 // current-world flight, impact, splash, and damage; the fixture only proves a
 // bounded authenticated spawn advance before that normal lifecycle.
 bool LagCompensation_ArmCanonicalRocketDamageRuntimeProbe();
+
+// Arms the mover-relative Rocket fixture. A real rotating mover and its real
+// client rider retain paired history, then translate together before the
+// ordinary attack. The accepted launch-delay sweep and later impact remain
+// current-world authority; no live entity is globally rewound.
+bool LagCompensation_ArmCanonicalRocketMoverRelativeRuntimeProbe();
+
+// Arms a real Rocket direct-contact lifecycle fixture. The production
+// rocket_touch path must observe exactly one current-world target contact,
+// apply its normal direct damage, retire the exact projectile generation via
+// FreeEntity, and remain damage-stable for a bounded post-touch hold.
+bool LagCompensation_ArmCanonicalRocketLifecycleTouchRuntimeProbe();
+
+// Arms a real Rocket lifetime fixture with the live target outside the flight
+// lane. The production projectile must retain its owner, receive no touch,
+// and retire its exact generation through the normally scheduled expiry.
+bool LagCompensation_ArmCanonicalRocketLifetimeExpiryRuntimeProbe();
 bool LagCompensation_ArmCanonicalBfgDamageRuntimeProbe();
 bool LagCompensation_ArmCanonicalIonRipperDamageRuntimeProbe();
 bool LagCompensation_ArmCanonicalTeslaMineDamageRuntimeProbe();
@@ -179,6 +201,18 @@ bool LagCompensation_ArmCanonicalProxLauncherLifecycleRuntimeProbe();
 // the fixture's present-world blocker, while normal RadiusDamage remains the
 // sole owner of the off-axis target's current-authority splash damage.
 bool LagCompensation_ArmCanonicalRocketSplashDamageRuntimeProbe();
+
+// Arms the same real-command Rocket splash path with the packaged rotating
+// inline BSP staged between the accepted current-world impact and the live
+// player. Production RadiusDamage/CanDamage must reject the occluded target;
+// the fixture never supplies the line-of-sight or damage result.
+bool LagCompensation_ArmCanonicalRocketSplashBspOcclusionRuntimeProbe();
+
+// Arms the same real-command Rocket splash path with the packaged func_water
+// surrounding the accepted current-world impact. The live player remains
+// outside the water volume and production CanDamage must retain its normal
+// MASK_SOLID-transparent splash result across that boundary.
+bool LagCompensation_ArmCanonicalRocketSplashWaterBoundaryRuntimeProbe();
 
 // Arms the Phalanx splash fixture. The real shell must collide with the
 // fixture's present-world blocker, while normal RadiusDamage remains the sole
@@ -354,12 +388,42 @@ trace_t LagCompensation_Trace(gentity_t *from_player,
 // historical collision result: callers retain ownership of entity movement,
 // linking, touch callbacks, damage, and projectile lifetime policy. Ballistic
 // policies also return the clear-flight velocity at the accepted end point.
+enum LagCompensationMoverRelativePolicy : uint32_t {
+  WORR_LAG_COMPENSATION_MOVER_RELATIVE_UNSPECIFIED = 0,
+  // The production projectile starts from its already-resolved current-world
+  // muzzle pose. Its bounded delay sweep, mover/player contact, and all later
+  // lifetime/damage decisions use the current world; historical mover-relative
+  // samples are never installed into live entities.
+  WORR_LAG_COMPENSATION_MOVER_RELATIVE_CURRENT_WORLD = 1,
+};
+
+// Console-only acceptance classifications for current-world splash
+// line-of-sight. These values describe observations of the production
+// RadiusDamage/CanDamage path; they are not gameplay or wire policy.
+enum LagCompensationSplashOcclusionPolicy : uint32_t {
+  WORR_LAG_COMPENSATION_SPLASH_OCCLUSION_UNSPECIFIED = 0,
+  WORR_LAG_COMPENSATION_SPLASH_OCCLUSION_CLEAR_PLAYER = 1,
+  WORR_LAG_COMPENSATION_SPLASH_OCCLUSION_BSP_BLOCKED = 2,
+  WORR_LAG_COMPENSATION_SPLASH_OCCLUSION_WATER_BOUNDARY = 3,
+};
+
+// Console-only acceptance classifications for the isolated Rocket lifecycle
+// fixtures. They describe passive observations of production behavior and do
+// not alter gameplay, lifetime authority, or the wire protocol.
+enum LagCompensationRocketLifecyclePolicy : uint32_t {
+  WORR_LAG_COMPENSATION_ROCKET_LIFECYCLE_UNSPECIFIED = 0,
+  WORR_LAG_COMPENSATION_ROCKET_LIFECYCLE_TOUCH_RETIREMENT = 1,
+  WORR_LAG_COMPENSATION_ROCKET_LIFECYCLE_LIFETIME_EXPIRY = 2,
+};
+
 struct LagCompensationProjectileForwardResult {
   trace_t trace{};
   Vector3 final_velocity{};
   uint64_t authoritative_age_us = 0;
   uint64_t advanced_age_us = 0;
   uint32_t weapon_policy = WORR_REWIND_WEAPON_UNSPECIFIED;
+  uint32_t mover_relative_policy =
+      WORR_LAG_COMPENSATION_MOVER_RELATIVE_UNSPECIFIED;
   worr_command_id_v1 command_id{};
   worr_event_entity_ref_v1 projectile_entity{};
   bool authenticated = false;
@@ -367,6 +431,8 @@ struct LagCompensationProjectileForwardResult {
   bool ballistic = false;
   bool clamped = false;
   bool blocked = false;
+  bool authority_guard_checked = false;
+  bool authority_guard_unchanged = false;
 };
 
 // Resolves how far a newly spawned projectile may advance in the *current*
@@ -396,11 +462,32 @@ void LagCompensation_ObserveCanonicalRailPierceHit(
     gentity_t *shooter, const trace_t &trace);
 
 // Observes a normal production projectile touch only for an isolated
-// current-world splash fixture. It never supplies a collision result, damage
-// target, or radius decision.
+// current-world splash or mover-relative fixture. It never supplies a
+// collision result, damage target, or radius decision; mover-relative proof is
+// recorded before normal damage/knockback can alter the rider's live state.
 void LagCompensation_ObserveCurrentWorldProjectileSplashImpact(
     gentity_t *projectile, gentity_t *other, const trace_t &trace,
     uint32_t weapon_policy);
+
+// Passive observations for the two isolated Rocket lifecycle fixtures. The
+// production weapon remains the sole owner of spawn, touch, damage, expiry,
+// and FreeEntity. The post-retirement observer proves slot-generation
+// invalidation only after that production FreeEntity call has returned.
+void LagCompensation_ObserveRocketLifecycleSpawn(gentity_t *projectile,
+                                                  gentity_t *owner);
+void LagCompensation_ObserveRocketLifecycleTouch(gentity_t *projectile,
+                                                  gentity_t *other,
+                                                  const trace_t &trace);
+void LagCompensation_ObserveRocketLifecyclePreRetirement(
+    gentity_t *projectile, bool lifetime_expiry);
+void LagCompensation_ObserveRocketLifecyclePostRetirement(
+    gentity_t *projectile, bool lifetime_expiry);
+
+// Passively records the exact production CanDamage result selected by
+// RadiusDamage for the isolated Rocket splash-occlusion fixtures. It is a
+// no-op for every other inflictor/target pair and cannot alter the result.
+void LagCompensation_ObserveCurrentWorldSplashCanDamage(
+    gentity_t *inflictor, gentity_t *target, bool can_damage);
 
 // Passive observations for the isolated Proximity Launcher lifecycle fixture.
 // They never create a landing, target, trigger, explosion, or damage result.

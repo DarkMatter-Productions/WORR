@@ -104,6 +104,17 @@ sv_worr_native_event_shadow::
     admission fails. Reconnect clients after changing it. See
     link:progressive-networking-controls.md[Progressive Networking Controls].
 
+sv_worr_native_snapshot_shadow::
+    Adds the server half of the developer-only canonical snapshot diagnostic
+    to `sv_worr_native_shadow`. Default value is 0 (disabled). The client and
+    server must enable both base native-shadow controls and both snapshot-shadow
+    controls before connecting, and `sv_snapshot_shadow` must remain enabled.
+    Established snapshot delivery remains available; this control alone does
+    not promote native rendering, effects, audio, or gameplay authority. It may
+    be combined with the event-shadow pair for the exact combined diagnostic.
+    Reconnect clients after changing it. See
+    link:progressive-networking-controls.md[Progressive Networking Controls].
+
 Generic
 ~~~~~~~
 
@@ -337,14 +348,19 @@ Progressive gameplay networking
 g_lag_compensation::
     Compatibility master switch for historical player-bounds hit validation.
     Default value is 0 (current-world collision). Value 1 allows the staged
-    historical path for eligible deathmatch weapon traces. This remains an
-    evaluation feature while moving-geometry, fairness, load, and platform
-    release gates are incomplete.
+    server-authoritative historical path for eligible deathmatch weapon traces.
+    Clients cannot supply a target, hit result, or arbitrary rewind time. The
+    supported historical query policies are Machinegun, Chaingun, Shotgun,
+    Super Shotgun, Railgun, Disruptor convergence, Plasma Beam, and
+    Thunderbolt. Spectators are excluded. This remains an evaluation feature
+    while broader mover, lifecycle, fairness, load, and platform release gates
+    are incomplete.
 
 sg_lag_compensation_max_ms::
     Maximum historical player rewind window in milliseconds. Default value is
-    200 and the policy limit is 0 to 250. Value 0 prevents historical rewind
-    even when ‘g_lag_compensation’ is enabled.
+    200 and the server-enforced hard policy limit is 0 to 250. Interpolation
+    allowance and client data cannot raise that cap. Value 0 prevents
+    historical rewind even when ‘g_lag_compensation’ is enabled.
 
 sg_lag_compensation_interp_ms::
     Additional interpolation allowance in milliseconds. Default value is -1,
@@ -363,6 +379,17 @@ sg_lag_compensation_debug::
        - 2 — also retain a bounded 256-record query journal without per-query
          console output
        - 3 or greater — also print one detailed console line per query
+
+Historical geometry answers collision queries only. Damage, spawn protection,
+health, death, and respawn remain current server authority, and a respawn
+cannot reuse the previous life's identity or history. A teleport, map or life
+change, identity mismatch, marked discontinuity, incomplete scene, or missing
+history fails closed to an uncompensated current-world trace. A rejected
+canonical command never falls back to a legacy time estimate. Set
+‘g_lag_compensation’ to 0 for the server-wide opt-out; no client setting can
+override it. Detailed diagnostics identify the selected path, weapon policy,
+fallback reason, timing, candidate count, and authority guard without changing
+gameplay.
 
 See link:progressive-networking-controls.md[Progressive Networking Controls]
 before enabling this path on a server.

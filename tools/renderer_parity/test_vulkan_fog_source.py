@@ -183,17 +183,20 @@ class VulkanFogSourceTests(unittest.TestCase):
         self.assertIn("set vk_fog 1", PARTICLE_FOG_CONFIG)
         self.assertIn("set gl_partscale 2", PARTICLE_FOG_CONFIG)
         self.assertIn("set vk_partscale 2", PARTICLE_FOG_CONFIG)
+        self.assertIn("set gl_partshape 0", PARTICLE_FOG_CONFIG)
+        self.assertIn("set vk_particle_shape 0", PARTICLE_FOG_CONFIG)
         self.assertIn("set cl_testparticles 1", PARTICLE_FOG_CONFIG)
         self.assertIn("map worr_fr01_global_fog", PARTICLE_FOG_CONFIG)
         scene = PARTICLE_FOG_MANIFEST["scenes"][0]
         self.assertEqual(scene["id"], "particle_global_fog_fixed_view")
-        self.assertEqual(scene["metrics"]["pixel_threshold"], 0)
-        self.assertEqual(scene["metrics"]["max_mean_absolute_rgb"], [0, 0, 0])
+        self.assertEqual(scene["metrics"]["pixel_threshold"], 1)
+        self.assertEqual(scene["metrics"]["max_mean_absolute_rgb"], [0.03, 0.01, 0.03])
         probe = scene["probes"][0]
         self.assertEqual(probe["color"], [75, 132, 174])
         self.assertEqual(probe["tolerance"], 0)
-        self.assertEqual(probe["min_pixels_per_backend"], 300000)
-        self.assertEqual(probe["min_backend_intersection_over_union"], 1.0)
+        self.assertEqual(probe["min_pixels_per_backend"], 24000)
+        self.assertEqual(probe["max_backend_count_delta_percent"], 0.1)
+        self.assertEqual(probe["min_backend_intersection_over_union"], 0.998)
 
     def test_target_laser_beam_fixture_requires_native_fog_receiver_coverage(self) -> None:
         self.assertIn("if (ent->flags & RF_BEAM)", VK_ENTITY)

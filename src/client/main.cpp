@@ -536,6 +536,7 @@ void CL_CheckForResend(void)
     //
     Com_PrintfLoc("$cl_requesting_connection", cls.connect_count);
 
+    CL_NetCapabilityRefreshOffer();
     cls.userinfo_modified = 0;
 
     // use maximum allowed msglen for loopback
@@ -1605,7 +1606,8 @@ static void CL_PacketEvent(void)
             Com_WPrintf(
                 "native application rejected: failure=%u mode=%u "
                 "readiness=%u transport=%u drains=%llu failures=%llu "
-                "event_reset=%u:%u/%u/%u status=%u/%u/%u/%u:%u/%u/0x%x\n",
+                "event_reset=%u:%u/%u/%u "
+                "status=%u/%u/%u/%u:%u/%u/0x%x receipt=%u/0x%llx\n",
                 status.last_failure, status.mode, status.readiness_phase,
                 status.transport_epoch,
                 (unsigned long long)status.drains,
@@ -1620,7 +1622,10 @@ static void CL_PacketEvent(void)
                 event_diagnostic.status.authority_epoch,
                 event_diagnostic.status.next_presentation_sequence,
                 event_diagnostic.status.authority_count,
-                event_diagnostic.status.state_flags);
+                event_diagnostic.status.state_flags,
+                event_diagnostic.status.receipt.highest_contiguous,
+                (unsigned long long)
+                    event_diagnostic.status.receipt.selective_mask);
         }
         Com_Error(ERR_DROP, "server sent a rejected application payload");
     }

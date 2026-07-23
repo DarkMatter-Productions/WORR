@@ -153,6 +153,13 @@ typedef struct vk_context_s {
     // device and then consumed by native material sampler creation.
     bool sampler_anisotropy_supported;
     float max_sampler_anisotropy;
+    // The alias-model cel pass is a native silhouette wireframe replay. Keep
+    // its optional raster requirements explicit: Vulkan does not enable
+    // non-solid fill or wide lines unless they were requested at device
+    // creation time.
+    bool celshading_supported;
+    float min_line_width;
+    float max_line_width;
     // Scene MSAA is enabled only when the device can natively resolve both
     // color and depth/stencil through render-pass2. The final presentation,
     // post-process, and sampled scene images remain single-sample targets.
@@ -202,6 +209,11 @@ typedef struct vk_context_s {
     // LDR resolution scaling can bypass the sampled fullscreen compositor
     // only when the presentation surface supports a filtered native blit.
     bool scaled_scene_blit_supported;
+    // A full-resolution sampled copy of the presentation image is needed by
+    // native refraction and by the final CRT pass. Keep this capability
+    // separate from the fast scaled-scene blit so CRT can allocate its
+    // intermediate lazily instead of carrying it on every scaled frame.
+    bool presentation_scene_copy_supported;
     VkFormat linear_scene_format;
     bool linear_scene_supported;
     bool linear_scene_mips_supported;

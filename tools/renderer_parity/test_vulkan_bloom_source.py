@@ -25,6 +25,13 @@ POST_SHADER = (
 BLOOM_SHADER = (ROOT / "src/rend_vk/shaders/vk_bloom.frag").read_text(
     encoding="utf-8"
 )
+BLOOM_PREFILTER_SHADER = (
+    ROOT / "src/rend_vk/shaders/vk_bloom_prefilter.frag"
+).read_text(encoding="utf-8")
+BLOOM_BLUR_SHADER = (ROOT / "src/rend_vk/shaders/vk_bloom_blur.frag").read_text(
+    encoding="utf-8"
+)
+SPIRV_GENERATOR = (ROOT / "tools/gen_vk_world_spv.py").read_text(encoding="utf-8")
 
 
 class VulkanBloomSourceTests(unittest.TestCase):
@@ -81,15 +88,21 @@ class VulkanBloomSourceTests(unittest.TestCase):
         self.assertIn("weight *= 0.5", POST_SHADER)
 
     def test_shaders_keep_prefilter_blur_and_composite_separate(self) -> None:
-        self.assertIn("float soft = clamp", BLOOM_SHADER)
-        self.assertIn("Gaussian kernel", BLOOM_SHADER)
-        self.assertIn("Pair two adjacent taps into one bilinear sample", BLOOM_SHADER)
-        self.assertIn("layout(std140, set = 1, binding = 0)", BLOOM_SHADER)
-        self.assertIn("vec4 offset_weight[51]", BLOOM_SHADER)
+        self.assertIn("float soft = clamp", BLOOM_PREFILTER_SHADER)
+        self.assertIn("authored-emission descriptor", BLOOM_PREFILTER_SHADER)
+        self.assertIn("layout(std140, set = 1, binding = 0)", BLOOM_BLUR_SHADER)
+        self.assertIn("vec4 offset_weight[51]", BLOOM_BLUR_SHADER)
         self.assertIn("for (int i = -radius; i <= radius; i += 2, ++pair)",
-                      BLOOM_SHADER)
-        self.assertIn("bloom_kernel.offset_weight[pair].xy", BLOOM_SHADER)
-        self.assertNotIn("float pair_offset", BLOOM_SHADER)
+                      BLOOM_BLUR_SHADER)
+        self.assertIn("bloom_kernel.offset_weight[pair].xy", BLOOM_BLUR_SHADER)
+        self.assertIn("VK_BLOOM_BLUR_HORIZONTAL", BLOOM_BLUR_SHADER)
+        self.assertNotIn("float pair_offset", BLOOM_BLUR_SHADER)
+        self.assertIn("bloom_prefilter_pipeline", VK_POST)
+        self.assertIn("bloom_blur_x_pipeline", VK_POST)
+        self.assertIn("bloom_blur_y_pipeline", VK_POST)
+        self.assertIn("vk_bloom_prefilter_frag_spv", SPIRV_GENERATOR)
+        self.assertIn("vk_bloom_blur_x_frag_spv", SPIRV_GENERATOR)
+        self.assertIn("vk_bloom_blur_y_frag_spv", SPIRV_GENERATOR)
         self.assertIn("VK_PostProcess_UpdateBlurKernel", VK_POST)
         self.assertIn("VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER", VK_POST)
         self.assertIn("binding = 2", POST_SHADER)

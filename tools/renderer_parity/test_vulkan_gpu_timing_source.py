@@ -104,11 +104,23 @@ class VulkanGpuTimingSourceTests(unittest.TestCase):
         self.assertIn("gpu_timing=%d", VK_DEBUG)
         self.assertIn("VK_DEBUG_MISSING_GPU_TIMING", VK_DEBUG)
 
+    def test_cpu_render_timing_excludes_surface_synchronization(self) -> None:
+        self.assertIn("static uint64_t vk_frame_sync_wait_us;", VK_MAIN)
+        self.assertIn("static void VK_AccumulateFrameSyncWait", VK_MAIN)
+        self.assertIn("vkAcquireNextImageKHR", VK_MAIN)
+        self.assertIn("vkQueuePresentKHR", VK_MAIN)
+        self.assertIn("cpu_render_ms=%.3f", VK_DEBUG)
+        self.assertIn("cpu_sync_wait_ms=%.3f", VK_DEBUG)
+        self.assertIn("float cpu_render_ms;", VK_DEBUG)
+        self.assertIn("float cpu_sync_wait_ms;", VK_DEBUG)
+        self.assertIn("VK_Debug_EndFrame(float cpu_frame_ms, float cpu_render_ms,", VK_DEBUG)
+        self.assertIn("frame_total_us - frame_sync_wait_us", VK_MAIN)
+
     def test_cpu_submission_timing_preserves_submillisecond_precision(self) -> None:
         self.assertIn("VK_HighResMicroseconds", VK_MAIN)
         self.assertIn("QueryPerformanceCounter", VK_MAIN)
         self.assertIn("vk_frame_begin_us", VK_MAIN)
-        self.assertIn("/\n                      1000.0f", VK_MAIN)
+        self.assertIn("(float)frame_total_us / 1000.0f", VK_MAIN)
 
     def test_stats_count_native_fullscreen_postprocess_submission(self) -> None:
         self.assertIn("VK_DEBUG_DOMAIN_POSTPROCESS", VK_DEBUG)

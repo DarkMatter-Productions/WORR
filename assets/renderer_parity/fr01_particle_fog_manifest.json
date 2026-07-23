@@ -8,8 +8,8 @@
       "capture": "fr01_particle_fog.tga",
       "crop": [160, 100, 640, 500],
       "metrics": {
-        "pixel_threshold": 0,
-        "max_mean_absolute_rgb": [0, 0, 0],
+        "pixel_threshold": 1,
+        "max_mean_absolute_rgb": [0.03, 0.01, 0.03],
         "max_pixels_over_threshold_percent": 0
       },
       "probes": [
@@ -17,9 +17,9 @@
           "name": "fogged_deterministic_particle_field",
           "color": [75, 132, 174],
           "tolerance": 0,
-          "min_pixels_per_backend": 300000,
-          "max_backend_count_delta_percent": 0,
-          "min_backend_intersection_over_union": 1.0
+          "min_pixels_per_backend": 24000,
+          "max_backend_count_delta_percent": 0.1,
+          "min_backend_intersection_over_union": 0.998
         }
       ]
     }

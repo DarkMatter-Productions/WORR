@@ -2,10 +2,12 @@
 """Generate the deterministic FR-10-T10 real-BSP collision fixture.
 
 The output is a collision-only Quake II IBSP v38 with a bounded world-water
-leaf and two independent inline brush-model hulls.  It deliberately contains
-no render geometry: the production server collision loader does not require it,
-and the fixture only exists to exercise the immutable rewind collision
-boundary.
+leaf, two independent inline brush-model hulls, one connected gameplay area,
+and one all-visible world cluster.  It deliberately contains no render
+geometry: the production server collision loader does not require it.  The
+connected area and visibility cluster keep ordinary PVS/PHS gameplay carriers
+available to headless networking acceptance while the same fixture exercises
+the immutable rewind collision boundary.
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ HEADER_LUMPS = 19
 
 LUMP_ENTITIES = 0
 LUMP_PLANES = 1
+LUMP_VISIBILITY = 3
 LUMP_NODES = 4
 LUMP_TEXINFO = 5
 LUMP_LEAFS = 8
@@ -76,18 +79,22 @@ def _texinfo(name: str, flags: int, value: int) -> bytes:
 
 def _leaf(
     contents: int,
+    cluster: int,
+    area: int,
     first_leaf_brush: int,
     num_leaf_brushes: int,
     mins: tuple[int, int, int],
     maxs: tuple[int, int, int],
 ) -> bytes:
-    # cluster -1 is valid without a visibility lump; area zero is the single
-    # area in this collision-only fixture.  There are no render leaf faces.
+    # Area zero is reserved by cmodel and fails CM_AreasConnected by design.
+    # Every fixture leaf therefore belongs to the one usable gameplay area;
+    # world gameplay leaves share cluster zero while inline-model-only leaves
+    # retain cluster -1. There are no render leaf faces.
     return struct.pack(
         "<ihh3h3h4H",
         contents,
-        -1,
-        0,
+        cluster,
+        area,
         *mins,
         *maxs,
         0,
@@ -160,18 +167,28 @@ def build_fixture() -> bytes:
     # both reference its convex brush; CM's per-trace checkcount suppresses
     # duplicate brush work when a sweep crosses the split plane.
     leafs = [
-        _leaf(CONTENTS_SOLID, 0, 0, (-512, -512, -512), (0, 512, 512)),
-        _leaf(0, 0, 0, (0, -512, -512), (512, 512, 512)),
-        _leaf(CONTENTS_WATER, 0, 1, (-21, -13, -11), (21, 13, 49)),
-        _leaf(CONTENTS_SOLID, 1, 1, (-17, -25, -9), (17, 25, 9)),
-        _leaf(CONTENTS_SOLID, 2, 1, (-17, -25, -9), (17, 25, 9)),
-        _leaf(CONTENTS_WATER, 3, 1, (-21, -13, -11), (21, 13, 49)),
-        _leaf(CONTENTS_WATER, 4, 1, (-21, -13, -11), (21, 13, 49)),
+        _leaf(CONTENTS_SOLID, -1, 1, 0, 0,
+              (-512, -512, -512), (0, 512, 512)),
+        _leaf(0, 0, 1, 0, 0,
+              (0, -512, -512), (512, 512, 512)),
+        _leaf(CONTENTS_WATER, 0, 1, 0, 1,
+              (-21, -13, -11), (21, 13, 49)),
+        _leaf(CONTENTS_SOLID, -1, 1, 1, 1,
+              (-17, -25, -9), (17, 25, 9)),
+        _leaf(CONTENTS_SOLID, -1, 1, 2, 1,
+              (-17, -25, -9), (17, 25, 9)),
+        _leaf(CONTENTS_WATER, -1, 1, 3, 1,
+              (-21, -13, -11), (21, 13, 49)),
+        _leaf(CONTENTS_WATER, -1, 1, 4, 1,
+              (-21, -13, -11), (21, 13, 49)),
     ]
 
     lumps: list[bytes] = [b"" for _ in range(HEADER_LUMPS)]
     lumps[LUMP_ENTITIES] = entities
     lumps[LUMP_PLANES] = b"".join(planes)
+    # One cluster sees and hears itself.  Both PVS and PHS offsets point to the
+    # same one-byte compressed row (bit zero set).
+    lumps[LUMP_VISIBILITY] = struct.pack("<III", 1, 12, 12) + b"\x01"
     lumps[LUMP_NODES] = b"".join(
         (
             _node_children(13, -1 - 1, 1),
@@ -209,7 +226,9 @@ def build_fixture() -> bytes:
             *((index, 1) for index in range(7, 13)),
         ]
     )
-    lumps[LUMP_AREAS] = struct.pack("<ii", 0, 0)
+    # cmodel reserves area zero and floods connections starting at area one.
+    # With no portals, the single usable area is self-connected.
+    lumps[LUMP_AREAS] = struct.pack("<4i", 0, 0, 0, 0)
 
     header_size = 8 + HEADER_LUMPS * 8
     cursor = header_size
@@ -236,12 +255,14 @@ def write_fixture(path: Path) -> dict[str, object]:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
     return {
-        "schema": "worr.rewind-collision-real-bsp-fixture.v2",
+        "schema": "worr.rewind-collision-real-bsp-fixture.v4",
         "path": str(path),
         "bytes": len(data),
         "sha256": hashlib.sha256(data).hexdigest(),
         "inline_models": 2,
         "deathmatch_spawns": 4,
+        "gameplay_areas": 1,
+        "visibility_clusters": 1,
     }
 
 

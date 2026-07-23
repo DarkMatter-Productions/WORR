@@ -147,10 +147,12 @@ float crt_scanline_mod(float hard_scan)
     float scan_dark = exp2(hard_scan * 0.25);
     float scale = max(push_data.params2.w, 1.0);
     // The final Vulkan pass uses a negative-height viewport to preserve the
-    // engine's top-left presentation convention. Compensate its half-pixel
-    // fragment-coordinate phase so the alternating scanline lands on the
-    // same output row as the OpenGL presentation pass.
-    float line = mod(floor((gl_FragCoord.y + 1.0) / scale), 2.0);
+    // engine's top-left presentation convention. Offset by one complete
+    // expanded source scanline rather than one fixed output pixel: this keeps
+    // both the bright/dark parity and the first row of each scaled block on
+    // the same rows as OpenGL at native, half, and quarter resolution.
+    float phase = scale;
+    float line = mod(floor((gl_FragCoord.y + phase) / scale), 2.0);
     return mix(scan_dark, 1.0, line);
 }
 

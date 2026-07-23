@@ -9,7 +9,10 @@ the Free Software Foundation; either version 2 of the License, or
 
 #pragma once
 
+#include "common/net/legacy_damage_event_candidate.h"
 #include "common/net/legacy_game_event_candidate.h"
+#include "common/net/legacy_help_path_event_candidate.h"
+#include "common/net/legacy_poi_event_candidate.h"
 #include "server/snapshot_shadow.h"
 
 #ifdef __cplusplus
@@ -17,6 +20,29 @@ extern "C" {
 #endif
 
 #define SV_SNAPSHOT_EVENT_CANDIDATES_VERSION 1u
+
+enum {
+  SV_SNAPSHOT_SPATIAL_AUDIO_RELIABLE = 1u << 0,
+  SV_SNAPSHOT_SPATIAL_AUDIO_NO_PHS = 1u << 1,
+  SV_SNAPSHOT_SPATIAL_AUDIO_LOCAL_ONLY = 1u << 2,
+};
+#define SV_SNAPSHOT_SPATIAL_AUDIO_KNOWN_FLAGS \
+  (SV_SNAPSHOT_SPATIAL_AUDIO_RELIABLE | SV_SNAPSHOT_SPATIAL_AUDIO_NO_PHS | \
+   SV_SNAPSHOT_SPATIAL_AUDIO_LOCAL_ONLY)
+
+enum {
+  SV_SNAPSHOT_GAME_EVENT_RELIABLE = 1u << 0,
+};
+#define SV_SNAPSHOT_GAME_EVENT_KNOWN_FLAGS \
+  SV_SNAPSHOT_GAME_EVENT_RELIABLE
+
+enum {
+  /* A lifetime of zero means retain indefinitely and is legal only when the
+   * legacy service was accepted by the reliable channel. */
+  SV_SNAPSHOT_KEYED_POI_RELIABLE = 1u << 0,
+};
+#define SV_SNAPSHOT_KEYED_POI_KNOWN_FLAGS \
+  SV_SNAPSHOT_KEYED_POI_RELIABLE
 
 typedef enum sv_snapshot_event_candidates_result_v1_e {
   SV_SNAPSHOT_EVENT_CANDIDATES_OK = 0,
@@ -54,6 +80,16 @@ SV_SnapshotShadowBuildSpatialAudioCandidateV1(
     uint32_t max_entities, const q2proto_sound_t *sound,
     worr_event_record_v1 *candidate_out);
 
+/* Additive structured-delivery form. Reliable audio becomes a non-expiring
+ * RELIABLE_ORDERED event. LOCAL_ONLY audio is world-anchored because its raw
+ * entity/channel is a client-local override key, not a spatial-lineage claim.
+ * Unknown flags and every failed bind leave output unchanged. */
+sv_snapshot_event_candidates_result_v1
+SV_SnapshotShadowBuildSpatialAudioCandidateWithDeliveryV1(
+    sv_snapshot_shadow_peer_v1 *peer, sv_snapshot_shadow_ref_v1 ref,
+    uint32_t max_entities, const q2proto_sound_t *sound,
+    uint32_t delivery_flags, worr_event_record_v1 *candidate_out);
+
 /*
  * Rebinds one decoded player or monster muzzleflash to an entity identity from
  * an exact final-emission snapshot. The source must be present in that
@@ -83,6 +119,58 @@ SV_SnapshotShadowBuildGameEventCandidatesV1(
     uint32_t max_entities,
     const worr_legacy_game_event_candidate_carrier_v1 *carriers,
     uint32_t carrier_count, worr_event_record_v1 *candidates_out);
+
+/* Additive delivery-aware form for a complete legacy direct-game-event
+ * message. A reliable message becomes a FIFO, non-expiring native batch;
+ * unknown flags or any failed member leave the whole output unchanged. */
+sv_snapshot_event_candidates_result_v1
+SV_SnapshotShadowBuildGameEventCandidatesWithDeliveryV1(
+    sv_snapshot_shadow_peer_v1 *peer, sv_snapshot_shadow_ref_v1 ref,
+    uint32_t max_entities,
+    const worr_legacy_game_event_candidate_carrier_v1 *carriers,
+    uint32_t carrier_count, uint32_t delivery_flags,
+    worr_event_record_v1 *candidates_out);
+
+/* Rebinds every indicator in one decoded per-client damage carrier to the
+ * controlled entity identity from an exact final-emission snapshot. The wire
+ * format has no attacker identity, so candidates retain their honest world
+ * source. The complete bounded batch and count remain unchanged on failure. */
+sv_snapshot_event_candidates_result_v1
+SV_SnapshotShadowBuildDamageCandidatesV1(
+    sv_snapshot_shadow_peer_v1 *peer, sv_snapshot_shadow_ref_v1 ref,
+    uint32_t max_entities, const q2proto_svc_damage_t *damage,
+    worr_event_record_v1 *candidates_out, uint32_t candidate_capacity,
+    uint32_t *candidate_count_out);
+
+/* Rebinds one per-client help-path marker to the controlled entity identity
+ * from an exact final-emission snapshot. The carrier is world-positioned and
+ * has no emitter identity; candidate_out remains unchanged on failure. */
+sv_snapshot_event_candidates_result_v1
+SV_SnapshotShadowBuildHelpPathCandidateV1(
+    sv_snapshot_shadow_peer_v1 *peer, sv_snapshot_shadow_ref_v1 ref,
+    uint32_t max_entities, const q2proto_svc_help_path_t *help_path,
+    worr_event_record_v1 *candidate_out);
+
+/* Rebinds one keyed per-client POI to the controlled entity identity from an
+ * exact final-emission snapshot. The raw service has no emitter identity, so
+ * its canonical source remains the world. This default unreliable form
+ * rejects an infinite lifetime; output is unchanged on every failure. */
+sv_snapshot_event_candidates_result_v1
+SV_SnapshotShadowBuildKeyedPOICandidateV1(
+    sv_snapshot_shadow_peer_v1 *peer, sv_snapshot_shadow_ref_v1 ref,
+    uint32_t max_entities, const q2proto_svc_poi_t *poi,
+    worr_event_record_v1 *candidate_out);
+
+/* Delivery-aware form used by the deferred reliable FIFO. Reliable admission
+ * keeps the action template's non-expiring RELIABLE_ORDERED delivery and
+ * permits lifetime_ms == 0. Accepted unreliable delivery rewrites to
+ * TRANSIENT/source_tick+1; delete and finite lifetimes are legal on either
+ * path. */
+sv_snapshot_event_candidates_result_v1
+SV_SnapshotShadowBuildKeyedPOICandidateWithDeliveryV1(
+    sv_snapshot_shadow_peer_v1 *peer, sv_snapshot_shadow_ref_v1 ref,
+    uint32_t max_entities, const q2proto_svc_poi_t *poi,
+    uint32_t delivery_flags, worr_event_record_v1 *candidate_out);
 
 /*
  * Rebinds a decoded temporary-entity template to the world or exact visible

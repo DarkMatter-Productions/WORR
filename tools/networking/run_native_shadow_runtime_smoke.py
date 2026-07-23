@@ -57,7 +57,7 @@ FRAGMENT_RATE_BYTES_PER_SECOND = 1500
 # async owner by construction instead of racing the synchronous snapshot tick.
 ASYNC_RATE_BYTES_PER_SECOND = 1_000_000
 SERVER_FPS = 40
-PUBLIC_MASK = 0x03
+PUBLIC_MASK = 0x53
 PRIVATE_MASK = 0x53
 IMPAIR_LATENCY_MS = 25
 CLIENT_IMPAIR_SEED = 424242
@@ -1009,6 +1009,7 @@ def run_processes(
     client: subprocess.Popen[object] | None = None
     server_terminated = False
     client_terminated = False
+    evidence_elapsed_seconds: float | None = None
     started = time.monotonic()
     with ExitStack() as stack:
         files = {
@@ -1047,6 +1048,13 @@ def run_processes(
                             "an endpoint exited after evidence before harness "
                             "termination"
                         )
+                    evidence_completed = time.monotonic()
+                    if evidence_completed > deadline:
+                        raise RuntimeError(
+                            "two-process native-shadow gate timed out during "
+                            "the post-evidence live grace"
+                        )
+                    evidence_elapsed_seconds = evidence_completed - started
                     break
                 if client.poll() is not None:
                     raise RuntimeError(
@@ -1075,12 +1083,17 @@ def run_processes(
         raise RuntimeError("staged dedicated server wrote unexpected stderr output")
     if not client_terminated or not server_terminated:
         raise RuntimeError("both endpoints must remain alive for harness termination")
+    if evidence_elapsed_seconds is None:
+        raise RuntimeError("native-shadow evidence completion was not recorded")
     return {
         "paths": paths,
         "texts": texts,
         "client_terminated_by_harness": client_terminated,
         "server_terminated_by_harness": server_terminated,
-        "elapsed_seconds": round(time.monotonic() - started, 3),
+        # This is the bounded evidence-oracle duration.  Process-tree teardown
+        # happens after the oracle has completed and can take several seconds
+        # on Windows, so it must not turn timely live evidence into a failure.
+        "elapsed_seconds": round(evidence_elapsed_seconds, 3),
     }
 
 

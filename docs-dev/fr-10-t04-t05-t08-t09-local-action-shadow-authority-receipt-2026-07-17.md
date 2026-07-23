@@ -38,11 +38,12 @@ bits, invalid command/catalog identities, or zero hashes fail closed.
    absent. The existing WNE1 codec writes and reads every receipt field
    explicitly; no raw-struct wire copy or `q2proto/` change is involved.
 5. Cgame classifies both authority-receipt payload families as private and
-   non-presentable. Its 128-entry action-shadow owner records semantic hashes
-   for exact canonical commands from the production prediction-input range and
-   accepts receipt-first or command-first arrival. An exact hash matches;
-   conflict, mismatch, expiration, invalid input, or capacity exhaustion
-   latches the shared event-runtime resync state.
+   non-presentable. The original slice's 128-entry action-shadow owner records
+   semantic hashes for exact canonical commands from the production prediction-
+   input range and accepts receipt-first or command-first arrival. An exact
+   hash matches; conflict, mismatch, expiration, invalid input, or capacity
+   exhaustion latches the shared event-runtime resync state. The 2026-07-20
+   continuation below supersedes 128 as the complete compositional bound.
 
 This owner is an audit boundary only. It never predicts a weapon callback,
 changes player state, creates a side effect, or presents audio/visual output.
@@ -125,6 +126,48 @@ every repeat. See
 The archive count includes unrelated renderer-parity assets already present in
 the shared working tree; this slice claims only that the final combined stage
 validated.
+
+## 2026-07-20 bounded lifecycle continuation
+
+Sustained healthy combined traffic exposed that retaining every exact matched
+pair forever could exhaust the original table. Cgame now applies private
+receipts on a separate contiguous event-ID cursor, independent of snapshot-
+fenced visual presentation. The cursor may cross an admitted visual record
+without presenting it, pins on a real gap or callback rejection, blocks all
+callback-time runtime mutation/replacement, and uses explicit exhausted bits to
+consume valid sequence `UINT32_MAX` once.
+
+Command-only rows may roll when no receipt exists. A later real receipt first
+uses exact V2 command history; only lost local coverage plus missing exact
+history causes fail-closed expiration/resync. A monotonic full-receipt frontier
+keeps exact duplicate identity and prunes lower command-only or already-matched
+terminal rows while preserving unmatched receipt-only evidence. The server
+mailbox independently latches the first typed invalid/epoch/regression/conflict/
+capacity/order failure, stays poisoned until reset, and makes the post-sgame
+server boundary disable/drain native authority as failure `18`.
+
+The full simultaneous flight composition is 798 entries: 127 client pending,
+64 retained native event TX, 512 event backlog, 63 selectively acknowledged
+successors behind one gap, and 32 server-mailbox rows. The selected fixed cgame
+capacity is 1,024. The acceptance manifest now adds local-action correlation as
+an eleventh focused child and binds the shared constants used by the
+derivation. Shared-constant assertions, both 798-entry arrival orders,
+more-than-two-table rolling streams, six focused Meson rows, and the production
+cgame build pass. The refreshed stage and final hardened 11-child parent also
+pass; the earlier artifacts remain historical rather than being relabeled.
+
+The lifecycle/provenance run at
+`.tmp/networking/fr10_t04_combined_terminal_prune_current.json` passes schema
+v36 with 15/15 damage and 29/29 exact receipt matches with zero reconciliation
+fault. The pre-capacity full parent at
+`.tmp/networking/fr10_t04_ordered_frontier_full.json` passes 10/10 focused and
+5/5 direct-numeric live lanes while remaining `partial` and
+`task_complete=false`. Final post-capacity parent
+`.tmp/networking/fr10_t04_bounded_lifecycle_full_retry.json` passes 11/11
+focused plus 5/5 live, including 30/30 combined matches, zero reconciliation
+fault, preflight plus post-fire proof, and deliberate `task_complete=false`.
+Full design, controlled snapshot-generation provenance, and evidence boundary:
+`docs-dev/fr-10-t04-t08-private-receipt-bounded-lifecycle-2026-07-20.md`.
 
 ## Remaining work
 

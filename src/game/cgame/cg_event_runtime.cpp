@@ -8,14 +8,27 @@ the Free Software Foundation; either version 2 of the License, or
 */
 
 #include "cg_event_runtime.hpp"
+#include "cg_canonical_snapshot_timeline.hpp"
 #include "cg_local_interaction.hpp"
+
+#include "common/net/predicted_presentation.h"
 
 #include <array>
 #include <cstring>
 
 namespace {
 
+static_assert(CG_EVENT_RUNTIME_SNAPSHOT_FENCE_CAPACITY ==
+                  CG_CANONICAL_SNAPSHOT_TIMELINE_SLOT_CAPACITY,
+              "event source-proof and presenter snapshot retention must stay aligned");
+static_assert(CG_EVENT_RUNTIME_SNAPSHOT_FENCE_CAPACITY >= 64u,
+              "event source proof must cover the one-second retention bound");
+static_assert(CG_CANONICAL_SNAPSHOT_TIMELINE_SLOT_CAPACITY >= 64u,
+              "presenter snapshots must cover the one-second retention bound");
+
 cg_local_action_shadow_report_callback_v1 local_action_shadow_report_callback;
+cg_event_runtime_can_present_callback_v1 event_can_present_callback;
+cg_event_runtime_present_callback_v1 event_present_callback;
 
 enum : std::uint32_t {
     BODY_REQUIRES_SNAPSHOT_REF = 1u << 0,
@@ -30,6 +43,9 @@ enum : std::uint32_t {
     AUTHORITY_SKIP = 1u << 2,
     AUTHORITY_REF_MISMATCH = 1u << 3,
     AUTHORITY_SIDE_EFFECT_PRESENTED = 1u << 4,
+    AUTHORITY_PRIVATE_RECONCILED = 1u << 5,
+    AUTHORITY_HAS_EXPIRY_SNAPSHOT_REF = 1u << 6,
+    AUTHORITY_HAS_EXPIRY_CROSSING_BOUND = 1u << 7,
 };
 
 struct authority_entry_t {
@@ -38,7 +54,14 @@ struct authority_entry_t {
     std::uint64_t semantic_hash;
     std::uint64_t resident_order;
     std::uint64_t fence_time_us;
+    worr_snapshot_id_v2 fence_snapshot_id;
+    worr_snapshot_id_v2 expiry_snapshot_id;
+    worr_snapshot_id_v2 expiry_crossing_snapshot_id;
     std::uint32_t fence_tick;
+    std::uint32_t expiry_fence_tick;
+    std::uint32_t expiry_crossing_tick;
+    std::uint64_t expiry_fence_time_us;
+    std::uint64_t expiry_crossing_time_us;
     std::uint32_t state;
     bool occupied;
 };
@@ -81,6 +104,13 @@ struct legacy_body_entry_t {
     bool occupied;
 };
 
+struct snapshot_fence_entry_t {
+    worr_snapshot_id_v2 snapshot_id;
+    std::uint64_t snapshot_time_us;
+    std::uint32_t snapshot_tick;
+    bool occupied;
+};
+
 struct runtime_state_t {
     std::array<worr_event_journal_slot_v1,
                CG_EVENT_RUNTIME_JOURNAL_CAPACITY> journal_slots;
@@ -94,6 +124,8 @@ struct runtime_state_t {
                CG_EVENT_RUNTIME_REFERENCE_CAPACITY> references;
     std::array<legacy_body_entry_t,
                CG_EVENT_RUNTIME_LEGACY_BODY_CAPACITY> legacy_bodies;
+    std::array<snapshot_fence_entry_t,
+               CG_EVENT_RUNTIME_SNAPSHOT_FENCE_CAPACITY> snapshot_fences;
     cg_event_runtime_status_v1 status;
     worr_snapshot_id_v2 last_snapshot_id;
     std::uint64_t last_snapshot_time_us;
@@ -109,6 +141,12 @@ struct runtime_state_t {
 runtime_state_t runtime;
 runtime_state_t staging;
 bool transaction_active;
+bool presentation_callback_active;
+
+bool runtime_mutation_blocked()
+{
+    return transaction_active || presentation_callback_active;
+}
 
 void increment_saturated(std::uint64_t &value)
 {
@@ -159,8 +197,11 @@ void mark_authority_degraded(runtime_state_t &state)
 bool authority_has_unpresented_records(const runtime_state_t &state)
 {
     for (const auto &entry : state.authority) {
+        /* AUTHORITY_SKIP is only a terminalization request.  Its ordered
+         * counter/cursor effects are not settled until the drain marks the
+         * entry presented, so a read-only checkpoint must not baseline it. */
         if (entry.occupied &&
-            (entry.state & (AUTHORITY_PRESENTED | AUTHORITY_SKIP)) == 0) {
+            (entry.state & AUTHORITY_PRESENTED) == 0) {
             return true;
         }
     }
@@ -364,6 +405,89 @@ const authority_entry_t *find_authority(const runtime_state_t &state,
     return nullptr;
 }
 
+enum class fenced_authority_expiry_v1 {
+    active,
+    crossed_without_render_bound,
+    terminal,
+};
+
+fenced_authority_expiry_v1 evaluate_fenced_authority_expiry(
+    const runtime_state_t &state, const authority_entry_t &authority,
+    std::uint64_t render_time_us);
+
+authority_entry_t *find_authority_for_slot(
+    runtime_state_t &state, std::uint32_t slot_index,
+    const worr_event_journal_slot_v1 &slot)
+{
+    if ((slot.record.flags & WORR_EVENT_FLAG_HAS_AUTHORITY_ID) == 0)
+        return nullptr;
+    auto *authority = find_authority(state, slot.record.event_id);
+    if (!authority || authority->slot.index != slot_index ||
+        authority->slot.generation != slot.generation) {
+        return nullptr;
+    }
+    return authority;
+}
+
+void expire_runtime_journal(runtime_state_t &state,
+                            std::uint64_t render_time_us,
+                            std::uint32_t now_tick)
+{
+    for (std::uint32_t index = 0; index < state.journal.capacity;
+         ++index) {
+        auto &slot = state.journal_slots[index];
+        if (slot.state == 0 ||
+            (slot.state & (WORR_EVENT_SLOT_EXPIRED |
+                           WORR_EVENT_SLOT_CANCELED)) != 0 ||
+            slot.record.delivery_class >
+                WORR_EVENT_DELIVERY_TRANSIENT) {
+            continue;
+        }
+
+        bool terminal = false;
+        if ((slot.record.flags &
+             WORR_EVENT_FLAG_SNAPSHOT_FENCED) != 0) {
+            auto *authority = find_authority_for_slot(
+                state, index, slot);
+            if (!authority) {
+                continue;
+            }
+            terminal = evaluate_fenced_authority_expiry(
+                           state, *authority, render_time_us) ==
+                       fenced_authority_expiry_v1::terminal;
+        } else {
+            terminal = tick_reached(now_tick, slot.record.expiry_tick);
+        }
+        if (terminal)
+            slot.state |= WORR_EVENT_SLOT_EXPIRED;
+    }
+}
+
+bool authority_slot_needs_presentation(
+    const runtime_state_t &state, const authority_entry_t &authority,
+    const worr_event_journal_slot_v1 &slot,
+    std::uint64_t render_time_us, std::uint32_t now_tick)
+{
+    if ((authority.record.flags &
+         WORR_EVENT_FLAG_SNAPSHOT_FENCED) == 0 ||
+        authority.record.delivery_class >
+            WORR_EVENT_DELIVERY_TRANSIENT) {
+        return Worr_EventJournalNeedsPresentationV1(
+            &state.journal, authority.slot, now_tick);
+    }
+
+    if ((slot.state & (WORR_EVENT_SLOT_PRESENTED |
+                       WORR_EVENT_SLOT_EXPIRED |
+                       WORR_EVENT_SLOT_CANCELED)) != 0 ||
+        (slot.state & WORR_EVENT_SLOT_RECEIVED) == 0 ||
+        evaluate_fenced_authority_expiry(
+            state, authority, render_time_us) !=
+            fenced_authority_expiry_v1::active) {
+        return false;
+    }
+    return true;
+}
+
 authority_entry_t *find_authority_by_prediction_key(
     runtime_state_t &state, worr_event_prediction_key_v1 key)
 {
@@ -549,24 +673,365 @@ legacy_body_entry_t *find_legacy_body(runtime_state_t &state,
     return nullptr;
 }
 
+void mark_authority_fence_mismatch(runtime_state_t &state,
+                                   authority_entry_t &authority,
+                                   bool require_resync)
+{
+    if ((authority.state & AUTHORITY_REF_MISMATCH) != 0)
+        return;
+    authority.state |= AUTHORITY_REF_MISMATCH;
+    increment_saturated(state.status.reference_conflicts);
+    if (require_resync && state.authority_initialized)
+        state.status.authority_requires_resync = 1;
+    mark_degraded(state);
+}
+
+bool attach_authority_fence(runtime_state_t &state,
+                            authority_entry_t &authority,
+                            worr_snapshot_id_v2 snapshot_id,
+                            std::uint32_t snapshot_tick,
+                            std::uint64_t snapshot_time_us,
+                            bool require_resync)
+{
+    if ((authority.state & AUTHORITY_HAS_SNAPSHOT_REF) != 0) {
+        if (snapshot_id_equal(authority.fence_snapshot_id, snapshot_id) &&
+            authority.fence_tick == snapshot_tick &&
+            authority.fence_time_us == snapshot_time_us) {
+            return true;
+        }
+        mark_authority_fence_mismatch(
+            state, authority, require_resync);
+        return false;
+    }
+    authority.state |= AUTHORITY_HAS_SNAPSHOT_REF;
+    authority.fence_snapshot_id = snapshot_id;
+    authority.fence_tick = snapshot_tick;
+    authority.fence_time_us = snapshot_time_us;
+    increment_saturated(state.status.authority_ref_body_joins);
+    return true;
+}
+
+snapshot_fence_entry_t *find_snapshot_fence(
+    runtime_state_t &state, worr_snapshot_id_v2 snapshot_id)
+{
+    for (auto &entry : state.snapshot_fences) {
+        if (entry.occupied &&
+            snapshot_id_equal(entry.snapshot_id, snapshot_id)) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+const snapshot_fence_entry_t *find_snapshot_fence(
+    const runtime_state_t &state, worr_snapshot_id_v2 snapshot_id)
+{
+    for (const auto &entry : state.snapshot_fences) {
+        if (entry.occupied &&
+            snapshot_id_equal(entry.snapshot_id, snapshot_id)) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+void retain_snapshot_fence(runtime_state_t &state,
+                           const worr_snapshot_v2 &snapshot)
+{
+    snapshot_fence_entry_t *selected = nullptr;
+    for (auto &entry : state.snapshot_fences) {
+        if (!entry.occupied) {
+            selected = &entry;
+            break;
+        }
+        if (!selected || entry.snapshot_id.sequence <
+                             selected->snapshot_id.sequence) {
+            selected = &entry;
+        }
+    }
+    if (!selected)
+        return;
+    *selected = {};
+    selected->snapshot_id = snapshot.snapshot_id;
+    selected->snapshot_tick = snapshot.server_tick;
+    selected->snapshot_time_us = snapshot.server_time_us;
+    selected->occupied = true;
+}
+
+bool derive_declared_snapshot_expiry(
+    const authority_entry_t &authority,
+    worr_snapshot_id_v2 &snapshot_id)
+{
+    if ((authority.record.flags &
+         WORR_EVENT_FLAG_SNAPSHOT_FENCED) == 0 ||
+        authority.record.delivery_class >
+            WORR_EVENT_DELIVERY_TRANSIENT ||
+        (authority.state & AUTHORITY_HAS_SNAPSHOT_REF) == 0) {
+        return false;
+    }
+
+    /* expiry_tick is an absolute per-client wire-snapshot number, just like
+     * source_tick for an explicit snapshot fence. Translate that identity
+     * directly; adding its numeric lifetime to fence_tick would mix the wire
+     * and simulation clocks. A modular wire wrap cannot occur inside one
+     * monotonic snapshot-ID epoch, so it remains future until the mandatory
+     * epoch reset either presents or invalidates the unresolved authority. */
+    if (authority.record.expiry_tick < authority.record.source_tick ||
+        authority.record.expiry_tick == UINT32_MAX) {
+        return false;
+    }
+    snapshot_id.epoch = authority.fence_snapshot_id.epoch;
+    snapshot_id.sequence = authority.record.expiry_tick + 1u;
+    return Worr_SnapshotIdValidV2(snapshot_id, false) &&
+           snapshot_id.sequence > authority.fence_snapshot_id.sequence;
+}
+
+void try_attach_declared_snapshot_expiry(
+    runtime_state_t &state, authority_entry_t &authority)
+{
+    if ((authority.state & (AUTHORITY_HAS_EXPIRY_SNAPSHOT_REF |
+                            AUTHORITY_HAS_EXPIRY_CROSSING_BOUND)) != 0) {
+        return;
+    }
+
+    worr_snapshot_id_v2 snapshot_id{};
+    if (!derive_declared_snapshot_expiry(authority, snapshot_id))
+        return;
+    const auto *fence = find_snapshot_fence(state, snapshot_id);
+    if (fence) {
+        authority.state |= AUTHORITY_HAS_EXPIRY_SNAPSHOT_REF;
+        authority.expiry_snapshot_id = fence->snapshot_id;
+        authority.expiry_fence_tick = fence->snapshot_tick;
+        authority.expiry_fence_time_us = fence->snapshot_time_us;
+        return;
+    }
+
+    /* If the exact deadline was skipped or already evicted, cache the first
+     * retained snapshot beyond it. This is a conservative render bound, not a
+     * fabricated deadline: presentation remains uncertain before its time and
+     * terminal expiry is proven at its time. Caching prevents bounded fence
+     * eviction from moving that proof forward forever under render lag. */
+    const snapshot_fence_entry_t *crossing = nullptr;
+    for (const auto &entry : state.snapshot_fences) {
+        if (!entry.occupied || entry.snapshot_id.epoch != snapshot_id.epoch ||
+            entry.snapshot_id.sequence <= snapshot_id.sequence) {
+            continue;
+        }
+        if (!crossing || entry.snapshot_id.sequence <
+                             crossing->snapshot_id.sequence) {
+            crossing = &entry;
+        }
+    }
+    if (!crossing)
+        return;
+    authority.state |= AUTHORITY_HAS_EXPIRY_CROSSING_BOUND;
+    authority.expiry_crossing_snapshot_id = crossing->snapshot_id;
+    authority.expiry_crossing_tick = crossing->snapshot_tick;
+    authority.expiry_crossing_time_us = crossing->snapshot_time_us;
+}
+
+fenced_authority_expiry_v1 evaluate_exact_fenced_retention(
+    const runtime_state_t &state, const authority_entry_t &authority)
+{
+    /* Event DATA can arrive after render has crossed a one-snapshot transient
+     * deadline. Keep that present-once event eligible while the bounded
+     * snapshot mirror still retains its exact source proof. Once the proof is
+     * evicted, fail closed instead of extending the event indefinitely. */
+    if (find_snapshot_fence(state, authority.fence_snapshot_id)) {
+        return fenced_authority_expiry_v1::active;
+    }
+
+    return fenced_authority_expiry_v1::terminal;
+}
+
+fenced_authority_expiry_v1 evaluate_fenced_authority_expiry(
+    const runtime_state_t &state, const authority_entry_t &authority,
+    std::uint64_t render_time_us)
+{
+    if ((authority.state & AUTHORITY_HAS_SNAPSHOT_REF) == 0)
+        return fenced_authority_expiry_v1::crossed_without_render_bound;
+
+    if ((authority.state & AUTHORITY_HAS_EXPIRY_SNAPSHOT_REF) != 0) {
+        /* Exact source and deadline identities are known. Their bounded
+         * source-fence retention, rather than a potentially already-crossed
+         * render sample, defines the present-once lifetime. */
+        return evaluate_exact_fenced_retention(state, authority);
+    }
+    if ((authority.state & AUTHORITY_HAS_EXPIRY_CROSSING_BOUND) != 0) {
+        return render_time_us >= authority.expiry_crossing_time_us
+                   ? fenced_authority_expiry_v1::terminal
+                   : fenced_authority_expiry_v1::
+                         crossed_without_render_bound;
+    }
+
+    worr_snapshot_id_v2 deadline_id{};
+    if (!derive_declared_snapshot_expiry(authority, deadline_id)) {
+        /* The deadline belongs to the next snapshot epoch. It is still
+         * provably future in this epoch; ResetSnapshot fail-closes any
+         * authority that remains unresolved across that boundary. */
+        return fenced_authority_expiry_v1::active;
+    }
+
+    if (find_snapshot_fence(state, deadline_id)) {
+        return evaluate_exact_fenced_retention(state, authority);
+    }
+
+    if (!state.has_last_snapshot ||
+        state.last_snapshot_id.epoch != deadline_id.epoch ||
+        state.last_snapshot_id.sequence < deadline_id.sequence) {
+        /* The exact deadline has not arrived. Wire-ID order proves that the
+         * event is still before its deadline, so presentation remains safe. */
+        return fenced_authority_expiry_v1::active;
+    }
+
+    /* Attachment normally caches the first retained crossing snapshot before
+     * evaluation. If the invariant is ever broken, fail closed instead of
+     * selecting a later moving bound here. */
+    return fenced_authority_expiry_v1::crossed_without_render_bound;
+}
+
+bool derive_declared_snapshot_fence(
+    const runtime_state_t &state, const worr_event_record_v1 &record,
+    worr_snapshot_id_v2 &snapshot_id)
+{
+    if ((record.flags & WORR_EVENT_FLAG_SNAPSHOT_FENCED) == 0 ||
+        !state.snapshot_initialized || state.status.snapshot_epoch == 0 ||
+        record.source_tick == UINT32_MAX) {
+        return false;
+    }
+    snapshot_id.epoch = state.status.snapshot_epoch;
+    snapshot_id.sequence = record.source_tick + 1u;
+    return snapshot_id.sequence != 0;
+}
+
+enum class crossed_transient_fence_v1 {
+    not_terminalizable,
+    waiting_for_expiry,
+    terminalized,
+};
+
+crossed_transient_fence_v1 handle_crossed_transient_fence(
+    runtime_state_t &state, authority_entry_t &authority,
+    worr_snapshot_id_v2 source_snapshot_id)
+{
+    const auto &record = authority.record;
+    if (record.delivery_class > WORR_EVENT_DELIVERY_TRANSIENT ||
+        record.expiry_tick < record.source_tick ||
+        record.expiry_tick == UINT32_MAX) {
+        return crossed_transient_fence_v1::not_terminalizable;
+    }
+
+    const worr_snapshot_id_v2 expiry_snapshot_id{
+        source_snapshot_id.epoch,
+        record.expiry_tick + 1u,
+    };
+    if (!Worr_SnapshotIdValidV2(expiry_snapshot_id, false) ||
+        !state.has_last_snapshot ||
+        state.last_snapshot_id.epoch != expiry_snapshot_id.epoch) {
+        return crossed_transient_fence_v1::not_terminalizable;
+    }
+    if (state.last_snapshot_id.sequence < expiry_snapshot_id.sequence)
+        return crossed_transient_fence_v1::waiting_for_expiry;
+
+    const auto *slot = Worr_EventJournalResolveV1(
+        &state.journal, authority.slot);
+    if (!slot ||
+        (slot->state & WORR_EVENT_SLOT_RECEIVED) == 0 ||
+        !event_id_equal(slot->record.event_id, record.event_id) ||
+        Worr_EventJournalCancelV1(
+            &state.journal, authority.slot) !=
+            WORR_EVENT_JOURNAL_INSERTED) {
+        return crossed_transient_fence_v1::not_terminalizable;
+    }
+
+    /* The source projection was skipped, so no presentation context can be
+     * reconstructed.  Once snapshot-ID order also crosses the transient's
+     * deadline, cancellation is final without inventing a render-time expiry
+     * bound.  Keep reliable/persistent records on the strict resync path. */
+    authority.state |= AUTHORITY_SKIP;
+    increment_saturated(state.status.authoritative_stale_or_coalesced);
+    return crossed_transient_fence_v1::terminalized;
+}
+
+cg_event_runtime_result_v1 try_attach_declared_snapshot_fence(
+    runtime_state_t &state, authority_entry_t &authority)
+{
+    if ((authority.record.flags & WORR_EVENT_FLAG_SNAPSHOT_FENCED) == 0 ||
+        (authority.state & AUTHORITY_HAS_SNAPSHOT_REF) != 0) {
+        return CG_EVENT_RUNTIME_OK;
+    }
+
+    worr_snapshot_id_v2 snapshot_id{};
+    if (!derive_declared_snapshot_fence(
+            state, authority.record, snapshot_id)) {
+        return CG_EVENT_RUNTIME_NOT_READY;
+    }
+    if (auto *fence = find_snapshot_fence(state, snapshot_id)) {
+        /* source_tick is the legacy per-client wire snapshot number used to
+         * derive snapshot_id.sequence.  The exact ID is the cross-domain
+         * lineage proof: an event-only peer reconstructs a legacy projection
+         * clock from that per-client wire stream, while the event retains the
+         * server map clock. No existing snapshot flag asserts clock-domain
+         * identity, so neither source_tick nor source_time_us is compared to
+         * the exact snapshot's own tick/time. */
+        return attach_authority_fence(
+                   state, authority, fence->snapshot_id,
+                   fence->snapshot_tick, fence->snapshot_time_us, true)
+                   ? CG_EVENT_RUNTIME_OK
+                   : CG_EVENT_RUNTIME_DEGRADED;
+    }
+
+    /* A future source snapshot can still arrive.  Once the observed timeline
+     * has crossed the declared identity, absence from the mirrored retention
+     * window is irrecoverable and must not leave a reliable ordered head
+     * stalled forever. */
+    if (!state.has_last_snapshot ||
+        state.last_snapshot_id.epoch != snapshot_id.epoch ||
+        state.last_snapshot_id.sequence < snapshot_id.sequence) {
+        return CG_EVENT_RUNTIME_NOT_READY;
+    }
+
+    const auto transient = handle_crossed_transient_fence(
+        state, authority, snapshot_id);
+    if (transient == crossed_transient_fence_v1::terminalized)
+        return CG_EVENT_RUNTIME_OK;
+    if (transient == crossed_transient_fence_v1::waiting_for_expiry)
+        return CG_EVENT_RUNTIME_NOT_READY;
+
+    mark_authority_fence_mismatch(state, authority, true);
+    return CG_EVENT_RUNTIME_DEGRADED;
+}
+
 bool attach_authority_reference(runtime_state_t &state,
                                 authority_entry_t &authority,
                                 reference_entry_t &reference)
 {
+    if ((authority.record.flags &
+         WORR_EVENT_FLAG_SNAPSHOT_FENCED) != 0) {
+        worr_snapshot_id_v2 declared_snapshot_id{};
+        if (!derive_declared_snapshot_fence(
+                state, authority.record, declared_snapshot_id) ||
+            !snapshot_id_equal(reference.snapshot_id,
+                               declared_snapshot_id)) {
+            /* An explicit fence's exact ID is lineage, not a hint. A
+             * semantically matching authority ref at any other snapshot must
+             * not bypass the declared source identity in either arrival
+             * order. */
+            mark_authority_fence_mismatch(state, authority, true);
+            return false;
+        }
+    }
     if (reference.ref.semantic_version != authority.record.model_revision ||
         reference.ref.semantic_hash != authority.semantic_hash) {
-        if ((authority.state & AUTHORITY_REF_MISMATCH) == 0) {
-            authority.state |= AUTHORITY_REF_MISMATCH;
-            increment_saturated(state.status.reference_conflicts);
-            mark_degraded(state);
-        }
+        mark_authority_fence_mismatch(state, authority, false);
         return false;
     }
-    authority.state |= AUTHORITY_HAS_SNAPSHOT_REF;
-    authority.fence_tick = reference.snapshot_tick;
-    authority.fence_time_us = reference.snapshot_time_us;
+    if (!attach_authority_fence(
+            state, authority, reference.snapshot_id,
+            reference.snapshot_tick, reference.snapshot_time_us, false)) {
+        return false;
+    }
     reference.consumed = true;
-    increment_saturated(state.status.authority_ref_body_joins);
     return true;
 }
 
@@ -626,6 +1091,22 @@ cg_event_runtime_result_v1 map_journal_result(
         return CG_EVENT_RUNTIME_NOT_FOUND;
     case WORR_EVENT_JOURNAL_TERMINAL:
         return CG_EVENT_RUNTIME_TERMINAL;
+    default:
+        return CG_EVENT_RUNTIME_DEGRADED;
+    }
+}
+
+cg_event_runtime_result_v1 map_predicted_presentation_resolution(
+    std::uint8_t resolution)
+{
+    switch (resolution) {
+    case WORR_PREDICTED_PRESENTATION_CONFIRMED_PENDING:
+    case WORR_PREDICTED_PRESENTATION_CONFIRMED_SUPPRESSED:
+        return CG_EVENT_RUNTIME_MATCHED;
+    case WORR_PREDICTED_PRESENTATION_CORRECTED_BEFORE_PRESENTATION:
+        return CG_EVENT_RUNTIME_CORRECTED;
+    case WORR_PREDICTED_PRESENTATION_CORRECTED_AFTER_PRESENTATION:
+        return CG_EVENT_RUNTIME_CORRECTED_AFTER_PRESENTATION;
     default:
         return CG_EVENT_RUNTIME_DEGRADED;
     }
@@ -703,6 +1184,9 @@ void mark_displaced_predictions(runtime_state_t &state,
 cg_event_runtime_result_v1 insert_authority(runtime_state_t &state,
                                             const worr_event_record_v1 &record)
 {
+    worr_predicted_presentation_decision_v1 presentation_decision{};
+    bool suppress_authority = false;
+
     if (auto *existing = find_authority(state, record.event_id)) {
         if (authoritative_records_equal(existing->record, record)) {
             increment_saturated(state.status.authoritative_duplicates);
@@ -736,6 +1220,21 @@ cg_event_runtime_result_v1 insert_authority(runtime_state_t &state,
             mark_degraded(state);
             return CG_EVENT_RUNTIME_CONFLICT;
         }
+    }
+
+    if (prediction) {
+        const auto presentation_result =
+            Worr_PredictedPresentationResolveV1(
+                &prediction->record, &record,
+                WORR_CGAME_EVENT_RANGE_MAX_ENTITIES_V2,
+                prediction->presented, &presentation_decision);
+        if (presentation_result != WORR_PREDICTED_PRESENTATION_OK) {
+            mark_degraded(state);
+            return CG_EVENT_RUNTIME_DEGRADED;
+        }
+        suppress_authority =
+            presentation_decision.authority_action ==
+            WORR_PREDICTED_PRESENTATION_SUPPRESS_AUTHORITY;
     }
 
     std::uint64_t semantic_hash = 0;
@@ -772,20 +1271,12 @@ cg_event_runtime_result_v1 insert_authority(runtime_state_t &state,
 
     auto reconciliation_result = result;
     if (prediction) {
-        const bool semantic_match =
-            Worr_EventRecordSemanticallyEqualV1(
-                &prediction->record, &record,
-                WORR_CGAME_EVENT_RANGE_MAX_ENTITIES_V2);
-        reconciliation_result = semantic_match
-                                    ? CG_EVENT_RUNTIME_MATCHED
-                                    : (prediction->presented
-                                           ? CG_EVENT_RUNTIME_CORRECTED_AFTER_PRESENTATION
-                                           : CG_EVENT_RUNTIME_CORRECTED);
+        reconciliation_result = map_predicted_presentation_resolution(
+            presentation_decision.resolution);
         prediction->reconciled = true;
         prediction->authority_id = record.event_id;
         prediction->has_authority_id = true;
-        if (prediction->presented &&
-            slot.index < state.journal.capacity) {
+        if (suppress_authority && slot.index < state.journal.capacity) {
             auto &resolved = state.journal_slots[slot.index];
             if (resolved.generation == slot.generation &&
                 (resolved.state & WORR_EVENT_SLOT_RECEIVED) != 0 &&
@@ -804,7 +1295,7 @@ cg_event_runtime_result_v1 insert_authority(runtime_state_t &state,
     if (!binding->resident_order)
         return CG_EVENT_RUNTIME_DEGRADED;
     binding->occupied = true;
-    if (prediction && prediction->presented)
+    if (suppress_authority)
         binding->state |= AUTHORITY_SIDE_EFFECT_PRESENTED;
     if (is_private_authority_receipt(record)) {
         /* Authority receipts carry reconciliation evidence only. They are
@@ -820,7 +1311,13 @@ cg_event_runtime_result_v1 insert_authority(runtime_state_t &state,
             state, record.event_id)) {
         attachment_degraded =
             !attach_authority_reference(state, *binding, *reference);
+    } else if ((record.flags & WORR_EVENT_FLAG_SNAPSHOT_FENCED) != 0) {
+        attachment_degraded =
+            try_attach_declared_snapshot_fence(state, *binding) ==
+            CG_EVENT_RUNTIME_DEGRADED;
     }
+    if (!attachment_degraded)
+        try_attach_declared_snapshot_expiry(state, *binding);
 
     increment_saturated(state.status.authoritative_records);
     note_reconciliation(state, reconciliation_result);
@@ -858,18 +1355,24 @@ cg_event_runtime_result_v1 insert_prediction(runtime_state_t &state,
 
     if (auto *authority = find_authority_by_prediction_key(
             state, record.prediction_key)) {
-        const bool semantic_match =
-            Worr_EventRecordSemanticallyEqualV1(
-                &authority->record, &record,
-                WORR_CGAME_EVENT_RANGE_MAX_ENTITIES_V2);
         const bool authority_presented =
             (authority->state & (AUTHORITY_PRESENTED |
                                  AUTHORITY_SIDE_EFFECT_PRESENTED)) != 0;
-        const auto result = semantic_match
-                                ? CG_EVENT_RUNTIME_MATCHED
-                                : (authority_presented
-                                       ? CG_EVENT_RUNTIME_CORRECTED_AFTER_PRESENTATION
-                                       : CG_EVENT_RUNTIME_CORRECTED);
+        worr_predicted_presentation_decision_v1 presentation_decision{};
+        const auto presentation_result =
+            Worr_PredictedPresentationResolveV1(
+                &record, &authority->record,
+                WORR_CGAME_EVENT_RANGE_MAX_ENTITIES_V2,
+                authority_presented, &presentation_decision);
+        if (presentation_result != WORR_PREDICTED_PRESENTATION_OK) {
+            mark_degraded(state);
+            return CG_EVENT_RUNTIME_DEGRADED;
+        }
+        const auto result = map_predicted_presentation_resolution(
+            presentation_decision.resolution);
+        const bool suppress_further_presentation =
+            presentation_decision.authority_action ==
+            WORR_PREDICTED_PRESENTATION_SUPPRESS_AUTHORITY;
         auto *tombstone = allocate_prediction_tombstone(state);
         if (!tombstone) {
             increment_saturated(
@@ -884,7 +1387,7 @@ cg_event_runtime_result_v1 insert_prediction(runtime_state_t &state,
         if (!tombstone->resident_order)
             return CG_EVENT_RUNTIME_DEGRADED;
         tombstone->occupied = true;
-        tombstone->presented = authority_presented;
+        tombstone->presented = suppress_further_presentation;
         tombstone->reconciled = true;
         tombstone->authority_id = authority->record.event_id;
         tombstone->has_authority_id = true;
@@ -1038,14 +1541,25 @@ void clear_legacy_references(runtime_state_t &state)
 
 void clear_snapshot_fences(runtime_state_t &state)
 {
+    for (auto &entry : state.snapshot_fences)
+        entry = {};
     for (auto &entry : state.references)
         entry = {};
     state.status.reference_count = 0;
     for (auto &entry : state.authority) {
         entry.state &= ~(AUTHORITY_HAS_SNAPSHOT_REF |
+                         AUTHORITY_HAS_EXPIRY_SNAPSHOT_REF |
+                         AUTHORITY_HAS_EXPIRY_CROSSING_BOUND |
                          AUTHORITY_REF_MISMATCH);
         entry.fence_tick = 0;
+        entry.expiry_fence_tick = 0;
+        entry.expiry_crossing_tick = 0;
         entry.fence_time_us = 0;
+        entry.expiry_fence_time_us = 0;
+        entry.expiry_crossing_time_us = 0;
+        entry.fence_snapshot_id = {};
+        entry.expiry_snapshot_id = {};
+        entry.expiry_crossing_snapshot_id = {};
     }
     for (auto &entry : state.legacy_bodies) {
         if (!entry.occupied ||
@@ -1070,6 +1584,205 @@ worr_event_journal_slot_v1 *resolve_journal_mutable(
     if (slot.state == 0 || slot.generation != ref.generation)
         return nullptr;
     return &slot;
+}
+
+void require_authority_resync(runtime_state_t &state)
+{
+    state.status.authority_requires_resync = 1;
+    mark_authority_degraded(state);
+}
+
+void consume_authority_cursor(runtime_state_t &state)
+{
+    if (state.status.next_authority_sequence == UINT32_MAX) {
+        state.status.authority_sequence_exhausted = 1;
+        return;
+    }
+    ++state.status.next_authority_sequence;
+}
+
+void consume_private_reconciliation_cursor(runtime_state_t &state)
+{
+    if (state.status.next_private_reconciliation_sequence == UINT32_MAX) {
+        state.status.private_reconciliation_sequence_exhausted = 1;
+        return;
+    }
+    ++state.status.next_private_reconciliation_sequence;
+}
+
+cg_event_runtime_result_v1 terminalize_authority_skip_head(
+    runtime_state_t &state, bool &terminalized)
+{
+    terminalized = false;
+    if (state.status.authority_sequence_exhausted != 0)
+        return CG_EVENT_RUNTIME_OK;
+    const worr_event_id_v1 id{
+        state.status.authority_epoch,
+        state.status.next_authority_sequence,
+    };
+    authority_entry_t *entry = find_authority(state, id);
+    if (!entry || (entry->state & AUTHORITY_SKIP) == 0)
+        return CG_EVENT_RUNTIME_OK;
+
+    if (is_private_authority_receipt(entry->record)) {
+        /* Private reconciliation is an irreversible application side effect.
+         * Its independent ordered cursor must commit the callback before the
+         * journal/presentation transaction can make this skip reclaimable. */
+        if ((entry->state & AUTHORITY_PRIVATE_RECONCILED) == 0) {
+            require_authority_resync(state);
+            return CG_EVENT_RUNTIME_DEGRADED;
+        }
+        /* A private receipt owns a normal reliable journal resident even
+         * though it has no generic presentation side effect. Prove that the
+         * slot still contains this exact record before making it reclaimable.
+         * Other AUTHORITY_SKIP producers can alias a newer persistent record
+         * or a recycled generation and must never mark that slot presented. */
+        worr_event_journal_slot_v1 *slot =
+            resolve_journal_mutable(state, entry->slot);
+        if (!slot ||
+            (slot->state & WORR_EVENT_SLOT_RECEIVED) == 0 ||
+            !authoritative_records_equal(slot->record, entry->record)) {
+            require_authority_resync(state);
+            return CG_EVENT_RUNTIME_DEGRADED;
+        }
+        if ((slot->state & WORR_EVENT_SLOT_PRESENTED) != 0) {
+            require_authority_resync(state);
+            return CG_EVENT_RUNTIME_DEGRADED;
+        }
+        const bool already_terminal =
+            (slot->state & (WORR_EVENT_SLOT_EXPIRED |
+                            WORR_EVENT_SLOT_CANCELED)) != 0;
+        if (!already_terminal &&
+            Worr_EventJournalMarkPresentedV1(
+                &state.journal, entry->slot) !=
+                WORR_EVENT_JOURNAL_INSERTED) {
+            require_authority_resync(state);
+            return CG_EVENT_RUNTIME_DEGRADED;
+        }
+    }
+
+    entry->state |= AUTHORITY_PRESENTED;
+    increment_saturated(state.status.authoritative_terminal_skips);
+    consume_authority_cursor(state);
+    terminalized = true;
+    return CG_EVENT_RUNTIME_OK;
+}
+
+cg_event_runtime_result_v1 apply_private_reconciliation(
+    runtime_state_t &state, authority_entry_t &entry)
+{
+    const auto &record = entry.record;
+    if (is_local_interaction_authority_receipt(record)) {
+        worr_local_interaction_authority_receipt_v1 receipt{};
+        std::memcpy(&receipt, record.payload, sizeof(receipt));
+        if (!local_interaction_receipt_accepted(
+                CG_LocalInteractionSubmitAuthorityReceipt(&receipt))) {
+            require_authority_resync(state);
+            return CG_EVENT_RUNTIME_DEGRADED;
+        }
+    } else if (is_local_action_shadow_authority_receipt(record)) {
+        worr_local_action_shadow_authority_receipt_v1 receipt{};
+        std::memcpy(&receipt, record.payload, sizeof(receipt));
+        if (!local_action_shadow_receipt_accepted(
+                CG_LocalActionShadowSubmitAuthorityReceipt(&receipt))) {
+            require_authority_resync(state);
+            return CG_EVENT_RUNTIME_DEGRADED;
+        }
+        /* Report at the ordered receipt application boundary as well as the
+         * prediction pass. A receipt can complete a pair after the last replay
+         * in a frame; waiting for another replay would make live parity
+         * evidence depend on renderer/client cadence. */
+        if (local_action_shadow_report_callback)
+            local_action_shadow_report_callback();
+    } else {
+        require_authority_resync(state);
+        return CG_EVENT_RUNTIME_DEGRADED;
+    }
+
+    entry.state |= AUTHORITY_PRIVATE_RECONCILED;
+    return CG_EVENT_RUNTIME_OK;
+}
+
+cg_event_runtime_result_v1 drain_private_reconciliation_heads(
+    runtime_state_t &state)
+{
+    for (;;) {
+        if (state.status.private_reconciliation_sequence_exhausted != 0)
+            return CG_EVENT_RUNTIME_OK;
+        const worr_event_id_v1 id{
+            state.status.authority_epoch,
+            state.status.next_private_reconciliation_sequence,
+        };
+        authority_entry_t *entry = find_authority(state, id);
+        if (!entry)
+            return CG_EVENT_RUNTIME_OK;
+
+        if (is_private_authority_receipt(entry->record) &&
+            (entry->state & AUTHORITY_PRIVATE_RECONCILED) == 0) {
+            const auto result = apply_private_reconciliation(state, *entry);
+            if (result != CG_EVENT_RUNTIME_OK)
+                return result;
+        }
+
+        /* This application cursor orders only private reconciliation. It may
+         * cross admitted visual records without marking their journal slots or
+         * changing the independent presentation cursor. */
+        consume_private_reconciliation_cursor(state);
+    }
+}
+
+cg_event_runtime_result_v1 drain_authority_skip_heads(
+    runtime_state_t &state)
+{
+    for (;;) {
+        bool terminalized = false;
+        const auto result =
+            terminalize_authority_skip_head(state, terminalized);
+        if (result != CG_EVENT_RUNTIME_OK || !terminalized)
+            return result;
+    }
+}
+
+cg_event_runtime_presentation_context_v1 presentation_context(
+    std::uint32_t provenance, worr_snapshot_id_v2 snapshot_id,
+    std::uint32_t fence_tick, std::uint64_t fence_time_us)
+{
+    cg_event_runtime_presentation_context_v1 context{};
+    context.struct_size = sizeof(context);
+    context.schema_version = CG_EVENT_RUNTIME_PRESENTER_VERSION;
+    context.provenance = provenance;
+    context.fence_snapshot_id = snapshot_id;
+    context.fence_tick = fence_tick;
+    context.fence_time_us = fence_time_us;
+    return context;
+}
+
+bool presenter_ready(const worr_event_record_v1 &record,
+                     const cg_event_runtime_presentation_context_v1 &context)
+{
+    if (!event_can_present_callback && !event_present_callback)
+        return true;
+    if (!event_can_present_callback || !event_present_callback ||
+        presentation_callback_active) {
+        return false;
+    }
+
+    presentation_callback_active = true;
+    const bool ready = event_can_present_callback(&record, &context);
+    presentation_callback_active = false;
+    return ready;
+}
+
+void presenter_commit(
+    const worr_event_record_v1 &record,
+    const cg_event_runtime_presentation_context_v1 &context)
+{
+    if (!event_present_callback || presentation_callback_active)
+        return;
+
+    presentation_callback_active = true;
+    event_present_callback(&record, &context);
+    presentation_callback_active = false;
 }
 
 cg_event_runtime_result_v1 present_predictions(
@@ -1111,6 +1824,14 @@ cg_event_runtime_result_v1 present_predictions(
                 &state.journal, ref, now_tick)) {
             continue;
         }
+        const auto context = presentation_context(
+            CG_EVENT_RUNTIME_PRESENTATION_PREDICTED, {},
+            best->record.source_tick, best->record.source_time_us);
+        if (!presenter_ready(best->record, context)) {
+            state.status.authority_requires_resync = 1;
+            mark_authority_degraded(state);
+            return CG_EVENT_RUNTIME_DEGRADED;
+        }
         if (Worr_EventJournalMarkPresentedV1(&state.journal, ref) !=
             WORR_EVENT_JOURNAL_INSERTED) {
             mark_degraded(state);
@@ -1134,6 +1855,7 @@ cg_event_runtime_result_v1 present_predictions(
                       best->record.source_tick,
                       best->record.source_time_us);
         increment_saturated(state.status.predicted_presentations);
+        presenter_commit(best->record, context);
         ++advanced;
     }
     return CG_EVENT_RUNTIME_OK;
@@ -1144,8 +1866,14 @@ cg_event_runtime_result_v1 present_authority(
     std::uint32_t now_tick, std::uint32_t max_presentations,
     std::uint32_t &advanced)
 {
+    if (state.status.authority_sequence_exhausted != 0)
+        return advanced < max_presentations
+                   ? CG_EVENT_RUNTIME_NOT_READY
+                   : CG_EVENT_RUNTIME_OK;
+
     std::uint32_t processed = 0;
-    while (advanced < max_presentations &&
+    while (state.status.authority_sequence_exhausted == 0 &&
+           advanced < max_presentations &&
            processed < max_presentations) {
         worr_event_id_v1 id{state.status.authority_epoch,
                             state.status.next_authority_sequence};
@@ -1157,11 +1885,13 @@ cg_event_runtime_result_v1 present_authority(
         ++processed;
 
         if ((entry->state & AUTHORITY_SKIP) != 0) {
-            entry->state |= AUTHORITY_PRESENTED;
-            increment_saturated(state.status.authoritative_terminal_skips);
-            ++state.status.next_authority_sequence;
-            if (!state.status.next_authority_sequence) {
-                mark_degraded(state);
+            bool terminalized = false;
+            const auto terminal_result =
+                terminalize_authority_skip_head(state, terminalized);
+            if (terminal_result != CG_EVENT_RUNTIME_OK)
+                return terminal_result;
+            if (!terminalized) {
+                require_authority_resync(state);
                 return CG_EVENT_RUNTIME_DEGRADED;
             }
             continue;
@@ -1182,11 +1912,7 @@ cg_event_runtime_result_v1 present_authority(
                 entry->state |= AUTHORITY_PRESENTED;
                 increment_saturated(
                     state.status.authoritative_terminal_skips);
-                ++state.status.next_authority_sequence;
-                if (!state.status.next_authority_sequence) {
-                    mark_degraded(state);
-                    return CG_EVENT_RUNTIME_DEGRADED;
-                }
+                consume_authority_cursor(state);
                 continue;
             }
         }
@@ -1199,10 +1925,17 @@ cg_event_runtime_result_v1 present_authority(
             increment_saturated(state.status.authority_reference_stalls);
             return CG_EVENT_RUNTIME_NOT_READY;
         }
+        /* Explicit snapshot-fenced legacy events retain the producer's server
+         * map clock even when an event-only client presents from a per-client
+         * legacy projection clock. For ordinary ref-bound records, retain the
+         * source-clock gate as an independent semantic-order check. */
+        const bool explicit_cross_domain_fence =
+            (entry->record.flags & WORR_EVENT_FLAG_SNAPSHOT_FENCED) != 0;
         if (entry->fence_time_us > render_time_us ||
-            entry->record.source_time_us > render_time_us ||
             !tick_reached(now_tick, entry->fence_tick) ||
-            !tick_reached(now_tick, entry->record.source_tick)) {
+            (!explicit_cross_domain_fence &&
+             (entry->record.source_time_us > render_time_us ||
+              !tick_reached(now_tick, entry->record.source_tick)))) {
             increment_saturated(state.status.future_time_stalls);
             return CG_EVENT_RUNTIME_NOT_READY;
         }
@@ -1211,11 +1944,7 @@ cg_event_runtime_result_v1 present_authority(
             entry->state |= AUTHORITY_PRESENTED;
             increment_saturated(
                 state.status.authoritative_prediction_suppressions);
-            ++state.status.next_authority_sequence;
-            if (!state.status.next_authority_sequence) {
-                mark_degraded(state);
-                return CG_EVENT_RUNTIME_DEGRADED;
-            }
+            consume_authority_cursor(state);
             continue;
         }
 
@@ -1228,9 +1957,19 @@ cg_event_runtime_result_v1 present_authority(
             entry->state |= AUTHORITY_PRESENTED;
             increment_saturated(state.status.authoritative_terminal_skips);
         } else {
-            if (!Worr_EventJournalNeedsPresentationV1(
-                    &state.journal, entry->slot, now_tick)) {
+            if (!authority_slot_needs_presentation(
+                    state, *entry, *slot, render_time_us,
+                    now_tick)) {
                 return CG_EVENT_RUNTIME_NOT_READY;
+            }
+            const auto context = presentation_context(
+                CG_EVENT_RUNTIME_PRESENTATION_AUTHORITY,
+                entry->fence_snapshot_id, entry->fence_tick,
+                entry->fence_time_us);
+            if (!presenter_ready(entry->record, context)) {
+                state.status.authority_requires_resync = 1;
+                mark_authority_degraded(state);
+                return CG_EVENT_RUNTIME_DEGRADED;
             }
             if (Worr_EventJournalMarkPresentedV1(
                     &state.journal, entry->slot) !=
@@ -1244,16 +1983,17 @@ cg_event_runtime_result_v1 present_authority(
                           entry->fence_time_us);
             increment_saturated(
                 state.status.authoritative_presentations);
+            presenter_commit(entry->record, context);
             ++advanced;
         }
 
-        ++state.status.next_authority_sequence;
-        if (!state.status.next_authority_sequence) {
-            mark_degraded(state);
-            return CG_EVENT_RUNTIME_DEGRADED;
-        }
+        consume_authority_cursor(state);
     }
-    return CG_EVENT_RUNTIME_OK;
+    /* A visual record can consume the final presentation budget while
+     * revealing one or more ordered control/stale skips immediately behind
+     * it. Skips have no presentation side effect and must not wait for a
+     * later render frame merely because the visual budget reached zero. */
+    return drain_authority_skip_heads(state);
 }
 
 cg_event_runtime_result_v1 present_legacy(
@@ -1323,15 +2063,33 @@ cg_event_runtime_result_v1 combine_advance_result(
 
 } // namespace
 
+void CG_EventRuntimeSetPresenter(
+    cg_event_runtime_can_present_callback_v1 can_present,
+    cg_event_runtime_present_callback_v1 present)
+{
+    if (runtime_mutation_blocked())
+        return;
+    /* Half-installed presentation authority would turn a validated journal
+     * commit into either a lost effect or an unvalidated side effect.  Keep
+     * the mismatch observable: presenter_ready() rejects it before the
+     * journal mark and the normal authority resync latch closes the stream. */
+    event_can_present_callback = can_present;
+    event_present_callback = present;
+}
+
 void CG_EventRuntimeSetLocalActionShadowReportCallback(
     cg_local_action_shadow_report_callback_v1 callback)
 {
+    if (runtime_mutation_blocked())
+        return;
     local_action_shadow_report_callback = callback;
 }
 
 cg_event_runtime_result_v1
 CG_EventRuntimeResetLegacy(std::uint32_t stream_epoch)
 {
+    if (runtime_mutation_blocked())
+        return CG_EVENT_RUNTIME_REENTRANT;
     const auto resets = runtime.status.legacy_resets;
     for (auto &body : runtime.legacy_bodies)
         body = {};
@@ -1352,6 +2110,8 @@ cg_event_runtime_result_v1
 CG_EventRuntimeResetAuthority(std::uint32_t stream_epoch,
                               std::uint32_t first_sequence)
 {
+    if (runtime_mutation_blocked())
+        return CG_EVENT_RUNTIME_REENTRANT;
     if ((stream_epoch == 0) != (first_sequence == 0))
         return CG_EVENT_RUNTIME_INVALID_ARGUMENT;
     /* The private authority carrier shares this epoch boundary. Retaining a
@@ -1371,6 +2131,9 @@ CG_EventRuntimeResetAuthority(std::uint32_t stream_epoch,
     runtime.authority_initialized = false;
     runtime.status.authority_epoch = 0;
     runtime.status.next_authority_sequence = 0;
+    runtime.status.next_private_reconciliation_sequence = 0;
+    runtime.status.authority_sequence_exhausted = 0;
+    runtime.status.private_reconciliation_sequence_exhausted = 0;
     runtime.status.receipt = {};
     runtime.status.authority_degraded = 0;
     runtime.status.authority_requires_resync = 0;
@@ -1390,6 +2153,8 @@ CG_EventRuntimeResetAuthority(std::uint32_t stream_epoch,
         runtime.authority_initialized ? stream_epoch : 0;
     runtime.status.next_authority_sequence =
         runtime.authority_initialized ? first_sequence : 0;
+    runtime.status.next_private_reconciliation_sequence =
+        runtime.authority_initialized ? first_sequence : 0;
     runtime.status.authority_resets = resets;
     increment_saturated(runtime.status.authority_resets);
     if (!runtime.authority_initialized) {
@@ -1405,6 +2170,8 @@ CG_EventRuntimeResetAuthority(std::uint32_t stream_epoch,
 cg_event_runtime_result_v1
 CG_EventRuntimeResetSnapshot(std::uint32_t snapshot_epoch)
 {
+    if (runtime_mutation_blocked())
+        return CG_EVENT_RUNTIME_REENTRANT;
     const auto resets = runtime.status.snapshot_resets;
     /* Snapshot-reference fences are part of the presentation proof. Losing
      * one beneath unresolved authoritative records cannot be repaired by
@@ -1429,6 +2196,8 @@ CG_EventRuntimeResetSnapshot(std::uint32_t snapshot_epoch)
 
 void CG_EventRuntimeSetAuditEnabled(bool enabled)
 {
+    if (runtime_mutation_blocked())
+        return;
     if ((runtime.status.audit_enabled != 0) == enabled)
         return;
 
@@ -1451,12 +2220,16 @@ bool CG_EventRuntimeAuditEnabled()
 
 void CG_EventRuntimeSynchronizeLocalInteractionHealth()
 {
+    if (runtime_mutation_blocked())
+        return;
     latch_local_interaction_resync();
 }
 
 cg_event_runtime_result_v1 CG_EventRuntimeSubmitAuthoritativeBatch(
     const worr_event_record_v1 *records, std::uint32_t count)
 {
+    if (runtime_mutation_blocked())
+        return CG_EVENT_RUNTIME_REENTRANT;
     if (!records || !count ||
         count > WORR_CGAME_EVENT_RANGE_MAX_RECORDS_V2)
         return CG_EVENT_RUNTIME_INVALID_ARGUMENT;
@@ -1465,9 +2238,6 @@ cg_event_runtime_result_v1 CG_EventRuntimeSubmitAuthoritativeBatch(
     latch_local_interaction_resync();
     if (runtime.status.authority_requires_resync != 0)
         return CG_EVENT_RUNTIME_NOT_READY;
-    if (transaction_active)
-        return CG_EVENT_RUNTIME_REENTRANT;
-
     transaction_active = true;
     copy_state(staging, runtime);
     increment_saturated(staging.status.authoritative_batches);
@@ -1508,33 +2278,30 @@ cg_event_runtime_result_v1 CG_EventRuntimeSubmitAuthoritativeBatch(
             aggregate = result;
     }
     commit_staging();
-    for (std::uint32_t index = 0; index < count; ++index) {
-        const auto &record = records[index];
-        if (is_local_interaction_authority_receipt(record)) {
-            worr_local_interaction_authority_receipt_v1 receipt{};
-            std::memcpy(&receipt, record.payload, sizeof(receipt));
-            if (!local_interaction_receipt_accepted(
-                    CG_LocalInteractionSubmitAuthorityReceipt(&receipt))) {
-                runtime.status.authority_requires_resync = 1;
-                mark_authority_degraded(runtime);
-                aggregate = CG_EVENT_RUNTIME_DEGRADED;
-            }
-        } else if (is_local_action_shadow_authority_receipt(record)) {
-            worr_local_action_shadow_authority_receipt_v1 receipt{};
-            std::memcpy(&receipt, record.payload, sizeof(receipt));
-            const auto receipt_result =
-                CG_LocalActionShadowSubmitAuthorityReceipt(&receipt);
-            if (!local_action_shadow_receipt_accepted(receipt_result)) {
-                runtime.status.authority_requires_resync = 1;
-                mark_authority_degraded(runtime);
-                aggregate = CG_EVENT_RUNTIME_DEGRADED;
-            }
-            // Report at the receipt boundary as well as the prediction pass.
-            // A receipt can complete a pair after the last replay in a frame;
-            // waiting for another replay would make live parity evidence
-            // dependent on renderer/client cadence rather than reconciliation.
-            if (local_action_shadow_report_callback)
-                local_action_shadow_report_callback();
+    bool private_reconciliation_accepted =
+        drain_private_reconciliation_heads(runtime) == CG_EVENT_RUNTIME_OK;
+    if (!private_reconciliation_accepted)
+        aggregate = CG_EVENT_RUNTIME_DEGRADED;
+    latch_local_interaction_resync();
+    if (runtime.status.authority_requires_resync != 0) {
+        private_reconciliation_accepted = false;
+        aggregate = CG_EVENT_RUNTIME_DEGRADED;
+        mark_authority_degraded(runtime);
+    }
+    if (private_reconciliation_accepted) {
+        /* Reconciliation callbacks are irreversible, so the application
+         * cursor runs only after the accepted authority batch commits. The
+         * subsequent presentation cursor/journal terminalization remains an
+         * all-or-nothing local-state transaction: an invariant failure retains
+         * the committed evidence and applied reconciliation, leaves the
+         * presentation cursor untouched, and requires a fresh authority epoch. */
+        copy_state(staging, runtime);
+        const auto drain_result = drain_authority_skip_heads(staging);
+        if (drain_result == CG_EVENT_RUNTIME_OK) {
+            commit_staging();
+        } else {
+            require_authority_resync(runtime);
+            aggregate = drain_result;
         }
     }
     if (aggregate == CG_EVENT_RUNTIME_DEGRADED)
@@ -1547,6 +2314,8 @@ cg_event_runtime_result_v1 CG_EventRuntimeSubmitAuthoritativeBatch(
 cg_event_runtime_result_v1 CG_EventRuntimeSubmitPredictedBatch(
     const worr_event_record_v1 *records, std::uint32_t count)
 {
+    if (runtime_mutation_blocked())
+        return CG_EVENT_RUNTIME_REENTRANT;
     if (!records || !count ||
         count > WORR_CGAME_EVENT_RANGE_MAX_RECORDS_V2)
         return CG_EVENT_RUNTIME_INVALID_ARGUMENT;
@@ -1555,9 +2324,6 @@ cg_event_runtime_result_v1 CG_EventRuntimeSubmitPredictedBatch(
     latch_local_interaction_resync();
     if (runtime.status.authority_requires_resync != 0)
         return CG_EVENT_RUNTIME_NOT_READY;
-    if (transaction_active)
-        return CG_EVENT_RUNTIME_REENTRANT;
-
     transaction_active = true;
     copy_state(staging, runtime);
     increment_saturated(staging.status.predicted_batches);
@@ -1611,6 +2377,8 @@ cg_event_runtime_result_v1 CG_EventRuntimeSubmitPredictedBatch(
 cg_event_runtime_result_v1 CG_EventRuntimeCancelPrediction(
     const worr_event_prediction_key_v1 *key)
 {
+    if (runtime_mutation_blocked())
+        return CG_EVENT_RUNTIME_REENTRANT;
     if (!key || key->command_epoch == 0 || key->command_sequence == 0 ||
         key->lane < WORR_EVENT_PREDICTION_LANE_GAMEPLAY ||
         key->lane > WORR_EVENT_PREDICTION_LANE_EFFECT) {
@@ -1658,15 +2426,14 @@ cg_event_runtime_result_v1 CG_EventRuntimeCancelPrediction(
 cg_event_runtime_result_v1 CG_EventRuntimeRetirePredictionsThrough(
     worr_command_cursor_v1 consumed_cursor)
 {
+    if (runtime_mutation_blocked())
+        return CG_EVENT_RUNTIME_REENTRANT;
     if (consumed_cursor.epoch == 0)
         return CG_EVENT_RUNTIME_INVALID_ARGUMENT;
     if (!runtime.authority_initialized)
         return CG_EVENT_RUNTIME_UNINITIALIZED;
     if (runtime.status.authority_requires_resync != 0)
         return CG_EVENT_RUNTIME_NOT_READY;
-    if (transaction_active)
-        return CG_EVENT_RUNTIME_REENTRANT;
-
     increment_saturated(runtime.status.prediction_retire_calls);
     bool duplicate = false;
     if (runtime.has_prediction_retired_cursor) {
@@ -1707,6 +2474,8 @@ cg_event_runtime_result_v1 CG_EventRuntimeObserveSnapshot(
     const worr_snapshot_event_ref_v2 *event_refs,
     std::uint32_t event_ref_count)
 {
+    if (runtime_mutation_blocked())
+        return CG_EVENT_RUNTIME_REENTRANT;
     const bool observe_authority = runtime.authority_initialized &&
                                    runtime.status.authority_requires_resync == 0;
     const bool observe_legacy = CG_EventRuntimeAuditEnabled();
@@ -1766,13 +2535,11 @@ cg_event_runtime_result_v1 CG_EventRuntimeObserveSnapshot(
             return CG_EVENT_RUNTIME_DEGRADED;
         }
     }
-    if (transaction_active)
-        return CG_EVENT_RUNTIME_REENTRANT;
-
     transaction_active = true;
     copy_state(staging, runtime);
     cg_event_runtime_result_v1 aggregate = CG_EVENT_RUNTIME_EMPTY;
     bool authority_attachment_degraded = false;
+    bool authority_terminalized = false;
     for (std::uint32_t index = 0; index < event_ref_count; ++index) {
         const bool authority_reference =
             event_refs[index].provenance ==
@@ -1812,10 +2579,43 @@ cg_event_runtime_result_v1 CG_EventRuntimeObserveSnapshot(
             aggregate = result;
         }
     }
+    retain_snapshot_fence(staging, *snapshot);
     staging.has_last_snapshot = true;
     staging.last_snapshot_id = snapshot->snapshot_id;
     staging.last_snapshot_time_us = snapshot->server_time_us;
     staging.last_snapshot_event_hash = snapshot->event_hash;
+    for (auto &authority : staging.authority) {
+        if (!authority.occupied ||
+            (authority.state & (AUTHORITY_SKIP |
+                                AUTHORITY_PRESENTED)) != 0 ||
+            (authority.record.flags &
+             WORR_EVENT_FLAG_SNAPSHOT_FENCED) == 0) {
+            continue;
+        }
+        if ((authority.state & AUTHORITY_HAS_SNAPSHOT_REF) == 0) {
+            const bool was_skipped =
+                (authority.state & AUTHORITY_SKIP) != 0;
+            const auto fence_result =
+                try_attach_declared_snapshot_fence(staging, authority);
+            authority_terminalized |=
+                !was_skipped &&
+                (authority.state & AUTHORITY_SKIP) != 0;
+            if (fence_result == CG_EVENT_RUNTIME_DEGRADED) {
+                aggregate = CG_EVENT_RUNTIME_DEGRADED;
+                authority_attachment_degraded = true;
+            } else if (fence_result == CG_EVENT_RUNTIME_OK &&
+                       aggregate == CG_EVENT_RUNTIME_EMPTY) {
+                aggregate = CG_EVENT_RUNTIME_OK;
+            }
+        }
+        if ((authority.state & AUTHORITY_REF_MISMATCH) == 0)
+            try_attach_declared_snapshot_expiry(staging, authority);
+    }
+    if (authority_terminalized &&
+        drain_authority_skip_heads(staging) != CG_EVENT_RUNTIME_OK) {
+        aggregate = CG_EVENT_RUNTIME_DEGRADED;
+        authority_attachment_degraded = true;
+    }
     increment_saturated(staging.status.snapshots_observed);
     commit_staging();
     if (authority_attachment_degraded)
@@ -1836,6 +2636,8 @@ cg_event_runtime_result_v1 CG_EventRuntimeObserveSnapshot(
 cg_event_runtime_result_v1 CG_EventRuntimeObserveLegacyEntry(
     const cg_canonical_event_presentation_entry_v1 *entry)
 {
+    if (runtime_mutation_blocked())
+        return CG_EVENT_RUNTIME_REENTRANT;
     if (!CG_EventRuntimeAuditEnabled())
         return CG_EVENT_RUNTIME_EMPTY;
     if (!entry ||
@@ -1853,9 +2655,6 @@ cg_event_runtime_result_v1 CG_EventRuntimeObserveLegacyEntry(
         return CG_EVENT_RUNTIME_UNINITIALIZED;
     if (entry->stream_epoch != runtime.status.legacy_epoch)
         return CG_EVENT_RUNTIME_WRONG_EPOCH;
-    if (transaction_active)
-        return CG_EVENT_RUNTIME_REENTRANT;
-
     std::uint64_t semantic_hash = 0;
     if (!Worr_EventRecordSemanticHashV1(
             &entry->record, WORR_CGAME_EVENT_RANGE_MAX_ENTITIES_V2,
@@ -1934,6 +2733,8 @@ cg_event_runtime_result_v1 CG_EventRuntimeAdvanceAudit(
     std::uint64_t render_time_us, std::uint32_t now_tick,
     std::uint32_t max_presentations, std::uint32_t *advanced_out)
 {
+    if (runtime_mutation_blocked())
+        return CG_EVENT_RUNTIME_REENTRANT;
     if (!advanced_out || !max_presentations)
         return CG_EVENT_RUNTIME_INVALID_ARGUMENT;
     const bool observe_legacy = CG_EventRuntimeAuditEnabled();
@@ -1943,9 +2744,6 @@ cg_event_runtime_result_v1 CG_EventRuntimeAdvanceAudit(
     }
     if (!runtime.legacy_initialized && !runtime.authority_initialized)
         return CG_EVENT_RUNTIME_UNINITIALIZED;
-    if (transaction_active)
-        return CG_EVENT_RUNTIME_REENTRANT;
-
     *advanced_out = 0;
     latch_local_interaction_resync();
     increment_saturated(runtime.status.advance_calls);
@@ -1961,7 +2759,7 @@ cg_event_runtime_result_v1 CG_EventRuntimeAdvanceAudit(
                 (runtime.journal_slots[index].state &
                  WORR_EVENT_SLOT_EXPIRED) != 0;
         }
-        (void)Worr_EventJournalExpireV1(&runtime.journal, now_tick);
+        expire_runtime_journal(runtime, render_time_us, now_tick);
         for (std::uint32_t index = 0; index < runtime.journal.capacity;
              ++index) {
             const auto &slot = runtime.journal_slots[index];
@@ -2027,12 +2825,128 @@ bool CG_EventRuntimeGetStatus(cg_event_runtime_status_v1 *status_out)
 {
     if (!status_out)
         return false;
-    latch_local_interaction_resync();
+    /* Status inspection is allowed from presenter and private-reconciliation
+     * callbacks so diagnostics can observe the exact pre/post-commit boundary.
+     * Do not let that read path latch external health and mutate the runtime
+     * while any callback/transaction guard is active. */
+    if (!runtime_mutation_blocked())
+        latch_local_interaction_resync();
     auto status = runtime.status;
     status.struct_size = sizeof(status);
     status.schema_version = CG_EVENT_RUNTIME_VERSION;
     if (runtime.authority_initialized)
         status.receipt = runtime.journal.receipt;
+    *status_out = status;
+    return true;
+}
+
+bool CG_EventRuntimeGetCheckpointBlock(
+    std::uint32_t expected_authority_epoch,
+    cg_event_runtime_checkpoint_block_v1 *block_out)
+{
+    if (!block_out)
+        return false;
+
+    *block_out = {};
+    block_out->struct_size = sizeof(*block_out);
+    block_out->expected_authority_epoch = expected_authority_epoch;
+    block_out->authority_epoch = runtime.status.authority_epoch;
+    block_out->next_authority_sequence =
+        runtime.status.next_authority_sequence;
+    block_out->last_snapshot_id = runtime.last_snapshot_id;
+    block_out->last_snapshot_time_us = runtime.last_snapshot_time_us;
+    block_out->last_render_time_us = runtime.status.last_render_time_us;
+    block_out->last_now_tick = runtime.status.last_now_tick;
+
+    if (runtime_mutation_blocked()) {
+        block_out->reason = CG_EVENT_RUNTIME_CHECKPOINT_BLOCK_MUTATION;
+        return true;
+    }
+    if (!runtime.authority_initialized) {
+        block_out->reason =
+            CG_EVENT_RUNTIME_CHECKPOINT_BLOCK_UNINITIALIZED;
+        return true;
+    }
+    if (runtime.status.authority_epoch != expected_authority_epoch) {
+        block_out->reason = CG_EVENT_RUNTIME_CHECKPOINT_BLOCK_WRONG_EPOCH;
+        return true;
+    }
+    if (runtime.status.authority_requires_resync != 0 ||
+        runtime.status.authority_degraded != 0) {
+        block_out->reason = CG_EVENT_RUNTIME_CHECKPOINT_BLOCK_UNHEALTHY;
+        return true;
+    }
+
+    const worr_event_id_v1 head_id{
+        runtime.status.authority_epoch,
+        runtime.status.next_authority_sequence,
+    };
+    const authority_entry_t *pending = find_authority(runtime, head_id);
+    if (!pending ||
+        (pending->state & AUTHORITY_PRESENTED) != 0) {
+        pending = nullptr;
+        for (const auto &entry : runtime.authority) {
+            if (!entry.occupied ||
+                (entry.state & AUTHORITY_PRESENTED) != 0) {
+                continue;
+            }
+            if (!pending || entry.record.event_id.sequence <
+                                pending->record.event_id.sequence) {
+                pending = &entry;
+            }
+        }
+        if (!pending) {
+            block_out->reason = CG_EVENT_RUNTIME_CHECKPOINT_BLOCK_NONE;
+            return false;
+        }
+        block_out->reason = CG_EVENT_RUNTIME_CHECKPOINT_BLOCK_MISSING_HEAD;
+    } else {
+        block_out->reason = CG_EVENT_RUNTIME_CHECKPOINT_BLOCK_PENDING_HEAD;
+    }
+
+    block_out->pending_sequence = pending->record.event_id.sequence;
+    block_out->authority_state = pending->state;
+    block_out->record_flags = pending->record.flags;
+    block_out->payload_kind = pending->record.payload_kind;
+    block_out->delivery_class = pending->record.delivery_class;
+    block_out->source_tick = pending->record.source_tick;
+    block_out->expiry_tick = pending->record.expiry_tick;
+    block_out->fence_tick = pending->fence_tick;
+    block_out->fence_snapshot_id = pending->fence_snapshot_id;
+    block_out->fence_time_us = pending->fence_time_us;
+    if (pending->slot.index < runtime.journal.capacity) {
+        const auto &slot = runtime.journal_slots[pending->slot.index];
+        if (slot.generation == pending->slot.generation)
+            block_out->slot_state = slot.state;
+    }
+    return true;
+}
+
+bool CG_EventRuntimeCheckpointReady(
+    std::uint32_t expected_authority_epoch,
+    cg_event_runtime_status_v1 *status_out)
+{
+    if (!status_out || expected_authority_epoch == 0 ||
+        runtime_mutation_blocked()) {
+        return false;
+    }
+
+    /* Fold independent reconciliation health into the same decision that
+     * produces the counter baseline.  Splitting this into GetStatus plus a
+     * second readiness query would allow a caller to pair unlike states. */
+    latch_local_interaction_resync();
+    if (!runtime.authority_initialized ||
+        runtime.status.authority_epoch != expected_authority_epoch ||
+        runtime.status.authority_requires_resync != 0 ||
+        runtime.status.authority_degraded != 0 ||
+        authority_has_unpresented_records(runtime)) {
+        return false;
+    }
+
+    auto status = runtime.status;
+    status.struct_size = sizeof(status);
+    status.schema_version = CG_EVENT_RUNTIME_VERSION;
+    status.receipt = runtime.journal.receipt;
     *status_out = status;
     return true;
 }

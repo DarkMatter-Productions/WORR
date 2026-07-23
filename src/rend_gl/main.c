@@ -313,7 +313,9 @@ cvar_t *r_lightmap;
 cvar_t *gl_fullbright;
 cvar_t *gl_vertexlight;
 cvar_t *gl_lightgrid;
+cvar_t *r_lightgrid;
 cvar_t *gl_polyblend;
+static cvar_t *r_polyblend;
 cvar_t *gl_showerrors;
 cvar_t *gl_damageblend_frac;
 
@@ -323,6 +325,8 @@ static bool gl_lightmap_brightness_syncing;
 static bool gl_lightmap_saturation_syncing;
 static bool gl_vsync_syncing;
 static bool gl_multisample_syncing;
+static bool gl_lightgrid_syncing;
+static bool gl_polyblend_syncing;
 
 typedef struct {
   cvar_t **primary;
@@ -850,13 +854,17 @@ static void GL_DrawNullModel(void) {
   if (e->flags & RF_WEAPONMODEL)
     return;
 
-  VectorCopy(e->origin, tess.vertices + 0);
-  VectorCopy(e->origin, tess.vertices + 8);
-  VectorCopy(e->origin, tess.vertices + 16);
+  // VA_NULLMODEL is submitted through glr.entmatrix. Keep its endpoints in
+  // model space: using e->origin/glr.entaxis here applies the entity
+  // translation, rotation, and scale a second time and can place every
+  // diagnostic axis off-screen.
+  VectorClear(tess.vertices + 0);
+  VectorClear(tess.vertices + 8);
+  VectorClear(tess.vertices + 16);
 
-  VectorMA(e->origin, 16, glr.entaxis[0], tess.vertices + 4);
-  VectorMA(e->origin, 16, glr.entaxis[1], tess.vertices + 12);
-  VectorMA(e->origin, 16, glr.entaxis[2], tess.vertices + 20);
+  VectorSet(tess.vertices + 4, 16, 0, 0);
+  VectorSet(tess.vertices + 12, 0, 16, 0);
+  VectorSet(tess.vertices + 20, 0, 0, 16);
 
   WN32(tess.vertices + 3, COLOR_RED.u32);
   WN32(tess.vertices + 7, COLOR_RED.u32);
@@ -1875,7 +1883,7 @@ void R_RenderFrame(const refdef_t *fd) {
   if (crt_enabled)
     GL_DrawCrt();
 
-  if (gl_polyblend->integer)
+  if (r_polyblend->integer)
     GL_Blend();
 
   GL_ProfileGpuEnd(&gpu_postfx);
@@ -2224,6 +2232,61 @@ static void gl_lightmap_sync(cvar_t *self) {
   gl_lightmap_syncing = false;
 
   gl_lightmap_changed(self);
+}
+
+static void gl_polyblend_changed(cvar_t *self) {
+  if (gl_polyblend_syncing || !self)
+    return;
+
+  gl_polyblend_syncing = true;
+  const int value = Cvar_ClampInteger(self, 0, 1);
+  const char *string = value ? "1" : "0";
+  if (gl_polyblend)
+    Cvar_SetByVar(gl_polyblend, string, FROM_CODE);
+  if (r_polyblend)
+    Cvar_SetByVar(r_polyblend, string, FROM_CODE);
+  gl_polyblend_syncing = false;
+}
+
+static void gl_lightgrid_changed(cvar_t *self) {
+  if (gl_lightgrid_syncing || !self)
+    return;
+
+  gl_lightgrid_syncing = true;
+  const char *string = Cvar_ClampInteger(self, 0, 1) ? "1" : "0";
+  if (gl_lightgrid)
+    Cvar_SetByVar(gl_lightgrid, string, FROM_CODE);
+  if (r_lightgrid)
+    Cvar_SetByVar(r_lightgrid, string, FROM_CODE);
+  gl_lightgrid_syncing = false;
+}
+
+static void gl_sync_lightgrid_defaults(void) {
+  if (!r_lightgrid || !gl_lightgrid)
+    return;
+
+  cvar_t *source = r_lightgrid;
+  if (!(r_lightgrid->flags & CVAR_MODIFIED) &&
+      (gl_lightgrid->flags & CVAR_MODIFIED))
+    source = gl_lightgrid;
+
+  const char *string = Cvar_ClampInteger(source, 0, 1) ? "1" : "0";
+  Cvar_SetByVar(gl_lightgrid, string, FROM_CODE);
+  Cvar_SetByVar(r_lightgrid, string, FROM_CODE);
+}
+
+static void gl_sync_polyblend_defaults(void) {
+  if (!r_polyblend || !gl_polyblend)
+    return;
+
+  cvar_t *source = r_polyblend;
+  if (!(r_polyblend->flags & CVAR_MODIFIED) &&
+      (gl_polyblend->flags & CVAR_MODIFIED))
+    source = gl_polyblend;
+
+  const char *string = Cvar_ClampInteger(source, 0, 1) ? "1" : "0";
+  Cvar_SetByVar(gl_polyblend, string, FROM_CODE);
+  Cvar_SetByVar(r_polyblend, string, FROM_CODE);
 }
 
 static void gl_sync_lightmap_defaults(void) {
@@ -2678,7 +2741,16 @@ static void GL_Register(void) {
   gl_vertexlight = Cvar_Get("gl_vertexlight", "0", 0);
   gl_vertexlight->changed = gl_lightmap_changed;
   gl_lightgrid = Cvar_Get("gl_lightgrid", "1", 0);
+  r_lightgrid = Cvar_Get("r_lightgrid", gl_lightgrid->string, CVAR_ARCHIVE);
+  gl_sync_lightgrid_defaults();
+  gl_lightgrid->changed = gl_lightgrid_changed;
+  r_lightgrid->changed = gl_lightgrid_changed;
   gl_polyblend = Cvar_Get("gl_polyblend", "1", 0);
+  r_polyblend = Cvar_Get("r_polyblend", gl_polyblend->string,
+                         CVAR_ARCHIVE);
+  gl_sync_polyblend_defaults();
+  gl_polyblend->changed = gl_polyblend_changed;
+  r_polyblend->changed = gl_polyblend_changed;
   gl_showerrors = Cvar_Get("gl_showerrors", "1", 0);
   gl_damageblend_frac = Cvar_Get("gl_damageblend_frac", "0.2", 0);
 
@@ -2730,6 +2802,19 @@ static void GL_Unregister(void) {
   gl_multisamples = NULL;
   r_multisamples = NULL;
   gl_multisample_syncing = false;
+  if (gl_lightgrid && gl_lightgrid->changed == gl_lightgrid_changed)
+    gl_lightgrid->changed = NULL;
+  if (r_lightgrid && r_lightgrid->changed == gl_lightgrid_changed)
+    r_lightgrid->changed = NULL;
+  r_lightgrid = NULL;
+  gl_lightgrid_syncing = false;
+  if (gl_polyblend && gl_polyblend->changed == gl_polyblend_changed)
+    gl_polyblend->changed = NULL;
+  if (r_polyblend && r_polyblend->changed == gl_polyblend_changed)
+    r_polyblend->changed = NULL;
+  gl_polyblend = NULL;
+  r_polyblend = NULL;
+  gl_polyblend_syncing = false;
   Cmd_RemoveCommand("strings");
   Cmd_RemoveCommand("gfxinfo");
   Cmd_RemoveCommand("r_shadow_dump");
@@ -2994,12 +3079,13 @@ void GL_PrintStats(void) {
                            c.textureUploadBytes;
   Com_Printf(
       "GL_STATS frame=%u draws=%d vertices=%llu indices=0 uploads=%llu "
-      "entities=%d dlights=%d particles=%d cpu_ms=%.3f gpu_ms=%.3f "
+      "entities=%d dlights=%d particles=%d cpu_ms=%.3f cpu_render_ms=%.3f gpu_ms=%.3f "
       "gpu_frame_ms=%.3f gpu_world_ms=%.3f gpu_effects_ms=%.3f "
       "gpu_post_ms=%.3f gpu_frame_valid=%d gpu_valid=%d\n",
       gl_telemetry.frame_number, c.batchesDrawn + c.batchesDrawn2D,
       (unsigned long long)c.trisDrawn * 3u, (unsigned long long)uploads,
       glr.fd.num_entities, glr.fd.num_dlights, glr.fd.num_particles,
+      GL_ProfileCpuMilliseconds(GL_CPU_PROFILE_FRAME),
       GL_ProfileCpuMilliseconds(GL_CPU_PROFILE_FRAME),
       gpu_world + gpu_effects + gpu_post, GL_ProfileGpuFrameMilliseconds(),
       gpu_world, gpu_effects, gpu_post, gl_telemetry.gpu_frame_valid,

@@ -65,6 +65,7 @@ static cvar_t *vk_draw_entities;
 static cvar_t *vk_draw_ui;
 static cvar_t *vk_showtearing;
 static cvar_t *vk_damageblend_frac;
+static cvar_t *vk_r_polyblend;
 static cvar_t *vk_screenshot_dir;
 static cvar_t *vk_resolutionscale;
 static cvar_t *vk_resolutionscale_aggressive;
@@ -101,6 +102,11 @@ static VkDeviceMemory vk_screenshot_memory;
 static VkDeviceSize vk_screenshot_capacity;
 static bool vk_dof_supported;
 static uint64_t vk_frame_begin_us;
+// Keep the published CPU render metric comparable with OpenGL's render-frame
+// profile. Vulkan's acquire/present calls can block on the desktop compositor
+// or frame scheduler even after rendering work is complete, so retain that
+// latency separately instead of attributing it to command recording.
+static uint64_t vk_frame_sync_wait_us;
 
 bool VK_RegisterScenePipelineVariant(vk_context_t *ctx,
                                      VkPipeline multisample_pipeline,
@@ -176,7 +182,10 @@ static void VK_DestroyScenePipelineVariants(vk_context_t *ctx)
     ctx->scene_single_sample_active = false;
 }
 
-#define VK_RESOLUTION_SCALE_MIN 0.25f
+// Keep the shared r_resolutionscale contract identical to OpenGL. The
+// full-resolution compositor/UI remains native, while the 3D scene may drop
+// as low as ten percent of each output dimension on constrained hardware.
+#define VK_RESOLUTION_SCALE_MIN 0.1f
 #define VK_RESOLUTION_SCALE_MAX 1.0f
 
 static float vk_resolutionscale_current_w = 1.0f;
@@ -210,6 +219,18 @@ static uint64_t VK_HighResMicroseconds(void) {
   clock_gettime(CLOCK_MONOTONIC, &now);
   return (uint64_t)now.tv_sec * 1000000ULL + (uint64_t)now.tv_nsec / 1000ULL;
 #endif
+}
+
+static void VK_AccumulateFrameSyncWait(uint64_t began_us)
+{
+    if (!began_us) {
+        return;
+    }
+    const uint64_t ended_us = VK_HighResMicroseconds();
+    if (ended_us >= began_us &&
+        UINT64_MAX - vk_frame_sync_wait_us >= ended_us - began_us) {
+        vk_frame_sync_wait_us += ended_us - began_us;
+    }
 }
 
 static void VK_ResetResolutionScaleHistory(void) {
@@ -1025,6 +1046,14 @@ static bool VK_SelectPhysicalDevice(void)
     vk_state.ctx.max_sampler_anisotropy =
         vk_state.ctx.sampler_anisotropy_supported
             ? max(props.limits.maxSamplerAnisotropy, 1.0f) : 1.0f;
+    // Vulkan requires both capabilities to reproduce OpenGL's alias-model
+    // cel pass (front-face polygon-line rendering with a variable line
+    // width). Record the device limits as well so entity submission can
+    // clamp the dynamic state before recording a draw.
+    vk_state.ctx.celshading_supported =
+        features.fillModeNonSolid == VK_TRUE && features.wideLines == VK_TRUE;
+    vk_state.ctx.min_line_width = props.limits.lineWidthRange[0];
+    vk_state.ctx.max_line_width = props.limits.lineWidthRange[1];
     vk_state.ctx.scene_sample_counts =
         props.limits.framebufferColorSampleCounts &
         props.limits.framebufferDepthSampleCounts;
@@ -1072,6 +1101,10 @@ static bool VK_CreateDevice(void)
     VkPhysicalDeviceFeatures enabled_features = { 0 };
     if (vk_state.ctx.sampler_anisotropy_supported) {
         enabled_features.samplerAnisotropy = VK_TRUE;
+    }
+    if (vk_state.ctx.celshading_supported) {
+        enabled_features.fillModeNonSolid = VK_TRUE;
+        enabled_features.wideLines = VK_TRUE;
     }
 
     VkDeviceCreateInfo create_info = {
@@ -2206,14 +2239,11 @@ unavailable:
     return false;
 }
 
-static void VK_CreateLiquidSceneResources(vk_context_t *ctx,
-                                          bool swapchain_supports_transfer_src,
-                                          VkFormatFeatureFlags format_features)
+static bool VK_CreateLiquidSceneResources(vk_context_t *ctx)
 {
     if (!ctx || !ctx->device || !ctx->swapchain.handle ||
-        !swapchain_supports_transfer_src ||
-        !(format_features & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
-        return;
+        !ctx->presentation_scene_copy_supported) {
+        return false;
     }
 
     VkResult result = VK_SUCCESS;
@@ -2296,12 +2326,15 @@ static void VK_CreateLiquidSceneResources(vk_context_t *ctx,
         }
         frame->liquid_scene_initialized = false;
     }
-    return;
+    return true;
 
 unavailable:
-    Com_WPrintf("Vulkan: native liquid scene copy unavailable (%s); refraction disabled.\n",
+    Com_WPrintf("Vulkan: native presentation scene copy unavailable (%s); "
+                "refraction and CRT are disabled.\n",
                 VK_ResultString(result));
     VK_DestroyLiquidSceneResources(ctx);
+    ctx->presentation_scene_copy_supported = false;
+    return false;
 }
 
 static void VK_DestroySwapchain(vk_context_t *ctx)
@@ -2506,6 +2539,7 @@ static void VK_DestroySwapchain(vk_context_t *ctx)
     ctx->scene_is_float = false;
     ctx->scene_offscreen_supported = false;
     ctx->scaled_scene_blit_supported = false;
+    ctx->presentation_scene_copy_supported = false;
     ctx->linear_scene_format = VK_FORMAT_UNDEFINED;
     ctx->linear_scene_supported = false;
     ctx->linear_scene_mips_supported = false;
@@ -2654,6 +2688,9 @@ static bool VK_CreateSwapchain(uint32_t width, uint32_t height)
     }
     const bool swapchain_supports_transfer_src =
         (caps.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) != 0;
+    ctx->presentation_scene_copy_supported = swapchain_supports_transfer_src &&
+        (scene_format_properties.optimalTilingFeatures &
+         VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) != 0;
 
     VkSwapchainCreateInfoKHR create_info = {
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
@@ -2767,9 +2804,7 @@ static bool VK_CreateSwapchain(uint32_t width, uint32_t height)
         ctx->scene_offscreen_supported = false;
     }
     if (!ctx->frames[0].linear_scene_image) {
-        VK_CreateLiquidSceneResources(
-            ctx, swapchain_supports_transfer_src,
-            scene_format_properties.optimalTilingFeatures);
+        VK_CreateLiquidSceneResources(ctx);
     }
 
     ctx->swapchain.views = VK_AllocArray(image_count, sizeof(*ctx->swapchain.views),
@@ -4398,9 +4433,12 @@ static bool VK_RecordCommandBuffer(VkCommandBuffer cmd, uint32_t image_index)
         VK_LinearSceneRestoreColorAttachment(cmd);
     }
 
+    vec3_t scene_clear_color = { 0.0f, 0.0f, 0.0f };
+    VK_Shadow_GetSkyFogClearColor(scene_clear_color);
     VkClearValue clear_values[2] = {
         {
-            .color = { { 0.0f, 0.0f, 0.0f, 1.0f } },
+            .color = { { scene_clear_color[0], scene_clear_color[1],
+                         scene_clear_color[2], 1.0f } },
         },
         {
             .depthStencil = { 1.0f, 0 },
@@ -4474,16 +4512,22 @@ static bool VK_RecordCommandBuffer(VkCommandBuffer cmd, uint32_t image_index)
     const VkDescriptorSet liquid_scene_descriptor_set = linear_scene
         ? frame->linear_scene_copy_base_descriptor_set
         : frame->liquid_scene_descriptor_set;
-    const bool liquid_refraction = !entity_overlay && draw_world &&
+    const bool transparent_world = draw_world &&
+        VK_World_HasTransparentBatches();
+    const bool liquid_refraction = !entity_overlay && transparent_world &&
         ctx->scene_load_render_pass && liquid_scene_descriptor_set &&
         VK_World_UsesRefraction();
     const bool direct_linear_presentation = linear_scene &&
         !liquid_refraction && !VK_PostProcess_RequiresSceneCopy();
     const bool postprocess_composite = VK_PostProcess_UsesCompositePass();
-    const bool crt_postprocess = VK_PostProcess_UsesCrtPass();
+    // CRT always samples the full-resolution presentation composite. A
+    // scaled or float scene allocates that copy lazily, so only record the
+    // CRT pass after its descriptor is available.
+    const bool crt_postprocess = VK_PostProcess_UsesCrtPass() &&
+        frame->liquid_scene_descriptor_set;
     const bool final_postprocess = ctx->presentation_load_render_pass &&
         scene_descriptor_set &&
-        VK_PostProcess_UsesFinalPass();
+        (postprocess_composite || crt_postprocess);
     const bool scaled_scene_blit = linear_scene &&
         !ctx->scene_is_float && ctx->scaled_scene_blit_supported &&
         scene_scaled &&
@@ -4511,15 +4555,11 @@ static bool VK_RecordCommandBuffer(VkCommandBuffer cmd, uint32_t image_index)
 
     vkCmdBeginRenderPass(cmd, &render_info, VK_SUBPASS_CONTENTS_INLINE);
     if (draw_world) {
-        if (liquid_refraction) {
-            VK_World_RecordOpaque(cmd, &ctx->scene_extent);
-        } else {
-            VK_World_Record(cmd, &ctx->scene_extent);
-        }
+        VK_World_RecordOpaque(cmd, &ctx->scene_extent);
     }
     VK_Debug_MarkGpuPhase(cmd, VK_DEBUG_GPU_PHASE_OPAQUE_WORLD);
     if (draw_entities) {
-        if (liquid_refraction) {
+        if (transparent_world) {
             VK_Entity_RecordBeforeLiquid(cmd, &ctx->scene_extent);
         } else {
             VK_Entity_Record(cmd, &ctx->scene_extent);
@@ -4527,6 +4567,15 @@ static bool VK_RecordCommandBuffer(VkCommandBuffer cmd, uint32_t image_index)
     }
     VK_Debug_MarkGpuPhase(cmd, VK_DEBUG_GPU_PHASE_OPAQUE_ENTITY);
     if (!liquid_refraction) {
+        // Preserve OpenGL's transparent sequence even when liquid refraction
+        // is disabled: alpha-back entities must be in the scene before world
+        // alpha faces, while effects and alpha-front entities remain late.
+        if (transparent_world) {
+            VK_World_RecordAlpha(cmd, &ctx->scene_extent, VK_NULL_HANDLE);
+        }
+        if (draw_entities && transparent_world) {
+            VK_Entity_RecordAfterLiquid(cmd, &ctx->scene_extent);
+        }
         VK_Debug_RecordShowTris(cmd, &ctx->scene_extent);
         VK_Debug_Record(cmd, &ctx->scene_extent);
         if (!final_postprocess && (!vk_draw_ui || vk_draw_ui->integer)) {
@@ -4799,6 +4848,50 @@ static bool VK_RecreateSceneTargets(void)
     return true;
 }
 
+// Direct presentation keeps this copy alive for water refraction. Offscreen
+// scenes do not need it until CRT is enabled: their normal final composite
+// reads the linear scene directly. Allocate the full-resolution copy only for
+// that final CRT stage, and retire all submitted frames before changing the
+// frame-slot-owned images or their descriptors.
+static bool VK_CrtSceneCopyResourcesNeedUpdate(const vk_context_t *ctx)
+{
+    if (!ctx || !ctx->frames[0].linear_scene_image ||
+        !ctx->presentation_scene_copy_supported) {
+        return false;
+    }
+
+    const bool crt_active = VK_PostProcess_UsesCrtPass();
+    const bool scene_copy_available =
+        ctx->frames[0].liquid_scene_image &&
+        ctx->frames[0].liquid_scene_descriptor_set;
+    return crt_active != scene_copy_available;
+}
+
+static void VK_UpdateCrtSceneCopyResources(vk_context_t *ctx)
+{
+    if (!ctx || !ctx->frames[0].linear_scene_image ||
+        !ctx->presentation_scene_copy_supported) {
+        return;
+    }
+
+    const bool crt_active = VK_PostProcess_UsesCrtPass();
+    const bool scene_copy_available =
+        ctx->frames[0].liquid_scene_image &&
+        ctx->frames[0].liquid_scene_descriptor_set;
+    if (crt_active == scene_copy_available) {
+        return;
+    }
+
+    if (crt_active) {
+        // Allocation failure leaves the final composite intact and disables
+        // just CRT for this frame; never begin a presentation-load pass with
+        // an invalid sampled source.
+        (void)VK_CreateLiquidSceneResources(ctx);
+    } else {
+        VK_DestroyLiquidSceneResources(ctx);
+    }
+}
+
 static bool VK_DrawFrame(void)
 {
     vk_context_t *ctx = &vk_state.ctx;
@@ -4811,16 +4904,27 @@ static bool VK_DrawFrame(void)
     const uint32_t frame_index = ctx->current_frame;
     vk_frame_context_t *frame = &ctx->frames[frame_index];
     VkResult result = VK_SUCCESS;
-    if (VK_PostProcess_NeedsSafeResourceUpdate() &&
-        !VK_WaitForSubmittedFrames(ctx,
-                                   "vkWaitForFences(bloom resource rebuild)")) {
-        return false;
+    const bool postprocess_resources_need_update =
+        VK_PostProcess_NeedsSafeResourceUpdate();
+    const bool crt_scene_copy_needs_update =
+        VK_CrtSceneCopyResourcesNeedUpdate(ctx);
+    if (postprocess_resources_need_update || crt_scene_copy_needs_update) {
+        const uint64_t sync_begin_us = VK_HighResMicroseconds();
+        const bool submitted_frames_ready = VK_WaitForSubmittedFrames(
+            ctx, "vkWaitForFences(postprocess resource rebuild)");
+        VK_AccumulateFrameSyncWait(sync_begin_us);
+        if (!submitted_frames_ready) {
+            return false;
+        }
     }
+    VK_UpdateCrtSceneCopyResources(ctx);
     VK_PostProcess_PrepareFrame();
 
     uint32_t image_index = 0;
+    const uint64_t acquire_begin_us = VK_HighResMicroseconds();
     result = vkAcquireNextImageKHR(ctx->device, ctx->swapchain.handle, UINT64_MAX,
                                    frame->image_available, VK_NULL_HANDLE, &image_index);
+    VK_AccumulateFrameSyncWait(acquire_begin_us);
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
         vk_state.swapchain_dirty = true;
         return false;
@@ -4834,10 +4938,14 @@ static bool VK_DrawFrame(void)
         return false;
     }
     uint32_t image_frame = ctx->swapchain.image_frame_slots[image_index];
-    if (image_frame != VK_INVALID_FRAME_SLOT && image_frame != frame_index &&
-        !VK_WaitForFrame(ctx, image_frame,
-                         "vkWaitForFences(acquired swapchain image)")) {
-        return false;
+    if (image_frame != VK_INVALID_FRAME_SLOT && image_frame != frame_index) {
+        const uint64_t sync_begin_us = VK_HighResMicroseconds();
+        const bool image_frame_ready = VK_WaitForFrame(
+            ctx, image_frame, "vkWaitForFences(acquired swapchain image)");
+        VK_AccumulateFrameSyncWait(sync_begin_us);
+        if (!image_frame_ready) {
+            return false;
+        }
     }
 
     vk_screenshot_armed = false;
@@ -4898,7 +5006,9 @@ static bool VK_DrawFrame(void)
         .pImageIndices = &image_index,
     };
 
+    const uint64_t present_begin_us = VK_HighResMicroseconds();
     result = vkQueuePresentKHR(ctx->graphics_queue, &present_info);
+    VK_AccumulateFrameSyncWait(present_begin_us);
 
     if ((result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR) &&
         ctx->swapchain.image_presented) {
@@ -4908,7 +5018,9 @@ static bool VK_DrawFrame(void)
     if (vk_screenshot_armed) {
         // The submitted command buffer already executed the readback copy;
         // finish the file write even if the present was suboptimal.
+        const uint64_t screenshot_begin_us = VK_HighResMicroseconds();
         VK_Screenshot_Complete();
+        VK_AccumulateFrameSyncWait(screenshot_begin_us);
     }
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
@@ -4990,6 +5102,12 @@ bool R_Init(bool total)
     }
     if (!vk_damageblend_frac) {
         vk_damageblend_frac = Cvar_Get("gl_damageblend_frac", "0.2", 0);
+    }
+    if (!vk_r_polyblend) {
+        // Shared presentation control. The legacy gl_polyblend spelling is
+        // synchronized by the OpenGL renderer, while native Vulkan consumes
+        // the renderer-neutral value directly.
+        vk_r_polyblend = Cvar_Get("r_polyblend", "1", CVAR_ARCHIVE);
     }
     if (!vk_screenshot_dir) {
         vk_screenshot_dir = Cvar_Get("r_screenshot_dir", "", CVAR_NOARCHIVE);
@@ -5266,9 +5384,12 @@ void R_RenderFrame(const refdef_t *fd)
 
     // Full-screen liquid/powerup and damage blends layer between the 3D view
     // and the HUD, mirroring the GL renderer's GL_Blend pass.
-    VK_UI_DrawScreenBlend(fd, vk_damageblend_frac
-                          ? Cvar_ClampValue(vk_damageblend_frac, 0.0f, 0.5f)
-                          : 0.2f);
+    if (!vk_r_polyblend || vk_r_polyblend->integer) {
+        VK_UI_DrawScreenBlend(fd, vk_damageblend_frac
+                              ? Cvar_ClampValue(vk_damageblend_frac, 0.0f,
+                                                0.5f)
+                              : 0.2f);
+    }
 }
 
 void R_LightPoint(const vec3_t origin, vec3_t light)
@@ -5603,6 +5724,7 @@ void R_BeginFrame(void)
     }
 
     vk_frame_begin_us = VK_HighResMicroseconds();
+    vk_frame_sync_wait_us = 0;
     VK_Debug_BeginFrame();
     VK_UI_BeginFrame();
 }
@@ -5624,8 +5746,14 @@ void R_EndFrame(void)
             Com_WPrintf("Vulkan: frame submission failed: %s\n", error);
         }
     }
-    VK_Debug_EndFrame((float)(VK_HighResMicroseconds() - vk_frame_begin_us) /
-                      1000.0f);
+    const uint64_t frame_end_us = VK_HighResMicroseconds();
+    const uint64_t frame_total_us = frame_end_us >= vk_frame_begin_us
+        ? frame_end_us - vk_frame_begin_us : 0;
+    const uint64_t frame_sync_wait_us = min(vk_frame_sync_wait_us,
+                                             frame_total_us);
+    VK_Debug_EndFrame((float)frame_total_us / 1000.0f,
+                      (float)(frame_total_us - frame_sync_wait_us) / 1000.0f,
+                      (float)frame_sync_wait_us / 1000.0f);
     VK_RecordResolutionScaleTime();
 }
 

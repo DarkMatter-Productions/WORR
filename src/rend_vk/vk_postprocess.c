@@ -153,7 +153,13 @@ typedef struct {
     bool swapchain_ready;
     VkPipelineLayout pipeline_layout;
     VkPipeline final_pipeline;
-    VkPipeline bloom_pipeline;
+    // Keep bloom stages in separate native pipelines.  The active bloom path
+    // otherwise pays a fragment-level branch for prefilter, blur X, and blur
+    // Y on every fullscreen sample.
+    VkPipeline bloom_copy_pipeline;
+    VkPipeline bloom_prefilter_pipeline;
+    VkPipeline bloom_blur_x_pipeline;
+    VkPipeline bloom_blur_y_pipeline;
     VkPipeline dof_pipeline;
     VkPipeline crt_pipeline;
     VkPipeline auto_exposure_pipeline;
@@ -1483,10 +1489,25 @@ void VK_PostProcess_DestroySwapchainResources(vk_context_t *ctx)
                           vk_postprocess.final_pipeline, NULL);
         vk_postprocess.final_pipeline = VK_NULL_HANDLE;
     }
-    if (vk_postprocess.bloom_pipeline) {
+    if (vk_postprocess.bloom_copy_pipeline) {
         vkDestroyPipeline(vk_postprocess.ctx->device,
-                          vk_postprocess.bloom_pipeline, NULL);
-        vk_postprocess.bloom_pipeline = VK_NULL_HANDLE;
+                          vk_postprocess.bloom_copy_pipeline, NULL);
+        vk_postprocess.bloom_copy_pipeline = VK_NULL_HANDLE;
+    }
+    if (vk_postprocess.bloom_prefilter_pipeline) {
+        vkDestroyPipeline(vk_postprocess.ctx->device,
+                          vk_postprocess.bloom_prefilter_pipeline, NULL);
+        vk_postprocess.bloom_prefilter_pipeline = VK_NULL_HANDLE;
+    }
+    if (vk_postprocess.bloom_blur_x_pipeline) {
+        vkDestroyPipeline(vk_postprocess.ctx->device,
+                          vk_postprocess.bloom_blur_x_pipeline, NULL);
+        vk_postprocess.bloom_blur_x_pipeline = VK_NULL_HANDLE;
+    }
+    if (vk_postprocess.bloom_blur_y_pipeline) {
+        vkDestroyPipeline(vk_postprocess.ctx->device,
+                          vk_postprocess.bloom_blur_y_pipeline, NULL);
+        vk_postprocess.bloom_blur_y_pipeline = VK_NULL_HANDLE;
     }
     if (vk_postprocess.dof_pipeline) {
         vkDestroyPipeline(vk_postprocess.ctx->device,
@@ -1562,9 +1583,16 @@ bool VK_PostProcess_CreateSwapchainResources(vk_context_t *ctx)
     }
     VK_PostProcess_DestroySwapchainResources(ctx);
 
+    enum {
+        VK_BLOOM_SHADER_COPY,
+        VK_BLOOM_SHADER_PREFILTER,
+        VK_BLOOM_SHADER_BLUR_X,
+        VK_BLOOM_SHADER_BLUR_Y,
+        VK_BLOOM_SHADER_COUNT,
+    };
     VkShaderModule vert_shader = VK_NULL_HANDLE;
     VkShaderModule frag_shader = VK_NULL_HANDLE;
-    VkShaderModule bloom_frag_shader = VK_NULL_HANDLE;
+    VkShaderModule bloom_frag_shaders[VK_BLOOM_SHADER_COUNT] = { 0 };
     VkShaderModule dof_frag_shader = VK_NULL_HANDLE;
     VkShaderModule crt_frag_shader = VK_NULL_HANDLE;
     VkShaderModuleCreateInfo vert_info = {
@@ -1588,18 +1616,39 @@ bool VK_PostProcess_CreateSwapchainResources(vk_context_t *ctx)
         vkDestroyShaderModule(ctx->device, vert_shader, NULL);
         return false;
     }
-    VkShaderModuleCreateInfo bloom_frag_info = {
-        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .codeSize = vk_bloom_frag_spv_size,
-        .pCode = vk_bloom_frag_spv,
+    const size_t bloom_frag_sizes[VK_BLOOM_SHADER_COUNT] = {
+        vk_bloom_copy_frag_spv_size,
+        vk_bloom_prefilter_frag_spv_size,
+        vk_bloom_blur_x_frag_spv_size,
+        vk_bloom_blur_y_frag_spv_size,
     };
-    if (!VK_PostProcess_Check(vkCreateShaderModule(ctx->device,
-                                                   &bloom_frag_info, NULL,
-                                                   &bloom_frag_shader),
-                              "vkCreateShaderModule(bloom frag)")) {
-        vkDestroyShaderModule(ctx->device, vert_shader, NULL);
-        vkDestroyShaderModule(ctx->device, frag_shader, NULL);
-        return false;
+    const uint32_t *const bloom_frag_codes[VK_BLOOM_SHADER_COUNT] = {
+        vk_bloom_copy_frag_spv,
+        vk_bloom_prefilter_frag_spv,
+        vk_bloom_blur_x_frag_spv,
+        vk_bloom_blur_y_frag_spv,
+    };
+    for (uint32_t i = 0; i < VK_BLOOM_SHADER_COUNT; ++i) {
+        VkShaderModuleCreateInfo bloom_frag_info = {
+            .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+            .codeSize = bloom_frag_sizes[i],
+            .pCode = bloom_frag_codes[i],
+        };
+        if (!VK_PostProcess_Check(
+                vkCreateShaderModule(ctx->device, &bloom_frag_info, NULL,
+                                     &bloom_frag_shaders[i]),
+                "vkCreateShaderModule(bloom stage)")) {
+            for (uint32_t destroy = 0; destroy < VK_BLOOM_SHADER_COUNT;
+                 ++destroy) {
+                if (bloom_frag_shaders[destroy]) {
+                    vkDestroyShaderModule(ctx->device,
+                                          bloom_frag_shaders[destroy], NULL);
+                }
+            }
+            vkDestroyShaderModule(ctx->device, vert_shader, NULL);
+            vkDestroyShaderModule(ctx->device, frag_shader, NULL);
+            return false;
+        }
     }
     if (!VK_PostProcess_CreateBloomRenderPass(
             ctx, VK_ATTACHMENT_LOAD_OP_DONT_CARE,
@@ -1607,7 +1656,9 @@ bool VK_PostProcess_CreateSwapchainResources(vk_context_t *ctx)
             "vkCreateRenderPass(bloom)")) {
         vkDestroyShaderModule(ctx->device, vert_shader, NULL);
         vkDestroyShaderModule(ctx->device, frag_shader, NULL);
-        vkDestroyShaderModule(ctx->device, bloom_frag_shader, NULL);
+        for (uint32_t i = 0; i < VK_BLOOM_SHADER_COUNT; ++i) {
+            vkDestroyShaderModule(ctx->device, bloom_frag_shaders[i], NULL);
+        }
         return false;
     }
     if (!VK_PostProcess_CreateBloomRenderPass(
@@ -1627,7 +1678,9 @@ bool VK_PostProcess_CreateSwapchainResources(vk_context_t *ctx)
                               "vkCreateShaderModule(DOF frag)")) {
         vkDestroyShaderModule(ctx->device, vert_shader, NULL);
         vkDestroyShaderModule(ctx->device, frag_shader, NULL);
-        vkDestroyShaderModule(ctx->device, bloom_frag_shader, NULL);
+        for (uint32_t i = 0; i < VK_BLOOM_SHADER_COUNT; ++i) {
+            vkDestroyShaderModule(ctx->device, bloom_frag_shaders[i], NULL);
+        }
         VK_PostProcess_DestroySwapchainResources(ctx);
         return false;
     }
@@ -1641,7 +1694,9 @@ bool VK_PostProcess_CreateSwapchainResources(vk_context_t *ctx)
                               "vkCreateShaderModule(CRT frag)")) {
         vkDestroyShaderModule(ctx->device, vert_shader, NULL);
         vkDestroyShaderModule(ctx->device, frag_shader, NULL);
-        vkDestroyShaderModule(ctx->device, bloom_frag_shader, NULL);
+        for (uint32_t i = 0; i < VK_BLOOM_SHADER_COUNT; ++i) {
+            vkDestroyShaderModule(ctx->device, bloom_frag_shaders[i], NULL);
+        }
         vkDestroyShaderModule(ctx->device, dof_frag_shader, NULL);
         VK_PostProcess_DestroySwapchainResources(ctx);
         return false;
@@ -1743,12 +1798,39 @@ bool VK_PostProcess_CreateSwapchainResources(vk_context_t *ctx)
     }
     if (created) {
         pipeline_info.renderPass = vk_postprocess.bloom_render_pass;
-        stages[1].module = bloom_frag_shader;
+        stages[1].module = bloom_frag_shaders[VK_BLOOM_SHADER_COPY];
         created = VK_PostProcess_Check(
             vkCreateGraphicsPipelines(ctx->device, VK_NULL_HANDLE, 1,
                                       &pipeline_info, NULL,
-                                      &vk_postprocess.bloom_pipeline),
-            "vkCreateGraphicsPipelines(bloom)");
+                                      &vk_postprocess.bloom_copy_pipeline),
+            "vkCreateGraphicsPipelines(bloom copy)");
+    }
+    if (created) {
+        pipeline_info.renderPass = vk_postprocess.bloom_render_pass;
+        stages[1].module = bloom_frag_shaders[VK_BLOOM_SHADER_PREFILTER];
+        created = VK_PostProcess_Check(
+            vkCreateGraphicsPipelines(ctx->device, VK_NULL_HANDLE, 1,
+                                      &pipeline_info, NULL,
+                                      &vk_postprocess.bloom_prefilter_pipeline),
+            "vkCreateGraphicsPipelines(bloom prefilter)");
+    }
+    if (created) {
+        pipeline_info.renderPass = vk_postprocess.bloom_render_pass;
+        stages[1].module = bloom_frag_shaders[VK_BLOOM_SHADER_BLUR_X];
+        created = VK_PostProcess_Check(
+            vkCreateGraphicsPipelines(ctx->device, VK_NULL_HANDLE, 1,
+                                      &pipeline_info, NULL,
+                                      &vk_postprocess.bloom_blur_x_pipeline),
+            "vkCreateGraphicsPipelines(bloom blur X)");
+    }
+    if (created) {
+        pipeline_info.renderPass = vk_postprocess.bloom_render_pass;
+        stages[1].module = bloom_frag_shaders[VK_BLOOM_SHADER_BLUR_Y];
+        created = VK_PostProcess_Check(
+            vkCreateGraphicsPipelines(ctx->device, VK_NULL_HANDLE, 1,
+                                      &pipeline_info, NULL,
+                                      &vk_postprocess.bloom_blur_y_pipeline),
+            "vkCreateGraphicsPipelines(bloom blur Y)");
     }
     if (created) {
         pipeline_info.renderPass = vk_postprocess.bloom_render_pass;
@@ -1770,7 +1852,9 @@ bool VK_PostProcess_CreateSwapchainResources(vk_context_t *ctx)
     }
     vkDestroyShaderModule(ctx->device, vert_shader, NULL);
     vkDestroyShaderModule(ctx->device, frag_shader, NULL);
-    vkDestroyShaderModule(ctx->device, bloom_frag_shader, NULL);
+    for (uint32_t i = 0; i < VK_BLOOM_SHADER_COUNT; ++i) {
+        vkDestroyShaderModule(ctx->device, bloom_frag_shaders[i], NULL);
+    }
     vkDestroyShaderModule(ctx->device, dof_frag_shader, NULL);
     vkDestroyShaderModule(ctx->device, crt_frag_shader, NULL);
     if (!created) {
@@ -2041,10 +2125,17 @@ void VK_PostProcess_RenderFrame(const refdef_t *fd)
         ? max(vk_postprocess.crt_mask_light->value, 0.0f) : 1.5f;
     vk_postprocess.crt_push.params2[2] = vk_postprocess.crt_shadow_mask
         ? Cvar_ClampValue(vk_postprocess.crt_shadow_mask, 0.0f, 4.0f) : 0.0f;
-    // Vulkan currently has no dynamic render scale, so the source and output
-    // scanline grids share one pixel scale. Keep this explicit for the future
-    // resolution-scaling path rather than baking it into the shader.
-    vk_postprocess.crt_push.params2[3] = 1.0f;
+    // CRT samples its already-upscaled presentation image, but its scanline
+    // cadence follows the 3D scene grid. Match GL_SetCrtUniforms: when native
+    // resolution scaling reduces the scene, each source scanline spans the
+    // corresponding number of output rows. Do not reduce the scale below one
+    // for a full-resolution scene or an unusual supersampled extent.
+    const float scene_height = vk_postprocess.ctx &&
+        vk_postprocess.ctx->scene_extent.height
+        ? (float)vk_postprocess.ctx->scene_extent.height
+        : max(vk_postprocess.push.output_size[1], 1.0f);
+    vk_postprocess.crt_push.params2[3] = max(
+        vk_postprocess.push.output_size[1] / max(scene_height, 1.0f), 1.0f);
     vk_postprocess.crt_push.texel[0] = 1.0f /
         max(vk_postprocess.push.output_size[0], 1.0f);
     vk_postprocess.crt_push.texel[1] = 1.0f /
@@ -2318,13 +2409,30 @@ static void VK_PostProcess_GenerateBloomMips(
 
 static void VK_PostProcess_RecordBloomPass(
     VkCommandBuffer cmd, vk_postprocess_bloom_image_t *target,
-    VkDescriptorSet descriptor_set, float mode, uint32_t width,
+    VkDescriptorSet descriptor_set, int mode, uint32_t width,
     uint32_t height, const vk_postprocess_bloom_push_t *source_push)
 {
     vk_postprocess_frame_resources_t *frame =
         VK_PostProcess_CurrentFrameResources();
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    switch (mode) {
+    case VK_BLOOM_MODE_COPY:
+        pipeline = vk_postprocess.bloom_copy_pipeline;
+        break;
+    case VK_BLOOM_MODE_PREFILTER:
+        pipeline = vk_postprocess.bloom_prefilter_pipeline;
+        break;
+    case VK_BLOOM_MODE_BLUR_X:
+        pipeline = vk_postprocess.bloom_blur_x_pipeline;
+        break;
+    case VK_BLOOM_MODE_BLUR_Y:
+        pipeline = vk_postprocess.bloom_blur_y_pipeline;
+        break;
+    default:
+        return;
+    }
     if (!cmd || !target || !target->image || !target->framebuffer ||
-        !descriptor_set || !vk_postprocess.bloom_pipeline || !source_push ||
+        !descriptor_set || !pipeline || !source_push ||
         !frame || !frame->blur_kernel_descriptor_set || !width || !height) {
         return;
     }
@@ -2368,10 +2476,10 @@ static void VK_PostProcess_RecordBloomPass(
     vk_postprocess_bloom_push_t push = *source_push;
     push.output_size[0] = (float)width;
     push.output_size[1] = (float)height;
-    push.aux[0] = mode;
+    push.aux[0] = (float)mode;
     vkCmdBeginRenderPass(cmd, &render_info, VK_SUBPASS_CONTENTS_INLINE);
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                      vk_postprocess.bloom_pipeline);
+                      pipeline);
     vkCmdSetViewport(cmd, 0, 1, &viewport);
     vkCmdSetScissor(cmd, 0, 1, &scissor);
     VkDescriptorSet descriptor_sets[] = {
@@ -2715,7 +2823,7 @@ bool VK_PostProcess_UsesCompositePass(void)
          vk_postprocess.waterwarp_active || vk_postprocess.color_active ||
          vk_postprocess.split_active || vk_postprocess.lut_active ||
          vk_postprocess.hdr_active || vk_postprocess.bloom_active ||
-         vk_postprocess.dof_active) &&
+         vk_postprocess.dof_active || vk_postprocess.crt_active) &&
         vk_postprocess.final_pipeline;
 }
 
@@ -2737,7 +2845,10 @@ bool VK_PostProcess_AllowsScaledSceneBlit(void)
 bool VK_PostProcess_UsesBloom(void)
 {
     return vk_postprocess.initialized && vk_postprocess.swapchain_ready &&
-        vk_postprocess.bloom_active && vk_postprocess.bloom_pipeline;
+        vk_postprocess.bloom_active &&
+        vk_postprocess.bloom_prefilter_pipeline &&
+        vk_postprocess.bloom_blur_x_pipeline &&
+        vk_postprocess.bloom_blur_y_pipeline;
 }
 
 bool VK_PostProcess_UsesBloomEmission(void)
@@ -2773,7 +2884,10 @@ bool VK_PostProcess_UsesFinalPass(void)
 bool VK_PostProcess_UsesDof(void)
 {
     return vk_postprocess.initialized && vk_postprocess.swapchain_ready &&
-        vk_postprocess.dof_active && vk_postprocess.dof_pipeline;
+        vk_postprocess.dof_active && vk_postprocess.dof_pipeline &&
+        vk_postprocess.bloom_copy_pipeline &&
+        vk_postprocess.bloom_blur_x_pipeline &&
+        vk_postprocess.bloom_blur_y_pipeline;
 }
 
 void VK_PostProcess_RecordFinal(VkCommandBuffer cmd, const VkExtent2D *extent,

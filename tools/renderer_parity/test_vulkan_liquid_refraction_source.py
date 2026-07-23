@@ -36,7 +36,9 @@ class VulkanLiquidRefractionSourceTests(unittest.TestCase):
         # native float scene, so its name describes that shared ownership.
         self.assertIn("ctx->scene_load_render_pass", VK_MAIN)
         copy_index = VK_MAIN.index("VK_SceneCopy_Record(cmd, image_index)")
-        alpha_index = VK_MAIN.index("VK_World_RecordAlpha(cmd, &ctx->scene_extent,")
+        alpha_index = VK_MAIN.index(
+            "VK_World_RecordAlpha(cmd, &ctx->scene_extent,", copy_index
+        )
         self.assertLess(copy_index, alpha_index)
         self.assertIn("VK_ATTACHMENT_STORE_OP_STORE", VK_MAIN)
         self.assertIn("liquid_render_pass_info.pDependencies = dependencies", VK_MAIN)
@@ -52,6 +54,7 @@ class VulkanLiquidRefractionSourceTests(unittest.TestCase):
     def test_world_submission_is_split_without_opengl_fallback(self) -> None:
         self.assertIn("void VK_World_RecordOpaque", VK_WORLD)
         self.assertIn("void VK_World_RecordAlpha", VK_WORLD)
+        self.assertIn("bool VK_World_HasTransparentBatches", VK_WORLD)
         self.assertIn("bool VK_World_UsesRefraction", VK_WORLD)
         self.assertIn('Cvar_Get("vk_warp_refraction", "0.1", 0)', VK_WORLD)
         self.assertNotIn('#include "rend_gl', VK_WORLD)
@@ -75,11 +78,36 @@ class VulkanLiquidRefractionSourceTests(unittest.TestCase):
         self.assertIn("void VK_Entity_RecordAfterLiquid", VK_ENTITY)
         before_index = VK_MAIN.index("VK_Entity_RecordBeforeLiquid(cmd, &ctx->scene_extent)")
         copy_index = VK_MAIN.index("VK_SceneCopy_Record(cmd, image_index)")
-        alpha_index = VK_MAIN.index("VK_World_RecordAlpha(cmd, &ctx->scene_extent,")
-        after_index = VK_MAIN.index("VK_Entity_RecordAfterLiquid(cmd, &ctx->scene_extent)")
+        alpha_index = VK_MAIN.index(
+            "VK_World_RecordAlpha(cmd, &ctx->scene_extent,", copy_index
+        )
+        after_index = VK_MAIN.index(
+            "VK_Entity_RecordAfterLiquid(cmd, &ctx->scene_extent)", alpha_index
+        )
         self.assertLess(before_index, copy_index)
         self.assertLess(copy_index, alpha_index)
         self.assertLess(alpha_index, after_index)
+
+    def test_non_refractive_transparency_keeps_the_same_phase_boundary(self) -> None:
+        self.assertIn(
+            "VK_World_RecordAlpha(cmd, &ctx->scene_extent, VK_NULL_HANDLE);",
+            VK_MAIN,
+        )
+        self.assertIn(
+            "if (draw_entities && transparent_world) {\n"
+            "            VK_Entity_RecordAfterLiquid(cmd, &ctx->scene_extent);",
+            VK_MAIN,
+        )
+        self.assertIn(
+            "const bool transparent_world = draw_world &&\n"
+            "        VK_World_HasTransparentBatches();",
+            VK_MAIN,
+        )
+        self.assertIn(
+            "Preserve OpenGL's transparent sequence even when liquid refraction\n"
+            "        // is disabled",
+            VK_MAIN,
+        )
 
 
 if __name__ == "__main__":

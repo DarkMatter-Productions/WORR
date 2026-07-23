@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "task_id": "FR-02-T14",
+  "scenes": [
+    {
+      "id": "alpha_cutout_shadow_casters",
+      "config": "renderer_parity/fr01_alpha_shadow.cfg",
+      "capture": "fr01_alpha_shadow.tga",
+      "crop": [200, 140, 560, 420],
+      "metrics": {
+        "pixel_threshold": 8,
+        "max_mean_absolute_rgb": [2.0, 2.0, 2.0],
+        "max_pixels_over_threshold_percent": 2.0
+      }
+    }
+  ]
+}

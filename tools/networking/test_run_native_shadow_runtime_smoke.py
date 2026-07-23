@@ -10,6 +10,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 MODULE_PATH = Path(__file__).with_name("run_native_shadow_runtime_smoke.py")
@@ -178,6 +179,102 @@ def runtime_texts(
         + "\n"
     )
     return client, server
+
+
+class _RunningProcess:
+    returncode = None
+
+    @staticmethod
+    def poll() -> None:
+        return None
+
+
+class _FakeClock:
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.now += seconds
+
+
+class NativeShadowProcessTimingTests(unittest.TestCase):
+    def _run(
+        self,
+        *,
+        clock: _FakeClock,
+        timeout: float,
+        terminate_side_effect: object,
+    ) -> dict[str, object]:
+        client_marker = "client_complete"
+        server_marker = "server_complete"
+
+        def read_text(path: Path) -> str:
+            if path.name == "client.stdout.log":
+                return client_marker
+            if path.name == "server.stdout.log":
+                return server_marker
+            return ""
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with (
+                mock.patch.object(
+                    SMOKE,
+                    "start_headless_process",
+                    side_effect=[_RunningProcess(), _RunningProcess()],
+                ),
+                mock.patch.object(SMOKE, "_wait_for_server_map"),
+                mock.patch.object(SMOKE, "_read_text", side_effect=read_text),
+                mock.patch.object(
+                    SMOKE,
+                    "terminate_process",
+                    side_effect=terminate_side_effect,
+                ),
+                mock.patch.object(
+                    SMOKE.time, "monotonic", side_effect=clock.monotonic
+                ),
+                mock.patch.object(SMOKE.time, "sleep", side_effect=clock.sleep),
+            ):
+                return SMOKE.run_processes(
+                    server_argv=("server",),
+                    client_argv=("client",),
+                    working_dir=root,
+                    run_root=root,
+                    client_marker=client_marker,
+                    server_marker=server_marker,
+                    timeout=timeout,
+                )
+
+    def test_slow_teardown_does_not_invalidate_timely_evidence(self) -> None:
+        clock = _FakeClock()
+
+        def slow_terminate(_process: object) -> bool:
+            clock.now += 10.0
+            return True
+
+        result = self._run(
+            clock=clock,
+            timeout=1.0,
+            terminate_side_effect=slow_terminate,
+        )
+
+        self.assertEqual(result["elapsed_seconds"], 0.25)
+        self.assertEqual(clock.now, 20.25)
+
+    def test_evidence_completed_after_live_grace_deadline_fails(self) -> None:
+        clock = _FakeClock()
+
+        with self.assertRaisesRegex(
+            RuntimeError, "timed out during the post-evidence live grace"
+        ):
+            self._run(
+                clock=clock,
+                timeout=0.2,
+                terminate_side_effect=lambda _process: True,
+            )
 
 
 def replace_status(text: str, prefix: str, values: dict[str, int]) -> str:

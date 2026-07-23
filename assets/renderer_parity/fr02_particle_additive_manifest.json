@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "task_id": "FR-02-T05",
+  "scenes": [
+    {
+      "id": "particle_additive_fixed_view",
+      "config": "renderer_parity/fr02_particle_additive.cfg",
+      "capture": "fr02_particle_additive.tga",
+      "crop": [160, 100, 640, 500],
+      "metrics": {
+        "pixel_threshold": 2,
+        "max_mean_absolute_rgb": [0.01, 0.01, 0.01],
+        "max_pixels_over_threshold_percent": 0
+      },
+      "probes": [
+        {
+          "name": "additive_particle_field",
+          "color": [48, 220, 96],
+          "tolerance": 2,
+          "min_pixels_per_backend": 24000,
+          "max_backend_count_delta_percent": 0.1,
+          "min_backend_intersection_over_union": 0.999
+        }
+      ]
+    },
+    {
+      "id": "particle_additive_square_fixed_view",
+      "config": "renderer_parity/fr02_particle_additive_square.cfg",
+      "capture": "fr02_particle_additive_square.tga",
+      "crop": [160, 100, 640, 500],
+      "metrics": {
+        "pixel_threshold": 2,
+        "max_mean_absolute_rgb": [0.01, 0.01, 0.01],
+        "max_pixels_over_threshold_percent": 0
+      },
+      "probes": [
+        {
+          "name": "square_additive_particle_field",
+          "color": [48, 220, 96],
+          "tolerance": 1,
+          "min_pixels_per_backend": 32000,
+          "max_backend_count_delta_percent": 0.01,
+          "min_backend_intersection_over_union": 1.0
+        }
+      ]
+    },
+    {
+      "id": "particle_additive_soft_fixed_view",
+      "config": "renderer_parity/fr02_particle_additive_soft.cfg",
+      "capture": "fr02_particle_additive_soft.tga",
+      "crop": [160, 100, 640, 500],
+      "metrics": {
+        "pixel_threshold": 2,
+        "max_mean_absolute_rgb": [0.01, 0.01, 0.01],
+        "max_pixels_over_threshold_percent": 0
+      },
+      "probes": [
+        {
+          "name": "soft_additive_particle_field",
+          "color": [48, 220, 96],
+          "tolerance": 1,
+          "min_pixels_per_backend": 27000,
+          "max_backend_count_delta_percent": 0.01,
+          "min_backend_intersection_over_union": 0.9999
+        }
+      ]
+    }
+  ]
+}

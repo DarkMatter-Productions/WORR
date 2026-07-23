@@ -292,6 +292,28 @@ bool Netchan_SetApplicationRxHook(netchan_t *chan,
                                   netchan_app_rx_fn receive,
                                   void *opaque);
 int Netchan_Transmit(netchan_t *chan, size_t length, const void *data, int numpackets);
+/*
+ * Transactional NEW-channel reliable handoffs for schedulers that need an
+ * exact generation boundary.  Both helpers require a positive packet-copy
+ * count and a clean outgoing reliable/fragment generation.  Rejection leaves
+ * the channel, queued bytes, callbacks, and output size untouched except that
+ * transmit_bytes_out is initialized to zero.
+ *
+ * Prefix handoff transfers exactly prefix_bytes from the head of message and
+ * preserves the remaining queued tail byte-for-byte.  Isolated handoff makes
+ * reliable_data the only reliable application bytes for this generation while
+ * leaving the ordinary queued message in place.  Registered TX hooks remain
+ * active, observe only the generation being handed off, and may append bytes
+ * to the visible ordinary queue for the following reliable generation.
+ * Success means the generation was transferred to netchan and a send was
+ * attempted; it does not imply that NET_SendPacket accepted a copy.
+ */
+bool Netchan_TransmitQueuedReliablePrefix(
+    netchan_t *chan, uint32_t prefix_bytes, int numpackets,
+    int *transmit_bytes_out);
+bool Netchan_TransmitIsolatedReliable(
+    netchan_t *chan, const void *reliable_data, uint32_t reliable_bytes,
+    int numpackets, int *transmit_bytes_out);
 int Netchan_TransmitNextFragment(netchan_t *chan);
 netchan_process_result_t Netchan_ProcessEx(netchan_t *chan);
 bool Netchan_Process(netchan_t *chan);

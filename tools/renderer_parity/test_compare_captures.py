@@ -139,6 +139,67 @@ class CompareCapturesTests(unittest.TestCase):
             self.assertFalse(report["passed"])
             self.assertTrue(any("required at most 0" in item for item in report["failures"]))
 
+    def test_scene_can_skip_backend_metric_gating(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            capture_root = root / "captures"
+            manifest_path = self.make_manifest(root, max_mean=1.0)
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            scene = manifest["scenes"][0]
+            scene["compare_backends"] = False
+            scene["probes"] = []
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            write_tga(capture_root / "opengl" / "fixture.tga", 2, 2,
+                      [(0, 255, 0)] * 4)
+            write_tga(capture_root / "vulkan" / "fixture.tga", 2, 2,
+                      [(255, 0, 0)] * 4)
+
+            report = compare_captures.evaluate_manifest(manifest_path, capture_root)
+
+            self.assertTrue(report["passed"])
+            self.assertFalse(report["scenes"][0]["compare_backends"])
+
+    def test_control_pair_requires_a_visible_transition_per_backend(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            capture_root = root / "captures"
+            manifest_path = self.make_manifest(root)
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            enabled = manifest["scenes"][0]
+            enabled["capture"] = "enabled.tga"
+            enabled["compare_backends"] = False
+            enabled["probes"] = []
+            disabled = dict(enabled)
+            disabled["id"] = "disabled"
+            disabled["capture"] = "disabled.tga"
+            manifest["scenes"].append(disabled)
+            manifest["control_pairs"] = [{
+                "id": "toggle",
+                "enabled_scene": "fixture",
+                "disabled_scene": "disabled",
+                "crop": [0, 0, 2, 2],
+                "pixel_threshold": 8,
+                "min_pixels_over_threshold_per_backend": 4,
+            }]
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            for renderer, color in (("opengl", (0, 255, 0)),
+                                    ("vulkan", (0, 0, 255))):
+                write_tga(capture_root / renderer / "enabled.tga", 2, 2,
+                          [color] * 4)
+                write_tga(capture_root / renderer / "disabled.tga", 2, 2,
+                          [(0, 0, 0)] * 4)
+
+            report = compare_captures.evaluate_manifest(manifest_path, capture_root)
+
+            self.assertTrue(report["passed"])
+            self.assertEqual(1, len(report["control_pairs"]))
+            self.assertEqual(
+                4,
+                report["control_pairs"][0]["backends"]["opengl"]["pixels_over_threshold"],
+            )
+
     def test_loader_normalizes_bottom_origin_tga(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "bottom.tga"

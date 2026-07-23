@@ -38,10 +38,13 @@ until the complete raw message has decoded successfully.
   messages after the corresponding snapshot has fitted. It queues exactly one
   native batch after complete decode and complete snapshot binding.
 
-Reliable writes, old netchan, no snapshot reference, disabled native mode,
-audio packets, malformed input, over-capacity sequences, unsupported `svc_*`
-families, and non-visible sources/subjects remain legacy-only. Existing legacy
-delivery is never suppressed by this shadow path.
+At this milestone reliable writes remained legacy-only. The continuation in
+`fr-10-t04-t05-reliable-mixed-game-event-native-shadow-2026-07-18.md` now
+defers complete reliable batches until the next exact committed snapshot and
+emits them as reliable-ordered native candidates. Old netchan, no snapshot
+reference, disabled native mode, audio packets, malformed input, over-capacity
+sequences, unsupported `svc_*` families, and non-visible sources/subjects
+remain legacy-only. Existing legacy delivery is never suppressed.
 
 ## Regression coverage
 
@@ -82,6 +85,8 @@ payloads, and 215 RmlUi asset payloads.
 ## Remaining scope
 
 This is intentionally a narrow production shadow extension, not a cutover.
-Other direct game service families, reliable/off-frame effects, native
-authority, live cgame/sgame local-action integration, prediction cutover, and
-presenter replacement remain under the open `FR-10-T04/T05/T07/T08/T09` work.
+Other direct game service families, off-frame effects without a safe identity
+anchor, native authority, live cgame/sgame local-action integration, prediction
+cutover, and presenter replacement remain under the open
+`FR-10-T04/T05/T07/T08/T09` work. Reliable mixed and multi-muzzle messages are
+covered by the 2026-07-18 continuation above.

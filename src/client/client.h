@@ -28,6 +28,7 @@ extern "C" {
 #include "shared/shared.h"
 #include "shared/list.h"
 #include "shared/game.h"
+#include "shared/cgame_native_event_probe.h"
 
 #include "common/bsp.h"
 #include "common/cmd.h"
@@ -39,6 +40,7 @@ extern "C" {
 #include "common/math.h"
 #include "common/msg.h"
 #include "common/net/chan.h"
+#include "common/net/adaptive_input.h"
 #include "common/net/net.h"
 #include "common/pmove.h"
 #include "common/prompt.h"
@@ -348,6 +350,7 @@ bool IN_MouseGrabbed(void);
 
 void CL_RegisterInput(void);
 void CL_AdaptiveInputReset(void);
+bool CL_AdaptiveInputGetOutputV1(worr_adaptive_input_output_v1 *output_out);
 void CL_UpdateCmd(int msec);
 void CL_FinalizeCmd(void);
 void CL_SendCmd(void);
@@ -394,6 +397,11 @@ void CL_CheckEntityPresent(int entnum, const char *what);
 // the sound code makes callbacks to the client for entity position
 // information, so entities can be dynamically re-spatialized
 void CL_GetEntitySoundOrigin(unsigned entnum, vec3_t org);
+int CL_CopyEntityLoopSoundStates(entity_state_t *states, int capacity);
+void CL_PrepareEntityLoopSoundStates(void);
+int CL_GetEntitySoundBinding(unsigned entnum, uint64_t *binding_out);
+bool CL_GetEntitySoundOriginBound(unsigned entnum, uint64_t binding,
+                                  vec3_t org);
 
 
 //
@@ -666,6 +674,7 @@ typedef struct {
 typedef struct {
     int         id;
     int         time;
+    bool        infinite;
     int         color;
     int         flags;
     qhandle_t   image;
@@ -856,6 +865,16 @@ extern const cgame_entity_export_t *cgame_entity;
 void CG_Init(void);
 void CG_Load(const char* new_game, bool is_rerelease_server);
 void CG_Unload(void);
+bool CL_CGameNativeEventProbeCompleteLegacyDispatch(
+    uint32_t carrier_kind,
+    worr_cgame_native_event_probe_legacy_disposition_v1 disposition);
+bool CL_CGameNativeEventProbeGetStatus(
+    worr_cgame_native_event_probe_status_v1 *status_out);
+bool CL_CGameNativeEventProbeCheckpoint(
+    uint32_t expected_map_generation,
+    uint32_t expected_authority_epoch,
+    uint64_t checkpoint_id,
+    worr_cgame_native_event_probe_checkpoint_receipt_v1 *receipt_out);
 
 #ifdef __cplusplus
 }

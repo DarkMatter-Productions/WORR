@@ -828,6 +828,14 @@ static void DMA_Spatialize(channel_t *ch)
 
     if (ch->fixed_origin) {
         VectorCopy(ch->origin, origin);
+    } else if (ch->native_binding) {
+        if (CL_GetEntitySoundOriginBound(ch->entnum, ch->entity_binding,
+                                         ch->origin)) {
+            VectorCopy(ch->origin, origin);
+        } else {
+            /* Keep the last bound position; never retarget a reused slot. */
+            VectorCopy(ch->origin, origin);
+        }
     } else {
         CL_GetEntitySoundOrigin(ch->entnum, origin);
     }
@@ -874,15 +882,15 @@ static void AddLoopSounds(void)
     channel_t   *ch;
     sfx_t       *sfx;
     sfxcache_t  *sc;
-    int         num;
-    entity_state_t *ent;
+    const entity_state_t *ent;
     vec3_t      origin;
     bool        occlusion_enabled = s_occlusion->integer;
 
     if (!S_BuildSoundList(sounds))
         return;
 
-    for (i = 0; i < cl.frame.numEntities; i++) {
+    const int entity_count = S_LoopSoundEntityCount();
+    for (i = 0; i < entity_count; i++) {
         if (!sounds[i])
             continue;
 
@@ -893,8 +901,9 @@ static void AddLoopSounds(void)
         if (!sc)
             continue;
 
-        num = (cl.frame.firstEntity + i) & PARSE_ENTITIES_MASK;
-        ent = &cl.entityStates[num];
+        ent = S_LoopSoundEntity(i);
+        if (!ent)
+            continue;
 
         vol = S_GetEntityLoopVolume(ent);
         att = S_GetEntityLoopDistMult(ent);
@@ -930,13 +939,14 @@ static void AddLoopSounds(void)
         right *= occ_gain;
         left_total += left;
         right_total += right;
-        for (j = i + 1; j < cl.frame.numEntities; j++) {
+        for (j = i + 1; j < entity_count; j++) {
             if (sounds[j] != sounds[i])
                 continue;
             sounds[j] = 0;  // don't check this again later
 
-            num = (cl.frame.firstEntity + j) & PARSE_ENTITIES_MASK;
-            ent = &cl.entityStates[num];
+            ent = S_LoopSoundEntity(j);
+            if (!ent)
+                continue;
 
             CL_GetEntitySoundOrigin(ent->number, origin);
             float ent_vol = S_GetEntityLoopVolume(ent);

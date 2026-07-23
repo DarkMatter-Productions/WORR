@@ -93,7 +93,9 @@ static bool receipt_valid(const worr_native_carrier_ack_ledger_v1 *ledger,
   }
   if ((receipt->state_flags & ~known_flags) != 0 ||
       receipt->message_sequence == 0 ||
-      !record_class_valid(receipt->record_class) || receipt->reserved0 != 0 ||
+      !record_class_valid(receipt->record_class) ||
+      (receipt->semantic_first_sequence != 0 &&
+       receipt->record_class != WORR_NATIVE_RECORD_EVENT_V1) ||
       receipt->handoffs_remaining > ledger->proactive_handoffs) {
     return false;
   }

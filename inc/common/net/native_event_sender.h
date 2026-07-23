@@ -11,6 +11,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "common/net/native_carrier_mixed.h"
 #include "common/net/native_codec.h"
+#include "common/net/native_event_batch.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -40,7 +41,7 @@ extern "C" {
 #define WORR_NATIVE_EVENT_SENDER_PAYLOAD_GENERATION_MAX \
     (UINT32_MAX >> WORR_NATIVE_EVENT_SENDER_PAYLOAD_INDEX_BITS)
 #define WORR_NATIVE_EVENT_SENDER_MAX_ENCODED_BYTES \
-    WORR_NATIVE_CODEC_MAX_EVENT_ENCODED_BYTES
+    WORR_NATIVE_EVENT_BATCH_MAX_PAYLOAD_BYTES
 
 enum {
     WORR_NATIVE_EVENT_SENDER_INITIALIZED = 1u << 0,
@@ -78,6 +79,10 @@ typedef struct worr_native_event_sender_telemetry_v1_s {
     uint64_t first_sends;
     uint64_t retries;
     uint64_t validation_failures;
+    /* Successful schema-2 promotion only; retries and ACK refreshes do not
+     * advance these logical construction counters. */
+    uint64_t schema2_batches_promoted;
+    uint64_t schema2_events_promoted;
 } worr_native_event_sender_telemetry_v1;
 
 typedef struct worr_native_event_sender_v1_s {

@@ -20,9 +20,13 @@ server config yet.
 | `cl_adaptive_input` | `0` | Keep the established `cl_maxpackets` and `cl_packetdup` input-delivery policy. |
 | `cl_worr_native_shadow` | `0` | Do not send the client half of the native command-shadow diagnostic. |
 | `sv_worr_native_shadow` | `0` | Do not enable the server half of the native command-shadow diagnostic. |
+| `cl_worr_native_input_batch` | `0` | Do not request the private multi-command native input-shadow test. |
+| `sv_worr_native_input_batch` | `0` | Do not allow the private multi-command native input-shadow test. |
 | `cl_worr_native_event_shadow` | `0` | Do not receive the client half of the native event-stream diagnostic. |
 | `sv_worr_native_event_shadow` | `0` | Do not emit the server half of the native event-stream diagnostic. |
-| `g_lag_compensation` | `0` | Trace weapon hits against the current server world. |
+| `cl_worr_native_snapshot_shadow` | `0` | Do not receive the client half of the native canonical-snapshot diagnostic. |
+| `sv_worr_native_snapshot_shadow` | `0` | Do not emit the server half of the native canonical-snapshot diagnostic. |
+| `g_lag_compensation` | `0` | Keep server-authoritative weapon traces in the current world. |
 | `sg_lag_compensation_debug` | `0` | Do not collect or print rewind diagnostics. |
 | `net_impair_enable` | `0` | Do not deliberately damage or delay network traffic. |
 
@@ -34,24 +38,25 @@ entity at a time instead of dropping the whole scene.
 
 The following work is still in progress:
 
-- the native progressive wire envelope is limited to the default-off command
-  and event shadows described below; neither is authoritative gameplay
-  traffic;
+- the native progressive wire envelope is limited to the default-off command,
+  event, snapshot, and combined diagnostic bundles described below; these do
+  not constitute full native-netcode or release promotion;
 - native canonical events can reach the cgame audit runtime, but live effects
   and audio are still presented by the established event path;
 - client gameplay and weapon prediction are not fully promoted;
-- adaptive input pacing is available only as an opt-in evaluation path for the
-  existing batched-command transport, not the future native envelope;
-- rewind covers historical player bounds for the integrated weapon traces, but
-  not moving brush models or the complete projectile, melee, and splash policy
-  set; and
+- adaptive input pacing is available as an opt-in evaluation path for the
+  established batched-command transport, and a separate private native batch
+  shadow is available for developers; neither is release-promoted;
+- rewind covers the eight historical query policies listed below and bounded
+  canonical brush-mover scenes, but broader mover, lifecycle, projectile,
+  melee, splash, and multi-target fairness coverage is not complete; and
 - multiplayer load, fairness, demo/spectator, and cross-platform release gates
   are not complete.
 
 For those reasons, snapshot render promotion and historical hit validation
 remain explicit opt-ins.
 
-## Native Command and Event Shadows (Developer Diagnostic Only)
+## Native Command, Event, and Snapshot Shadows (Developer Diagnostic Only)
 
 `cl_worr_native_shadow` and `sv_worr_native_shadow` enable the client and
 server halves of a small native-wire diagnostic. Both default to `0`, and both
@@ -64,6 +69,23 @@ the server. The legacy command is still sent, received, and used for gameplay.
 This pilot does not improve ping, bandwidth, prediction, or hit registration,
 and it does not enable the planned full native netcode.
 
+The connection advertises one exact capability bundle based on the controls
+that were set before connecting:
+
+| Controls enabled at an endpoint | Exact capability mask |
+| --- | ---: |
+| Base native shadow disabled | `0x03` (established compatibility path) |
+| Base native shadow only | `0x53` (command diagnostic) |
+| Base + event shadows | `0x73` (command and event diagnostics) |
+| Base + snapshot shadows | `0x57` (command and snapshot diagnostics) |
+| Base + event + snapshot shadows | `0x77` (combined diagnostics) |
+
+Both endpoints must select the same armed bundle. A mode mismatch, partial
+intersection, unavailable native endpoint, or failed readiness check falls
+back to exact `0x03`; WORR does not guess a partial native format. The choice
+is frozen for that connection, so reconnect after changing any of these
+controls.
+
 `cl_worr_native_event_shadow` and `sv_worr_native_event_shadow` add a separate
 server-to-client event-stream test on top of that command shadow. Both event
 controls and both base native-shadow controls must be enabled before connecting.
@@ -72,6 +94,19 @@ The server must also retain its normal snapshot observation
 snapshot output, retains them until acknowledged, and submits them to the
 client's cgame event audit runtime. Established snapshot events remain in the
 packet and remain responsible for visible effects and audio.
+
+`cl_worr_native_snapshot_shadow` and `sv_worr_native_snapshot_shadow` add the
+canonical full-snapshot diagnostic instead. Both snapshot controls and both
+base native-shadow controls must be enabled before connecting, and the server
+must keep `sv_snapshot_shadow 1`. Established snapshots continue to be sent.
+These controls alone do not promote the native timeline, effects, audio, or
+gameplay authority; the narrow presentation modes used by developers have
+separate controls and are not release-ready.
+
+Enabling both the event and snapshot pairs selects the combined `0x77` test
+bundle. Its event and snapshot lanes share one bounded carrier, but it remains
+default-off diagnostic traffic rather than completed `FR-10-T04` transport or
+`FR-10-T15` release acceptance.
 
 For a controlled local or private test, set the server side before accepting the
 connection:
@@ -88,17 +123,23 @@ set cl_worr_native_shadow 1
 set cl_worr_native_event_shadow 1
 ```
 
-These controls apply when a connection is created. Reconnect after changing
-either one; changing a value during an existing connection does not reconfigure
-that connection. If the peer is incompatible or the diagnostic encounters an
-error, it silently drains and falls back while the established command path
-continues. With either control left at its default `0`, normal legacy networking
-and demo behavior are unchanged.
+That example selects event bundle `0x73`. For snapshot-only bundle `0x57`,
+leave both event controls at `0` and set
+`sv_worr_native_snapshot_shadow 1` plus
+`cl_worr_native_snapshot_shadow 1`. For combined bundle `0x77`, set both event
+controls and both snapshot controls to `1`. The base native-shadow pair is
+required in every native mode.
 
-Leave the two event controls at `0` when testing only the command shadow. A
-client and server that select different native modes fail the private test
-safely and continue on established networking; they do not guess a shared
-format.
+These controls apply when a connection is created. Reconnect after changing
+any native-shadow control; changing a value during an existing connection does
+not reconfigure that connection. If the peer is incompatible or the diagnostic
+encounters an error, it silently drains and falls back while the established
+command path continues. With either base native-shadow control left at its
+default `0`, normal legacy networking and demo behavior are unchanged.
+
+Leave both event controls and both snapshot controls at `0` when testing only
+the command shadow. A client and server that select different native modes
+fall back safely to established networking; they do not guess a shared format.
 
 Use `cl_worr_native_shadow_status` on the client or
 `sv_worr_native_shadow_status` on the server when diagnosing a map transition.
@@ -114,6 +155,47 @@ On the server, `transport_epoch` is the newest handshake being evaluated, while
 `wire_committed_transport_epoch` is the epoch whose native test-wire state has
 actually crossed its point of no return. They can differ briefly during a map
 change; that is expected and makes the transition explicit.
+
+### Private Native Input Batch Shadow
+
+`cl_worr_native_input_batch` and `sv_worr_native_input_batch` add a developer-
+only multi-command test to the command shadow. Both default to `0`. It works
+only with the base command-only native shadow: leave both event and snapshot
+shadow pairs disabled, enable both base native-shadow controls, and enable the
+matching input-batch control at each endpoint before connecting.
+
+For a controlled test server:
+
+```text
+set sv_worr_native_shadow 1
+set sv_worr_native_input_batch 1
+```
+
+On the client, before connecting:
+
+```text
+set cl_worr_native_shadow 1
+set cl_worr_native_input_batch 1
+```
+
+This still selects the existing command diagnostic bundle `0x53`; it does not
+advertise a new public capability. When the private confirmation succeeds, the
+client can send two through eight fresh canonical commands together beside the
+normal movement stream. The normal commands stay in the packet and remain in
+charge of gameplay. The server acknowledges the test batch only after every
+native command exactly matches its normal counterpart.
+
+Reconnect after changing either input-batch control. If confirmation space is
+unavailable, a peer does not support the test, or the private batch is malformed
+or expires, WORR declines or drains only this diagnostic and keeps established
+input delivery available. Do not use this test as a ping, bandwidth, prediction,
+or hit-registration improvement.
+
+Use `cl_worr_native_input_delivery_status` to inspect the client request,
+confirmation, candidate range, retained batch, retry, acknowledgement, fallback,
+and failure counters. `sv_worr_native_shadow_status [slot]` prints the matching
+per-client server input-delivery row, including pending legacy joins and whether
+its test acknowledgement is blocked. Both commands are diagnostic only.
 
 ## Server Snapshot Observation
 
@@ -144,16 +226,40 @@ until that peer is reinitialized or disconnects.
   only when it passes the timeline safety checks and matches established
   interpolation within the configured tolerance. Every rejected entity falls
   back independently.
+- `3` — **native timeline authority, test only**. Once the engine establishes
+  native timeline ownership, enumerate remote entities from immutable
+  canonical snapshots and keep previous-only entities visible until their
+  removal boundary. Losing ownership after that bind produces an empty native
+  frame instead of silently mixing in established packet entities.
 
 When the canonical snapshot consumer is active, modes `1` and `2` print one
 aggregate `cg_snapshot_timeline_render: ...` line per second. They do not print
-a line for every entity. The predicted local player is never switched by this
-control, and extrapolation is disabled in this stage.
+a line for every entity. Mode `3` also prints a compact
+`cg_snapshot_timeline_adaptive: ...` row. The predicted local player is never
+switched by this control. Modes `1` and `2` do not extrapolate; mode `3` uses
+the bounded controls below.
 
 `cg_snapshot_timeline_render_epsilon` sets the largest accepted per-axis origin,
 beam-end, or angular difference at the promotion gate. Its default is `0.125`;
 values are limited to `0.0001` through `8.0`. Raising it makes the comparison
 less strict and is not recommended for ordinary parity testing.
+
+Mode `3` uses these non-persistent timing controls:
+
+- `cg_snapshot_timeline_interpolation_delay_ms` sets the baseline delay and
+  defaults to `50` ms (range `0`–`1000`).
+- `cg_snapshot_timeline_adaptive_interpolation` defaults to `1`. It raises the
+  delay from accepted arrival jitter and recent extrapolation/clamp pressure,
+  then recovers toward the baseline during stable delivery.
+- `cg_snapshot_timeline_max_interpolation_delay_ms` caps that adaptive delay
+  and defaults to `150` ms (range `0`–`1000`, never below the baseline).
+- `cg_snapshot_timeline_max_extrapolation_ms` defaults to `50` ms (range
+  `0`–`250`). Set it to `0` to disable extrapolation.
+
+Generation replacement, missing components, snapshot discontinuities,
+teleports, and excessive linear or angular speed always block blending even
+when extrapolation is enabled. Pause and rate changes advance through the
+canonical clock; legacy demos keep established whole-stream rendering.
 
 To run a short client-side audit:
 
@@ -168,8 +274,8 @@ maximum errors. Return to the normal path with:
 cg_snapshot_timeline_render 0
 ```
 
-Mode `2` is intended only for controlled playtests after mode `1` is clean. It
-does not enable canonical effects, audio, or full gameplay prediction.
+Modes `2` and `3` are intended only for controlled playtests after mode `1` is
+clean. Neither enables canonical event effects or full gameplay prediction.
 
 ## Client Full-Snapshot Recovery
 
@@ -227,18 +333,64 @@ module:
 - `1` — allow the historical player-bounds path for eligible deathmatch weapon
   traces.
 
-The current integration covers machinegun, chaingun, shotgun, super shotgun,
-railgun, disruptor convergence, plasma beam, and thunderbolt player traces.
-Bots are not treated as rewound shooters. Static world and current non-player
-collision remain authoritative, and moving brush-model history is not yet
-included. If command authority, timing, player history, or a complete frozen
-player scene cannot be proven, the query uses current-world collision.
+This is a server-authoritative feature. A client sends its ordinary input and
+acknowledgement data, but it cannot supply a target, a hit result, or an
+arbitrary rewind time. The server validates the command identity and timing,
+chooses the eligible historical instant, constructs the collision scene, and
+runs the trace. If a canonical command is rejected, the server does not retry
+it using the weaker legacy acknowledgement estimate.
+
+### Supported Historical Query Policies
+
+These are the only weapon policies that currently use historical player
+collision:
+
+| Policy | Historical part | Current-authority part |
+| --- | --- | --- |
+| Machinegun | Muzzle-convergence and bullet trace. | Normal bullet damage, knockback, effects, and target state. |
+| Chaingun | Muzzle-convergence and each bullet trace. | Normal burst cadence and each bullet's damage and effects. |
+| Shotgun | Muzzle-convergence and pellet traces. | Normal pellet damage, knockback, and effects. |
+| Super Shotgun | Muzzle-convergence and both barrels' pellet traces. | Normal damage, knockback, and effects from both barrels. |
+| Railgun | Muzzle-convergence and the piercing ray, including generation-checked per-ray ignores. | Normal damage and effects after each trace result. |
+| Disruptor convergence | Point target query followed, when needed, by the expanded convergence query at the same historical instant. | Projectile movement, contact, delayed damage, and lifetime. |
+| Plasma Beam | Main beam query and its water-excluding retrace. | Beam cadence, damage, water effects, and target state. |
+| Thunderbolt | Main ray, water-excluding retrace, and paired side rays as one de-duplicated footprint. | Damage, cadence, effects, and the separate underwater-discharge branch. |
+
+Static map collision remains authoritative. Canonical scenes can include
+authenticated history for live `SOLID_BSP` brush movers; legacy rewind keeps
+non-player collision in the current world. Broader mover and multi-target
+fairness coverage is still in progress. Bots are not treated as rewound
+shooters.
+
+### Fairness, Lifecycle, and Fallback
+
+The configured rewind window defaults to 200 ms. The server clamps it to a
+hard range of `0..250` ms, so neither interpolation allowance nor client data
+can extend a query beyond 250 ms. Setting the window to `0` prevents historical
+queries even if the master switch is `1`.
+
+Historical geometry is used only to answer the collision query. It is not a
+historical damage simulation. Once the trace returns, the normal server weapon
+code evaluates the current, generation-matched entity. Current health, armor,
+team rules, spawn protection, damageability, knockback, death, effects, and
+respawn state remain authoritative. A respawn begins a new identity generation
+and clears the previous life's history, so an old pose cannot stand in for the
+new life. Spectators are excluded from eligible shooter and target collision
+history.
+
+WORR does not interpolate across a teleport, map change/reset, identity or
+life-generation change, death/respawn boundary, or another marked history
+discontinuity. If the server cannot prove a safe pose on the requested side of
+that boundary, or if required history, mover data, scene sealing, or command
+authority is missing, the affected query uses an uncompensated current-world
+trace. It does not guess a time, keep a partial rewound scene, or accept a
+client-declared hit.
 
 The supporting policy controls are:
 
 | Control | Default | Meaning |
 | --- | ---: | --- |
-| `sg_lag_compensation_max_ms` | `200` | Maximum historical window. It is limited to `0..250` ms; `0` prevents historical rewind even when the master switch is on. |
+| `sg_lag_compensation_max_ms` | `200` | Maximum historical window. The server enforces a `250` ms hard cap; `0` prevents historical rewind even when the master switch is on. |
 | `sg_lag_compensation_interp_ms` | `-1` | Additional interpolation allowance. `-1` derives it from the estimated snapshot interval; a non-negative value supplies an explicit allowance limited by `sg_lag_compensation_max_ms`. |
 | `sg_lag_compensation_legacy_error_ms` | `50` | Largest accepted error bound for a legacy packet-shared time mapping, limited to `0..250` ms. Lower values fail closed more readily. |
 | `sg_lag_compensation_debug` | `0` | Diagnostic level described below. |
@@ -255,6 +407,15 @@ Debug levels are cumulative:
 - `3` or greater — also print one detailed `lagcomp trace ...` line for each
   observed query. Use this only for short investigations; busy weapon traces
   can produce substantial console output.
+
+The aggregate line counts accepted sessions, canonical acceptance/rejection,
+missing history, discontinuities, caps, scene work, and mover/brush activity.
+At level `2`, the retained journal and its telemetry distinguish canonical,
+bounded legacy, and current-world paths and their fallback outcomes for
+diagnostic tooling. A detailed line includes the weapon policy, selected path,
+outcome, fallback and policy reason, requested and applied times, candidate
+count, and the collision-authority guard. These values are diagnostic evidence;
+they cannot enable compensation or change a hit result.
 
 A controlled evaluation config can begin with:
 
@@ -273,6 +434,11 @@ return immediately to current-world collision:
 g_lag_compensation 0
 sg_lag_compensation_debug 0
 ```
+
+`g_lag_compensation 0` is the server-wide opt-out and takes the historical path
+out of consideration for every client. `sg_lag_compensation_max_ms 0` is an
+additional server-side disable while retaining the master setting. No client
+setting can override either control.
 
 Historical hit validation is still default-off because its full fairness,
 abuse, moving-geometry, sustained-load, and multi-platform release evidence is

@@ -37,10 +37,14 @@ bool Worr_EventStreamDescriptorInitV1(
 bool Worr_EventStreamDescriptorValidateV1(
     const worr_event_stream_descriptor_v1 *descriptor)
 {
+    const uint16_t known_flags =
+        WORR_EVENT_STREAM_FLAG_BATCH_SCHEMA2;
+
     return descriptor != NULL &&
            descriptor->struct_size == sizeof(*descriptor) &&
            descriptor->schema_version == WORR_EVENT_STREAM_ABI_VERSION &&
-           descriptor->flags == 0 && descriptor->stream_epoch != 0 &&
+           (descriptor->flags & ~known_flags) == 0 &&
+           descriptor->stream_epoch != 0 &&
            descriptor->first_sequence != 0 &&
            descriptor->event_schema_version == WORR_EVENT_ABI_VERSION &&
            descriptor->model_revision == WORR_EVENT_MODEL_REVISION;
@@ -54,6 +58,7 @@ bool Worr_EventStreamDescriptorEqualV1(
            Worr_EventStreamDescriptorValidateV1(right) &&
            left->stream_epoch == right->stream_epoch &&
            left->first_sequence == right->first_sequence &&
+           left->flags == right->flags &&
            left->event_schema_version == right->event_schema_version &&
            left->model_revision == right->model_revision;
 }

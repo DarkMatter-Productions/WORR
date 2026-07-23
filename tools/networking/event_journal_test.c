@@ -103,6 +103,48 @@ static void set_test_vec3(float value[3], float base)
     value[2] = base + 2.0f;
 }
 
+static worr_event_record_v1 make_keyed_poi_event(uint32_t epoch,
+                                                  uint32_t sequence,
+                                                  uint16_t key,
+                                                  uint16_t lifetime_ms)
+{
+    worr_event_payload_keyed_poi_v1 payload;
+    worr_event_record_v1 record;
+
+    memset(&payload, 0, sizeof(payload));
+    payload.key = key;
+    payload.lifetime_ms = lifetime_ms;
+    if (lifetime_ms != WORR_EVENT_KEYED_POI_REMOVE_LIFETIME_MS) {
+        payload.position[0] = 1.0f;
+        payload.position[1] = 2.0f;
+        payload.position[2] = 3.0f;
+        payload.image_index = 77;
+        payload.color_index = 208;
+        payload.flags = WORR_EVENT_KEYED_POI_FLAG_HIDE_ON_AIM;
+    }
+    record = make_payload_event(sequence, WORR_EVENT_TYPE_STATE_CHANGE,
+                                WORR_EVENT_PAYLOAD_KEYED_POI_V1, &payload,
+                                sizeof(payload));
+    record.event_id.stream_epoch = epoch;
+    record.delivery_class = WORR_EVENT_DELIVERY_RELIABLE_ORDERED;
+    record.expiry_tick = 0;
+    return record;
+}
+
+static void keyed_poi_payload_get(
+    const worr_event_record_v1 *record,
+    worr_event_payload_keyed_poi_v1 *payload_out)
+{
+    memcpy(payload_out, record->payload, sizeof(*payload_out));
+}
+
+static void keyed_poi_payload_set(
+    worr_event_record_v1 *record,
+    const worr_event_payload_keyed_poi_v1 *payload)
+{
+    memcpy(record->payload, payload, sizeof(*payload));
+}
+
 static worr_event_payload_legacy_temp_v1 make_temp_payload(
     uint16_t subtype, int16_t raw_entity1)
 {
@@ -181,7 +223,7 @@ static int test_validation_and_hash(void)
     CHECK(Worr_EventRecordHashV1(&valid, TEST_MAX_ENTITIES, &hash_a));
     CHECK(Worr_EventRecordHashV1(&valid, TEST_MAX_ENTITIES, &hash_b));
     CHECK(hash_a == hash_b);
-    CHECK(hash_a == UINT64_C(6612534348164222094));
+    CHECK(hash_a == UINT64_C(17999893636270564749));
 
     invalid = valid;
     invalid.struct_size--;
@@ -357,7 +399,7 @@ static int test_legacy_entity_catalog_and_semantic_hash(void)
     CHECK(Worr_EventRecordHashV1(&record, TEST_MAX_ENTITIES, &full_hash));
     CHECK(Worr_EventRecordSemanticHashV1(&record, TEST_MAX_ENTITIES,
                                          &semantic_hash));
-    CHECK(semantic_hash == UINT64_C(12433297410386378852));
+    CHECK(semantic_hash == UINT64_C(459024801986651691));
 
     candidate = record;
     candidate.flags &= ~(uint32_t)WORR_EVENT_FLAG_HAS_AUTHORITY_ID;
@@ -1030,6 +1072,209 @@ static int test_muzzle_and_spatial_audio_catalog(void)
     ((worr_event_payload_spatial_audio_v1 *)invalid.payload)->origin[1] =
         INFINITY;
     CHECK(!Worr_EventRecordValidateV1(&invalid, TEST_MAX_ENTITIES));
+    return 0;
+}
+
+static int test_keyed_poi_catalog_and_semantics(void)
+{
+    worr_event_record_v1 base = make_keyed_poi_event(60, 1, 1024, 5000);
+    worr_event_record_v1 other;
+    worr_event_payload_keyed_poi_v1 payload;
+    uint64_t base_hash;
+    uint64_t other_hash;
+
+    CHECK(WORR_EVENT_MODEL_REVISION == 2);
+    CHECK(WORR_EVENT_PAYLOAD_KEYED_POI_V1 == 13);
+    CHECK(sizeof(worr_event_payload_keyed_poi_v1) == 20);
+    CHECK(Worr_EventRecordValidateV1(&base, TEST_MAX_ENTITIES));
+    CHECK(Worr_EventRecordHashV1(&base, TEST_MAX_ENTITIES, &base_hash));
+
+    other = make_keyed_poi_event(60, 1, 1024, 0);
+    CHECK(Worr_EventRecordValidateV1(&other, TEST_MAX_ENTITIES));
+    other = make_keyed_poi_event(60, 1, UINT16_MAX, UINT16_MAX - 1u);
+    CHECK(Worr_EventRecordValidateV1(&other, TEST_MAX_ENTITIES));
+    other = make_keyed_poi_event(
+        60, 1, 1024, WORR_EVENT_KEYED_POI_REMOVE_LIFETIME_MS);
+    CHECK(Worr_EventRecordValidateV1(&other, TEST_MAX_ENTITIES));
+
+    other = base;
+    keyed_poi_payload_get(&other, &payload);
+    payload.key = 0;
+    keyed_poi_payload_set(&other, &payload);
+    CHECK(!Worr_EventRecordValidateV1(&other, TEST_MAX_ENTITIES));
+
+    other = base;
+    keyed_poi_payload_get(&other, &payload);
+    payload.flags |= 1u << 1;
+    keyed_poi_payload_set(&other, &payload);
+    CHECK(!Worr_EventRecordValidateV1(&other, TEST_MAX_ENTITIES));
+    other = base;
+    keyed_poi_payload_get(&other, &payload);
+    payload.position[1] = NAN;
+    keyed_poi_payload_set(&other, &payload);
+    CHECK(!Worr_EventRecordValidateV1(&other, TEST_MAX_ENTITIES));
+    payload.position[1] = INFINITY;
+    keyed_poi_payload_set(&other, &payload);
+    CHECK(!Worr_EventRecordValidateV1(&other, TEST_MAX_ENTITIES));
+
+    other = base;
+    other.event_type = WORR_EVENT_TYPE_GAMEPLAY_CUE;
+    CHECK(!Worr_EventRecordValidateV1(&other, TEST_MAX_ENTITIES));
+    other = base;
+    other.delivery_class = WORR_EVENT_DELIVERY_TRANSIENT;
+    other.expiry_tick = other.source_tick + 1u;
+    CHECK(Worr_EventRecordValidateV1(&other, TEST_MAX_ENTITIES));
+    other.expiry_tick++;
+    CHECK(!Worr_EventRecordValidateV1(&other, TEST_MAX_ENTITIES));
+    other = base;
+    other.delivery_class = WORR_EVENT_DELIVERY_TRANSIENT;
+    other.source_tick = UINT32_MAX;
+    other.expiry_tick = 0;
+    CHECK(!Worr_EventRecordValidateV1(&other, TEST_MAX_ENTITIES));
+    other = base;
+    other.delivery_class = WORR_EVENT_DELIVERY_PERSISTENT_STATE;
+    CHECK(!Worr_EventRecordValidateV1(&other, TEST_MAX_ENTITIES));
+    other = base;
+    other.delivery_class = WORR_EVENT_DELIVERY_COSMETIC;
+    other.expiry_tick = other.source_tick + 1u;
+    CHECK(!Worr_EventRecordValidateV1(&other, TEST_MAX_ENTITIES));
+    other = base;
+    other.expiry_tick = other.source_tick + 1u;
+    CHECK(!Worr_EventRecordValidateV1(&other, TEST_MAX_ENTITIES));
+    other = base;
+    other.prediction_class = WORR_EVENT_PREDICTION_COMMAND_IMMEDIATE;
+    CHECK(!Worr_EventRecordValidateV1(&other, TEST_MAX_ENTITIES));
+    other = base;
+    other.flags &= ~WORR_EVENT_FLAG_REPLAY_SAFE;
+    CHECK(!Worr_EventRecordValidateV1(&other, TEST_MAX_ENTITIES));
+    other = base;
+    other.flags &= ~WORR_EVENT_FLAG_PRESENT_ONCE;
+    CHECK(!Worr_EventRecordValidateV1(&other, TEST_MAX_ENTITIES));
+    other = base;
+    other.flags |= WORR_EVENT_FLAG_CRITICAL;
+    CHECK(!Worr_EventRecordValidateV1(&other, TEST_MAX_ENTITIES));
+    other = base;
+    other.payload_size--;
+    CHECK(!Worr_EventRecordValidateV1(&other, TEST_MAX_ENTITIES));
+    other = base;
+    other.payload[sizeof(payload)] = 1;
+    CHECK(!Worr_EventRecordValidateV1(&other, TEST_MAX_ENTITIES));
+
+    other = base;
+    other.source_time_us = UINT64_MAX - UINT64_C(4999999);
+    CHECK(!Worr_EventRecordValidateV1(&other, TEST_MAX_ENTITIES));
+    other.source_time_us = UINT64_MAX - UINT64_C(5000000);
+    CHECK(Worr_EventRecordValidateV1(&other, TEST_MAX_ENTITIES));
+
+    other = make_keyed_poi_event(
+        60, 1, 1024, WORR_EVENT_KEYED_POI_REMOVE_LIFETIME_MS);
+    keyed_poi_payload_get(&other, &payload);
+    payload.position[0] = 1.0f;
+    keyed_poi_payload_set(&other, &payload);
+    CHECK(!Worr_EventRecordValidateV1(&other, TEST_MAX_ENTITIES));
+    payload.position[0] = 0.0f;
+    payload.image_index = 1;
+    keyed_poi_payload_set(&other, &payload);
+    CHECK(!Worr_EventRecordValidateV1(&other, TEST_MAX_ENTITIES));
+    payload.image_index = 0;
+    payload.color_index = 1;
+    keyed_poi_payload_set(&other, &payload);
+    CHECK(!Worr_EventRecordValidateV1(&other, TEST_MAX_ENTITIES));
+    payload.color_index = 0;
+    payload.flags = WORR_EVENT_KEYED_POI_FLAG_HIDE_ON_AIM;
+    keyed_poi_payload_set(&other, &payload);
+    CHECK(!Worr_EventRecordValidateV1(&other, TEST_MAX_ENTITIES));
+
+    other = base;
+    keyed_poi_payload_get(&other, &payload);
+    payload.position[1] = -0.0f;
+    keyed_poi_payload_set(&other, &payload);
+    keyed_poi_payload_get(&base, &payload);
+    payload.position[1] = 0.0f;
+    keyed_poi_payload_set(&base, &payload);
+    CHECK(Worr_EventRecordSemanticallyEqualV1(
+        &base, &other, TEST_MAX_ENTITIES));
+    CHECK(Worr_EventRecordHashV1(&base, TEST_MAX_ENTITIES, &base_hash));
+    CHECK(Worr_EventRecordHashV1(&other, TEST_MAX_ENTITIES, &other_hash));
+    CHECK(base_hash == other_hash);
+
+#define CHECK_POI_PAYLOAD_CHANGE(statement)                                 \
+    do {                                                                    \
+        other = base;                                                       \
+        keyed_poi_payload_get(&other, &payload);                            \
+        statement;                                                          \
+        keyed_poi_payload_set(&other, &payload);                            \
+        CHECK(Worr_EventRecordValidateV1(&other, TEST_MAX_ENTITIES));       \
+        CHECK(!Worr_EventRecordSemanticallyEqualV1(                         \
+            &base, &other, TEST_MAX_ENTITIES));                             \
+        CHECK(Worr_EventRecordHashV1(                                       \
+            &other, TEST_MAX_ENTITIES, &other_hash));                       \
+        CHECK(base_hash != other_hash);                                     \
+    } while (0)
+    CHECK_POI_PAYLOAD_CHANGE(payload.key++);
+    CHECK_POI_PAYLOAD_CHANGE(payload.lifetime_ms++);
+    CHECK_POI_PAYLOAD_CHANGE(payload.position[0] += 1.0f);
+    CHECK_POI_PAYLOAD_CHANGE(payload.image_index++);
+    CHECK_POI_PAYLOAD_CHANGE(payload.color_index++);
+    CHECK_POI_PAYLOAD_CHANGE(payload.flags = 0);
+#undef CHECK_POI_PAYLOAD_CHANGE
+    return 0;
+}
+
+static int test_keyed_poi_journal_fifo_and_expiry(void)
+{
+    worr_event_journal_v1 journal;
+    worr_event_journal_slot_v1 storage[2];
+    worr_event_journal_slot_v1 transient_storage[1];
+    worr_event_slot_ref_v1 first;
+    worr_event_slot_ref_v1 second;
+    worr_event_slot_ref_v1 third;
+    worr_event_record_v1 event;
+
+    CHECK(Worr_EventJournalInitV1(&journal, storage, 2,
+                                  TEST_MAX_ENTITIES, 70));
+    event = make_keyed_poi_event(70, 1, 100, 5000);
+    CHECK(Worr_EventJournalInsertAuthoritativeV1(&journal, &event, &first) ==
+          WORR_EVENT_JOURNAL_INSERTED);
+    event = make_keyed_poi_event(70, 2, 100, 4000);
+    CHECK(Worr_EventJournalInsertAuthoritativeV1(&journal, &event, &second) ==
+          WORR_EVENT_JOURNAL_INSERTED);
+    CHECK(first.index != second.index && journal.occupied == 2);
+    CHECK(Worr_EventJournalResolveV1(&journal, first)->record.event_id.sequence ==
+          1);
+    CHECK(Worr_EventJournalResolveV1(&journal, second)->record.event_id.sequence ==
+          2);
+
+    event = make_keyed_poi_event(70, 3, 100, 3000);
+    CHECK(Worr_EventJournalInsertAuthoritativeV1(&journal, &event, &third) ==
+          WORR_EVENT_JOURNAL_CAPACITY_FATAL);
+    CHECK(!Worr_EventReceiptContainsV1(&journal.receipt, event.event_id));
+    CHECK(Worr_EventJournalMarkPresentedV1(&journal, first) ==
+          WORR_EVENT_JOURNAL_INSERTED);
+    CHECK(Worr_EventJournalMarkPresentedV1(&journal, second) ==
+          WORR_EVENT_JOURNAL_INSERTED);
+    CHECK(Worr_EventJournalInsertAuthoritativeV1(&journal, &event, &third) ==
+          WORR_EVENT_JOURNAL_INSERTED);
+    CHECK(!Worr_EventJournalResolveV1(&journal, first));
+    CHECK(Worr_EventJournalResolveV1(&journal, second));
+    CHECK(Worr_EventJournalResolveV1(&journal, third));
+
+    CHECK(Worr_EventJournalInitV1(&journal, transient_storage, 1,
+                                  TEST_MAX_ENTITIES, 71));
+    event = make_keyed_poi_event(71, 1, 200, 25);
+    event.delivery_class = WORR_EVENT_DELIVERY_TRANSIENT;
+    event.expiry_tick = event.source_tick + 1u;
+    CHECK(Worr_EventRecordValidateV1(&event, TEST_MAX_ENTITIES));
+    CHECK(Worr_EventJournalInsertAuthoritativeV1(&journal, &event, &first) ==
+          WORR_EVENT_JOURNAL_INSERTED);
+    CHECK(Worr_EventJournalNeedsPresentationV1(
+        &journal, first, event.source_tick));
+    CHECK(Worr_EventJournalExpireV1(&journal, event.source_tick) == 0);
+    CHECK(Worr_EventJournalExpireV1(&journal, event.expiry_tick) == 1);
+    CHECK(!Worr_EventJournalNeedsPresentationV1(
+        &journal, first, event.expiry_tick));
+    CHECK(Worr_EventJournalMarkPresentedV1(&journal, first) ==
+          WORR_EVENT_JOURNAL_TERMINAL);
     return 0;
 }
 
@@ -1726,6 +1971,8 @@ int main(void)
     CHECK(test_legacy_entity_catalog_and_semantic_hash() == 0);
     CHECK(test_legacy_temp_catalog() == 0);
     CHECK(test_muzzle_and_spatial_audio_catalog() == 0);
+    CHECK(test_keyed_poi_catalog_and_semantics() == 0);
+    CHECK(test_keyed_poi_journal_fifo_and_expiry() == 0);
     CHECK(test_receipts_order_loss_and_wrap() == 0);
     CHECK(test_prediction_matching() == 0);
     CHECK(test_prediction_correction_receipt_edges() == 0);

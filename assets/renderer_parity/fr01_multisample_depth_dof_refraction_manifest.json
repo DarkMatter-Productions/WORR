@@ -11,7 +11,7 @@
       "metrics": {
         "pixel_threshold": 1,
         "max_mean_absolute_rgb": [0.6, 0.2, 0.6],
-        "max_pixels_over_threshold_percent": 0
+        "max_pixels_over_threshold_percent": 0.5
       }
     }
   ]

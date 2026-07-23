@@ -25,29 +25,31 @@ paths.
 uses the un-interpolated entity origin, matching the OpenGL diagnostic's
 origin/end-point rule rather than the renderer's interpolated mesh position.
 
-## Validation status
+## Paired validation
 
 - `worr_vulkan_x86_64.dll` builds successfully.
 - `test_vulkan_debug_origins_source.py` verifies the cvar, render-frame gate,
   scaled-axis construction, RGB lines, weapon exclusion, and absence of an
   OpenGL include.
 - A hidden 960x720 capture of the stock `dmspot` MD2 with Vulkan validation
-  enabled rendered the three expected RGB masks: red 52 pixels, green 90
-  pixels, and blue 90 pixels. The Vulkan validation log had no VUID or
-  validation errors.
+  enabled renders the expected RGB masks: 52/56 red pixels, 90/86 green
+  pixels, and 90/90 blue pixels for Vulkan/OpenGL respectively.
+- The retained `fr01_model_origins_manifest.json` crop has red/green/blue mask
+  IoUs `0.92857`, `0.95556`, and `1.0`. Four endpoint pixels differ by more
+  than one RGB code because the APIs rasterize diagonal line endpoints
+  differently; no other diagnostic pixel difference exceeds one code.
+- The Vulkan validation log contains no VUID or validation errors.
 
-A paired OpenGL/Vulkan screenshot gate was attempted but is not retained as a
-passing regression fixture. Both renderers reported their `*_showorigins`
-cvar as `1`; an OpenGL probe also confirmed repeated calls to
-`GL_DrawNullModel`. Nevertheless, OpenGL produced no pure red, green, or blue
-axis pixels anywhere in the 960x720 capture, while Vulkan produced the masks
-above. Controls removing depth testing and blending from the OpenGL submission
-did not change that result and the driver reported no GL error.
+The previous OpenGL baseline failure was a real transform defect. Its
+`GL_DrawNullModel` built vertices in world space and then applied
+`glr.entmatrix`, which contains the same entity translation, rotation, and
+scale. The axes were therefore double-transformed and could be off-screen.
+OpenGL now submits local `{0, 0, 0}`-to-`{16, 0, 0}` / `{0, 16, 0}` /
+`{0, 0, 16}` segments through that matrix, matching Vulkan's native world
+segments without routing either renderer through the other.
 
-Therefore this is a native Vulkan functional improvement, not a completed
-visual-parity claim. Repairing the OpenGL baseline or establishing a stable
-cross-renderer diagnostic capture remains open under `FR-01-T15`; `gl_showtris`
-also remains unimplemented in Vulkan.
+Broader `vk_showtris` material/effect coverage remains a separate diagnostic
+follow-up.
 
 ## Regression coverage
 
@@ -57,7 +59,8 @@ Run the source contract with:
 python -m unittest tools.renderer_parity.test_vulkan_debug_origins_source
 ```
 
-For runtime work, use a hidden `win_headless 1` local fixture with cheats
-latched before `map`, then enable `gl_showorigins` and `vk_showorigins` after
-the map reaches the spawned state. Do not treat the current OpenGL image as a
-visual baseline until its axis path rasterizes correctly.
+For runtime work, use the retained hidden fixture:
+
+```powershell
+python tools/renderer_parity/run_capture_matrix.py --install-dir .install --manifest assets/renderer_parity/fr01_model_origins_manifest.json --run-root .tmp/renderer-parity/fr01-model-origins-final --vulkan-validation
+```

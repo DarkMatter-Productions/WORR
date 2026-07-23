@@ -13,8 +13,6 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include <string.h>
 
-#define SV_LOCAL_ACTION_SHADOW_AUTHORITY_CAPACITY 32u
-
 typedef struct local_action_shadow_authority_slot_s {
     worr_local_action_shadow_authority_receipt_v1 receipt;
     uint64_t publish_order;
@@ -22,9 +20,39 @@ typedef struct local_action_shadow_authority_slot_s {
     uint8_t reserved[7];
 } local_action_shadow_authority_slot_t;
 
+/*
+ * Retain the most recently admitted receipt after mailbox consumption.  This
+ * is the bounded command-ID frontier for one client: an exact retransmission
+ * of the frontier remains idempotent, while a conflicting or regressed ID
+ * cannot become a new FIFO entry.  A connection/map reset starts a new epoch.
+ */
+typedef struct local_action_shadow_authority_frontier_s {
+    worr_local_action_shadow_authority_receipt_v1 receipt;
+    uint8_t initialized;
+    uint8_t reserved[7];
+} local_action_shadow_authority_frontier_t;
+
 static local_action_shadow_authority_slot_t
-    mailboxes[MAX_CLIENTS][SV_LOCAL_ACTION_SHADOW_AUTHORITY_CAPACITY];
+    mailboxes[MAX_CLIENTS]
+             [WORR_LOCAL_ACTION_SHADOW_AUTHORITY_MAILBOX_CAPACITY];
+static local_action_shadow_authority_frontier_t frontiers[MAX_CLIENTS];
+static sv_local_action_shadow_authority_failure_v1 failures[MAX_CLIENTS];
+static uint8_t failed[MAX_CLIENTS];
 static uint64_t next_publish_order;
+
+static void latch_failure(
+    uint32_t client_index,
+    sv_local_action_shadow_authority_failure_v1 failure)
+{
+    if (client_index >= MAX_CLIENTS ||
+        failure == SV_LOCAL_ACTION_SHADOW_AUTHORITY_FAILURE_NONE ||
+        failures[client_index] !=
+            SV_LOCAL_ACTION_SHADOW_AUTHORITY_FAILURE_NONE) {
+        return;
+    }
+    failures[client_index] = failure;
+    failed[client_index] = 1;
+}
 
 static bool command_id_equal(worr_command_id_v1 left,
                              worr_command_id_v1 right)
@@ -36,14 +64,49 @@ static bool publish_receipt(
     uint32_t client_index,
     const worr_local_action_shadow_authority_receipt_v1 *receipt)
 {
+    local_action_shadow_authority_frontier_t *frontier;
     uint32_t index;
     int free_index = -1;
 
-    if (client_index >= MAX_CLIENTS || next_publish_order == UINT64_MAX ||
-        !Worr_LocalActionShadowAuthorityReceiptValidateV1(receipt)) {
+    if (client_index >= MAX_CLIENTS)
+        return false;
+    if (failed[client_index])
+        return false;
+    if (!Worr_LocalActionShadowAuthorityReceiptValidateV1(receipt)) {
+        latch_failure(
+            client_index,
+            SV_LOCAL_ACTION_SHADOW_AUTHORITY_FAILURE_INVALID_RECEIPT);
         return false;
     }
-    for (index = 0; index < SV_LOCAL_ACTION_SHADOW_AUTHORITY_CAPACITY;
+    frontier = &frontiers[client_index];
+
+    if (frontier->initialized) {
+        if (receipt->command_id.epoch != frontier->receipt.command_id.epoch) {
+            latch_failure(
+                client_index,
+                SV_LOCAL_ACTION_SHADOW_AUTHORITY_FAILURE_EPOCH_CHANGE);
+            return false;
+        }
+        if (receipt->command_id.sequence <
+            frontier->receipt.command_id.sequence) {
+            latch_failure(
+                client_index,
+                SV_LOCAL_ACTION_SHADOW_AUTHORITY_FAILURE_COMMAND_REGRESSION);
+            return false;
+        }
+        if (receipt->command_id.sequence ==
+            frontier->receipt.command_id.sequence) {
+            if (memcmp(&frontier->receipt, receipt, sizeof(*receipt)) == 0)
+                return true;
+            latch_failure(
+                client_index,
+                SV_LOCAL_ACTION_SHADOW_AUTHORITY_FAILURE_COMMAND_CONFLICT);
+            return false;
+        }
+    }
+
+    for (index = 0;
+         index < WORR_LOCAL_ACTION_SHADOW_AUTHORITY_MAILBOX_CAPACITY;
          ++index) {
         local_action_shadow_authority_slot_t *slot =
             &mailboxes[client_index][index];
@@ -54,15 +117,33 @@ static bool publish_receipt(
         }
         if (!command_id_equal(slot->receipt.command_id, receipt->command_id))
             continue;
-        return memcmp(&slot->receipt, receipt, sizeof(*receipt)) == 0;
-    }
-    if (free_index < 0)
+        if (memcmp(&slot->receipt, receipt, sizeof(*receipt)) == 0)
+            return true;
+        latch_failure(
+            client_index,
+            SV_LOCAL_ACTION_SHADOW_AUTHORITY_FAILURE_COMMAND_CONFLICT);
         return false;
+    }
+
+    if (free_index < 0) {
+        latch_failure(
+            client_index,
+            SV_LOCAL_ACTION_SHADOW_AUTHORITY_FAILURE_CAPACITY);
+        return false;
+    }
+    if (next_publish_order == UINT64_MAX) {
+        latch_failure(
+            client_index,
+            SV_LOCAL_ACTION_SHADOW_AUTHORITY_FAILURE_ORDER_EXHAUSTED);
+        return false;
+    }
 
     ++next_publish_order;
     mailboxes[client_index][free_index].receipt = *receipt;
     mailboxes[client_index][free_index].publish_order = next_publish_order;
     mailboxes[client_index][free_index].occupied = 1;
+    frontier->receipt = *receipt;
+    frontier->initialized = 1;
     return true;
 }
 
@@ -75,6 +156,9 @@ static const worr_local_action_shadow_authority_import_v1 authority_import = {
 void SV_LocalActionShadowAuthorityResetMap(void)
 {
     memset(mailboxes, 0, sizeof(mailboxes));
+    memset(frontiers, 0, sizeof(frontiers));
+    memset(failures, 0, sizeof(failures));
+    memset(failed, 0, sizeof(failed));
     next_publish_order = 0;
 }
 
@@ -83,6 +167,10 @@ void SV_LocalActionShadowAuthorityResetClient(uint32_t client_index)
     if (client_index >= MAX_CLIENTS)
         return;
     memset(mailboxes[client_index], 0, sizeof(mailboxes[client_index]));
+    memset(&frontiers[client_index], 0, sizeof(frontiers[client_index]));
+    failures[client_index] =
+        SV_LOCAL_ACTION_SHADOW_AUTHORITY_FAILURE_NONE;
+    failed[client_index] = 0;
 }
 
 const worr_local_action_shadow_authority_import_v1 *
@@ -97,7 +185,8 @@ static int oldest_receipt_index(uint32_t client_index)
     int selected = -1;
     uint64_t selected_order = UINT64_MAX;
 
-    for (index = 0; index < SV_LOCAL_ACTION_SHADOW_AUTHORITY_CAPACITY;
+    for (index = 0;
+         index < WORR_LOCAL_ACTION_SHADOW_AUTHORITY_MAILBOX_CAPACITY;
          ++index) {
         local_action_shadow_authority_slot_t *slot =
             &mailboxes[client_index][index];
@@ -148,5 +237,20 @@ bool SV_LocalActionShadowAuthorityConsumeNextReceipt(
     }
     memset(&mailboxes[client_index][selected], 0,
            sizeof(mailboxes[client_index][selected]));
+    return true;
+}
+
+bool SV_LocalActionShadowAuthorityTakeFailure(
+    uint32_t client_index,
+    sv_local_action_shadow_authority_failure_v1 *failure_out)
+{
+    if (client_index >= MAX_CLIENTS || !failure_out ||
+        failures[client_index] ==
+            SV_LOCAL_ACTION_SHADOW_AUTHORITY_FAILURE_NONE) {
+        return false;
+    }
+    *failure_out = failures[client_index];
+    failures[client_index] =
+        SV_LOCAL_ACTION_SHADOW_AUTHORITY_FAILURE_NONE;
     return true;
 }

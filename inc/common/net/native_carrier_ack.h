@@ -51,7 +51,9 @@ typedef struct worr_native_carrier_ack_receipt_v1_s {
   uint16_t handoffs_remaining;
   uint8_t record_class;
   uint8_t state_flags;
-  uint32_t reserved0;
+  /* Zero for every non-batch receipt.  Schema-2 EVENT admission stores the
+   * first logical sequence here; the WNE record ref supplies the last. */
+  uint32_t semantic_first_sequence;
 } worr_native_carrier_ack_receipt_v1;
 
 /* Counters saturate at UINT64_MAX and change only with committed mutation. */

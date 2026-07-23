@@ -28,6 +28,9 @@ void CL_EventRangeCaptureMuzzleV2(
     const q2proto_svc_muzzleflash_t *muzzleflash,
     uint32_t family);
 void CL_EventRangeCaptureSoundV2(const q2proto_sound_t *sound);
+void CL_EventRangeCaptureDamageV2(
+    const q2proto_svc_damage_t *damage);
+bool CL_EventRangeCapturePOIV2(const q2proto_svc_poi_t *poi);
 
 #ifdef __cplusplus
 }

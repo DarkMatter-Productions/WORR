@@ -600,7 +600,7 @@ static bool v2_builder_shape_valid(
 static bool v2_action_kind_valid(uint32_t carrier_kind)
 {
     return carrier_kind >= WORR_CGAME_EVENT_CARRIER_TEMP_ENTITY_V2 &&
-           carrier_kind <= WORR_CGAME_EVENT_CARRIER_SPATIAL_SOUND_V2;
+           carrier_kind <= WORR_CGAME_EVENT_CARRIER_KEYED_POI_V2;
 }
 
 static bool v2_carrier_kind_valid(uint32_t carrier_kind)
@@ -725,7 +725,8 @@ static void v2_commit_action_ref(
 }
 
 static bool v2_candidate_template_valid(
-    const worr_cgame_event_action_candidate_v2 *candidate)
+    const worr_cgame_event_action_candidate_v2 *candidate,
+    uint32_t expected_source_ordinal)
 {
     const worr_event_record_v1 *record;
     if (!candidate || candidate->struct_size != sizeof(*candidate) ||
@@ -739,7 +740,7 @@ static bool v2_candidate_template_valid(
            record->event_id.stream_epoch == 0 &&
            record->event_id.sequence == 0 &&
            (record->flags & WORR_EVENT_FLAG_HAS_AUTHORITY_ID) == 0 &&
-           record->source_ordinal == 0 &&
+           record->source_ordinal == expected_source_ordinal &&
            record->prediction_class ==
                WORR_EVENT_PREDICTION_AUTHORITATIVE_ONLY &&
            record->prediction_key.command_epoch == 0 &&
@@ -776,6 +777,11 @@ static bool v2_record_matches_carrier_kind(
     case WORR_CGAME_EVENT_CARRIER_SPATIAL_SOUND_V2:
         return record->payload_kind ==
                WORR_EVENT_PAYLOAD_SPATIAL_AUDIO_V1;
+    case WORR_CGAME_EVENT_CARRIER_DAMAGE_V2:
+        return record->payload_kind == WORR_EVENT_PAYLOAD_DAMAGE;
+    case WORR_CGAME_EVENT_CARRIER_KEYED_POI_V2:
+        return record->payload_kind ==
+               WORR_EVENT_PAYLOAD_KEYED_POI_V1;
     default:
         return false;
     }
@@ -863,71 +869,138 @@ Worr_CGameEventRangeDeliverActionV2(
     worr_cgame_event_range_consume_fn_v2 consume,
     void *consume_context)
 {
-    worr_event_record_v1 record;
-    worr_event_entity_ref_v1 source_ref;
-    worr_event_entity_ref_v1 subject_ref;
+    return Worr_CGameEventRangeDeliverActionBatchV2(
+        builder, candidate, 1, carrier_kind, range_flags, consume,
+        consume_context);
+}
+
+static bool v2_action_record_shape_valid(
+    const worr_event_record_v1 *record, uint32_t carrier_kind)
+{
+    if (!record || !v2_record_matches_carrier_kind(record, carrier_kind))
+        return false;
+    if ((carrier_kind == WORR_CGAME_EVENT_CARRIER_PLAYER_MUZZLE_V2 ||
+         carrier_kind == WORR_CGAME_EVENT_CARRIER_MONSTER_MUZZLE_V2) &&
+        (record->source_entity.index == 0 ||
+         record->subject_entity.index != WORR_EVENT_NO_ENTITY)) {
+        return false;
+    }
+    if ((carrier_kind == WORR_CGAME_EVENT_CARRIER_DAMAGE_V2 ||
+         carrier_kind == WORR_CGAME_EVENT_CARRIER_KEYED_POI_V2) &&
+        (record->source_entity.index != 0 ||
+         record->subject_entity.index == 0 ||
+         record->subject_entity.index == WORR_EVENT_NO_ENTITY)) {
+        return false;
+    }
+    return true;
+}
+
+worr_cgame_event_range_build_result_v2
+Worr_CGameEventRangeDeliverActionBatchV2(
+    worr_cgame_event_range_builder_v2 *builder,
+    const worr_cgame_event_action_candidate_v2 *candidates,
+    uint32_t candidate_count,
+    uint32_t carrier_kind,
+    uint32_t range_flags,
+    worr_cgame_event_range_consume_fn_v2 consume,
+    void *consume_context)
+{
     worr_cgame_event_range_build_result_v2 result;
     worr_cgame_event_range_v2 range;
+    worr_event_entity_ref_v1 source_ref;
+    worr_event_entity_ref_v1 subject_ref;
+    worr_event_record_v1 record;
     uint32_t flags;
+    uint32_t index;
 
     if (!v2_builder_shape_valid(builder) || !consume ||
-        !v2_action_kind_valid(carrier_kind) ||
+        !v2_action_kind_valid(carrier_kind) || candidate_count == 0 ||
+        candidate_count > builder->scratch_capacity ||
+        (carrier_kind == WORR_CGAME_EVENT_CARRIER_DAMAGE_V2 &&
+         candidate_count > WORR_CGAME_EVENT_DAMAGE_BATCH_MAX_V2) ||
+        (carrier_kind != WORR_CGAME_EVENT_CARRIER_DAMAGE_V2 &&
+         candidate_count != 1) ||
         !v2_caller_range_flags_valid(range_flags) ||
         !v2_external_storage_disjoint(
-            builder, candidate, sizeof(*candidate), 1,
-            _Alignof(worr_cgame_event_action_candidate_v2)) ||
-        !v2_candidate_template_valid(candidate)) {
+            builder, candidates, sizeof(*candidates), candidate_count,
+            _Alignof(worr_cgame_event_action_candidate_v2))) {
         return WORR_CGAME_EVENT_RANGE_BUILD_INVALID_V2;
     }
     if (builder->in_callback)
         return WORR_CGAME_EVENT_RANGE_BUILD_REENTRANT_V2;
-    if (!v2_cursor_can_advance(builder, 1))
+    if (!v2_cursor_can_advance(builder, candidate_count))
         return WORR_CGAME_EVENT_RANGE_BUILD_ORDER_EXHAUSTED_V2;
 
-    result = v2_preview_entity_ref(
-        builder, candidate->source_entity_index, false, &source_ref);
-    if (result != WORR_CGAME_EVENT_RANGE_BUILD_DELIVERED_V2)
-        return result;
-    result = v2_preview_entity_ref(
-        builder, candidate->subject_entity_index, true, &subject_ref);
-    if (result != WORR_CGAME_EVENT_RANGE_BUILD_DELIVERED_V2)
-        return result;
-
-    record = candidate->record;
-    record.source_entity = source_ref;
-    record.subject_entity = subject_ref;
-    if (!Worr_EventRecordCandidateValidateV1(
-            &record, builder->observed_capacity) ||
-        !v2_record_matches_carrier_kind(&record, carrier_kind) ||
-        ((carrier_kind == WORR_CGAME_EVENT_CARRIER_PLAYER_MUZZLE_V2 ||
-          carrier_kind == WORR_CGAME_EVENT_CARRIER_MONSTER_MUZZLE_V2) &&
-         (record.source_entity.index == 0 ||
-          record.subject_entity.index != WORR_EVENT_NO_ENTITY))) {
-        return WORR_CGAME_EVENT_RANGE_BUILD_INVALID_V2;
+    /* First pass is failure-atomic: preview and validate the complete carrier
+     * without touching generations, cursors, or scratch storage. */
+    for (index = 0; index < candidate_count; ++index) {
+        const worr_cgame_event_action_candidate_v2 *candidate =
+            &candidates[index];
+        if (!v2_candidate_template_valid(candidate, index))
+            return WORR_CGAME_EVENT_RANGE_BUILD_INVALID_V2;
+        if (index != 0 &&
+            (candidate->record.source_tick !=
+                 candidates[0].record.source_tick ||
+             candidate->record.source_time_us !=
+                 candidates[0].record.source_time_us ||
+             (carrier_kind == WORR_CGAME_EVENT_CARRIER_DAMAGE_V2 &&
+              candidate->subject_entity_index !=
+                  candidates[0].subject_entity_index))) {
+            return WORR_CGAME_EVENT_RANGE_BUILD_INVALID_V2;
+        }
+        result = v2_preview_entity_ref(
+            builder, candidate->source_entity_index, false, &source_ref);
+        if (result != WORR_CGAME_EVENT_RANGE_BUILD_DELIVERED_V2)
+            return result;
+        result = v2_preview_entity_ref(
+            builder, candidate->subject_entity_index, true, &subject_ref);
+        if (result != WORR_CGAME_EVENT_RANGE_BUILD_DELIVERED_V2)
+            return result;
+        record = candidate->record;
+        record.source_entity = source_ref;
+        record.subject_entity = subject_ref;
+        if (!Worr_EventRecordCandidateValidateV1(
+                &record, builder->observed_capacity) ||
+            !v2_action_record_shape_valid(&record, carrier_kind)) {
+            return WORR_CGAME_EVENT_RANGE_BUILD_INVALID_V2;
+        }
     }
 
-    v2_commit_action_ref(builder, candidate->source_entity_index);
-    v2_commit_action_ref(builder, candidate->subject_entity_index);
-    builder->scratch_records[0] = record;
-    ++builder->batch_generation;
-    ++builder->carrier_sequence;
     flags = range_flags |
             WORR_CGAME_EVENT_RANGE_SOURCE_TIME_INFERRED_V2 |
             WORR_CGAME_EVENT_RANGE_ROUTING_UNKNOWN_V2 |
             WORR_CGAME_EVENT_RANGE_FIRST_CHUNK_V2 |
             WORR_CGAME_EVENT_RANGE_LAST_CHUNK_V2 |
             WORR_CGAME_EVENT_RANGE_LEGACY_PRESENTER_AUTHORITATIVE_V2;
-    if (candidate->source_entity_index != 0 ||
-        (candidate->subject_entity_index != WORR_EVENT_NO_ENTITY &&
-         candidate->subject_entity_index != 0)) {
-        flags |= WORR_CGAME_EVENT_RANGE_ENTITY_GENERATION_OBSERVED_V2;
+    for (index = 0; index < candidate_count; ++index) {
+        const worr_cgame_event_action_candidate_v2 *candidate =
+            &candidates[index];
+        /* These previews cannot fail after the unchanged first pass. */
+        (void)v2_preview_entity_ref(
+            builder, candidate->source_entity_index, false, &source_ref);
+        (void)v2_preview_entity_ref(
+            builder, candidate->subject_entity_index, true, &subject_ref);
+        record = candidate->record;
+        record.source_entity = source_ref;
+        record.subject_entity = subject_ref;
+        builder->scratch_records[index] = record;
+        v2_commit_action_ref(builder, candidate->source_entity_index);
+        v2_commit_action_ref(builder, candidate->subject_entity_index);
+        if (candidate->source_entity_index != 0 ||
+            (candidate->subject_entity_index != WORR_EVENT_NO_ENTITY &&
+             candidate->subject_entity_index != 0)) {
+            flags |= WORR_CGAME_EVENT_RANGE_ENTITY_GENERATION_OBSERVED_V2;
+        }
     }
+    ++builder->batch_generation;
+    ++builder->carrier_sequence;
     v2_initialize_range(
-        builder, &range, record.source_tick, record.source_time_us,
+        builder, &range, candidates[0].record.source_tick,
+        candidates[0].record.source_time_us,
         WORR_CGAME_EVENT_RANGE_PHASE_ACTION_PRE_PRESENT_V2, flags,
         carrier_kind, WORR_CGAME_EVENT_ADAPTER_OK_V2, 0, 1,
-        builder->next_arrival_ordinal, 1);
-    ++builder->next_arrival_ordinal;
+        builder->next_arrival_ordinal, candidate_count);
+    builder->next_arrival_ordinal += candidate_count;
     v2_invoke_range(builder, &range, consume, consume_context);
     return WORR_CGAME_EVENT_RANGE_BUILD_DELIVERED_V2;
 }
@@ -1325,13 +1398,24 @@ static bool v2_range_flags_valid(const worr_cgame_event_range_v2 *range)
         WORR_CGAME_EVENT_RANGE_PHASE_ACTION_PRE_PRESENT_V2) {
         bool expected_generation_observed = false;
         if (!rejected) {
-            if (range->count != 1)
+            if ((range->carrier_kind ==
+                     WORR_CGAME_EVENT_CARRIER_DAMAGE_V2 &&
+                 (range->count == 0 ||
+                  range->count >
+                      WORR_CGAME_EVENT_DAMAGE_BATCH_MAX_V2)) ||
+                (range->carrier_kind !=
+                     WORR_CGAME_EVENT_CARRIER_DAMAGE_V2 &&
+                 range->count != 1)) {
                 return false;
-            expected_generation_observed =
-                range->records[0].source_entity.index != 0 ||
-                (range->records[0].subject_entity.index !=
-                     WORR_EVENT_NO_ENTITY &&
-                 range->records[0].subject_entity.index != 0);
+            }
+            for (uint32_t index = 0; index < range->count; ++index) {
+                expected_generation_observed =
+                    expected_generation_observed ||
+                    range->records[index].source_entity.index != 0 ||
+                    (range->records[index].subject_entity.index !=
+                         WORR_EVENT_NO_ENTITY &&
+                     range->records[index].subject_entity.index != 0);
+            }
         }
         return v2_action_kind_valid(range->carrier_kind) &&
                range->chunk_count == 1 &&
@@ -1461,16 +1545,24 @@ bool Worr_CGameEventRangeAuditConsumeV2(
         }
         if (range->phase ==
             WORR_CGAME_EVENT_RANGE_PHASE_ACTION_PRE_PRESENT_V2) {
-            if (range->records[index].source_ordinal != 0 ||
-                !v2_record_matches_carrier_kind(
+            const uint32_t expected_source_ordinal =
+                range->carrier_kind ==
+                        WORR_CGAME_EVENT_CARRIER_DAMAGE_V2
+                    ? index
+                    : 0;
+            if (range->records[index].source_ordinal !=
+                    expected_source_ordinal ||
+                !v2_action_record_shape_valid(
                     &range->records[index], range->carrier_kind) ||
-                ((range->carrier_kind ==
-                      WORR_CGAME_EVENT_CARRIER_PLAYER_MUZZLE_V2 ||
-                  range->carrier_kind ==
-                      WORR_CGAME_EVENT_CARRIER_MONSTER_MUZZLE_V2) &&
-                 (range->records[index].source_entity.index == 0 ||
+                (range->carrier_kind ==
+                     WORR_CGAME_EVENT_CARRIER_DAMAGE_V2 &&
+                 index != 0 &&
+                 (range->records[index].source_entity.index !=
+                      range->records[0].source_entity.index ||
                   range->records[index].subject_entity.index !=
-                      WORR_EVENT_NO_ENTITY))) {
+                      range->records[0].subject_entity.index ||
+                  range->records[index].subject_entity.generation !=
+                      range->records[0].subject_entity.generation))) {
                 increment_u64(&audit->status.rejected_ranges);
                 return false;
             }

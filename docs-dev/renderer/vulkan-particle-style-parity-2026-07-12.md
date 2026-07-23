@@ -58,6 +58,8 @@ logs are local evidence and are not release artifacts.
 
 ## Remaining Renderer-Parity Work
 
-This closes particle style selection only. Particle shape selection, Vulkan
-beam style parity (`FR-01-T02`), flare behavior (`FR-01-T03`), broader
-post-processing parity, and pixel-comparison coverage remain separate work.
+Particle shape selection and deterministic pixel-comparison coverage were
+subsequently completed in
+`vulkan-particle-shape-additive-visual-parity-2026-07-19.md`. Vulkan beam
+style parity (`FR-01-T02`), flare behavior (`FR-01-T03`), and broader
+post-processing remain separate work.

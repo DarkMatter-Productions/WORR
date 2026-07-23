@@ -51,8 +51,12 @@ The `write_msg` adapter requires:
    carriers); and
 4. visible source generations for every carrier.
 
-Reliable, old-netchan, malformed, unsupported-service, over-capacity, and
-non-visible paths remain byte-identical legacy delivery.
+At this milestone reliable messages remained legacy-only. The continuation in
+`fr-10-t04-t05-reliable-mixed-game-event-native-shadow-2026-07-18.md` now
+captures complete reliable mixed/multi-muzzle messages after legacy append and
+binds them to the next exact final snapshot. Old-netchan, malformed,
+unsupported-service, over-capacity, and non-visible paths remain byte-identical
+legacy delivery.
 
 ## Verification
 
@@ -70,6 +74,7 @@ validated: 16 root runtime files, one root dependency, one q2aas reference map,
 ## Remaining scope
 
 The transport remains observational and legacy authoritative. Unsupported
-`svc_*` game messages, reliable/off-frame event classes, direct predicted local
-submission, native snapshot fences, native presentation, and authority cutover
-remain open roadmap work.
+`svc_*` game messages, off-frame event classes without a safe identity anchor,
+direct predicted local submission, native presentation, and authority cutover
+remain open roadmap work. Reliable mixed/multi-muzzle snapshot fencing is now
+implemented by the 2026-07-18 continuation above.

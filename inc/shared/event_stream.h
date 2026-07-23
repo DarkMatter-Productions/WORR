@@ -33,6 +33,12 @@ extern "C" {
 #define WORR_EVENT_STREAM_ABI_VERSION 1u
 #define WORR_EVENT_STREAM_MAX_ENTITIES_V1 8192u
 
+enum {
+    /* The receiver explicitly accepts native EVENT record schema 2, whose
+     * nested logical records remain canonical event ABI v1. */
+    WORR_EVENT_STREAM_FLAG_BATCH_SCHEMA2 = 1u << 0,
+};
+
 typedef struct worr_event_stream_descriptor_v1_s {
     uint32_t struct_size;
     uint16_t schema_version;

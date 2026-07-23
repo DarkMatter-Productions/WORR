@@ -117,6 +117,8 @@ def summarize(records: list[dict[str, float]], warmup: int) -> dict[str, float |
     result: dict[str, float | int] = {"samples": len(samples)}
     for metric in (
         "cpu_ms",
+        "cpu_render_ms",
+        "cpu_sync_wait_ms",
         "gpu_ms",
         "gpu_frame_ms",
         "gpu_upload_ms",
@@ -136,6 +138,8 @@ def summarize(records: list[dict[str, float]], warmup: int) -> dict[str, float |
         "entity_fast_lit_no_fog_draws",
         "entity_texture_replace_draws",
         "entity_texture_replace_no_fog_draws",
+        "entity_bmodel_bindings",
+        "entity_models_culled",
         "world_fast_lit_candidates",
         "world_fast_lit_disabled",
         "world_fast_lit_fullbright",
@@ -167,7 +171,8 @@ def summarize(records: list[dict[str, float]], warmup: int) -> dict[str, float |
 def ratios(vulkan: dict[str, float | int], opengl: dict[str, float | int]) -> dict[str, float]:
     result: dict[str, float] = {}
     for metric in (
-        "cpu_ms_mean", "cpu_ms_p95", "gpu_ms_mean", "gpu_ms_p95",
+        "cpu_ms_mean", "cpu_ms_p95", "cpu_render_ms_mean",
+        "cpu_render_ms_p95", "gpu_ms_mean", "gpu_ms_p95",
         "gpu_frame_ms_mean", "gpu_frame_ms_p95",
         "gpu_post_ms_mean", "gpu_post_ms_p95",
     ):

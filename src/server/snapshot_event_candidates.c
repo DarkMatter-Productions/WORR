@@ -9,8 +9,10 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "snapshot_event_candidates_internal.h"
 
+#include "common/net/legacy_damage_event_candidate.h"
 #include "common/net/legacy_entity_event_candidate.h"
 #include "common/net/legacy_muzzle_event_candidate.h"
+#include "common/net/legacy_poi_event_candidate.h"
 #include "common/net/legacy_spatial_audio_event_candidate.h"
 #include "common/net/legacy_temp_event_candidate.h"
 
@@ -85,6 +87,14 @@ static sv_snapshot_event_candidates_result_v1 resolve_snapshot_entity(
       entity_out->generation = 1;
       return SV_SNAPSHOT_EVENT_CANDIDATES_OK;
     }
+    /* A client's controlled player is authoritative snapshot state even when
+     * the final entity delta list omits that same first-person entity.  Bind
+     * self-authored carriers (notably player muzzle flashes) to the copied
+     * player generation before searching the independently visible entities. */
+    if (view->snapshot->controlled_entity.identity.index == entity_index) {
+      *entity_out = view->snapshot->controlled_entity.identity;
+      return SV_SNAPSHOT_EVENT_CANDIDATES_OK;
+    }
     for (index = 0; index < view->entity_count; ++index) {
       if (view->entities[index].generation.identity.index == entity_index)
         break;
@@ -110,6 +120,10 @@ static sv_snapshot_event_candidates_result_v1 bind_visible_source_entity(
   if (result != SV_SNAPSHOT_EVENT_CANDIDATES_OK)
     return result;
 
+  /* Direct post-frame carriers have no slot in this snapshot's event-ref
+   * range.  Preserve their exact immutable lineage explicitly so cgame can
+   * derive and verify this final-emission snapshot before presentation. */
+  candidate->flags |= WORR_EVENT_FLAG_SNAPSHOT_FENCED;
   if (!Worr_EventRecordCandidateValidateV1(candidate, max_entities))
     return SV_SNAPSHOT_EVENT_CANDIDATES_INVALID_CANDIDATE;
   return SV_SNAPSHOT_EVENT_CANDIDATES_OK;
@@ -244,14 +258,25 @@ SV_SnapshotShadowBuildSpatialAudioCandidateV1(
     sv_snapshot_shadow_peer_v1 *peer, sv_snapshot_shadow_ref_v1 ref,
     uint32_t max_entities, const q2proto_sound_t *sound,
     worr_event_record_v1 *candidate_out) {
+  return SV_SnapshotShadowBuildSpatialAudioCandidateWithDeliveryV1(
+      peer, ref, max_entities, sound, 0, candidate_out);
+}
+
+sv_snapshot_event_candidates_result_v1
+SV_SnapshotShadowBuildSpatialAudioCandidateWithDeliveryV1(
+    sv_snapshot_shadow_peer_v1 *peer, sv_snapshot_shadow_ref_v1 ref,
+    uint32_t max_entities, const q2proto_sound_t *sound,
+    uint32_t delivery_flags, worr_event_record_v1 *candidate_out) {
   worr_snapshot_projection_view_v2 view;
   sv_snapshot_shadow_sent_v1 sent;
   worr_event_record_v1 candidate;
+  worr_event_payload_spatial_audio_v1 payload;
   uint32_t source_entity_index;
   sv_snapshot_event_candidates_result_v1 bind_result;
   worr_legacy_spatial_audio_event_candidate_result_v1 result;
 
-  if (!peer || !sound || !candidate_out || max_entities == 0)
+  if (!peer || !sound || !candidate_out || max_entities == 0 ||
+      (delivery_flags & ~SV_SNAPSHOT_SPATIAL_AUDIO_KNOWN_FLAGS) != 0)
     return SV_SNAPSHOT_EVENT_CANDIDATES_INVALID_ARGUMENT;
   bind_result = load_final_emission_view(peer, ref, max_entities, &sent, &view);
   if (bind_result != SV_SNAPSHOT_EVENT_CANDIDATES_OK)
@@ -264,6 +289,31 @@ SV_SnapshotShadowBuildSpatialAudioCandidateV1(
     return SV_SNAPSHOT_EVENT_CANDIDATES_SOURCE_NOT_VISIBLE;
   if (result != WORR_LEGACY_SPATIAL_AUDIO_EVENT_CANDIDATE_OK)
     return SV_SNAPSHOT_EVENT_CANDIDATES_INVALID_CANDIDATE;
+
+  memcpy(&payload, candidate.payload, sizeof(payload));
+  if ((delivery_flags & SV_SNAPSHOT_SPATIAL_AUDIO_RELIABLE) != 0) {
+    payload.flags |= WORR_EVENT_SPATIAL_AUDIO_RELIABLE;
+    candidate.delivery_class = WORR_EVENT_DELIVERY_RELIABLE_ORDERED;
+    candidate.expiry_tick = 0;
+  }
+  if ((delivery_flags & SV_SNAPSHOT_SPATIAL_AUDIO_NO_PHS) != 0)
+    payload.flags |= WORR_EVENT_SPATIAL_AUDIO_NO_PHS;
+  if ((delivery_flags & SV_SNAPSHOT_SPATIAL_AUDIO_LOCAL_ONLY) != 0)
+    payload.flags |= WORR_EVENT_SPATIAL_AUDIO_LOCAL_ONLY;
+  memcpy(candidate.payload, &payload, sizeof(payload));
+
+  if ((delivery_flags & SV_SNAPSHOT_SPATIAL_AUDIO_LOCAL_ONLY) != 0) {
+    if (sound->has_position) {
+      payload.flags |= WORR_EVENT_SPATIAL_AUDIO_POSITION_FORCED;
+      memcpy(candidate.payload, &payload, sizeof(payload));
+    }
+    bind_result = bind_visible_source_entity(
+        &view, 0, max_entities, &candidate);
+    if (bind_result != SV_SNAPSHOT_EVENT_CANDIDATES_OK)
+      return bind_result;
+    *candidate_out = candidate;
+    return SV_SNAPSHOT_EVENT_CANDIDATES_OK;
+  }
 
   if (sound->has_entity_channel) {
     bind_result = bind_visible_source_entity(
@@ -280,13 +330,9 @@ SV_SnapshotShadowBuildSpatialAudioCandidateV1(
     return SV_SNAPSHOT_EVENT_CANDIDATES_INVALID_ARGUMENT;
   }
 
-  {
-    worr_event_payload_spatial_audio_v1 payload;
-
-    memcpy(&payload, candidate.payload, sizeof(payload));
-    payload.flags |= WORR_EVENT_SPATIAL_AUDIO_POSITION_FORCED;
-    memcpy(candidate.payload, &payload, sizeof(payload));
-  }
+  memcpy(&payload, candidate.payload, sizeof(payload));
+  payload.flags |= WORR_EVENT_SPATIAL_AUDIO_POSITION_FORCED;
+  memcpy(candidate.payload, &payload, sizeof(payload));
   bind_result = bind_visible_source_entity(&view, 0, max_entities, &candidate);
   if (bind_result != SV_SNAPSHOT_EVENT_CANDIDATES_OK)
     return bind_result;
@@ -368,12 +414,25 @@ SV_SnapshotShadowBuildGameEventCandidatesV1(
     const worr_legacy_game_event_candidate_carrier_v1 *carriers,
     uint32_t carrier_count, worr_event_record_v1 *candidates_out)
 {
+  return SV_SnapshotShadowBuildGameEventCandidatesWithDeliveryV1(
+      peer, ref, max_entities, carriers, carrier_count, 0, candidates_out);
+}
+
+sv_snapshot_event_candidates_result_v1
+SV_SnapshotShadowBuildGameEventCandidatesWithDeliveryV1(
+    sv_snapshot_shadow_peer_v1 *peer, sv_snapshot_shadow_ref_v1 ref,
+    uint32_t max_entities,
+    const worr_legacy_game_event_candidate_carrier_v1 *carriers,
+    uint32_t carrier_count, uint32_t delivery_flags,
+    worr_event_record_v1 *candidates_out)
+{
   worr_event_record_v1
       candidates[WORR_LEGACY_GAME_EVENT_CANDIDATE_SEQUENCE_MAX];
   uint32_t index;
 
   if (!peer || !carriers || !candidates_out || carrier_count == 0 ||
-      max_entities == 0) {
+      max_entities == 0 ||
+      (delivery_flags & ~SV_SNAPSHOT_GAME_EVENT_KNOWN_FLAGS) != 0) {
     return SV_SNAPSHOT_EVENT_CANDIDATES_INVALID_ARGUMENT;
   }
   if (carrier_count > WORR_LEGACY_GAME_EVENT_CANDIDATE_SEQUENCE_MAX)
@@ -402,9 +461,158 @@ SV_SnapshotShadowBuildGameEventCandidatesV1(
     }
     if (result != SV_SNAPSHOT_EVENT_CANDIDATES_OK)
       return result;
+    if ((delivery_flags & SV_SNAPSHOT_GAME_EVENT_RELIABLE) != 0) {
+      candidates[index].delivery_class =
+          WORR_EVENT_DELIVERY_RELIABLE_ORDERED;
+      candidates[index].expiry_tick = 0;
+    }
   }
   for (index = 0; index < carrier_count; ++index)
     candidates_out[index] = candidates[index];
+  return SV_SNAPSHOT_EVENT_CANDIDATES_OK;
+}
+
+sv_snapshot_event_candidates_result_v1
+SV_SnapshotShadowBuildDamageCandidatesV1(
+    sv_snapshot_shadow_peer_v1 *peer, sv_snapshot_shadow_ref_v1 ref,
+    uint32_t max_entities, const q2proto_svc_damage_t *damage,
+    worr_event_record_v1 *candidates_out, uint32_t candidate_capacity,
+    uint32_t *candidate_count_out)
+{
+  worr_snapshot_projection_view_v2 view;
+  sv_snapshot_shadow_sent_v1 sent;
+  worr_event_record_v1 candidates[Q2PROTO_MAX_DAMAGE_INDICATORS];
+  worr_event_entity_ref_v1 controlled_entity;
+  uint32_t candidate_count;
+  uint32_t index;
+  sv_snapshot_event_candidates_result_v1 bind_result;
+  worr_legacy_damage_event_candidate_result_v1 result;
+
+  if (!peer || !damage || !candidates_out || !candidate_count_out ||
+      candidate_capacity == 0 || max_entities == 0) {
+    return SV_SNAPSHOT_EVENT_CANDIDATES_INVALID_ARGUMENT;
+  }
+  bind_result = load_final_emission_view(peer, ref, max_entities, &sent, &view);
+  if (bind_result != SV_SNAPSHOT_EVENT_CANDIDATES_OK)
+    return bind_result;
+
+  result = Worr_LegacyDamageEventCandidatesBuildV1(
+      damage, sent.wire_snapshot_number, sent.snapshot.server_time_us,
+      max_entities, candidates, candidate_capacity, &candidate_count);
+  if (result == WORR_LEGACY_DAMAGE_EVENT_CANDIDATE_CAPACITY)
+    return SV_SNAPSHOT_EVENT_CANDIDATES_CAPACITY;
+  if (result != WORR_LEGACY_DAMAGE_EVENT_CANDIDATE_OK)
+    return SV_SNAPSHOT_EVENT_CANDIDATES_INVALID_CANDIDATE;
+
+  controlled_entity = view.snapshot->controlled_entity.identity;
+  if (!Worr_EventEntityRefValidV1(controlled_entity, max_entities, false))
+    return SV_SNAPSHOT_EVENT_CANDIDATES_INVALID_PROJECTION;
+  for (index = 0; index < candidate_count; ++index) {
+    candidates[index].subject_entity = controlled_entity;
+    candidates[index].flags |= WORR_EVENT_FLAG_SNAPSHOT_FENCED;
+    if (!Worr_EventRecordCandidateValidateV1(&candidates[index],
+                                             max_entities)) {
+      return SV_SNAPSHOT_EVENT_CANDIDATES_INVALID_CANDIDATE;
+    }
+  }
+
+  memcpy(candidates_out, candidates,
+         sizeof(candidates[0]) * candidate_count);
+  *candidate_count_out = candidate_count;
+  return SV_SNAPSHOT_EVENT_CANDIDATES_OK;
+}
+
+sv_snapshot_event_candidates_result_v1
+SV_SnapshotShadowBuildHelpPathCandidateV1(
+    sv_snapshot_shadow_peer_v1 *peer, sv_snapshot_shadow_ref_v1 ref,
+    uint32_t max_entities, const q2proto_svc_help_path_t *help_path,
+    worr_event_record_v1 *candidate_out)
+{
+  worr_snapshot_projection_view_v2 view;
+  sv_snapshot_shadow_sent_v1 sent;
+  worr_event_record_v1 candidate;
+  worr_event_entity_ref_v1 controlled_entity;
+  sv_snapshot_event_candidates_result_v1 bind_result;
+  worr_legacy_help_path_event_candidate_result_v1 result;
+
+  if (!peer || !help_path || !candidate_out || max_entities == 0)
+    return SV_SNAPSHOT_EVENT_CANDIDATES_INVALID_ARGUMENT;
+  bind_result = load_final_emission_view(peer, ref, max_entities, &sent, &view);
+  if (bind_result != SV_SNAPSHOT_EVENT_CANDIDATES_OK)
+    return bind_result;
+
+  result = Worr_LegacyHelpPathEventCandidateBuildV1(
+      help_path, sent.wire_snapshot_number, sent.snapshot.server_time_us,
+      max_entities, &candidate);
+  if (result != WORR_LEGACY_HELP_PATH_EVENT_CANDIDATE_OK)
+    return SV_SNAPSHOT_EVENT_CANDIDATES_INVALID_CANDIDATE;
+
+  controlled_entity = view.snapshot->controlled_entity.identity;
+  if (!Worr_EventEntityRefValidV1(controlled_entity, max_entities, false))
+    return SV_SNAPSHOT_EVENT_CANDIDATES_INVALID_PROJECTION;
+  candidate.subject_entity = controlled_entity;
+  candidate.flags |= WORR_EVENT_FLAG_SNAPSHOT_FENCED;
+  if (!Worr_EventRecordCandidateValidateV1(&candidate, max_entities))
+    return SV_SNAPSHOT_EVENT_CANDIDATES_INVALID_CANDIDATE;
+
+  *candidate_out = candidate;
+  return SV_SNAPSHOT_EVENT_CANDIDATES_OK;
+}
+
+sv_snapshot_event_candidates_result_v1
+SV_SnapshotShadowBuildKeyedPOICandidateV1(
+    sv_snapshot_shadow_peer_v1 *peer, sv_snapshot_shadow_ref_v1 ref,
+    uint32_t max_entities, const q2proto_svc_poi_t *poi,
+    worr_event_record_v1 *candidate_out)
+{
+  return SV_SnapshotShadowBuildKeyedPOICandidateWithDeliveryV1(
+      peer, ref, max_entities, poi, 0, candidate_out);
+}
+
+sv_snapshot_event_candidates_result_v1
+SV_SnapshotShadowBuildKeyedPOICandidateWithDeliveryV1(
+    sv_snapshot_shadow_peer_v1 *peer, sv_snapshot_shadow_ref_v1 ref,
+    uint32_t max_entities, const q2proto_svc_poi_t *poi,
+    uint32_t delivery_flags, worr_event_record_v1 *candidate_out)
+{
+  worr_snapshot_projection_view_v2 view;
+  sv_snapshot_shadow_sent_v1 sent;
+  worr_event_record_v1 candidate;
+  worr_event_entity_ref_v1 controlled_entity;
+  sv_snapshot_event_candidates_result_v1 bind_result;
+  worr_legacy_keyed_poi_event_candidate_result_v1 result;
+
+  if (!peer || !poi || !candidate_out || max_entities == 0 ||
+      (delivery_flags & ~SV_SNAPSHOT_KEYED_POI_KNOWN_FLAGS) != 0) {
+    return SV_SNAPSHOT_EVENT_CANDIDATES_INVALID_ARGUMENT;
+  }
+  bind_result = load_final_emission_view(peer, ref, max_entities, &sent, &view);
+  if (bind_result != SV_SNAPSHOT_EVENT_CANDIDATES_OK)
+    return bind_result;
+  if ((delivery_flags & SV_SNAPSHOT_KEYED_POI_RELIABLE) == 0) {
+    if (poi->time == 0 || sent.wire_snapshot_number == UINT32_MAX)
+      return SV_SNAPSHOT_EVENT_CANDIDATES_INVALID_CANDIDATE;
+  }
+
+  result = Worr_LegacyKeyedPOIEventCandidateBuildV1(
+      poi, sent.wire_snapshot_number, sent.snapshot.server_time_us,
+      max_entities, &candidate);
+  if (result != WORR_LEGACY_KEYED_POI_EVENT_CANDIDATE_OK)
+    return SV_SNAPSHOT_EVENT_CANDIDATES_INVALID_CANDIDATE;
+  if ((delivery_flags & SV_SNAPSHOT_KEYED_POI_RELIABLE) == 0) {
+    candidate.delivery_class = WORR_EVENT_DELIVERY_TRANSIENT;
+    candidate.expiry_tick = candidate.source_tick + 1u;
+  }
+
+  controlled_entity = view.snapshot->controlled_entity.identity;
+  if (!Worr_EventEntityRefValidV1(controlled_entity, max_entities, false))
+    return SV_SNAPSHOT_EVENT_CANDIDATES_INVALID_PROJECTION;
+  candidate.subject_entity = controlled_entity;
+  candidate.flags |= WORR_EVENT_FLAG_SNAPSHOT_FENCED;
+  if (!Worr_EventRecordCandidateValidateV1(&candidate, max_entities))
+    return SV_SNAPSHOT_EVENT_CANDIDATES_INVALID_CANDIDATE;
+
+  *candidate_out = candidate;
   return SV_SNAPSHOT_EVENT_CANDIDATES_OK;
 }
 

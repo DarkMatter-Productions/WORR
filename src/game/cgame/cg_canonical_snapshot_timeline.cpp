@@ -538,6 +538,49 @@ worr_snapshot_timeline_result_v1 CG_CanonicalSnapshotTimelineCopySnapshot(
     return record_query_result(result);
 }
 
+worr_snapshot_timeline_result_v1 CG_CanonicalSnapshotTimelineFindSnapshot(
+    worr_snapshot_id_v2 snapshot_id,
+    worr_snapshot_timeline_ref_v1 *ref_out)
+{
+    auto result = ensure_initialized();
+    if (result == WORR_SNAPSHOT_TIMELINE_OK &&
+        (!ref_out || snapshot_id.epoch == 0 || snapshot_id.sequence == 0)) {
+        result = WORR_SNAPSHOT_TIMELINE_INVALID_ARGUMENT;
+    }
+    if (result == WORR_SNAPSHOT_TIMELINE_OK && !canonical.active)
+        result = WORR_SNAPSHOT_TIMELINE_INVALID_TIMELINE;
+    if (result == WORR_SNAPSHOT_TIMELINE_OK &&
+        snapshot_id.epoch != canonical.status.active_epoch) {
+        result = WORR_SNAPSHOT_TIMELINE_NOT_FOUND;
+    }
+    if (result != WORR_SNAPSHOT_TIMELINE_OK)
+        return record_query_result(result);
+
+    std::uint32_t selected = UINT32_MAX;
+    for (std::uint32_t index = 0;
+         index < static_cast<std::uint32_t>(canonical.slots.size());
+         ++index) {
+        const auto &slot = canonical.slots[index];
+        if (!slot.committed ||
+            slot.snapshot.snapshot_id.epoch != snapshot_id.epoch ||
+            slot.snapshot.snapshot_id.sequence != snapshot_id.sequence) {
+            continue;
+        }
+        if (selected != UINT32_MAX)
+            return record_query_result(WORR_SNAPSHOT_TIMELINE_CORRUPT);
+        selected = index;
+    }
+    if (selected == UINT32_MAX)
+        return record_query_result(WORR_SNAPSHOT_TIMELINE_NOT_FOUND);
+
+    const worr_snapshot_timeline_ref_v1 ref{
+        selected, canonical.slots[selected].generation};
+    if (!Worr_SnapshotTimelineRefValidV1(&canonical.timeline, ref))
+        return record_query_result(WORR_SNAPSHOT_TIMELINE_CORRUPT);
+    *ref_out = ref;
+    return record_query_result(WORR_SNAPSHOT_TIMELINE_OK);
+}
+
 worr_snapshot_timeline_result_v1 CG_CanonicalSnapshotTimelineCopyPlayer(
     worr_snapshot_timeline_ref_v1 ref,
     worr_snapshot_player_v2 *player_out)
@@ -548,6 +591,22 @@ worr_snapshot_timeline_result_v1 CG_CanonicalSnapshotTimelineCopyPlayer(
     if (result == WORR_SNAPSHOT_TIMELINE_OK) {
         result = Worr_SnapshotTimelineCopyPlayerV1(
             &canonical.timeline, ref, player_out);
+    }
+    return record_query_result(result);
+}
+
+worr_snapshot_timeline_result_v1 CG_CanonicalSnapshotTimelineCopyEntities(
+    worr_snapshot_timeline_ref_v1 ref,
+    worr_snapshot_entity_v2 *entities_out,
+    std::uint32_t capacity,
+    std::uint32_t *count_out)
+{
+    auto result = ensure_initialized();
+    if (result == WORR_SNAPSHOT_TIMELINE_OK && !canonical.active)
+        result = WORR_SNAPSHOT_TIMELINE_INVALID_TIMELINE;
+    if (result == WORR_SNAPSHOT_TIMELINE_OK) {
+        result = Worr_SnapshotTimelineCopyEntitiesV1(
+            &canonical.timeline, ref, entities_out, capacity, count_out);
     }
     return record_query_result(result);
 }

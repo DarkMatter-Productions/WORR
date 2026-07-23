@@ -10,6 +10,9 @@ the Free Software Foundation; either version 2 of the License, or
 #include "client.h"
 
 #include "client/cgame_event_shadow_runtime.h"
+#include "client/snapshot_shadow.h"
+#include "common/net/legacy_damage_event_candidate.h"
+#include "common/net/legacy_poi_event_candidate.h"
 #include "common/net/legacy_muzzle_event_candidate.h"
 #include "common/net/legacy_spatial_audio_event_candidate.h"
 #include "common/net/legacy_temp_event_candidate.h"
@@ -24,6 +27,8 @@ namespace {
 static_assert(static_cast<uint32_t>(EV_NONE) == 0);
 static_assert(static_cast<uint32_t>(EV_LADDER_STEP) ==
               WORR_CGAME_EVENT_SHADOW_MAX_LEGACY_EVENT);
+static_assert(WORR_CGAME_EVENT_DAMAGE_BATCH_MAX_V2 ==
+              Q2PROTO_MAX_DAMAGE_INDICATORS);
 
 std::array<worr_cgame_event_shadow_observed_v1,
            WORR_CGAME_EVENT_SHADOW_MAX_ENTITIES>
@@ -130,6 +135,60 @@ uint32_t runtime_entity_capacity()
     return configured < WORR_CGAME_EVENT_RANGE_MAX_ENTITIES_V2
                ? configured
                : WORR_CGAME_EVENT_RANGE_MAX_ENTITIES_V2;
+}
+
+bool synchronize_controlled_action_lineage(
+    uint32_t controlled_entity_index, uint32_t capacity)
+{
+    worr_snapshot_projection_view_v2 view{};
+    worr_snapshot_projection_hashes_v2 hashes{};
+    worr_snapshot_ref_v2 projection_ref{};
+
+    if (controlled_entity_index == 0 ||
+        controlled_entity_index >= capacity ||
+        (!builder_v2_initialized &&
+         !reset_builder(WORR_CGAME_EVENT_SHADOW_RESET_CLIENT_STATE)) ||
+        !builder_v2_initialized || builder_v2.in_callback ||
+        !CL_SnapshotShadowLatest(&view, &hashes, &projection_ref) ||
+        !view.snapshot || !view.player ||
+        view.snapshot->server_tick != action_tick() ||
+        !Worr_SnapshotGenerationValidV2(
+            view.snapshot->controlled_entity, capacity, false) ||
+        !Worr_SnapshotGenerationValidV2(
+            view.player->controlled_entity, capacity, false)) {
+        return false;
+    }
+
+    const auto &snapshot_controlled =
+        view.snapshot->controlled_entity;
+    const auto &player_controlled = view.player->controlled_entity;
+    if (snapshot_controlled.identity.index != controlled_entity_index ||
+        player_controlled.identity.index != controlled_entity_index ||
+        snapshot_controlled.identity.generation !=
+            player_controlled.identity.generation ||
+        snapshot_controlled.provenance_flags !=
+            player_controlled.provenance_flags) {
+        return false;
+    }
+
+    auto &observed = builder_v2.observed[controlled_entity_index];
+    if (observed.generation >
+        snapshot_controlled.identity.generation) {
+        return false;
+    }
+
+    /* First-person packet frames may omit the controlled entity while the
+     * canonical snapshot deliberately preserves its lifecycle.  Recipient-
+     * local actions are implicitly addressed to that entity, so bind the
+     * action builder to the retained canonical identity instead of previewing
+     * a fabricated next generation from packet-frame absence.  No other
+     * observed slot is changed; ordinary packet entities retain their
+     * existing lifecycle. */
+    observed.generation = snapshot_controlled.identity.generation;
+    observed.present = 1;
+    observed.provisional = 0;
+    observed.last_seen_batch = builder_v2.batch_generation;
+    return true;
 }
 
 bool runtime_entity_valid(int32_t entity, bool allow_world)
@@ -455,4 +514,135 @@ extern "C" void CL_EventRangeCaptureSoundV2(const q2proto_sound_t *sound)
     }
     deliver_action_candidate(
         &candidate, WORR_CGAME_EVENT_CARRIER_SPATIAL_SOUND_V2);
+}
+
+extern "C" void CL_EventRangeCaptureDamageV2(
+    const q2proto_svc_damage_t *damage)
+{
+    std::array<worr_event_record_v1, Q2PROTO_MAX_DAMAGE_INDICATORS>
+        records{};
+    std::array<worr_cgame_event_action_candidate_v2,
+               Q2PROTO_MAX_DAMAGE_INDICATORS>
+        candidates{};
+    std::uint32_t candidate_count = 0;
+    const std::uint32_t capacity = runtime_entity_capacity();
+    const std::uint32_t controlled_entity_index =
+        cl.frame.clientNum >= 0
+            ? static_cast<std::uint32_t>(cl.frame.clientNum) + 1u
+            : WORR_EVENT_NO_ENTITY;
+    const bool controlled_index_valid =
+        controlled_entity_index != 0 &&
+        controlled_entity_index != WORR_EVENT_NO_ENTITY &&
+        controlled_entity_index < capacity;
+
+    if (!damage || !controlled_index_valid ||
+        Worr_LegacyDamageEventCandidatesBuildV1(
+            damage, action_tick(), frame_time_us(), capacity,
+            records.data(), static_cast<std::uint32_t>(records.size()),
+            &candidate_count) !=
+            WORR_LEGACY_DAMAGE_EVENT_CANDIDATE_OK) {
+        deliver_rejected_action(
+            WORR_CGAME_EVENT_CARRIER_DAMAGE_V2,
+            controlled_index_valid
+                ? WORR_CGAME_EVENT_ADAPTER_INVALID_SHAPE_V2
+                : WORR_CGAME_EVENT_ADAPTER_ENTITY_OUT_OF_RANGE_V2);
+        return;
+    }
+    if (!synchronize_controlled_action_lineage(
+            controlled_entity_index, capacity)) {
+        deliver_rejected_action(
+            WORR_CGAME_EVENT_CARRIER_DAMAGE_V2,
+            WORR_CGAME_EVENT_ADAPTER_INVALID_SHAPE_V2);
+        return;
+    }
+
+    for (std::uint32_t index = 0; index < candidate_count; ++index) {
+        candidates[index].struct_size = sizeof(candidates[index]);
+        candidates[index].source_entity_index = 0;
+        candidates[index].subject_entity_index =
+            controlled_entity_index;
+        candidates[index].record = records[index];
+        /* Action-range generation ownership is client-observed.  Convert the
+         * already validated shared record into the required ID-less/ref-less
+         * template without changing payload, tick, ordinal, or expiry. */
+        candidates[index].record.source_entity = {
+            WORR_EVENT_NO_ENTITY, 0};
+        candidates[index].record.subject_entity = {
+            WORR_EVENT_NO_ENTITY, 0};
+    }
+    if ((!builder_v2_initialized &&
+         !reset_builder(WORR_CGAME_EVENT_SHADOW_RESET_CLIENT_STATE)) ||
+        !builder_v2_initialized ||
+        Worr_CGameEventRangeDeliverActionBatchV2(
+            &builder_v2, candidates.data(), candidate_count,
+            WORR_CGAME_EVENT_CARRIER_DAMAGE_V2, demo_range_flags_v2(),
+            consume_bridge_v2, nullptr) !=
+        WORR_CGAME_EVENT_RANGE_BUILD_DELIVERED_V2) {
+        deliver_rejected_action(
+            WORR_CGAME_EVENT_CARRIER_DAMAGE_V2,
+            WORR_CGAME_EVENT_ADAPTER_PAYLOAD_INVALID_V2);
+    }
+}
+
+extern "C" bool CL_EventRangeCapturePOIV2(
+    const q2proto_svc_poi_t *poi)
+{
+    worr_event_record_v1 record{};
+    worr_cgame_event_action_candidate_v2 candidate{};
+    const std::uint32_t capacity = runtime_entity_capacity();
+    const std::uint32_t source_tick = action_tick();
+    const std::uint32_t controlled_entity_index =
+        cl.frame.clientNum >= 0
+            ? static_cast<std::uint32_t>(cl.frame.clientNum) + 1u
+            : WORR_EVENT_NO_ENTITY;
+    const bool controlled_index_valid =
+        controlled_entity_index != 0 &&
+        controlled_entity_index != WORR_EVENT_NO_ENTITY &&
+        controlled_entity_index < capacity;
+
+    if (!poi || source_tick == UINT32_MAX || !controlled_index_valid ||
+        Worr_LegacyKeyedPOIEventCandidateBuildV1(
+            poi, source_tick, frame_time_us(), capacity, &record) !=
+            WORR_LEGACY_KEYED_POI_EVENT_CANDIDATE_OK) {
+        deliver_rejected_action(
+            WORR_CGAME_EVENT_CARRIER_KEYED_POI_V2,
+            controlled_index_valid
+                ? WORR_CGAME_EVENT_ADAPTER_INVALID_SHAPE_V2
+                : WORR_CGAME_EVENT_ADAPTER_ENTITY_OUT_OF_RANGE_V2);
+        return false;
+    }
+    if (!synchronize_controlled_action_lineage(
+            controlled_entity_index, capacity)) {
+        deliver_rejected_action(
+            WORR_CGAME_EVENT_CARRIER_KEYED_POI_V2,
+            WORR_CGAME_EVENT_ADAPTER_INVALID_SHAPE_V2);
+        return false;
+    }
+
+    candidate.struct_size = sizeof(candidate);
+    candidate.source_entity_index = 0;
+    candidate.subject_entity_index = controlled_entity_index;
+    candidate.record = record;
+    candidate.record.source_entity = {WORR_EVENT_NO_ENTITY, 0};
+    candidate.record.subject_entity = {WORR_EVENT_NO_ENTITY, 0};
+
+    if (!builder_v2_initialized &&
+        !reset_builder(WORR_CGAME_EVENT_SHADOW_RESET_CLIENT_STATE)) {
+        return false;
+    }
+    if (!builder_v2_initialized)
+        return false;
+
+    const auto result = Worr_CGameEventRangeDeliverActionV2(
+        &builder_v2, &candidate,
+        WORR_CGAME_EVENT_CARRIER_KEYED_POI_V2,
+        demo_range_flags_v2(), consume_bridge_v2, nullptr);
+    if (result == WORR_CGAME_EVENT_RANGE_BUILD_DELIVERED_V2)
+        return true;
+    if (result == WORR_CGAME_EVENT_RANGE_BUILD_INVALID_V2) {
+        deliver_rejected_action(
+            WORR_CGAME_EVENT_CARRIER_KEYED_POI_V2,
+            WORR_CGAME_EVENT_ADAPTER_PAYLOAD_INVALID_V2);
+    }
+    return false;
 }

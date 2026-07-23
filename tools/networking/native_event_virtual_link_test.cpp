@@ -14,6 +14,8 @@
 #include "common/net/legacy_entity_event_candidate.h"
 #include "common/net/legacy_temp_event_candidate.h"
 #include "common/net/native_carrier.h"
+#include "common/net/native_event_batch.h"
+#include "common/net/native_event_sender.h"
 #include "common/net/native_readiness_sideband.h"
 #include "cg_event_runtime.hpp"
 #include "cg_local_interaction.hpp"
@@ -27,6 +29,7 @@
 client_static_t cls{};
 client_state_t cl{};
 unsigned com_localTime{};
+cgame_import_t cgi{};
 cvar_t *developer{};
 
 extern "C" void Com_LPrintf(print_type_t, const char *, ...)
@@ -42,7 +45,7 @@ void CG_LocalActionShadowReportParity()
 namespace {
 
 constexpr uint32_t kPublicCapabilities =
-    WORR_NET_CAP_LEGACY_STAGE_MASK;
+    WORR_NET_CAP_NATIVE_EVENT_PUBLIC_MASK;
 constexpr uint32_t kPrivateEventCapabilities =
     WORR_NET_CAP_NATIVE_EVENT_PRIVATE_MASK;
 constexpr uint32_t kApplicationCeiling = 1024;
@@ -52,6 +55,7 @@ cvar_t event_shadow_cvar{};
 cvar_t snapshot_shadow_cvar{};
 cvar_t probe_hold_cvar{};
 cvar_t snapshot_timeline_owned_cvar{};
+cvar_t input_batch_cvar{};
 std::array<byte, 1024> reliable_storage{};
 
 [[noreturn]] void fail(const char *expression, int line)
@@ -256,6 +260,28 @@ void observe_configured_action_command()
     range.commands[0].command_id =
         interaction_command_records[1].command.command_id;
     range.commands[0].command = interaction_command_records[1].command.command;
+    CG_LocalActionShadowObserveCommands(range);
+}
+
+void observe_past_configured_action_command()
+{
+    worr_cgame_prediction_input_range_v1 range{};
+    range.struct_size = sizeof(range);
+    range.api_version = WORR_CGAME_PREDICTION_INPUT_API_VERSION;
+    range.result = WORR_CGAME_PREDICTION_INPUT_OK;
+    range.source = WORR_CGAME_PREDICTION_INPUT_SOURCE_CANONICAL_CURSOR;
+    range.flags = WORR_CGAME_PREDICTION_INPUT_CANONICAL;
+    range.authoritative_legacy_sequence =
+        kInteractionRequestLegacySequence;
+    range.current_legacy_sequence =
+        kInteractionPostRequestLegacySequence;
+    range.command_count = 1;
+    range.commands[0].legacy_sequence =
+        kInteractionPostRequestLegacySequence;
+    range.commands[0].command_id =
+        interaction_command_records[2].command.command_id;
+    range.commands[0].command =
+        interaction_command_records[2].command.command;
     CG_LocalActionShadowObserveCommands(range);
 }
 
@@ -908,8 +934,9 @@ void test_private_authority_receipt_reconciles_over_native_virtual_link(
           NETCHAN_APP_RX_EXPOSE_LEGACY);
 
     auto status = event_status(fixture, descriptor_time + 1u);
-    CHECK(status.descriptor_acked == 1 && status.candidates_promoted == 1 &&
-          status.retained_count == 1);
+    CHECK(status.descriptor_acked == 1 && status.backlog_count == 1 &&
+          status.candidates_promoted == 0 && status.retained_count == 0 &&
+          status.output_due == 1);
     /* Import installation resets the interaction cache by contract, so it
      * must precede either prediction or authority receipt arrival. */
     install_configured_interaction_import();
@@ -966,17 +993,12 @@ void test_private_authority_receipt_reconciles_over_native_virtual_link(
     CHECK(cgame_status.authoritative_records ==
           cgame_before_receipt.authoritative_records + 1u);
     CHECK(cgame_status.authoritative_presentations == 0);
+    CHECK(cgame_status.authoritative_terminal_skips ==
+          cgame_before_receipt.authoritative_terminal_skips + 1u);
+    CHECK(cgame_status.next_authority_sequence == first_sequence + 1u);
+    CHECK(cgame_status.advance_calls == cgame_before_receipt.advance_calls);
     CHECK(cgame_status.receipt.highest_contiguous == first_sequence);
-
-    std::uint32_t advanced = UINT32_MAX;
-    const auto terminal_skips = cgame_status.authoritative_terminal_skips;
-    CHECK(CG_EventRuntimeAdvanceAudit(UINT64_C(7000000), 700, 1, &advanced) ==
-          CG_EVENT_RUNTIME_OK);
-    CHECK(advanced == 0);
-    CHECK(CG_EventRuntimeGetStatus(&cgame_status));
-    CHECK(cgame_status.authoritative_terminal_skips == terminal_skips + 1u &&
-          cgame_status.authoritative_presentations == 0 &&
-          cgame_status.authority_requires_resync == 0);
+    CHECK(cgame_status.authority_requires_resync == 0);
 
     /* Drop the exact event receipt, then deliver the server retry twice. The
      * native admission owner rearms the ACK without reinserting the control
@@ -1084,7 +1106,9 @@ void test_private_authority_receipt_reconciles_over_native_virtual_link(
         CHECK(SV_NativeShadowQueueEventCandidatesV1(
             &fixture.server, &candidate, 1, recovery_time + 3u));
         status = event_status(fixture, recovery_time + 3u);
-        CHECK(status.candidates_promoted == 1 && status.retained_count == 1);
+        CHECK(status.backlog_count == 1 &&
+              status.candidates_promoted == 0 &&
+              status.retained_count == 0);
 
         install_configured_interaction_import();
         predict_configured_interaction();
@@ -1215,14 +1239,31 @@ void test_private_action_shadow_receipt_over_native_virtual_link()
               cgame_before.authoritative_records + 1u &&
           cgame_after.authoritative_presentations == 0 &&
           cgame_after.receipt.highest_contiguous == first_sequence);
+    CHECK(cgame_after.authoritative_terminal_skips ==
+          cgame_before.authoritative_terminal_skips + 1u);
+    CHECK(cgame_after.next_authority_sequence == first_sequence + 1u);
+    CHECK(cgame_after.advance_calls == cgame_before.advance_calls);
+    CHECK(cgame_after.authority_requires_resync == 0);
 
-    uint32_t advanced = UINT32_MAX;
-    CHECK(CG_EventRuntimeAdvanceAudit(
-              UINT64_C(7010000), 701, 1, &advanced) ==
-          CG_EVENT_RUNTIME_OK);
-    CHECK(advanced == 0);
-    CHECK(CG_EventRuntimeGetStatus(&cgame_after));
-    CHECK(cgame_after.authoritative_presentations == 0);
+    /* Retire the terminal command/receipt pair behind the authoritative
+     * legacy frontier, then inject the exact already-admitted event again.
+     * Runtime duplicate detection must remain the at-most-once side-effect
+     * fence even after the local correlation entry no longer exists. */
+    observe_past_configured_action_command();
+    auto duplicate = candidate;
+    duplicate.flags |= WORR_EVENT_FLAG_HAS_AUTHORITY_ID;
+    duplicate.event_id = {stream_epoch, first_sequence};
+    CHECK(Worr_EventRecordValidateV1(
+        &duplicate, WORR_EVENT_STREAM_MAX_ENTITIES_V1));
+    CHECK(CG_EventRuntimeSubmitAuthoritativeBatch(&duplicate, 1) ==
+          CG_EVENT_RUNTIME_DUPLICATE);
+    CG_LocalActionShadowGetStatus(&action);
+    CHECK(action.authority_receipts == 1 &&
+          action.authority_duplicates == 0 &&
+          action.authority_unmatched == 0 &&
+          action.command_matches == 1 &&
+          action.command_mismatches == 0 &&
+          action.requires_resync == 0);
 
     auto final_ack = prepare_packet(cls.netchan, descriptor_time + 3u);
     accept_packet(cls.netchan, final_ack);
@@ -1364,7 +1405,9 @@ void test_bidirectional_loss_reorder_duplicate_and_ack_loss()
 
     auto status = event_status(fixture, retry_time);
     CHECK(status.descriptor_acked == 1 &&
-          status.candidates_promoted == 1 &&
+          status.backlog_count == 1 &&
+          status.retained_count == 0 &&
+          status.candidates_promoted == 0 &&
           status.output_due == 1);
 
     /* The delayed descriptor arrives after the newer reverse-direction
@@ -1381,6 +1424,10 @@ void test_bidirectional_loss_reorder_duplicate_and_ack_loss()
      * exact command ACK. */
     CHECK(SV_NativeShadowOutputDueV1(
         &fixture.server, retry_time + 1u));
+    status = event_status(fixture, retry_time + 1u);
+    CHECK(status.backlog_count == 0 &&
+          status.retained_count == 1 &&
+          status.candidates_promoted == 1);
     auto event_and_command_ack = prepare_packet(
         fixture.server_channel, retry_time + 1u);
     auto server_view = carrier_view(event_and_command_ack);
@@ -1453,7 +1500,8 @@ void test_multiple_events_selective_receipt_under_semantic_reordering()
         static_cast<uint32_t>(candidates.size()), descriptor_time));
 
     /* Establish authority, then release the descriptor gate.  All three
-     * canonical candidates become retained, independently schedulable DATA. */
+     * canonical candidates remain deferred until the first TX selection,
+     * when they become independently schedulable DATA. */
     auto descriptor = prepare_packet(fixture.server_channel, descriptor_time);
     const auto descriptor_ref = data_record_ref(descriptor);
     CHECK(descriptor_ref.record_class ==
@@ -1470,8 +1518,9 @@ void test_multiple_events_selective_receipt_under_semantic_reordering()
     CHECK(deliver_to_server(fixture, descriptor_ack, descriptor_time + 1u) ==
           NETCHAN_APP_RX_EXPOSE_LEGACY);
     auto status = event_status(fixture, descriptor_time + 1u);
-    CHECK(status.descriptor_acked == 1 && status.candidates_promoted == 3 &&
-          status.retained_count == 3);
+    CHECK(status.descriptor_acked == 1 && status.backlog_count == 3 &&
+          status.candidates_promoted == 0 && status.retained_count == 0 &&
+          status.output_due == 1);
 
     /* Event 1 arrives and is released.  Event 2 is locally handed off but
      * lost by the virtual link; the unsent event 3 remains immediately due
@@ -1550,6 +1599,198 @@ void test_multiple_events_selective_receipt_under_semantic_reordering()
     status = event_status(fixture, retry_time + 1u);
     CHECK(status.retained_count == 0 && status.events_acknowledged == 3 &&
           status.retries >= 1);
+
+    SV_NativeShadowPeerDestroyV1(&fixture.server);
+    fixture.server_live = false;
+    CL_NativeReadinessPilotBeforeNetchanClose(&cls.netchan);
+}
+
+void test_schema2_receipt_window_stalls_and_recovers_over_native_virtual_link()
+{
+    fixture_t fixture{};
+    constexpr uint32_t command_epoch = 352;
+    constexpr uint32_t descriptor_time = 12010;
+    constexpr uint32_t candidate_count = 72;
+    std::array<worr_event_record_v1, candidate_count> candidates{};
+    std::array<wire_packet_t, WORR_NATIVE_EVENT_SENDER_TX_CAPACITY>
+        first_window{};
+    reset_fixture(fixture, 12000, command_epoch);
+
+    /* Seventy-two exact-fence footsteps exceed the 64-ID semantic receipt
+     * window while remaining small enough to exercise several schema-2
+     * carriers.  Candidate capture must stay ID-less until the descriptor
+     * ACK reaches a real TX/pump boundary. */
+    for (uint32_t index = 0; index < candidate_count; ++index)
+        candidates[index] = event_candidate(900, 200u + index);
+    CHECK(SV_NativeShadowQueueEventCandidatesV1(
+        &fixture.server, candidates.data(), candidate_count,
+        descriptor_time));
+
+    auto descriptor = prepare_packet(fixture.server_channel, descriptor_time);
+    const auto descriptor_ref = data_record_ref(descriptor);
+    CHECK(descriptor_ref.record_class ==
+              WORR_NATIVE_RECORD_EVENT_STREAM_DESCRIPTOR_V1 &&
+          descriptor_ref.object_epoch != 0 &&
+          descriptor_ref.object_sequence != 0);
+    const uint32_t stream_epoch = descriptor_ref.object_epoch;
+    const uint32_t first_event_sequence = descriptor_ref.object_sequence;
+    accept_packet(fixture.server_channel, descriptor);
+    CHECK(deliver_to_client(fixture, descriptor, descriptor_time) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+
+    auto descriptor_ack = prepare_packet(cls.netchan, descriptor_time + 1u);
+    accept_packet(cls.netchan, descriptor_ack);
+    CHECK(deliver_to_server(fixture, descriptor_ack, descriptor_time + 1u) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    auto status = event_status(fixture, descriptor_time + 1u);
+    CHECK(status.descriptor_acked == 1 &&
+          status.backlog_count == candidate_count &&
+          status.candidates_promoted == 0 && status.retained_count == 0 &&
+          status.output_due == 1);
+
+    CHECK(SV_NativeShadowOutputDueV1(
+        &fixture.server, descriptor_time + 2u));
+    status = event_status(fixture, descriptor_time + 2u);
+    CHECK(status.candidates_promoted == 64 && status.backlog_count == 8 &&
+          status.retained_count > 1 &&
+          status.retained_count <= first_window.size() &&
+          status.schema2_events_promoted == 64 &&
+          status.schema2_batches_promoted == status.retained_count);
+    const uint32_t first_window_packet_count = status.retained_count;
+
+    uint32_t preceding_last_sequence = first_event_sequence - 1u;
+    uint32_t first_batch_event_count = 0;
+    for (uint32_t index = 0; index < first_window_packet_count; ++index) {
+        first_window[index] = prepare_packet(
+            fixture.server_channel, descriptor_time + 2u);
+        const auto ref = data_record_ref(first_window[index]);
+        CHECK(ref.record_class == WORR_NATIVE_RECORD_EVENT_V1 &&
+              ref.record_schema_version ==
+                  WORR_NATIVE_EVENT_BATCH_RECORD_SCHEMA &&
+              ref.object_epoch == stream_epoch &&
+              ref.object_sequence > preceding_last_sequence);
+        const uint32_t logical_count =
+            ref.object_sequence - preceding_last_sequence;
+        CHECK(logical_count >= WORR_NATIVE_EVENT_BATCH_MIN_EVENTS &&
+              logical_count <= WORR_NATIVE_EVENT_BATCH_MAX_EVENTS);
+        if (index == 0)
+            first_batch_event_count = logical_count;
+        preceding_last_sequence = ref.object_sequence;
+        accept_packet(fixture.server_channel, first_window[index]);
+    }
+    CHECK(first_batch_event_count != 0 &&
+          preceding_last_sequence == first_event_sequence + 63u);
+
+    /* Lose the oldest schema-2 carrier but admit every later carrier.  The
+     * client can record all later logical IDs selectively without releasing
+     * the contiguous presentation cursor. */
+    for (uint32_t index = 1; index < first_window_packet_count; ++index) {
+        CHECK(deliver_to_client(
+                  fixture, first_window[index],
+                  descriptor_time + 3u + index) ==
+              NETCHAN_APP_RX_EXPOSE_LEGACY);
+    }
+    CHECK(!CL_CGameEventRuntimeRequiresResync());
+    CHECK(fake_event_runtime.authority_count ==
+              64u - first_batch_event_count &&
+          fake_event_runtime.receipt.highest_contiguous ==
+              first_event_sequence - 1u &&
+          fake_event_runtime.receipt.selective_mask != 0 &&
+          fake_event_runtime.next_sequence == first_event_sequence);
+
+    /* The later contiguous transport messages coalesce into one ACK range.
+     * Retiring them cannot promote IDs 65..72 while the oldest logical ID is
+     * still unacknowledged. */
+    constexpr uint32_t selective_ack_time = descriptor_time + 20u;
+    auto selective_ack = prepare_packet(cls.netchan, selective_ack_time);
+    accept_packet(cls.netchan, selective_ack);
+    CHECK(deliver_to_server(fixture, selective_ack, selective_ack_time) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    status = event_status(fixture, selective_ack_time);
+    CHECK(status.retained_count == 1 && status.backlog_count == 8 &&
+          status.candidates_promoted == 64 &&
+          status.events_acknowledged == 64u - first_batch_event_count);
+    CHECK(!SV_NativeShadowOutputEligiblePeekV1(
+        &fixture.server, selective_ack_time + 1u));
+    uint32_t promoted = UINT32_MAX;
+    CHECK(SV_NativeShadowEventPumpV1(
+              &fixture.server, selective_ack_time + 1u, &promoted) &&
+          promoted == 0);
+    status = event_status(fixture, selective_ack_time + 1u);
+    CHECK(status.retained_count == 1 && status.backlog_count == 8 &&
+          status.candidates_promoted == 64 && status.output_due == 0);
+
+    /* When the delayed oldest carrier arrives, its batch closes the entire
+     * selective gap atomically.  Its ACK releases the semantic window, and
+     * only the following explicit pump assigns IDs to the final eight. */
+    CHECK(deliver_to_client(
+              fixture, first_window[0], selective_ack_time + 2u) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    CHECK(!CL_CGameEventRuntimeRequiresResync());
+    CHECK(fake_event_runtime.authority_count == 64 &&
+          fake_event_runtime.receipt.highest_contiguous ==
+              first_event_sequence + 63u &&
+          fake_event_runtime.receipt.selective_mask == 0 &&
+          fake_event_runtime.next_sequence == first_event_sequence + 64u);
+
+    auto oldest_ack =
+        prepare_packet(cls.netchan, selective_ack_time + 3u);
+    accept_packet(cls.netchan, oldest_ack);
+    CHECK(deliver_to_server(
+              fixture, oldest_ack, selective_ack_time + 3u) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    status = event_status(fixture, selective_ack_time + 3u);
+    CHECK(status.retained_count == 0 && status.backlog_count == 8 &&
+          status.candidates_promoted == 64 &&
+          status.events_acknowledged == 64 && status.output_due == 1);
+
+    promoted = 0;
+    CHECK(SV_NativeShadowEventPumpV1(
+              &fixture.server, selective_ack_time + 4u, &promoted) &&
+          promoted == 8);
+    status = event_status(fixture, selective_ack_time + 4u);
+    CHECK(status.backlog_count == 0 &&
+          status.candidates_promoted == candidate_count &&
+          status.schema2_events_promoted == candidate_count &&
+          status.retained_count == 2 &&
+          status.schema2_batches_promoted ==
+              first_window_packet_count + 2u);
+
+    const uint32_t final_packet_count = status.retained_count;
+    preceding_last_sequence = first_event_sequence + 63u;
+    for (uint32_t index = 0; index < final_packet_count; ++index) {
+        auto packet = prepare_packet(
+            fixture.server_channel, selective_ack_time + 5u);
+        const auto ref = data_record_ref(packet);
+        CHECK(ref.record_class == WORR_NATIVE_RECORD_EVENT_V1 &&
+              ref.record_schema_version ==
+                  WORR_NATIVE_EVENT_BATCH_RECORD_SCHEMA &&
+              ref.object_epoch == stream_epoch &&
+              ref.object_sequence > preceding_last_sequence);
+        preceding_last_sequence = ref.object_sequence;
+        accept_packet(fixture.server_channel, packet);
+        CHECK(deliver_to_client(
+                  fixture, packet, selective_ack_time + 5u + index) ==
+              NETCHAN_APP_RX_EXPOSE_LEGACY);
+    }
+    CHECK(preceding_last_sequence == first_event_sequence + 71u &&
+          fake_event_runtime.authority_count == candidate_count &&
+          fake_event_runtime.receipt.highest_contiguous ==
+              first_event_sequence + 71u &&
+          fake_event_runtime.receipt.selective_mask == 0 &&
+          fake_event_runtime.next_sequence == first_event_sequence + 72u &&
+          !CL_CGameEventRuntimeRequiresResync());
+
+    auto final_ack = prepare_packet(cls.netchan, selective_ack_time + 30u);
+    accept_packet(cls.netchan, final_ack);
+    CHECK(deliver_to_server(
+              fixture, final_ack, selective_ack_time + 30u) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    status = event_status(fixture, selective_ack_time + 30u);
+    CHECK(status.retained_count == 0 && status.backlog_count == 0 &&
+          status.events_acknowledged == candidate_count &&
+          status.first_sends == candidate_count + 1u &&
+          status.retries == 0);
 
     SV_NativeShadowPeerDestroyV1(&fixture.server);
     fixture.server_live = false;
@@ -1865,6 +2106,11 @@ void diagnose_exhausted_ack_credit_lifecycle_gap()
 
 } // namespace
 
+extern "C" uint32_t CL_NetCapabilityOffered(void)
+{
+    return kPublicCapabilities;
+}
+
 extern "C" cvar_t *Cvar_Get(const char *name, const char *, int)
 {
     if (name &&
@@ -1884,7 +2130,25 @@ extern "C" cvar_t *Cvar_Get(const char *name, const char *, int)
             name, "cl_worr_native_snapshot_timeline_owned") == 0) {
         return &snapshot_timeline_owned_cvar;
     }
+    if (name && std::strcmp(name, "cl_worr_native_input_batch") == 0)
+        return &input_batch_cvar;
     return &shadow_cvar;
+}
+
+extern "C" bool CL_AdaptiveInputGetOutputV1(
+    worr_adaptive_input_output_v1 *output_out)
+{
+    if (output_out)
+        *output_out = {};
+    return false;
+}
+
+extern "C" bool CL_ConsumedCursorGetLatestV1(
+    worr_command_cursor_v1 *cursor_out)
+{
+    if (cursor_out)
+        *cursor_out = {};
+    return false;
 }
 
 extern "C" void Cvar_SetByVar(cvar_t *var, const char *value, from_t)
@@ -2012,6 +2276,7 @@ int main()
 {
     test_bidirectional_loss_reorder_duplicate_and_ack_loss();
     test_multiple_events_selective_receipt_under_semantic_reordering();
+    test_schema2_receipt_window_stalls_and_recovers_over_native_virtual_link();
     test_corruption_is_directional_and_fail_closed();
     test_epoch_cancellation_strips_old_ack_and_data();
     test_private_authority_receipt_rejection_over_native_virtual_link();

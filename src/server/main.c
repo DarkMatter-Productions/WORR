@@ -65,6 +65,7 @@ cvar_t  *sv_qwmod;              // atu QW Physics modificator
 cvar_t  *sv_novis;
 cvar_t  *sv_shadow_strict_replication;
 static cvar_t *sv_worr_native_shadow;
+static cvar_t *sv_worr_native_input_batch;
 static cvar_t *sv_worr_native_event_shadow;
 static cvar_t *sv_worr_native_snapshot_shadow;
 
@@ -7088,36 +7089,47 @@ static void SVC_DirectConnect(void)
     SV_UserinfoChanged(newcl);
 
     /* Default-off means no allocation, hooks, or wire-visible behavior.  The
-     * private pilot is connection-scoped and snapshots the cvar only here. */
+     * endpoint is connection-scoped and requires the client's exact public
+     * bundle to match the server mode sampled here. */
     if (sv_worr_native_shadow && sv_worr_native_shadow->integer != 0 &&
         params.nctype == NETCHAN_NEW && !newcl->worr_capability_failed &&
         (newcl->protocol == PROTOCOL_VERSION_Q2PRO ||
          newcl->protocol == PROTOCOL_VERSION_R1Q2 ||
-         newcl->protocol == PROTOCOL_VERSION_RERELEASE) &&
-        newcl->worr_capabilities_offered ==
-            WORR_NET_CAP_LEGACY_STAGE_MASK) {
+         newcl->protocol == PROTOCOL_VERSION_RERELEASE)) {
         const bool event_mode =
             sv_worr_native_event_shadow &&
             sv_worr_native_event_shadow->integer != 0;
         const bool snapshot_mode =
             sv_worr_native_snapshot_shadow &&
             sv_worr_native_snapshot_shadow->integer != 0;
+        const uint32_t public_mask = Worr_NetCapabilityPublicOfferV1(
+            true, event_mode, snapshot_mode);
 
-        sv_native_shadow_peer_v1 *pilot =
-            SV_Mallocz(sizeof(*pilot));
-        const sv_native_shadow_mode_v1 native_shadow_mode =
-            event_mode && snapshot_mode
-                ? SV_NATIVE_SHADOW_MODE_EVENT_SNAPSHOT
-                : (snapshot_mode
-                       ? SV_NATIVE_SHADOW_MODE_SNAPSHOT
-                       : (event_mode ? SV_NATIVE_SHADOW_MODE_EVENT
-                                     : SV_NATIVE_SHADOW_MODE_COMMAND));
-        if (SV_NativeShadowPeerInitModeV1(
-                pilot, &newcl->netchan, svs.realtime,
-                native_shadow_mode)) {
-            newcl->worr_native_shadow = pilot;
-        } else {
-            Z_Free(pilot);
+        if (newcl->worr_capabilities_offered == public_mask) {
+            sv_native_shadow_peer_v1 *pilot =
+                SV_Mallocz(sizeof(*pilot));
+            const sv_native_shadow_mode_v1 native_shadow_mode =
+                event_mode && snapshot_mode
+                    ? SV_NATIVE_SHADOW_MODE_EVENT_SNAPSHOT
+                    : (snapshot_mode
+                           ? SV_NATIVE_SHADOW_MODE_SNAPSHOT
+                           : (event_mode ? SV_NATIVE_SHADOW_MODE_EVENT
+                                         : SV_NATIVE_SHADOW_MODE_COMMAND));
+            if (SV_NativeShadowPeerInitModeV1(
+                    pilot, &newcl->netchan, svs.realtime,
+                    native_shadow_mode) &&
+                SV_NativeShadowConfigureInputBatchV1(
+                    pilot,
+                    native_shadow_mode ==
+                            SV_NATIVE_SHADOW_MODE_COMMAND &&
+                        sv_worr_native_input_batch &&
+                        sv_worr_native_input_batch->integer != 0 &&
+                        newcl->worr_native_input_batch_requested)) {
+                newcl->worr_native_shadow = pilot;
+            } else {
+                SV_NativeShadowPeerDestroyV1(pilot);
+                Z_Free(pilot);
+            }
         }
     }
 
@@ -8109,6 +8121,21 @@ void SV_UserinfoChanged(client_t *cl)
         SV_DropClient(cl, "WORR capability offer changed");
         return;
     }
+
+    val = Info_ValueForKey(
+        cl->userinfo, WORR_NATIVE_INPUT_BATCH_USERINFO_KEY);
+    {
+        const bool input_batch_requested = strcmp(val, "1") == 0;
+        if (!cl->worr_native_shadow) {
+            cl->worr_native_input_batch_requested =
+                input_batch_requested;
+        } else if (input_batch_requested !=
+                   cl->worr_native_input_batch_requested) {
+            cl->worr_native_input_batch_requested = false;
+            SV_NativeShadowDisableInputBatchV1(
+                cl->worr_native_shadow);
+        }
+    }
 }
 
 
@@ -8263,6 +8290,8 @@ void SV_Init(void)
     sv_novis = Cvar_Get("sv_novis", "0", 0);
     sv_shadow_strict_replication = Cvar_Get("sv_shadow_strict_replication", "0", 0);
     sv_worr_native_shadow = Cvar_Get("sv_worr_native_shadow", "0", 0);
+    sv_worr_native_input_batch = Cvar_Get(
+        "sv_worr_native_input_batch", "0", 0);
     sv_worr_native_event_shadow = Cvar_Get(
         "sv_worr_native_event_shadow", "0", 0);
     sv_worr_native_snapshot_shadow = Cvar_Get(

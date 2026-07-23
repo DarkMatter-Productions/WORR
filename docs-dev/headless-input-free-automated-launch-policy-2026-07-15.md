@@ -39,6 +39,12 @@ grab cvar unset; map activation can still call it after the client transitions
 to gameplay. This keeps the policy no-window and input-free through the full
 connection lifecycle.
 
+The Windows mouse backend independently enforces the same boundary. In
+`win_headless` it refuses raw-mouse registration and every direct grab request;
+its cursor clipping and warping helpers are no-ops. This protects the desktop
+if a future window, focus, resize, or renderer path reaches the platform
+backend without passing through `IN_Init()`.
+
 ## Applied launchers
 
 The rule is enforced by command-building contracts for networking live snapshot

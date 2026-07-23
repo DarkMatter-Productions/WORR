@@ -483,7 +483,9 @@ int Netchan_TransmitNextFragment(netchan_t *chan)
 NetchanNew_Transmit
 ================
 */
-static int NetchanNew_Transmit(netchan_t *chan, size_t length, const void *data, int numpackets)
+static int NetchanNew_Transmit(netchan_t *chan, size_t length,
+                               const void *data, int numpackets,
+                               bool force_reliable)
 {
     sizebuf_t   send;
     byte        send_buf[MAX_PACKETLEN];
@@ -505,7 +507,7 @@ static int NetchanNew_Transmit(netchan_t *chan, size_t length, const void *data,
         return Netchan_TransmitNextFragment(chan);
     }
 
-    send_reliable = false;
+    send_reliable = force_reliable;
 
 // if the remote side dropped the last reliable message, resend it
     if (chan->incoming_acknowledged > chan->last_reliable_sequence &&
@@ -882,9 +884,87 @@ int Netchan_Transmit(netchan_t *chan, size_t length, const void *data, int numpa
     }
 
     if (chan->type)
-        return NetchanNew_Transmit(chan, length, data, numpackets);
+        return NetchanNew_Transmit(
+            chan, length, data, numpackets, false);
 
     return NetchanOld_Transmit(chan, length, data, numpackets);
+}
+
+static bool Netchan_ReliableHandoffReady(const netchan_t *chan,
+                                         int numpackets)
+{
+    return chan != NULL && chan->type == NETCHAN_NEW &&
+           numpackets > 0 && chan->reliable_buf != NULL &&
+           chan->message.data != NULL && !chan->message.overflowed &&
+           chan->message.maxsize != 0 && chan->message.readcount == 0 &&
+           chan->message.cursize <= chan->message.maxsize &&
+           chan->reliable_length == 0 && !chan->fragment_pending &&
+           chan->fragment_out.data != NULL &&
+           !chan->fragment_out.overflowed &&
+           chan->fragment_out.maxsize != 0 &&
+           chan->fragment_out.cursize == 0 &&
+           chan->fragment_out.readcount == 0;
+}
+
+bool Netchan_TransmitQueuedReliablePrefix(
+    netchan_t *chan, uint32_t prefix_bytes, int numpackets,
+    int *transmit_bytes_out)
+{
+    uint32_t tail_bytes;
+    int transmit_bytes;
+
+    if (transmit_bytes_out)
+        *transmit_bytes_out = 0;
+    if (!Netchan_ReliableHandoffReady(chan, numpackets) ||
+        prefix_bytes == 0 || prefix_bytes > chan->message.cursize ||
+        prefix_bytes > chan->fragment_out.maxsize) {
+        return false;
+    }
+
+    tail_bytes = chan->message.cursize - prefix_bytes;
+    memmove(chan->reliable_buf, chan->message.data, prefix_bytes);
+    if (tail_bytes != 0) {
+        memmove(chan->message.data,
+                chan->message.data + prefix_bytes,
+                tail_bytes);
+    }
+    chan->message.cursize = tail_bytes;
+    chan->reliable_length = prefix_bytes;
+    chan->reliable_sequence ^= 1;
+
+    /* The ordinary transmit path seals message before invoking the hook.  Do
+     * the same here so callback-appended bytes join the visible preserved tail
+     * as the next reliable generation instead of being overwritten later. */
+    transmit_bytes = NetchanNew_Transmit(
+        chan, 0, NULL, numpackets, true);
+    if (transmit_bytes_out)
+        *transmit_bytes_out = transmit_bytes;
+    return true;
+}
+
+bool Netchan_TransmitIsolatedReliable(
+    netchan_t *chan, const void *reliable_data, uint32_t reliable_bytes,
+    int numpackets, int *transmit_bytes_out)
+{
+    int transmit_bytes;
+
+    if (transmit_bytes_out)
+        *transmit_bytes_out = 0;
+    if (!Netchan_ReliableHandoffReady(chan, numpackets) ||
+        reliable_data == NULL || reliable_bytes == 0 ||
+        reliable_bytes > chan->message.maxsize ||
+        reliable_bytes > chan->fragment_out.maxsize) {
+        return false;
+    }
+
+    memmove(chan->reliable_buf, reliable_data, reliable_bytes);
+    chan->reliable_length = reliable_bytes;
+    chan->reliable_sequence ^= 1;
+    transmit_bytes = NetchanNew_Transmit(
+        chan, 0, NULL, numpackets, true);
+    if (transmit_bytes_out)
+        *transmit_bytes_out = transmit_bytes;
+    return true;
 }
 
 /*

@@ -123,7 +123,7 @@ constexpr bit_t<n> bit_v = 1ull << n;
 // game.h -- game dll information visible to server
 // PARIL_NEW_API - value likely not used by any other Q2-esque engine in the wild
 constexpr int32_t GAME_API_VERSION = 2025;
-constexpr int32_t CGAME_API_VERSION = 2028;
+constexpr int32_t CGAME_API_VERSION = 2029;
 
 // forward declarations
 struct gentity_t;
@@ -2287,6 +2287,9 @@ struct cgame_import_t {
 	bool		(*Key_IsDown)(int key);
 	const char	*(*CL_GetImageConfigString)(int image_index);
 	rgba_t		(*CL_GetPaletteColor)(int index);
+	bool		(*CL_GetPrecachedImageInfo)(int image_index,
+								 const char **name_out,
+								 int *width_out, int *height_out);
 };
 
 //

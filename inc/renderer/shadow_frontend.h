@@ -173,6 +173,7 @@ typedef struct {
     int caster_count;
     int dynamic_caster_count;
     uint32_t caster_hash;
+    uint32_t content_hash;
 } shadow_view_desc_t;
 
 typedef struct {
@@ -288,7 +289,11 @@ typedef struct {
     int max_resolution;
     void *userdata;
 
-    void (*begin_frame)(void *userdata, const shadow_frontend_policy_t *policy);
+    // required_page_count is one plus the largest page index in this completed
+    // frontend view set (or one when no view is active). Backends can reserve
+    // resources before individual ensure_page calls without a mid-frame grow.
+    void (*begin_frame)(void *userdata, const shadow_frontend_policy_t *policy,
+                        uint32_t required_page_count);
     bool (*resolve_caster_bounds)(void *userdata, const entity_t *ent,
                                   const bsp_t *world_bsp,
                                   vec3_t local_mins, vec3_t local_maxs);
@@ -309,6 +314,7 @@ typedef struct {
     uint32_t last_used_frame;
     uint32_t dirty_reasons;
     uint32_t caster_hash;
+    uint32_t content_hash;
 } shadow_resident_view_t;
 
 typedef struct {

@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 INPUT = (ROOT / "src/client/input.cpp").read_text(encoding="utf-8")
+WINDOWS_CLIENT = (ROOT / "src/windows/client.c").read_text(encoding="utf-8")
 
 
 class HeadlessInputContractTests(unittest.TestCase):
@@ -29,6 +30,23 @@ class HeadlessInputContractTests(unittest.TestCase):
             grab.index("IN_HeadlessAutomation()"),
             grab.index("if (cls.key_dest & KEY_CONSOLE)"),
         )
+
+    def test_windows_mouse_backend_refuses_headless_initialization_and_capture(self) -> None:
+        init = WINDOWS_CLIENT[WINDOWS_CLIENT.index("bool Win_InitMouse(void)"):]
+        self.assertIn("if (win_is_headless())", init)
+        self.assertLess(init.index("if (win_is_headless())"), init.index("register_raw_mouse(true)"))
+
+        grab = WINDOWS_CLIENT[WINDOWS_CLIENT.index("void Win_GrabMouse(bool grab)"):]
+        self.assertIn("if (win_is_headless())", grab)
+        self.assertLess(grab.index("if (win_is_headless())"), grab.index("Win_AcquireMouse();"))
+
+        clip = WINDOWS_CLIENT[WINDOWS_CLIENT.index("static void Win_ClipCursor(void)\n{"):]
+        self.assertIn("if (win_is_headless())", clip)
+        self.assertLess(clip.index("if (win_is_headless())"), clip.index("ClipCursor(&win.screen_rc)"))
+
+        warp = WINDOWS_CLIENT[WINDOWS_CLIENT.index("void Win_WarpMouse(int x, int y)"):]
+        self.assertIn("if (win_is_headless())", warp)
+        self.assertLess(warp.index("if (win_is_headless())"), warp.index("SetCursorPos("))
 
 
 if __name__ == "__main__":

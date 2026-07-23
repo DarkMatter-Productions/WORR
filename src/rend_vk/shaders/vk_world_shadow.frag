@@ -12,11 +12,13 @@
 #define SHADOW_VISIBILITY_EXPONENT 2.0
 #define VK_SHADOW_MAX_PAGES 64
 #define VK_SHADOW_MAX_DLIGHTS 64
+#define VK_SHADOW_RESOLUTION_POOL_COUNT 5
 #define DLIGHT_CUTOFF 64.0
 
 struct shadow_page_t {
     mat4 matrix;
     vec4 params;
+    vec4 location;
 };
 
 struct shadow_dlight_t {
@@ -29,8 +31,8 @@ struct shadow_dlight_t {
 
 layout(set = 0, binding = 0) uniform sampler2D tex_sampler;
 layout(set = 1, binding = 0) uniform sampler2D lm_sampler;
-layout(set = 2, binding = 0) uniform sampler2DArray shadow_sampler;
-layout(set = 2, binding = 3) uniform sampler2DArrayShadow shadow_sampler_cmp;
+layout(set = 2, binding = 0) uniform sampler2DArray shadow_sampler[VK_SHADOW_RESOLUTION_POOL_COUNT];
+layout(set = 2, binding = 3) uniform sampler2DArrayShadow shadow_sampler_cmp[VK_SHADOW_RESOLUTION_POOL_COUNT];
 layout(std140, set = 2, binding = 1) uniform ShadowPages {
     vec4 shadow_global;
     vec4 shadow_sun;
@@ -45,7 +47,7 @@ layout(std140, set = 2, binding = 1) uniform ShadowPages {
     shadow_page_t shadow_pages[VK_SHADOW_MAX_PAGES];
     shadow_dlight_t shadow_dlights[VK_SHADOW_MAX_DLIGHTS];
 };
-layout(set = 2, binding = 2) uniform sampler2DArray shadow_moments;
+layout(set = 2, binding = 2) uniform sampler2DArray shadow_moments[VK_SHADOW_RESOLUTION_POOL_COUNT];
 layout(set = 0, binding = 1) uniform sampler2D glow_sampler;
 #ifdef VK_WORLD_ANIMATED
 layout(set = 3, binding = 0) uniform sampler2D refract_sampler;
@@ -66,14 +68,51 @@ layout(location = 9) flat in uint in_refraction_enabled;
 
 layout(location = 0) out vec4 out_color;
 
+int shadow_page_pool(int page) {
+    return clamp(int(shadow_pages[page].location.y + 0.5), 0,
+                 VK_SHADOW_RESOLUTION_POOL_COUNT - 1);
+}
+
+int shadow_page_layer(int page) {
+    return max(int(shadow_pages[page].location.x + 0.5), 0);
+}
+
 float shadow_raw_depth(int page, vec2 uv) {
-    return texture(shadow_sampler, vec3(uv, float(page))).r;
+    int pool = shadow_page_pool(page);
+    float layer = float(shadow_page_layer(page));
+    switch (pool) {
+        case 0: return texture(shadow_sampler[0], vec3(uv, layer)).r;
+        case 1: return texture(shadow_sampler[1], vec3(uv, layer)).r;
+        case 2: return texture(shadow_sampler[2], vec3(uv, layer)).r;
+        case 3: return texture(shadow_sampler[3], vec3(uv, layer)).r;
+        default: return texture(shadow_sampler[4], vec3(uv, layer)).r;
+    }
 }
 
 float shadow_compare_depth(int page, vec2 uv, float depth) {
     // Use hardware depth compare for hard/PCF paths; keep raw depth sampling
     // available for PCSS blocker search and moment filters.
-    return texture(shadow_sampler_cmp, vec4(uv, float(page), depth));
+    int pool = shadow_page_pool(page);
+    float layer = float(shadow_page_layer(page));
+    switch (pool) {
+        case 0: return texture(shadow_sampler_cmp[0], vec4(uv, layer, depth));
+        case 1: return texture(shadow_sampler_cmp[1], vec4(uv, layer, depth));
+        case 2: return texture(shadow_sampler_cmp[2], vec4(uv, layer, depth));
+        case 3: return texture(shadow_sampler_cmp[3], vec4(uv, layer, depth));
+        default: return texture(shadow_sampler_cmp[4], vec4(uv, layer, depth));
+    }
+}
+
+vec2 shadow_moment_lookup(int page, vec2 uv) {
+    int pool = shadow_page_pool(page);
+    float layer = float(shadow_page_layer(page));
+    switch (pool) {
+        case 0: return texture(shadow_moments[0], vec3(uv, layer)).xy;
+        case 1: return texture(shadow_moments[1], vec3(uv, layer)).xy;
+        case 2: return texture(shadow_moments[2], vec3(uv, layer)).xy;
+        case 3: return texture(shadow_moments[3], vec3(uv, layer)).xy;
+        default: return texture(shadow_moments[4], vec3(uv, layer)).xy;
+    }
 }
 
 float shadow_pcf_depth(int page, vec3 tc, float bias, float radius_texels) {
@@ -123,9 +162,9 @@ float shadow_moment_factor(int page, vec3 tc, float bias, float filter_mode) {
     float evsm_exponent = max(shadow_moment_tuning.y, 0.0001);
     if (filter_mode > 2.5) {
         depth = exp(min(evsm_exponent * depth, evsm_exponent));
-        moments = texture(shadow_moments, vec3(tc.xy, float(page))).xy;
+        moments = shadow_moment_lookup(page, tc.xy);
     } else {
-        moments = texture(shadow_moments, vec3(tc.xy, float(page))).xy;
+        moments = shadow_moment_lookup(page, tc.xy);
     }
     if (depth <= moments.x) {
         return 1.0;
@@ -398,6 +437,12 @@ void main() {
     }
 #endif
     vec4 base = texture(tex_sampler, uv);
+#ifdef VK_WORLD_LIGHTMAP_DEBUG
+    // r_lightmap mirrors OpenGL's diagnostic view: render the combined
+    // authored lightmap on a white base without material emission or scene
+    // intensity changing the sampled values.
+    base = vec4(1.0);
+#endif
     if ((in_flags & VK_WORLD_VERTEX_ALPHATEST) != 0u && base.a <= 0.666) {
         discard;
     }
@@ -444,6 +489,7 @@ void main() {
     if ((in_flags & (VK_WORLD_VERTEX_LIGHTMAPPED |
                      VK_WORLD_VERTEX_GLOWMAP)) ==
         (VK_WORLD_VERTEX_LIGHTMAPPED | VK_WORLD_VERTEX_GLOWMAP)) {
+#ifndef VK_WORLD_LIGHTMAP_DEBUG
         // GL's wall glow map uses alpha, not RGB, to raise the authored
         // lightmap toward white before dynamic lighting/modulate is applied.
         float glow_scale = shadow_glowmap_tuning.x;
@@ -451,6 +497,7 @@ void main() {
             glow_scale *= max(shadow_moment_tuning.z, 1.0);
         }
         lm.rgb = mix(lm.rgb, vec3(1.0), texture(glow_sampler, uv).a * glow_scale);
+#endif
     }
     vec3 normal = normalize(in_normal);
     // shadow_moment_tuning.w carries the global r_fullbright state. Keep the
@@ -470,9 +517,11 @@ void main() {
                        max(shadow_dlight_count.y, 0.0), vec3(0.0));
     }
     vec4 color = base * vec4(lighting, lm.a) * in_color;
+#ifndef VK_WORLD_LIGHTMAP_DEBUG
     if ((in_flags & VK_WORLD_VERTEX_INTENSITY) != 0u) {
         color.rgb *= max(shadow_moment_tuning.z, 1.0);
     }
+#endif
     apply_fog(color.rgb, (in_flags & VK_WORLD_VERTEX_SKY) != 0u);
 #ifdef VK_WORLD_ANIMATED
     // Match the OpenGL refract path: sample the completed opaque scene using

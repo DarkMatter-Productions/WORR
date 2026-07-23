@@ -26,6 +26,12 @@ extern "C" {
  */
 void CL_NativeReadinessPilotRegisterCvar(void);
 
+/* Exact public offer requested by the current default-off controls. */
+uint32_t CL_NativeReadinessPilotRequestedPublicCapabilities(void);
+/* Private/default-off WNB1 request sampled into a separate ROM userinfo key.
+ * It never changes the public capability offer. */
+bool CL_NativeReadinessPilotRequestedInputBatchV1(void);
+
 /* Called only after Netchan_Setup and q2proto client-context initialization. */
 bool CL_NativeReadinessPilotBeginConnection(netchan_t *channel);
 
@@ -71,6 +77,16 @@ void CL_NativeReadinessPilotObserveEncodedCommandRange(
 bool CL_NativeReadinessPilotOwnsSnapshotTimeline(void);
 void CL_NativeReadinessPilotSnapshotExpectationReady(void);
 void CL_NativeReadinessPilotSnapshotExpectationFailed(void);
+
+/*
+ * Reports a separately confirmed exhaustive native effect cutover, not merely
+ * an ACTIVE event carrier.  The current event capability does not guarantee
+ * that every legacy service was transactionally captured and queued, so this
+ * remains false and raw presentation stays authoritative.  A future cutover
+ * contract may latch ownership through DRAIN and release it only at a whole-
+ * stream map/connection/demo boundary.
+ */
+bool CL_NativeReadinessPilotOwnsEventPresentation(void);
 
 /*
  * Non-mutating scheduler query for an outer client send loop.  True means a
@@ -169,6 +185,49 @@ _Static_assert(offsetof(cl_native_readiness_pilot_status_v1, last_failure) == 22
 
 bool CL_NativeReadinessPilotGetStatusV1(
     cl_native_readiness_pilot_status_v1 *status_out);
+
+enum {
+    CL_NATIVE_INPUT_BATCH_STATUS_ABI_V1 = 1,
+};
+
+typedef struct cl_native_input_batch_status_v1_s {
+    uint32_t struct_size;
+    uint16_t schema_version;
+    uint16_t reserved0;
+    uint32_t requested;
+    uint32_t confirmed;
+    uint32_t enabled;
+    uint32_t drained;
+    uint32_t official_epoch;
+    uint32_t transport_epoch;
+    uint32_t received_sequence;
+    uint32_t candidate_count;
+    uint32_t active_first_sequence;
+    uint32_t active_last_sequence;
+    uint32_t active_command_count;
+    uint32_t active_handoffs;
+    uint64_t candidates_collected;
+    uint64_t plans;
+    uint64_t batches_encoded;
+    uint64_t prepare_fallbacks;
+    uint64_t first_handoffs;
+    uint64_t retry_handoffs;
+    uint64_t batches_acknowledged;
+    uint64_t commands_acknowledged;
+    uint64_t retry_exhaustions;
+    uint64_t failures;
+} cl_native_input_batch_status_v1;
+
+#if defined(__cplusplus)
+static_assert(sizeof(cl_native_input_batch_status_v1) == 136,
+              "client native input batch status V1 layout changed");
+#else
+_Static_assert(sizeof(cl_native_input_batch_status_v1) == 136,
+               "client native input batch status V1 layout changed");
+#endif
+
+bool CL_NativeReadinessPilotGetInputBatchStatusV1(
+    cl_native_input_batch_status_v1 *status_out);
 
 /* Scalar-only snapshot lane diagnostics emitted alongside the base status
  * command; absent receivers still produce a stable zero row. */

@@ -16,6 +16,9 @@ constexpr uint32_t slot_count = 8;
 constexpr uint32_t entities_per_slot = 12;
 constexpr uint32_t area_per_slot = 8;
 constexpr uint32_t events_per_slot = 8;
+constexpr uint32_t inferred_reset_provenance =
+    WORR_SNAPSHOT_GENERATION_LEGACY_INFERRED |
+    WORR_SNAPSHOT_GENERATION_EPOCH_RESET;
 
 [[noreturn]] void fail(const char *expression, int line)
 {
@@ -179,8 +182,14 @@ worr_snapshot_ref_v2 publish(fixture_t &fixture, frame_carrier_t &carrier,
         static_cast<uint64_t>(carrier.frame.serverframe) * UINT64_C(25000);
     input.consumed_command = consumed;
     worr_snapshot_ref_v2 ref{};
-    CHECK(Worr_SnapshotQ2ProtoPublishV2(&fixture.context, &input, &ref) ==
-          WORR_SNAPSHOT_Q2PROTO_OK);
+    const auto result = Worr_SnapshotQ2ProtoPublishV2(
+        &fixture.context, &input, &ref);
+    if (result != WORR_SNAPSHOT_Q2PROTO_OK) {
+        std::fprintf(stderr, "snapshot publish result=%u frame=%d base=%d\n",
+                     static_cast<unsigned>(result), carrier.frame.serverframe,
+                     carrier.frame.deltaframe);
+        fail("Worr_SnapshotQ2ProtoPublishV2 == OK", __LINE__);
+    }
     return ref;
 }
 
@@ -204,6 +213,67 @@ const worr_snapshot_entity_v2 &find_entity(
             return snapshot.entities[i];
     }
     fail("entity not found", __LINE__);
+}
+
+bool has_entity(const worr_snapshot_projection_view_v2 &snapshot,
+                uint32_t index)
+{
+    for (uint32_t i = 0; i < snapshot.entity_count; ++i) {
+        if (snapshot.entities[i].generation.identity.index == index)
+            return true;
+    }
+    return false;
+}
+
+void check_controlled_generation(
+    const worr_snapshot_projection_view_v2 &snapshot,
+    uint32_t expected_provenance, bool expect_entity)
+{
+    const auto &controlled = snapshot.snapshot->controlled_entity;
+    CHECK(controlled.identity.index == 1);
+    CHECK(controlled.identity.generation == 1);
+    CHECK(controlled.provenance_flags == expected_provenance);
+    CHECK(std::memcmp(&controlled, &snapshot.player->controlled_entity,
+                      sizeof(controlled)) == 0);
+    CHECK(has_entity(snapshot, 1) == expect_entity);
+    if (expect_entity) {
+        CHECK(std::memcmp(&controlled, &find_entity(snapshot, 1).generation,
+                          sizeof(controlled)) == 0);
+    }
+}
+
+struct timeline_fixture_t {
+    static constexpr uint32_t slots = 4;
+    worr_snapshot_timeline_v1 timeline{};
+    std::array<worr_snapshot_timeline_slot_v1, slots> slot_storage{};
+    std::array<worr_snapshot_entity_v2, slots * entities_per_slot>
+        entity_storage{};
+    std::array<uint8_t, slots * area_per_slot> area_storage{};
+    std::array<worr_snapshot_event_ref_v2, slots * events_per_slot>
+        event_storage{};
+};
+
+void init_timeline(timeline_fixture_t &fixture)
+{
+    fixture = {};
+    CHECK(Worr_SnapshotTimelineInitV1(
+              &fixture.timeline, fixture.slot_storage.data(),
+              fixture.slot_storage.size(), fixture.entity_storage.data(),
+              fixture.entity_storage.size(), entities_per_slot,
+              fixture.area_storage.data(), fixture.area_storage.size(),
+              area_per_slot, fixture.event_storage.data(),
+              fixture.event_storage.size(), events_per_slot, max_entities) ==
+          WORR_SNAPSHOT_TIMELINE_OK);
+}
+
+void publish_timeline(timeline_fixture_t &fixture,
+                      const worr_snapshot_projection_view_v2 &snapshot)
+{
+    worr_snapshot_timeline_ref_v1 ref{};
+    CHECK(Worr_SnapshotTimelinePublishV1(
+              &fixture.timeline, &snapshot, 1, &ref) ==
+          WORR_SNAPSHOT_TIMELINE_OK);
+    CHECK(Worr_SnapshotTimelineRefValidV1(&fixture.timeline, ref));
 }
 
 void test_reconstruction_lineage_and_branch_bases()
@@ -449,79 +519,128 @@ void test_epoch_rebind_preserves_refs_and_delta_bases()
 void test_controlled_entity_lineage_without_first_person_carrier()
 {
     fixture_t fixture;
+    timeline_fixture_t timeline;
     init_fixture(fixture, 9);
+    init_timeline(timeline);
 
     auto frame40 = make_frame(40, -1, true);
     add_delta(frame40, 2, entity_delta(2, 1));
     const auto ref40 = publish(
         fixture, frame40, WORR_SNAPSHOT_Q2PROTO_FRAME_OBSERVER_ATTACH);
     const auto view40 = view(fixture, ref40);
-    CHECK(view40.player->controlled_entity.identity.index == 1);
-    CHECK(view40.player->controlled_entity.identity.generation == 1);
-    CHECK(view40.snapshot->controlled_entity.identity.generation == 1);
+    check_controlled_generation(
+        view40, inferred_reset_provenance, false);
+    publish_timeline(timeline, view40);
 
     /* Playerstate proves entity 1's lifecycle exists even though the
      * first-person entity was omitted from frame 40's entity range. Its first
-     * later carrier is therefore an update to generation 1, not a reuse. */
+     * later carrier is therefore an update to generation 1, not a reuse, and
+     * retains the provenance of that playerstate assignment. */
     auto frame41 = make_frame(41, 40, false);
     add_delta(frame41, 1, entity_delta(1, 2));
     const auto ref41 = publish(fixture, frame41);
     const auto view41 = view(fixture, ref41);
-    CHECK(find_entity(view41, 1).generation.identity.generation == 1);
-    CHECK(view41.player->controlled_entity.identity.generation == 1);
-    CHECK(view41.snapshot->controlled_entity.identity.generation == 1);
+    check_controlled_generation(
+        view41, inferred_reset_provenance, true);
+    publish_timeline(timeline, view41);
 }
 
 void test_initial_controlled_carrier_generation_and_timeline_acceptance()
 {
     fixture_t fixture;
+    timeline_fixture_t timeline;
     init_fixture(fixture, 12);
+    init_timeline(timeline);
 
-    auto frame0 = make_frame(0, -1, true);
+    auto frame0 = make_frame(40, -1, true);
     add_delta(frame0, 1, entity_delta(3, 1));
-    const auto ref0 = publish(fixture, frame0);
+    const auto ref0 = publish(
+        fixture, frame0, WORR_SNAPSHOT_Q2PROTO_FRAME_OBSERVER_ATTACH);
     const auto view0 = view(fixture, ref0);
-    const auto &entity_generation = find_entity(view0, 1).generation;
-    const uint32_t expected_provenance =
-        WORR_SNAPSHOT_GENERATION_LEGACY_INFERRED |
-        WORR_SNAPSHOT_GENERATION_EPOCH_RESET;
+    check_controlled_generation(
+        view0, inferred_reset_provenance, true);
+    publish_timeline(timeline, view0);
 
-    CHECK(entity_generation.provenance_flags == expected_provenance);
-    CHECK(std::memcmp(&entity_generation,
-                      &view0.snapshot->controlled_entity,
-                      sizeof(entity_generation)) == 0);
-    CHECK(std::memcmp(&entity_generation,
-                      &view0.player->controlled_entity,
-                      sizeof(entity_generation)) == 0);
+    /* A later delta can carry the controlled entity unchanged. Its original
+     * epoch-reset assignment provenance must remain identical in the entity,
+     * player, and snapshot identities; otherwise native snapshot preflight
+     * rejects an otherwise valid projection as CONTROLLED_ENTITY_MISMATCH. */
+    auto frame1 = make_frame(41, 40, false);
+    add_delta(frame1, 2, entity_delta(4, 2));
+    const auto ref1 = publish(fixture, frame1);
+    const auto view1 = view(fixture, ref1);
+    check_controlled_generation(
+        view1, inferred_reset_provenance, true);
+    publish_timeline(timeline, view1);
+}
 
-    constexpr uint32_t timeline_slots = 2;
-    constexpr uint32_t timeline_entities_per_slot = 2;
-    constexpr uint32_t timeline_area_per_slot = area_per_slot;
-    constexpr uint32_t timeline_events_per_slot = 2;
-    worr_snapshot_timeline_v1 timeline{};
-    std::array<worr_snapshot_timeline_slot_v1, timeline_slots>
-        timeline_slot_storage{};
-    std::array<worr_snapshot_entity_v2,
-               timeline_slots * timeline_entities_per_slot>
-        timeline_entity_storage{};
-    std::array<uint8_t, timeline_slots * timeline_area_per_slot>
-        timeline_area_storage{};
-    std::array<worr_snapshot_event_ref_v2,
-               timeline_slots * timeline_events_per_slot>
-        timeline_event_storage{};
-    CHECK(Worr_SnapshotTimelineInitV1(
-              &timeline, timeline_slot_storage.data(), timeline_slots,
-              timeline_entity_storage.data(), timeline_entity_storage.size(),
-              timeline_entities_per_slot, timeline_area_storage.data(),
-              timeline_area_storage.size(), timeline_area_per_slot,
-              timeline_event_storage.data(), timeline_event_storage.size(),
-              timeline_events_per_slot, max_entities) ==
-          WORR_SNAPSHOT_TIMELINE_OK);
-    worr_snapshot_timeline_ref_v1 timeline_ref{};
-    CHECK(Worr_SnapshotTimelinePublishV1(&timeline, &view0, 1,
-                                         &timeline_ref) ==
-          WORR_SNAPSHOT_TIMELINE_OK);
-    CHECK(Worr_SnapshotTimelineRefValidV1(&timeline, timeline_ref));
+void test_controlled_generation_provenance_survives_explicit_delta()
+{
+    fixture_t fixture;
+    timeline_fixture_t timeline;
+    init_fixture(fixture, 13);
+    init_timeline(timeline);
+
+    auto frame40 = make_frame(40, -1, true);
+    add_delta(frame40, 1, entity_delta(3, 1));
+    const auto ref40 = publish(
+        fixture, frame40, WORR_SNAPSHOT_Q2PROTO_FRAME_OBSERVER_ATTACH);
+    const auto view40 = view(fixture, ref40);
+    check_controlled_generation(
+        view40, inferred_reset_provenance, true);
+    publish_timeline(timeline, view40);
+
+    /* An explicit entity delta changes components, not the generation
+     * assignment that established this controlled lifecycle. */
+    auto frame41 = make_frame(41, 40, false);
+    add_delta(frame41, 1, entity_delta(5, 2));
+    const auto ref41 = publish(fixture, frame41);
+    const auto view41 = view(fixture, ref41);
+    CHECK(find_entity(view41, 1).model_index[0] == 5);
+    check_controlled_generation(
+        view41, inferred_reset_provenance, true);
+    publish_timeline(timeline, view41);
+}
+
+void test_controlled_generation_provenance_survives_lineage_keyframes()
+{
+    fixture_t fixture;
+    timeline_fixture_t timeline;
+    init_fixture(fixture, 14);
+    init_timeline(timeline);
+
+    auto frame40 = make_frame(40, -1, true);
+    add_delta(frame40, 1, entity_delta(3, 1));
+    const auto ref40 = publish(
+        fixture, frame40, WORR_SNAPSHOT_Q2PROTO_FRAME_OBSERVER_ATTACH);
+    const auto view40 = view(fixture, ref40);
+    check_controlled_generation(
+        view40, inferred_reset_provenance, true);
+    publish_timeline(timeline, view40);
+
+    /* A full frame uses its parent only for generation lineage. A carried
+     * controlled entity still inherits that lifecycle's exact provenance. */
+    auto frame41 = make_frame(41, -1, true);
+    add_delta(frame41, 1, entity_delta(6, 2));
+    const auto ref41 = publish(
+        fixture, frame41,
+        WORR_SNAPSHOT_Q2PROTO_FRAME_LINEAGE_PARENT_VALID, 40);
+    const auto view41 = view(fixture, ref41);
+    check_controlled_generation(
+        view41, inferred_reset_provenance, true);
+    publish_timeline(timeline, view41);
+
+    /* The same exact record must also survive a generation-only keyframe
+     * whose packet-entity range omits the first-person entity entirely. */
+    auto frame42 = make_frame(42, -1, true);
+    add_delta(frame42, 2, entity_delta(7, 3));
+    const auto ref42 = publish(
+        fixture, frame42,
+        WORR_SNAPSHOT_Q2PROTO_FRAME_LINEAGE_PARENT_VALID, 41);
+    const auto view42 = view(fixture, ref42);
+    check_controlled_generation(
+        view42, inferred_reset_provenance, false);
+    publish_timeline(timeline, view42);
 }
 
 void test_fragment_stall_discontinuity()
@@ -758,6 +877,8 @@ int main()
     test_epoch_rebind_preserves_refs_and_delta_bases();
     test_controlled_entity_lineage_without_first_person_carrier();
     test_initial_controlled_carrier_generation_and_timeline_acceptance();
+    test_controlled_generation_provenance_survives_explicit_delta();
+    test_controlled_generation_provenance_survives_lineage_keyframes();
     test_fragment_stall_discontinuity();
     test_hostile_alias_rejection();
     test_consumed_cursor_validation_and_attach_contract();

@@ -83,6 +83,7 @@ void test_canonical_constructor_catalog_and_atomic_failure() {
           candidate.prediction_class ==
               WORR_EVENT_PREDICTION_AUTHORITATIVE_ONLY);
     CHECK(candidate.expiry_tick == 18 && semantic_hash != 0);
+    CHECK((candidate.flags & WORR_EVENT_FLAG_SNAPSHOT_FENCED) == 0);
     const auto actual_payload = payload(candidate);
     CHECK(actual_payload.raw_event == expected.raw_event &&
           actual_payload.flags == expected.payload_flags &&
@@ -250,6 +251,8 @@ void test_final_per_peer_retention_capacity_and_stale_refs() {
                                                candidates.size(), &count) ==
         SV_SNAPSHOT_EVENT_CANDIDATES_OK);
   CHECK(count == 2);
+  CHECK((candidates[0].flags & WORR_EVENT_FLAG_SNAPSHOT_FENCED) == 0 &&
+        (candidates[1].flags & WORR_EVENT_FLAG_SNAPSHOT_FENCED) == 0);
 
   /* The inferred semantic tick remains the exact per-peer wire tick used by
    * the q2proto projector, while the retained snapshot exposes the distinct
@@ -338,6 +341,7 @@ void test_visible_spatial_audio_final_emission_binding() {
             peer, ref, max_entities, &sound, &candidate) ==
         SV_SNAPSHOT_EVENT_CANDIDATES_OK);
   CHECK(Worr_EventRecordCandidateValidateV1(&candidate, max_entities));
+  CHECK((candidate.flags & WORR_EVENT_FLAG_SNAPSHOT_FENCED) != 0);
   CHECK(candidate.source_tick == 31 &&
         candidate.source_time_us == UINT64_C(50000000) &&
         candidate.source_entity.index == 4 &&
@@ -350,7 +354,51 @@ void test_visible_spatial_audio_final_emission_binding() {
         (payload.flags & WORR_EVENT_SPATIAL_AUDIO_HAS_ENTITY_CHANNEL) != 0 &&
         (payload.flags & WORR_EVENT_SPATIAL_AUDIO_HAS_POSITION) == 0);
 
+  CHECK(SV_SnapshotShadowBuildSpatialAudioCandidateWithDeliveryV1(
+            peer, ref, max_entities, &sound,
+            SV_SNAPSHOT_SPATIAL_AUDIO_RELIABLE |
+                SV_SNAPSHOT_SPATIAL_AUDIO_NO_PHS,
+            &candidate) == SV_SNAPSHOT_EVENT_CANDIDATES_OK);
+  std::memcpy(&payload, candidate.payload, sizeof(payload));
+  CHECK(candidate.delivery_class == WORR_EVENT_DELIVERY_RELIABLE_ORDERED &&
+        candidate.expiry_tick == 0 && candidate.source_entity.index == 4 &&
+        (payload.flags & WORR_EVENT_SPATIAL_AUDIO_RELIABLE) != 0 &&
+        (payload.flags & WORR_EVENT_SPATIAL_AUDIO_NO_PHS) != 0 &&
+        (payload.flags & WORR_EVENT_SPATIAL_AUDIO_LOCAL_ONLY) == 0);
+
+  CHECK(SV_SnapshotShadowBuildSpatialAudioCandidateWithDeliveryV1(
+            peer, ref, max_entities, &sound,
+            SV_SNAPSHOT_SPATIAL_AUDIO_RELIABLE |
+                SV_SNAPSHOT_SPATIAL_AUDIO_LOCAL_ONLY,
+            &candidate) == SV_SNAPSHOT_EVENT_CANDIDATES_OK);
+  std::memcpy(&payload, candidate.payload, sizeof(payload));
+  CHECK(candidate.delivery_class == WORR_EVENT_DELIVERY_RELIABLE_ORDERED &&
+        candidate.expiry_tick == 0 && candidate.source_entity.index == 0 &&
+        candidate.source_entity.generation == 1 && payload.raw_entity == 4 &&
+        (payload.flags & WORR_EVENT_SPATIAL_AUDIO_LOCAL_ONLY) != 0 &&
+        (payload.flags & WORR_EVENT_SPATIAL_AUDIO_RELIABLE) != 0 &&
+        (payload.flags & WORR_EVENT_SPATIAL_AUDIO_HAS_POSITION) == 0 &&
+        (payload.flags & WORR_EVENT_SPATIAL_AUDIO_POSITION_FORCED) == 0);
+
+  CHECK(SV_SnapshotShadowBuildSpatialAudioCandidateWithDeliveryV1(
+            peer, ref, max_entities, &sound,
+            SV_SNAPSHOT_SPATIAL_AUDIO_LOCAL_ONLY,
+            &candidate) == SV_SNAPSHOT_EVENT_CANDIDATES_OK);
+  std::memcpy(&payload, candidate.payload, sizeof(payload));
+  CHECK(candidate.delivery_class == WORR_EVENT_DELIVERY_TRANSIENT &&
+        candidate.expiry_tick == candidate.source_tick + 1u &&
+        candidate.source_entity.index == 0 &&
+        candidate.source_entity.generation == 1 && payload.raw_entity == 4 &&
+        (payload.flags & WORR_EVENT_SPATIAL_AUDIO_LOCAL_ONLY) != 0 &&
+        (payload.flags & WORR_EVENT_SPATIAL_AUDIO_RELIABLE) == 0 &&
+        (payload.flags & WORR_EVENT_SPATIAL_AUDIO_HAS_POSITION) == 0);
+
   auto candidate_before = candidate;
+  CHECK(SV_SnapshotShadowBuildSpatialAudioCandidateWithDeliveryV1(
+            peer, ref, max_entities, &sound, UINT32_C(0x80000000),
+            &candidate) == SV_SNAPSHOT_EVENT_CANDIDATES_INVALID_ARGUMENT);
+  CHECK(std::memcmp(&candidate, &candidate_before, sizeof(candidate)) == 0);
+
   sound.entity = 5;
   CHECK(SV_SnapshotShadowBuildSpatialAudioCandidateV1(
             peer, ref, max_entities, &sound, &candidate) ==
@@ -405,6 +453,7 @@ void test_visible_muzzle_final_emission_binding() {
             WORR_EVENT_MUZZLE_FAMILY_PLAYER, &candidate) ==
         SV_SNAPSHOT_EVENT_CANDIDATES_OK);
   CHECK(Worr_EventRecordCandidateValidateV1(&candidate, max_entities));
+  CHECK((candidate.flags & WORR_EVENT_FLAG_SNAPSHOT_FENCED) != 0);
   CHECK(candidate.source_tick == 37 &&
         candidate.source_time_us == UINT64_C(56000000) &&
         candidate.source_entity.index == 7 &&
@@ -415,6 +464,18 @@ void test_visible_muzzle_final_emission_binding() {
         payload.family == WORR_EVENT_MUZZLE_FAMILY_PLAYER &&
         payload.flash_id == WORR_EVENT_PLAYER_MUZZLE_MACHINEGUN &&
         payload.flags == WORR_EVENT_MUZZLE_FLAG_SILENCED);
+
+  /* The controlled player is copied in player state and may be intentionally
+   * absent from its own first-person entity list.  Its exact generation still
+   * owns self-authored muzzle lineage. */
+  muzzleflash.entity = 1;
+  CHECK(SV_SnapshotShadowBuildMuzzleCandidateV1(
+            peer, ref, max_entities, &muzzleflash,
+            WORR_EVENT_MUZZLE_FAMILY_PLAYER, &candidate) ==
+        SV_SNAPSHOT_EVENT_CANDIDATES_OK);
+  CHECK(candidate.source_entity.index == 1 &&
+        candidate.source_entity.generation == 1 &&
+        Worr_EventRecordCandidateValidateV1(&candidate, max_entities));
 
   muzzleflash.entity = 6;
   const auto candidate_before = candidate;
@@ -499,6 +560,7 @@ void test_visible_temp_final_emission_binding() {
                                               &candidate) ==
         SV_SNAPSHOT_EVENT_CANDIDATES_OK);
   CHECK(Worr_EventRecordCandidateValidateV1(&candidate, max_entities));
+  CHECK((candidate.flags & WORR_EVENT_FLAG_SNAPSHOT_FENCED) != 0);
   CHECK(candidate.source_tick == 43 &&
         candidate.source_time_us == UINT64_C(61000000) &&
         candidate.source_entity.index == 0 && candidate.source_entity.generation == 1 &&
@@ -584,8 +646,8 @@ void test_visible_mixed_game_event_final_emission_binding() {
   add_delta(frame, 7, entity_delta(7, 1));
   const auto ref = send(peer, frame, 2020, UINT64_C(62000000));
 
-  std::array<worr_legacy_game_event_candidate_carrier_v1, 3> carriers{};
-  std::array<worr_event_record_v1, 3> candidates{};
+  std::array<worr_legacy_game_event_candidate_carrier_v1, 4> carriers{};
+  std::array<worr_event_record_v1, 4> candidates{};
   carriers[0].kind = WORR_LEGACY_GAME_EVENT_CANDIDATE_TEMP_ENTITY;
   carriers[0].temp_entity.type = WORR_EVENT_LEGACY_TEMP_GUNSHOT;
   carriers[0].temp_entity.direction[2] = 1.0f;
@@ -593,10 +655,14 @@ void test_visible_mixed_game_event_final_emission_binding() {
   carriers[1].muzzle_family = WORR_EVENT_MUZZLE_FAMILY_MONSTER;
   carriers[1].muzzleflash.entity = 3;
   carriers[1].muzzleflash.weapon = WORR_EVENT_MONSTER_MUZZLE_LAST;
-  carriers[2].kind = WORR_LEGACY_GAME_EVENT_CANDIDATE_TEMP_ENTITY;
-  carriers[2].temp_entity.type = WORR_EVENT_LEGACY_TEMP_LIGHTNING;
-  carriers[2].temp_entity.entity1 = 3;
-  carriers[2].temp_entity.entity2 = 7;
+  carriers[2].kind = WORR_LEGACY_GAME_EVENT_CANDIDATE_MUZZLEFLASH;
+  carriers[2].muzzle_family = WORR_EVENT_MUZZLE_FAMILY_PLAYER;
+  carriers[2].muzzleflash.entity = 7;
+  carriers[2].muzzleflash.weapon = WORR_EVENT_PLAYER_MUZZLE_MACHINEGUN;
+  carriers[3].kind = WORR_LEGACY_GAME_EVENT_CANDIDATE_TEMP_ENTITY;
+  carriers[3].temp_entity.type = WORR_EVENT_LEGACY_TEMP_LIGHTNING;
+  carriers[3].temp_entity.entity1 = 3;
+  carriers[3].temp_entity.entity2 = 7;
 
   CHECK(SV_SnapshotShadowBuildGameEventCandidatesV1(
             peer, ref, max_entities, carriers.data(),
@@ -604,14 +670,38 @@ void test_visible_mixed_game_event_final_emission_binding() {
         SV_SNAPSHOT_EVENT_CANDIDATES_OK);
   CHECK(candidates[0].source_entity.index == 0 &&
         candidates[1].source_entity.index == 3 &&
-        candidates[2].source_entity.index == 3 &&
-        candidates[2].subject_entity.index == 7 &&
+        candidates[2].source_entity.index == 7 &&
+        candidates[3].source_entity.index == 3 &&
+        candidates[3].subject_entity.index == 7 &&
         candidates[0].payload_kind == WORR_EVENT_PAYLOAD_LEGACY_TEMP_V1 &&
         candidates[1].payload_kind == WORR_EVENT_PAYLOAD_MUZZLE_V1 &&
-        candidates[2].payload_kind == WORR_EVENT_PAYLOAD_LEGACY_TEMP_V1);
+        candidates[2].payload_kind == WORR_EVENT_PAYLOAD_MUZZLE_V1 &&
+        candidates[3].payload_kind == WORR_EVENT_PAYLOAD_LEGACY_TEMP_V1);
+  for (const auto &fenced : candidates)
+    CHECK((fenced.flags & WORR_EVENT_FLAG_SNAPSHOT_FENCED) != 0);
+
+  CHECK(SV_SnapshotShadowBuildGameEventCandidatesWithDeliveryV1(
+            peer, ref, max_entities, carriers.data(),
+            static_cast<uint32_t>(carriers.size()),
+            SV_SNAPSHOT_GAME_EVENT_RELIABLE, candidates.data()) ==
+        SV_SNAPSHOT_EVENT_CANDIDATES_OK);
+  for (const auto &reliable : candidates) {
+    CHECK(reliable.delivery_class == WORR_EVENT_DELIVERY_RELIABLE_ORDERED &&
+          reliable.expiry_tick == 0 &&
+          Worr_EventRecordCandidateValidateV1(&reliable, max_entities));
+  }
+
+  const auto reliable_candidates_before = candidates;
+  CHECK(SV_SnapshotShadowBuildGameEventCandidatesWithDeliveryV1(
+            peer, ref, max_entities, carriers.data(),
+            static_cast<uint32_t>(carriers.size()), UINT32_C(0x80000000),
+            candidates.data()) ==
+        SV_SNAPSHOT_EVENT_CANDIDATES_INVALID_ARGUMENT);
+  CHECK(std::memcmp(candidates.data(), reliable_candidates_before.data(),
+                    sizeof(candidates)) == 0);
 
   const auto candidates_before = candidates;
-  carriers[2].temp_entity.entity2 = 2;
+  carriers[3].temp_entity.entity2 = 2;
   CHECK(SV_SnapshotShadowBuildGameEventCandidatesV1(
             peer, ref, max_entities, carriers.data(),
             static_cast<uint32_t>(carriers.size()), candidates.data()) ==
@@ -627,6 +717,230 @@ void test_visible_mixed_game_event_final_emission_binding() {
   SV_SnapshotShadowDestroyV1(peer);
 }
 
+void test_damage_indicator_controlled_entity_binding() {
+  const auto shadow_config = config();
+  auto *peer = SV_SnapshotShadowCreateV1(&shadow_config);
+  CHECK(peer != nullptr);
+
+  auto frame = make_frame(51, -1, true);
+  add_delta(frame, 3, entity_delta(3, 1));
+  const auto ref = send(peer, frame, 2030, UINT64_C(63000000));
+
+  q2proto_svc_damage_t damage{};
+  damage.count = 2;
+  damage.damage[0].damage = 9;
+  damage.damage[0].health = true;
+  damage.damage[0].direction[0] = 1.0f;
+  damage.damage[1].damage = 17;
+  damage.damage[1].armor = true;
+  damage.damage[1].shield = true;
+  damage.damage[1].direction[1] = -1.0f;
+
+  std::array<worr_event_record_v1, Q2PROTO_MAX_DAMAGE_INDICATORS>
+      candidates{};
+  uint32_t candidate_count = UINT32_MAX;
+  CHECK(SV_SnapshotShadowBuildDamageCandidatesV1(
+            peer, ref, max_entities, &damage, candidates.data(),
+            static_cast<uint32_t>(candidates.size()), &candidate_count) ==
+        SV_SNAPSHOT_EVENT_CANDIDATES_OK);
+  CHECK(candidate_count == 2);
+  for (uint32_t index = 0; index < candidate_count; ++index) {
+    CHECK(candidates[index].source_tick == 51 &&
+          candidates[index].source_time_us == UINT64_C(63000000) &&
+          candidates[index].source_ordinal == index &&
+          candidates[index].source_entity.index == 0 &&
+          candidates[index].source_entity.generation == 1 &&
+          candidates[index].subject_entity.index == 1 &&
+          candidates[index].subject_entity.generation == 1 &&
+          candidates[index].event_type == WORR_EVENT_TYPE_DAMAGE &&
+          Worr_EventRecordCandidateValidateV1(&candidates[index],
+                                               max_entities));
+    CHECK((candidates[index].flags &
+           WORR_EVENT_FLAG_SNAPSHOT_FENCED) != 0);
+  }
+  worr_event_payload_damage_v1 payload{};
+  std::memcpy(&payload, candidates[0].payload, sizeof(payload));
+  CHECK(payload.amount == 9.0f && payload.direction[0] == 1.0f &&
+        payload.damage_flags == WORR_EVENT_DAMAGE_FLAG_HEALTH);
+  std::memcpy(&payload, candidates[1].payload, sizeof(payload));
+  CHECK(payload.amount == 17.0f && payload.direction[1] == -1.0f &&
+        payload.damage_flags ==
+            (WORR_EVENT_DAMAGE_FLAG_ARMOR | WORR_EVENT_DAMAGE_FLAG_SHIELD));
+
+  const auto candidates_before = candidates;
+  const auto count_before = candidate_count;
+  CHECK(SV_SnapshotShadowBuildDamageCandidatesV1(
+            peer, ref, max_entities, &damage, candidates.data(), 1,
+            &candidate_count) == SV_SNAPSHOT_EVENT_CANDIDATES_CAPACITY);
+  CHECK(std::memcmp(candidates.data(), candidates_before.data(),
+                    sizeof(candidates)) == 0 &&
+        candidate_count == count_before);
+
+  auto frame52 = make_frame(52, -1, true);
+  add_delta(frame52, 3, entity_delta(3, 2));
+  (void)send(peer, frame52, 2031, UINT64_C(63010000));
+  auto frame53 = make_frame(53, -1, true);
+  add_delta(frame53, 3, entity_delta(3, 3));
+  (void)send(peer, frame53, 2032, UINT64_C(63020000));
+  CHECK(SV_SnapshotShadowBuildDamageCandidatesV1(
+            peer, ref, max_entities, &damage, candidates.data(),
+            static_cast<uint32_t>(candidates.size()), &candidate_count) ==
+        SV_SNAPSHOT_EVENT_CANDIDATES_STALE_REF);
+  CHECK(std::memcmp(candidates.data(), candidates_before.data(),
+                    sizeof(candidates)) == 0 &&
+        candidate_count == count_before);
+
+  SV_SnapshotShadowDestroyV1(peer);
+}
+
+void test_help_path_controlled_entity_binding() {
+  const auto shadow_config = config();
+  auto *peer = SV_SnapshotShadowCreateV1(&shadow_config);
+  CHECK(peer != nullptr);
+
+  auto frame = make_frame(61, -1, true);
+  add_delta(frame, 3, entity_delta(3, 1));
+  const auto ref = send(peer, frame, 2040, UINT64_C(64000000));
+
+  q2proto_svc_help_path_t help_path{};
+  help_path.start = true;
+  help_path.pos[0] = 12.5f;
+  help_path.pos[1] = -24.25f;
+  help_path.pos[2] = 96.0f;
+  help_path.dir[0] = 0.25f;
+  help_path.dir[1] = 0.5f;
+  help_path.dir[2] = 0.75f;
+
+  worr_event_record_v1 candidate{};
+  CHECK(SV_SnapshotShadowBuildHelpPathCandidateV1(
+            peer, ref, max_entities, &help_path, &candidate) ==
+        SV_SNAPSHOT_EVENT_CANDIDATES_OK);
+  CHECK(candidate.source_tick == 61 &&
+        candidate.source_time_us == UINT64_C(64000000) &&
+        candidate.source_entity.index == 0 &&
+        candidate.source_entity.generation == 1 &&
+        candidate.subject_entity.index == 1 &&
+        candidate.subject_entity.generation == 1 &&
+        candidate.event_type == WORR_EVENT_TYPE_VISUAL_EFFECT &&
+        candidate.delivery_class == WORR_EVENT_DELIVERY_TRANSIENT &&
+        Worr_EventRecordCandidateValidateV1(&candidate, max_entities));
+  CHECK((candidate.flags & WORR_EVENT_FLAG_SNAPSHOT_FENCED) != 0);
+  worr_event_payload_effect_v1 payload{};
+  std::memcpy(&payload, candidate.payload, sizeof(payload));
+  CHECK(payload.effect_id == WORR_EVENT_EFFECT_HELP_PATH_MARKER &&
+        payload.variant == WORR_EVENT_HELP_PATH_VARIANT_START &&
+        payload.origin[0] == 12.5f && payload.origin[1] == -24.25f &&
+        payload.origin[2] == 96.0f && payload.direction[0] == 0.25f &&
+        payload.direction[1] == 0.5f && payload.direction[2] == 0.75f);
+
+  const auto candidate_before = candidate;
+  auto frame62 = make_frame(62, -1, true);
+  add_delta(frame62, 3, entity_delta(3, 2));
+  (void)send(peer, frame62, 2041, UINT64_C(64010000));
+  auto frame63 = make_frame(63, -1, true);
+  add_delta(frame63, 3, entity_delta(3, 3));
+  (void)send(peer, frame63, 2042, UINT64_C(64020000));
+  CHECK(SV_SnapshotShadowBuildHelpPathCandidateV1(
+            peer, ref, max_entities, &help_path, &candidate) ==
+        SV_SNAPSHOT_EVENT_CANDIDATES_STALE_REF);
+  CHECK(std::memcmp(&candidate, &candidate_before, sizeof(candidate)) == 0);
+
+  SV_SnapshotShadowDestroyV1(peer);
+}
+
+void test_keyed_poi_controlled_entity_binding_and_delivery() {
+  const auto shadow_config = config();
+  auto *peer = SV_SnapshotShadowCreateV1(&shadow_config);
+  CHECK(peer != nullptr);
+
+  auto frame = make_frame(71, -1, true);
+  add_delta(frame, 3, entity_delta(3, 1));
+  const auto ref = send(peer, frame, 2050, UINT64_C(65000000));
+
+  q2proto_svc_poi_t poi{};
+  poi.key = 8195;
+  poi.time = 5000;
+  poi.pos[0] = 12.5f;
+  poi.pos[1] = -24.25f;
+  poi.pos[2] = 96.0f;
+  poi.image = 321;
+  poi.color = 215;
+  poi.flags = WORR_EVENT_KEYED_POI_FLAG_HIDE_ON_AIM;
+
+  worr_event_record_v1 candidate{};
+  CHECK(SV_SnapshotShadowBuildKeyedPOICandidateV1(
+            peer, ref, max_entities, &poi, &candidate) ==
+        SV_SNAPSHOT_EVENT_CANDIDATES_OK);
+  CHECK(candidate.source_tick == 71 &&
+        candidate.source_time_us == UINT64_C(65000000) &&
+        candidate.source_entity.index == 0 &&
+        candidate.source_entity.generation == 1 &&
+        candidate.subject_entity.index == 1 &&
+        candidate.subject_entity.generation == 1 &&
+        candidate.event_type == WORR_EVENT_TYPE_STATE_CHANGE &&
+        candidate.delivery_class == WORR_EVENT_DELIVERY_TRANSIENT &&
+        candidate.expiry_tick == 72 &&
+        candidate.payload_kind == WORR_EVENT_PAYLOAD_KEYED_POI_V1 &&
+        Worr_EventRecordCandidateValidateV1(&candidate, max_entities));
+  CHECK((candidate.flags & WORR_EVENT_FLAG_SNAPSHOT_FENCED) != 0);
+  worr_event_payload_keyed_poi_v1 payload{};
+  std::memcpy(&payload, candidate.payload, sizeof(payload));
+  CHECK(payload.key == 8195 && payload.lifetime_ms == 5000 &&
+        payload.position[0] == 12.5f && payload.position[1] == -24.25f &&
+        payload.position[2] == 96.0f && payload.image_index == 321 &&
+        payload.color_index == 215 &&
+        payload.flags == WORR_EVENT_KEYED_POI_FLAG_HIDE_ON_AIM);
+
+  const auto candidate_before = candidate;
+  poi.time = WORR_EVENT_KEYED_POI_REMOVE_LIFETIME_MS;
+  CHECK(SV_SnapshotShadowBuildKeyedPOICandidateV1(
+            peer, ref, max_entities, &poi, &candidate) ==
+        SV_SNAPSHOT_EVENT_CANDIDATES_OK);
+  std::memcpy(&payload, candidate.payload, sizeof(payload));
+  worr_event_payload_keyed_poi_v1 removal_payload{};
+  removal_payload.key = poi.key;
+  removal_payload.lifetime_ms = WORR_EVENT_KEYED_POI_REMOVE_LIFETIME_MS;
+  CHECK(std::memcmp(&payload, &removal_payload, sizeof(payload)) == 0);
+  CHECK(candidate.delivery_class == WORR_EVENT_DELIVERY_TRANSIENT &&
+        candidate.source_tick == 71 && candidate.expiry_tick == 72 &&
+        Worr_EventRecordCandidateValidateV1(&candidate, max_entities));
+
+  candidate = candidate_before;
+  poi.time = 0;
+  CHECK(SV_SnapshotShadowBuildKeyedPOICandidateV1(
+            peer, ref, max_entities, &poi, &candidate) ==
+        SV_SNAPSHOT_EVENT_CANDIDATES_INVALID_CANDIDATE);
+  CHECK(std::memcmp(&candidate, &candidate_before, sizeof(candidate)) == 0);
+  CHECK(SV_SnapshotShadowBuildKeyedPOICandidateWithDeliveryV1(
+            peer, ref, max_entities, &poi,
+            SV_SNAPSHOT_KEYED_POI_RELIABLE, &candidate) ==
+        SV_SNAPSHOT_EVENT_CANDIDATES_OK);
+  std::memcpy(&payload, candidate.payload, sizeof(payload));
+  CHECK(payload.lifetime_ms == 0 &&
+        candidate.delivery_class == WORR_EVENT_DELIVERY_RELIABLE_ORDERED &&
+        candidate.expiry_tick == 0);
+
+  const auto reliable_before = candidate;
+  CHECK(SV_SnapshotShadowBuildKeyedPOICandidateWithDeliveryV1(
+            peer, ref, max_entities, &poi, UINT32_C(0x80000000),
+            &candidate) == SV_SNAPSHOT_EVENT_CANDIDATES_INVALID_ARGUMENT);
+  CHECK(std::memcmp(&candidate, &reliable_before, sizeof(candidate)) == 0);
+
+  auto frame72 = make_frame(72, -1, true);
+  add_delta(frame72, 3, entity_delta(3, 2));
+  (void)send(peer, frame72, 2051, UINT64_C(65010000));
+  auto frame73 = make_frame(73, -1, true);
+  add_delta(frame73, 3, entity_delta(3, 3));
+  (void)send(peer, frame73, 2052, UINT64_C(65020000));
+  CHECK(SV_SnapshotShadowBuildKeyedPOICandidateWithDeliveryV1(
+            peer, ref, max_entities, &poi,
+            SV_SNAPSHOT_KEYED_POI_RELIABLE, &candidate) ==
+        SV_SNAPSHOT_EVENT_CANDIDATES_STALE_REF);
+  CHECK(std::memcmp(&candidate, &reliable_before, sizeof(candidate)) == 0);
+
+  SV_SnapshotShadowDestroyV1(peer);
+}
+
 } // namespace
 
 int main() {
@@ -636,6 +950,9 @@ int main() {
   test_visible_muzzle_final_emission_binding();
   test_visible_temp_final_emission_binding();
   test_visible_mixed_game_event_final_emission_binding();
+  test_damage_indicator_controlled_entity_binding();
+  test_help_path_controlled_entity_binding();
+  test_keyed_poi_controlled_entity_binding_and_delivery();
   std::puts("server_snapshot_event_candidates_test: ok");
   return 0;
 }

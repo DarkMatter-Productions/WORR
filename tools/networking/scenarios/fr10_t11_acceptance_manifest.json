@@ -1,0 +1,223 @@
+{
+  "schema": "worr.networking.fr10-t11-acceptance-manifest.v1",
+  "task": "FR-10-T11",
+  "seed": 20260719,
+  "repeat": 3,
+  "bounds": {
+    "matrix_cases": 40,
+    "matrix_invocations": 120,
+    "canonical_modes": 11,
+    "canonical_live_repetitions": 33,
+    "fallback_live_repetitions": 3,
+    "total_live_repetitions": 36,
+    "minimum_repeat": 3,
+    "maximum_repeat": 3,
+    "per_repeat_timeout_seconds": 45,
+    "child_timeout_seconds": 180
+  },
+  "matrix": {
+    "path": "tools/networking/scenarios/rewind_player_acceptance_matrix.json",
+    "schema": "worr.networking.rewind-player-acceptance-matrix.v1",
+    "evidence_schema": "worr.networking.acceptance-evidence.v1",
+    "raw_schema": "worr.networking.rewind-acceptance-raw.v1",
+    "disabled_opt_out_case": {
+      "case_id": "boundary/disabled",
+      "policy_evaluated": false,
+      "policy_accepted": false,
+      "query_evaluated": false,
+      "path": 3,
+      "outcome": 4,
+      "fallback_reason": 1,
+      "authoritative_unchanged": true
+    }
+  },
+  "canonical": {
+    "schema": "worr.networking.canonical-weapon-damage-runtime.v37",
+    "scenarios": [
+      {
+        "kind": "production-policy",
+        "name": "machinegun",
+        "mode": "machinegun",
+        "weapon_policy": 1,
+        "fixture_expected_damage": 8,
+        "observed_damage": 8,
+        "client_count": 2
+      },
+      {
+        "kind": "production-policy",
+        "name": "chaingun",
+        "mode": "chaingun",
+        "weapon_policy": 2,
+        "fixture_expected_damage": 18,
+        "observed_damage": 18,
+        "client_count": 2
+      },
+      {
+        "kind": "production-policy",
+        "name": "shotgun",
+        "mode": "shotgun",
+        "weapon_policy": 3,
+        "fixture_expected_damage": 48,
+        "observed_damage": 48,
+        "client_count": 2
+      },
+      {
+        "kind": "production-policy",
+        "name": "super-shotgun",
+        "mode": "super-shotgun",
+        "weapon_policy": 4,
+        "fixture_expected_damage": 120,
+        "observed_damage": 120,
+        "client_count": 2
+      },
+      {
+        "kind": "production-policy",
+        "name": "railgun",
+        "mode": "railgun",
+        "weapon_policy": 5,
+        "fixture_expected_damage": 80,
+        "observed_damage": 80,
+        "client_count": 2
+      },
+      {
+        "kind": "production-policy",
+        "name": "disruptor",
+        "mode": "disruptor",
+        "weapon_policy": 6,
+        "fixture_expected_damage": 45,
+        "observed_damage": 45,
+        "client_count": 2
+      },
+      {
+        "kind": "production-policy",
+        "name": "plasma-beam",
+        "mode": "plasma-beam",
+        "weapon_policy": 7,
+        "fixture_expected_damage": 8,
+        "observed_damage": 8,
+        "client_count": 2
+      },
+      {
+        "kind": "production-policy",
+        "name": "thunderbolt",
+        "mode": "thunderbolt",
+        "weapon_policy": 8,
+        "fixture_expected_damage": 8,
+        "observed_damage": 8,
+        "client_count": 2
+      },
+      {
+        "kind": "fairness",
+        "name": "historical-mover-occlusion",
+        "mode": "railgun-mover-occlusion",
+        "weapon_policy": 5,
+        "fixture_expected_damage": 80,
+        "observed_damage": 0,
+        "client_count": 2,
+        "required_true": [
+          "historical_mover_occlusion_required",
+          "historical_mover_relocated",
+          "historical_mover_baseline_clear",
+          "historical_mover_occlusion_observed",
+          "historical_mover_target_undamaged"
+        ],
+        "minimums": {
+          "historical_mover_history_count": 6
+        }
+      },
+      {
+        "kind": "fairness",
+        "name": "spectator-exclusion",
+        "mode": "railgun-spectator-exclusion",
+        "weapon_policy": 5,
+        "fixture_expected_damage": 80,
+        "observed_damage": 80,
+        "client_count": 3,
+        "require_spectator_exclusion": true
+      },
+      {
+        "kind": "fairness",
+        "name": "spawn-protection",
+        "mode": "railgun-spawn-protection",
+        "weapon_policy": 5,
+        "fixture_expected_damage": 0,
+        "observed_damage": 0,
+        "client_count": 2,
+        "require_spawn_protection": true
+      }
+    ],
+    "common_status": {
+      "status": "pass",
+      "armed": 1,
+      "players_ready": 1,
+      "history_ready": 1,
+      "canonical_scope": 1,
+      "attack_received": 1,
+      "weapon_callback": 1,
+      "canonical_historical_hit": 1,
+      "current_geometry_unchanged": 1,
+      "observation_path": 1,
+      "observation_outcome": 1,
+      "observation_fallback": 0,
+      "capture_append_rejections": 0,
+      "failure_code": 0,
+      "playing_candidates": 2,
+      "eligible_candidates": 2
+    },
+    "minimum_status": {
+      "target_history_captures": 6,
+      "applied_age_us": 1
+    }
+  },
+  "fallback": {
+    "schema": "worr.networking.rewind-rail-damage-runtime.v2",
+    "damage_amount": 30,
+    "required_true": [
+      "setup_ready",
+      "history_ready",
+      "current_world_miss",
+      "rejected_current_fallback",
+      "rejected_no_damage",
+      "legacy_rewind_selected",
+      "rail_policy_observed",
+      "near_latency_hit",
+      "bounded_latency_hit",
+      "capped_latency_hit",
+      "damage_applied",
+      "geometry_unchanged",
+      "query_authority_unchanged"
+    ]
+  },
+  "abuse": {
+    "matrix_cases": [
+      "boundary/stale",
+      "boundary/future",
+      "boundary/history_miss",
+      "boundary/death_respawn",
+      "boundary/slot_reuse",
+      "boundary/disabled"
+    ],
+    "live_cases": [
+      "invalid-current-ack-no-damage",
+      "spectator-exclusion",
+      "spawn-protection"
+    ]
+  },
+  "required_source_tokens": [
+    {
+      "mode": "railgun-spawn-protection",
+      "path": "src/game/sgame/gameplay/g_svcmds.cpp",
+      "tokens": [
+        "worr_rewind_canonical_rail_spawn_protection_arm"
+      ]
+    },
+    {
+      "mode": "railgun-spawn-protection",
+      "path": "src/game/sgame/network/lag_compensation.cpp",
+      "tokens": [
+        "sg_worr_rewind_canonical_rail_spawn_protection_status"
+      ]
+    }
+  ],
+  "output_root": ".tmp/networking"
+}

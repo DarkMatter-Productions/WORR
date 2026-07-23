@@ -16,10 +16,12 @@ VkDescriptorSetLayout VK_Shadow_GetDescriptorSetLayout(void);
 VkDescriptorSet VK_Shadow_GetDescriptorSet(void);
 bool VK_Shadow_HasActiveReceiverLighting(void);
 bool VK_Shadow_HasActiveSurfaceFog(void);
+bool VK_Shadow_GetSkyFogClearColor(vec3_t out_color);
 void VK_Shadow_UpdateDlights(const refdef_t *fd);
 
 void VK_Shadow_BeginFrame(void *userdata,
-                          const shadow_frontend_policy_t *policy);
+                          const shadow_frontend_policy_t *policy,
+                          uint32_t required_page_count);
 bool VK_Shadow_EnsurePage(void *userdata, const shadow_view_desc_t *view);
 bool VK_Shadow_RenderView(void *userdata, const shadow_view_desc_t *view,
                           const shadow_caster_t *casters,

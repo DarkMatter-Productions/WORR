@@ -73,7 +73,7 @@ cvar_t *developer{};
 namespace {
 
 constexpr uint32_t kPublicCapabilities =
-    WORR_NET_CAP_LEGACY_STAGE_MASK;
+    WORR_NET_CAP_NATIVE_SNAPSHOT_PUBLIC_MASK;
 constexpr uint32_t kPrivateSnapshotCapabilities =
     WORR_NET_CAP_NATIVE_SNAPSHOT_PRIVATE_MASK;
 constexpr uint32_t kProjectionEntityCapacity = 64;
@@ -99,8 +99,12 @@ static_assert(kRereleaseEntityIndexLimit >
 static_assert(kPrivateSnapshotCapabilities == UINT32_C(0x57));
 
 cvar_t native_shadow_cvar{};
+cvar_t input_batch_cvar{};
+cvar_t input_batch_offer_cvar{};
 cvar_t event_shadow_cvar{};
+cvar_t event_presentation_owned_cvar{};
 cvar_t snapshot_shadow_mode_cvar{};
+cvar_t capability_offer_cvar{};
 cvar_t probe_hold_cvar{};
 cvar_t projection_shadow_cvar{};
 cvar_t projection_debug_cvar{};
@@ -1241,10 +1245,18 @@ void reset_fixture(fixture_t &fixture, uint32_t now,
     std::memset(&cl, 0, sizeof(cl));
     std::memset(&native_shadow_cvar, 0,
                 sizeof(native_shadow_cvar));
+    std::memset(&input_batch_cvar, 0,
+                sizeof(input_batch_cvar));
+    std::memset(&input_batch_offer_cvar, 0,
+                sizeof(input_batch_offer_cvar));
     std::memset(&event_shadow_cvar, 0,
                 sizeof(event_shadow_cvar));
+    std::memset(&event_presentation_owned_cvar, 0,
+                sizeof(event_presentation_owned_cvar));
     std::memset(&snapshot_shadow_mode_cvar, 0,
                 sizeof(snapshot_shadow_mode_cvar));
+    std::memset(&capability_offer_cvar, 0,
+                sizeof(capability_offer_cvar));
     std::memset(&probe_hold_cvar, 0,
                 sizeof(probe_hold_cvar));
     std::memset(&projection_shadow_cvar, 0,
@@ -1258,6 +1270,8 @@ void reset_fixture(fixture_t &fixture, uint32_t now,
     std::memset(&prediction_enabled_cvar, 0,
                 sizeof(prediction_enabled_cvar));
     std::memset(&paused_cvar, 0, sizeof(paused_cvar));
+    std::memset(&snapshot_timeline_owned_cvar, 0,
+                sizeof(snapshot_timeline_owned_cvar));
     reliable_storage.fill(0);
     com_localTime = now;
     fixture.official_epoch = official_epoch;
@@ -1294,6 +1308,7 @@ void reset_fixture(fixture_t &fixture, uint32_t now,
     CHECK(shadow_status.consumer_attached == 1);
 
     CL_NativeReadinessPilotRegisterCvar();
+    CL_NetCapabilityRegisterOffer();
     CHECK(CL_NativeReadinessPilotBeginConnection(&cls.netchan));
     CHECK(SV_NativeShadowPeerInitModeV1(
         &fixture.server, &fixture.server_channel, now,
@@ -2464,8 +2479,25 @@ extern "C" cvar_t *Cvar_Get(
         return &event_shadow_cvar;
     }
     if (name &&
+        std::strcmp(name, "cl_worr_native_input_batch") == 0) {
+        return &input_batch_cvar;
+    }
+    if (name &&
+        std::strcmp(name, WORR_NATIVE_INPUT_BATCH_USERINFO_KEY) == 0) {
+        return &input_batch_offer_cvar;
+    }
+    if (name &&
+        std::strcmp(
+            name, "cl_worr_native_event_presentation_owned") == 0) {
+        return &event_presentation_owned_cvar;
+    }
+    if (name &&
         std::strcmp(name, "cl_worr_native_snapshot_shadow") == 0) {
         return &snapshot_shadow_mode_cvar;
+    }
+    if (name &&
+        std::strcmp(name, WORR_NET_CAPABILITY_USERINFO_KEY) == 0) {
+        return &capability_offer_cvar;
     }
     if (name &&
         std::strcmp(name, "cl_worr_native_shadow_probe_hold") == 0) {
@@ -2487,10 +2519,18 @@ extern "C" cvar_t *Cvar_Get(
     return &native_shadow_cvar;
 }
 
+extern "C" bool CL_AdaptiveInputGetOutputV1(
+    worr_adaptive_input_output_v1 *output_out)
+{
+    if (output_out)
+        *output_out = {};
+    return false;
+}
+
 extern "C" void Cvar_SetByVar(cvar_t *var, const char *value, from_t)
 {
     CHECK(var != nullptr && value != nullptr);
-    var->integer = value[0] == '1' ? 1 : 0;
+    var->integer = static_cast<int32_t>(std::strtoul(value, nullptr, 10));
     var->value = static_cast<float>(var->integer);
 }
 

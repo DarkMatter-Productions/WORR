@@ -17,6 +17,40 @@ static bool mask_valid(uint32_t capabilities)
     return (capabilities & ~WORR_NET_CAP_KNOWN_MASK) == 0;
 }
 
+uint32_t Worr_NetCapabilityPublicOfferV1(bool native_enabled,
+                                         bool event_enabled,
+                                         bool snapshot_enabled)
+{
+    if (!native_enabled)
+        return WORR_NET_CAP_LEGACY_STAGE_MASK;
+    if (event_enabled && snapshot_enabled)
+        return WORR_NET_CAP_NATIVE_EVENT_SNAPSHOT_PUBLIC_MASK;
+    if (event_enabled)
+        return WORR_NET_CAP_NATIVE_EVENT_PUBLIC_MASK;
+    if (snapshot_enabled)
+        return WORR_NET_CAP_NATIVE_SNAPSHOT_PUBLIC_MASK;
+    return WORR_NET_CAP_NATIVE_COMMAND_PUBLIC_MASK;
+}
+
+bool Worr_NetCapabilityIsPublicNativeMaskV1(uint32_t capabilities)
+{
+    return capabilities == WORR_NET_CAP_NATIVE_COMMAND_PUBLIC_MASK ||
+           capabilities == WORR_NET_CAP_NATIVE_EVENT_PUBLIC_MASK ||
+           capabilities == WORR_NET_CAP_NATIVE_SNAPSHOT_PUBLIC_MASK ||
+           capabilities ==
+               WORR_NET_CAP_NATIVE_EVENT_SNAPSHOT_PUBLIC_MASK;
+}
+
+uint32_t Worr_NetCapabilityPublicSupportV1(
+    uint32_t offered, uint32_t configured, bool native_endpoint_ready)
+{
+    if (native_endpoint_ready && offered == configured &&
+        Worr_NetCapabilityIsPublicNativeMaskV1(configured)) {
+        return configured;
+    }
+    return WORR_NET_CAP_LEGACY_STAGE_MASK;
+}
+
 bool Worr_NetCapabilitiesFormatV1(uint32_t capabilities,
                                   char *text_out,
                                   size_t text_capacity)

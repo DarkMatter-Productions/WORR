@@ -117,12 +117,16 @@ The generated map SHA-256 is:
 1B65468863A0D849A319AAF9B12EC00ABDF7CFD995FC733B6ACA99B4B70AE873
 ```
 
-`assets/renderer_parity/fr01_bmodel_first_frame_manifest.json` owns two scenes:
+`assets/renderer_parity/fr01_bmodel_first_frame_manifest.json` owns three scenes:
 
 - `bmodel_transformed_first_frame` uses `r_fullbright 1` and proves the
   transformed bmodel plus global world-lighting bypass;
-- `legacy_lightmapped_world` uses `r_fullbright 0` and compares a background
-  crop containing only the authored dark legacy lightmap.
+- `legacy_lightmapped_world` uses `r_fullbright 0`, `gl_modulate 1`, and the
+  shared `r_lightmap 1` diagnostic mode to compare a background crop containing
+  only the authored legacy lightmap; and
+- `global_fullbright_lightmapped_world` uses `r_fullbright 1` to prove that
+  the normal textured fullbright route remains separate from the diagnostic
+  lightmap route.
 
 The manifest enforces both pixel and semantic gates:
 
@@ -132,9 +136,9 @@ The manifest enforces both pixel and semantic gates:
 - at most `1%` backend mask-count difference; and
 - at least `0.99` backend mask intersection-over-union.
 
-The lightmapped scene additionally requires at least 30,000 dark authored
-lightmap pixels, at most `1%` backend count difference, and IoU at least
-`0.99`.
+The lightmapped scene additionally requires at least 30,000 exact RGB
+`32 / 32 / 32` authored-lightmap pixels, at most `1%` backend count
+difference, and IoU at least `0.99`.
 
 The capture runner disables DOF and RmlUi before renderer/UI initialization.
 The new idempotent `closeconsole` command invokes the existing forced console
@@ -211,6 +215,24 @@ D242B399152B7E6E93AE80A5D832665B18C3B38AB78C41D59CEB5464E185B494  .install/worr_
 82C16BCAF2B5DCD5E5AED2E1B5B3CCC31054058D58BA74008387D4D61CDF10A8  .install/basew/pak0.pkz
 1B65468863A0D849A319AAF9B12EC00ABDF7CFD995FC733B6ACA99B4B70AE873  .install/basew/maps/worr_fr01_bmodel_first_frame.bsp
 ```
+
+## 2026-07-19 follow-up: shared `r_lightmap` parity
+
+The legacy probe was strengthened after a fresh capture showed that a broad
+dark-range check did not isolate the authored lightmap itself. The shared
+OpenGL `r_lightmap` cvar is now implemented natively by Vulkan opaque and
+alpha world pipelines, including OpenGL-compatible glow/intensity suppression
+and bloom-extraction suppression. The current three-scene validation root is:
+
+```text
+.tmp/renderer-parity/fr01-bmodel-lightmap-debug-final/
+```
+
+It holds exact OpenGL/Vulkan equality for the 170,000-pixel transformed scene,
+the 34,000-pixel exact RGB `32 / 32 / 32` legacy-lightmap mask, and the
+34,000-pixel exact RGB `24 / 40 / 72` global-fullbright mask under validation.
+See `vulkan-shared-lightmap-debug-parity-2026-07-19.md` for implementation and
+validation detail.
 
 ## Scope conclusion
 

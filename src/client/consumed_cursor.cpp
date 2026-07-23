@@ -186,6 +186,15 @@ extern "C" bool CL_ConsumedCursorCanonicalEstablished(void)
     return capability_active() && canonical_established;
 }
 
+extern "C" bool CL_ConsumedCursorGetLatestV1(
+    worr_command_cursor_v1 *cursor_out)
+{
+    if (!cursor_out || !capability_active() || !canonical_established)
+        return false;
+    *cursor_out = last_canonical_cursor;
+    return true;
+}
+
 extern "C" bool CL_ConsumedCursorGetTelemetry(
     worr_consumed_cursor_sideband_telemetry_v1 *telemetry_out)
 {

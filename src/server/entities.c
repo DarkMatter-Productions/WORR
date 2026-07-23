@@ -647,6 +647,17 @@ bool SV_WriteFrameToClient_Enhanced(client_t *client, unsigned maxsize)
         client->worr_native_shadow) {
         if (SV_NativeShadowModeHasEventV1(
                 client->worr_native_shadow->mode)) {
+            /* Reliable direct-game and keyed-POI messages precede this frame
+             * on the legacy channel. Bind their unified FIFO first, against
+             * this exact committed projection, before frame-derived and
+             * post-frame unreliable event candidates. */
+            if (client->csr && client->csr->max_edicts > 0) {
+                (void)SV_NativeShadowFlushReliableEventsV1(
+                    client->worr_native_shadow,
+                    client->worr_snapshot_shadow, snapshot_ref,
+                    (uint32_t)client->csr->max_edicts,
+                    (uint32_t)sv.spawncount, svs.realtime);
+            }
             /* The legacy frame is already complete and remains
              * authoritative.  Native queue failure drains only the opt-in
              * event shadow. */

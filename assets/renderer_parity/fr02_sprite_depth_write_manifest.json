@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "task_id": "FR-02-T05",
+  "scenes": [
+    {
+      "id": "opaque_sprite_preserves_far_translucent_fixed_view",
+      "config": "renderer_parity/fr02_sprite_depth_write.cfg",
+      "capture": "fr02_sprite_depth_write.tga",
+      "crop": [300, 180, 360, 440],
+      "metrics": {
+        "pixel_threshold": 0,
+        "max_mean_absolute_rgb": [0, 0, 0],
+        "max_pixels_over_threshold_percent": 0
+      },
+      "probes": [
+        {
+          "name": "opaque_sprite_outer_region",
+          "color": [32, 200, 80],
+          "tolerance": 0,
+          "min_pixels_per_backend": 55000,
+          "max_backend_count_delta_percent": 0,
+          "min_backend_intersection_over_union": 1.0
+        },
+        {
+          "name": "far_translucent_sprite_blended_over_opaque",
+          "color": [128, 132, 56],
+          "tolerance": 0,
+          "min_pixels_per_backend": 100000,
+          "max_backend_count_delta_percent": 0,
+          "min_backend_intersection_over_union": 1.0
+        }
+      ]
+    }
+  ]
+}

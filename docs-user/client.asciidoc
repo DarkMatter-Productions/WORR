@@ -41,15 +41,37 @@ cg_snapshot_timeline_render::
       - 1 — audit canonical remote-entity transforms without displaying them
       - 2 — display only parity-proven canonical remote transforms, with an
         independent established-render fallback for every rejected entity
+      - 3 — use the owned native snapshot timeline for remote entities during
+        a controlled native-networking test
 
-    Mode 2 is intended for controlled playtests. It does not switch the
-    predicted local player, enable extrapolation, or promote canonical effects
-    and audio.
+    Modes 2 and 3 are intended for controlled playtests. Mode 3 is available
+    only after the engine has established native timeline ownership; it keeps
+    local-player prediction separate and fails closed if that ownership is
+    lost. This control does not promote canonical event effects.
 
 cg_snapshot_timeline_render_epsilon::
     Maximum per-axis origin, beam-end, or angular difference accepted by the
     snapshot promotion parity gate. Default value is 0.125 and the usable range
     is 0.0001 to 8.0. This is a non-persistent testing control.
+
+cg_snapshot_timeline_interpolation_delay_ms::
+    Baseline native-timeline render delay for mode 3. Default value is 50 ms;
+    values are limited to 0 through 1000 ms.
+
+cg_snapshot_timeline_adaptive_interpolation::
+    Allows mode 3 to raise its render delay when accepted snapshot arrival
+    jitter or recent extrapolation indicates pressure, then recover toward the
+    baseline. Defaults to 1. It has no effect while established rendering owns
+    the stream.
+
+cg_snapshot_timeline_max_interpolation_delay_ms::
+    Upper limit for adaptive mode-3 delay. Default value is 150 ms; values are
+    limited to 0 through 1000 ms and cannot reduce the configured baseline.
+
+cg_snapshot_timeline_max_extrapolation_ms::
+    Maximum mode-3 extrapolation window after all entity safety checks pass.
+    Default value is 50 ms; values are limited to 0 through 250 ms. Set it to
+    0 to disable native extrapolation.
 
 cl_protocol::
     Specifies preferred network protocol version to use when connecting to
@@ -108,6 +130,17 @@ cl_worr_native_event_shadow::
     the cgame audit runtime accepts them; established snapshot events still
     produce visible effects and audio. This is not a performance or gameplay
     authority option. Reconnect after changing it. See
+    link:progressive-networking-controls.md[Progressive Networking Controls].
+
+cl_worr_native_snapshot_shadow::
+    Adds the client half of the developer-only canonical snapshot diagnostic
+    to `cl_worr_native_shadow`. Default value is 0 (disabled). The client and
+    server must enable both base native-shadow controls and both snapshot-shadow
+    controls before connecting; `sv_snapshot_shadow` must remain enabled on the
+    server. This control alone does not replace established snapshots or
+    promote native rendering, effects, audio, or gameplay authority. It may be
+    combined with the event-shadow pair for the exact combined diagnostic.
+    Reconnect after changing it. See
     link:progressive-networking-controls.md[Progressive Networking Controls].
 
 cl_snapshot_recovery::
@@ -1343,6 +1376,11 @@ cl_demosuspendtoggle::
     pauses if it was recoring. Default value is 1 (toggle between pause and
     resume).
 
+cl_native_demo_max_mb::
+    Sets the maximum size of an opt-in native snapshot capture. Values are
+    clamped from 1 to 64 MiB, and the default is 64. This does not affect
+    normal `.dm2` recording.
+
 cl_autopause::
     Specifies if single player game or demo playback is automatically paused
     once client console or menu is opened. Default value is 1 (pause game).
@@ -1547,6 +1585,26 @@ suspend::
 
 resume::
     Resumes demo recording.
+
+native_record <filename[.wdm]>::
+    Starts an opt-in canonical snapshot capture under
+    ‘demos/_filename_.wdm’. This currently works only during live play on a
+    connection with the confirmed native snapshot feature. It does not support
+    demo playback, MVD/GTV playback, map changes, or spectator view changes.
+
+WARNING: A `.wdm` capture is not yet a playable demo. It contains bounded
+canonical snapshots for development tooling and future replay support. Use the
+normal ‘record’ command when you need a playable `.dm2` demo.
+
+native_stop::
+    Finishes the active native snapshot capture. WORR validates the complete
+    temporary file before publishing the `.wdm`. If writing or validation
+    fails, the `.wdm.tmp` file is retained for diagnosis and is not treated as
+    a valid capture.
+
+native_record_status::
+    Prints native snapshot recording state, stop reason, paths, counts, byte
+    limit, epochs, and the last codec/framing result.
 
 .Demo packet sizes
 ******************

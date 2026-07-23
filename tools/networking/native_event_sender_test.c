@@ -47,6 +47,58 @@ static bool make_candidate(uint32_t tick, uint32_t entity_index,
       raw_event, 1024, candidate_out, &semantic_hash);
 }
 
+static bool make_blaster_candidate(uint32_t tick, uint32_t entity_index,
+                                   uint16_t payload_kind,
+                                   worr_event_record_v1 *candidate_out) {
+  worr_event_payload_legacy_temp_v1 temporary;
+  worr_event_payload_muzzle_v1 muzzle;
+  worr_event_payload_spatial_audio_v1 spatial;
+  uint16_t valid_fields = 0;
+
+  if (!make_candidate(tick, entity_index,
+                      WORR_EVENT_LEGACY_ENTITY_FOOTSTEP, candidate_out))
+    return false;
+  memset(candidate_out->payload, 0, sizeof(candidate_out->payload));
+  candidate_out->payload_kind = payload_kind;
+  switch (payload_kind) {
+  case WORR_EVENT_PAYLOAD_LEGACY_TEMP_V1:
+    memset(&temporary, 0, sizeof(temporary));
+    temporary.subtype = WORR_EVENT_LEGACY_TEMP_GUNSHOT;
+    if (!Worr_EventLegacyTempFieldMaskV1(
+            temporary.subtype, 0, &valid_fields))
+      return false;
+    temporary.valid_fields = valid_fields;
+    temporary.position1[0] = 3.0f;
+    temporary.direction[1] = 1.0f;
+    candidate_out->event_type = WORR_EVENT_TYPE_VISUAL_EFFECT;
+    candidate_out->payload_size = sizeof(temporary);
+    memcpy(candidate_out->payload, &temporary, sizeof(temporary));
+    break;
+  case WORR_EVENT_PAYLOAD_MUZZLE_V1:
+    memset(&muzzle, 0, sizeof(muzzle));
+    muzzle.family = WORR_EVENT_MUZZLE_FAMILY_PLAYER;
+    muzzle.flash_id = WORR_EVENT_PLAYER_MUZZLE_BLASTER;
+    candidate_out->event_type = WORR_EVENT_TYPE_WEAPON_FIRE;
+    candidate_out->payload_size = sizeof(muzzle);
+    memcpy(candidate_out->payload, &muzzle, sizeof(muzzle));
+    break;
+  case WORR_EVENT_PAYLOAD_SPATIAL_AUDIO_V1:
+    memset(&spatial, 0, sizeof(spatial));
+    spatial.asset_id = 99;
+    spatial.raw_entity = WORR_EVENT_NO_ENTITY;
+    spatial.volume = 1.0f;
+    spatial.attenuation = 2.0f;
+    spatial.pitch = 1.0f;
+    candidate_out->event_type = WORR_EVENT_TYPE_AUDIO_CUE;
+    candidate_out->payload_size = sizeof(spatial);
+    memcpy(candidate_out->payload, &spatial, sizeof(spatial));
+    break;
+  default:
+    return false;
+  }
+  return Worr_EventRecordCandidateValidateV1(candidate_out, 1024);
+}
+
 static bool make_ack_packet_for_epoch(uint32_t transport_epoch, uint32_t first,
                                       uint32_t last, uint8_t *packet_out,
                                       size_t packet_capacity,
@@ -698,6 +750,7 @@ static bool test_event_sequence_exhaustion(void) {
   uint32_t promoted;
   uint32_t event_payloads = 0;
   uint32_t index;
+  bool due = true;
 
   CHECK(Worr_EventStreamDescriptorInitV1(&descriptor, 105, UINT32_MAX));
   CHECK(Worr_NativeEventSenderInitV1(&sender, &binding, &descriptor, 1024, 872,
@@ -748,11 +801,170 @@ static bool test_event_sequence_exhaustion(void) {
     }
   }
   CHECK(event_payloads == 1 && Worr_NativeEventSenderValidateV1(&sender));
+  CHECK(Worr_NativeEventSenderDataDuePeekV1(
+            &sender, 7003, 100, &due) ==
+            WORR_NATIVE_EVENT_SENDER_SEQUENCE_LIMIT &&
+        due);
   sender_before = sender;
   promoted = UINT32_MAX;
   CHECK(Worr_NativeEventSenderPumpV1(&sender, 7003, &promoted) ==
             WORR_NATIVE_EVENT_SENDER_SEQUENCE_LIMIT &&
         promoted == 0 && memcmp(&sender, &sender_before, sizeof(sender)) == 0 &&
+        Worr_NativeEventSenderValidateV1(&sender));
+  return true;
+}
+
+static bool test_schema2_receipt_window_stalls_on_oldest_unacked(void) {
+  const uint32_t capabilities = WORR_NET_CAP_NATIVE_EVENT_PRIVATE_MASK;
+  worr_native_session_binding_v1 binding = make_binding(capabilities);
+  worr_event_stream_descriptor_v1 descriptor;
+  static worr_native_event_sender_v1 sender;
+  static worr_native_event_sender_v1 corrupt_sender;
+  worr_native_carrier_ack_ledger_v1 ledger;
+  worr_event_record_v1 candidates[72];
+  worr_native_envelope_frame_info_v1 frame;
+  uint8_t packet[WORR_NATIVE_CARRIER_MAX_PACKET_BYTES];
+  uint8_t ack_packet[WORR_NATIVE_CARRIER_MAX_PACKET_BYTES];
+  size_t packet_bytes;
+  size_t ack_bytes;
+  uint64_t token;
+  uint32_t descriptor_message;
+  uint32_t acknowledged;
+  uint32_t promoted;
+  uint32_t event_payloads = 0;
+  uint32_t logical_events = 0;
+  uint32_t earliest_outer_sequence = UINT32_MAX;
+  uint32_t earliest_message = 0;
+  uint32_t later_first_message = UINT32_MAX;
+  uint32_t later_last_message = 0;
+  uint32_t next_before_stall;
+  uint16_t head_before_stall;
+  uint32_t index;
+  uint32_t sent_payloads;
+  bool due = true;
+
+  CHECK(Worr_EventStreamDescriptorInitV1(&descriptor, 108, 1000));
+  descriptor.flags = WORR_EVENT_STREAM_FLAG_BATCH_SCHEMA2;
+  CHECK(Worr_NativeEventSenderInitV1(
+            &sender, &binding, &descriptor, 1024, 872, 9500) ==
+        WORR_NATIVE_EVENT_SENDER_OK);
+  CHECK(Worr_NativeCarrierAckLedgerInitV1(&ledger, &binding, 3));
+  descriptor_message = sender.tx_slots[0].message_sequence;
+  CHECK(Worr_NativeEventSenderPrepareMixedV1(
+            &sender, &ledger, 9501, 100, 100, 1024, NULL, 0, packet,
+            sizeof(packet), &packet_bytes, &token) ==
+        WORR_NATIVE_EVENT_SENDER_OK);
+  CHECK(Worr_NativeEventSenderConfirmMixedV1(
+            &sender, &ledger, 9501, packet, packet_bytes) ==
+        WORR_NATIVE_EVENT_SENDER_OK);
+  CHECK(make_ack_packet(&binding, descriptor_message, descriptor_message,
+                        ack_packet, sizeof(ack_packet), &ack_bytes));
+  CHECK(Worr_NativeEventSenderApplyAcksV1(
+            &sender, ack_packet, ack_bytes, &acknowledged) ==
+        WORR_NATIVE_EVENT_SENDER_ACK_APPLIED);
+
+  for (index = 0; index < 72; ++index) {
+    CHECK(make_candidate(800, 100u + index,
+                         WORR_EVENT_LEGACY_ENTITY_FOOTSTEP,
+                         &candidates[index]));
+  }
+  CHECK(Worr_NativeEventSenderQueueCandidatesV1(
+            &sender, candidates, 72) == WORR_NATIVE_EVENT_SENDER_QUEUED);
+  CHECK(Worr_NativeEventSenderPumpV1(
+            &sender, 9502, &promoted) ==
+            WORR_NATIVE_EVENT_SENDER_PROMOTED &&
+        promoted == WORR_EVENT_RECEIPT_SELECTIVE_CAPACITY &&
+        sender.backlog_count == 8 &&
+        sender.next_event_sequence == 1064);
+
+  for (index = 0; index < WORR_NATIVE_EVENT_SENDER_TX_CAPACITY; ++index) {
+    const worr_native_tx_slot_v1 *slot = &sender.tx_slots[index];
+    const worr_native_event_sender_payload_v1 *payload;
+    worr_native_event_batch_info_v1 batch;
+    if ((slot->state_flags & WORR_NATIVE_TX_SLOT_OCCUPIED) == 0 ||
+        slot->record.record_class != WORR_NATIVE_RECORD_EVENT_V1)
+      continue;
+    payload = &sender.payloads[
+        slot->payload_handle & WORR_NATIVE_EVENT_SENDER_PAYLOAD_INDEX_MASK];
+    CHECK(Worr_NativeEventBatchInspectV1(
+              payload->encoded, payload->encoded_bytes, &batch) ==
+          WORR_NATIVE_EVENT_BATCH_OK);
+    ++event_payloads;
+    logical_events += batch.event_count;
+    if (slot->record.object_sequence < earliest_outer_sequence) {
+      if (earliest_message != 0) {
+        if (earliest_message < later_first_message)
+          later_first_message = earliest_message;
+        if (earliest_message > later_last_message)
+          later_last_message = earliest_message;
+      }
+      earliest_outer_sequence = slot->record.object_sequence;
+      earliest_message = slot->message_sequence;
+    } else {
+      if (slot->message_sequence < later_first_message)
+        later_first_message = slot->message_sequence;
+      if (slot->message_sequence > later_last_message)
+        later_last_message = slot->message_sequence;
+    }
+  }
+  CHECK(event_payloads > 1 && logical_events == 64 &&
+        earliest_message != 0 && later_first_message != UINT32_MAX &&
+        later_last_message >= later_first_message);
+  corrupt_sender = sender;
+  ++corrupt_sender.next_event_sequence;
+  CHECK(!Worr_NativeEventSenderValidateV1(&corrupt_sender));
+
+  /* Hand off every transport payload once.  Model only the oldest batch's
+   * packet/ACK as lost; later batches are eligible for exact ACK release. */
+  for (sent_payloads = 0; sent_payloads < event_payloads; ++sent_payloads) {
+    CHECK(Worr_NativeEventSenderPrepareMixedV1(
+              &sender, &ledger, 9502, 100, 100, 1024, NULL, 0, packet,
+              sizeof(packet), &packet_bytes, &token) ==
+          WORR_NATIVE_EVENT_SENDER_OK);
+    CHECK(decode_only_data(packet, packet_bytes, &frame));
+    if (sent_payloads == 0)
+      CHECK(frame.message_sequence == earliest_message);
+    CHECK(Worr_NativeEventSenderConfirmMixedV1(
+              &sender, &ledger, 9502, packet, packet_bytes) ==
+          WORR_NATIVE_EVENT_SENDER_OK);
+  }
+
+  /* Later transport ACKs can free most slots, but they cannot widen the
+   * cgame receipt window while the first logical batch remains unacknowledged. */
+  CHECK(make_ack_packet(&binding, later_first_message, later_last_message,
+                        ack_packet, sizeof(ack_packet), &ack_bytes));
+  CHECK(Worr_NativeEventSenderApplyAcksV1(
+            &sender, ack_packet, ack_bytes, &acknowledged) ==
+            WORR_NATIVE_EVENT_SENDER_ACK_APPLIED &&
+        acknowledged == event_payloads - 1u &&
+        sender.tx.retained_count == 1);
+  next_before_stall = sender.next_event_sequence;
+  head_before_stall = sender.backlog_head;
+  promoted = UINT32_MAX;
+  CHECK(Worr_NativeEventSenderPumpV1(
+            &sender, 9503, &promoted) ==
+            WORR_NATIVE_EVENT_SENDER_CAPACITY &&
+        promoted == 0 && sender.next_event_sequence == next_before_stall &&
+        sender.backlog_head == head_before_stall &&
+        sender.backlog_count == 8 && sender.tx.retained_count == 1);
+  due = true;
+  CHECK(Worr_NativeEventSenderDataDuePeekV1(
+            &sender, 9503, 100, &due) ==
+            WORR_NATIVE_EVENT_SENDER_NOT_DUE &&
+        !due);
+
+  CHECK(make_ack_packet(&binding, earliest_message, earliest_message,
+                        ack_packet, sizeof(ack_packet), &ack_bytes));
+  CHECK(Worr_NativeEventSenderApplyAcksV1(
+            &sender, ack_packet, ack_bytes, &acknowledged) ==
+            WORR_NATIVE_EVENT_SENDER_ACK_APPLIED &&
+        acknowledged == 1 && sender.tx.retained_count == 0);
+  CHECK(Worr_NativeEventSenderPumpV1(
+            &sender, 9504, &promoted) ==
+            WORR_NATIVE_EVENT_SENDER_PROMOTED &&
+        promoted == 8 && sender.backlog_count == 0 &&
+        sender.next_event_sequence == 1072 &&
+        sender.telemetry.schema2_events_promoted == 72 &&
         Worr_NativeEventSenderValidateV1(&sender));
   return true;
 }
@@ -941,6 +1153,207 @@ static bool test_explicit_counted_cancellation(void) {
   return true;
 }
 
+static bool test_same_source_coordinates_schema2_batch_and_logical_telemetry(
+    void) {
+  static const uint16_t blaster_kinds[5] = {
+      WORR_EVENT_PAYLOAD_LEGACY_TEMP_V1,
+      WORR_EVENT_PAYLOAD_LEGACY_TEMP_V1,
+      WORR_EVENT_PAYLOAD_MUZZLE_V1,
+      WORR_EVENT_PAYLOAD_MUZZLE_V1,
+      WORR_EVENT_PAYLOAD_SPATIAL_AUDIO_V1,
+  };
+  const uint32_t capabilities = WORR_NET_CAP_NATIVE_EVENT_PRIVATE_MASK;
+  worr_native_session_binding_v1 binding = make_binding(capabilities);
+  worr_event_stream_descriptor_v1 descriptor;
+  static worr_native_event_sender_v1 sender;
+  static worr_native_event_sender_v1 legacy_sender;
+  static worr_native_event_sender_v1 corrupt_sender;
+  worr_native_carrier_ack_ledger_v1 ledger;
+  worr_native_carrier_ack_ledger_v1 legacy_ledger;
+  worr_event_record_v1 candidates[5];
+  worr_event_record_v1 decoded[WORR_NATIVE_EVENT_BATCH_MAX_EVENTS];
+  worr_native_event_batch_info_v1 batch;
+  worr_native_envelope_frame_info_v1 frame;
+  uint8_t packet[WORR_NATIVE_CARRIER_MAX_PACKET_BYTES];
+  uint8_t ack_packet[WORR_NATIVE_CARRIER_MAX_PACKET_BYTES];
+  size_t packet_bytes;
+  size_t ack_bytes;
+  uint64_t token;
+  uint32_t descriptor_message;
+  uint32_t event_message = 0;
+  uint32_t acknowledged;
+  uint32_t promoted;
+  uint32_t index;
+  bool due = false;
+  const worr_native_event_sender_payload_v1 *batch_payload = NULL;
+
+  CHECK(Worr_EventStreamDescriptorInitV1(&descriptor, 109, 700));
+  descriptor.flags |= WORR_EVENT_STREAM_FLAG_BATCH_SCHEMA2;
+  CHECK(Worr_EventStreamDescriptorValidateV1(&descriptor));
+  CHECK(Worr_NativeEventSenderInitV1(
+            &sender, &binding, &descriptor, 1024, 872, 10000) ==
+        WORR_NATIVE_EVENT_SENDER_OK);
+  CHECK(Worr_NativeCarrierAckLedgerInitV1(&ledger, &binding, 3));
+  descriptor_message = sender.tx_slots[0].message_sequence;
+  CHECK(Worr_NativeEventSenderPrepareMixedV1(
+            &sender, &ledger, 10001, 100, 100, 1024, NULL, 0, packet,
+            sizeof(packet), &packet_bytes, &token) ==
+        WORR_NATIVE_EVENT_SENDER_OK);
+  CHECK(Worr_NativeEventSenderConfirmMixedV1(
+            &sender, &ledger, 10001, packet, packet_bytes) ==
+        WORR_NATIVE_EVENT_SENDER_OK);
+  CHECK(make_ack_packet(&binding, descriptor_message, descriptor_message,
+                        ack_packet, sizeof(ack_packet), &ack_bytes));
+  CHECK(Worr_NativeEventSenderApplyAcksV1(
+            &sender, ack_packet, ack_bytes, &acknowledged) ==
+            WORR_NATIVE_EVENT_SENDER_ACK_APPLIED &&
+        acknowledged == 1);
+
+  for (index = 0; index < 5; ++index) {
+    CHECK(make_blaster_candidate(600, 60u + index,
+                                 blaster_kinds[index],
+                                 &candidates[index]));
+  }
+  CHECK(Worr_NativeEventSenderQueueCandidatesV1(
+            &sender, candidates, 5) == WORR_NATIVE_EVENT_SENDER_QUEUED);
+  CHECK(Worr_NativeEventSenderDataDuePeekV1(
+            &sender, 10000, 100, &due) ==
+            WORR_NATIVE_EVENT_SENDER_CLOCK_REGRESSION &&
+        !due);
+  CHECK(Worr_NativeEventSenderPumpV1(&sender, 10002, &promoted) ==
+            WORR_NATIVE_EVENT_SENDER_PROMOTED &&
+        promoted == 5 && sender.backlog_count == 0 &&
+        sender.tx.retained_count == 1 && sender.payload_occupied == 1 &&
+        sender.telemetry.candidates_promoted == 5 &&
+        sender.telemetry.schema2_batches_promoted == 1 &&
+        sender.telemetry.schema2_events_promoted == 5);
+  corrupt_sender = sender;
+  corrupt_sender.telemetry.schema2_events_promoted = 6;
+  CHECK(!Worr_NativeEventSenderValidateV1(&corrupt_sender));
+  corrupt_sender = sender;
+  corrupt_sender.telemetry.schema2_batches_promoted = 0;
+  CHECK(!Worr_NativeEventSenderValidateV1(&corrupt_sender));
+  corrupt_sender = sender;
+  corrupt_sender.telemetry.schema2_batches_promoted = 3;
+  CHECK(!Worr_NativeEventSenderValidateV1(&corrupt_sender));
+  corrupt_sender = sender;
+  corrupt_sender.telemetry.candidates_promoted = 9;
+  corrupt_sender.telemetry.schema2_events_promoted = 9;
+  CHECK(!Worr_NativeEventSenderValidateV1(&corrupt_sender));
+  corrupt_sender = sender;
+  corrupt_sender.telemetry.candidates_queued = UINT64_MAX;
+  corrupt_sender.telemetry.candidates_promoted = UINT64_MAX;
+  corrupt_sender.telemetry.schema2_batches_promoted = UINT64_MAX;
+  corrupt_sender.telemetry.schema2_events_promoted = UINT64_MAX;
+  CHECK(Worr_NativeEventSenderValidateV1(&corrupt_sender));
+  corrupt_sender = sender;
+  corrupt_sender.descriptor.flags = 0;
+  CHECK(!Worr_NativeEventSenderValidateV1(&corrupt_sender));
+  for (index = 0; index < WORR_NATIVE_EVENT_SENDER_TX_CAPACITY; ++index) {
+    if ((sender.tx_slots[index].state_flags &
+         WORR_NATIVE_TX_SLOT_OCCUPIED) != 0) {
+      event_message = sender.tx_slots[index].message_sequence;
+      batch_payload = &sender.payloads[
+          sender.tx_slots[index].payload_handle &
+          WORR_NATIVE_EVENT_SENDER_PAYLOAD_INDEX_MASK];
+    }
+  }
+  CHECK(event_message != 0 && batch_payload != NULL &&
+        batch_payload->record.record_schema_version ==
+            WORR_NATIVE_EVENT_BATCH_RECORD_SCHEMA);
+  CHECK(Worr_NativeEventBatchDecodeV1(
+            batch_payload->encoded, batch_payload->encoded_bytes, 1024,
+            decoded, WORR_NATIVE_EVENT_BATCH_MAX_EVENTS, &batch) ==
+            WORR_NATIVE_EVENT_BATCH_OK &&
+        batch.event_count == 5 && batch.first_sequence == 700 &&
+        batch.last_sequence == 704 &&
+        batch.nested_event_bytes == 752 &&
+        batch_payload->encoded_bytes == 784 &&
+        batch_payload->encoded_bytes +
+                WORR_NATIVE_ENVELOPE_WIRE_HEADER_BYTES ==
+            840 &&
+        batch_payload->encoded_bytes +
+                WORR_NATIVE_ENVELOPE_WIRE_HEADER_BYTES <=
+            872);
+  for (index = 0; index < 5; ++index)
+    CHECK(decoded[index].event_id.sequence == 700u + index);
+
+  CHECK(Worr_NativeEventSenderPrepareMixedV1(
+            &sender, &ledger, 10002, 100, 100, 1024, NULL, 0, packet,
+            sizeof(packet), &packet_bytes, &token) ==
+        WORR_NATIVE_EVENT_SENDER_OK);
+  CHECK(decode_only_data(packet, packet_bytes, &frame));
+  CHECK(frame.record.record_schema_version ==
+            WORR_NATIVE_EVENT_BATCH_RECORD_SCHEMA &&
+        frame.record.object_sequence == 704 && frame.fragment_count == 1);
+  CHECK(Worr_NativeEventSenderConfirmMixedV1(
+            &sender, &ledger, 10002, packet, packet_bytes) ==
+        WORR_NATIVE_EVENT_SENDER_OK);
+  CHECK(sender.telemetry.first_sends == 6);
+
+  CHECK(Worr_NativeEventSenderPrepareMixedV1(
+            &sender, &ledger, 10102, 100, 100, 1024, NULL, 0, packet,
+            sizeof(packet), &packet_bytes, &token) ==
+        WORR_NATIVE_EVENT_SENDER_OK);
+  CHECK(decode_only_data(packet, packet_bytes, &frame));
+  CHECK(frame.message_sequence == event_message &&
+        frame.record.record_schema_version ==
+            WORR_NATIVE_EVENT_BATCH_RECORD_SCHEMA &&
+        frame.record.object_sequence == 704 && frame.fragment_count == 1);
+  CHECK(Worr_NativeEventSenderConfirmMixedV1(
+            &sender, &ledger, 10102, packet, packet_bytes) ==
+        WORR_NATIVE_EVENT_SENDER_OK);
+  CHECK(sender.telemetry.first_sends == 6 &&
+        sender.telemetry.retries == 5 &&
+        sender.telemetry.schema2_batches_promoted == 1 &&
+        sender.telemetry.schema2_events_promoted == 5);
+
+  CHECK(make_ack_packet(&binding, event_message, event_message, ack_packet,
+                        sizeof(ack_packet), &ack_bytes));
+  CHECK(Worr_NativeEventSenderApplyAcksV1(
+            &sender, ack_packet, ack_bytes, &acknowledged) ==
+            WORR_NATIVE_EVENT_SENDER_ACK_APPLIED &&
+        acknowledged == 1 && sender.telemetry.events_acknowledged == 5 &&
+        sender.tx.retained_count == 0);
+
+  /* Without the descriptor opt-in, even a set with exact shared producer
+   * coordinates remains five schema-1 transport objects. */
+  descriptor.flags = 0;
+  CHECK(Worr_NativeEventSenderInitV1(
+            &legacy_sender, &binding, &descriptor, 1024, 872, 10100) ==
+        WORR_NATIVE_EVENT_SENDER_OK);
+  CHECK(Worr_NativeCarrierAckLedgerInitV1(&legacy_ledger, &binding, 3));
+  descriptor_message = legacy_sender.tx_slots[0].message_sequence;
+  CHECK(Worr_NativeEventSenderPrepareMixedV1(
+            &legacy_sender, &legacy_ledger, 10101, 100, 100, 1024, NULL, 0,
+            packet, sizeof(packet), &packet_bytes, &token) ==
+        WORR_NATIVE_EVENT_SENDER_OK);
+  CHECK(Worr_NativeEventSenderConfirmMixedV1(
+            &legacy_sender, &legacy_ledger, 10101, packet, packet_bytes) ==
+        WORR_NATIVE_EVENT_SENDER_OK);
+  CHECK(make_ack_packet(&binding, descriptor_message, descriptor_message,
+                        ack_packet, sizeof(ack_packet), &ack_bytes));
+  CHECK(Worr_NativeEventSenderApplyAcksV1(
+            &legacy_sender, ack_packet, ack_bytes, &acknowledged) ==
+        WORR_NATIVE_EVENT_SENDER_ACK_APPLIED);
+  CHECK(Worr_NativeEventSenderQueueCandidatesV1(
+            &legacy_sender, candidates, 5) ==
+        WORR_NATIVE_EVENT_SENDER_QUEUED);
+  CHECK(Worr_NativeEventSenderPumpV1(
+            &legacy_sender, 10102, &promoted) ==
+            WORR_NATIVE_EVENT_SENDER_PROMOTED &&
+        promoted == 5 && legacy_sender.tx.retained_count == 5);
+  CHECK(legacy_sender.telemetry.schema2_batches_promoted == 0 &&
+        legacy_sender.telemetry.schema2_events_promoted == 0);
+  for (index = 0; index < WORR_NATIVE_EVENT_SENDER_TX_CAPACITY; ++index) {
+    if ((legacy_sender.tx_slots[index].state_flags &
+         WORR_NATIVE_TX_SLOT_OCCUPIED) != 0)
+      CHECK(legacy_sender.tx_slots[index].record.record_schema_version ==
+            WORR_EVENT_ABI_VERSION);
+  }
+  return true;
+}
+
 int main(void) {
   if (!test_descriptor_gate_and_exact_stride() ||
       !test_event_handoff_reject_retire_and_late_ack() ||
@@ -949,7 +1362,9 @@ int main(void) {
       !test_partial_multi_range_event_release() ||
       !test_exact_mixed_budget_failure_transactionality() ||
       !test_event_sequence_exhaustion() ||
+      !test_schema2_receipt_window_stalls_on_oldest_unacked() ||
       !test_retire_rejects_prepared_packet() ||
+      !test_same_source_coordinates_schema2_batch_and_logical_telemetry() ||
       !test_explicit_counted_cancellation())
     return 1;
   puts("native event sender tests passed");

@@ -44,7 +44,7 @@ class VulkanUiDeviceLocalStreamSourceTests(unittest.TestCase):
         )
 
     def test_ui_draws_bind_device_local_buffers_only_after_upload_recording(self) -> None:
-        record = VK_UI[VK_UI.index("void VK_UI_Record(VkCommandBuffer cmd,"):]
+        record = VK_UI[VK_UI.index("static void VK_UI_RecordWithPipelines"):]
         self.assertIn("!frame->vertex_upload_bytes || !frame->index_upload_bytes", record)
         self.assertIn("vkCmdBindVertexBuffers(cmd, 0, 1, &frame->vertex_buffer", record)
         self.assertIn("vkCmdBindIndexBuffer(cmd, frame->index_buffer", record)

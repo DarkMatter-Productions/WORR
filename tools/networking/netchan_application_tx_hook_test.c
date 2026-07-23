@@ -50,6 +50,10 @@ typedef struct test_hook_s {
     uint64_t token;
     netchan_t *clear_registration_on_prepare;
     bool clear_registration_result;
+    netchan_t *append_queue_on_prepare;
+    byte append_queue_bytes[16];
+    uint32_t append_queue_byte_count;
+    unsigned queue_appends;
 
     unsigned prepare_calls;
     netchan_app_tx_prepare_info_v1_t prepare_info;
@@ -246,6 +250,14 @@ static netchan_app_tx_prepare_result_t test_prepare(
                    ? hook->candidate_bytes
                    : info->max_application_bytes);
     output->application_bytes = hook->candidate_bytes;
+
+    if (hook->append_queue_on_prepare &&
+        hook->append_queue_byte_count != 0) {
+        SZ_Write(&hook->append_queue_on_prepare->message,
+                 hook->append_queue_bytes,
+                 hook->append_queue_byte_count);
+        hook->queue_appends++;
+    }
 
     if (hook->clear_registration_on_prepare) {
         hook->clear_registration_result = Netchan_SetApplicationTxHook(
@@ -620,6 +632,397 @@ static int test_reliable_only_and_fragment_bypass(void)
     return 0;
 }
 
+static int test_queued_reliable_prefix_handoff_and_retry(void)
+{
+    static const byte prefix[] = {0xa1, 0xa2, 0xa3};
+    static const byte callback_append[] = {0xbc, 0xbd};
+    static const byte expected_tail[] = {
+        0xb1, 0xb2, 0xb3, 0xbc, 0xbd
+    };
+    static const byte queued[] = {
+        0xa1, 0xa2, 0xa3, 0xb1, 0xb2, 0xb3
+    };
+    static const bool accepted[] = {true};
+    netchan_t chan;
+    test_hook_t hook;
+    sizebuf_t tail_descriptor;
+    int transmit_bytes = -1;
+    unsigned prepare_calls;
+
+    memset(&hook, 0, sizeof(hook));
+    hook.mode = TEST_PREPARE_BYPASS;
+    init_channel(&chan, NETCHAN_NEW, NS_SERVER, 0,
+                 TEST_MAX_APPLICATION);
+    SZ_Write(&chan.message, queued, sizeof(queued));
+    hook.append_queue_on_prepare = &chan;
+    hook.append_queue_byte_count = sizeof(callback_append);
+    memcpy(hook.append_queue_bytes, callback_append,
+           sizeof(callback_append));
+    CHECK(Netchan_SetApplicationTxHook(
+              &chan, test_prepare, test_completion, &hook));
+    reset_send(accepted, 1);
+    CHECK(Netchan_TransmitQueuedReliablePrefix(
+        &chan, sizeof(prefix), 1, &transmit_bytes));
+    CHECK(transmit_bytes == 8 + (int)sizeof(prefix) &&
+          test_send.calls == 1 &&
+          test_send.packet_bytes[0] == 8 + sizeof(prefix) &&
+          memcmp(test_send.packets[0] + 8, prefix,
+                 sizeof(prefix)) == 0);
+    CHECK(chan.reliable_length == sizeof(prefix) &&
+          memcmp(chan.reliable_buf, prefix, sizeof(prefix)) == 0 &&
+          chan.message.cursize == sizeof(expected_tail) &&
+          memcmp(chan.message.data, expected_tail,
+                 sizeof(expected_tail)) == 0 &&
+          chan.reliable_sequence && chan.last_reliable_sequence == 1 &&
+          chan.outgoing_sequence == 2);
+    CHECK(hook.prepare_calls == 1 && hook.completion_calls == 0 &&
+          hook.queue_appends == 1 &&
+          hook.prepare_info.reliable_bytes == sizeof(prefix) &&
+          hook.prepare_info.unreliable_bytes == 0 &&
+          hook.legacy_bytes == sizeof(prefix) &&
+          memcmp(hook.legacy, prefix, sizeof(prefix)) == 0);
+
+    /* A handed-off generation owns the reliable slot until its exact ACK.
+     * Rejection is transactional and cannot consume the preserved tail. */
+    tail_descriptor = chan.message;
+    prepare_calls = hook.prepare_calls;
+    hook.append_queue_on_prepare = NULL;
+    reset_send(accepted, 1);
+    transmit_bytes = -1;
+    CHECK(!Netchan_TransmitQueuedReliablePrefix(
+        &chan, 1, 1, &transmit_bytes));
+    CHECK(transmit_bytes == 0 && test_send.calls == 0 &&
+          hook.prepare_calls == prepare_calls &&
+          memcmp(&chan.message, &tail_descriptor,
+                 sizeof(tail_descriptor)) == 0 &&
+          memcmp(chan.message.data, expected_tail,
+                 sizeof(expected_tail)) == 0);
+
+    /* Model a later packet acknowledging past this sequence with the wrong
+     * reliable bit.  Netchan retries the exact prefix, never the queued tail. */
+    chan.incoming_acknowledged = chan.last_reliable_sequence + 1;
+    chan.incoming_reliable_acknowledged = !chan.reliable_sequence;
+    reset_send(accepted, 1);
+    CHECK(Netchan_Transmit(&chan, 0, NULL, 1) ==
+          8 + (int)sizeof(prefix));
+    CHECK(test_send.calls == 1 && hook.prepare_calls == prepare_calls + 1 &&
+          hook.legacy_bytes == sizeof(prefix) &&
+          memcmp(hook.legacy, prefix, sizeof(prefix)) == 0 &&
+          chan.message.cursize == sizeof(expected_tail) &&
+          memcmp(chan.message.data, expected_tail,
+                 sizeof(expected_tail)) == 0 &&
+          chan.reliable_length == sizeof(prefix));
+
+    Netchan_Close(&chan);
+    return 0;
+}
+
+static int test_isolated_reliable_handoff_preserves_queue(void)
+{
+    static const byte isolated[] = {0xc1, 0xc2};
+    static const byte queued[] = {0xd1, 0xd2, 0xd3, 0xd4};
+    static const byte callback_append[] = {0xda};
+    static const byte expected_queue[] = {
+        0xd1, 0xd2, 0xd3, 0xd4, 0xda
+    };
+    static const byte candidate[] = {0xe1, 0xe2, 0xe3};
+    static const bool accepted[] = {true};
+    netchan_t chan;
+    test_hook_t hook;
+    sizebuf_t queued_descriptor;
+    int transmit_bytes = -1;
+
+    memset(&hook, 0, sizeof(hook));
+    hook.mode = TEST_PREPARE_VALID;
+    hook.token = UINT64_C(0x1020304050607080);
+    hook.candidate_bytes = sizeof(candidate);
+    memcpy(hook.candidate, candidate, sizeof(candidate));
+    init_channel(&chan, NETCHAN_NEW, NS_SERVER, 0,
+                 TEST_MAX_APPLICATION);
+    SZ_Write(&chan.message, queued, sizeof(queued));
+    queued_descriptor = chan.message;
+    queued_descriptor.cursize += sizeof(callback_append);
+    hook.append_queue_on_prepare = &chan;
+    hook.append_queue_byte_count = sizeof(callback_append);
+    memcpy(hook.append_queue_bytes, callback_append,
+           sizeof(callback_append));
+    CHECK(Netchan_SetApplicationTxHook(
+              &chan, test_prepare, test_completion, &hook));
+    reset_send(accepted, 1);
+    CHECK(Netchan_TransmitIsolatedReliable(
+        &chan, isolated, sizeof(isolated), 1, &transmit_bytes));
+    CHECK(transmit_bytes == 8 + (int)sizeof(candidate) &&
+          test_send.calls == 1 &&
+          test_send.packet_bytes[0] == 8 + sizeof(candidate) &&
+          memcmp(test_send.packets[0] + 8, candidate,
+                 sizeof(candidate)) == 0);
+    CHECK(memcmp(&chan.message, &queued_descriptor,
+                 sizeof(queued_descriptor)) == 0 &&
+          memcmp(chan.message.data, expected_queue,
+                 sizeof(expected_queue)) == 0 &&
+          chan.reliable_length == sizeof(isolated) &&
+          memcmp(chan.reliable_buf, isolated, sizeof(isolated)) == 0);
+    CHECK(hook.prepare_calls == 1 && hook.completion_calls == 1 &&
+          hook.queue_appends == 1 &&
+          hook.prepare_info.reliable_bytes == sizeof(isolated) &&
+          hook.prepare_info.unreliable_bytes == 0 &&
+          hook.legacy_bytes == sizeof(isolated) &&
+          memcmp(hook.legacy, isolated, sizeof(isolated)) == 0 &&
+          hook.completion_info.result ==
+              NETCHAN_APP_TX_COMPLETION_ACCEPTED &&
+          hook.completion_info.token == hook.token);
+
+    /* A retry remains isolated as well; the ordinary queue is still the
+     * byte-identical later generation. */
+    chan.incoming_acknowledged = chan.last_reliable_sequence + 1;
+    chan.incoming_reliable_acknowledged = !chan.reliable_sequence;
+    hook.append_queue_on_prepare = NULL;
+    reset_send(accepted, 1);
+    CHECK(Netchan_Transmit(&chan, 0, NULL, 1) ==
+          8 + (int)sizeof(candidate));
+    CHECK(hook.prepare_calls == 2 && hook.completion_calls == 2 &&
+          hook.legacy_bytes == sizeof(isolated) &&
+          memcmp(hook.legacy, isolated, sizeof(isolated)) == 0 &&
+          memcmp(&chan.message, &queued_descriptor,
+                 sizeof(queued_descriptor)) == 0 &&
+          memcmp(chan.message.data, expected_queue,
+                 sizeof(expected_queue)) == 0);
+
+    /* Model the reliable ACK.  The next ordinary transfer takes the preserved
+     * queue, proving it was neither merged into nor reordered before isolated. */
+    chan.reliable_length = 0;
+    chan.incoming_acknowledged = chan.last_reliable_sequence;
+    chan.incoming_reliable_acknowledged = chan.reliable_sequence;
+    hook.mode = TEST_PREPARE_BYPASS;
+    reset_send(accepted, 1);
+    CHECK(Netchan_Transmit(&chan, 0, NULL, 1) ==
+          8 + (int)sizeof(expected_queue));
+    CHECK(chan.message.cursize == 0 &&
+          chan.reliable_length == sizeof(expected_queue) &&
+          memcmp(chan.reliable_buf, expected_queue,
+                 sizeof(expected_queue)) == 0 &&
+          hook.prepare_calls == 3 &&
+          hook.legacy_bytes == sizeof(expected_queue) &&
+          memcmp(hook.legacy, expected_queue,
+                 sizeof(expected_queue)) == 0);
+
+    Netchan_Close(&chan);
+    return 0;
+}
+
+static int test_reliable_handoff_fragment_and_busy_rejection(void)
+{
+    enum {
+        PREFIX_BYTES = TEST_MAX_APPLICATION + 1,
+        TAIL_BYTES = 2,
+    };
+    byte queued[PREFIX_BYTES + TAIL_BYTES];
+    static const byte isolated[] = {0xf1};
+    static const bool accepted[] = {true};
+    netchan_t chan;
+    test_hook_t hook;
+    int transmit_bytes = -1;
+
+    for (size_t index = 0; index < PREFIX_BYTES; ++index)
+        queued[index] = (byte)index;
+    queued[PREFIX_BYTES] = 0x71;
+    queued[PREFIX_BYTES + 1] = 0x72;
+    memset(&hook, 0, sizeof(hook));
+    hook.mode = TEST_PREPARE_VALID;
+    hook.candidate_bytes = 1;
+    hook.candidate[0] = 0xff;
+    init_channel(&chan, NETCHAN_NEW, NS_SERVER, 0,
+                 TEST_MAX_APPLICATION);
+    SZ_Write(&chan.message, queued, sizeof(queued));
+    CHECK(Netchan_SetApplicationTxHook(
+              &chan, test_prepare, test_completion, &hook));
+    reset_send(accepted, 1);
+    CHECK(Netchan_TransmitQueuedReliablePrefix(
+        &chan, PREFIX_BYTES, 1, &transmit_bytes));
+    CHECK(transmit_bytes == 10 + TEST_MAX_APPLICATION &&
+          test_send.calls == 1 && hook.prepare_calls == 0 &&
+          hook.completion_calls == 0 && chan.fragment_pending &&
+          chan.fragment_out.cursize == PREFIX_BYTES &&
+          chan.fragment_out.readcount == TEST_MAX_APPLICATION &&
+          chan.reliable_length == PREFIX_BYTES &&
+          memcmp(chan.reliable_buf, queued, PREFIX_BYTES) == 0 &&
+          chan.message.cursize == TAIL_BYTES &&
+          memcmp(chan.message.data, queued + PREFIX_BYTES,
+                 TAIL_BYTES) == 0);
+
+    /* Neither helper may create a new generation while the fragment owner is
+     * live, and finishing fragments still leaves the reliable ACK gate busy. */
+    reset_send(accepted, 1);
+    transmit_bytes = -1;
+    CHECK(!Netchan_TransmitQueuedReliablePrefix(
+        &chan, 1, 1, &transmit_bytes));
+    CHECK(transmit_bytes == 0 && test_send.calls == 0);
+    transmit_bytes = -1;
+    CHECK(!Netchan_TransmitIsolatedReliable(
+        &chan, isolated, sizeof(isolated), 1, &transmit_bytes));
+    CHECK(transmit_bytes == 0 && test_send.calls == 0);
+
+    reset_send(accepted, 1);
+    CHECK(Netchan_TransmitNextFragment(&chan) == 11);
+    CHECK(test_send.calls == 1 && !chan.fragment_pending &&
+          chan.fragment_out.cursize == 0 &&
+          chan.fragment_out.readcount == 0 &&
+          chan.reliable_length == PREFIX_BYTES);
+    transmit_bytes = -1;
+    CHECK(!Netchan_TransmitIsolatedReliable(
+        &chan, isolated, sizeof(isolated), 1, &transmit_bytes));
+    CHECK(transmit_bytes == 0 &&
+          chan.message.cursize == TAIL_BYTES &&
+          memcmp(chan.message.data, queued + PREFIX_BYTES,
+                 TAIL_BYTES) == 0);
+
+    Netchan_Close(&chan);
+    return 0;
+}
+
+static int test_reliable_handoff_send_rejection_retains_retry(void)
+{
+    static const byte isolated[] = {0x61, 0x62};
+    static const byte queued[] = {0x71, 0x72};
+    static const byte candidate[] = {0x81, 0x82, 0x83};
+    static const bool rejected[] = {false};
+    netchan_t chan;
+    test_hook_t hook;
+    int transmit_bytes = -1;
+
+    memset(&hook, 0, sizeof(hook));
+    hook.mode = TEST_PREPARE_VALID;
+    hook.candidate_bytes = sizeof(candidate);
+    memcpy(hook.candidate, candidate, sizeof(candidate));
+    init_channel(&chan, NETCHAN_NEW, NS_SERVER, 0,
+                 TEST_MAX_APPLICATION);
+    SZ_Write(&chan.message, queued, sizeof(queued));
+    CHECK(Netchan_SetApplicationTxHook(
+              &chan, test_prepare, test_completion, &hook));
+    reset_send(rejected, 1);
+    CHECK(Netchan_TransmitIsolatedReliable(
+        &chan, isolated, sizeof(isolated), 1, &transmit_bytes));
+    CHECK(transmit_bytes == 8 + (int)sizeof(candidate) &&
+          test_send.calls == 1 && hook.prepare_calls == 1 &&
+          hook.completion_calls == 1 &&
+          hook.completion_info.result ==
+              NETCHAN_APP_TX_COMPLETION_NOT_ACCEPTED &&
+          hook.completion_info.accepted_copies == 0 &&
+          chan.reliable_length == sizeof(isolated) &&
+          memcmp(chan.reliable_buf, isolated, sizeof(isolated)) == 0 &&
+          chan.message.cursize == sizeof(queued) &&
+          memcmp(chan.message.data, queued, sizeof(queued)) == 0);
+
+    chan.incoming_acknowledged = chan.last_reliable_sequence + 1;
+    chan.incoming_reliable_acknowledged = !chan.reliable_sequence;
+    reset_send(rejected, 1);
+    CHECK(Netchan_Transmit(&chan, 0, NULL, 1) ==
+          8 + (int)sizeof(candidate));
+    CHECK(hook.prepare_calls == 2 && hook.completion_calls == 2 &&
+          hook.completion_info.result ==
+              NETCHAN_APP_TX_COMPLETION_NOT_ACCEPTED &&
+          chan.reliable_length == sizeof(isolated) &&
+          memcmp(chan.reliable_buf, isolated, sizeof(isolated)) == 0 &&
+          chan.message.cursize == sizeof(queued) &&
+          memcmp(chan.message.data, queued, sizeof(queued)) == 0);
+
+    Netchan_Close(&chan);
+    return 0;
+}
+
+static int test_reliable_handoff_invalid_inputs_are_transactional(void)
+{
+    static const byte queued[] = {0x81, 0x82};
+    static const byte isolated[] = {0x91};
+    netchan_t old_chan;
+    netchan_t chan;
+    sizebuf_t descriptor;
+    int transmit_bytes;
+
+    init_channel(&old_chan, NETCHAN_OLD, NS_SERVER, 0,
+                 TEST_MAX_APPLICATION);
+    SZ_Write(&old_chan.message, queued, sizeof(queued));
+    descriptor = old_chan.message;
+    transmit_bytes = -1;
+    CHECK(!Netchan_TransmitQueuedReliablePrefix(
+        &old_chan, 1, 1, &transmit_bytes));
+    CHECK(transmit_bytes == 0 &&
+          memcmp(&old_chan.message, &descriptor, sizeof(descriptor)) == 0 &&
+          memcmp(old_chan.message.data, queued, sizeof(queued)) == 0);
+    transmit_bytes = -1;
+    CHECK(!Netchan_TransmitIsolatedReliable(
+        &old_chan, isolated, sizeof(isolated), 1, &transmit_bytes));
+    CHECK(transmit_bytes == 0 &&
+          memcmp(&old_chan.message, &descriptor, sizeof(descriptor)) == 0 &&
+          memcmp(old_chan.message.data, queued, sizeof(queued)) == 0);
+    Netchan_Close(&old_chan);
+
+    init_channel(&chan, NETCHAN_NEW, NS_SERVER, 0,
+                 TEST_MAX_APPLICATION);
+    SZ_Write(&chan.message, queued, sizeof(queued));
+    descriptor = chan.message;
+    reset_send(NULL, 0);
+#define CHECK_PREFIX_REJECT(bytes_, copies_)                                \
+    do {                                                                    \
+        transmit_bytes = -1;                                                \
+        CHECK(!Netchan_TransmitQueuedReliablePrefix(                        \
+            &chan, (bytes_), (copies_), &transmit_bytes));                  \
+        CHECK(transmit_bytes == 0 && test_send.calls == 0 &&                \
+              memcmp(&chan.message, &descriptor, sizeof(descriptor)) == 0 &&\
+              memcmp(chan.message.data, queued, sizeof(queued)) == 0);      \
+    } while (0)
+#define CHECK_ISOLATED_REJECT(data_, bytes_, copies_)                       \
+    do {                                                                    \
+        transmit_bytes = -1;                                                \
+        CHECK(!Netchan_TransmitIsolatedReliable(                            \
+            &chan, (data_), (bytes_), (copies_), &transmit_bytes));         \
+        CHECK(transmit_bytes == 0 && test_send.calls == 0 &&                \
+              memcmp(&chan.message, &descriptor, sizeof(descriptor)) == 0 &&\
+              memcmp(chan.message.data, queued, sizeof(queued)) == 0);      \
+    } while (0)
+
+    CHECK_PREFIX_REJECT(0, 1);
+    CHECK_PREFIX_REJECT(sizeof(queued) + 1, 1);
+    CHECK_PREFIX_REJECT(1, 0);
+    CHECK_PREFIX_REJECT(1, -1);
+    CHECK_ISOLATED_REJECT(NULL, sizeof(isolated), 1);
+    CHECK_ISOLATED_REJECT(isolated, 0, 1);
+    CHECK_ISOLATED_REJECT(isolated, sizeof(isolated), 0);
+    CHECK_ISOLATED_REJECT(isolated, sizeof(isolated), -1);
+    CHECK_ISOLATED_REJECT(
+        isolated, chan.message.maxsize + 1u, 1);
+
+    chan.message.overflowed = true;
+    descriptor = chan.message;
+    CHECK_PREFIX_REJECT(1, 1);
+    chan.message.overflowed = false;
+    chan.message.readcount = 1;
+    descriptor = chan.message;
+    CHECK_PREFIX_REJECT(1, 1);
+    chan.message.readcount = 0;
+    chan.message.cursize = chan.message.maxsize + 1u;
+    descriptor = chan.message;
+    CHECK_ISOLATED_REJECT(isolated, sizeof(isolated), 1);
+    chan.message.cursize = sizeof(queued);
+    descriptor = chan.message;
+    chan.reliable_length = 1;
+    CHECK_ISOLATED_REJECT(isolated, sizeof(isolated), 1);
+    chan.reliable_length = 0;
+    chan.fragment_pending = true;
+    CHECK_PREFIX_REJECT(1, 1);
+    chan.fragment_pending = false;
+    chan.fragment_out.cursize = 1;
+    CHECK_ISOLATED_REJECT(isolated, sizeof(isolated), 1);
+    chan.fragment_out.cursize = 0;
+    chan.fragment_out.overflowed = true;
+    CHECK_PREFIX_REJECT(1, 1);
+
+#undef CHECK_ISOLATED_REJECT
+#undef CHECK_PREFIX_REJECT
+    Netchan_Close(&chan);
+    return 0;
+}
+
 static int test_registration_and_teardown(void)
 {
     netchan_t old_chan;
@@ -678,6 +1081,16 @@ int main(void)
     if (test_exact_capacity_and_zero_application() != 0)
         return 1;
     if (test_reliable_only_and_fragment_bypass() != 0)
+        return 1;
+    if (test_queued_reliable_prefix_handoff_and_retry() != 0)
+        return 1;
+    if (test_isolated_reliable_handoff_preserves_queue() != 0)
+        return 1;
+    if (test_reliable_handoff_fragment_and_busy_rejection() != 0)
+        return 1;
+    if (test_reliable_handoff_send_rejection_retains_retry() != 0)
+        return 1;
+    if (test_reliable_handoff_invalid_inputs_are_transactional() != 0)
         return 1;
     if (test_registration_and_teardown() != 0)
         return 1;

@@ -208,30 +208,34 @@ def evaluate_scene(
     metrics_config = scene.get("metrics", {})
     if not isinstance(metrics_config, dict):
         raise CaptureError(f"{scene_id}: metrics must be an object")
+    compare_backends = scene.get("compare_backends", True)
+    if not isinstance(compare_backends, bool):
+        raise CaptureError(f"{scene_id}: compare_backends must be boolean")
     pixel_threshold = _number(metrics_config.get("pixel_threshold", 8), "pixel_threshold")
     metrics = compare_images(opengl, vulkan, crop, pixel_threshold)
 
     failures: list[str] = []
-    max_mean = _triplet(
-        metrics_config.get("max_mean_absolute_rgb", [255, 255, 255]),
-        "max_mean_absolute_rgb",
-    )
-    for channel, label in enumerate("RGB"):
-        if metrics["mean_absolute_rgb"][channel] > max_mean[channel]:
-            failures.append(
-                f"{scene_id}: mean absolute {label} error "
-                f"{metrics['mean_absolute_rgb'][channel]:.5f} exceeds "
-                f"{max_mean[channel]:.5f}"
-            )
-    max_over = _number(
-        metrics_config.get("max_pixels_over_threshold_percent", 100),
-        "max_pixels_over_threshold_percent",
-    )
-    if metrics["pixels_over_threshold_percent"] > max_over:
-        failures.append(
-            f"{scene_id}: {metrics['pixels_over_threshold_percent']:.5f}% of pixels "
-            f"exceed error {pixel_threshold:g}; limit is {max_over:.5f}%"
+    if compare_backends:
+        max_mean = _triplet(
+            metrics_config.get("max_mean_absolute_rgb", [255, 255, 255]),
+            "max_mean_absolute_rgb",
         )
+        for channel, label in enumerate("RGB"):
+            if metrics["mean_absolute_rgb"][channel] > max_mean[channel]:
+                failures.append(
+                    f"{scene_id}: mean absolute {label} error "
+                    f"{metrics['mean_absolute_rgb'][channel]:.5f} exceeds "
+                    f"{max_mean[channel]:.5f}"
+                )
+        max_over = _number(
+            metrics_config.get("max_pixels_over_threshold_percent", 100),
+            "max_pixels_over_threshold_percent",
+        )
+        if metrics["pixels_over_threshold_percent"] > max_over:
+            failures.append(
+                f"{scene_id}: {metrics['pixels_over_threshold_percent']:.5f}% of pixels "
+                f"exceed error {pixel_threshold:g}; limit is {max_over:.5f}%"
+            )
 
     probe_reports: list[dict[str, Any]] = []
     probes = scene.get("probes", [])
@@ -332,12 +336,12 @@ def evaluate_scene(
                 f"{scene_id}.{name}: required at most {maximum} matching pixels "
                 f"per backend; OpenGL={gl_count}, Vulkan={vk_count}"
             )
-        if delta_percent > max_delta:
+        if compare_backends and delta_percent > max_delta:
             failures.append(
                 f"{scene_id}.{name}: backend pixel-count delta "
                 f"{delta_percent:.5f}% exceeds {max_delta:.5f}%"
             )
-        if mask["intersection_over_union"] < min_iou:
+        if compare_backends and mask["intersection_over_union"] < min_iou:
             failures.append(
                 f"{scene_id}.{name}: backend mask intersection-over-union "
                 f"{mask['intersection_over_union']:.5f} is below {min_iou:.5f}"
@@ -348,11 +352,75 @@ def evaluate_scene(
         "capture": capture,
         "dimensions": [opengl.width, opengl.height],
         "crop": list(crop),
+        "compare_backends": compare_backends,
         "metrics": metrics,
         "probes": probe_reports,
         "passed": not failures,
     }
     return report, failures
+
+
+def evaluate_control_pair(
+    pair: dict[str, Any], scenes_by_id: dict[str, dict[str, Any]],
+    capture_root: Path,
+) -> tuple[dict[str, Any], list[str]]:
+    pair_id = pair.get("id")
+    enabled_id = pair.get("enabled_scene")
+    disabled_id = pair.get("disabled_scene")
+    if not isinstance(pair_id, str) or not pair_id:
+        raise CaptureError("control pair id must be a non-empty string")
+    if not isinstance(enabled_id, str) or enabled_id not in scenes_by_id:
+        raise CaptureError(f"{pair_id}: enabled_scene must reference a manifest scene")
+    if not isinstance(disabled_id, str) or disabled_id not in scenes_by_id:
+        raise CaptureError(f"{pair_id}: disabled_scene must reference a manifest scene")
+    if enabled_id == disabled_id:
+        raise CaptureError(f"{pair_id}: enabled_scene and disabled_scene must differ")
+
+    enabled_capture = scenes_by_id[enabled_id].get("capture")
+    disabled_capture = scenes_by_id[disabled_id].get("capture")
+    if not isinstance(enabled_capture, str) or not isinstance(disabled_capture, str):
+        raise CaptureError(f"{pair_id}: referenced scenes must provide captures")
+    if enabled_capture == disabled_capture:
+        raise CaptureError(f"{pair_id}: control scenes must use distinct captures")
+
+    pixel_threshold = _number(pair.get("pixel_threshold", 8),
+                              f"{pair_id}.pixel_threshold")
+    minimum = int(_number(pair.get("min_pixels_over_threshold_per_backend", 0),
+                          f"{pair_id}.min_pixels_over_threshold_per_backend"))
+    if minimum < 0:
+        raise CaptureError(
+            f"{pair_id}.min_pixels_over_threshold_per_backend must be non-negative"
+        )
+
+    reports: dict[str, dict[str, Any]] = {}
+    failures: list[str] = []
+    for renderer in ("opengl", "vulkan"):
+        enabled_path = capture_root / renderer / enabled_capture
+        disabled_path = capture_root / renderer / disabled_capture
+        if not enabled_path.is_file() or not disabled_path.is_file():
+            raise CaptureError(f"{pair_id}: missing {renderer} control capture")
+        enabled = load_tga(enabled_path)
+        disabled = load_tga(disabled_path)
+        crop = _crop(pair, enabled)
+        metrics = compare_images(enabled, disabled, crop, pixel_threshold)
+        reports[renderer] = metrics
+        if metrics["pixels_over_threshold"] < minimum:
+            failures.append(
+                f"{pair_id}: {renderer} changed only "
+                f"{metrics['pixels_over_threshold']} pixels over error "
+                f"{pixel_threshold:g}; required {minimum}"
+            )
+
+    return {
+        "id": pair_id,
+        "enabled_scene": enabled_id,
+        "disabled_scene": disabled_id,
+        "crop": list(_crop(pair, load_tga(capture_root / "opengl" / enabled_capture))),
+        "pixel_threshold": pixel_threshold,
+        "min_pixels_over_threshold_per_backend": minimum,
+        "backends": reports,
+        "passed": not failures,
+    }, failures
 
 
 def evaluate_manifest(
@@ -371,6 +439,16 @@ def evaluate_manifest(
     failures: list[str] = []
     requested_scene_ids = set(scene_ids or ())
     found_scene_ids: set[str] = set()
+    scenes_by_id: dict[str, dict[str, Any]] = {}
+    for scene in scenes:
+        if not isinstance(scene, dict):
+            raise CaptureError("manifest scene must be an object")
+        scene_id = scene.get("id")
+        if not isinstance(scene_id, str) or not scene_id:
+            raise CaptureError("manifest scene id must be non-empty")
+        if scene_id in scenes_by_id:
+            raise CaptureError(f"duplicate scene id: {scene_id}")
+        scenes_by_id[scene_id] = scene
     for scene in scenes:
         if not isinstance(scene, dict):
             raise CaptureError("manifest scene must be an object")
@@ -388,12 +466,29 @@ def evaluate_manifest(
         raise CaptureError(
             "unknown scene id(s): " + ", ".join(sorted(unknown_scene_ids))
         )
+    pair_reports: list[dict[str, Any]] = []
+    pairs = raw.get("control_pairs", [])
+    if not isinstance(pairs, list):
+        raise CaptureError("control_pairs must be an array")
+    selected_ids = requested_scene_ids or set(scenes_by_id)
+    for pair in pairs:
+        if not isinstance(pair, dict):
+            raise CaptureError("control pair must be an object")
+        enabled_id = pair.get("enabled_scene")
+        disabled_id = pair.get("disabled_scene")
+        if (not isinstance(enabled_id, str) or not isinstance(disabled_id, str) or
+                enabled_id not in selected_ids or disabled_id not in selected_ids):
+            continue
+        report, pair_failures = evaluate_control_pair(pair, scenes_by_id, capture_root)
+        pair_reports.append(report)
+        failures.extend(pair_failures)
     return {
         "schema_version": 1,
         "task_id": raw.get("task_id"),
         "manifest": str(manifest_path),
         "capture_root": str(capture_root),
         "scenes": reports,
+        "control_pairs": pair_reports,
         "failures": failures,
         "passed": not failures,
     }

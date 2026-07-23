@@ -181,12 +181,16 @@ cvar_t *sg_lag_compensation_melee_max_displacement = nullptr;
 cvar_t *sg_worr_rewind_mover_selftest_status = nullptr;
 cvar_t *sg_worr_rewind_rail_damage_selftest_status = nullptr;
 cvar_t *sg_worr_rewind_canonical_rail_damage_status = nullptr;
+cvar_t *sg_worr_rewind_canonical_rail_spawn_protection_status = nullptr;
 cvar_t *sg_worr_rewind_canonical_rail_mover_occlusion_status = nullptr;
 cvar_t *sg_worr_rewind_canonical_machinegun_damage_status = nullptr;
 cvar_t *sg_worr_rewind_canonical_chaingun_damage_status = nullptr;
 cvar_t *sg_worr_rewind_canonical_super_shotgun_damage_status = nullptr;
 cvar_t *sg_worr_rewind_canonical_disruptor_damage_status = nullptr;
 cvar_t *sg_worr_rewind_canonical_rocket_damage_status = nullptr;
+cvar_t *sg_worr_rewind_canonical_rocket_mover_relative_status = nullptr;
+cvar_t *sg_worr_rewind_canonical_rocket_lifecycle_touch_status = nullptr;
+cvar_t *sg_worr_rewind_canonical_rocket_lifetime_expiry_status = nullptr;
 cvar_t *sg_worr_rewind_canonical_bfg_damage_status = nullptr;
 cvar_t *sg_worr_rewind_canonical_ion_ripper_damage_status = nullptr;
 cvar_t *sg_worr_rewind_canonical_tesla_mine_damage_status = nullptr;
@@ -243,6 +247,7 @@ struct CanonicalRailProbeState {
   gentity_t *current_world_splash_impact = nullptr;
   gentity_t *current_world_splash_damage_target = nullptr;
   gentity_t *prox_landing_surface = nullptr;
+  gentity_t *rocket_lifecycle_projectile = nullptr;
   worr_event_entity_ref_v1 shooter_identity{};
   worr_event_entity_ref_v1 target_identity{};
   worr_event_entity_ref_v1 water_identity{};
@@ -250,8 +255,10 @@ struct CanonicalRailProbeState {
   worr_event_entity_ref_v1 current_world_splash_impact_identity{};
   worr_event_entity_ref_v1 current_world_splash_damage_target_identity{};
   worr_event_entity_ref_v1 current_world_splash_projectile_identity{};
+  worr_event_entity_ref_v1 mover_relative_projectile_identity{};
   worr_event_entity_ref_v1 prox_mine_identity{};
   worr_event_entity_ref_v1 prox_landing_surface_identity{};
+  worr_event_entity_ref_v1 rocket_lifecycle_projectile_identity{};
   worr_command_id_v1 command_id{};
   // A Generic weapon may enter its first fire frame from one real attack
   // command and spawn its projectile from a later real held command. Current
@@ -274,7 +281,11 @@ struct CanonicalRailProbeState {
   Vector3 current_target_offset{0.0f, 96.0f, 0.0f};
   Vector3 historical_mover_restore_origin{};
   Vector3 historical_mover_current_origin{};
+  Vector3 splash_water_restore_origin{};
+  Vector3 mover_relative_local_origin{8.0f, 0.0f, 32.0f};
+  Vector3 mover_relative_first_target_origin{};
   bool historical_mover_restore_linked = false;
+  bool splash_water_restore_linked = false;
   uint64_t applied_age_us = 0;
   uint32_t target_history_captures = 0;
   uint32_t target_capture_prepares = 0;
@@ -301,6 +312,16 @@ struct CanonicalRailProbeState {
   uint32_t projectile_forward_expected_launches = 0;
   uint32_t melee_current_displacement_units = 0;
   uint32_t historical_mover_history_count = 0;
+  uint32_t mover_relative_policy =
+      WORR_LAG_COMPENSATION_MOVER_RELATIVE_UNSPECIFIED;
+  uint32_t mover_relative_history_pairs = 0;
+  uint32_t splash_occlusion_policy =
+      WORR_LAG_COMPENSATION_SPLASH_OCCLUSION_UNSPECIFIED;
+  uint32_t rocket_lifecycle_policy =
+      WORR_LAG_COMPENSATION_ROCKET_LIFECYCLE_UNSPECIFIED;
+  uint32_t rocket_touch_count = 0;
+  uint32_t rocket_lifetime_scheduled_ms = 0;
+  uint32_t rocket_lifetime_elapsed_ms = 0;
   uint32_t weapon_policy = WORR_REWIND_WEAPON_UNSPECIFIED;
   item_id_t weapon_item = IT_NULL;
   uint32_t expected_damage = 0;
@@ -317,11 +338,19 @@ struct CanonicalRailProbeState {
   bool release_damage_stable = false;
   bool water_retrace_required = false;
   bool water_retrace_observed = false;
+  bool spawn_protection_required = false;
   bool historical_mover_occlusion_required = false;
   bool historical_mover_relocated = false;
   bool historical_mover_baseline_clear = false;
   bool historical_mover_occlusion_observed = false;
   bool historical_mover_target_undamaged = false;
+  bool mover_relative_projectile_required = false;
+  bool mover_relative_first_target_recorded = false;
+  bool mover_relative_target_history_moved = false;
+  bool mover_relative_mover_history_moved = false;
+  bool mover_relative_pair_preserved = false;
+  bool mover_relative_current_world_impact = false;
+  bool mover_relative_authority_unchanged = false;
   bool projectile_forward_required = false;
   bool projectile_forward_authenticated = false;
   bool projectile_forward_advanced = false;
@@ -339,6 +368,23 @@ struct CanonicalRailProbeState {
   bool current_world_splash_after_forward = false;
   bool current_world_splash_clear_impact_after_touch = false;
   bool current_world_splash_damage_target_after_touch = false;
+  bool splash_occlusion_required = false;
+  bool splash_radius_evaluated = false;
+  bool splash_can_damage_observed = false;
+  bool splash_can_damage = false;
+  bool splash_bsp_blocker_verified = false;
+  bool splash_water_restore_required = false;
+  bool splash_water_relocated = false;
+  bool splash_water_boundary_verified = false;
+  bool splash_target_undamaged = false;
+  bool rocket_lifecycle_required = false;
+  bool rocket_owner_identity_retained = false;
+  bool rocket_touch_current_world = false;
+  bool rocket_retired = false;
+  bool rocket_retired_by_touch = false;
+  bool rocket_retired_by_expiry = false;
+  bool rocket_post_touch_hold_verified = false;
+  bool rocket_no_double_damage = false;
   float current_world_splash_impact_half_extent = 16.0f;
   bool prox_lifecycle_required = false;
   bool prox_mine_landed = false;
@@ -352,6 +398,9 @@ struct CanonicalRailProbeState {
   bool thunderbolt_discharge_ammo_drained = false;
   item_id_t thunderbolt_discharge_ammo_item = IT_NULL;
   int shooter_health_before = 0;
+  int rocket_lifecycle_target_health_at_retirement = 0;
+  GameTime rocket_lifecycle_spawn_time{};
+  uint64_t rocket_lifecycle_retired_time_us = 0;
   uint32_t release_damage_before = 0;
   uint64_t release_grace_deadline_us = 0;
   uint32_t weapon_damage = 0;
@@ -427,6 +476,8 @@ constexpr uint64_t kCanonicalBeamSustainedProbeTimeoutUs = UINT64_C(5000000);
 constexpr GameTime kCanonicalBeamSustainedProbeAngleLockDuration = 6_sec;
 constexpr int kCanonicalShotgunProbeExpectedDamage = 48;
 constexpr uint64_t kCanonicalBeamReleaseGraceUs = UINT64_C(250000);
+constexpr uint64_t kCanonicalRocketPostTouchHoldUs = UINT64_C(250000);
+constexpr uint32_t kCanonicalRocketLifetimeScheduledMs = 10000;
 // A Generic fire animation must reach its normal callback promptly after the
 // accepted attack. This independent authorization lifetime never extends the
 // projectile forward-distance cap itself.
@@ -466,12 +517,16 @@ void CanonicalRailProbeObserveMeleeSelection(
 [[nodiscard]] bool CanonicalRailProbeSameEntity(
     const gentity_t *entity, worr_event_entity_ref_v1 expected);
 bool CanonicalRailProbeArm();
+bool CanonicalRailSpawnProtectionProbeArm();
 bool CanonicalRailMoverOcclusionProbeArm();
 bool CanonicalMachinegunProbeArm();
 bool CanonicalChaingunProbeArm();
 bool CanonicalSuperShotgunProbeArm();
 bool CanonicalDisruptorProbeArm();
 bool CanonicalRocketProbeArm();
+bool CanonicalRocketMoverRelativeProbeArm();
+bool CanonicalRocketLifecycleTouchProbeArm();
+bool CanonicalRocketLifetimeExpiryProbeArm();
 bool CanonicalBfgProbeArm();
 bool CanonicalIonRipperProbeArm();
 bool CanonicalTeslaMineProbeArm();
@@ -484,6 +539,8 @@ bool CanonicalHandGrenadeProbeArm();
 bool CanonicalHandGrenadeSplashProbeArm();
 bool CanonicalProxLauncherProbeArm();
 bool CanonicalRocketSplashProbeArm();
+bool CanonicalRocketSplashBspOcclusionProbeArm();
+bool CanonicalRocketSplashWaterBoundaryProbeArm();
 bool CanonicalPhalanxSplashProbeArm();
 bool CanonicalPlasmaGunProbeArm();
 bool CanonicalPlasmaGunSplashProbeArm();
@@ -1692,7 +1749,7 @@ enum CanonicalSceneRejection : uint32_t {
     if ((result.pose.flags & requiredFlags) != requiredFlags) {
       continue;
     }
-    if (!Worr_RewindSceneAddResultV1(&cache.scene, &result)) {
+    if (!Worr_RewindSceneAddOwnedResultV1(&cache.scene, &result)) {
       ++diagnostics.scenesRejected;
       return reject(CANONICAL_SCENE_REJECTION_ADD_RESULT);
     }
@@ -2461,14 +2518,34 @@ void CanonicalRailProbeRestoreHistoricalMover() {
   canonicalRailProbe.historical_mover_identity = {};
 }
 
+void CanonicalRailProbeRestoreSplashWater() {
+  gentity_t *water = canonicalRailProbe.water;
+  if (canonicalRailProbe.splash_water_restore_required && water &&
+      CanonicalRailProbeSameEntity(water, canonicalRailProbe.water_identity)) {
+    water->s.origin = canonicalRailProbe.splash_water_restore_origin;
+    if (canonicalRailProbe.splash_water_restore_linked)
+      gi.linkEntity(water);
+    else
+      gi.unlinkEntity(water);
+  }
+  if (canonicalRailProbe.splash_water_restore_required) {
+    canonicalRailProbe.water = nullptr;
+    canonicalRailProbe.water_identity = {};
+  }
+}
+
 void CanonicalRailProbePublish() {
   if (!sg_worr_rewind_canonical_rail_damage_status ||
+      !sg_worr_rewind_canonical_rail_spawn_protection_status ||
       !sg_worr_rewind_canonical_rail_mover_occlusion_status ||
       !sg_worr_rewind_canonical_machinegun_damage_status ||
       !sg_worr_rewind_canonical_chaingun_damage_status ||
       !sg_worr_rewind_canonical_super_shotgun_damage_status ||
       !sg_worr_rewind_canonical_disruptor_damage_status ||
       !sg_worr_rewind_canonical_rocket_damage_status ||
+      !sg_worr_rewind_canonical_rocket_mover_relative_status ||
+      !sg_worr_rewind_canonical_rocket_lifecycle_touch_status ||
+      !sg_worr_rewind_canonical_rocket_lifetime_expiry_status ||
       !sg_worr_rewind_canonical_bfg_damage_status ||
       !sg_worr_rewind_canonical_ion_ripper_damage_status ||
       !sg_worr_rewind_canonical_tesla_mine_damage_status ||
@@ -2594,10 +2671,10 @@ void CanonicalRailProbePublish() {
     canonicalRailProbe.local_action_proof_joined = localActionJoined;
     canonicalRailProbe.local_action_proof_shadow = localActionShadow;
   }
-  char value[1024]{};
+  char value[1536]{};
   std::snprintf(
       value, sizeof(value),
-      "%s:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%llu:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%llu:%llu:%llu:%llu:%llu:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%llu:%llu:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u", status, armed,
+      "%s:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%llu:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%llu:%llu:%llu:%llu:%llu:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%llu:%llu:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u", status, armed,
       canonicalRailProbe.players_ready ? 1u : 0u,
       canonicalRailProbe.history_ready ? 1u : 0u,
       canonicalRailProbe.canonical_scope ? 1u : 0u,
@@ -2659,7 +2736,15 @@ void CanonicalRailProbePublish() {
       canonicalRailProbe.historical_mover_baseline_clear ? 1u : 0u,
       canonicalRailProbe.historical_mover_occlusion_observed ? 1u : 0u,
       canonicalRailProbe.historical_mover_target_undamaged ? 1u : 0u,
-      canonicalRailProbe.historical_mover_history_count);
+      canonicalRailProbe.historical_mover_history_count,
+      canonicalRailProbe.mover_relative_projectile_required ? 1u : 0u,
+      canonicalRailProbe.mover_relative_policy,
+      canonicalRailProbe.mover_relative_target_history_moved ? 1u : 0u,
+      canonicalRailProbe.mover_relative_mover_history_moved ? 1u : 0u,
+      canonicalRailProbe.mover_relative_pair_preserved ? 1u : 0u,
+      canonicalRailProbe.mover_relative_current_world_impact ? 1u : 0u,
+      canonicalRailProbe.mover_relative_authority_unchanged ? 1u : 0u,
+      canonicalRailProbe.mover_relative_history_pairs);
   const std::size_t valueLength = std::strlen(value);
   std::snprintf(
       value + valueLength, sizeof(value) - valueLength,
@@ -2685,7 +2770,37 @@ void CanonicalRailProbePublish() {
       localActionShadow.flags,
       localActionShadow.semantics.v2_blockers,
       static_cast<unsigned long long>(localActionShadow.record_hash));
+  const std::size_t proofLength = std::strlen(value);
+  std::snprintf(
+      value + proofLength, sizeof(value) - proofLength,
+      ":%u:%u:%u:%u:%u:%u:%u:%u",
+      canonicalRailProbe.splash_occlusion_required ? 1u : 0u,
+      canonicalRailProbe.splash_occlusion_policy,
+      canonicalRailProbe.splash_radius_evaluated ? 1u : 0u,
+      canonicalRailProbe.splash_can_damage_observed ? 1u : 0u,
+      canonicalRailProbe.splash_can_damage ? 1u : 0u,
+      canonicalRailProbe.splash_bsp_blocker_verified ? 1u : 0u,
+      canonicalRailProbe.splash_water_boundary_verified ? 1u : 0u,
+      canonicalRailProbe.splash_target_undamaged ? 1u : 0u);
+  const std::size_t lifecycleLength = std::strlen(value);
+  std::snprintf(
+      value + lifecycleLength, sizeof(value) - lifecycleLength,
+      ":%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u:%u",
+      canonicalRailProbe.rocket_lifecycle_required ? 1u : 0u,
+      canonicalRailProbe.rocket_lifecycle_policy,
+      canonicalRailProbe.rocket_owner_identity_retained ? 1u : 0u,
+      canonicalRailProbe.rocket_touch_count,
+      canonicalRailProbe.rocket_touch_current_world ? 1u : 0u,
+      canonicalRailProbe.rocket_retired ? 1u : 0u,
+      canonicalRailProbe.rocket_retired_by_touch ? 1u : 0u,
+      canonicalRailProbe.rocket_retired_by_expiry ? 1u : 0u,
+      canonicalRailProbe.rocket_post_touch_hold_verified ? 1u : 0u,
+      canonicalRailProbe.rocket_no_double_damage ? 1u : 0u,
+      canonicalRailProbe.rocket_lifetime_scheduled_ms,
+      canonicalRailProbe.rocket_lifetime_elapsed_ms);
   gi.cvarForceSet("sg_worr_rewind_canonical_rail_damage_status", value);
+  gi.cvarForceSet("sg_worr_rewind_canonical_rail_spawn_protection_status",
+                  value);
   gi.cvarForceSet("sg_worr_rewind_canonical_rail_mover_occlusion_status",
                   value);
   gi.cvarForceSet("sg_worr_rewind_canonical_machinegun_damage_status", value);
@@ -2693,6 +2808,12 @@ void CanonicalRailProbePublish() {
   gi.cvarForceSet("sg_worr_rewind_canonical_super_shotgun_damage_status", value);
   gi.cvarForceSet("sg_worr_rewind_canonical_disruptor_damage_status", value);
   gi.cvarForceSet("sg_worr_rewind_canonical_rocket_damage_status", value);
+  gi.cvarForceSet("sg_worr_rewind_canonical_rocket_mover_relative_status",
+                  value);
+  gi.cvarForceSet("sg_worr_rewind_canonical_rocket_lifecycle_touch_status",
+                  value);
+  gi.cvarForceSet("sg_worr_rewind_canonical_rocket_lifetime_expiry_status",
+                  value);
   gi.cvarForceSet("sg_worr_rewind_canonical_bfg_damage_status", value);
   gi.cvarForceSet("sg_worr_rewind_canonical_ion_ripper_damage_status", value);
   gi.cvarForceSet("sg_worr_rewind_canonical_tesla_mine_damage_status", value);
@@ -2741,6 +2862,7 @@ void CanonicalRailProbeFail(uint32_t failure) {
   canonicalRailProbe.failure = failure;
   canonicalRailProbe.stage = CanonicalRailProbeStage::Failed;
   CanonicalRailProbeRestoreHistoricalMover();
+  CanonicalRailProbeRestoreSplashWater();
   CanonicalRailProbeReleaseCurrentWorldSplashImpact();
   CanonicalRailProbeReleaseCurrentWorldSplashDamageTarget();
   CanonicalRailProbeReleaseProxLandingSurface();
@@ -2790,6 +2912,19 @@ void CanonicalRailProbePlacePlayer(gentity_t *entity, const Vector3 &origin) {
   gi.linkEntity(entity);
 }
 
+// Spawn protection remains current gameplay authority even when collision is
+// answered from an authenticated historical scene. The dedicated acceptance
+// fixture applies it only to the isolated target and never changes the rewind
+// decision, selected pose, trace result, or client input.
+void CanonicalRailProbeApplyTargetSpawnProtection() {
+  if (!canonicalRailProbe.target || !canonicalRailProbe.target->client)
+    return;
+  canonicalRailProbe.target->client->PowerupTimer(
+      PowerupTimer::SpawnProtection) =
+      canonicalRailProbe.spawn_protection_required ? level.time + 10_sec
+                                                    : 0_ms;
+}
+
 // Keep a fixture target at its selected live pose after real weapon damage.
 // Unlike CanonicalRailProbePlacePlayer this deliberately preserves health and
 // every combat outcome: it only clears movement introduced by normal damage
@@ -2805,6 +2940,42 @@ void CanonicalRailProbePinTarget(gentity_t *entity, const Vector3 &origin) {
   entity->client->old_pmove.origin = origin;
   entity->client->old_pmove.velocity = {};
   gi.linkEntity(entity);
+}
+
+[[nodiscard]] bool CanonicalRailProbePlaceMoverRelativeTarget(
+    bool preserveCombatState) {
+  if (!canonicalRailProbe.mover_relative_projectile_required)
+    return true;
+  gentity_t *mover = canonicalRailProbe.historical_mover;
+  gentity_t *target = canonicalRailProbe.target;
+  if (!CanonicalRailProbeSameEntity(
+          mover, canonicalRailProbe.historical_mover_identity) ||
+      !CanonicalRailProbeSameEntity(target,
+                                    canonicalRailProbe.target_identity) ||
+      !EligibleLiveMover(mover)) {
+    return false;
+  }
+
+  Vector3 forward{};
+  Vector3 right{};
+  Vector3 up{};
+  AngleVectors(mover->s.angles, forward, right, up);
+  const Vector3 local = canonicalRailProbe.mover_relative_local_origin;
+  const Vector3 origin = mover->s.origin + forward * local[0] +
+                         right * local[1] + up * local[2];
+  if (preserveCombatState)
+    CanonicalRailProbePinTarget(target, origin);
+  else
+    CanonicalRailProbePlacePlayer(target, origin);
+  target->groundEntity = mover;
+  gi.linkEntity(target);
+  canonicalRailProbe.current_target_origin = origin;
+  if (!canonicalRailProbe.mover_relative_first_target_recorded) {
+    canonicalRailProbe.mover_relative_first_target_origin = origin;
+    canonicalRailProbe.historical_target_origin = origin;
+    canonicalRailProbe.mover_relative_first_target_recorded = true;
+  }
+  return target->linked && target->groundEntity == mover;
 }
 
 [[nodiscard]] bool CanonicalRailProbePlaceCurrentWorldSplashImpact(
@@ -2851,6 +3022,93 @@ void CanonicalRailProbePinTarget(gentity_t *entity, const Vector3 &origin) {
   return true;
 }
 
+[[nodiscard]] bool CanonicalRailProbeStageSplashOcclusion(
+    gentity_t *projectile) {
+  const uint32_t policy = canonicalRailProbe.splash_occlusion_policy;
+  if (policy == WORR_LAG_COMPENSATION_SPLASH_OCCLUSION_UNSPECIFIED ||
+      policy == WORR_LAG_COMPENSATION_SPLASH_OCCLUSION_CLEAR_PLAYER) {
+    return true;
+  }
+  const bool exactTarget = CanonicalRailProbeSameEntity(
+      canonicalRailProbe.target, canonicalRailProbe.target_identity);
+  const bool linkedTarget =
+      canonicalRailProbe.target && canonicalRailProbe.target->linked;
+  if (!projectile || !exactTarget || !linkedTarget) {
+    canonicalRailProbe.failure = 32;
+    return false;
+  }
+
+  const Vector3 impactCenter =
+      projectile->linked
+          ? (projectile->absMin + projectile->absMax) * 0.5f
+          : projectile->s.origin;
+  const Vector3 targetCenter =
+      (canonicalRailProbe.target->absMin +
+       canonicalRailProbe.target->absMax) *
+      0.5f;
+
+  if (policy == WORR_LAG_COMPENSATION_SPLASH_OCCLUSION_BSP_BLOCKED) {
+    gentity_t *mover = canonicalRailProbe.historical_mover;
+    if (!CanonicalRailProbeSameEntity(
+            mover, canonicalRailProbe.historical_mover_identity) ||
+        !EligibleLiveMover(mover) || !mover->className ||
+        Q_strcasecmp(mover->className, "func_rotating") != 0) {
+      canonicalRailProbe.failure = 33;
+      return false;
+    }
+    if (!canonicalRailProbe.historical_mover_relocated) {
+      canonicalRailProbe.historical_mover_restore_origin = mover->s.origin;
+      canonicalRailProbe.historical_mover_restore_linked = mover->linked;
+    }
+    canonicalRailProbe.historical_mover_current_origin =
+        impactCenter + (targetCenter - impactCenter) * 0.5f;
+    // Mark restoration ownership before mutating the real mover so any
+    // subsequent link/verification failure still restores the fixture.
+    canonicalRailProbe.historical_mover_relocated = true;
+    mover->s.origin = canonicalRailProbe.historical_mover_current_origin;
+    gi.linkEntity(mover);
+    return mover->linked && mover->solid == SOLID_BSP &&
+           mover->s.origin == canonicalRailProbe.historical_mover_current_origin;
+  }
+
+  if (policy == WORR_LAG_COMPENSATION_SPLASH_OCCLUSION_WATER_BOUNDARY) {
+    gentity_t *water = canonicalRailProbe.water;
+    const bool exactWater = CanonicalRailProbeSameEntity(
+        water, canonicalRailProbe.water_identity);
+    const bool waterClass =
+        water && water->className &&
+        Q_strcasecmp(water->className, "func_water") == 0;
+    const bool waterBrush = water && water->solid == SOLID_BSP;
+    if (!exactWater || !waterClass || !waterBrush) {
+      canonicalRailProbe.failure = 34;
+      return false;
+    }
+    if (!canonicalRailProbe.splash_water_restore_required) {
+      canonicalRailProbe.splash_water_restore_origin = water->s.origin;
+      canonicalRailProbe.splash_water_restore_linked = water->linked;
+    }
+    canonicalRailProbe.splash_water_restore_required = true;
+    water->s.origin = impactCenter;
+    gi.linkEntity(water);
+    canonicalRailProbe.splash_water_relocated =
+        water->linked && water->s.origin == impactCenter;
+    const trace_t waterTrace = gi.traceLine(
+        impactCenter, targetCenter, projectile, MASK_WATER);
+    const bool exactWaterStart =
+        CanonicalRailProbeSameEntity(waterTrace.ent,
+                                     canonicalRailProbe.water_identity) &&
+        waterTrace.startSolid;
+    canonicalRailProbe.splash_water_boundary_verified =
+        canonicalRailProbe.splash_water_relocated &&
+        exactWaterStart && !waterTrace.allSolid;
+    if (!canonicalRailProbe.splash_water_boundary_verified)
+      canonicalRailProbe.failure = 35;
+    return canonicalRailProbe.splash_water_boundary_verified;
+  }
+
+  return false;
+}
+
 [[nodiscard]] bool CanonicalRailProbePlaceProxLandingSurface(
     gentity_t *mine) {
   if (!canonicalRailProbe.prox_lifecycle_required)
@@ -2893,7 +3151,12 @@ void CanonicalRailProbePinTarget(gentity_t *entity, const Vector3 &origin) {
 }
 
 [[nodiscard]] bool CanonicalRailProbeSelectHistoricalMover() {
-  if (!canonicalRailProbe.historical_mover_occlusion_required)
+  const bool splashBspRequired =
+      canonicalRailProbe.splash_occlusion_policy ==
+      WORR_LAG_COMPENSATION_SPLASH_OCCLUSION_BSP_BLOCKED;
+  if (!canonicalRailProbe.historical_mover_occlusion_required &&
+      !canonicalRailProbe.mover_relative_projectile_required &&
+      !splashBspRequired)
     return true;
   if (canonicalRailProbe.historical_mover) {
     return CanonicalRailProbeSameEntity(
@@ -2914,7 +3177,12 @@ void CanonicalRailProbePinTarget(gentity_t *entity, const Vector3 &origin) {
     gentity_t *candidate = &g_entities[index];
     worr_event_entity_ref_v1 identity{};
     worr_sgame_rewind_collision::Asset asset{};
-    if (!EligibleLiveMover(candidate) || !EntityRef(candidate, identity) ||
+    if (!EligibleLiveMover(candidate) ||
+        (splashBspRequired &&
+         (!candidate->className ||
+          Q_strcasecmp(candidate->className, "func_rotating") != 0 ||
+          candidate->aVelocity.lengthSquared() <= 0.0f)) ||
+        !EntityRef(candidate, identity) ||
         !ResolveMoverAsset(*candidate, map, asset) ||
         asset.local_maxs[0] - asset.local_mins[0] < 16.0f ||
         asset.local_maxs[1] - asset.local_mins[1] < 16.0f) {
@@ -2928,6 +3196,11 @@ void CanonicalRailProbePinTarget(gentity_t *entity, const Vector3 &origin) {
 }
 
 [[nodiscard]] bool CanonicalRailProbeSelectPlayers() {
+  const bool splashWaterRequired =
+      canonicalRailProbe.splash_occlusion_policy ==
+      WORR_LAG_COMPENSATION_SPLASH_OCCLUSION_WATER_BOUNDARY;
+  const bool waterRequired =
+      canonicalRailProbe.water_retrace_required || splashWaterRequired;
   if (canonicalRailProbe.shooter || canonicalRailProbe.target) {
     if (!CanonicalRailProbeSameEntity(canonicalRailProbe.shooter,
                                       canonicalRailProbe.shooter_identity) ||
@@ -2936,7 +3209,7 @@ void CanonicalRailProbePinTarget(gentity_t *entity, const Vector3 &origin) {
       CanonicalRailProbeFail(4);
       return false;
     }
-    if (canonicalRailProbe.water_retrace_required &&
+    if (waterRequired &&
         !CanonicalRailProbeSameEntity(canonicalRailProbe.water,
                                       canonicalRailProbe.water_identity)) {
       CanonicalRailProbeFail(16);
@@ -3006,7 +3279,7 @@ void CanonicalRailProbePinTarget(gentity_t *entity, const Vector3 &origin) {
   canonicalRailProbe.target = target;
   canonicalRailProbe.shooter_identity = shooterIdentity;
   canonicalRailProbe.target_identity = targetIdentity;
-  if (canonicalRailProbe.water_retrace_required) {
+  if (waterRequired) {
     // The packaged collision fixture owns a real func_water brush centered at
     // the world origin. Select it by entity identity so later observations
     // prove actual water contact followed by a normal production retrace.
@@ -3070,12 +3343,18 @@ void CanonicalRailProbePrepareFrameCapture(gentity_t *entity) {
     // Every pre-fire pose is an ordinary end-frame capture at the same
     // historical location.  The actual rail trace later sees the target only
     // at current_target_origin in the live world.
-    CanonicalRailProbePlacePlayer(
-        canonicalRailProbe.target,
-        canonicalRailProbe.historical_target_origin);
+    if (canonicalRailProbe.mover_relative_projectile_required) {
+      if (!CanonicalRailProbePlaceMoverRelativeTarget(false)) {
+        CanonicalRailProbeFail(30);
+        return;
+      }
+    } else {
+      CanonicalRailProbePlacePlayer(
+          canonicalRailProbe.target,
+          canonicalRailProbe.historical_target_origin);
+    }
     canonicalRailProbe.target->health = kCanonicalRailProbeTargetHealth;
-    canonicalRailProbe.target->client->PowerupTimer(
-        PowerupTimer::SpawnProtection) = 0_ms;
+    CanonicalRailProbeApplyTargetSpawnProtection();
     CanonicalRailProbePublish();
   } else if (canonicalRailProbe.stage == CanonicalRailProbeStage::AwaitingDamage &&
              canonicalRailProbe.projectile_current_authority_required &&
@@ -3084,8 +3363,15 @@ void CanonicalRailProbePrepareFrameCapture(gentity_t *entity) {
     // initial attack and a Generic weapon's later fire frame. Keep only the
     // fixture target's server-staged current pose; health, collision, normal
     // projectile flight, contact, splash, and damage remain untouched.
-    CanonicalRailProbePinTarget(entity,
-                                canonicalRailProbe.current_target_origin);
+    if (canonicalRailProbe.mover_relative_projectile_required) {
+      if (!CanonicalRailProbePlaceMoverRelativeTarget(true)) {
+        CanonicalRailProbeFail(30);
+        return;
+      }
+    } else {
+      CanonicalRailProbePinTarget(entity,
+                                  canonicalRailProbe.current_target_origin);
+    }
   }
 }
 
@@ -3158,13 +3444,22 @@ void CanonicalRailProbeCaptureFrame(gentity_t *entity) {
       healthBefore > healthAfter
           ? static_cast<uint32_t>(healthBefore - healthAfter)
           : 0u;
+  canonicalRailProbe.splash_target_undamaged =
+      canonicalRailProbe.splash_occlusion_required &&
+      healthAfter == healthBefore;
   canonicalRailProbe.historical_mover_target_undamaged =
       !canonicalRailProbe.historical_mover_occlusion_required ||
       healthAfter == healthBefore;
   const bool damageApplied = CanonicalRailProbeDamageApplied();
+  if (canonicalRailProbe.mover_relative_projectile_required) {
+    canonicalRailProbe.mover_relative_current_world_impact =
+        canonicalRailProbe.mover_relative_current_world_impact &&
+        damageApplied && !canonicalRailProbe.canonical_historical_hit;
+  }
   uint64_t currentTimeUs = 0;
   const bool needsAuthoritativeTime =
       canonicalRailProbe.damage_settle_delay_us ||
+      canonicalRailProbe.rocket_lifecycle_required ||
       (canonicalRailProbe.release_required &&
        canonicalRailProbe.release_received);
   if (needsAuthoritativeTime && !CurrentAuthoritativeTimeUs(currentTimeUs)) {
@@ -3172,18 +3467,67 @@ void CanonicalRailProbeCaptureFrame(gentity_t *entity) {
     return;
   }
   bool damageSettled = true;
-  if (canonicalRailProbe.damage_settle_delay_us) {
+  if (canonicalRailProbe.rocket_lifecycle_required) {
+    const bool deadlineReached =
+        currentTimeUs >= canonicalRailProbe.damage_settle_deadline_us;
+    switch (canonicalRailProbe.rocket_lifecycle_policy) {
+    case WORR_LAG_COMPENSATION_ROCKET_LIFECYCLE_TOUCH_RETIREMENT:
+      damageSettled =
+          canonicalRailProbe.rocket_retired &&
+          currentTimeUs >=
+              canonicalRailProbe.rocket_lifecycle_retired_time_us +
+                  kCanonicalRocketPostTouchHoldUs;
+      if (damageSettled) {
+        canonicalRailProbe.rocket_post_touch_hold_verified = true;
+        canonicalRailProbe.rocket_no_double_damage =
+            canonicalRailProbe.rocket_touch_count == 1 &&
+            canonicalRailProbe.target->health ==
+                canonicalRailProbe
+                    .rocket_lifecycle_target_health_at_retirement &&
+            canonicalRailProbe.weapon_damage ==
+                canonicalRailProbe.expected_damage;
+      } else if (deadlineReached) {
+        damageSettled = true;
+      }
+      break;
+    case WORR_LAG_COMPENSATION_ROCKET_LIFECYCLE_LIFETIME_EXPIRY:
+      damageSettled = canonicalRailProbe.rocket_retired || deadlineReached;
+      if (canonicalRailProbe.rocket_retired) {
+        canonicalRailProbe.rocket_no_double_damage =
+            canonicalRailProbe.rocket_touch_count == 0 &&
+            canonicalRailProbe.target->health ==
+                canonicalRailProbe.target_health_before &&
+            canonicalRailProbe.weapon_damage == 0;
+      }
+      break;
+    default:
+      damageSettled = deadlineReached;
+      break;
+    }
+  } else if (canonicalRailProbe.damage_settle_delay_us) {
     const bool deadlineReached =
         currentTimeUs >= canonicalRailProbe.damage_settle_deadline_us;
     // Delayed projectiles need their normal daemon/lifecycle window to settle
     // before measuring damage. Held beams instead publish pending progress
     // until the requested normal cadence reaches exact cumulative damage, then
     // finish immediately; the same deadline remains a fail-closed timeout.
-    damageSettled = !canonicalRailProbe.damage_required
-                        ? true
-                        : (canonicalRailProbe.defer_damage_evaluation_until_deadline
-                               ? deadlineReached
-                               : (damageApplied || deadlineReached));
+    if (!canonicalRailProbe.damage_required &&
+        canonicalRailProbe.splash_occlusion_policy !=
+            WORR_LAG_COMPENSATION_SPLASH_OCCLUSION_UNSPECIFIED) {
+      // A zero-damage BSP result is meaningful only after the exact
+      // RadiusDamage candidate has completed production CanDamage. Do not let
+      // the initially unchanged health make that asynchronous projectile
+      // fixture settle before its real touch.
+      damageSettled =
+          canonicalRailProbe.splash_radius_evaluated || deadlineReached;
+    } else {
+      damageSettled =
+          !canonicalRailProbe.damage_required
+              ? true
+              : (canonicalRailProbe.defer_damage_evaluation_until_deadline
+                     ? deadlineReached
+                     : (damageApplied || deadlineReached));
+    }
   }
   if (!damageSettled) {
     CanonicalRailProbePublish();
@@ -3259,6 +3603,16 @@ void CanonicalRailProbeCaptureFrame(gentity_t *entity) {
        canonicalRailProbe.historical_mover_target_undamaged &&
        canonicalRailProbe.historical_mover_history_count >=
            kCanonicalRailProbeRequiredHistoryCaptures);
+  const bool moverRelativeProjectileProof =
+      !canonicalRailProbe.mover_relative_projectile_required ||
+      (canonicalRailProbe.mover_relative_policy ==
+           WORR_LAG_COMPENSATION_MOVER_RELATIVE_CURRENT_WORLD &&
+       canonicalRailProbe.mover_relative_target_history_moved &&
+       canonicalRailProbe.mover_relative_mover_history_moved &&
+       canonicalRailProbe.mover_relative_pair_preserved &&
+       canonicalRailProbe.mover_relative_current_world_impact &&
+       canonicalRailProbe.mover_relative_authority_unchanged &&
+       canonicalRailProbe.mover_relative_history_pairs >= 2);
   const bool normalHitscanProof =
       canonicalRailProbe.canonical_scope &&
       canonicalRailProbe.attack_received && canonicalRailProbe.weapon_callback &&
@@ -3286,17 +3640,106 @@ void CanonicalRailProbeCaptureFrame(gentity_t *entity) {
       (!canonicalRailProbe.damage_required || damageApplied) &&
       !canonicalRailProbe.canonical_historical_hit &&
       canonicalRailProbe.current_geometry_unchanged &&
-      projectileForwardProof;
+      projectileForwardProof && moverRelativeProjectileProof;
   const bool proxLifecycleProof =
       !canonicalRailProbe.prox_lifecycle_required ||
       (canonicalRailProbe.prox_mine_landed &&
        canonicalRailProbe.prox_mine_triggered &&
        canonicalRailProbe.prox_mine_exploded);
+  bool rocketLifecycleProof = true;
+  switch (canonicalRailProbe.rocket_lifecycle_policy) {
+  case WORR_LAG_COMPENSATION_ROCKET_LIFECYCLE_UNSPECIFIED:
+    rocketLifecycleProof = !canonicalRailProbe.rocket_lifecycle_required;
+    break;
+  case WORR_LAG_COMPENSATION_ROCKET_LIFECYCLE_TOUCH_RETIREMENT:
+    rocketLifecycleProof =
+        canonicalRailProbe.rocket_lifecycle_required &&
+        canonicalRailProbe.rocket_owner_identity_retained &&
+        canonicalRailProbe.rocket_touch_count == 1 &&
+        canonicalRailProbe.rocket_touch_current_world &&
+        canonicalRailProbe.rocket_retired &&
+        canonicalRailProbe.rocket_retired_by_touch &&
+        !canonicalRailProbe.rocket_retired_by_expiry &&
+        canonicalRailProbe.rocket_post_touch_hold_verified &&
+        canonicalRailProbe.rocket_no_double_damage &&
+        canonicalRailProbe.rocket_lifetime_scheduled_ms ==
+            kCanonicalRocketLifetimeScheduledMs &&
+        canonicalRailProbe.rocket_lifetime_elapsed_ms > 0 &&
+        canonicalRailProbe.rocket_lifetime_elapsed_ms <
+            canonicalRailProbe.rocket_lifetime_scheduled_ms;
+    break;
+  case WORR_LAG_COMPENSATION_ROCKET_LIFECYCLE_LIFETIME_EXPIRY: {
+    const uint64_t adjustedElapsedMs =
+        static_cast<uint64_t>(canonicalRailProbe.rocket_lifetime_elapsed_ms) +
+        canonicalRailProbe.projectile_forward_advanced_age_us /
+            UINT64_C(1000);
+    const uint64_t frameToleranceMs = std::max<uint64_t>(
+        static_cast<uint64_t>(gi.frameTimeMs) * UINT64_C(2), UINT64_C(32));
+    rocketLifecycleProof =
+        canonicalRailProbe.rocket_lifecycle_required &&
+        canonicalRailProbe.rocket_owner_identity_retained &&
+        canonicalRailProbe.rocket_touch_count == 0 &&
+        !canonicalRailProbe.rocket_touch_current_world &&
+        canonicalRailProbe.rocket_retired &&
+        !canonicalRailProbe.rocket_retired_by_touch &&
+        canonicalRailProbe.rocket_retired_by_expiry &&
+        !canonicalRailProbe.rocket_post_touch_hold_verified &&
+        canonicalRailProbe.rocket_no_double_damage &&
+        canonicalRailProbe.rocket_lifetime_scheduled_ms ==
+            kCanonicalRocketLifetimeScheduledMs &&
+        adjustedElapsedMs >= canonicalRailProbe.rocket_lifetime_scheduled_ms &&
+        adjustedElapsedMs <=
+            static_cast<uint64_t>(
+                canonicalRailProbe.rocket_lifetime_scheduled_ms) +
+                frameToleranceMs;
+    break;
+  }
+  default:
+    rocketLifecycleProof = false;
+    break;
+  }
+  bool splashOcclusionProof = true;
+  switch (canonicalRailProbe.splash_occlusion_policy) {
+  case WORR_LAG_COMPENSATION_SPLASH_OCCLUSION_UNSPECIFIED:
+    break;
+  case WORR_LAG_COMPENSATION_SPLASH_OCCLUSION_CLEAR_PLAYER:
+    splashOcclusionProof =
+        canonicalRailProbe.splash_occlusion_required &&
+        canonicalRailProbe.splash_radius_evaluated &&
+        canonicalRailProbe.splash_can_damage_observed &&
+        canonicalRailProbe.splash_can_damage && damageApplied &&
+        !canonicalRailProbe.splash_target_undamaged;
+    break;
+  case WORR_LAG_COMPENSATION_SPLASH_OCCLUSION_BSP_BLOCKED:
+    splashOcclusionProof =
+        canonicalRailProbe.splash_occlusion_required &&
+        canonicalRailProbe.splash_radius_evaluated &&
+        canonicalRailProbe.splash_can_damage_observed &&
+        !canonicalRailProbe.splash_can_damage &&
+        canonicalRailProbe.splash_bsp_blocker_verified &&
+        canonicalRailProbe.splash_target_undamaged &&
+        canonicalRailProbe.weapon_damage == 0;
+    break;
+  case WORR_LAG_COMPENSATION_SPLASH_OCCLUSION_WATER_BOUNDARY:
+    splashOcclusionProof =
+        canonicalRailProbe.splash_occlusion_required &&
+        canonicalRailProbe.splash_radius_evaluated &&
+        canonicalRailProbe.splash_can_damage_observed &&
+        canonicalRailProbe.splash_can_damage &&
+        canonicalRailProbe.splash_water_relocated &&
+        canonicalRailProbe.splash_water_boundary_verified && damageApplied &&
+        !canonicalRailProbe.splash_target_undamaged;
+    break;
+  default:
+    splashOcclusionProof = false;
+    break;
+  }
   const bool currentWorldSplashProof =
       currentAuthorityProjectileProof &&
       canonicalRailProbe.current_world_splash_required &&
       canonicalRailProbe.current_world_splash_impact_observed &&
-      (!canonicalRailProbe.damage_required || damageApplied);
+      (!canonicalRailProbe.damage_required || damageApplied) &&
+      splashOcclusionProof;
   // Production discharge intentionally returns before the beam's historical
   // trace. It is a current-authority radius/self-damage effect, so require the
   // explicit production-branch observer rather than fabricating a hitscan
@@ -3312,10 +3755,11 @@ void CanonicalRailProbeCaptureFrame(gentity_t *entity) {
                   ? (canonicalRailProbe.current_world_splash_required
                          ? currentWorldSplashProof
                          : (currentAuthorityProjectileProof &&
-                            proxLifecycleProof))
+                            proxLifecycleProof && rocketLifecycleProof))
                   : normalHitscanProof))) {
     canonicalRailProbe.stage = CanonicalRailProbeStage::Passed;
     CanonicalRailProbeRestoreHistoricalMover();
+    CanonicalRailProbeRestoreSplashWater();
     CanonicalRailProbeReleaseCurrentWorldSplashImpact();
     CanonicalRailProbeReleaseCurrentWorldSplashDamageTarget();
     CanonicalRailProbeReleaseProxLandingSurface();
@@ -3332,12 +3776,22 @@ void CanonicalRailProbeCaptureFrame(gentity_t *entity) {
     } else if (canonicalRailProbe.current_world_splash_required &&
                !canonicalRailProbe.current_world_splash_impact_observed) {
       failure = 22;
+    } else if (canonicalRailProbe.splash_occlusion_policy !=
+                   WORR_LAG_COMPENSATION_SPLASH_OCCLUSION_UNSPECIFIED &&
+               !splashOcclusionProof) {
+      failure = 31;
     } else if (canonicalRailProbe.prox_lifecycle_required &&
                !proxLifecycleProof) {
       failure = 24;
+    } else if (canonicalRailProbe.rocket_lifecycle_required &&
+               !rocketLifecycleProof) {
+      failure = 36;
     } else if (canonicalRailProbe.historical_mover_occlusion_required &&
                !historicalMoverOcclusionProof) {
       failure = 28;
+    } else if (canonicalRailProbe.mover_relative_projectile_required &&
+               !moverRelativeProjectileProof) {
+      failure = 30;
     }
     CanonicalRailProbeFail(failure);
   }
@@ -3500,6 +3954,18 @@ void CanonicalRailProbeObserveProjectileForward(
     canonicalRailProbe.projectile_forward_advanced_age_us =
         result.advanced_age_us;
   }
+  if (canonicalRailProbe.mover_relative_projectile_required) {
+    if (result.projectile_entity.index == 0) {
+      CanonicalRailProbeFail(30);
+      return;
+    }
+    canonicalRailProbe.mover_relative_projectile_identity =
+        result.projectile_entity;
+    canonicalRailProbe.mover_relative_policy =
+        result.mover_relative_policy;
+    canonicalRailProbe.mover_relative_authority_unchanged =
+        result.authority_guard_checked && result.authority_guard_unchanged;
+  }
   if (canonicalRailProbe.current_world_splash_required) {
     if (result.projectile_entity.index == 0) {
       CanonicalRailProbeFail(23);
@@ -3554,7 +4020,13 @@ void CanonicalRailProbeObserveProjectileForward(
   canonicalRailProbe.current_geometry_unchanged =
       canonicalRailProbe.target && canonicalRailProbe.target->linked &&
       canonicalRailProbe.target->s.origin ==
-          canonicalRailProbe.current_target_origin;
+          canonicalRailProbe.current_target_origin &&
+      (!canonicalRailProbe.mover_relative_projectile_required ||
+       (canonicalRailProbe.target->groundEntity ==
+            canonicalRailProbe.historical_mover &&
+        canonicalRailProbe.historical_mover->linked &&
+        canonicalRailProbe.historical_mover->s.origin ==
+            canonicalRailProbe.historical_mover_current_origin));
   CanonicalRailProbePublish();
 }
 
@@ -3595,8 +4067,111 @@ void CanonicalRailProbeObserveMeleeSelection(
   CanonicalRailProbePublish();
 }
 
+[[nodiscard]] bool CanonicalRailProbeValidateMoverRelativeHistory() {
+  if (!canonicalRailProbe.mover_relative_projectile_required)
+    return true;
+  const std::size_t targetIndex = ClientIndex(canonicalRailProbe.target);
+  MoverTrack *moverTrack =
+      FindMoverTrack(canonicalRailProbe.historical_mover_identity);
+  if (targetIndex >= poseTracks.size() || !moverTrack ||
+      !poseTracks[targetIndex].initialized || !moverTrack->initialized ||
+      !Worr_RewindHistoryValidateV1(&poseTracks[targetIndex].history) ||
+      !Worr_RewindHistoryValidateV1(&moverTrack->history) ||
+      poseTracks[targetIndex].history.count <
+          kCanonicalRailProbeRequiredHistoryCaptures ||
+      moverTrack->history.count < kCanonicalRailProbeRequiredHistoryCaptures) {
+    return false;
+  }
+
+  const worr_rewind_history_v1 &targetHistory =
+      poseTracks[targetIndex].history;
+  const worr_rewind_history_v1 &moverHistory = moverTrack->history;
+  bool haveFirstPair = false;
+  bool targetMoved = false;
+  bool moverMoved = false;
+  float firstTargetOrigin[3]{};
+  float firstMoverOrigin[3]{};
+  float firstMoverAngles[3]{};
+  uint32_t pairCount = 0;
+  for (uint32_t targetOffset = 0; targetOffset < targetHistory.count;
+       ++targetOffset) {
+    const uint32_t targetSlot = static_cast<uint32_t>(
+        (static_cast<uint64_t>(targetHistory.head) + targetOffset) %
+        targetHistory.capacity);
+    const worr_rewind_pose_v1 &targetPose = targetHistory.slots[targetSlot];
+    if ((targetPose.flags & WORR_REWIND_POSE_HAS_MOVER) == 0 ||
+        !CanonicalRailProbeSameReference(
+            targetPose.mover,
+            canonicalRailProbe.historical_mover_identity)) {
+      continue;
+    }
+
+    const worr_rewind_pose_v1 *moverPose = nullptr;
+    for (uint32_t moverOffset = 0; moverOffset < moverHistory.count;
+         ++moverOffset) {
+      const uint32_t moverSlot = static_cast<uint32_t>(
+          (static_cast<uint64_t>(moverHistory.head) + moverOffset) %
+          moverHistory.capacity);
+      const worr_rewind_pose_v1 &candidate = moverHistory.slots[moverSlot];
+      if (candidate.entity.index == targetPose.mover.index &&
+          candidate.entity.generation == targetPose.mover.generation &&
+          candidate.server_time_us == targetPose.server_time_us &&
+          candidate.server_tick == targetPose.server_tick &&
+          candidate.collision_shape ==
+              WORR_REWIND_COLLISION_BRUSH_MODEL) {
+        moverPose = &candidate;
+        break;
+      }
+    }
+    if (!moverPose)
+      continue;
+
+    float expectedRelativeOrigin[3]{};
+    float expectedRelativeAngles[3]{};
+    for (std::size_t component = 0; component < 3; ++component) {
+      expectedRelativeOrigin[component] =
+          targetPose.origin[component] - moverPose->origin[component];
+      expectedRelativeAngles[component] =
+          targetPose.angles[component] - moverPose->angles[component];
+    }
+    if (std::memcmp(targetPose.mover_relative_origin,
+                    expectedRelativeOrigin,
+                    sizeof(expectedRelativeOrigin)) != 0 ||
+        std::memcmp(targetPose.mover_relative_angles,
+                    expectedRelativeAngles,
+                    sizeof(expectedRelativeAngles)) != 0) {
+      return false;
+    }
+
+    if (!haveFirstPair) {
+      std::memcpy(firstTargetOrigin, targetPose.origin,
+                  sizeof(firstTargetOrigin));
+      std::memcpy(firstMoverOrigin, moverPose->origin,
+                  sizeof(firstMoverOrigin));
+      std::memcpy(firstMoverAngles, moverPose->angles,
+                  sizeof(firstMoverAngles));
+      haveFirstPair = true;
+    } else {
+      targetMoved |= std::memcmp(firstTargetOrigin, targetPose.origin,
+                                 sizeof(firstTargetOrigin)) != 0;
+      moverMoved |=
+          std::memcmp(firstMoverOrigin, moverPose->origin,
+                      sizeof(firstMoverOrigin)) != 0 ||
+          std::memcmp(firstMoverAngles, moverPose->angles,
+                      sizeof(firstMoverAngles)) != 0;
+    }
+    ++pairCount;
+  }
+
+  canonicalRailProbe.mover_relative_history_pairs = pairCount;
+  canonicalRailProbe.mover_relative_target_history_moved = targetMoved;
+  canonicalRailProbe.mover_relative_mover_history_moved = moverMoved;
+  return pairCount >= 2 && targetMoved && moverMoved;
+}
+
 [[nodiscard]] bool CanonicalRailProbeRelocateHistoricalMover() {
-  if (!canonicalRailProbe.historical_mover_occlusion_required)
+  if (!canonicalRailProbe.historical_mover_occlusion_required &&
+      !canonicalRailProbe.mover_relative_projectile_required)
     return true;
   if (canonicalRailProbe.historical_mover_relocated) {
     return CanonicalRailProbeSameEntity(
@@ -3621,15 +4196,34 @@ void CanonicalRailProbeObserveMeleeSelection(
   }
 
   canonicalRailProbe.historical_mover_history_count = track->history.count;
+  if (!CanonicalRailProbeValidateMoverRelativeHistory())
+    return false;
   canonicalRailProbe.historical_mover_restore_origin = mover->s.origin;
   canonicalRailProbe.historical_mover_restore_linked = mover->linked;
-  canonicalRailProbe.historical_mover_current_origin =
-      mover->s.origin + Vector3{0.0f, 96.0f, 0.0f};
+  const Vector3 relativeBefore = canonicalRailProbe.target
+                                     ? canonicalRailProbe.target->s.origin -
+                                           mover->s.origin
+                                     : Vector3{};
+  canonicalRailProbe.historical_mover_current_origin = mover->s.origin +
+      (canonicalRailProbe.mover_relative_projectile_required
+           ? Vector3{32.0f, 0.0f, 0.0f}
+           : Vector3{0.0f, 96.0f, 0.0f});
   mover->s.origin = canonicalRailProbe.historical_mover_current_origin;
   gi.linkEntity(mover);
   canonicalRailProbe.historical_mover_relocated =
       mover->linked &&
       mover->s.origin == canonicalRailProbe.historical_mover_current_origin;
+  if (canonicalRailProbe.mover_relative_projectile_required) {
+    if (!canonicalRailProbe.historical_mover_relocated ||
+        !CanonicalRailProbePlaceMoverRelativeTarget(false)) {
+      return false;
+    }
+    const Vector3 relativeAfter =
+        canonicalRailProbe.target->s.origin - mover->s.origin;
+    canonicalRailProbe.mover_relative_pair_preserved =
+        canonicalRailProbe.target->groundEntity == mover &&
+        (relativeAfter - relativeBefore).lengthSquared() <= 0.0001f;
+  }
   return canonicalRailProbe.historical_mover_relocated;
 }
 
@@ -3641,8 +4235,13 @@ void CanonicalRailProbePrepareCommand(gentity_t *entity, usercmd_t *command) {
   if (canonicalRailProbe.stage == CanonicalRailProbeStage::AwaitingDamage &&
       canonicalRailProbe.projectile_current_authority_required &&
       entity == canonicalRailProbe.target) {
-    CanonicalRailProbePinTarget(entity,
-                                canonicalRailProbe.current_target_origin);
+    if (canonicalRailProbe.mover_relative_projectile_required) {
+      if (!CanonicalRailProbePlaceMoverRelativeTarget(true))
+        CanonicalRailProbeFail(30);
+    } else {
+      CanonicalRailProbePinTarget(entity,
+                                  canonicalRailProbe.current_target_origin);
+    }
     return;
   }
   if (entity != canonicalRailProbe.shooter) {
@@ -3751,7 +4350,12 @@ void CanonicalRailProbePrepareCommand(gentity_t *entity, usercmd_t *command) {
   Item *weapon = GetItemByIndex(canonicalRailProbe.weapon_item);
   if (!weapon || !weapon->weaponThink || weapon->id == IT_NULL ||
       canonicalRailProbe.weapon_policy == WORR_REWIND_WEAPON_UNSPECIFIED ||
-      canonicalRailProbe.expected_damage == 0) {
+      (canonicalRailProbe.expected_damage == 0 &&
+       !canonicalRailProbe.spawn_protection_required &&
+       canonicalRailProbe.splash_occlusion_policy !=
+           WORR_LAG_COMPENSATION_SPLASH_OCCLUSION_BSP_BLOCKED &&
+       canonicalRailProbe.rocket_lifecycle_policy !=
+           WORR_LAG_COMPENSATION_ROCKET_LIFECYCLE_LIFETIME_EXPIRY)) {
     CanonicalRailProbeFail(8);
     return;
   }
@@ -3773,8 +4377,7 @@ void CanonicalRailProbePrepareCommand(gentity_t *entity, usercmd_t *command) {
     return;
   }
   canonicalRailProbe.target->health = kCanonicalRailProbeTargetHealth;
-  canonicalRailProbe.target->client->PowerupTimer(
-      PowerupTimer::SpawnProtection) = 0_ms;
+  CanonicalRailProbeApplyTargetSpawnProtection();
   entity->client->spawnAngleLockAngles = {};
   entity->client->spawnAngleLockUntil =
       level.time + (canonicalRailProbe.sustained_hold_required
@@ -3861,8 +4464,13 @@ bool CanonicalHitscanProbeArm(uint32_t weaponPolicy, item_id_t weaponItem,
                               bool currentWorldSplashClearImpactAfterTouch =
                                   false,
                               bool currentWorldSplashDamageTargetAfterTouch =
-                                  false) {
+                                  false,
+                              uint32_t splashOcclusionPolicy =
+                                  WORR_LAG_COMPENSATION_SPLASH_OCCLUSION_UNSPECIFIED,
+                              uint32_t rocketLifecyclePolicy =
+                                  WORR_LAG_COMPENSATION_ROCKET_LIFECYCLE_UNSPECIFIED) {
   CanonicalRailProbeRestoreHistoricalMover();
+  CanonicalRailProbeRestoreSplashWater();
   CanonicalRailProbeReleaseCurrentWorldSplashImpact();
   CanonicalRailProbeReleaseCurrentWorldSplashDamageTarget();
   CanonicalRailProbeReleaseProxLandingSurface();
@@ -3953,6 +4561,14 @@ bool CanonicalHitscanProbeArm(uint32_t weaponPolicy, item_id_t weaponItem,
       currentWorldSplashClearImpactAfterTouch;
   canonicalRailProbe.current_world_splash_damage_target_after_touch =
       currentWorldSplashDamageTargetAfterTouch;
+  canonicalRailProbe.splash_occlusion_policy = splashOcclusionPolicy;
+  canonicalRailProbe.splash_occlusion_required =
+      splashOcclusionPolicy !=
+      WORR_LAG_COMPENSATION_SPLASH_OCCLUSION_UNSPECIFIED;
+  canonicalRailProbe.rocket_lifecycle_policy = rocketLifecyclePolicy;
+  canonicalRailProbe.rocket_lifecycle_required =
+      rocketLifecyclePolicy !=
+      WORR_LAG_COMPENSATION_ROCKET_LIFECYCLE_UNSPECIFIED;
   canonicalRailProbe.damage_required = damageRequired;
   canonicalRailProbe.sustained_hold_required = sustainedHoldRequired;
   canonicalRailProbe.prox_lifecycle_required = proxLifecycleRequired;
@@ -3978,6 +4594,21 @@ bool CanonicalRailProbeArm() {
                                   IT_WEAPON_RAILGUN,
                                   kCanonicalRailProbeExpectedDamage, 19, 112.0f,
                                   0);
+}
+
+bool CanonicalRailSpawnProtectionProbeArm() {
+  if (!CanonicalRailProbeArm())
+    return false;
+
+  // The normal Railgun callback must still record the exact historical target
+  // hit. Only the subsequent current-authority Damage policy is expected to
+  // reduce the applied amount to zero.
+  canonicalRailProbe.spawn_protection_required = true;
+  canonicalRailProbe.expected_damage = 0;
+  canonicalRailProbe.minimum_damage = 0;
+  CanonicalRailProbeApplyTargetSpawnProtection();
+  CanonicalRailProbePublish();
+  return canonicalRailProbe.stage != CanonicalRailProbeStage::Failed;
 }
 
 bool CanonicalRailMoverOcclusionProbeArm() {
@@ -4055,6 +4686,62 @@ bool CanonicalRocketProbeArm() {
                                   kCanonicalRocketProbeExpectedDamage, 13,
                                   112.0f, UINT64_C(1500000), false,
                                   {32.0f, 0.0f, 0.0f});
+}
+
+bool CanonicalRocketMoverRelativeProbeArm() {
+  // The real func_rotating and its client rider retain paired normal-frame
+  // history before both translate 32 units in the live world. The Rocket
+  // launch-delay sweep deliberately consumes no historical mover pose: its
+  // current muzzle, current hull sweep, later contact, and damage remain
+  // production authority throughout.
+  if (!CanonicalHitscanProbeArm(
+          WORR_REWIND_WEAPON_ROCKET_SPAWN_FORWARD, IT_WEAPON_RLAUNCHER,
+          kCanonicalRocketProbeExpectedDamage, 13, 112.0f,
+          UINT64_C(1500000), false, {32.0f, 0.0f, 0.0f}, false,
+          {8.0f, 0.0f, 32.0f})) {
+    return false;
+  }
+  canonicalRailProbe.mover_relative_projectile_required = true;
+  if (!CanonicalRailProbeSelectHistoricalMover() ||
+      !CanonicalRailProbePlaceMoverRelativeTarget(false)) {
+    CanonicalRailProbeFail(30);
+    return false;
+  }
+  canonicalRailProbe.shooter_origin =
+      canonicalRailProbe.historical_target_origin -
+      Vector3{canonicalRailProbe.target_distance, 0.0f, 0.0f};
+  CanonicalRailProbePlacePlayer(canonicalRailProbe.shooter,
+                                canonicalRailProbe.shooter_origin);
+  CanonicalRailProbePublish();
+  return canonicalRailProbe.stage != CanonicalRailProbeStage::Failed;
+}
+
+bool CanonicalRocketLifecycleTouchProbeArm() {
+  // The target remains on the normal Rocket flight lane. Only production
+  // contact, Damage, and FreeEntity can satisfy the lifecycle suffix; the
+  // extra window merely proves that no second touch or damage occurs after
+  // the exact projectile generation has retired.
+  return CanonicalHitscanProbeArm(
+      WORR_REWIND_WEAPON_ROCKET_SPAWN_FORWARD, IT_WEAPON_RLAUNCHER,
+      kCanonicalRocketProbeExpectedDamage, 13, 112.0f,
+      UINT64_C(2000000), false, {32.0f, 0.0f, 0.0f}, false,
+      {64.0f, 192.0f, 64.0f}, false, false, 8, false, false, 0, false,
+      true, false, false, false, 16.0f, false, false,
+      WORR_LAG_COMPENSATION_SPLASH_OCCLUSION_UNSPECIFIED,
+      WORR_LAG_COMPENSATION_ROCKET_LIFECYCLE_TOUCH_RETIREMENT);
+}
+
+bool CanonicalRocketLifetimeExpiryProbeArm() {
+  // Keep the real client outside the launch lane and wait for the Rocket's
+  // ordinary 8000/speed nextThink. The fixture never shortens that lifetime,
+  // invents contact, or calls FreeEntity itself.
+  return CanonicalHitscanProbeArm(
+      WORR_REWIND_WEAPON_ROCKET_SPAWN_FORWARD, IT_WEAPON_RLAUNCHER, 0, 13,
+      112.0f, UINT64_C(12000000), false, {0.0f, 256.0f, 0.0f}, false,
+      {64.0f, 192.0f, 64.0f}, false, false, 8, false, false, 0, false,
+      false, false, false, false, 16.0f, false, false,
+      WORR_LAG_COMPENSATION_SPLASH_OCCLUSION_UNSPECIFIED,
+      WORR_LAG_COMPENSATION_ROCKET_LIFECYCLE_LIFETIME_EXPIRY);
 }
 
 bool CanonicalBfgProbeArm() {
@@ -4228,7 +4915,36 @@ bool CanonicalRocketSplashProbeArm() {
       WORR_REWIND_WEAPON_ROCKET_SPAWN_FORWARD, IT_WEAPON_RLAUNCHER,
       kCanonicalRocketSplashProbeExpectedDamage, 13, 112.0f,
       UINT64_C(1500000), false, {-64.0f, 48.0f, 0.0f}, false,
-      {64.0f, 192.0f, 64.0f}, false, false, 8, false, true);
+      {64.0f, 192.0f, 64.0f}, false, false, 8, false, true, 0, false,
+      true, false, false, false, 16.0f, false, false,
+      WORR_LAG_COMPENSATION_SPLASH_OCCLUSION_CLEAR_PLAYER);
+}
+
+bool CanonicalRocketSplashBspOcclusionProbeArm() {
+  // The real rocket first reaches the ordinary present-world impact fixture.
+  // Only then is the packaged rotating BSP placed across the splash ray, so
+  // it cannot influence projectile flight. Production CanDamage must reject
+  // the live player and production Damage must leave health exactly stable.
+  return CanonicalHitscanProbeArm(
+      WORR_REWIND_WEAPON_ROCKET_SPAWN_FORWARD, IT_WEAPON_RLAUNCHER, 0, 13,
+      112.0f, UINT64_C(1500000), false, {-64.0f, 48.0f, 0.0f}, false,
+      {64.0f, 192.0f, 64.0f}, false, false, 8, false, true, 0, false,
+      false, false, false, false, 16.0f, true, false,
+      WORR_LAG_COMPENSATION_SPLASH_OCCLUSION_BSP_BLOCKED);
+}
+
+bool CanonicalRocketSplashWaterBoundaryProbeArm() {
+  // The exact packaged func_water is moved around the accepted impact only
+  // after real projectile contact. The target stays outside that volume; the
+  // normal MASK_SOLID CanDamage query must cross the non-solid boundary and
+  // retain the same exact clear-side splash result.
+  return CanonicalHitscanProbeArm(
+      WORR_REWIND_WEAPON_ROCKET_SPAWN_FORWARD, IT_WEAPON_RLAUNCHER,
+      kCanonicalRocketSplashProbeExpectedDamage, 13, 112.0f,
+      UINT64_C(1500000), false, {-64.0f, 48.0f, 0.0f}, false,
+      {64.0f, 192.0f, 64.0f}, false, false, 8, false, true, 0, false,
+      true, false, false, false, 16.0f, true, false,
+      WORR_LAG_COMPENSATION_SPLASH_OCCLUSION_WATER_BOUNDARY);
 }
 
 bool CanonicalPhalanxSplashProbeArm() {
@@ -4279,12 +4995,15 @@ bool CanonicalPlasmaGunSplashProbeArm() {
 bool CanonicalBlasterProbeArm() {
   // The standard Blaster's maximum 100 ms advance is 150 units at speed 1500.
   // Keep the live target beyond that advance and require normal remaining
-  // current-world bolt flight for the exact direct hit. The shared path also
-  // covers HyperBlaster, whose direct/radius lifecycle remains current-owned.
+  // current-world bolt flight for the exact direct hit. Keep this dedicated
+  // headless lane in the real-BSP fixture's visible non-solid world leaf so
+  // the ordinary PVS/PHS muzzle and impact carriers reach the live clients.
+  // The shared path also covers HyperBlaster, whose direct/radius lifecycle
+  // remains current-owned.
   return CanonicalHitscanProbeArm(
       WORR_REWIND_WEAPON_BLASTER_BOLT_SPAWN_FORWARD, IT_WEAPON_BLASTER,
       kCanonicalBlasterProbeExpectedDamage, 9, 224.0f, UINT64_C(1500000),
-      false, {32.0f, 0.0f, 0.0f});
+      false, {32.0f, 0.0f, 0.0f}, false, {320.0f, 192.0f, 64.0f});
 }
 
 bool CanonicalHyperBlasterProbeArm() {
@@ -4463,6 +5182,8 @@ bool CanonicalShotgunProbeArm() {
                                   112.0f, 0);
 }
 
+#include "lag_compensation_t10_budget.inc"
+
 } // namespace
 
 void LagCompensation_Init() {
@@ -4482,10 +5203,15 @@ void LagCompensation_Init() {
       "sg_lag_compensation_melee_max_displacement", "64", CVAR_NOFLAGS);
   sg_worr_rewind_mover_selftest_status = gi.cvar(
       "sg_worr_rewind_mover_selftest_status", "idle", CVAR_NOSET);
+  sg_worr_rewind_budget_selftest_status = gi.cvar(
+      "sg_worr_rewind_budget_selftest_status", "idle", CVAR_NOSET);
   sg_worr_rewind_rail_damage_selftest_status = gi.cvar(
       "sg_worr_rewind_rail_damage_selftest_status", "idle", CVAR_NOSET);
   sg_worr_rewind_canonical_rail_damage_status = gi.cvar(
       "sg_worr_rewind_canonical_rail_damage_status", "idle", CVAR_NOSET);
+  sg_worr_rewind_canonical_rail_spawn_protection_status = gi.cvar(
+      "sg_worr_rewind_canonical_rail_spawn_protection_status", "idle",
+      CVAR_NOSET);
   sg_worr_rewind_canonical_rail_mover_occlusion_status = gi.cvar(
       "sg_worr_rewind_canonical_rail_mover_occlusion_status", "idle",
       CVAR_NOSET);
@@ -4501,6 +5227,15 @@ void LagCompensation_Init() {
       "sg_worr_rewind_canonical_disruptor_damage_status", "idle", CVAR_NOSET);
   sg_worr_rewind_canonical_rocket_damage_status = gi.cvar(
       "sg_worr_rewind_canonical_rocket_damage_status", "idle", CVAR_NOSET);
+  sg_worr_rewind_canonical_rocket_mover_relative_status = gi.cvar(
+      "sg_worr_rewind_canonical_rocket_mover_relative_status", "idle",
+      CVAR_NOSET);
+  sg_worr_rewind_canonical_rocket_lifecycle_touch_status = gi.cvar(
+      "sg_worr_rewind_canonical_rocket_lifecycle_touch_status", "idle",
+      CVAR_NOSET);
+  sg_worr_rewind_canonical_rocket_lifetime_expiry_status = gi.cvar(
+      "sg_worr_rewind_canonical_rocket_lifetime_expiry_status", "idle",
+      CVAR_NOSET);
   sg_worr_rewind_canonical_bfg_damage_status = gi.cvar(
       "sg_worr_rewind_canonical_bfg_damage_status", "idle", CVAR_NOSET);
   sg_worr_rewind_canonical_ion_ripper_damage_status = gi.cvar(
@@ -4628,6 +5363,7 @@ void LagCompensation_Shutdown() {
   commandContextImport = nullptr;
   rewindCollisionImport = nullptr;
   CanonicalRailProbeRestoreHistoricalMover();
+  CanonicalRailProbeRestoreSplashWater();
   CanonicalRailProbeReleaseCurrentWorldSplashImpact();
   CanonicalRailProbeReleaseCurrentWorldSplashDamageTarget();
   canonicalRailProbe = {};
@@ -4644,6 +5380,7 @@ void LagCompensation_ResetMap() {
   if (!initialized)
     return;
   CanonicalRailProbeRestoreHistoricalMover();
+  CanonicalRailProbeRestoreSplashWater();
   CanonicalRailProbeReleaseCurrentWorldSplashImpact();
   CanonicalRailProbeReleaseCurrentWorldSplashDamageTarget();
   CanonicalRailProbeReleaseProxLandingSurface();
@@ -4990,6 +5727,11 @@ bool LagCompensation_RunHistoricalBrushRuntimeProbe(
   if (!probe)
     return false;
   *probe = {};
+  // The existing dedicated-only, input-free T10 command is also the trigger
+  // for the independent maximum-capacity budget fixture. Its status is
+  // published through a distinct machine-readable cvar and its storage never
+  // aliases this moving-brush probe or live rewind authority.
+  (void)RunT10BudgetRuntimeProbe();
   struct PublishStatus {
     LagCompensationHistoricalBrushRuntimeProbe *probe;
     bool passed = false;
@@ -5966,6 +6708,10 @@ bool LagCompensation_ArmCanonicalRailDamageRuntimeProbe() {
   return CanonicalRailProbeArm();
 }
 
+bool LagCompensation_ArmCanonicalRailSpawnProtectionRuntimeProbe() {
+  return CanonicalRailSpawnProtectionProbeArm();
+}
+
 bool LagCompensation_ArmCanonicalRailMoverOcclusionRuntimeProbe() {
   return CanonicalRailMoverOcclusionProbeArm();
 }
@@ -5988,6 +6734,18 @@ bool LagCompensation_ArmCanonicalDisruptorDamageRuntimeProbe() {
 
 bool LagCompensation_ArmCanonicalRocketDamageRuntimeProbe() {
   return CanonicalRocketProbeArm();
+}
+
+bool LagCompensation_ArmCanonicalRocketMoverRelativeRuntimeProbe() {
+  return CanonicalRocketMoverRelativeProbeArm();
+}
+
+bool LagCompensation_ArmCanonicalRocketLifecycleTouchRuntimeProbe() {
+  return CanonicalRocketLifecycleTouchProbeArm();
+}
+
+bool LagCompensation_ArmCanonicalRocketLifetimeExpiryRuntimeProbe() {
+  return CanonicalRocketLifetimeExpiryProbeArm();
 }
 
 bool LagCompensation_ArmCanonicalBfgDamageRuntimeProbe() {
@@ -6040,6 +6798,14 @@ bool LagCompensation_ArmCanonicalProxLauncherLifecycleRuntimeProbe() {
 
 bool LagCompensation_ArmCanonicalRocketSplashDamageRuntimeProbe() {
   return CanonicalRocketSplashProbeArm();
+}
+
+bool LagCompensation_ArmCanonicalRocketSplashBspOcclusionRuntimeProbe() {
+  return CanonicalRocketSplashBspOcclusionProbeArm();
+}
+
+bool LagCompensation_ArmCanonicalRocketSplashWaterBoundaryRuntimeProbe() {
+  return CanonicalRocketSplashWaterBoundaryProbeArm();
 }
 
 bool LagCompensation_ArmCanonicalPhalanxSplashDamageRuntimeProbe() {
@@ -6239,8 +7005,15 @@ void LagCompensation_ObserveCanonicalWeaponCallback(
   // before the normal callback creates its current-world projectile; do not
   // alter health, collision shape, contact, splash, or damage authority.
   if (canonicalRailProbe.projectile_current_authority_required) {
-    CanonicalRailProbePinTarget(canonicalRailProbe.target,
-                                canonicalRailProbe.current_target_origin);
+    if (canonicalRailProbe.mover_relative_projectile_required) {
+      if (!CanonicalRailProbePlaceMoverRelativeTarget(true)) {
+        CanonicalRailProbeFail(30);
+        return;
+      }
+    } else {
+      CanonicalRailProbePinTarget(canonicalRailProbe.target,
+                                  canonicalRailProbe.current_target_origin);
+    }
   }
   canonicalRailProbe.weapon_callback = true;
   CanonicalRailProbePublish();
@@ -6289,18 +7062,51 @@ void LagCompensation_ObserveCurrentWorldProjectileSplashImpact(
     gentity_t *projectile, gentity_t *other, const trace_t &trace,
     uint32_t weaponPolicy) {
   if (canonicalRailProbe.stage != CanonicalRailProbeStage::AwaitingDamage ||
-      !canonicalRailProbe.current_world_splash_required || !projectile ||
+      (!canonicalRailProbe.current_world_splash_required &&
+       !canonicalRailProbe.mover_relative_projectile_required) ||
+      !projectile ||
       !other || projectile->owner != canonicalRailProbe.shooter ||
       weaponPolicy != canonicalRailProbe.weapon_policy ||
-      !CanonicalRailProbeSameEntity(
-          other, canonicalRailProbe.current_world_splash_impact_identity) ||
-      !CanonicalRailProbeSameEntity(
-          projectile,
-          canonicalRailProbe.current_world_splash_projectile_identity) ||
       trace.fraction >= 1.0f || trace.startSolid || trace.allSolid) {
     return;
   }
+  if (canonicalRailProbe.mover_relative_projectile_required) {
+    if (!CanonicalRailProbeSameEntity(
+            projectile,
+            canonicalRailProbe.mover_relative_projectile_identity) ||
+        !CanonicalRailProbeSameEntity(other,
+                                      canonicalRailProbe.target_identity) ||
+        !CanonicalRailProbeSameEntity(
+            canonicalRailProbe.historical_mover,
+            canonicalRailProbe.historical_mover_identity) ||
+        !canonicalRailProbe.target->linked ||
+        !canonicalRailProbe.historical_mover->linked) {
+      return;
+    }
+    // rocket_touch has already received a normal current-world physics trace,
+    // for the exact projectile and target, but has not yet applied knockback or
+    // damage. The paired-history and attack-staging checks independently prove
+    // the rider/mover relationship; record contact before production combat
+    // legitimately mutates the rider's live ground/velocity state.
+    canonicalRailProbe.mover_relative_current_world_impact = true;
+    CanonicalRailProbePublish();
+    return;
+  }
+  if (!CanonicalRailProbeSameEntity(
+          other, canonicalRailProbe.current_world_splash_impact_identity) ||
+      !CanonicalRailProbeSameEntity(
+          projectile,
+          canonicalRailProbe.current_world_splash_projectile_identity)) {
+    return;
+  }
   canonicalRailProbe.current_world_splash_impact_observed = true;
+  if (canonicalRailProbe.splash_occlusion_required &&
+      !CanonicalRailProbeStageSplashOcclusion(projectile)) {
+    CanonicalRailProbeFail(canonicalRailProbe.failure
+                               ? canonicalRailProbe.failure
+                               : 31);
+    return;
+  }
   if (canonicalRailProbe.current_world_splash_damage_target_after_touch) {
     Vector3 direction = projectile->velocity;
     if (direction.normalize() <= 0.0f) {
@@ -6344,6 +7150,150 @@ void LagCompensation_ObserveCurrentWorldProjectileSplashImpact(
     // fabricates damage, line-of-sight, or a collision result.
     other->solid = SOLID_NOT;
     gi.unlinkEntity(other);
+  }
+  CanonicalRailProbePublish();
+}
+
+void LagCompensation_ObserveRocketLifecycleSpawn(gentity_t *projectile,
+                                                  gentity_t *owner) {
+  if (canonicalRailProbe.stage != CanonicalRailProbeStage::AwaitingDamage ||
+      !canonicalRailProbe.rocket_lifecycle_required || !projectile || !owner ||
+      owner != canonicalRailProbe.shooter || projectile->owner != owner ||
+      canonicalRailProbe.weapon_policy !=
+          WORR_REWIND_WEAPON_ROCKET_SPAWN_FORWARD ||
+      !CanonicalRailProbeSameEntity(owner,
+                                    canonicalRailProbe.shooter_identity)) {
+    return;
+  }
+  if (canonicalRailProbe.rocket_lifecycle_projectile_identity.index != 0) {
+    CanonicalRailProbeFail(37);
+    return;
+  }
+  worr_event_entity_ref_v1 identity{};
+  const int64_t scheduledMs = (projectile->nextThink - level.time).milliseconds();
+  if (!EntityRef(projectile, identity) || scheduledMs < 0 ||
+      scheduledMs > std::numeric_limits<uint32_t>::max()) {
+    CanonicalRailProbeFail(37);
+    return;
+  }
+  canonicalRailProbe.rocket_lifecycle_projectile = projectile;
+  canonicalRailProbe.rocket_lifecycle_projectile_identity = identity;
+  canonicalRailProbe.rocket_lifecycle_spawn_time = level.time;
+  canonicalRailProbe.rocket_lifetime_scheduled_ms =
+      static_cast<uint32_t>(scheduledMs);
+  CanonicalRailProbePublish();
+}
+
+void LagCompensation_ObserveRocketLifecycleTouch(gentity_t *projectile,
+                                                  gentity_t *other,
+                                                  const trace_t &trace) {
+  if (canonicalRailProbe.stage != CanonicalRailProbeStage::AwaitingDamage ||
+      !canonicalRailProbe.rocket_lifecycle_required || !projectile || !other ||
+      projectile != canonicalRailProbe.rocket_lifecycle_projectile ||
+      projectile->owner != canonicalRailProbe.shooter ||
+      !CanonicalRailProbeSameEntity(
+          projectile,
+          canonicalRailProbe.rocket_lifecycle_projectile_identity)) {
+    return;
+  }
+  ++canonicalRailProbe.rocket_touch_count;
+  canonicalRailProbe.rocket_touch_current_world =
+      !trace.startSolid && !trace.allSolid && trace.fraction < 1.0f &&
+      CanonicalRailProbeSameEntity(other,
+                                   canonicalRailProbe.target_identity);
+  CanonicalRailProbePublish();
+}
+
+void LagCompensation_ObserveRocketLifecyclePreRetirement(
+    gentity_t *projectile, bool lifetimeExpiry) {
+  if (canonicalRailProbe.stage != CanonicalRailProbeStage::AwaitingDamage ||
+      !canonicalRailProbe.rocket_lifecycle_required || !projectile ||
+      projectile != canonicalRailProbe.rocket_lifecycle_projectile) {
+    return;
+  }
+  if (!CanonicalRailProbeSameEntity(
+          projectile,
+          canonicalRailProbe.rocket_lifecycle_projectile_identity)) {
+    CanonicalRailProbeFail(37);
+    return;
+  }
+  canonicalRailProbe.rocket_owner_identity_retained =
+      projectile->owner == canonicalRailProbe.shooter &&
+      CanonicalRailProbeSameEntity(projectile->owner,
+                                   canonicalRailProbe.shooter_identity);
+  canonicalRailProbe.rocket_retired_by_touch = !lifetimeExpiry;
+  canonicalRailProbe.rocket_retired_by_expiry = lifetimeExpiry;
+  canonicalRailProbe.rocket_lifecycle_target_health_at_retirement =
+      canonicalRailProbe.target ? canonicalRailProbe.target->health : 0;
+  const int64_t elapsedMs =
+      (level.time - canonicalRailProbe.rocket_lifecycle_spawn_time)
+          .milliseconds();
+  canonicalRailProbe.rocket_lifetime_elapsed_ms =
+      static_cast<uint32_t>(std::clamp<int64_t>(
+          elapsedMs, 0, std::numeric_limits<uint32_t>::max()));
+  CanonicalRailProbePublish();
+}
+
+void LagCompensation_ObserveRocketLifecyclePostRetirement(
+    gentity_t *projectile, bool lifetimeExpiry) {
+  if (canonicalRailProbe.stage != CanonicalRailProbeStage::AwaitingDamage ||
+      !canonicalRailProbe.rocket_lifecycle_required || !projectile ||
+      projectile != canonicalRailProbe.rocket_lifecycle_projectile) {
+    return;
+  }
+  const worr_event_entity_ref_v1 identity =
+      canonicalRailProbe.rocket_lifecycle_projectile_identity;
+  const bool correctPath =
+      lifetimeExpiry ? canonicalRailProbe.rocket_retired_by_expiry
+                     : canonicalRailProbe.rocket_retired_by_touch;
+  // EntityRef captured the live non-client as spawn_count + 1. FreeEntity
+  // increments the old spawn_count and stores that exact captured generation,
+  // so equality here proves that the previously live reference is retired.
+  if (!correctPath || identity.index == 0 ||
+      projectile->s.number != static_cast<int32_t>(identity.index) ||
+      projectile->inUse || projectile->spawn_count != identity.generation ||
+      !projectile->className ||
+      Q_strcasecmp(projectile->className, "freed") != 0 ||
+      !CurrentAuthoritativeTimeUs(
+          canonicalRailProbe.rocket_lifecycle_retired_time_us)) {
+    CanonicalRailProbeFail(37);
+    return;
+  }
+  canonicalRailProbe.rocket_retired = true;
+  CanonicalRailProbePublish();
+}
+
+void LagCompensation_ObserveCurrentWorldSplashCanDamage(
+    gentity_t *inflictor, gentity_t *target, bool canDamage) {
+  if (canonicalRailProbe.stage != CanonicalRailProbeStage::AwaitingDamage ||
+      !canonicalRailProbe.splash_occlusion_required ||
+      !canonicalRailProbe.current_world_splash_impact_observed ||
+      !CanonicalRailProbeSameEntity(
+          inflictor,
+          canonicalRailProbe.current_world_splash_projectile_identity) ||
+      !CanonicalRailProbeSameEntity(target,
+                                    canonicalRailProbe.target_identity)) {
+    return;
+  }
+  if (canonicalRailProbe.splash_can_damage_observed &&
+      canonicalRailProbe.splash_can_damage != canDamage) {
+    CanonicalRailProbeFail(31);
+    return;
+  }
+
+  canonicalRailProbe.splash_radius_evaluated = true;
+  canonicalRailProbe.splash_can_damage_observed = true;
+  canonicalRailProbe.splash_can_damage = canDamage;
+  if (canonicalRailProbe.splash_occlusion_policy ==
+      WORR_LAG_COMPENSATION_SPLASH_OCCLUSION_BSP_BLOCKED) {
+    gentity_t *mover = canonicalRailProbe.historical_mover;
+    canonicalRailProbe.splash_bsp_blocker_verified =
+        !canDamage && canonicalRailProbe.historical_mover_relocated &&
+        CanonicalRailProbeSameEntity(
+            mover, canonicalRailProbe.historical_mover_identity) &&
+        mover->linked && mover->solid == SOLID_BSP && mover->className &&
+        Q_strcasecmp(mover->className, "func_rotating") == 0 &&
+        mover->s.origin == canonicalRailProbe.historical_mover_current_origin;
   }
   CanonicalRailProbePublish();
 }
@@ -6436,6 +7386,8 @@ LagCompensation_ResolveProjectileSpawnForward(gentity_t *shooter,
                                               uint32_t weaponPolicy) {
   LagCompensationProjectileForwardResult result{};
   result.weapon_policy = weaponPolicy;
+  result.mover_relative_policy =
+      WORR_LAG_COMPENSATION_MOVER_RELATIVE_CURRENT_WORLD;
   const auto finish = [&]() {
     CanonicalRailProbeObserveProjectileForward(shooter, result);
     MaybeReportDiagnostics();
@@ -6471,17 +7423,18 @@ LagCompensation_ResolveProjectileSpawnForward(gentity_t *shooter,
     ++diagnostics.projectileForwardRejected;
     return finish();
   }
-  const bool resolvedActive = ResolveCanonicalDecision(
-      shooterIndex, decision, canonicalContextAvailable);
-  // A release-only held throw can occur one weapon-animation frame after its
-  // command scope closes. Its deferred record is accepted only when it was
-  // captured from that actual attack-to-release edge; a held prime can never
-  // be relabeled as release authority.
-  const bool resolvedDeferred =
-      !resolvedActive &&
-      ResolveDeferredProjectileForwardDecision(shooter, shooterIndex,
-                                                weaponPolicy, currentTimeUs,
-                                                decision);
+  // Weapon_Generic can reach its projectile callback under a later accepted
+  // zero-input command. Prefer the bounded authorization captured from the
+  // actual attack (or actual attack-to-release edge), so that unrelated active
+  // authority cannot mask the command that caused this spawn. A held prime can
+  // never be relabeled as release authority because the deferred recorder and
+  // resolver both retain the release-only policy bit.
+  const bool resolvedDeferred = ResolveDeferredProjectileForwardDecision(
+      shooter, shooterIndex, weaponPolicy, currentTimeUs, decision);
+  const bool resolvedActive =
+      !resolvedDeferred &&
+      ResolveCanonicalDecision(shooterIndex, decision,
+                               canonicalContextAvailable);
   if (!resolvedActive && !resolvedDeferred) {
     ++diagnostics.projectileForwardRejected;
     return finish();
@@ -6520,6 +7473,18 @@ LagCompensation_ResolveProjectileSpawnForward(gentity_t *shooter,
     ++diagnostics.projectileForwardClamped;
   if (result.advanced_age_us == 0)
     return finish();
+
+  // The mover-relative policy is intentionally non-mutating. Fingerprint all
+  // live player/mover collision authority around the production current-world
+  // sweep so a future implementation cannot silently install historical poses
+  // into live edicts while claiming a spawn-only estimate.
+  const uint64_t authorityBefore = AuthoritativeCollisionHash();
+  const auto finishCurrentWorld = [&]() {
+    result.authority_guard_checked = true;
+    result.authority_guard_unchanged =
+        authorityBefore == AuthoritativeCollisionHash();
+    return finish();
+  };
 
   // A bouncing projectile needs a separate, conservative path. Mirror the
   // regular Toss gravity-before-move ordering over the accepted bounded age,
@@ -6561,7 +7526,7 @@ LagCompensation_ResolveProjectileSpawnForward(gentity_t *shooter,
         result.blocked = true;
         result.advanced_age_us = 0;
         ++diagnostics.projectileForwardBlocked;
-        return finish();
+        return finishCurrentWorld();
       }
       origin = trace.endPos;
       remainingUs -= stepUs;
@@ -6573,7 +7538,7 @@ LagCompensation_ResolveProjectileSpawnForward(gentity_t *shooter,
     result.advanced = true;
     result.ballistic = true;
     ++diagnostics.projectileForwardAdvanced;
-    return finish();
+    return finishCurrentWorld();
   }
 
   // This is deliberately the same current-world swept-hull query used by the
@@ -6591,7 +7556,7 @@ LagCompensation_ResolveProjectileSpawnForward(gentity_t *shooter,
   ++diagnostics.projectileForwardAdvanced;
   if (result.blocked)
     ++diagnostics.projectileForwardBlocked;
-  return finish();
+  return finishCurrentWorld();
 }
 
 LagCompensationMeleeSelectionResult

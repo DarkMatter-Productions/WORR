@@ -13,6 +13,12 @@ DEBUG = (ROOT / "src/rend_vk/vk_debug.c").read_text(encoding="utf-8")
 SHADER = (
     ROOT / "src/rend_vk/shaders/vk_entity_gpu_bmodel.vert"
 ).read_text(encoding="utf-8")
+TEXTURE_REPLACE_SHADER = (
+    ROOT / "src/rend_vk/shaders/vk_entity_gpu_bmodel_texture_replace.vert"
+).read_text(encoding="utf-8")
+TEXTURE_REPLACE_FRAGMENT = (
+    ROOT / "src/rend_vk/shaders/vk_entity_gpu_bmodel_texture_replace.frag"
+).read_text(encoding="utf-8")
 ENTITY_FRAGMENT = (ROOT / "src/rend_vk/shaders/vk_entity.frag").read_text(
     encoding="utf-8"
 )
@@ -67,6 +73,14 @@ class VulkanGpuBmodelSubmissionSourceTests(unittest.TestCase):
         self.assertIn("existing->instance_count++;", ENTITY)
         self.assertIn("vk_entity.bmodel_instance_count - batch->first_instance", ENTITY)
 
+    def test_static_bmodel_bindings_are_cached_per_recording_pass(self) -> None:
+        self.assertIn('Cvar_Get("vk_bmodel_binding_cache", "1",', ENTITY)
+        self.assertIn("VK_Entity_BmodelBindingCacheEnabled", ENTITY)
+        self.assertIn("bool bmodel_buffers_bound = false;", ENTITY)
+        self.assertIn("!bmodel_buffers_bound ||", ENTITY)
+        self.assertIn("VK_Debug_RecordEntityBmodelBinding()", ENTITY)
+        self.assertIn("entity_bmodel_bindings=%u", DEBUG)
+
     def test_fast_lit_specialization_is_limited_to_unlit_opaque_receivers(self) -> None:
         self.assertIn("VK_ENTITY_VERTEX_GPU_BMODEL_FAST_LIT", ENTITY)
         self.assertIn('Cvar_Get("vk_bmodel_fast_lit", "1"', ENTITY)
@@ -98,7 +112,7 @@ class VulkanGpuBmodelSubmissionSourceTests(unittest.TestCase):
 
     def test_fast_lit_fragment_keeps_opaque_batches_discard_free(self) -> None:
         fast_lit = ENTITY_FRAGMENT.split(
-            "#ifdef VK_ENTITY_GPU_BMODEL_FAST_LIT", 1
+            "#elif defined(VK_ENTITY_GPU_BMODEL_FAST_LIT)", 1
         )[1].split("#else", 1)[0]
         self.assertNotIn("discard;", fast_lit)
         self.assertIn("#ifndef VK_ENTITY_GPU_BMODEL_FAST_LIT_NO_FOG", fast_lit)
@@ -136,7 +150,40 @@ class VulkanGpuBmodelSubmissionSourceTests(unittest.TestCase):
             "vk_entity_gpu_bmodel_texture_replace_no_fog_frag_spv",
             SPV_GENERATOR,
         )
+        self.assertIn("vk_entity_gpu_bmodel_texture_replace.frag", SPV_GENERATOR)
         self.assertIn("VK_Debug_RecordEntityTextureReplaceDraw", ENTITY)
+
+    def test_texture_replace_vertex_specialization_avoids_unused_receiver_work(
+        self,
+    ) -> None:
+        self.assertIn("vk_entity_gpu_bmodel_texture_replace.vert", SPV_GENERATOR)
+        self.assertIn("vk_entity_gpu_bmodel_texture_replace_vert_spv", ENTITY)
+        self.assertIn(
+            "vk_entity_gpu_bmodel_texture_replace_no_fog_vert_spv", ENTITY
+        )
+        self.assertIn("gpu_bmodel_texture_replace", ENTITY)
+        self.assertIn("gpu_bmodel_texture_replace_specialized", ENTITY)
+        self.assertIn("vk_bmodel_texture_replace_specialization", ENTITY)
+        self.assertIn("in_pos", TEXTURE_REPLACE_SHADER)
+        self.assertIn("in_uv", TEXTURE_REPLACE_SHADER)
+        self.assertIn("in_face_flags", TEXTURE_REPLACE_SHADER)
+        self.assertIn("in_origin", TEXTURE_REPLACE_SHADER)
+        self.assertIn("in_scaled_axis0", TEXTURE_REPLACE_SHADER)
+        self.assertIn("in_scaled_axis1", TEXTURE_REPLACE_SHADER)
+        self.assertIn("in_scaled_axis2", TEXTURE_REPLACE_SHADER)
+        self.assertIn("in_entity_flags", TEXTURE_REPLACE_SHADER)
+        self.assertIn("out_flags = in_face_flags | in_entity_flags", TEXTURE_REPLACE_SHADER)
+        self.assertNotIn("in_normal", TEXTURE_REPLACE_SHADER)
+        self.assertNotIn("in_lm_uv", TEXTURE_REPLACE_SHADER)
+        self.assertNotIn("in_face_alpha", TEXTURE_REPLACE_SHADER)
+        self.assertNotIn("in_normal_axis", TEXTURE_REPLACE_SHADER)
+        self.assertNotIn("in_color", TEXTURE_REPLACE_SHADER)
+        self.assertIn("layout(location = 4) out vec3 out_world_pos", TEXTURE_REPLACE_SHADER)
+        self.assertIn("VK_ENTITY_GPU_BMODEL_TEXTURE_REPLACE_NO_FOG", TEXTURE_REPLACE_SHADER)
+        self.assertIn("layout(location = 0) in vec2 in_uv", TEXTURE_REPLACE_FRAGMENT)
+        self.assertIn("layout(location = 3) flat in uint in_flags", TEXTURE_REPLACE_FRAGMENT)
+        self.assertIn("layout(location = 4) in vec3 in_world_pos", TEXTURE_REPLACE_FRAGMENT)
+        self.assertIn("VK_ENTITY_GPU_BMODEL_TEXTURE_REPLACE_NO_FOG", TEXTURE_REPLACE_FRAGMENT)
 
 
 if __name__ == "__main__":

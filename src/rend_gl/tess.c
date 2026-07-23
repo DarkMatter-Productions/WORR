@@ -522,6 +522,10 @@ static const glVaDesc_t arraydescs[VA_TOTAL][VERT_ATTR_COUNT] = {
     [VA_OCCLUDE] = {
         [VERT_ATTR_POS] = ATTR_FLOAT(3, 3, 0),
     },
+    [VA_SHADOW_ALPHA] = {
+        [VERT_ATTR_POS] = ATTR_FLOAT(3, 5, 0),
+        [VERT_ATTR_TC] = ATTR_FLOAT(2, 5, 3),
+    },
     [VA_POSTPROCESS] = {
         [VERT_ATTR_POS] = ATTR_FLOAT(2, 4, 0),
         [VERT_ATTR_TC]  = ATTR_FLOAT(2, 4, 2),

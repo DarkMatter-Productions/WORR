@@ -133,6 +133,7 @@ typedef struct worr_cgame_event_shadow_audit_v1_s {
 #define WORR_CGAME_EVENT_RANGE_API_VERSION_V2 2u
 #define WORR_CGAME_EVENT_RANGE_MAX_RECORDS_V2 512u
 #define WORR_CGAME_EVENT_RANGE_MAX_ENTITIES_V2 8192u
+#define WORR_CGAME_EVENT_DAMAGE_BATCH_MAX_V2 4u
 
 typedef enum worr_cgame_event_range_phase_v2_e {
     WORR_CGAME_EVENT_RANGE_PHASE_ACTION_PRE_PRESENT_V2 = 1,
@@ -145,7 +146,9 @@ typedef enum worr_cgame_event_carrier_kind_v2_e {
     WORR_CGAME_EVENT_CARRIER_PLAYER_MUZZLE_V2 = 3,
     WORR_CGAME_EVENT_CARRIER_MONSTER_MUZZLE_V2 = 4,
     WORR_CGAME_EVENT_CARRIER_SPATIAL_SOUND_V2 = 5,
-    WORR_CGAME_EVENT_CARRIER_KIND_COUNT_V2 = 5,
+    WORR_CGAME_EVENT_CARRIER_DAMAGE_V2 = 6,
+    WORR_CGAME_EVENT_CARRIER_KEYED_POI_V2 = 7,
+    WORR_CGAME_EVENT_CARRIER_KIND_COUNT_V2 = 7,
 } worr_cgame_event_carrier_kind_v2;
 
 typedef enum worr_cgame_event_adapter_status_v2_e {
@@ -194,7 +197,9 @@ typedef struct worr_cgame_event_range_v2_s {
 /* The record is a pointer-free candidate template.  source_entity and
  * subject_entity must both be the absent reference; the accumulator replaces
  * them with client-observed references atomically after previewing generation
- * changes.  Legacy V2 candidates remain ID-less and prediction-key-free. */
+ * changes.  A single-action candidate has source_ordinal zero.  In an atomic
+ * multi-record action, source_ordinal must equal the candidate's array index.
+ * Legacy V2 candidates remain ID-less and prediction-key-free. */
 typedef struct worr_cgame_event_action_candidate_v2_s {
     uint32_t struct_size;
     uint32_t source_entity_index;
@@ -322,6 +327,17 @@ Worr_CGameEventRangeDeliverActionV2(
     worr_cgame_event_range_consume_fn_v2 consume,
     void *consume_context);
 worr_cgame_event_range_build_result_v2
+Worr_CGameEventRangeDeliverActionBatchV2(
+    worr_cgame_event_range_builder_v2 *builder,
+    const worr_cgame_event_action_candidate_v2 *candidates,
+    uint32_t candidate_count,
+    uint32_t carrier_kind,
+    /* Caller supplies DEMO_PLAYBACK/DEMO_SEEK only.  The complete batch is
+     * validated and generation-previewed before any builder state changes. */
+    uint32_t range_flags,
+    worr_cgame_event_range_consume_fn_v2 consume,
+    void *consume_context);
+worr_cgame_event_range_build_result_v2
 Worr_CGameEventRangeDeliverRejectedActionV2(
     worr_cgame_event_range_builder_v2 *builder,
     uint32_t carrier_tick,
@@ -418,7 +434,7 @@ WORR_CGAME_EVENT_SHADOW_STATIC_ASSERT(
     sizeof(worr_cgame_event_observed_v2) == 12,
     "cgame event observed v2 layout changed");
 WORR_CGAME_EVENT_SHADOW_STATIC_ASSERT(
-    sizeof(worr_cgame_event_range_audit_status_v2) == 192,
+    sizeof(worr_cgame_event_range_audit_status_v2) == 224,
     "cgame event audit status v2 layout changed");
 
 #undef WORR_CGAME_EVENT_SHADOW_STATIC_ASSERT

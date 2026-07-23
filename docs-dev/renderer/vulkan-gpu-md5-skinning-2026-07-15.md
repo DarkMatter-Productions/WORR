@@ -58,8 +58,19 @@ shader performs the weighted reconstruction once per submitted vertex, and
 compatible adjacent instances share one instanced draw.
 
 The CPU still interpolates joints, so this slice does not yet remove every MD5
-animation cost. Runtime paired OpenGL/Vulkan captures and the `FR-01-T15`
-budgets remain required before claiming an end-to-end performance gain.
+animation cost. A paired normal-path OpenGL/Vulkan capture now proves native
+GPU-MD5 submission under validation; representative `FR-01-T15` budgets remain
+required before claiming an end-to-end performance gain. See
+`vulkan-gpu-md5-runtime-parity-2026-07-19.md`.
+
+The frame-local MD5 instance and joint-palette records now occupy their aligned
+regions in the shared native model-instance arena. The descriptor retains the
+palette region's explicit offset and capacity; see
+`vulkan-entity-instance-arena-2026-07-20.md`.
+
+The runtime coverage now also includes the registered 17-joint player
+replacement at a non-zero source frame; see
+`vulkan-gpu-md5-multijoint-runtime-parity-2026-07-20.md`.
 
 ## Headless validation
 

@@ -69,14 +69,17 @@ def build_bsp(
     worldspawn_properties: tuple[str, ...] = (),
     warp_flags: int = SURF_WARP | SURF_FLOWING,
     view_leaf_contents: int = 0,
+    extra_entities: tuple[str, ...] = (),
 ) -> bytes:
     properties = "".join(worldspawn_properties)
+    entities_after_start = "".join(extra_entities)
     entities = (
         '{\n"classname" "worldspawn"\n'
         '"message" "WORR FR-01-T10 warp-flow parity"\n'
         f"{properties}}}\n"
         '{\n"classname" "info_player_start"\n'
-        '"origin" "0 0 -22"\n"angle" "0"\n}\n\0'
+        '"origin" "0 0 -22"\n"angle" "0"\n}\n'
+        f"{entities_after_start}\0"
     ).encode("ascii")
     vertices = (*_quad(640.0), *_quad(320.0))
     edges = [(0, 0)]

@@ -51,6 +51,10 @@ typedef struct {
     uint32_t entity_fast_lit_no_fog_draws;
     uint32_t entity_texture_replace_draws;
     uint32_t entity_texture_replace_no_fog_draws;
+    uint32_t entity_bmodel_bindings;
+    uint32_t entity_models_culled;
+    uint32_t entity_gpu_md5_draws;
+    uint32_t entity_gpu_md5_instances;
     uint32_t world_fast_lit_candidates;
     uint32_t world_fast_lit_disabled;
     uint32_t world_fast_lit_fullbright;
@@ -58,6 +62,8 @@ typedef struct {
     uint32_t world_fast_lit_pipeline_unavailable;
     uint32_t world_fast_lit_material_ineligible;
     float cpu_frame_ms;
+    float cpu_render_ms;
+    float cpu_sync_wait_ms;
     float gpu_frame_ms;
     float gpu_upload_ms;
     float gpu_shadow_ms;
@@ -617,6 +623,9 @@ static void VK_Debug_DrawStats(void)
         stats->active_debug_lines, MAX_DEBUG_LINES,
         stats->debug_capacity_hits));
     SCR_StatKeyValue("CPU frame ms", va("%.3f", stats->cpu_frame_ms));
+    SCR_StatKeyValue("CPU render ms", va("%.3f", stats->cpu_render_ms));
+    SCR_StatKeyValue("CPU sync wait ms", va("%.3f",
+                                              stats->cpu_sync_wait_ms));
     SCR_StatKeyValue("GPU frame ms", stats->gpu_frame_valid
         ? va("%.3f", stats->gpu_frame_ms) : "unavailable");
     SCR_StatKeyValue("GPU phases ms", stats->gpu_frame_valid
@@ -641,7 +650,7 @@ static void VK_Debug_Stats_f(void)
         indices += stats->domains[i].indices;
         uploads += stats->domains[i].upload_bytes;
     }
-    Com_Printf("VK_STATS frame=%llu draws=%llu vertices=%llu indices=%llu uploads=%llu world_draws=%llu entity_draws=%llu ui_draws=%llu post_draws=%llu shadow_draws=%llu debug_draws=%llu world_fast_lit_draws=%u world_fast_lit_no_fog_draws=%u world_texture_replace_draws=%u world_texture_replace_no_fog_draws=%u msaa_depth_resolve_elisions=%u msaa_single_sample_dof_scene_frames=%u msaa_single_sample_scaled_scene_frames=%u entity_fast_lit_draws=%u entity_fast_lit_no_fog_draws=%u entity_texture_replace_draws=%u entity_texture_replace_no_fog_draws=%u world_fast_lit_candidates=%u world_fast_lit_disabled=%u world_fast_lit_fullbright=%u world_fast_lit_receiver_lighting=%u world_fast_lit_pipeline_unavailable=%u world_fast_lit_material_ineligible=%u world_uploads=%llu entity_uploads=%llu ui_uploads=%llu post_uploads=%llu shadow_uploads=%llu debug_uploads=%llu entities=%u dlights=%u particles=%u queries=%u debug_lines=%u capacity_hits=%u cpu_ms=%.3f gpu_ms=%.3f gpu_frame_ms=%.3f gpu_upload_ms=%.3f gpu_shadow_ms=%.3f gpu_opaque_world_ms=%.3f gpu_opaque_entity_ms=%.3f gpu_scene_ms=%.3f gpu_post_ms=%.3f gpu_frame_valid=%d gpu_valid=%d missing_mask=0x%02x\n",
+    Com_Printf("VK_STATS frame=%llu draws=%llu vertices=%llu indices=%llu uploads=%llu world_draws=%llu entity_draws=%llu ui_draws=%llu post_draws=%llu shadow_draws=%llu debug_draws=%llu world_fast_lit_draws=%u world_fast_lit_no_fog_draws=%u world_texture_replace_draws=%u world_texture_replace_no_fog_draws=%u msaa_depth_resolve_elisions=%u msaa_single_sample_dof_scene_frames=%u msaa_single_sample_scaled_scene_frames=%u entity_fast_lit_draws=%u entity_fast_lit_no_fog_draws=%u entity_texture_replace_draws=%u entity_texture_replace_no_fog_draws=%u entity_bmodel_bindings=%u entity_models_culled=%u entity_gpu_md5_draws=%u entity_gpu_md5_instances=%u world_fast_lit_candidates=%u world_fast_lit_disabled=%u world_fast_lit_fullbright=%u world_fast_lit_receiver_lighting=%u world_fast_lit_pipeline_unavailable=%u world_fast_lit_material_ineligible=%u world_uploads=%llu entity_uploads=%llu ui_uploads=%llu post_uploads=%llu shadow_uploads=%llu debug_uploads=%llu entities=%u dlights=%u particles=%u queries=%u debug_lines=%u capacity_hits=%u cpu_ms=%.3f cpu_render_ms=%.3f cpu_sync_wait_ms=%.3f gpu_ms=%.3f gpu_frame_ms=%.3f gpu_upload_ms=%.3f gpu_shadow_ms=%.3f gpu_opaque_world_ms=%.3f gpu_opaque_entity_ms=%.3f gpu_scene_ms=%.3f gpu_post_ms=%.3f gpu_frame_valid=%d gpu_valid=%d missing_mask=0x%02x\n",
                (unsigned long long)stats->frame_number,
                (unsigned long long)draws,
                (unsigned long long)vertices,
@@ -670,6 +679,10 @@ static void VK_Debug_Stats_f(void)
                stats->entity_fast_lit_no_fog_draws,
                stats->entity_texture_replace_draws,
                stats->entity_texture_replace_no_fog_draws,
+               stats->entity_bmodel_bindings,
+               stats->entity_models_culled,
+               stats->entity_gpu_md5_draws,
+               stats->entity_gpu_md5_instances,
                stats->world_fast_lit_candidates,
                stats->world_fast_lit_disabled,
                stats->world_fast_lit_fullbright,
@@ -691,6 +704,7 @@ static void VK_Debug_Stats_f(void)
                stats->entities, stats->dlights, stats->particles,
                stats->queries, stats->active_debug_lines,
                stats->debug_capacity_hits, stats->cpu_frame_ms,
+               stats->cpu_render_ms, stats->cpu_sync_wait_ms,
                stats->gpu_frame_ms, stats->gpu_frame_ms,
                stats->gpu_upload_ms, stats->gpu_shadow_ms,
                stats->gpu_opaque_world_ms, stats->gpu_opaque_entity_ms,
@@ -911,9 +925,12 @@ void VK_Debug_BeginFrame(void)
     vk_debug.current.gpu_frame_valid = vk_debug.gpu_frame_valid;
 }
 
-void VK_Debug_EndFrame(float cpu_frame_ms)
+void VK_Debug_EndFrame(float cpu_frame_ms, float cpu_render_ms,
+                       float cpu_sync_wait_ms)
 {
     vk_debug.current.cpu_frame_ms = max(cpu_frame_ms, 0.0f);
+    vk_debug.current.cpu_render_ms = max(cpu_render_ms, 0.0f);
+    vk_debug.current.cpu_sync_wait_ms = max(cpu_sync_wait_ms, 0.0f);
     vk_debug.last = vk_debug.current;
 
     int interval = vk_debug.stats_log
@@ -1234,6 +1251,22 @@ void VK_Debug_RecordEntityTextureReplaceDraw(bool no_fog)
     if (no_fog) {
         vk_debug.current.entity_texture_replace_no_fog_draws++;
     }
+}
+
+void VK_Debug_RecordEntityBmodelBinding(void)
+{
+    vk_debug.current.entity_bmodel_bindings++;
+}
+
+void VK_Debug_RecordEntityModelCull(void)
+{
+    vk_debug.current.entity_models_culled++;
+}
+
+void VK_Debug_RecordEntityGpuMd5Draw(uint32_t instances)
+{
+    vk_debug.current.entity_gpu_md5_draws++;
+    vk_debug.current.entity_gpu_md5_instances += instances;
 }
 
 void VK_Debug_SetWorldFastLitCoverage(uint32_t candidates, uint32_t disabled,

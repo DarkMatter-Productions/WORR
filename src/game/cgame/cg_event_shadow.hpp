@@ -10,8 +10,11 @@ the Free Software Foundation; either version 2 of the License, or
 #pragma once
 
 #include "shared/cgame_event_shadow.h"
+#include "shared/cgame_native_event_probe.h"
 
 #include <cstdint>
+
+struct cg_event_runtime_presentation_context_v1;
 
 constexpr std::uint32_t CG_CANONICAL_EVENT_PRESENTATION_VERSION = 1u;
 constexpr std::uint32_t CG_CANONICAL_EVENT_PRESENTATION_CAPACITY = 2048u;
@@ -80,6 +83,28 @@ struct cg_canonical_event_presentation_status_v1 {
 
 const worr_cgame_event_shadow_export_v1 *CG_GetEventShadowAPI();
 const worr_cgame_event_range_export_v2 *CG_GetEventRangeAPIv2();
+
+/* Private cgame half of the public native-event probe extension. Accepted raw
+ * actions are captured by cg_event_shadow.cpp; cg_native_event_presenter.cpp
+ * owns lifecycle aggregation and publishes the extension table. */
+void CG_NativeEventProbeRawBeginMap();
+void CG_NativeEventProbeRawEndMap();
+void CG_NativeEventProbeRawUninstall();
+bool CG_NativeEventProbeLegacyActionHash(
+    const worr_cgame_event_range_v2 *range,
+    std::uint32_t record_index,
+    std::uint64_t *hash_out);
+bool CG_NativeEventProbeAuthorityHash(
+    const worr_event_record_v1 *record,
+    const cg_event_runtime_presentation_context_v1 *context,
+    std::uint64_t *hash_out);
+bool CG_NativeEventProbeCompleteLegacyDispatch(
+    std::uint32_t carrier_kind,
+    worr_cgame_native_event_probe_legacy_disposition_v1 disposition);
+bool CG_NativeEventProbeFillRawStatus(
+    worr_cgame_native_event_probe_status_v1 *status_out);
+bool CG_NativeEventProbeRawCheckpointReady();
+void CG_NativeEventProbeRawApplyCheckpoint();
 
 /*
  * Value-only, cgame-owned presentation history. Begin starts at the oldest

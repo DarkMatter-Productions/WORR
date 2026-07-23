@@ -16,6 +16,7 @@ damage falloff and checking line-of-sight to affected entities.*/
 
 #include "../g_local.hpp"
 #include "../bots/bot_combat.hpp"
+#include "../network/lag_compensation.hpp"
 #include "freezetag_damage.hpp"
 
 #include <cassert>
@@ -1278,7 +1279,10 @@ bool RadiusDamage(gentity_t *inflictor, gentity_t *attacker, float damage,
     points = damage * (1.0f - v.length() / radius);
 
     if (points > 0) {
-      if (CanDamage(ent, inflictor)) {
+      const bool canDamage = CanDamage(ent, inflictor);
+      LagCompensation_ObserveCurrentWorldSplashCanDamage(inflictor, ent,
+                                                         canDamage);
+      if (canDamage) {
         if (LogAccuracyHit(ent, attacker))
           hitClient = true;
         dir = (ent->s.origin - origin).normalized();

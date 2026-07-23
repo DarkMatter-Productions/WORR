@@ -2,6 +2,7 @@
 // Licensed under the GNU General Public License 2.0.
 
 #include "cg_entity_local.h"
+#include "cg_native_event_presenter.hpp"
 #include "cg_snapshot_timeline.hpp"
 
 const cgame_entity_import_t *cgei = nullptr;
@@ -146,15 +147,19 @@ void CG_Entity_InitCvars(void)
     CG_SnapshotTimeline_InitCvars();
     CG_CanonicalSnapshotRender_InitCvars();
     CG_PredictionAuthority_InitCvars();
+    CG_NativeEventPresenterInitCvars();
 
     cg_entity_cvars_initialized = true;
 }
 
 void CG_Entity_SetImport(const cgame_entity_import_t *import)
 {
+    CG_NativeEventPresenterUninstall();
     cgei = import;
     cg_entity_cvars_initialized = false;
     CG_Entity_InitCvars();
+    if (cgei)
+        CG_NativeEventPresenterInstall();
 }
 
 bool CG_IsActiveMultiplayerSession(void)
@@ -185,6 +190,11 @@ void CL_CheckPredictionError(void);
 void CL_CalcViewValues(void);
 void CL_AddEntities(void);
 void CL_GetEntitySoundOrigin(unsigned entnum, vec3_t org);
+void CL_PrepareLoopSoundEntities(void);
+int CL_CopyLoopSoundEntities(entity_state_t *states, int capacity);
+int CL_GetEntitySoundBinding(unsigned entnum, uint64_t *binding_out);
+bool CL_GetEntitySoundOriginBound(unsigned entnum, uint64_t binding,
+                                  vec3_t org);
 void CL_ParseTEnt(void);
 void CL_MuzzleFlash(void);
 void CL_MuzzleFlash2(void);
@@ -214,6 +224,10 @@ static cgame_entity_export_t cg_entity_exports = {
     .AddEntities = CL_AddEntities,
 
     .GetEntitySoundOrigin = CL_GetEntitySoundOrigin,
+    .PrepareLoopSoundEntities = CL_PrepareLoopSoundEntities,
+    .CopyLoopSoundEntities = CL_CopyLoopSoundEntities,
+    .GetEntitySoundBinding = CL_GetEntitySoundBinding,
+    .GetEntitySoundOriginBound = CL_GetEntitySoundOriginBound,
 
     .ParseTempEntity = CL_ParseTEnt,
     .ParseMuzzleFlash = CL_MuzzleFlash,

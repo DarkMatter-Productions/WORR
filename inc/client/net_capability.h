@@ -16,6 +16,7 @@ extern "C" {
 #endif
 
 void CL_NetCapabilityRegisterOffer(void);
+void CL_NetCapabilityRefreshOffer(void);
 void CL_NetCapabilityReset(uint32_t connection_epoch);
 void CL_NetCapabilityShutdown(void);
 bool CL_NetCapabilityPacketBegin(void);
@@ -26,6 +27,7 @@ bool CL_NetCapabilityObserveSetting(int32_t index, int32_t value);
 void CL_NetCapabilityObserveInterveningService(void);
 
 uint32_t CL_NetCapabilityNegotiated(void);
+uint32_t CL_NetCapabilityOffered(void);
 bool CL_NetCapabilityHas(uint32_t capability);
 bool CL_NetCapabilityGetState(worr_net_capability_state_v1 *state_out);
 

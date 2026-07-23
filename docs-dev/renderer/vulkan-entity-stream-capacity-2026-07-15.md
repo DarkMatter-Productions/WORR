@@ -32,6 +32,18 @@ halving its live upload bytes without changing indexed triangle order. The
 change does not itself claim GPU-driven submission before the related
 indexed/static-mesh, instance, and skinning work is complete.
 
+The later `FR-01-T14` follow-up coalesces the CPU-expanded vertex and index
+buffers in each frame context into one native geometry arena with independently
+grown regions. It retains the same live-byte telemetry while reducing active
+buffer, copy, and barrier work; see
+`vulkan-entity-geometry-arena-2026-07-19.md`.
+
+The later GPU-model follow-up similarly coalesces the MD2, inline-BSP, MD5
+instance, and MD5 joint-palette streams in each frame context into one aligned
+native instance arena. Its regions preserve independent geometric capacity and
+the MD5 descriptor binds the palette's native offset; see
+`vulkan-entity-instance-arena-2026-07-20.md`.
+
 ## Performance characteristics
 
 The change turns repeated high-water growth from O(number of incremental

@@ -1,6 +1,7 @@
 /* Deterministic FR-10-T04 canonical native codec tests. */
 
 #include "common/net/native_codec.h"
+#include "common/net/native_event_batch.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -281,6 +282,7 @@ static worr_event_record_v1 make_event_kind(uint16_t kind,
         worr_event_payload_legacy_temp_v1 legacy_temp;
         worr_event_payload_muzzle_v1 muzzle;
         worr_event_payload_spatial_audio_v1 spatial;
+        worr_event_payload_keyed_poi_v1 keyed_poi;
     } payload;
     uint16_t temp_fields = 0;
 
@@ -385,6 +387,21 @@ static worr_event_record_v1 make_event_kind(uint16_t kind,
         record.payload_size = sizeof(payload.spatial);
         memcpy(record.payload, &payload.spatial, sizeof(payload.spatial));
         break;
+    case WORR_EVENT_PAYLOAD_KEYED_POI_V1:
+        record.event_type = WORR_EVENT_TYPE_STATE_CHANGE;
+        record.delivery_class = WORR_EVENT_DELIVERY_RELIABLE_ORDERED;
+        payload.keyed_poi.key = UINT16_C(0x1234);
+        payload.keyed_poi.lifetime_ms = 5000;
+        payload.keyed_poi.position[0] = 1.0f;
+        payload.keyed_poi.position[1] = -0.0f;
+        payload.keyed_poi.position[2] = 3.5f;
+        payload.keyed_poi.image_index = UINT16_C(0x4567);
+        payload.keyed_poi.color_index = UINT8_C(0xd0);
+        payload.keyed_poi.flags = WORR_EVENT_KEYED_POI_FLAG_HIDE_ON_AIM;
+        record.payload_size = sizeof(payload.keyed_poi);
+        memcpy(record.payload, &payload.keyed_poi,
+               sizeof(payload.keyed_poi));
+        break;
     default:
         break;
     }
@@ -405,6 +422,7 @@ static bool test_event_codecs(void)
         WORR_EVENT_PAYLOAD_LEGACY_TEMP_V1,
         WORR_EVENT_PAYLOAD_MUZZLE_V1,
         WORR_EVENT_PAYLOAD_SPATIAL_AUDIO_V1,
+        WORR_EVENT_PAYLOAD_KEYED_POI_V1,
     };
     uint8_t encoded[256];
     uint8_t malformed[256];
@@ -450,6 +468,115 @@ static bool test_event_codecs(void)
             CHECK(source.payload_size == 72);
             CHECK(info.range_counts[0] == 68);
         }
+        if (kinds[index] == WORR_EVENT_PAYLOAD_KEYED_POI_V1) {
+            CHECK(WORR_EVENT_MODEL_REVISION == 2);
+            CHECK(source.payload_size == 20 && preflight == 132);
+            CHECK(info.model_revision == 2 && info.range_counts[0] == 20);
+            CHECK(encoded[108] == 13 && encoded[109] == 0 &&
+                  encoded[110] == 20 && encoded[111] == 0);
+            CHECK(encoded[112] == 0x34 && encoded[113] == 0x12 &&
+                  encoded[114] == 0x88 && encoded[115] == 0x13);
+            CHECK(encoded[116] == 0 && encoded[117] == 0 &&
+                  encoded[118] == 0x80 && encoded[119] == 0x3f);
+            CHECK(encoded[120] == 0 && encoded[121] == 0 &&
+                  encoded[122] == 0 && encoded[123] == 0);
+            CHECK(encoded[124] == 0 && encoded[125] == 0 &&
+                  encoded[126] == 0x60 && encoded[127] == 0x40);
+            CHECK(encoded[128] == 0x67 && encoded[129] == 0x45 &&
+                  encoded[130] == 0xd0 && encoded[131] == 1);
+        }
+    }
+
+    {
+        worr_event_payload_keyed_poi_v1 removal;
+
+        source = make_event_kind(WORR_EVENT_PAYLOAD_KEYED_POI_V1, 48);
+        CHECK(Worr_NativeCodecEventEncodeV1(
+                  &source, TEST_MAX_ENTITIES, encoded, sizeof(encoded),
+                  &encoded_bytes) == WORR_NATIVE_CODEC_OK);
+        CHECK(encoded_bytes == 132);
+        memset(&sentinel, 0x6b, sizeof(sentinel));
+
+        decoded = sentinel;
+        memcpy(malformed, encoded, encoded_bytes);
+        malformed[131] |= 1u << 1;
+        CHECK(Worr_NativeCodecEventDecodeV1(
+                  malformed, encoded_bytes, TEST_MAX_ENTITIES, &decoded) ==
+              WORR_NATIVE_CODEC_INVALID_RECORD);
+        CHECK(memcmp(&decoded, &sentinel, sizeof(decoded)) == 0);
+
+        decoded = sentinel;
+        memcpy(malformed, encoded, encoded_bytes);
+        store_u32(malformed + 116, UINT32_C(0x80000000));
+        CHECK(Worr_NativeCodecEventDecodeV1(
+                  malformed, encoded_bytes, TEST_MAX_ENTITIES, &decoded) ==
+              WORR_NATIVE_CODEC_MALFORMED);
+        CHECK(memcmp(&decoded, &sentinel, sizeof(decoded)) == 0);
+
+        decoded = sentinel;
+        memcpy(malformed, encoded, encoded_bytes);
+        store_u32(malformed + 24, 19);
+        CHECK(Worr_NativeCodecEventDecodeV1(
+                  malformed, encoded_bytes, TEST_MAX_ENTITIES, &decoded) ==
+              WORR_NATIVE_CODEC_MALFORMED);
+        CHECK(memcmp(&decoded, &sentinel, sizeof(decoded)) == 0);
+
+        decoded = sentinel;
+        CHECK(Worr_NativeCodecEventDecodeV1(
+                  encoded, encoded_bytes - 1u, TEST_MAX_ENTITIES, &decoded) ==
+              WORR_NATIVE_CODEC_MALFORMED);
+        CHECK(memcmp(&decoded, &sentinel, sizeof(decoded)) == 0);
+
+        memset(&removal, 0, sizeof(removal));
+        removal.key = UINT16_C(0xffff);
+        removal.lifetime_ms = WORR_EVENT_KEYED_POI_REMOVE_LIFETIME_MS;
+        source = make_event_kind(WORR_EVENT_PAYLOAD_KEYED_POI_V1, 49);
+        memcpy(source.payload, &removal, sizeof(removal));
+        CHECK(Worr_NativeCodecEventEncodeV1(
+                  &source, TEST_MAX_ENTITIES, encoded, sizeof(encoded),
+                  &encoded_bytes) == WORR_NATIVE_CODEC_OK);
+        decoded = sentinel;
+        memcpy(malformed, encoded, encoded_bytes);
+        malformed[128] = 1;
+        CHECK(Worr_NativeCodecEventDecodeV1(
+                  malformed, encoded_bytes, TEST_MAX_ENTITIES, &decoded) ==
+              WORR_NATIVE_CODEC_INVALID_RECORD);
+        CHECK(memcmp(&decoded, &sentinel, sizeof(decoded)) == 0);
+    }
+
+    {
+        worr_event_record_v1 unfenced =
+            make_event_kind(WORR_EVENT_PAYLOAD_U32X4, 49);
+        uint64_t unfenced_semantic;
+        uint64_t fenced_semantic;
+        uint64_t unfenced_full;
+        uint64_t fenced_full;
+
+        source = unfenced;
+        source.flags |= WORR_EVENT_FLAG_SNAPSHOT_FENCED;
+        CHECK(Worr_EventRecordValidateV1(&source, TEST_MAX_ENTITIES));
+        CHECK(Worr_EventRecordSemanticHashV1(
+            &unfenced, TEST_MAX_ENTITIES, &unfenced_semantic));
+        CHECK(Worr_EventRecordSemanticHashV1(
+            &source, TEST_MAX_ENTITIES, &fenced_semantic));
+        CHECK(unfenced_semantic == fenced_semantic);
+        CHECK(Worr_EventRecordSemanticallyEqualV1(
+            &unfenced, &source, TEST_MAX_ENTITIES));
+        CHECK(Worr_EventRecordHashV1(
+            &unfenced, TEST_MAX_ENTITIES, &unfenced_full));
+        CHECK(Worr_EventRecordHashV1(
+            &source, TEST_MAX_ENTITIES, &fenced_full));
+        CHECK(unfenced_full != fenced_full);
+        CHECK(Worr_NativeCodecEventEncodeV1(
+                  &source, TEST_MAX_ENTITIES, encoded, sizeof(encoded),
+                  &encoded_bytes) == WORR_NATIVE_CODEC_OK);
+        CHECK(Worr_NativeCodecEventDecodeV1(
+                  encoded, encoded_bytes, TEST_MAX_ENTITIES, &decoded) ==
+              WORR_NATIVE_CODEC_OK);
+        CHECK((decoded.flags & WORR_EVENT_FLAG_SNAPSHOT_FENCED) != 0);
+
+        source.source_tick = UINT32_MAX;
+        CHECK(!Worr_EventRecordValidateV1(&source, TEST_MAX_ENTITIES));
     }
 
     {
@@ -561,6 +688,174 @@ static bool test_event_codecs(void)
     CHECK(Worr_NativeCodecEventPreflightV1(
               &source, TEST_MAX_ENTITIES, &preflight) ==
           WORR_NATIVE_CODEC_INVALID_RECORD);
+    source.flags |= WORR_EVENT_FLAG_SNAPSHOT_FENCED;
+    CHECK(!Worr_EventRecordValidateV1(&source, TEST_MAX_ENTITIES));
+    return true;
+}
+
+static bool test_event_batch_codec(void)
+{
+    static const uint16_t kinds[5] = {
+        WORR_EVENT_PAYLOAD_LEGACY_TEMP_V1,
+        WORR_EVENT_PAYLOAD_DAMAGE,
+        WORR_EVENT_PAYLOAD_SPATIAL_AUDIO_V1,
+        WORR_EVENT_PAYLOAD_EFFECT,
+        WORR_EVENT_PAYLOAD_AUDIO,
+    };
+    static const uint16_t blaster_kinds[5] = {
+        WORR_EVENT_PAYLOAD_LEGACY_TEMP_V1,
+        WORR_EVENT_PAYLOAD_LEGACY_TEMP_V1,
+        WORR_EVENT_PAYLOAD_MUZZLE_V1,
+        WORR_EVENT_PAYLOAD_MUZZLE_V1,
+        WORR_EVENT_PAYLOAD_SPATIAL_AUDIO_V1,
+    };
+    static const uint32_t blaster_event_bytes[5] = {
+        180, 180, 120, 120, 152,
+    };
+    worr_event_record_v1 records[5];
+    worr_event_record_v1 blaster_records[5];
+    worr_event_record_v1 decoded[WORR_NATIVE_EVENT_BATCH_MAX_EVENTS];
+    worr_event_record_v1 decoded_before[WORR_NATIVE_EVENT_BATCH_MAX_EVENTS];
+    worr_native_event_batch_info_v1 info;
+    worr_native_event_batch_info_v1 decoded_info;
+    worr_native_event_batch_info_v1 info_before;
+    worr_native_envelope_fragmenter_v1 fragmenter;
+    worr_native_record_ref_v1 ref;
+    uint8_t encoded[WORR_NATIVE_EVENT_BATCH_MAX_PAYLOAD_BYTES];
+    uint8_t blaster_encoded[WORR_NATIVE_EVENT_BATCH_MAX_PAYLOAD_BYTES];
+    uint8_t encoded_before[sizeof(encoded)];
+    size_t encoded_bytes = 0;
+    size_t blaster_encoded_bytes = 0;
+    size_t encoded_bytes_before;
+    uint32_t event_bytes;
+    uint32_t index;
+
+    CHECK(Worr_NativeEventBatchMaxWireBytesV1(1) == 0);
+    CHECK(Worr_NativeEventBatchMaxWireBytesV1(2) == 416);
+    CHECK(Worr_NativeEventBatchMaxWireBytesV1(8) == 1568);
+    CHECK(Worr_NativeEventBatchMaxWireBytesV1(9) == 0);
+    for (index = 0; index < 5; ++index) {
+        records[index] = make_event_kind(kinds[index], 100u + index);
+        records[index].source_tick = 900;
+        records[index].source_time_us = UINT64_C(12345678);
+        CHECK(Worr_EventRecordValidateV1(&records[index], TEST_MAX_ENTITIES));
+    }
+    memset(encoded, 0xa5, sizeof(encoded));
+    memset(&info, 0, sizeof(info));
+    CHECK(Worr_NativeEventBatchEncodeV1(
+              records, 5, TEST_MAX_ENTITIES, encoded, sizeof(encoded),
+              &encoded_bytes, &info) == WORR_NATIVE_EVENT_BATCH_OK);
+    /* Frozen five-event envelope probe: 760 nested bytes + 32 batch bytes.
+     * The complete WNE image is 848 bytes, below the frozen 872-byte live
+     * DATA datagram ceiling, and leaves the required carrier reserves. */
+    CHECK(encoded_bytes == 792 && info.nested_event_bytes == 760 &&
+          info.event_count == 5 && info.first_sequence == 100 &&
+          info.last_sequence == 104);
+    CHECK(encoded_bytes + WORR_NATIVE_ENVELOPE_WIRE_HEADER_BYTES == 848);
+    CHECK(encoded_bytes + WORR_NATIVE_ENVELOPE_WIRE_HEADER_BYTES +
+              8u + 32u + 7u * 16u ==
+          1000);
+    memset(&ref, 0, sizeof(ref));
+    ref.record_class = WORR_NATIVE_RECORD_EVENT_V1;
+    ref.record_schema_version = WORR_NATIVE_EVENT_BATCH_RECORD_SCHEMA;
+    ref.object_epoch = info.stream_epoch;
+    ref.object_sequence = info.last_sequence;
+    CHECK(Worr_NativeEnvelopeFragmenterInitV1(
+        &fragmenter, 31, 9, ref, 1, encoded, (uint32_t)encoded_bytes, 872));
+    CHECK(fragmenter.fragment_count == 1 && fragmenter.fragment_stride == 816);
+
+    /* The canonical Blaster mix is two temporary effects, two muzzle cues,
+     * and one spatial-audio cue.  Its schema-1 WNC images are 180, 180, 120,
+     * 120, and 152 bytes respectively, so the compact schema-2 batch is 784
+     * bytes and its complete WNE image is 840 bytes. */
+    for (index = 0; index < 5; ++index) {
+        blaster_records[index] =
+            make_event_kind(blaster_kinds[index], 200u + index);
+        blaster_records[index].source_tick = 901;
+        blaster_records[index].source_time_us = UINT64_C(12345679);
+        CHECK(Worr_NativeCodecEventPreflightV1(
+                  &blaster_records[index], TEST_MAX_ENTITIES,
+                  &event_bytes) == WORR_NATIVE_CODEC_OK);
+        CHECK(event_bytes == blaster_event_bytes[index]);
+    }
+    CHECK(Worr_NativeEventBatchEncodeV1(
+              blaster_records, 5, TEST_MAX_ENTITIES, blaster_encoded,
+              sizeof(blaster_encoded), &blaster_encoded_bytes,
+              &decoded_info) == WORR_NATIVE_EVENT_BATCH_OK);
+    CHECK(blaster_encoded_bytes == 784 &&
+          decoded_info.nested_event_bytes == 752 &&
+          decoded_info.event_count == 5 &&
+          decoded_info.first_sequence == 200 &&
+          decoded_info.last_sequence == 204);
+    CHECK(blaster_encoded_bytes + WORR_NATIVE_ENVELOPE_WIRE_HEADER_BYTES ==
+          840);
+    CHECK(blaster_encoded_bytes + WORR_NATIVE_ENVELOPE_WIRE_HEADER_BYTES +
+              8u + 32u + 7u * 16u ==
+          992);
+
+    {
+        worr_event_record_v1 poi_records[2];
+        worr_native_event_batch_info_v1 poi_info;
+        uint8_t poi_encoded[WORR_NATIVE_EVENT_BATCH_MAX_PAYLOAD_BYTES];
+        size_t poi_encoded_bytes = 0;
+
+        poi_records[0] =
+            make_event_kind(WORR_EVENT_PAYLOAD_KEYED_POI_V1, 300);
+        poi_records[1] =
+            make_event_kind(WORR_EVENT_PAYLOAD_KEYED_POI_V1, 301);
+        poi_records[1].source_tick = poi_records[0].source_tick;
+        poi_records[1].source_time_us = poi_records[0].source_time_us;
+        memset(&poi_info, 0, sizeof(poi_info));
+        CHECK(Worr_NativeEventBatchEncodeV1(
+                  poi_records, 2, TEST_MAX_ENTITIES, poi_encoded,
+                  sizeof(poi_encoded), &poi_encoded_bytes, &poi_info) ==
+              WORR_NATIVE_EVENT_BATCH_OK);
+        CHECK(poi_encoded_bytes == 296 &&
+              poi_info.nested_event_bytes == 264 &&
+              poi_info.event_count == 2 && poi_info.first_sequence == 300 &&
+              poi_info.last_sequence == 301);
+        CHECK(poi_encoded_bytes + WORR_NATIVE_ENVELOPE_WIRE_HEADER_BYTES ==
+              352);
+    }
+
+    memset(decoded, 0x5a, sizeof(decoded));
+    CHECK(Worr_NativeEventBatchDecodeV1(
+              encoded, encoded_bytes, TEST_MAX_ENTITIES, decoded,
+              WORR_NATIVE_EVENT_BATCH_MAX_EVENTS, &decoded_info) ==
+          WORR_NATIVE_EVENT_BATCH_OK);
+    CHECK(memcmp(&decoded_info, &info, sizeof(info)) == 0);
+    for (index = 0; index < 5; ++index) {
+        uint64_t source_hash;
+        uint64_t decoded_hash;
+        CHECK(Worr_EventRecordHashV1(
+            &records[index], TEST_MAX_ENTITIES, &source_hash));
+        CHECK(Worr_EventRecordHashV1(
+            &decoded[index], TEST_MAX_ENTITIES, &decoded_hash));
+        CHECK(source_hash == decoded_hash);
+    }
+
+    memcpy(encoded_before, encoded, sizeof(encoded));
+    encoded_bytes_before = SIZE_MAX;
+    memset(&info, 0x6b, sizeof(info));
+    info_before = info;
+    records[4].source_time_us++;
+    CHECK(Worr_NativeEventBatchEncodeV1(
+              records, 5, TEST_MAX_ENTITIES, encoded, sizeof(encoded),
+              &encoded_bytes_before, &info) ==
+          WORR_NATIVE_EVENT_BATCH_INVALID_RECORD);
+    CHECK(memcmp(encoded, encoded_before, sizeof(encoded)) == 0 &&
+          encoded_bytes_before == SIZE_MAX &&
+          memcmp(&info, &info_before, sizeof(info)) == 0);
+
+    memcpy(decoded_before, decoded, sizeof(decoded));
+    info = info_before;
+    encoded[encoded_bytes - 1u] ^= 1u;
+    CHECK(Worr_NativeEventBatchDecodeV1(
+              encoded, encoded_bytes, TEST_MAX_ENTITIES, decoded,
+              WORR_NATIVE_EVENT_BATCH_MAX_EVENTS, &info) ==
+          WORR_NATIVE_EVENT_BATCH_CORRUPT);
+    CHECK(memcmp(decoded, decoded_before, sizeof(decoded)) == 0 &&
+          memcmp(&info, &info_before, sizeof(info)) == 0);
     return true;
 }
 
@@ -791,6 +1086,8 @@ static bool test_snapshot_codec(void)
     worr_snapshot_projection_view_v2 decoded_view;
     worr_snapshot_projection_hashes_v2 decoded_hashes;
     worr_snapshot_projection_hashes_v2 source_hashes;
+    worr_native_codec_snapshot_metadata_v1 metadata;
+    worr_native_codec_snapshot_metadata_v1 metadata_sentinel;
     worr_snapshot_store_publish_v2 publication;
     worr_snapshot_store_publish_v2 publication_sentinel;
     worr_native_codec_info_v1 info;
@@ -824,6 +1121,47 @@ static bool test_snapshot_codec(void)
     CHECK(info.range_counts[2] == 1);
     CHECK(Worr_SnapshotProjectionHashesV2(
         &view, TEST_MAX_ENTITIES, &source_hashes));
+    memset(&metadata, 0xcc, sizeof(metadata));
+    CHECK(Worr_NativeCodecSnapshotMetadataV1(
+              encoded, encoded_bytes, TEST_MAX_ENTITIES, &metadata) ==
+          WORR_NATIVE_CODEC_OK);
+    CHECK(metadata.struct_size == sizeof(metadata));
+    CHECK(metadata.schema_version == WORR_NATIVE_CODEC_ABI_VERSION);
+    CHECK(metadata.flags == 0 && metadata.reserved0 == 0);
+    CHECK(memcmp(&metadata.codec, &info, sizeof(info)) == 0);
+    CHECK(metadata.snapshot.snapshot_id.epoch ==
+              view.snapshot->snapshot_id.epoch &&
+          metadata.snapshot.snapshot_id.sequence ==
+              view.snapshot->snapshot_id.sequence &&
+          metadata.snapshot.server_time_us == view.snapshot->server_time_us &&
+          metadata.snapshot.entity_range.count == 2 &&
+          metadata.snapshot.area_range.count == 2 &&
+          metadata.snapshot.event_range.count == 1);
+    CHECK(memcmp(&metadata.hashes, &source_hashes,
+                 sizeof(source_hashes)) == 0);
+
+    memset(&metadata_sentinel, 0x6a, sizeof(metadata_sentinel));
+    metadata = metadata_sentinel;
+    memcpy(malformed, encoded, encoded_bytes);
+    malformed[WORR_NATIVE_CODEC_WIRE_HEADER_BYTES + 126u] ^= 1;
+    CHECK(Worr_NativeCodecSnapshotMetadataV1(
+              malformed, encoded_bytes, TEST_MAX_ENTITIES, &metadata) ==
+          WORR_NATIVE_CODEC_CORRUPT);
+    CHECK(memcmp(&metadata, &metadata_sentinel, sizeof(metadata)) == 0);
+    metadata = metadata_sentinel;
+    memcpy(malformed, encoded, encoded_bytes);
+    malformed[WORR_NATIVE_CODEC_WIRE_HEADER_BYTES +
+              WORR_NATIVE_CODEC_SNAPSHOT_FIXED_BODY_BYTES + 2u] = 1;
+    CHECK(Worr_NativeCodecSnapshotMetadataV1(
+              malformed, encoded_bytes, TEST_MAX_ENTITIES, &metadata) ==
+          WORR_NATIVE_CODEC_MALFORMED);
+    CHECK(memcmp(&metadata, &metadata_sentinel, sizeof(metadata)) == 0);
+    memcpy(malformed, encoded, encoded_bytes);
+    CHECK(Worr_NativeCodecSnapshotMetadataV1(
+              malformed, encoded_bytes, TEST_MAX_ENTITIES,
+              (worr_native_codec_snapshot_metadata_v1 *)malformed) ==
+          WORR_NATIVE_CODEC_INVALID_ARGUMENT);
+    CHECK(memcmp(malformed, encoded, encoded_bytes) == 0);
     memset(&decoded_snapshot, 0xcc, sizeof(decoded_snapshot));
     memset(&decoded_player, 0xcc, sizeof(decoded_player));
     memset(decoded_entities, 0xcc, sizeof(decoded_entities));
@@ -1201,6 +1539,7 @@ static bool test_maximum_entity_snapshot_codec(void)
 int main(void)
 {
     if (!test_command_codec() || !test_event_codecs() ||
+        !test_event_batch_codec() ||
         !test_snapshot_codec() || !test_empty_snapshot_codec() ||
         !test_maximum_entity_snapshot_codec()) {
         return 1;

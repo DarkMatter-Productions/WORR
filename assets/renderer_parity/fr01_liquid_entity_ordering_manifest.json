@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "task_id": "FR-01-T10",
+  "scenes": [
+    {
+      "id": "transparent_entities_straddle_refractive_liquid",
+      "config": "renderer_parity/fr01_liquid_entity_ordering.cfg",
+      "capture": "fr01_liquid_entity_ordering.tga",
+      "crop": [160, 120, 640, 480],
+      "metrics": {
+        "pixel_threshold": 12,
+        "max_mean_absolute_rgb": [1.2, 1.0, 1.0],
+        "max_pixels_over_threshold_percent": 1.5
+      }
+    },
+    {
+      "id": "transparent_entities_liquid_unrefracted_control",
+      "config": "renderer_parity/fr01_liquid_entity_ordering_unrefracted.cfg",
+      "capture": "fr01_liquid_entity_ordering_unrefracted.tga",
+      "crop": [160, 120, 640, 480],
+      "metrics": {
+        "pixel_threshold": 1,
+        "max_mean_absolute_rgb": [0.5, 0.2, 0.5],
+        "max_pixels_over_threshold_percent": 0.0
+      }
+    }
+  ]
+}

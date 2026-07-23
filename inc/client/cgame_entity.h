@@ -94,6 +94,8 @@ typedef struct cgame_entity_import_s {
     float (*Cvar_ClampValue)(cvar_t *var, float min, float max);
     cvar_t *fs_game;
     cvar_t *sv_paused;
+    /* 64-bit unscaled monotonic engine time; cgame applies render rate. */
+    const uint64_t *host_realtime_us;
 
     void (*Cbuf_ExecuteDeferred)(cmdbuf_t *buf);
     void (*AddCommandString)(const char *text);
@@ -154,6 +156,7 @@ typedef struct cgame_entity_import_s {
     void (*V_AddLightStyle)(int style, float value);
 
     qhandle_t (*S_RegisterSound)(const char *name);
+    qhandle_t (*S_GetPrecachedSound)(unsigned index);
     void (*S_StartSound)(const vec3_t origin, int entnum, int entchannel,
                          qhandle_t sfx, float volume, float attenuation, float timeofs);
 
@@ -181,6 +184,13 @@ typedef struct cgame_entity_export_s {
     void (*AddEntities)(void);
 
     void (*GetEntitySoundOrigin)(unsigned entnum, vec3_t org);
+    void (*PrepareLoopSoundEntities)(void);
+    /* -1 selects legacy engine enumeration; >=0 is a canonical value count. */
+    int (*CopyLoopSoundEntities)(entity_state_t *states, int capacity);
+    /* -1 is legacy ownership, 0 absent, 1 returns a native lifecycle token. */
+    int (*GetEntitySoundBinding)(unsigned entnum, uint64_t *binding_out);
+    bool (*GetEntitySoundOriginBound)(unsigned entnum, uint64_t binding,
+                                      vec3_t org);
 
     void (*ParseTempEntity)(void);
     void (*ParseMuzzleFlash)(void);

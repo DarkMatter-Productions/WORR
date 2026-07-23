@@ -42,6 +42,9 @@ bool CL_ConsumedCursorGetTelemetry(
  * true it remains true until an explicit connection/map/demo reset. */
 bool CL_ConsumedCursorCanonicalEstablished(void);
 
+/* Copies the latest authenticated authoritative cursor. */
+bool CL_ConsumedCursorGetLatestV1(worr_command_cursor_v1 *cursor_out);
+
 #ifdef __cplusplus
 }
 #endif

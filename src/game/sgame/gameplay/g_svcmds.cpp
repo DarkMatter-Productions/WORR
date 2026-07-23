@@ -4215,6 +4215,18 @@ static void SVCmd_RewindCanonicalRailDamageArm_f()
 		armed ? "pass" : "fail");
 }
 
+// Selects only the isolated target's current-authority spawn-protection
+// fixture state. The admitted client command and ordinary Railgun callback
+// remain the sole source of the historical trace and damage attempt.
+static void SVCmd_RewindCanonicalRailSpawnProtectionArm_f()
+{
+	const bool armed =
+		LagCompensation_ArmCanonicalRailSpawnProtectionRuntimeProbe();
+	gi.Com_PrintFmt(
+		"worr_rewind_canonical_rail_spawn_protection_arm: status={}\n",
+		armed ? "pass" : "fail");
+}
+
 // Arms the real-command Railgun mover-occlusion variant. The console only
 // selects fixture geometry; the admitted client command and normal weapon
 // callback remain the sole source of trace and damage authority.
@@ -4270,6 +4282,17 @@ static void SVCmd_RewindCanonicalRocketDamageArm_f()
 {
 	const bool armed = LagCompensation_ArmCanonicalRocketDamageRuntimeProbe();
 	gi.Com_PrintFmt("worr_rewind_canonical_rocket_damage_arm: status={}\n",
+		armed ? "pass" : "fail");
+}
+
+// Arms the bounded mover-relative Rocket seam. The fixture observes paired
+// mover/rider history and current-world damage only; it cannot synthesize a
+// command, projectile, collision result, or historical world mutation.
+static void SVCmd_RewindCanonicalRocketMoverRelativeArm_f()
+{
+	const bool armed =
+		LagCompensation_ArmCanonicalRocketMoverRelativeRuntimeProbe();
+	gi.Com_PrintFmt("worr_rewind_canonical_rocket_mover_relative_arm: status={}\n",
 		armed ? "pass" : "fail");
 }
 
@@ -4376,6 +4399,53 @@ static void SVCmd_RewindCanonicalRocketSplashDamageArm_f()
 {
 	const bool armed = LagCompensation_ArmCanonicalRocketSplashDamageRuntimeProbe();
 	gi.Com_PrintFmt("worr_rewind_canonical_rocket_splash_damage_arm: status={}\n",
+		armed ? "pass" : "fail");
+}
+
+// The projectile reaches the same real current-world impact before the
+// packaged rotating BSP is staged. Normal RadiusDamage/CanDamage must own the
+// resulting blocked player decision and exact zero damage.
+static void SVCmd_RewindCanonicalRocketSplashBspOcclusionArm_f()
+{
+	const bool armed =
+		LagCompensation_ArmCanonicalRocketSplashBspOcclusionRuntimeProbe();
+	gi.Com_PrintFmt(
+		"worr_rewind_canonical_rocket_splash_bsp_occlusion_arm: status={}\n",
+		armed ? "pass" : "fail");
+}
+
+// The packaged func_water surrounds only the accepted current-world impact.
+// The player remains outside; normal MASK_SOLID splash visibility must cross
+// that non-solid boundary and apply its ordinary falloff.
+static void SVCmd_RewindCanonicalRocketSplashWaterBoundaryArm_f()
+{
+	const bool armed =
+		LagCompensation_ArmCanonicalRocketSplashWaterBoundaryRuntimeProbe();
+	gi.Com_PrintFmt(
+		"worr_rewind_canonical_rocket_splash_water_boundary_arm: status={}\n",
+		armed ? "pass" : "fail");
+}
+
+// The fixture stages only the ordinary direct-hit lane. Production
+// rocket_touch, Damage, and FreeEntity must supply the exact single-contact
+// retirement and bounded post-touch stability proof.
+static void SVCmd_RewindCanonicalRocketLifecycleTouchArm_f()
+{
+	const bool armed =
+		LagCompensation_ArmCanonicalRocketLifecycleTouchRuntimeProbe();
+	gi.Com_PrintFmt(
+		"worr_rewind_canonical_rocket_lifecycle_touch_arm: status={}\n",
+		armed ? "pass" : "fail");
+}
+
+// The live target is staged outside the flight lane. Production nextThink and
+// its normal FreeEntity expiry remain the only lifecycle authority.
+static void SVCmd_RewindCanonicalRocketLifetimeExpiryArm_f()
+{
+	const bool armed =
+		LagCompensation_ArmCanonicalRocketLifetimeExpiryRuntimeProbe();
+	gi.Com_PrintFmt(
+		"worr_rewind_canonical_rocket_lifetime_expiry_arm: status={}\n",
 		armed ? "pass" : "fail");
 }
 
@@ -4594,6 +4664,9 @@ void ServerCommand()
 	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_rail_damage_arm") == 0) {
 		SVCmd_RewindCanonicalRailDamageArm_f();
 	}
+	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_rail_spawn_protection_arm") == 0) {
+		SVCmd_RewindCanonicalRailSpawnProtectionArm_f();
+	}
 	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_rail_mover_occlusion_arm") == 0) {
 		SVCmd_RewindCanonicalRailMoverOcclusionArm_f();
 	}
@@ -4611,6 +4684,9 @@ void ServerCommand()
 	}
 	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_rocket_damage_arm") == 0) {
 		SVCmd_RewindCanonicalRocketDamageArm_f();
+	}
+	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_rocket_mover_relative_arm") == 0) {
+		SVCmd_RewindCanonicalRocketMoverRelativeArm_f();
 	}
 	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_bfg_damage_arm") == 0) {
 		SVCmd_RewindCanonicalBfgDamageArm_f();
@@ -4650,6 +4726,18 @@ void ServerCommand()
 	}
 	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_rocket_splash_damage_arm") == 0) {
 		SVCmd_RewindCanonicalRocketSplashDamageArm_f();
+	}
+	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_rocket_splash_bsp_occlusion_arm") == 0) {
+		SVCmd_RewindCanonicalRocketSplashBspOcclusionArm_f();
+	}
+	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_rocket_splash_water_boundary_arm") == 0) {
+		SVCmd_RewindCanonicalRocketSplashWaterBoundaryArm_f();
+	}
+	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_rocket_lifecycle_touch_arm") == 0) {
+		SVCmd_RewindCanonicalRocketLifecycleTouchArm_f();
+	}
+	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_rocket_lifetime_expiry_arm") == 0) {
+		SVCmd_RewindCanonicalRocketLifetimeExpiryArm_f();
 	}
 	else if (Q_strcasecmp(cmd, "worr_rewind_canonical_plasma_gun_damage_arm") == 0) {
 		SVCmd_RewindCanonicalPlasmaGunDamageArm_f();

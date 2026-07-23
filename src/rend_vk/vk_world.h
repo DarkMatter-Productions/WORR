@@ -26,12 +26,15 @@ void VK_World_Record(VkCommandBuffer cmd, const VkExtent2D *extent);
 void VK_World_RecordOpaque(VkCommandBuffer cmd, const VkExtent2D *extent);
 void VK_World_RecordBloomEmission(VkCommandBuffer cmd, const VkExtent2D *extent);
 bool VK_World_HasBloomEmission(void);
+bool VK_World_HasTransparentBatches(void);
 void VK_World_RecordAlpha(VkCommandBuffer cmd, const VkExtent2D *extent,
                           VkDescriptorSet scene_descriptor_set);
 bool VK_World_UsesRefraction(void);
 
 void VK_World_LightPoint(const vec3_t origin, vec3_t light);
-void VK_World_LightPointEx(const vec3_t origin, vec3_t light, bool include_dynamic_lights);
+void VK_World_LightPointEx(const vec3_t origin, vec3_t light,
+                           bool include_dynamic_lights,
+                           bool *out_has_static_light);
 float VK_World_LightmapModulate(void);
 float VK_World_LightmapAdd(void);
 float VK_World_EntityModulate(void);
@@ -42,4 +45,10 @@ bool VK_World_SurfaceUsesIntensity(const bsp_t *bsp, const mface_t *face);
 VkDescriptorSet VK_World_GetLightmapDescriptorSet(void);
 bool VK_World_GetFaceLightmapUV(const mface_t *face, const vec3_t point,
                                 vec2_t out_uv);
+// Returns the base-material descriptor and normalized texture coordinate
+// scale for a BSP face.  Shadow rendering uses this only for alpha-tested
+// caster faces, so ordinary shadow pages remain descriptor-free.
+bool VK_World_GetFaceShadowMaterial(const mface_t *face,
+                                    VkDescriptorSet *out_descriptor_set,
+                                    vec2_t out_inv_size);
 const bsp_t *VK_World_GetBsp(void);

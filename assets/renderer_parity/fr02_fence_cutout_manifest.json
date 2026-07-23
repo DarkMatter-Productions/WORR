@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "task_id": "FR-02-T05",
+  "scenes": [
+    {
+      "id": "binary_alpha_fence_fixed_view",
+      "config": "renderer_parity/fr02_fence_cutout.cfg",
+      "capture": "fr02_fence_cutout.tga",
+      "crop": [200, 140, 560, 420],
+      "metrics": {
+        "pixel_threshold": 0,
+        "max_mean_absolute_rgb": [0, 0, 0],
+        "max_pixels_over_threshold_percent": 0
+      },
+      "probes": [
+        {"name": "opaque_fence_cells", "color": [184, 104, 32], "tolerance": 0, "min_pixels_per_backend": 109000, "max_backend_count_delta_percent": 0, "min_backend_intersection_over_union": 1.0},
+        {"name": "revealed_fence_backdrop", "color": [24, 64, 112], "tolerance": 0, "min_pixels_per_backend": 109000, "max_backend_count_delta_percent": 0, "min_backend_intersection_over_union": 1.0}
+      ]
+    }
+  ]
+}

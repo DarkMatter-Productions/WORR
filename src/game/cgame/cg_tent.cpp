@@ -20,8 +20,35 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "shared/shared.h"
 #include "common/mdfour.h"
 #include "cg_entity_local.h"
+#include "cg_native_event_presenter.hpp"
 
 static cvar_t *cl_compass_time;
+
+static bool cl_native_tent_active;
+static tent_params_t cl_native_tent_value;
+static bool cl_native_tent_has_sound_origin;
+static vec3_t cl_native_tent_sound_origin;
+static int cl_native_tent_sound_entity;
+
+#undef te
+#define te (cl_native_tent_active ? cl_native_tent_value : *cgei->te)
+
+#undef S_StartSound
+static void CL_StartTEntSound(const vec3_t origin, int entnum,
+                              int entchannel, qhandle_t sfx,
+                              float volume, float attenuation,
+                              float timeofs)
+{
+    const vec_t *resolved_origin = origin;
+    if (!resolved_origin && cl_native_tent_active &&
+        cl_native_tent_has_sound_origin &&
+        entnum == cl_native_tent_sound_entity) {
+        resolved_origin = cl_native_tent_sound_origin;
+    }
+    cgei->S_StartSound(resolved_origin, entnum, entchannel, sfx, volume,
+                       attenuation, timeofs);
+}
+#define S_StartSound CL_StartTEntSound
 
 qhandle_t   cl_sfx_ric1;
 qhandle_t   cl_sfx_ric2;
@@ -37,6 +64,21 @@ qhandle_t   cl_sfx_watrexp;
 
 qhandle_t   cl_sfx_lightning;
 qhandle_t   cl_sfx_disrexp;
+static qhandle_t cl_sfx_bigtele;
+static qhandle_t cl_sfx_item_respawn;
+static qhandle_t cl_sfx_player_teleport;
+static qhandle_t cl_sfx_land;
+static qhandle_t cl_sfx_fall2;
+static qhandle_t cl_sfx_fall1;
+
+#undef S_RegisterSound
+static qhandle_t CL_RegisterTEntSound(const char *name)
+{
+    if (cl_native_tent_active && !strcmp(name, "misc/bigtele.wav"))
+        return cl_sfx_bigtele;
+    return cgei->S_RegisterSound(name);
+}
+#define S_RegisterSound CL_RegisterTEntSound
 
 qhandle_t   cl_mod_explode;
 qhandle_t   cl_mod_smoke;
@@ -149,7 +191,9 @@ static int CL_FindFootstepSurface(int entnum)
 CL_PlayFootstepSfx
 =================
 */
-void CL_PlayFootstepSfx(int step_id, int entnum, float volume, float attenuation)
+static void CL_PlayFootstepSfxInternal(int step_id, int entnum,
+                                       const vec3_t fixed_origin,
+                                       float volume, float attenuation)
 {
     const cl_footstep_sfx_t *sfx;
     qhandle_t footstep_sfx;
@@ -159,7 +203,8 @@ void CL_PlayFootstepSfx(int step_id, int entnum, float volume, float attenuation
         return; // should not really happen
 
     if (step_id == -1)
-        step_id = CL_FindFootstepSurface(entnum);
+        step_id = fixed_origin ? FOOTSTEP_ID_DEFAULT
+                               : CL_FindFootstepSurface(entnum);
 
     if ((unsigned)step_id >= (unsigned)cl_num_footsteps)
         step_id = FOOTSTEP_ID_DEFAULT;
@@ -176,8 +221,44 @@ void CL_PlayFootstepSfx(int step_id, int entnum, float volume, float attenuation
     if (footstep_sfx == cl_last_footstep)
         footstep_sfx = sfx->sfx[(sfx_num + 1) % sfx->num_sfx];
 
-    S_StartSound(NULL, entnum, CHAN_FOOTSTEP, footstep_sfx, volume, attenuation, 0);
+    S_StartSound(fixed_origin, entnum, CHAN_FOOTSTEP, footstep_sfx,
+                 volume, attenuation, 0);
     cl_last_footstep = footstep_sfx;
+}
+
+void CL_PlayFootstepSfx(int step_id, int entnum, float volume,
+                        float attenuation)
+{
+    CL_PlayFootstepSfxInternal(step_id, entnum, nullptr, volume,
+                               attenuation);
+}
+
+void CL_PlayFootstepSfxAt(int step_id, int entnum,
+                          const vec3_t fixed_origin, float volume,
+                          float attenuation)
+{
+    if (!fixed_origin)
+        return;
+    CL_PlayFootstepSfxInternal(step_id, entnum, fixed_origin, volume,
+                               attenuation);
+}
+
+bool CL_CanPresentFootstepValue(int step_id)
+{
+    if (!cl_footstep_sfx || cl_num_footsteps <= 0)
+        return false;
+    if ((unsigned)step_id >= (unsigned)cl_num_footsteps)
+        step_id = FOOTSTEP_ID_DEFAULT;
+    const cl_footstep_sfx_t *sounds = &cl_footstep_sfx[step_id];
+    if (sounds->num_sfx <= 0)
+        sounds = &cl_footstep_sfx[FOOTSTEP_ID_DEFAULT];
+    if (sounds->num_sfx <= 0)
+        return false;
+    for (int index = 0; index < sounds->num_sfx; ++index) {
+        if (!sounds->sfx[index])
+            return false;
+    }
+    return true;
 }
 
 /*
@@ -283,6 +364,45 @@ void CL_RegisterTEntSounds(void)
 
     cl_sfx_lightning = S_RegisterSound("weapons/tesla.wav");
     cl_sfx_disrexp = S_RegisterSound("weapons/disrupthit.wav");
+    const bool prepare_native_effects =
+        CG_NativeEventPresenterResourcesRequired();
+    cl_sfx_bigtele = prepare_native_effects
+                         ? S_RegisterSound("misc/bigtele.wav")
+                         : 0;
+    cl_sfx_item_respawn = prepare_native_effects
+                              ? S_RegisterSound("items/respawn1.wav")
+                              : 0;
+    cl_sfx_player_teleport = prepare_native_effects
+                                 ? S_RegisterSound("misc/tele1.wav")
+                                 : 0;
+    cl_sfx_land = prepare_native_effects
+                      ? S_RegisterSound("player/land1.wav")
+                      : 0;
+    cl_sfx_fall2 = prepare_native_effects
+                       ? S_RegisterSound("*fall2.wav")
+                       : 0;
+    cl_sfx_fall1 = prepare_native_effects
+                       ? S_RegisterSound("*fall1.wav")
+                       : 0;
+    CL_RegisterNativeMuzzleSounds(prepare_native_effects);
+}
+
+qhandle_t CL_NativeLegacyEntityEventSound(int raw_event)
+{
+    switch (raw_event) {
+    case EV_ITEM_RESPAWN:
+        return cl_sfx_item_respawn;
+    case EV_PLAYER_TELEPORT:
+        return cl_sfx_player_teleport;
+    case EV_FALLSHORT:
+        return cl_sfx_land;
+    case EV_FALL:
+        return cl_sfx_fall2;
+    case EV_FALLFAR:
+        return cl_sfx_fall1;
+    default:
+        return 0;
+    }
 }
 
 static const char *const muzzlenames[MFLASH_TOTAL] = {
@@ -547,6 +667,19 @@ void CL_SmokeAndFlash(const vec3_t origin)
     ex->frames = 2;
     ex->start = cl.servertime - CL_FRAMETIME;
     ex->ent.model = cl_mod_flash;
+}
+
+bool CL_MuzzleValueResourcesReady()
+{
+    if (!cl_muzzleflashes)
+        return false;
+    if (!cl_muzzleflashes->integer)
+        return true;
+    for (const qhandle_t model : cl_mod_muzzles) {
+        if (!model)
+            return false;
+    }
+    return true;
 }
 
 static void CL_AddExplosions(void)
@@ -1723,6 +1856,141 @@ void CL_ParseTEnt(void)
     default:
         Com_Error(ERR_DROP, "%s: bad type", __func__);
     }
+}
+
+bool CL_CanPresentTEntValue(const tent_params_t *params,
+                            const vec3_t fixed_sound_origin,
+                            int fixed_sound_entity)
+{
+    (void)fixed_sound_origin;
+    (void)fixed_sound_entity;
+    if (!params || !cgei || cl_native_tent_active ||
+        !cl_disable_particles || !cl_disable_explosions ||
+        !cl_dlight_hacks) {
+        return false;
+    }
+
+    switch (params->type) {
+    case TE_GUNSHOT:
+    case TE_BULLET_SPARKS:
+        return cl_mod_smoke && cl_mod_flash && cl_sfx_ric1 &&
+               cl_sfx_ric2 && cl_sfx_ric3;
+    case TE_SPARKS:
+    case TE_BLOOD:
+    case TE_LASER_SPARKS:
+    case TE_BLUEHYPERBLASTER:
+    case TE_BFG_BIGEXPLOSION:
+    case TE_BUBBLETRAIL:
+    case TE_GREENBLOOD:
+    case TE_TUNNEL_SPARKS:
+    case TE_DEBUGTRAIL:
+    case TE_FLASHLIGHT:
+    case TE_FORCEWALL:
+    case TE_STEAM:
+    case TE_MOREBLOOD:
+    case TE_CHAINFIST_SMOKE:
+    case TE_TELEPORT_EFFECT:
+    case TE_DBALL_GOAL:
+    case TE_WIDOWBEAMOUT:
+    case TE_NUKEBLAST:
+    case TE_WIDOWSPLASH:
+    case TE_POWER_SPLASH:
+    case TE_DAMAGE_DEALT:
+        return true;
+    case TE_SCREEN_SPARKS:
+    case TE_SHIELD_SPARKS:
+    case TE_HEATBEAM_SPARKS:
+    case TE_HEATBEAM_STEAM:
+    case TE_BUBBLETRAIL2:
+    case TE_ELECTRIC_SPARKS:
+        return cl_sfx_lashit != 0;
+    case TE_SHOTGUN:
+        return cl_mod_smoke && cl_mod_flash;
+    case TE_SPLASH:
+        return cl_sfx_spark5 && cl_sfx_spark6 && cl_sfx_spark7;
+    case TE_BLUEHYPERBLASTER_2:
+    case TE_BLASTER:
+    case TE_BLASTER2:
+    case TE_FLECHETTE:
+        return cl_mod_explode && cl_sfx_lashit;
+    case TE_RAILTRAIL:
+    case TE_RAILTRAIL2:
+        return cl_sfx_railg && cl_railtrail_type &&
+               cl_railtrail_time && cl_railcore_color &&
+               cl_railcore_width && cl_railspiral_color &&
+               cl_railspiral_radius;
+    case TE_GRENADE_EXPLOSION:
+    case TE_EXPLOSION2:
+    case TE_EXPLOSION2_NL:
+        return cl_mod_explo4 && cl_sfx_grenexp;
+    case TE_GRENADE_EXPLOSION_WATER:
+        return cl_mod_explo4 && cl_sfx_watrexp;
+    case TE_ROCKET_EXPLOSION:
+    case TE_EXPLOSION1:
+    case TE_EXPLOSION1_NL:
+    case TE_PLASMA_EXPLOSION:
+    case TE_EXPLOSION1_NP:
+    case TE_EXPLOSION1_BIG:
+    case TE_PLAIN_EXPLOSION:
+        return cl_mod_explo4 && cl_sfx_rockexp;
+    case TE_ROCKET_EXPLOSION_WATER:
+        return cl_mod_explo4 && cl_sfx_watrexp;
+    case TE_BFG_EXPLOSION:
+    case TE_BFG_ZAP:
+        return cl_mod_bfg_explo != 0;
+    case TE_BFG_LASER:
+        return true;
+    case TE_PARASITE_ATTACK:
+    case TE_MEDIC_CABLE_ATTACK:
+        return cl_mod_parasite_segment != 0;
+    case TE_BOSSTPORT:
+        return cl_sfx_bigtele != 0;
+    case TE_GRAPPLE_CABLE:
+    case TE_GRAPPLE_CABLE_2:
+        return cl_mod_grapple_cable != 0;
+    case TE_WELDING_SPARKS:
+        return cl_mod_flash != 0;
+    case TE_LIGHTNING:
+    case TE_LIGHTNING_BEAM:
+        return cl_mod_lightning && cl_sfx_lightning;
+    case TE_HEATBEAM:
+    case TE_MONSTER_HEATBEAM:
+        return cl_mod_heatbeam != 0;
+    case TE_TRACKER_EXPLOSION:
+        return cl_sfx_disrexp != 0;
+    case TE_BERSERK_SLAM:
+        return cl_mod_explode != 0;
+    default:
+        return false;
+    }
+}
+
+bool CL_CanPresentHelpPathValue(const vec3_t origin, const vec3_t dir,
+                                bool first)
+{
+    (void)first;
+    return origin && dir && cl_mod_marker != 0;
+}
+
+void CL_PresentTEntValue(const tent_params_t *params,
+                         const vec3_t fixed_sound_origin,
+                         int fixed_sound_entity)
+{
+    if (!params || !cgei || cl_native_tent_active)
+        return;
+    cl_native_tent_value = *params;
+    cl_native_tent_active = true;
+    cl_native_tent_sound_entity = fixed_sound_entity;
+    if (fixed_sound_origin) {
+        VectorCopy(fixed_sound_origin, cl_native_tent_sound_origin);
+        cl_native_tent_has_sound_origin = true;
+    }
+    CL_ParseTEnt();
+    cl_native_tent_active = false;
+    cl_native_tent_value = {};
+    cl_native_tent_has_sound_origin = false;
+    cl_native_tent_sound_entity = 0;
+    VectorClear(cl_native_tent_sound_origin);
 }
 
 /*

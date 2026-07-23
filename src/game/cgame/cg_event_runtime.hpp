@@ -17,13 +17,19 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include <cstdint>
 
-constexpr std::uint32_t CG_EVENT_RUNTIME_VERSION = 1u;
+constexpr std::uint32_t CG_EVENT_RUNTIME_VERSION = 2u;
+constexpr std::uint32_t CG_EVENT_RUNTIME_PRESENTER_VERSION = 1u;
 constexpr std::uint32_t CG_EVENT_RUNTIME_JOURNAL_CAPACITY = 512u;
 constexpr std::uint32_t CG_EVENT_RUNTIME_AUTHORITY_CAPACITY = 1024u;
 constexpr std::uint32_t CG_EVENT_RUNTIME_PREDICTION_TOMBSTONE_CAPACITY =
     1024u;
 constexpr std::uint32_t CG_EVENT_RUNTIME_REFERENCE_CAPACITY = 2048u;
 constexpr std::uint32_t CG_EVENT_RUNTIME_LEGACY_BODY_CAPACITY = 2048u;
+/* Mirrors the immutable cgame timeline's 64-slot bound.  Its 63 retained
+ * 16 ms intervals cover the explicit one-second interpolation window at the
+ * maximum effective ~62 Hz server cadence, so delayed direct-native bodies
+ * can still join exact final-emission source proof in either arrival order. */
+constexpr std::uint32_t CG_EVENT_RUNTIME_SNAPSHOT_FENCE_CAPACITY = 64u;
 
 enum cg_event_runtime_result_v1 : std::uint32_t {
     CG_EVENT_RUNTIME_OK = WORR_CGAME_EVENT_RUNTIME_OK,
@@ -56,6 +62,17 @@ struct cg_event_runtime_status_v1 {
     std::uint32_t authority_epoch;
     std::uint32_t snapshot_epoch;
     std::uint32_t next_authority_sequence;
+    /* Ordered admission/application cursor for private reconciliation
+     * receipts. Unlike next_authority_sequence, this cursor may cross an
+     * admitted visual record before that record is snapshot-fenced or
+     * presented. */
+    std::uint32_t next_private_reconciliation_sequence;
+    /* UINT32_MAX is a valid final event sequence. Once that record has been
+     * consumed the corresponding cursor remains pinned at UINT32_MAX and its
+     * exhausted bit distinguishes terminal completion from a pending final
+     * record. A fresh authority epoch resets both bits. */
+    std::uint32_t authority_sequence_exhausted;
+    std::uint32_t private_reconciliation_sequence_exhausted;
     std::uint32_t authority_count;
     std::uint32_t prediction_tombstone_count;
     std::uint32_t reference_count;
@@ -152,10 +169,51 @@ bool CG_EventRuntimeAuditEnabled();
 
 /* Optional diagnostics observer. Event admission remains independent of the
  * prediction/UI translation unit so focused runtime consumers can link the
- * production authority path without a presentation logger. */
+ * production authority path without a presentation logger. Status inspection
+ * is allowed from the observer; mutating runtime calls report REENTRANT (or are
+ * ignored for void setters) until ordered reconciliation returns. */
 using cg_local_action_shadow_report_callback_v1 = void (*)();
 void CG_EventRuntimeSetLocalActionShadowReportCallback(
     cg_local_action_shadow_report_callback_v1 callback);
+
+enum cg_event_runtime_presentation_provenance_v1 : std::uint32_t {
+    CG_EVENT_RUNTIME_PRESENTATION_PREDICTED = 1u,
+    CG_EVENT_RUNTIME_PRESENTATION_AUTHORITY = 2u,
+};
+
+/*
+ * Production presentation is deliberately a two-phase, synchronous contract.
+ * `CanPresent` must be side-effect free and validates every already-prepared
+ * resource and generation needed by `Present`; registration/allocation belongs
+ * to an earlier lifecycle phase. The runtime then marks the journal entry
+ * presented before invoking the total/no-fail `Present` callback. This keeps a
+ * rejected event fail-closed without making a committed effect retryable.
+ * Neither callback may retain the borrowed record/context or re-enter a
+ * mutating event-runtime operation. Such result-returning reentry reports
+ * `CG_EVENT_RUNTIME_REENTRANT`; void configuration setters are ignored while a
+ * callback is active. Status inspection remains available for diagnostics.
+ */
+struct cg_event_runtime_presentation_context_v1 {
+    std::uint32_t struct_size;
+    std::uint32_t schema_version;
+    std::uint32_t provenance;
+    std::uint32_t reserved0;
+    worr_snapshot_id_v2 fence_snapshot_id;
+    std::uint32_t fence_tick;
+    std::uint32_t reserved1;
+    std::uint64_t fence_time_us;
+};
+
+using cg_event_runtime_can_present_callback_v1 = bool (*)(
+    const worr_event_record_v1 *record,
+    const cg_event_runtime_presentation_context_v1 *context);
+using cg_event_runtime_present_callback_v1 = void (*)(
+    const worr_event_record_v1 *record,
+    const cg_event_runtime_presentation_context_v1 *context);
+
+void CG_EventRuntimeSetPresenter(
+    cg_event_runtime_can_present_callback_v1 can_present,
+    cg_event_runtime_present_callback_v1 present);
 
 /* Latch an independent local-interaction reconciliation failure into the
  * private authority health domain before any further event admission or
@@ -192,12 +250,60 @@ cg_event_runtime_result_v1 CG_EventRuntimeObserveSnapshot(
 cg_event_runtime_result_v1 CG_EventRuntimeObserveLegacyEntry(
     const cg_canonical_event_presentation_entry_v1 *entry);
 
-/* The production sink is intentionally no-effects. It records deterministic
- * present-once evidence while legacy parsing remains presentation authority. */
+/* Advances the deterministic present-once sink.  With no presenter installed
+ * it remains audit-only; production cgame installs the real value presenter. */
 cg_event_runtime_result_v1 CG_EventRuntimeAdvanceAudit(
     std::uint64_t render_time_us, std::uint32_t now_tick,
     std::uint32_t max_presentations, std::uint32_t *advanced_out);
 
 bool CG_EventRuntimeGetStatus(cg_event_runtime_status_v1 *status_out);
+
+enum cg_event_runtime_checkpoint_block_reason_v1 : std::uint32_t {
+    CG_EVENT_RUNTIME_CHECKPOINT_BLOCK_NONE = 0u,
+    CG_EVENT_RUNTIME_CHECKPOINT_BLOCK_MUTATION = 1u,
+    CG_EVENT_RUNTIME_CHECKPOINT_BLOCK_UNINITIALIZED = 2u,
+    CG_EVENT_RUNTIME_CHECKPOINT_BLOCK_WRONG_EPOCH = 3u,
+    CG_EVENT_RUNTIME_CHECKPOINT_BLOCK_UNHEALTHY = 4u,
+    CG_EVENT_RUNTIME_CHECKPOINT_BLOCK_MISSING_HEAD = 5u,
+    CG_EVENT_RUNTIME_CHECKPOINT_BLOCK_PENDING_HEAD = 6u,
+};
+
+/* Cgame-private checkpoint diagnostics. This is deliberately outside the
+ * engine/cgame export ABI: it describes the current ordered authority head for
+ * developer telemetry without changing readiness or mutating runtime state. */
+struct cg_event_runtime_checkpoint_block_v1 {
+    std::uint32_t struct_size;
+    std::uint32_t reason;
+    std::uint32_t expected_authority_epoch;
+    std::uint32_t authority_epoch;
+    std::uint32_t next_authority_sequence;
+    std::uint32_t pending_sequence;
+    std::uint32_t authority_state;
+    std::uint32_t slot_state;
+    std::uint32_t record_flags;
+    std::uint32_t payload_kind;
+    std::uint32_t delivery_class;
+    std::uint32_t source_tick;
+    std::uint32_t expiry_tick;
+    std::uint32_t fence_tick;
+    worr_snapshot_id_v2 fence_snapshot_id;
+    worr_snapshot_id_v2 last_snapshot_id;
+    std::uint64_t fence_time_us;
+    std::uint64_t last_snapshot_time_us;
+    std::uint64_t last_render_time_us;
+    std::uint32_t last_now_tick;
+    std::uint32_t reserved0;
+};
+
+bool CG_EventRuntimeGetCheckpointBlock(
+    std::uint32_t expected_authority_epoch,
+    cg_event_runtime_checkpoint_block_v1 *block_out);
+/* Capture one checkpoint baseline only while the requested live authority
+ * epoch is healthy and has no authoritative record still awaiting terminal
+ * presentation.  The readiness decision and status copy are one runtime
+ * operation; status_out is left untouched when the function returns false. */
+bool CG_EventRuntimeCheckpointReady(
+    std::uint32_t expected_authority_epoch,
+    cg_event_runtime_status_v1 *status_out);
 bool CG_EventRuntimeSnapshotFenceHealthy(std::uint32_t snapshot_epoch);
 const worr_cgame_event_runtime_export_v1 *CG_GetEventRuntimeAPI();

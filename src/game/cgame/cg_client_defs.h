@@ -97,9 +97,41 @@ typedef enum {
 
 void CL_AddWeaponMuzzleFX(cl_muzzlefx_t fx, const vec3_t offset, float scale);
 void CL_AddMuzzleFX(const vec3_t origin, const vec3_t angles, cl_muzzlefx_t fx, int skin, float scale);
+bool CL_CanPresentMuzzleFlashValue(const mz_params_t *params,
+                                   const entity_state_t *source_state,
+                                   const vec3_t sound_origin,
+                                   uint32_t source_generation,
+                                   bool monster_family);
+void CL_PresentMuzzleFlashValue(const mz_params_t *params,
+                                const entity_state_t *source_state,
+                                const vec3_t sound_origin,
+                                uint32_t source_generation,
+                                bool monster_family);
+bool CL_CanPresentLegacyEntityEventValue(
+    int number, int raw_event, const entity_state_t *source_state);
+void CL_PresentLegacyEntityEventValue(int number, int raw_event,
+                                      const entity_state_t *source_state);
+bool CL_CanPresentTEntValue(const tent_params_t *params,
+                            const vec3_t fixed_sound_origin,
+                            int fixed_sound_entity);
+void CL_PresentTEntValue(const tent_params_t *params,
+                         const vec3_t fixed_sound_origin,
+                         int fixed_sound_entity);
+extern "C" void CL_PresentDamageDisplayValue(int damage,
+                                               const vec3_t color,
+                                               const vec3_t direction);
 void CL_AddHelpPath(const vec3_t origin, const vec3_t dir, bool first);
+bool CL_CanPresentHelpPathValue(const vec3_t origin, const vec3_t dir,
+                                bool first);
+bool CL_CanPresentFootstepValue(int step_id);
+bool CL_MuzzleValueResourcesReady();
+void CL_RegisterNativeMuzzleSounds(bool enabled);
+qhandle_t CL_NativeLegacyEntityEventSound(int raw_event);
 void CL_DrawBeam(const vec3_t org, const vec3_t end, float model_length, qhandle_t model);
 void CL_PlayFootstepSfx(int step_id, int entnum, float volume, float attenuation);
+void CL_PlayFootstepSfxAt(int step_id, int entnum,
+                          const vec3_t fixed_origin, float volume,
+                          float attenuation);
 
 void CL_DiminishingTrail(centity_t *ent, const vec3_t end, diminishing_trail_t type);
 void CL_FlyEffect(centity_t *ent, const vec3_t origin);

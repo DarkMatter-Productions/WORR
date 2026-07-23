@@ -651,6 +651,14 @@ void S_IssuePlaysound(playsound_t *ps)
     if (s_show->integer)
         Com_PrintfLoc("$s_issue_line", ps->begin);
 #endif
+    // A native cue that had no lifecycle at queue time can never become
+    // playable. Reject it before channel selection so it cannot preempt a
+    // valid active sound sharing the same entity/channel.
+    if (ps->native_binding && ps->entity_binding == 0) {
+        S_FreePlaysound(ps);
+        return;
+    }
+
     // pick a channel to play on
     ch = S_PickChannel(ps->entnum, ps->entchannel);
     if (!ch) {
@@ -673,9 +681,18 @@ void S_IssuePlaysound(playsound_t *ps)
     ch->master_vol = ps->volume;
     ch->entnum = ps->entnum;
     ch->entchannel = ps->entchannel;
+    ch->entity_binding = ps->entity_binding;
+    ch->native_binding = ps->native_binding;
     ch->sfx = ps->sfx;
     VectorCopy(ps->origin, ch->origin);
     ch->fixed_origin = ps->fixed_origin;
+    if (ch->native_binding) {
+        // Refresh when the exact lifecycle still exists.  If it was removed
+        // while a positive time offset was pending, retain the origin captured
+        // at queue time and never query or attach to a replacement lifecycle.
+        (void)CL_GetEntitySoundOriginBound(ch->entnum, ch->entity_binding,
+                                           ch->origin);
+    }
     ch->pos = 0;
     ch->end = s_paintedtime + sc->length;
 
@@ -727,10 +744,32 @@ void S_StartSound(const vec3_t origin, int entnum, int entchannel, qhandle_t hSf
     if (!ps)
         return;
 
+    // Playsound nodes are recycled through an intrusive free list.  Never let
+    // a fixed-origin or legacy dynamic sound inherit native lifecycle
+    // authority from the node's previous use.
+    ps->entity_binding = 0;
+    ps->native_binding = false;
+    VectorClear(ps->origin);
+
     if (origin) {
         VectorCopy(origin, ps->origin);
         ps->fixed_origin = true;
+    } else if (attenuation != ATTN_NONE && entnum != -1 &&
+               entnum != listener_entnum) {
+        ps->fixed_origin = false;
+        uint64_t binding = 0;
+        const int binding_result =
+            CL_GetEntitySoundBinding(entnum, &binding);
+        if (binding_result >= 0) {
+            ps->native_binding = true;
+            if (binding_result == 1 &&
+                CL_GetEntitySoundOriginBound(entnum, binding, ps->origin)) {
+                ps->entity_binding = binding;
+            }
+        }
     } else {
+        // Local/UI and other guaranteed full-volume sounds never need an
+        // entity origin and must survive a temporarily unavailable native view.
         ps->fixed_origin = false;
     }
 
@@ -842,17 +881,72 @@ void S_PauseRawSamples(bool paused)
 // Update sound buffer
 // =======================================================================
 
+static entity_state_t s_loop_sound_entities[MAX_EDICTS];
+static int s_loop_sound_entity_count;
+
+int S_LoopSoundEntityCount(void)
+{
+    return s_loop_sound_entity_count;
+}
+
+bool S_BindChannelEntity(channel_t *channel)
+{
+    if (!channel)
+        return false;
+    uint64_t binding = 0;
+    const int result =
+        CL_GetEntitySoundBinding(channel->entnum, &binding);
+    if (result < 0) {
+        channel->native_binding = false;
+        channel->entity_binding = 0;
+        return true;
+    }
+    if (result != 1)
+        return false;
+    if (channel->native_binding && channel->entity_binding != binding)
+        return false;
+    channel->native_binding = true;
+    channel->entity_binding = binding;
+    return CL_GetEntitySoundOriginBound(channel->entnum, binding,
+                                        channel->origin);
+}
+
+const entity_state_t *S_LoopSoundEntity(int index)
+{
+    if (index < 0 || index >= s_loop_sound_entity_count)
+        return nullptr;
+    return &s_loop_sound_entities[index];
+}
+
 int S_BuildSoundList(int *sounds)
 {
-    int             i, num, count;
-    entity_state_t  *ent;
+    int             i, count;
+    const entity_state_t *ent;
 
-    if (cls.state != ca_active || !s_active || sv_paused->integer || !s_ambient->integer)
+    s_loop_sound_entity_count = 0;
+    if (!sounds || cls.state != ca_active || !s_active ||
+        sv_paused->integer || !s_ambient->integer)
         return 0;
 
-    for (i = count = 0; i < cl.frame.numEntities; i++) {
-        num = (cl.frame.firstEntity + i) & PARSE_ENTITIES_MASK;
-        ent = &cl.entityStates[num];
+    CL_PrepareEntityLoopSoundStates();
+    int source_count = CL_CopyEntityLoopSoundStates(
+        s_loop_sound_entities, MAX_EDICTS);
+    if (source_count < 0) {
+        if (cl.frame.numEntities < 0 || cl.frame.numEntities > MAX_EDICTS)
+            return 0;
+        source_count = cl.frame.numEntities;
+        for (i = 0; i < source_count; ++i) {
+            const int num =
+                (cl.frame.firstEntity + i) & PARSE_ENTITIES_MASK;
+            s_loop_sound_entities[i] = cl.entityStates[num];
+        }
+    }
+    if (source_count < 0 || source_count > MAX_EDICTS)
+        return 0;
+    s_loop_sound_entity_count = source_count;
+
+    for (i = count = 0; i < source_count; i++) {
+        ent = &s_loop_sound_entities[i];
         if (s_ambient->integer == 2 && !ent->modelindex) {
             sounds[i] = 0;
         } else if (s_ambient->integer == 3 && ent->number != listener_entnum) {
@@ -1432,6 +1526,13 @@ void S_Update(void)
     } else {
         listener_entnum = cl.frame.clientNum + 1;
     }
+
+    // Canonical entity state is also the authority for dynamic and one-shot
+    // sound origins.  Prepare it before either backend spatializes existing
+    // channels; loop-sound enumeration happens later and is not guaranteed to
+    // run when ambient sounds are disabled or the server is paused.
+    if (cls.state == ca_active && s_active)
+        CL_PrepareEntityLoopSoundStates();
 
     OGG_Update();
 

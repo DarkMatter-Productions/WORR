@@ -1,0 +1,1142 @@
+{
+  "schema_version": 1,
+  "task_id": "FR-10-T07",
+  "classifications": [
+    "legacy-authoritative",
+    "native-shadow/probe",
+    "migrated/native-authoritative",
+    "suppressed"
+  ],
+  "conditions": {
+    "legacy-until-negotiated-cutover": "Legacy presentation remains authoritative unless a separately negotiated, exhaustive event-effect cutover confirms every carrier family for the bound map epoch.",
+    "raw-suppressed-after-cutover": "The decoded raw carrier is still captured, but its legacy presenter is skipped only while CL_NativeReadinessPilotOwnsEventPresentation() is true for the bound map epoch.",
+    "embedded-suppressed-after-cutover": "The decoded snapshot event remains available for capture and audit, but its legacy one-shot presenter is skipped only while the ROM ownership cvar is set for the bound map epoch.",
+    "probe-never-owns": "The map-latched cg_native_event_preflight_probe path performs full resource and fence preflight, commits telemetry only, emits no effect, and never claims raw ownership.",
+    "native-authority-dormant": "Native effect emission additionally requires CG_NativeEventPresenterSetEffectAuthority(true); no production caller or negotiated cutover currently supplies that transition.",
+    "whole-stream-release": "An owned map epoch releases raw suppression only at an explicit whole-stream boundary; transport drain alone must not restore the legacy presenter."
+  },
+  "entries": [
+    {
+      "id": "ownership-cutover-confirmation-latch",
+      "family": "ownership-control",
+      "role": "cutover-latch",
+      "classification": "native-shadow/probe",
+      "owner": "client native-readiness pilot",
+      "cutover_condition": "native-authority-dormant",
+      "source": {
+        "file": "src/client/native_readiness_pilot.cpp",
+        "entrypoint": "event_effect_cutover_confirmed",
+        "anchor": "event_effect_cutover_confirmed",
+        "occurrences": 2
+      },
+      "test_evidence": [
+        "network-native-client-readiness-pilot",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "ownership-latch-writer",
+      "family": "ownership-control",
+      "role": "ownership-writer",
+      "classification": "suppressed",
+      "owner": "client native-readiness pilot",
+      "cutover_condition": "whole-stream-release",
+      "source": {
+        "file": "src/client/native_readiness_pilot.cpp",
+        "entrypoint": "set_event_presentation_owned",
+        "anchor": "set_event_presentation_owned(",
+        "occurrences": 4
+      },
+      "test_evidence": [
+        "network-native-client-readiness-pilot",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "raw-service-ownership-query",
+      "family": "ownership-control",
+      "role": "ownership-query",
+      "classification": "suppressed",
+      "owner": "client server-message parser",
+      "cutover_condition": "raw-suppressed-after-cutover",
+      "source": {
+        "file": "src/client/parse.cpp",
+        "entrypoint": "CL_NativeReadinessPilotOwnsEventPresentation",
+        "anchor": "CL_NativeReadinessPilotOwnsEventPresentation()",
+        "occurrences": 11
+      },
+      "test_evidence": [
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "embedded-event-ownership-query",
+      "family": "embedded-entity-event",
+      "role": "ownership-query",
+      "classification": "suppressed",
+      "owner": "cgame snapshot entity-event dispatcher",
+      "cutover_condition": "embedded-suppressed-after-cutover",
+      "source": {
+        "file": "src/game/cgame/cg_entities.cpp",
+        "entrypoint": "parse_entity_event",
+        "anchor": "cl_worr_native_event_presentation_owned->integer",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "native-effect-authority-switch",
+      "family": "ownership-control",
+      "role": "authority-switch",
+      "classification": "native-shadow/probe",
+      "owner": "cgame native event presenter",
+      "cutover_condition": "native-authority-dormant",
+      "source": {
+        "file": "src/game/cgame/cg_native_event_presenter.cpp",
+        "entrypoint": "CG_NativeEventPresenterSetEffectAuthority",
+        "anchor": "CG_NativeEventPresenterSetEffectAuthority(",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-cgame-native-event-presenter",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "native-runtime-two-phase-hook",
+      "family": "ownership-control",
+      "role": "native-runtime-hook",
+      "classification": "native-shadow/probe",
+      "owner": "cgame native event presenter",
+      "cutover_condition": "probe-never-owns",
+      "source": {
+        "file": "src/game/cgame/cg_native_event_presenter.cpp",
+        "entrypoint": "CG_NativeEventPresenterInstall",
+        "anchor": "CG_EventRuntimeSetPresenter(&can_present, &present);",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-cgame-native-event-presenter",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "spatial-audio-raw-capture",
+      "family": "service-spatial-audio",
+      "role": "raw-capture",
+      "classification": "native-shadow/probe",
+      "owner": "client server-message parser",
+      "cutover_condition": "probe-never-owns",
+      "source": {
+        "file": "src/client/parse.cpp",
+        "entrypoint": "CL_ParseStartSoundPacket",
+        "anchor": "CL_EventRangeCaptureSoundV2(&snd);",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-reliable-spatial-audio-source-contract",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "spatial-audio-raw-suppression",
+      "family": "service-spatial-audio",
+      "role": "raw-suppression",
+      "classification": "suppressed",
+      "owner": "client server-message parser",
+      "cutover_condition": "raw-suppressed-after-cutover",
+      "source": {
+        "file": "src/client/parse.cpp",
+        "entrypoint": "S_ParseStartSound",
+        "anchor": "S_ParseStartSound();",
+        "occurrences": 2
+      },
+      "test_evidence": [
+        "network-reliable-spatial-audio-source-contract",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "spatial-audio-legacy-presenter",
+      "family": "service-spatial-audio",
+      "role": "legacy-presenter",
+      "classification": "legacy-authoritative",
+      "owner": "client sound system",
+      "cutover_condition": "legacy-until-negotiated-cutover",
+      "source": {
+        "file": "src/client/sound/main.cpp",
+        "entrypoint": "S_ParseStartSound",
+        "anchor": "void S_ParseStartSound(void)",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "spatial-audio-legacy-sink",
+      "family": "service-spatial-audio",
+      "role": "legacy-effect-sink",
+      "classification": "legacy-authoritative",
+      "owner": "client sound system",
+      "cutover_condition": "legacy-until-negotiated-cutover",
+      "source": {
+        "file": "src/client/sound/main.cpp",
+        "entrypoint": "S_StartSound",
+        "anchor": "void S_StartSound(",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "spatial-audio-cgame-import-binding",
+      "family": "service-spatial-audio",
+      "role": "legacy-export-binding",
+      "classification": "legacy-authoritative",
+      "owner": "client-to-cgame sound import bridge",
+      "cutover_condition": "legacy-until-negotiated-cutover",
+      "source": {
+        "file": "src/client/cgame.cpp",
+        "entrypoint": "S_StartSound",
+        "anchor": ".S_StartSound = S_StartSound,",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-cgame-native-event-presenter",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "spatial-audio-native-commit",
+      "family": "service-spatial-audio",
+      "role": "native-commit",
+      "classification": "native-shadow/probe",
+      "owner": "cgame native event presenter",
+      "cutover_condition": "native-authority-dormant",
+      "source": {
+        "file": "src/game/cgame/cg_native_event_presenter.cpp",
+        "entrypoint": "S_StartSound",
+        "anchor": "S_StartSound(prepared.sound_origin, prepared.sound_entity,",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-cgame-native-event-presenter",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "temp-entity-raw-capture",
+      "family": "service-temp-entity",
+      "role": "raw-capture",
+      "classification": "native-shadow/probe",
+      "owner": "client server-message parser",
+      "cutover_condition": "probe-never-owns",
+      "source": {
+        "file": "src/client/parse.cpp",
+        "entrypoint": "CL_ParseTEntPacket",
+        "anchor": "CL_EventRangeCaptureTempV2(temp_entity);",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-legacy-temp-event-candidate",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "temp-entity-raw-suppression",
+      "family": "service-temp-entity",
+      "role": "raw-suppression",
+      "classification": "suppressed",
+      "owner": "client server-message parser",
+      "cutover_condition": "raw-suppressed-after-cutover",
+      "source": {
+        "file": "src/client/parse.cpp",
+        "entrypoint": "CL_ParseTEnt",
+        "anchor": "CL_ParseTEnt();",
+        "occurrences": 2
+      },
+      "test_evidence": [
+        "network-legacy-temp-event-candidate",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "temp-entity-engine-bridge",
+      "family": "service-temp-entity",
+      "role": "legacy-bridge",
+      "classification": "legacy-authoritative",
+      "owner": "client-to-cgame entity export bridge",
+      "cutover_condition": "legacy-until-negotiated-cutover",
+      "source": {
+        "file": "src/client/tent.cpp",
+        "entrypoint": "CL_ParseTEnt",
+        "anchor": "cgame_entity->ParseTempEntity();",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "temp-entity-cgame-export-binding",
+      "family": "service-temp-entity",
+      "role": "legacy-export-binding",
+      "classification": "legacy-authoritative",
+      "owner": "cgame entity export table",
+      "cutover_condition": "legacy-until-negotiated-cutover",
+      "source": {
+        "file": "src/game/cgame/cg_entity_api.cpp",
+        "entrypoint": "ParseTempEntity",
+        "anchor": ".ParseTempEntity = CL_ParseTEnt,",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "temp-entity-cgame-presenter",
+      "family": "service-temp-entity",
+      "role": "legacy-presenter",
+      "classification": "legacy-authoritative",
+      "owner": "cgame temporary-effect presenter",
+      "cutover_condition": "legacy-until-negotiated-cutover",
+      "source": {
+        "file": "src/game/cgame/cg_tent.cpp",
+        "entrypoint": "CL_ParseTEnt",
+        "anchor": "void CL_ParseTEnt(void)",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-cgame-native-event-presenter",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "temp-entity-cgame-sound-sink",
+      "family": "service-temp-entity",
+      "role": "legacy-effect-sink",
+      "classification": "legacy-authoritative",
+      "owner": "cgame temporary-effect presenter",
+      "cutover_condition": "legacy-until-negotiated-cutover",
+      "source": {
+        "file": "src/game/cgame/cg_tent.cpp",
+        "entrypoint": "CL_StartTEntSound",
+        "anchor": "static void CL_StartTEntSound(",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-cgame-native-event-presenter",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "temp-entity-native-value-presenter",
+      "family": "service-temp-entity",
+      "role": "native-value-presenter",
+      "classification": "native-shadow/probe",
+      "owner": "cgame native event presenter",
+      "cutover_condition": "native-authority-dormant",
+      "source": {
+        "file": "src/game/cgame/cg_tent.cpp",
+        "entrypoint": "CL_PresentTEntValue",
+        "anchor": "void CL_PresentTEntValue(",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-cgame-native-event-presenter",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "temp-entity-native-commit",
+      "family": "service-temp-entity",
+      "role": "native-commit",
+      "classification": "native-shadow/probe",
+      "owner": "cgame native event presenter",
+      "cutover_condition": "native-authority-dormant",
+      "source": {
+        "file": "src/game/cgame/cg_native_event_presenter.cpp",
+        "entrypoint": "CL_PresentTEntValue",
+        "anchor": "CL_PresentTEntValue(",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-cgame-native-event-presenter",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "muzzle-raw-capture",
+      "family": "service-muzzle",
+      "role": "raw-capture",
+      "classification": "native-shadow/probe",
+      "owner": "client server-message parser",
+      "cutover_condition": "probe-never-owns",
+      "source": {
+        "file": "src/client/parse.cpp",
+        "entrypoint": "CL_ParseMuzzleFlashPacket",
+        "anchor": "CL_EventRangeCaptureMuzzleV2(muzzleflash, family);",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-legacy-muzzle-event-candidate",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "player-muzzle-raw-suppression",
+      "family": "service-player-muzzle",
+      "role": "raw-suppression",
+      "classification": "suppressed",
+      "owner": "client server-message parser",
+      "cutover_condition": "raw-suppressed-after-cutover",
+      "source": {
+        "file": "src/client/parse.cpp",
+        "entrypoint": "CL_MuzzleFlash",
+        "anchor": "CL_MuzzleFlash();",
+        "occurrences": 2
+      },
+      "test_evidence": [
+        "network-legacy-muzzle-event-candidate",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "player-muzzle-engine-bridge",
+      "family": "service-player-muzzle",
+      "role": "legacy-bridge",
+      "classification": "legacy-authoritative",
+      "owner": "client-to-cgame entity export bridge",
+      "cutover_condition": "legacy-until-negotiated-cutover",
+      "source": {
+        "file": "src/client/effects.cpp",
+        "entrypoint": "CL_MuzzleFlash",
+        "anchor": "cgame_entity->ParseMuzzleFlash();",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "player-muzzle-cgame-export-binding",
+      "family": "service-player-muzzle",
+      "role": "legacy-export-binding",
+      "classification": "legacy-authoritative",
+      "owner": "cgame entity export table",
+      "cutover_condition": "legacy-until-negotiated-cutover",
+      "source": {
+        "file": "src/game/cgame/cg_entity_api.cpp",
+        "entrypoint": "ParseMuzzleFlash",
+        "anchor": ".ParseMuzzleFlash = CL_MuzzleFlash,",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "player-muzzle-cgame-presenter",
+      "family": "service-player-muzzle",
+      "role": "legacy-presenter",
+      "classification": "legacy-authoritative",
+      "owner": "cgame muzzle presenter",
+      "cutover_condition": "legacy-until-negotiated-cutover",
+      "source": {
+        "file": "src/game/cgame/cg_effects.cpp",
+        "entrypoint": "CL_MuzzleFlash",
+        "anchor": "void CL_MuzzleFlash(void)",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-cgame-native-event-presenter",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "monster-muzzle-raw-suppression",
+      "family": "service-monster-muzzle",
+      "role": "raw-suppression",
+      "classification": "suppressed",
+      "owner": "client server-message parser",
+      "cutover_condition": "raw-suppressed-after-cutover",
+      "source": {
+        "file": "src/client/parse.cpp",
+        "entrypoint": "CL_MuzzleFlash2",
+        "anchor": "CL_MuzzleFlash2();",
+        "occurrences": 2
+      },
+      "test_evidence": [
+        "network-legacy-muzzle-event-candidate",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "monster-muzzle-engine-bridge",
+      "family": "service-monster-muzzle",
+      "role": "legacy-bridge",
+      "classification": "legacy-authoritative",
+      "owner": "client-to-cgame entity export bridge",
+      "cutover_condition": "legacy-until-negotiated-cutover",
+      "source": {
+        "file": "src/client/effects.cpp",
+        "entrypoint": "CL_MuzzleFlash2",
+        "anchor": "cgame_entity->ParseMuzzleFlash2();",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "monster-muzzle-cgame-export-binding",
+      "family": "service-monster-muzzle",
+      "role": "legacy-export-binding",
+      "classification": "legacy-authoritative",
+      "owner": "cgame entity export table",
+      "cutover_condition": "legacy-until-negotiated-cutover",
+      "source": {
+        "file": "src/game/cgame/cg_entity_api.cpp",
+        "entrypoint": "ParseMuzzleFlash2",
+        "anchor": ".ParseMuzzleFlash2 = CL_MuzzleFlash2,",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "monster-muzzle-cgame-presenter",
+      "family": "service-monster-muzzle",
+      "role": "legacy-presenter",
+      "classification": "legacy-authoritative",
+      "owner": "cgame muzzle presenter",
+      "cutover_condition": "legacy-until-negotiated-cutover",
+      "source": {
+        "file": "src/game/cgame/cg_effects.cpp",
+        "entrypoint": "CL_MuzzleFlash2",
+        "anchor": "void CL_MuzzleFlash2(void)",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-cgame-native-event-presenter",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "muzzle-native-value-presenter",
+      "family": "service-muzzle",
+      "role": "native-value-presenter",
+      "classification": "native-shadow/probe",
+      "owner": "cgame native event presenter",
+      "cutover_condition": "native-authority-dormant",
+      "source": {
+        "file": "src/game/cgame/cg_effects.cpp",
+        "entrypoint": "CL_PresentMuzzleFlashValue",
+        "anchor": "void CL_PresentMuzzleFlashValue(",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-cgame-native-event-presenter",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "muzzle-cgame-sound-sink",
+      "family": "service-muzzle",
+      "role": "legacy-effect-sink",
+      "classification": "legacy-authoritative",
+      "owner": "cgame muzzle presenter",
+      "cutover_condition": "legacy-until-negotiated-cutover",
+      "source": {
+        "file": "src/game/cgame/cg_effects.cpp",
+        "entrypoint": "CL_StartMuzzleSound",
+        "anchor": "static void CL_StartMuzzleSound(",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-cgame-native-event-presenter",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "muzzle-native-commit",
+      "family": "service-muzzle",
+      "role": "native-commit",
+      "classification": "native-shadow/probe",
+      "owner": "cgame native event presenter",
+      "cutover_condition": "native-authority-dormant",
+      "source": {
+        "file": "src/game/cgame/cg_native_event_presenter.cpp",
+        "entrypoint": "CL_PresentMuzzleFlashValue",
+        "anchor": "CL_PresentMuzzleFlashValue(",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-cgame-native-event-presenter",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "damage-raw-capture",
+      "family": "service-damage-indicator",
+      "role": "raw-capture",
+      "classification": "native-shadow/probe",
+      "owner": "client server-message parser",
+      "cutover_condition": "probe-never-owns",
+      "source": {
+        "file": "src/client/parse.cpp",
+        "entrypoint": "CL_EventRangeCaptureDamageV2",
+        "anchor": "CL_EventRangeCaptureDamageV2(&svc_msg.damage);",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-damage-indicator-source-contract",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "damage-raw-suppression",
+      "family": "service-damage-indicator",
+      "role": "raw-suppression",
+      "classification": "suppressed",
+      "owner": "client server-message parser",
+      "cutover_condition": "raw-suppressed-after-cutover",
+      "source": {
+        "file": "src/client/parse.cpp",
+        "entrypoint": "CL_ParseDamage",
+        "anchor": "CL_ParseDamage(&svc_msg.damage);",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-damage-indicator-source-contract",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "damage-legacy-parser",
+      "family": "service-damage-indicator",
+      "role": "legacy-presenter",
+      "classification": "legacy-authoritative",
+      "owner": "client server-message parser",
+      "cutover_condition": "legacy-until-negotiated-cutover",
+      "source": {
+        "file": "src/client/parse.cpp",
+        "entrypoint": "CL_ParseDamage",
+        "anchor": "SCR_AddToDamageDisplay(",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-damage-indicator-source-contract",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "damage-engine-sink",
+      "family": "service-damage-indicator",
+      "role": "legacy-effect-sink",
+      "classification": "legacy-authoritative",
+      "owner": "client screen damage-display bridge",
+      "cutover_condition": "legacy-until-negotiated-cutover",
+      "source": {
+        "file": "src/client/screen.cpp",
+        "entrypoint": "SCR_AddToDamageDisplay",
+        "anchor": "void SCR_AddToDamageDisplay(",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-damage-indicator-source-contract",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "damage-cgame-value-presenter",
+      "family": "service-damage-indicator",
+      "role": "native-value-presenter",
+      "classification": "native-shadow/probe",
+      "owner": "cgame damage-display presenter",
+      "cutover_condition": "native-authority-dormant",
+      "source": {
+        "file": "src/game/cgame/cg_draw.cpp",
+        "entrypoint": "CL_PresentDamageDisplayValue",
+        "anchor": "CL_PresentDamageDisplayValue(",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-cgame-native-event-presenter",
+        "network-damage-indicator-source-contract",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "damage-cgame-sink",
+      "family": "service-damage-indicator",
+      "role": "legacy-effect-sink",
+      "classification": "legacy-authoritative",
+      "owner": "cgame damage-display presenter",
+      "cutover_condition": "legacy-until-negotiated-cutover",
+      "source": {
+        "file": "src/game/cgame/cg_draw.cpp",
+        "entrypoint": "CG_AddDamageDisplay",
+        "anchor": "void CG_AddDamageDisplay(",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-cgame-native-event-presenter",
+        "network-damage-indicator-source-contract",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "damage-cgame-export-binding",
+      "family": "service-damage-indicator",
+      "role": "legacy-export-binding",
+      "classification": "legacy-authoritative",
+      "owner": "cgame main export table",
+      "cutover_condition": "legacy-until-negotiated-cutover",
+      "source": {
+        "file": "src/game/cgame/cg_main.cpp",
+        "entrypoint": "AddDamageDisplay",
+        "anchor": "cglobals.AddDamageDisplay = CG_AddDamageDisplay;",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-damage-indicator-source-contract",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "damage-native-commit",
+      "family": "service-damage-indicator",
+      "role": "native-commit",
+      "classification": "native-shadow/probe",
+      "owner": "cgame native event presenter",
+      "cutover_condition": "native-authority-dormant",
+      "source": {
+        "file": "src/game/cgame/cg_native_event_presenter.cpp",
+        "entrypoint": "CL_PresentDamageDisplayValue",
+        "anchor": "CL_PresentDamageDisplayValue(",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-cgame-native-event-presenter",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "keyed-poi-raw-capture",
+      "family": "service-keyed-poi",
+      "role": "raw-capture",
+      "classification": "native-shadow/probe",
+      "owner": "client server-message parser",
+      "cutover_condition": "probe-never-owns",
+      "source": {
+        "file": "src/client/parse.cpp",
+        "entrypoint": "CL_EventRangeCapturePOIV2",
+        "anchor": "CL_EventRangeCapturePOIV2(&svc_msg.poi);",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-cgame-event-presentation",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "keyed-poi-raw-suppression",
+      "family": "service-keyed-poi",
+      "role": "raw-suppression",
+      "classification": "suppressed",
+      "owner": "client server-message parser",
+      "cutover_condition": "raw-suppressed-after-cutover",
+      "source": {
+        "file": "src/client/parse.cpp",
+        "entrypoint": "CL_ParsePOI",
+        "anchor": "CL_ParsePOI(&svc_msg.poi);",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-cgame-event-presentation",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "keyed-poi-legacy-presenter",
+      "family": "service-keyed-poi",
+      "role": "legacy-presenter",
+      "classification": "legacy-authoritative",
+      "owner": "client server-message parser",
+      "cutover_condition": "legacy-until-negotiated-cutover",
+      "source": {
+        "file": "src/client/parse.cpp",
+        "entrypoint": "CL_ParsePOI",
+        "anchor": "static void CL_ParsePOI(",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "keyed-poi-engine-add-sink",
+      "family": "service-keyed-poi",
+      "role": "legacy-effect-sink",
+      "classification": "legacy-authoritative",
+      "owner": "client screen POI presenter",
+      "cutover_condition": "legacy-until-negotiated-cutover",
+      "source": {
+        "file": "src/client/screen.cpp",
+        "entrypoint": "SCR_AddPOI",
+        "anchor": "void SCR_AddPOI(",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "keyed-poi-engine-remove-sink",
+      "family": "service-keyed-poi",
+      "role": "legacy-effect-sink",
+      "classification": "legacy-authoritative",
+      "owner": "client screen POI presenter",
+      "cutover_condition": "legacy-until-negotiated-cutover",
+      "source": {
+        "file": "src/client/screen.cpp",
+        "entrypoint": "SCR_RemovePOI",
+        "anchor": "void SCR_RemovePOI(",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "keyed-poi-native-preflight",
+      "family": "service-keyed-poi",
+      "role": "native-value-presenter",
+      "classification": "native-shadow/probe",
+      "owner": "cgame keyed POI presenter",
+      "cutover_condition": "native-authority-dormant",
+      "source": {
+        "file": "src/game/cgame/cg_draw.cpp",
+        "entrypoint": "CG_CanPresentKeyedPOIValue",
+        "anchor": "bool CG_CanPresentKeyedPOIValue(",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-cgame-native-event-presenter",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "keyed-poi-native-sink",
+      "family": "service-keyed-poi",
+      "role": "native-value-presenter",
+      "classification": "native-shadow/probe",
+      "owner": "cgame keyed POI presenter",
+      "cutover_condition": "native-authority-dormant",
+      "source": {
+        "file": "src/game/cgame/cg_draw.cpp",
+        "entrypoint": "CG_PresentKeyedPOIValue",
+        "anchor": "void CG_PresentKeyedPOIValue(",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-cgame-native-event-presenter",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "keyed-poi-native-commit",
+      "family": "service-keyed-poi",
+      "role": "native-commit",
+      "classification": "native-shadow/probe",
+      "owner": "cgame native event presenter",
+      "cutover_condition": "native-authority-dormant",
+      "source": {
+        "file": "src/game/cgame/cg_native_event_presenter.cpp",
+        "entrypoint": "CG_PresentKeyedPOIValue",
+        "anchor": "CG_PresentKeyedPOIValue(&prepared.keyed_poi);",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-cgame-native-event-presenter",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "help-path-raw-suppression",
+      "family": "service-help-path",
+      "role": "raw-suppression",
+      "classification": "suppressed",
+      "owner": "client server-message parser",
+      "cutover_condition": "raw-suppressed-after-cutover",
+      "source": {
+        "file": "src/client/parse.cpp",
+        "entrypoint": "CL_AddHelpPath",
+        "anchor": "CL_AddHelpPath(",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-help-path-source-contract",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "help-path-engine-bridge",
+      "family": "service-help-path",
+      "role": "legacy-bridge",
+      "classification": "legacy-authoritative",
+      "owner": "client-to-cgame entity export bridge",
+      "cutover_condition": "legacy-until-negotiated-cutover",
+      "source": {
+        "file": "src/client/tent.cpp",
+        "entrypoint": "CL_AddHelpPath",
+        "anchor": "cgame_entity->AddHelpPath(origin, dir, first);",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-help-path-source-contract",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "help-path-cgame-export-binding",
+      "family": "service-help-path",
+      "role": "legacy-export-binding",
+      "classification": "legacy-authoritative",
+      "owner": "cgame entity export table",
+      "cutover_condition": "legacy-until-negotiated-cutover",
+      "source": {
+        "file": "src/game/cgame/cg_entity_api.cpp",
+        "entrypoint": "AddHelpPath",
+        "anchor": ".AddHelpPath = CL_AddHelpPath,",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-help-path-source-contract",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "help-path-cgame-presenter",
+      "family": "service-help-path",
+      "role": "legacy-presenter",
+      "classification": "legacy-authoritative",
+      "owner": "cgame help-path presenter",
+      "cutover_condition": "legacy-until-negotiated-cutover",
+      "source": {
+        "file": "src/game/cgame/cg_tent.cpp",
+        "entrypoint": "CL_AddHelpPath",
+        "anchor": "void CL_AddHelpPath(",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-cgame-native-event-presenter",
+        "network-help-path-source-contract",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "help-path-native-commit",
+      "family": "service-help-path",
+      "role": "native-commit",
+      "classification": "native-shadow/probe",
+      "owner": "cgame native event presenter",
+      "cutover_condition": "native-authority-dormant",
+      "source": {
+        "file": "src/game/cgame/cg_native_event_presenter.cpp",
+        "entrypoint": "CL_AddHelpPath",
+        "anchor": "CL_AddHelpPath(",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-cgame-native-event-presenter",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "embedded-entity-engine-fallback",
+      "family": "embedded-entity-event",
+      "role": "legacy-fallback-presenter",
+      "classification": "legacy-authoritative",
+      "owner": "compiled client fallback (currently unreachable behind cgame)",
+      "cutover_condition": "legacy-until-negotiated-cutover",
+      "source": {
+        "file": "src/client/entities.cpp",
+        "entrypoint": "parse_entity_event",
+        "anchor": "static void parse_entity_event(",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "embedded-entity-cgame-presenter",
+      "family": "embedded-entity-event",
+      "role": "legacy-presenter",
+      "classification": "legacy-authoritative",
+      "owner": "cgame snapshot entity-event dispatcher",
+      "cutover_condition": "legacy-until-negotiated-cutover",
+      "source": {
+        "file": "src/game/cgame/cg_entities.cpp",
+        "entrypoint": "present_entity_impulse_event",
+        "anchor": "static void present_entity_impulse_event(",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-cgame-native-event-presenter",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "embedded-entity-native-value-presenter",
+      "family": "embedded-entity-event",
+      "role": "native-value-presenter",
+      "classification": "native-shadow/probe",
+      "owner": "cgame native event presenter",
+      "cutover_condition": "native-authority-dormant",
+      "source": {
+        "file": "src/game/cgame/cg_entities.cpp",
+        "entrypoint": "CL_PresentLegacyEntityEventValue",
+        "anchor": "void CL_PresentLegacyEntityEventValue(",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-cgame-native-event-presenter",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "embedded-entity-native-commit",
+      "family": "embedded-entity-event",
+      "role": "native-commit",
+      "classification": "native-shadow/probe",
+      "owner": "cgame native event presenter",
+      "cutover_condition": "native-authority-dormant",
+      "source": {
+        "file": "src/game/cgame/cg_native_event_presenter.cpp",
+        "entrypoint": "CL_PresentLegacyEntityEventValue",
+        "anchor": "CL_PresentLegacyEntityEventValue(",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-cgame-native-event-presenter",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "native-event-probe-cgame-export",
+      "family": "ownership-control",
+      "role": "probe-export",
+      "classification": "native-shadow/probe",
+      "owner": "cgame extension registry",
+      "cutover_condition": "probe-never-owns",
+      "source": {
+        "file": "src/game/cgame/cg_main.cpp",
+        "entrypoint": "CG_GetExtension",
+        "anchor": "WORR_CGAME_NATIVE_EVENT_PROBE_EXPORT_V1",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-cgame-native-event-presenter",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "native-event-probe-engine-binding",
+      "family": "ownership-control",
+      "role": "probe-binding",
+      "classification": "native-shadow/probe",
+      "owner": "client cgame loader",
+      "cutover_condition": "probe-never-owns",
+      "source": {
+        "file": "src/client/cgame.cpp",
+        "entrypoint": "CG_Load",
+        "anchor": "WORR_CGAME_NATIVE_EVENT_PROBE_EXPORT_V1",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "native-event-probe-checkpoint-cgame-export",
+      "family": "ownership-control",
+      "role": "probe-checkpoint-export",
+      "classification": "native-shadow/probe",
+      "owner": "cgame extension registry",
+      "cutover_condition": "probe-never-owns",
+      "source": {
+        "file": "src/game/cgame/cg_main.cpp",
+        "entrypoint": "CG_GetExtension",
+        "anchor": "WORR_CGAME_NATIVE_EVENT_PROBE_EXPORT_V2",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-cgame-native-event-presenter",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "native-event-probe-checkpoint-engine-binding",
+      "family": "ownership-control",
+      "role": "probe-checkpoint-binding",
+      "classification": "native-shadow/probe",
+      "owner": "client cgame loader",
+      "cutover_condition": "probe-never-owns",
+      "source": {
+        "file": "src/client/cgame.cpp",
+        "entrypoint": "CG_Load",
+        "anchor": "WORR_CGAME_NATIVE_EVENT_PROBE_EXPORT_V2",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-cgame-native-event-presenter",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "native-event-probe-raw-completion",
+      "family": "service-exact-action",
+      "role": "probe-legacy-completion",
+      "classification": "native-shadow/probe",
+      "owner": "client server-message parser",
+      "cutover_condition": "probe-never-owns",
+      "source": {
+        "file": "src/client/parse.cpp",
+        "entrypoint": "CL_CGameNativeEventProbeCompleteLegacyDispatch",
+        "anchor": "(void)CL_CGameNativeEventProbeCompleteLegacyDispatch(",
+        "occurrences": 20
+      },
+      "test_evidence": [
+        "network-cgame-native-event-presenter",
+        "network-native-event-presenter-source-contract"
+      ]
+    },
+    {
+      "id": "native-event-probe-status-command",
+      "family": "ownership-control",
+      "role": "probe-status",
+      "classification": "native-shadow/probe",
+      "owner": "client input command registry",
+      "cutover_condition": "probe-never-owns",
+      "source": {
+        "file": "src/client/input.cpp",
+        "entrypoint": "CL_NativeEventProbeStatus_f",
+        "anchor": "{ \"cl_worr_native_event_probe_status\", CL_NativeEventProbeStatus_f }",
+        "occurrences": 1
+      },
+      "test_evidence": [
+        "network-canonical-rail-damage-runtime-gate-parser",
+        "network-native-event-presenter-source-contract"
+      ]
+    }
+  ]
+}

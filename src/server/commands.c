@@ -804,6 +804,60 @@ static void SV_Status_f(void)
 
 /*
 ============================
+SV_WorrCapabilityStatus_f
+
+Read-only connection capability tuple.  This remains available when every
+optional native endpoint is disabled, so acceptance can prove the exact
+default legacy 0x03 negotiation without inferring it from launch flags.
+============================
+*/
+static void SV_WorrCapabilityStatus_f(void)
+{
+    client_t *client;
+    int requested_slot = -1;
+
+    if (!svs.initialized) {
+        Com_Printf("No server running.\n");
+        return;
+    }
+    if (Cmd_Argc() > 2 ||
+        (Cmd_Argc() == 2 && !COM_IsUint(Cmd_Argv(1)))) {
+        Com_Printf("Usage: sv_worr_capability_status [slot]\n");
+        return;
+    }
+    if (Cmd_Argc() == 2) {
+        requested_slot = Q_atoi(Cmd_Argv(1));
+        if (requested_slot < 0 || requested_slot >= svs.maxclients) {
+            Com_Printf("sv_worr_capability_status: invalid slot\n");
+            return;
+        }
+    }
+
+    FOR_EACH_CLIENT(client) {
+        if (requested_slot >= 0 && client->number != requested_slot)
+            continue;
+        if (client->state <= cs_zombie)
+            continue;
+        Com_Printf(
+            "WORR_CAPABILITY_SERVER_STATUS_V1 schema=1 slot=%d "
+            "protocol=%d epoch=%u offered=0x%02x supported=0x%02x "
+            "negotiated=0x%02x confirm_sent=%u failed=%u "
+            "native_shadow=%u input_batch_requested=%u command_parser=%u\n",
+            client->number, client->protocol,
+            (unsigned)client->worr_capability_epoch,
+            (unsigned)client->worr_capabilities_offered,
+            (unsigned)client->worr_capabilities_supported,
+            (unsigned)client->worr_capabilities_negotiated,
+            client->worr_capability_confirm_sent ? 1u : 0u,
+            client->worr_capability_failed ? 1u : 0u,
+            client->worr_native_shadow ? 1u : 0u,
+            client->worr_native_input_batch_requested ? 1u : 0u,
+            client->worr_command_parser_initialized ? 1u : 0u);
+    }
+}
+
+/*
+============================
 SV_WorrNativeShadowStatus_f
 
 Stable, scalar-only rows consumed by the staged two-process impairment gate.
@@ -902,6 +956,94 @@ static void SV_WorrNativeShadowStatus_f(void)
             (unsigned long long)status.stale_cancelled_carriers,
             (unsigned long long)status.stale_cancelled_readiness_records,
             status.last_failure, status.last_failure_detail);
+
+        if (SV_NativeShadowModeHasEventV1(
+                client->worr_native_shadow->mode)) {
+            sv_native_shadow_event_status_v1 event_status;
+
+            memset(&event_status, 0, sizeof(event_status));
+            if (SV_NativeShadowGetEventStatusV1(
+                    client->worr_native_shadow, svs.realtime,
+                    &event_status)) {
+                Com_Printf(
+                    "WORR_NATIVE_SERVER_EVENT_STATUS_V1 schema=%u "
+                    "slot=%d mode=%u sender=%u retired_sender=%u "
+                    "tx_open=%u stream_epoch=%u descriptor_acked=%u "
+                    "backlog=%u retained=%u retired_retained=%u "
+                    "output_due=%u confirms=%llu snapshots_queued=%llu "
+                    "queue_failures=%llu candidates_queued=%llu "
+                    "candidates_promoted=%llu descriptor_acks=%llu "
+                    "event_acks=%llu "
+                    "prepared=%llu confirmed=%llu rejected=%llu "
+                    "first_sends=%llu retries=%llu "
+                    "schema2_batches_promoted=%llu "
+                    "schema2_events_promoted=%llu\n",
+                    event_status.schema_version, client->number,
+                    event_status.mode,
+                    event_status.sender_initialized,
+                    event_status.retired_sender_initialized,
+                    event_status.tx_open, event_status.stream_epoch,
+                    event_status.descriptor_acked,
+                    event_status.backlog_count,
+                    event_status.retained_count,
+                    event_status.retired_retained_count,
+                    event_status.output_due,
+                    (unsigned long long)event_status.active_confirms,
+                    (unsigned long long)event_status.snapshots_queued,
+                    (unsigned long long)
+                        event_status.snapshot_queue_failures,
+                    (unsigned long long)event_status.candidates_queued,
+                    (unsigned long long)event_status.candidates_promoted,
+                    (unsigned long long)
+                        event_status.descriptors_acknowledged,
+                    (unsigned long long)event_status.events_acknowledged,
+                    (unsigned long long)event_status.packets_prepared,
+                    (unsigned long long)event_status.packets_confirmed,
+                    (unsigned long long)event_status.packets_rejected,
+                    (unsigned long long)event_status.first_sends,
+                    (unsigned long long)event_status.retries,
+                    (unsigned long long)
+                        event_status.schema2_batches_promoted,
+                    (unsigned long long)
+                        event_status.schema2_events_promoted);
+            }
+        }
+
+        {
+            sv_native_shadow_input_batch_status_v1 batch_status;
+            memset(&batch_status, 0, sizeof(batch_status));
+            if (SV_NativeShadowGetInputBatchStatusV1(
+                    client->worr_native_shadow, &batch_status)) {
+                Com_Printf(
+                    "WORR_NATIVE_SERVER_INPUT_DELIVERY_STATUS_V1 "
+                    "schema=%u slot=%d requested=%u confirmed=%u "
+                    "declined=%u ack_blocked=%u pending=%u "
+                    "first_pending=%u last_pending=%u "
+                    "official_epoch=%u transport_epoch=%u "
+                    "confirmations=%llu batches=%llu commands=%llu "
+                    "repeats=%llu legacy_joins=%llu "
+                    "acks_unblocked=%llu legacy_fallbacks=%llu "
+                    "failures=%llu\n",
+                    batch_status.schema_version, client->number,
+                    batch_status.requested, batch_status.confirmed,
+                    batch_status.declined, batch_status.ack_blocked,
+                    batch_status.pending_count,
+                    batch_status.first_pending_sequence,
+                    batch_status.last_pending_sequence,
+                    batch_status.official_connection_epoch,
+                    batch_status.transport_epoch,
+                    (unsigned long long)
+                        batch_status.confirmations_appended,
+                    (unsigned long long)batch_status.batches_received,
+                    (unsigned long long)batch_status.commands_received,
+                    (unsigned long long)batch_status.repeat_refreshes,
+                    (unsigned long long)batch_status.legacy_joins,
+                    (unsigned long long)
+                        batch_status.acknowledgements_unblocked,
+                    (unsigned long long)batch_status.legacy_fallbacks,
+                    (unsigned long long)batch_status.failures);
+            }
+        }
 
         if (SV_NativeShadowModeHasSnapshotV1(
                 client->worr_native_shadow->mode)) {
@@ -2114,6 +2256,7 @@ static const cmdreg_t c_server[] = {
     { "kick", SV_Kick_f, SV_SetPlayer_c },
     { "kickban", SV_Kick_f, SV_SetPlayer_c },
     { "status", SV_Status_f },
+    { "sv_worr_capability_status", SV_WorrCapabilityStatus_f },
     { "sv_worr_native_shadow_status", SV_WorrNativeShadowStatus_f },
     { "serverinfo", SV_Serverinfo_f },
     { "dumpuser", SV_DumpUser_f, SV_SetPlayer_c },

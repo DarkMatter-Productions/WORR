@@ -29,6 +29,9 @@ layout(location = 6) flat out float out_time;
 layout(location = 7) flat out float out_refraction_scale;
 layout(location = 8) flat out uint out_effects_enabled;
 layout(location = 9) flat out uint out_refraction_enabled;
+layout(location = 10) flat out vec3 out_sky_axis0;
+layout(location = 11) flat out vec3 out_sky_axis1;
+layout(location = 12) flat out vec3 out_sky_axis2;
 
 void main() {
     const uint VK_WORLD_VERTEX_SKY = 128u;
@@ -68,4 +71,7 @@ void main() {
     out_refraction_scale = in_refraction_scale;
     out_effects_enabled = in_effects_enabled;
     out_refraction_enabled = in_refraction_enabled;
+    out_sky_axis0 = in_sky_axis0.xyz;
+    out_sky_axis1 = in_sky_axis1.xyz;
+    out_sky_axis2 = in_sky_axis2.xyz;
 }

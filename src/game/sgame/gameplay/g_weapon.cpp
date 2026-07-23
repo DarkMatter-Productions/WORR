@@ -944,6 +944,15 @@ gentity_t *fire_handgrenade(gentity_t *self, const Vector3 &start,
 fire_rocket
 =================
 */
+static THINK(rocket_expire)(gentity_t *ent) -> void {
+  // The wrapper preserves the ordinary scheduled FreeEntity authority while
+  // making the exact pre/post generation transition passively observable by
+  // the isolated lifecycle fixture.
+  LagCompensation_ObserveRocketLifecyclePreRetirement(ent, true);
+  FreeEntity(ent);
+  LagCompensation_ObserveRocketLifecyclePostRetirement(ent, true);
+}
+
 static TOUCH(rocket_touch)(gentity_t *ent, gentity_t *other, const trace_t &tr,
                            bool otherTouchingSelf)
     ->void {
@@ -952,9 +961,13 @@ static TOUCH(rocket_touch)(gentity_t *ent, gentity_t *other, const trace_t &tr,
     return;
 
   if (tr.surface && (tr.surface->flags & SURF_SKY)) {
+    LagCompensation_ObserveRocketLifecyclePreRetirement(ent, false);
     FreeEntity(ent);
+    LagCompensation_ObserveRocketLifecyclePostRetirement(ent, false);
     return;
   }
+
+  LagCompensation_ObserveRocketLifecycleTouch(ent, other, tr);
 
   // This is diagnostic-only and has no gameplay effect outside the isolated
   // current-world projectile splash fixture. The normal touch path below
@@ -996,7 +1009,9 @@ static TOUCH(rocket_touch)(gentity_t *ent, gentity_t *other, const trace_t &tr,
   gi.WritePosition(origin);
   gi.multicast(ent->s.origin, MULTICAST_PHS, false);
 
+  LagCompensation_ObserveRocketLifecyclePreRetirement(ent, false);
   FreeEntity(ent);
+  LagCompensation_ObserveRocketLifecyclePostRetirement(ent, false);
 }
 
 gentity_t *fire_rocket(gentity_t *self, const Vector3 &start,
@@ -1021,7 +1036,7 @@ gentity_t *fire_rocket(gentity_t *self, const Vector3 &start,
   rocket->owner = self;
   rocket->touch = rocket_touch;
   rocket->nextThink = level.time + GameTime::from_sec(8000.f / speed);
-  rocket->think = FreeEntity;
+  rocket->think = rocket_expire;
   rocket->dmg = damage;
   rocket->splashDamage = splashDamage;
   rocket->splashRadius = splashRadius;
@@ -1030,6 +1045,7 @@ gentity_t *fire_rocket(gentity_t *self, const Vector3 &start,
   rocket->className = "rocket";
 
   gi.linkEntity(rocket);
+  LagCompensation_ObserveRocketLifecycleSpawn(rocket, self);
 
   // A Rocket remains entirely current-world authority after its accepted
   // command. The bounded advance merely consumes authenticated spawn delay;

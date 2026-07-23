@@ -16,7 +16,15 @@ the Free Software Foundation; either version 2 of the License, or
 #define EVENT_KNOWN_FLAGS                                                   \
     ((uint32_t)(WORR_EVENT_FLAG_HAS_AUTHORITY_ID |                          \
                 WORR_EVENT_FLAG_CRITICAL | WORR_EVENT_FLAG_REPLAY_SAFE |   \
-                WORR_EVENT_FLAG_PRESENT_ONCE))
+                WORR_EVENT_FLAG_PRESENT_ONCE |                             \
+                WORR_EVENT_FLAG_SNAPSHOT_FENCED))
+
+/* Authority identity and immutable-snapshot lineage are delivery metadata.
+ * They remain covered by the full record hash/wire bytes but do not make the
+ * same raw legacy action a different semantic event. */
+#define EVENT_SEMANTIC_IGNORED_FLAGS                                        \
+    ((uint32_t)(WORR_EVENT_FLAG_HAS_AUTHORITY_ID |                          \
+                WORR_EVENT_FLAG_SNAPSHOT_FENCED))
 
 #define LEGACY_ENTITY_KNOWN_FLAGS                                           \
     ((uint16_t)(WORR_EVENT_LEGACY_ENTITY_FLAG_PRESENTATION |                \
@@ -39,6 +47,8 @@ the Free Software Foundation; either version 2 of the License, or
                 WORR_EVENT_SPATIAL_AUDIO_NO_PHS |                           \
                 WORR_EVENT_SPATIAL_AUDIO_LOCAL_ONLY |                       \
                 WORR_EVENT_SPATIAL_AUDIO_POSITION_FORCED))
+#define KEYED_POI_REQUIRED_RECORD_FLAGS                                     \
+    ((uint32_t)(WORR_EVENT_FLAG_REPLAY_SAFE | WORR_EVENT_FLAG_PRESENT_ONCE))
 
 static const uint64_t fnv_offset_basis = UINT64_C(14695981039346656037);
 static const uint64_t fnv_prime = UINT64_C(1099511628211);
@@ -172,6 +182,8 @@ static uint16_t payload_size_for_kind(uint16_t kind)
     case WORR_EVENT_PAYLOAD_LOCAL_ACTION_SHADOW_AUTHORITY_V1:
         return (uint16_t)sizeof(
             worr_local_action_shadow_authority_receipt_v1);
+    case WORR_EVENT_PAYLOAD_KEYED_POI_V1:
+        return (uint16_t)sizeof(worr_event_payload_keyed_poi_v1);
     default:
         return UINT16_MAX;
     }
@@ -205,7 +217,8 @@ static bool payload_matches_event_type(uint16_t event_type,
         return payload_kind == WORR_EVENT_PAYLOAD_U32X4 ||
                payload_kind == WORR_EVENT_PAYLOAD_ENTITY_REF ||
                payload_kind == WORR_EVENT_PAYLOAD_LEGACY_ENTITY_V1 ||
-               payload_kind == WORR_EVENT_PAYLOAD_MUZZLE_V1;
+               payload_kind == WORR_EVENT_PAYLOAD_MUZZLE_V1 ||
+               payload_kind == WORR_EVENT_PAYLOAD_KEYED_POI_V1;
     case WORR_EVENT_TYPE_LEGACY_BRIDGE:
         return payload_kind == WORR_EVENT_PAYLOAD_U32X4;
     case WORR_EVENT_TYPE_AUTHORITY_RECEIPT:
@@ -663,6 +676,46 @@ static bool validate_spatial_audio_payload(
                         : zero_vec3(payload->origin);
 }
 
+static bool validate_keyed_poi_payload(
+    const worr_event_record_v1 *record,
+    const worr_event_payload_keyed_poi_v1 *payload)
+{
+    const bool removing =
+        payload->lifetime_ms == WORR_EVENT_KEYED_POI_REMOVE_LIFETIME_MS;
+    const bool reliable =
+        record->delivery_class == WORR_EVENT_DELIVERY_RELIABLE_ORDERED &&
+        record->expiry_tick == 0;
+    const bool transient =
+        record->delivery_class == WORR_EVENT_DELIVERY_TRANSIENT &&
+        record->source_tick != UINT32_MAX &&
+        record->expiry_tick == record->source_tick + 1u;
+    const uint32_t permitted_record_flags =
+        KEYED_POI_REQUIRED_RECORD_FLAGS |
+        WORR_EVENT_FLAG_HAS_AUTHORITY_ID |
+        WORR_EVENT_FLAG_SNAPSHOT_FENCED;
+
+    if (record->event_type != WORR_EVENT_TYPE_STATE_CHANGE ||
+        (!reliable && !transient) ||
+        record->prediction_class !=
+            WORR_EVENT_PREDICTION_AUTHORITATIVE_ONLY ||
+        (record->flags & KEYED_POI_REQUIRED_RECORD_FLAGS) !=
+            KEYED_POI_REQUIRED_RECORD_FLAGS ||
+        (record->flags & ~permitted_record_flags) != 0 || payload->key == 0 ||
+        !finite_vec3(payload->position) ||
+        (payload->flags & ~WORR_EVENT_KEYED_POI_KNOWN_FLAGS) != 0) {
+        return false;
+    }
+
+    if (removing) {
+        return zero_vec3(payload->position) && payload->image_index == 0 &&
+               payload->color_index == 0 && payload->flags == 0;
+    }
+
+    return payload->lifetime_ms == 0 ||
+           record->source_time_us <=
+               UINT64_MAX - (uint64_t)payload->lifetime_ms * UINT64_C(1000);
+}
+
 static bool validate_payload(const worr_event_record_v1 *record,
                              uint32_t max_entities)
 {
@@ -690,7 +743,8 @@ static bool validate_payload(const worr_event_record_v1 *record,
         memcpy(&payload, record->payload, sizeof(payload));
         return isfinite(payload.amount) && payload.amount >= 0.0f &&
                isfinite(payload.impulse) && payload.impulse >= 0.0f &&
-               finite_vec3(payload.direction) && finite_vec3(payload.point);
+               finite_vec3(payload.direction) && finite_vec3(payload.point) &&
+               (payload.damage_flags & ~WORR_EVENT_DAMAGE_KNOWN_FLAGS) == 0;
     }
     case WORR_EVENT_PAYLOAD_AUDIO: {
         worr_event_payload_audio_v1 payload;
@@ -737,6 +791,11 @@ static bool validate_payload(const worr_event_record_v1 *record,
         worr_local_action_shadow_authority_receipt_v1 payload;
         memcpy(&payload, record->payload, sizeof(payload));
         return Worr_LocalActionShadowAuthorityReceiptValidateV1(&payload);
+    }
+    case WORR_EVENT_PAYLOAD_KEYED_POI_V1: {
+        worr_event_payload_keyed_poi_v1 payload;
+        memcpy(&payload, record->payload, sizeof(payload));
+        return validate_keyed_poi_payload(record, &payload);
     }
     default:
         return false;
@@ -790,6 +849,18 @@ static bool record_validate(const worr_event_record_v1 *record,
             record->expiry_tick != 0) {
             return false;
         }
+    }
+
+    if ((record->flags & WORR_EVENT_FLAG_SNAPSHOT_FENCED) != 0 &&
+        (authority_receipt ||
+         record->prediction_class !=
+             WORR_EVENT_PREDICTION_AUTHORITATIVE_ONLY ||
+         record->source_tick == UINT32_MAX ||
+         (record->flags & (WORR_EVENT_FLAG_REPLAY_SAFE |
+                           WORR_EVENT_FLAG_PRESENT_ONCE)) !=
+             (WORR_EVENT_FLAG_REPLAY_SAFE |
+              WORR_EVENT_FLAG_PRESENT_ONCE))) {
+        return false;
     }
 
     if (authoritative) {
@@ -1017,6 +1088,18 @@ static uint64_t hash_payload(uint64_t hash,
         hash = hash_u64(hash, payload.descriptor_hash);
         return hash_u64(hash, payload.record_hash);
     }
+    case WORR_EVENT_PAYLOAD_KEYED_POI_V1: {
+        worr_event_payload_keyed_poi_v1 payload;
+        unsigned int i;
+        memcpy(&payload, record->payload, sizeof(payload));
+        hash = hash_u16(hash, payload.key);
+        hash = hash_u16(hash, payload.lifetime_ms);
+        for (i = 0; i < 3; ++i)
+            hash = hash_float(hash, payload.position[i]);
+        hash = hash_u16(hash, payload.image_index);
+        hash = hash_u8(hash, payload.color_index);
+        return hash_u8(hash, payload.flags);
+    }
     default:
         return 0;
     }
@@ -1033,7 +1116,7 @@ static uint64_t hash_record_fields(const worr_event_record_v1 *record,
     hash = hash_u32(hash,
                     semantic
                         ? record->flags &
-                              ~(uint32_t)WORR_EVENT_FLAG_HAS_AUTHORITY_ID
+                              ~EVENT_SEMANTIC_IGNORED_FLAGS
                         : record->flags);
     if (!semantic) {
         hash = hash_u32(hash, record->event_id.stream_epoch);
@@ -1225,6 +1308,16 @@ static bool payload_semantically_equal(const worr_event_record_v1 *left,
         memcpy(&b, right->payload, sizeof(b));
         return memcmp(&a, &b, sizeof(a)) == 0;
     }
+    case WORR_EVENT_PAYLOAD_KEYED_POI_V1: {
+        worr_event_payload_keyed_poi_v1 a;
+        worr_event_payload_keyed_poi_v1 b;
+        memcpy(&a, left->payload, sizeof(a));
+        memcpy(&b, right->payload, sizeof(b));
+        return a.key == b.key && a.lifetime_ms == b.lifetime_ms &&
+               vec3_semantically_equal(a.position, b.position) &&
+               a.image_index == b.image_index &&
+               a.color_index == b.color_index && a.flags == b.flags;
+    }
     default:
         return false;
     }
@@ -1243,9 +1336,8 @@ bool Worr_EventRecordSemanticallyEqualV1(
     return left->struct_size == right->struct_size &&
            left->schema_version == right->schema_version &&
            left->model_revision == right->model_revision &&
-           (left->flags & ~(uint32_t)WORR_EVENT_FLAG_HAS_AUTHORITY_ID) ==
-               (right->flags &
-                ~(uint32_t)WORR_EVENT_FLAG_HAS_AUTHORITY_ID) &&
+           (left->flags & ~EVENT_SEMANTIC_IGNORED_FLAGS) ==
+               (right->flags & ~EVENT_SEMANTIC_IGNORED_FLAGS) &&
            left->source_tick == right->source_tick &&
            left->source_ordinal == right->source_ordinal &&
            left->source_time_us == right->source_time_us &&
@@ -1321,10 +1413,11 @@ static bool receipt_valid(const worr_event_receipt_ack_v1 *receipt)
     if (receipt->highest_contiguous == UINT32_MAX)
         return receipt->selective_mask == 0;
     remaining = (uint64_t)UINT32_MAX - receipt->highest_contiguous;
-    if (remaining >= 64)
+    if (remaining >= WORR_EVENT_RECEIPT_SELECTIVE_CAPACITY)
         return true;
-    valid_mask = remaining == 64 ? UINT64_MAX
-                                 : ((UINT64_C(1) << remaining) - 1u);
+    valid_mask = remaining == WORR_EVENT_RECEIPT_SELECTIVE_CAPACITY
+                     ? UINT64_MAX
+                     : ((UINT64_C(1) << remaining) - 1u);
     return (receipt->selective_mask & ~valid_mask) == 0;
 }
 
@@ -1362,7 +1455,7 @@ bool Worr_EventReceiptContainsV1(const worr_event_receipt_ack_v1 *receipt,
         return true;
     delta = (uint64_t)event_id.sequence -
             ((uint64_t)receipt->highest_contiguous + 1u);
-    return delta < 64u &&
+    return delta < WORR_EVENT_RECEIPT_SELECTIVE_CAPACITY &&
            (receipt->selective_mask & (UINT64_C(1) << delta)) != 0;
 }
 
@@ -1381,7 +1474,7 @@ worr_event_receipt_result_v1 Worr_EventReceiptMarkV1(
 
     delta = (uint64_t)event_id.sequence -
             ((uint64_t)receipt->highest_contiguous + 1u);
-    if (delta >= 64u)
+    if (delta >= WORR_EVENT_RECEIPT_SELECTIVE_CAPACITY)
         return WORR_EVENT_RECEIPT_OUTSIDE_WINDOW;
 
     receipt->selective_mask |= UINT64_C(1) << delta;

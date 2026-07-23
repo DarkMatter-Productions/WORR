@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "task_id": "FR-02-T05",
+  "scenes": [
+    {
+      "id": "screen_and_damage_blend",
+      "config": "renderer_parity/fr02_screen_blend.cfg",
+      "capture": "fr02_screen_blend.tga",
+      "crop": [0, 0, 960, 720],
+      "metrics": {
+        "pixel_threshold": 2,
+        "max_mean_absolute_rgb": [1.0, 1.0, 0.4],
+        "max_pixels_over_threshold_percent": 0
+      },
+      "probes": [
+        {
+          "name": "screen_blend_inner_receiver",
+          "min_color": [138, 82, 67],
+          "max_color": [141, 85, 69],
+          "min_pixels_per_backend": 245000,
+          "max_backend_count_delta_percent": 0,
+          "min_backend_intersection_over_union": 1
+        }
+      ]
+    },
+    {
+      "id": "screen_and_damage_blend_disabled",
+      "config": "renderer_parity/fr02_screen_blend_disabled.cfg",
+      "capture": "fr02_screen_blend_disabled.tga",
+      "crop": [0, 0, 960, 720],
+      "metrics": {
+        "pixel_threshold": 0,
+        "max_mean_absolute_rgb": [0, 0, 0],
+        "max_pixels_over_threshold_percent": 0
+      }
+    }
+  ]
+}

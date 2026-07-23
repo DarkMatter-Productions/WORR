@@ -2215,3 +2215,42 @@ void CL_GetEntitySoundOrigin(unsigned entnum, vec3_t org)
 
     cgame_entity->GetEntitySoundOrigin(entnum, org);
 }
+
+int CL_CopyEntityLoopSoundStates(entity_state_t *states, int capacity)
+{
+    CL_RequireCGameEntity(__func__);
+    if (!cgame_entity->CopyLoopSoundEntities) {
+        Com_Error(ERR_DROP,
+                  "cgame entity CopyLoopSoundEntities not available");
+    }
+    return cgame_entity->CopyLoopSoundEntities(states, capacity);
+}
+
+void CL_PrepareEntityLoopSoundStates(void)
+{
+    CL_RequireCGameEntity(__func__);
+    if (!cgame_entity->PrepareLoopSoundEntities) {
+        Com_Error(ERR_DROP,
+                  "cgame entity PrepareLoopSoundEntities not available");
+    }
+    cgame_entity->PrepareLoopSoundEntities();
+}
+
+int CL_GetEntitySoundBinding(unsigned entnum, uint64_t *binding_out)
+{
+    CL_RequireCGameEntity(__func__);
+    if (!cgame_entity->GetEntitySoundBinding)
+        Com_Error(ERR_DROP, "cgame entity GetEntitySoundBinding not available");
+    return cgame_entity->GetEntitySoundBinding(entnum, binding_out);
+}
+
+bool CL_GetEntitySoundOriginBound(unsigned entnum, uint64_t binding,
+                                  vec3_t org)
+{
+    CL_RequireCGameEntity(__func__);
+    if (!cgame_entity->GetEntitySoundOriginBound) {
+        Com_Error(ERR_DROP,
+                  "cgame entity GetEntitySoundOriginBound not available");
+    }
+    return cgame_entity->GetEntitySoundOriginBound(entnum, binding, org);
+}

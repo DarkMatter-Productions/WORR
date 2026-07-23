@@ -121,7 +121,10 @@ typedef struct mface_s {
     uint16_t        lm_height;
 
     int             drawflags; // DSURF_PLANEBACK, etc
-    int             statebits;
+    // Renderer state includes GLS_REFRACT_ENABLE and later shader controls
+    // above bit 31, so this must retain the full state mask between BSP
+    // registration and the eventual world draw.
+    uint64_t        statebits;
     int             firstvert;
     int             firstbasis;
     uint16_t        light_s, light_t;

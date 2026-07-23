@@ -47,7 +47,8 @@ bool VK_Debug_CreateSwapchainResources(vk_context_t *ctx);
 void VK_Debug_DestroySwapchainResources(vk_context_t *ctx);
 
 void VK_Debug_BeginFrame(void);
-void VK_Debug_EndFrame(float cpu_frame_ms);
+void VK_Debug_EndFrame(float cpu_frame_ms, float cpu_render_ms,
+                       float cpu_sync_wait_ms);
 void VK_Debug_BeginGpuFrame(VkCommandBuffer cmd, uint32_t frame_index);
 void VK_Debug_MarkGpuPhase(VkCommandBuffer cmd, vk_debug_gpu_phase_t phase);
 void VK_Debug_EndGpuFrame(VkCommandBuffer cmd);
@@ -81,6 +82,9 @@ void VK_Debug_RecordMSAASingleSampleDofScene(void);
 void VK_Debug_RecordMSAASingleSampleScaledScene(void);
 void VK_Debug_RecordEntityFastLitNoFogDraw(void);
 void VK_Debug_RecordEntityTextureReplaceDraw(bool no_fog);
+void VK_Debug_RecordEntityBmodelBinding(void);
+void VK_Debug_RecordEntityModelCull(void);
+void VK_Debug_RecordEntityGpuMd5Draw(uint32_t instances);
 void VK_Debug_SetWorldFastLitCoverage(uint32_t candidates, uint32_t disabled,
                                       uint32_t fullbright,
                                       uint32_t receiver_lighting,

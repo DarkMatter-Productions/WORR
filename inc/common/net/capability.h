@@ -29,14 +29,13 @@ enum {
     WORR_NET_CAP_CONSUMED_COMMAND_CURSOR_V1 = UINT32_C(1) << 1,
     WORR_NET_CAP_CANONICAL_SNAPSHOT_V2 = UINT32_C(1) << 2,
     WORR_NET_CAP_TYPED_EVENT_RANGE_V2 = UINT32_C(1) << 3,
-    /* Reserved until FR-10-T04's separate packet envelope is integrated. */
+    /* Advertised only by an armed, exact native endpoint bundle. */
     WORR_NET_CAP_NATIVE_ENVELOPE_V1 = UINT32_C(1) << 4,
-    /* Reserved until the retained event descriptor/DATA path is promoted. */
+    /* Added only by the armed event or combined endpoint bundle. */
     WORR_NET_CAP_NATIVE_EVENT_STREAM_V1 = UINT32_C(1) << 5,
     /*
-     * Private readiness binding for the epoch-cancellation barrier.  This bit
-     * is carried by CHALLENGE/CLIENT_READY records and is not part of the
-     * public legacy-stage offer.
+     * Public and readiness binding for the native epoch-cancellation barrier.
+     * It is absent from the exact legacy fallback.
      */
     WORR_NET_CAP_NATIVE_EPOCH_CANCEL_V1 = UINT32_C(1) << 6,
 };
@@ -56,12 +55,16 @@ enum {
     ((uint32_t)(WORR_NET_CAP_LEGACY_COMMAND_SIDEBAND_V1 |           \
                 WORR_NET_CAP_CONSUMED_COMMAND_CURSOR_V1))
 
-/* Every private native readiness binding requires these two capabilities. */
+/* Every native public/readiness bundle requires these two capabilities. */
 #define WORR_NET_CAP_NATIVE_READINESS_REQUIRED_MASK                  \
     ((uint32_t)(WORR_NET_CAP_NATIVE_ENVELOPE_V1 |                   \
                 WORR_NET_CAP_NATIVE_EPOCH_CANCEL_V1))
 
-/* Exact private bindings; neither mask is part of the public 0x03 offer. */
+/*
+ * Exact native bundles.  The readiness exchange binds these same masks.  A
+ * bundle is advertised publicly only when the default-off endpoint is armed;
+ * otherwise the public offer remains exactly LEGACY_STAGE_MASK.
+ */
 #define WORR_NET_CAP_NATIVE_COMMAND_PRIVATE_MASK                     \
     ((uint32_t)(WORR_NET_CAP_LEGACY_STAGE_MASK |                    \
                 WORR_NET_CAP_NATIVE_READINESS_REQUIRED_MASK))
@@ -69,9 +72,8 @@ enum {
     ((uint32_t)(WORR_NET_CAP_NATIVE_COMMAND_PRIVATE_MASK |          \
                 WORR_NET_CAP_NATIVE_EVENT_STREAM_V1))
 /*
- * Private full-snapshot transaction binding.  This remains outside the
- * public legacy-stage offer until native snapshot DATA has a live endpoint
- * on both peers.
+ * Full-snapshot transaction binding, advertised only by an armed snapshot or
+ * combined endpoint.
  */
 #define WORR_NET_CAP_NATIVE_SNAPSHOT_PRIVATE_MASK                    \
     ((uint32_t)(WORR_NET_CAP_NATIVE_COMMAND_PRIVATE_MASK |          \
@@ -79,6 +81,17 @@ enum {
 #define WORR_NET_CAP_NATIVE_EVENT_SNAPSHOT_PRIVATE_MASK              \
     ((uint32_t)(WORR_NET_CAP_NATIVE_EVENT_PRIVATE_MASK |             \
                 WORR_NET_CAP_CANONICAL_SNAPSHOT_V2))
+
+/* Public names preserve the exact readiness bundle values without changing
+ * the existing private-readiness API. */
+#define WORR_NET_CAP_NATIVE_COMMAND_PUBLIC_MASK                      \
+    WORR_NET_CAP_NATIVE_COMMAND_PRIVATE_MASK
+#define WORR_NET_CAP_NATIVE_EVENT_PUBLIC_MASK                        \
+    WORR_NET_CAP_NATIVE_EVENT_PRIVATE_MASK
+#define WORR_NET_CAP_NATIVE_SNAPSHOT_PUBLIC_MASK                     \
+    WORR_NET_CAP_NATIVE_SNAPSHOT_PRIVATE_MASK
+#define WORR_NET_CAP_NATIVE_EVENT_SNAPSHOT_PUBLIC_MASK               \
+    WORR_NET_CAP_NATIVE_EVENT_SNAPSHOT_PRIVATE_MASK
 
 typedef enum worr_net_capability_phase_v1_e {
     WORR_NET_CAPABILITY_RESET = 0,
@@ -125,6 +138,20 @@ bool Worr_NetCapabilitiesFormatV1(uint32_t capabilities,
                                   size_t text_capacity);
 worr_net_capability_result_v1 Worr_NetCapabilitiesParseV1(
     const char *text, uint32_t *capabilities_out);
+
+/* Default-off public policy.  Optional lanes have no effect unless the base
+ * native endpoint is enabled. */
+uint32_t Worr_NetCapabilityPublicOfferV1(bool native_enabled,
+                                         bool event_enabled,
+                                         bool snapshot_enabled);
+bool Worr_NetCapabilityIsPublicNativeMaskV1(uint32_t capabilities);
+
+/* A server exposes a native bundle only for an exact peer/configuration
+ * match and a live endpoint.  Every other valid combination falls back to
+ * the byte-identical legacy-stage mask instead of negotiating a partial
+ * native intersection. */
+uint32_t Worr_NetCapabilityPublicSupportV1(
+    uint32_t offered, uint32_t configured, bool native_endpoint_ready);
 
 bool Worr_NetCapabilityStateInitV1(
     worr_net_capability_state_v1 *state,

@@ -461,6 +461,19 @@ bool Worr_RewindSceneValidateV1(const worr_rewind_scene_v1 *scene);
  */
 bool Worr_RewindSceneAddResultV1(worr_rewind_scene_v1 *scene,
                                  const worr_rewind_pose_result_v1 *result);
+
+/*
+ * Server-owned construction path.  The caller must retain exclusive ownership
+ * of the scene and storage returned by Worr_RewindSceneInitV1 between calls.
+ * Header, decision, result, alias, capacity, and ordering checks remain on
+ * every add, while previously accepted slots are not rescanned.  Seal is the
+ * mandatory publication boundary: it deeply validates every candidate, mover
+ * relationship, and hash before setting WORR_REWIND_SCENE_SEALED.  Unsealed
+ * scenes remain invalid for Worr_RewindTraceViewV1.
+ */
+bool Worr_RewindSceneAddOwnedResultV1(
+    worr_rewind_scene_v1 *scene,
+    const worr_rewind_pose_result_v1 *result);
 bool Worr_RewindSceneSealV1(worr_rewind_scene_v1 *scene);
 
 /*

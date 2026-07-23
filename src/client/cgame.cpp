@@ -610,6 +610,14 @@ extern "C" mtexinfo_t nulltexinfo;
 #define CGAME_ENTITY_POP_R_SUPPORTSPERPIXELLIGHTING 1
 #endif
 
+static qhandle_t CG_S_GetPrecachedSound(unsigned index)
+{
+    if (index >= static_cast<unsigned>(cl.csr.max_sounds) ||
+        index >= MAX_SOUNDS)
+        return 0;
+    return cl.sound_precache[index];
+}
+
 static cgame_entity_import_t cg_entity_import = {
     .api_version = CGAME_ENTITY_API_VERSION,
 
@@ -644,6 +652,7 @@ static cgame_entity_import_t cg_entity_import = {
     .Cvar_ClampValue = Cvar_ClampValue,
     .fs_game = fs_game,
     .sv_paused = sv_paused,
+    .host_realtime_us = &com_unscaledTimeUs,
 
     .Cbuf_ExecuteDeferred = Cbuf_ExecuteDeferred,
     .AddCommandString = CG_AddCommandString,
@@ -698,6 +707,7 @@ static cgame_entity_import_t cg_entity_import = {
     .V_AddLightStyle = V_AddLightStyle,
 
     .S_RegisterSound = S_RegisterSound,
+    .S_GetPrecachedSound = CG_S_GetPrecachedSound,
     .S_StartSound = S_StartSound,
 
     .LOC_AddLocationsToScene = LOC_AddLocationsToScene,
@@ -1291,6 +1301,34 @@ static const char *CG_CL_GetImageConfigString(int image_index)
     return cl.configstrings[cl.csr.images + image_index];
 }
 
+static bool CG_CL_GetPrecachedImageInfo(int image_index,
+                                       const char **name_out,
+                                       int *width_out, int *height_out)
+{
+    if (!name_out || !width_out || !height_out)
+        return false;
+
+    *name_out = "";
+    *width_out = 0;
+    *height_out = 0;
+    if (image_index <= 0 || image_index >= cl.csr.max_images)
+        return false;
+
+    const char *name = cl.configstrings[cl.csr.images + image_index];
+    const qhandle_t image = cl.image_precache[image_index];
+    if (!name || !*name || !image)
+        return false;
+    (void)R_GetPicSize(width_out, height_out, image);
+    if (*width_out <= 0 || *height_out <= 0) {
+        *width_out = 0;
+        *height_out = 0;
+        return false;
+    }
+
+    *name_out = name;
+    return true;
+}
+
 #if !USE_EXTERNAL_RENDERERS
 extern uint32_t d_8to24table[256];
 #endif
@@ -1325,6 +1363,10 @@ const cgame_entity_export_t *cgame_entity = NULL;
 static char *current_game = NULL;
 static bool current_rerelease_server;
 static const cgame_ui_export_t *cgame_ui;
+static const worr_cgame_native_event_probe_export_v1
+    *cgame_native_event_probe;
+static const worr_cgame_native_event_probe_export_v2
+    *cgame_native_event_probe_v2;
 static void *cgame_library;
 
 typedef cgame_export_t *(*cgame_entry_t)(cgame_import_t *);
@@ -1409,6 +1451,7 @@ static void CG_FillImports(cgame_import_t *imports)
         .Key_IsDown = CG_Key_IsDown,
         .CL_GetImageConfigString = CG_CL_GetImageConfigString,
         .CL_GetPaletteColor = CG_CL_GetPaletteColor,
+        .CL_GetPrecachedImageInfo = CG_CL_GetPrecachedImageInfo,
     };
 }
 
@@ -1556,6 +1599,41 @@ void CG_Load(const char* new_game, bool is_rerelease_server)
             Com_WPrintf("cgame event runtime consumer rejected\n");
         }
 
+        cgame_native_event_probe = NULL;
+        cgame_native_event_probe_v2 = NULL;
+        if (cgame->GetExtension) {
+            cgame_native_event_probe = static_cast<
+                const worr_cgame_native_event_probe_export_v1 *>(
+                cgame->GetExtension(
+                    WORR_CGAME_NATIVE_EVENT_PROBE_EXPORT_V1));
+            if (cgame_native_event_probe &&
+                (cgame_native_event_probe->struct_size !=
+                     sizeof(*cgame_native_event_probe) ||
+                 cgame_native_event_probe->api_version !=
+                     WORR_CGAME_NATIVE_EVENT_PROBE_API_VERSION ||
+                 !cgame_native_event_probe->CompleteLegacyDispatch ||
+                 !cgame_native_event_probe->GetStatus)) {
+                Com_WPrintf("cgame native event probe extension mismatch\n");
+                cgame_native_event_probe = NULL;
+            }
+            cgame_native_event_probe_v2 = static_cast<
+                const worr_cgame_native_event_probe_export_v2 *>(
+                cgame->GetExtension(
+                    WORR_CGAME_NATIVE_EVENT_PROBE_EXPORT_V2));
+            if (cgame_native_event_probe_v2 &&
+                (cgame_native_event_probe_v2->struct_size !=
+                     sizeof(*cgame_native_event_probe_v2) ||
+                 cgame_native_event_probe_v2->api_version !=
+                     WORR_CGAME_NATIVE_EVENT_PROBE_API_VERSION_V2 ||
+                 !cgame_native_event_probe_v2->CompleteLegacyDispatch ||
+                 !cgame_native_event_probe_v2->GetStatus ||
+                 !cgame_native_event_probe_v2->Checkpoint)) {
+                Com_WPrintf(
+                    "cgame native event probe V2 extension mismatch\n");
+                cgame_native_event_probe_v2 = NULL;
+            }
+        }
+
         const worr_cgame_snapshot_timeline_export_v2 *snapshot_timeline =
             NULL;
         if (cgame->GetExtension) {
@@ -1591,6 +1669,8 @@ void CG_Load(const char* new_game, bool is_rerelease_server)
 
 void CG_Unload(void)
 {
+    cgame_native_event_probe = NULL;
+    cgame_native_event_probe_v2 = NULL;
     (void)CL_SnapshotShadowSetConsumer(NULL);
     (void)CL_CGameEventRuntimeSetConsumer(NULL);
     CL_EventRangeSetConsumerV2(NULL);
@@ -1602,6 +1682,34 @@ void CG_Unload(void)
 
     Sys_FreeLibrary(cgame_library);
     cgame_library = NULL;
+}
+
+bool CL_CGameNativeEventProbeCompleteLegacyDispatch(
+    uint32_t carrier_kind,
+    worr_cgame_native_event_probe_legacy_disposition_v1 disposition)
+{
+    return cgame_native_event_probe &&
+           cgame_native_event_probe->CompleteLegacyDispatch(
+               carrier_kind, disposition);
+}
+
+bool CL_CGameNativeEventProbeGetStatus(
+    worr_cgame_native_event_probe_status_v1 *status_out)
+{
+    return status_out && cgame_native_event_probe &&
+           cgame_native_event_probe->GetStatus(status_out);
+}
+
+bool CL_CGameNativeEventProbeCheckpoint(
+    uint32_t expected_map_generation,
+    uint32_t expected_authority_epoch,
+    uint64_t checkpoint_id,
+    worr_cgame_native_event_probe_checkpoint_receipt_v1 *receipt_out)
+{
+    return receipt_out && cgame_native_event_probe_v2 &&
+           cgame_native_event_probe_v2->Checkpoint(
+               expected_map_generation, expected_authority_epoch,
+               checkpoint_id, receipt_out);
 }
 
 float CL_Wheel_TimeScale(void)

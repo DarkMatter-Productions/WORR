@@ -77,7 +77,7 @@ class VulkanFramesInFlightSourceTests(unittest.TestCase):
         self.assertIn("descriptor_lut_active", VK_POST)
         self.assertIn("descriptor_bloom_active", VK_POST)
         self.assertIn("VK_WaitForSubmittedFrames(ctx,", VK_MAIN)
-        self.assertIn("vkWaitForFences(bloom resource rebuild)", VK_MAIN)
+        self.assertIn("vkWaitForFences(postprocess resource rebuild)", VK_MAIN)
         self.assertNotIn("VK_FrameUsesSharedPresentationTargets", VK_MAIN)
 
     def test_no_opengl_renderer_route(self) -> None:

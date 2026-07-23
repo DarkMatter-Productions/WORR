@@ -3619,8 +3619,7 @@ void SCR_RemovePOI(int id)
     for (int i = 0; i < MAX_TRACKED_POIS; i++, poi++) {
 
         if (poi->id == id) {
-            poi->id = 0;
-            poi->time = 0;
+            *poi = {};
             break;
         }
     }
@@ -3635,6 +3634,10 @@ void SCR_AddPOI(int id, int time, const vec3_t p, int image, int color, int flag
 
     if (!scr_pois->integer)
         return;
+    if (image < 0 || image >= cl.csr.max_images) {
+        Com_WPrintf("POI image index %d is out of range\n", image);
+        return;
+    }
 
     scr_poi_t *poi = NULL;
 
@@ -3646,11 +3649,14 @@ void SCR_AddPOI(int id, int time, const vec3_t p, int image, int color, int flag
 
         for (int i = 0; i < MAX_TRACKED_POIS; i++, poi_rover++) {
             // not expired
-            if (poi_rover->time > cl.time) {
+            if (poi_rover->infinite || poi_rover->time > cl.time) {
                 // keyed
                 if (poi_rover->id) {
                     continue;
-                } else if (!oldest_poi || poi_rover->time < oldest_poi->time) {
+                } else if (!oldest_poi ||
+                           (oldest_poi->infinite && !poi_rover->infinite) ||
+                           (!oldest_poi->infinite && !poi_rover->infinite &&
+                            poi_rover->time < oldest_poi->time)) {
                     oldest_poi = poi_rover;
                 }
             } else {
@@ -3680,7 +3686,7 @@ void SCR_AddPOI(int id, int time, const vec3_t p, int image, int color, int flag
                 break;
             }
 
-            if (poi_rover->time <= cl.time) {
+            if (!poi_rover->infinite && poi_rover->time <= cl.time) {
                 // expired
                 if (!free_poi) {
                     free_poi = poi_rover;
@@ -3688,7 +3694,10 @@ void SCR_AddPOI(int id, int time, const vec3_t p, int image, int color, int flag
             } else {
                 // not expired; we should only ever replace non-key'd POIs
                 if (!poi_rover->id) {
-                    if (!oldest_poi || poi_rover->time < oldest_poi->time) {
+                    if (!oldest_poi ||
+                        (oldest_poi->infinite && !poi_rover->infinite) ||
+                        (!oldest_poi->infinite && !poi_rover->infinite &&
+                         poi_rover->time < oldest_poi->time)) {
                         oldest_poi = poi_rover;
                     }
                 }
@@ -3702,10 +3711,12 @@ void SCR_AddPOI(int id, int time, const vec3_t p, int image, int color, int flag
 
     if (!poi) {
         Com_WPrintf("couldn't add a POI\n");
+        return;
     }
 
     poi->id = id;
-    poi->time = cl.time + time;
+    poi->infinite = time == 0;
+    poi->time = poi->infinite ? 0 : cl.time + time;
     VectorCopy(p, poi->position);
     poi->image = cl.image_precache[image];
     R_GetPicSize(&poi->width, &poi->height, poi->image);
@@ -3750,7 +3761,7 @@ static void SCR_DrawPOIs(color_t base_color)
 
     for (int i = 0; i < MAX_TRACKED_POIS; i++, poi++) {
 
-        if (poi->time <= cl.time) {
+        if (!poi->infinite && poi->time <= cl.time) {
             continue;
         }
 

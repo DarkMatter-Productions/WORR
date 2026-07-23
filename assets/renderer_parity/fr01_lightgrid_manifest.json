@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "task_id": "FR-01-T14",
+  "scenes": [
+    {
+      "id": "stock_md2_bspx_lightgrid_enabled",
+      "config": "renderer_parity/fr01_lightgrid.cfg",
+      "capture": "fr01_lightgrid_enabled.tga",
+      "crop": [280, 460, 400, 210],
+      "metrics": {
+        "pixel_threshold": 16,
+        "max_mean_absolute_rgb": [2, 2, 2],
+        "max_pixels_over_threshold_percent": 1.0
+      },
+      "probes": [
+        {
+          "name": "lightgrid_green_model",
+          "min_color": [0, 25, 0],
+          "max_color": [25, 255, 25],
+          "min_pixels_per_backend": 38000,
+          "max_backend_count_delta_percent": 0,
+          "min_backend_intersection_over_union": 1.0
+        }
+      ]
+    },
+    {
+      "id": "stock_md2_bspx_lightgrid_disabled",
+      "config": "renderer_parity/fr01_lightgrid_disabled.cfg",
+      "capture": "fr01_lightgrid_disabled.tga",
+      "crop": [280, 460, 400, 210],
+      "metrics": {
+        "pixel_threshold": 16,
+        "max_mean_absolute_rgb": [2, 2, 2],
+        "max_pixels_over_threshold_percent": 1.0
+      }
+    },
+    {
+      "id": "stock_md2_no_static_receiver",
+      "config": "renderer_parity/fr01_lightgrid_no_receiver.cfg",
+      "capture": "fr01_lightgrid_no_receiver.tga",
+      "crop": [280, 460, 400, 210],
+      "metrics": {
+        "pixel_threshold": 16,
+        "max_mean_absolute_rgb": [2, 2, 2],
+        "max_pixels_over_threshold_percent": 1.0
+      }
+    },
+    {
+      "id": "stock_md2_inline_bsp_static_receiver",
+      "config": "renderer_parity/fr01_lightgrid_inline_receiver.cfg",
+      "capture": "fr01_lightgrid_inline_receiver.tga",
+      "crop": [280, 460, 400, 210],
+      "metrics": {
+        "pixel_threshold": 16,
+        "max_mean_absolute_rgb": [2, 2, 2],
+        "max_pixels_over_threshold_percent": 1.0
+      },
+      "probes": [
+        {
+          "name": "inline_bsp_blue_model",
+          "min_color": [0, 0, 25],
+          "max_color": [25, 25, 255],
+          "min_pixels_per_backend": 30000,
+          "max_backend_count_delta_percent": 0,
+          "min_backend_intersection_over_union": 1.0
+        }
+      ]
+    }
+  ],
+  "control_pairs": [
+    {
+      "id": "lightgrid_toggle_changes_model_lighting",
+      "enabled_scene": "stock_md2_bspx_lightgrid_enabled",
+      "disabled_scene": "stock_md2_bspx_lightgrid_disabled",
+      "crop": [280, 460, 400, 210],
+      "pixel_threshold": 16,
+      "min_pixels_over_threshold_per_backend": 40000
+    },
+    {
+      "id": "static_receiver_changes_no_receiver_model_lighting",
+      "enabled_scene": "stock_md2_bspx_lightgrid_disabled",
+      "disabled_scene": "stock_md2_no_static_receiver",
+      "crop": [280, 460, 400, 210],
+      "pixel_threshold": 16,
+      "min_pixels_over_threshold_per_backend": 40000
+    },
+    {
+      "id": "inline_bsp_receiver_changes_no_receiver_model_lighting",
+      "enabled_scene": "stock_md2_inline_bsp_static_receiver",
+      "disabled_scene": "stock_md2_no_static_receiver",
+      "crop": [280, 460, 400, 210],
+      "pixel_threshold": 16,
+      "min_pixels_over_threshold_per_backend": 40000
+    }
+  ]
+}

@@ -9,6 +9,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #pragma once
 
+#include <limits.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -22,10 +23,12 @@ extern "C" {
 #endif
 
 #define WORR_EVENT_ABI_VERSION 1u
-#define WORR_EVENT_MODEL_REVISION 1u
+#define WORR_EVENT_MODEL_REVISION 2u
 #define WORR_EVENT_PAYLOAD_CAPACITY 80u
 #define WORR_EVENT_NO_ENTITY UINT32_MAX
 #define WORR_EVENT_SPATIAL_AUDIO_MAX_PITCH 4.0f
+#define WORR_EVENT_RECEIPT_SELECTIVE_CAPACITY 64u
+#define WORR_EVENT_KEYED_POI_REMOVE_LIFETIME_MS UINT16_MAX
 
 /* Epoch and sequence zero are reserved.  Streams start at { 1, 1 } and
  * advance the epoch instead of allowing a sequence to wrap inside an epoch. */
@@ -89,6 +92,17 @@ enum {
     WORR_EVENT_FLAG_CRITICAL = 1u << 1,
     WORR_EVENT_FLAG_REPLAY_SAFE = 1u << 2,
     WORR_EVENT_FLAG_PRESENT_ONCE = 1u << 3,
+    /* The producer bound the event to one exact immutable final-emission
+     * snapshot.  source_tick is the per-client wire snapshot number, so
+     * { active_snapshot_epoch, source_tick + 1 } is that canonical snapshot
+     * ID; it is deliberately not the snapshot's own simulation tick.
+     * source_time_us remains the producer's simulation clock.  It matches a
+     * native authoritative snapshot clock, but an event-only peer can present
+     * from a legacy projection whose clock has a per-client origin.  The exact
+     * ID bridges those clock domains; presentation uses the retained
+     * snapshot's tick/time.  This flag is lineage metadata and is ignored by
+     * event semantic comparison. */
+    WORR_EVENT_FLAG_SNAPSHOT_FENCED = 1u << 4,
 };
 
 typedef enum worr_event_payload_kind_v1_e {
@@ -105,7 +119,14 @@ typedef enum worr_event_payload_kind_v1_e {
     WORR_EVENT_PAYLOAD_SPATIAL_AUDIO_V1 = 10,
     WORR_EVENT_PAYLOAD_LOCAL_INTERACTION_AUTHORITY_V1 = 11,
     WORR_EVENT_PAYLOAD_LOCAL_ACTION_SHADOW_AUTHORITY_V1 = 12,
+    WORR_EVENT_PAYLOAD_KEYED_POI_V1 = 13,
 } worr_event_payload_kind_v1;
+
+enum {
+    WORR_EVENT_KEYED_POI_FLAG_HIDE_ON_AIM = 1u << 0,
+    WORR_EVENT_KEYED_POI_KNOWN_FLAGS =
+        WORR_EVENT_KEYED_POI_FLAG_HIDE_ON_AIM,
+};
 
 /* Stable legacy entity-event wire values. */
 typedef enum worr_event_legacy_entity_id_v1_e {
@@ -273,6 +294,15 @@ typedef struct worr_event_payload_entity_ref_v1_s {
     worr_event_entity_ref_v1 entity;
 } worr_event_payload_entity_ref_v1;
 
+enum {
+    WORR_EVENT_DAMAGE_FLAG_HEALTH = 1u << 0,
+    WORR_EVENT_DAMAGE_FLAG_ARMOR = 1u << 1,
+    WORR_EVENT_DAMAGE_FLAG_SHIELD = 1u << 2,
+};
+#define WORR_EVENT_DAMAGE_KNOWN_FLAGS                                      \
+    (WORR_EVENT_DAMAGE_FLAG_HEALTH | WORR_EVENT_DAMAGE_FLAG_ARMOR |        \
+     WORR_EVENT_DAMAGE_FLAG_SHIELD)
+
 typedef struct worr_event_payload_damage_v1_s {
     float amount;
     float impulse;
@@ -289,6 +319,17 @@ typedef struct worr_event_payload_audio_v1_s {
     float attenuation;
     float pitch;
 } worr_event_payload_audio_v1;
+
+/* Stable generic-effect IDs and variants. Values are transport schema, not
+ * renderer asset handles. */
+typedef enum worr_event_effect_id_v1_e {
+    WORR_EVENT_EFFECT_HELP_PATH_MARKER = 1,
+} worr_event_effect_id_v1;
+
+typedef enum worr_event_help_path_variant_v1_e {
+    WORR_EVENT_HELP_PATH_VARIANT_CONTINUE = 0,
+    WORR_EVENT_HELP_PATH_VARIANT_START = 1,
+} worr_event_help_path_variant_v1;
 
 typedef struct worr_event_payload_effect_v1_s {
     uint32_t effect_id;
@@ -343,11 +384,27 @@ typedef struct worr_event_payload_spatial_audio_v1_s {
     float pitch;
 } worr_event_payload_spatial_audio_v1;
 
+/* Canonical keyed point-of-interest state. key zero remains the legacy
+ * unkeyed/transient carrier and is deliberately outside this retained-state
+ * payload. A lifetime of zero is infinite; UINT16_MAX is a removal tombstone
+ * whose remaining fields must all be zero. */
+typedef struct worr_event_payload_keyed_poi_v1_s {
+    uint16_t key;
+    uint16_t lifetime_ms;
+    float position[3];
+    uint16_t image_index;
+    uint8_t color_index;
+    uint8_t flags;
+} worr_event_payload_keyed_poi_v1;
+
 /*
  * Pointer-free, transport-neutral canonical event record.  All unused payload
- * bytes and reserved fields are zero.  source_time_us is simulation time, not
- * a wall clock.  expiry_tick is an absolute, wrap-safe simulation tick for
- * cosmetic/transient events and zero for retained delivery classes.
+ * bytes and reserved fields are zero.  source_time_us is the producer's
+ * simulation time, not a wall clock.  Except for SNAPSHOT_FENCED records,
+ * source_tick is in that same simulation domain; the flag documents its
+ * per-client wire-snapshot exception above. expiry_tick is an absolute,
+ * wrap-safe source-tick-domain deadline for cosmetic/transient events and zero
+ * for retained delivery classes.
  */
 typedef struct worr_event_record_v1_s {
     uint32_t struct_size;
@@ -480,6 +537,16 @@ WORR_EVENT_STATIC_ASSERT(sizeof(worr_event_payload_muzzle_v1) == 8,
                          "muzzle payload v1 layout changed");
 WORR_EVENT_STATIC_ASSERT(sizeof(worr_event_payload_spatial_audio_v1) == 40,
                          "spatial audio payload v1 layout changed");
+WORR_EVENT_STATIC_ASSERT(sizeof(worr_event_payload_keyed_poi_v1) == 20,
+                         "keyed POI payload v1 layout changed");
+WORR_EVENT_STATIC_ASSERT(
+    offsetof(worr_event_payload_keyed_poi_v1, key) == 0 &&
+        offsetof(worr_event_payload_keyed_poi_v1, lifetime_ms) == 2 &&
+        offsetof(worr_event_payload_keyed_poi_v1, position) == 4 &&
+        offsetof(worr_event_payload_keyed_poi_v1, image_index) == 16 &&
+        offsetof(worr_event_payload_keyed_poi_v1, color_index) == 18 &&
+        offsetof(worr_event_payload_keyed_poi_v1, flags) == 19,
+    "keyed POI payload v1 field offsets changed");
 WORR_EVENT_STATIC_ASSERT(
     sizeof(worr_local_interaction_authority_receipt_v1) <=
         WORR_EVENT_PAYLOAD_CAPACITY,
@@ -495,7 +562,8 @@ WORR_EVENT_STATIC_ASSERT(WORR_EVENT_PAYLOAD_LEGACY_ENTITY_V1 == 7 &&
                              WORR_EVENT_PAYLOAD_LOCAL_INTERACTION_AUTHORITY_V1 ==
                                  11 &&
                              WORR_EVENT_PAYLOAD_LOCAL_ACTION_SHADOW_AUTHORITY_V1 ==
-                                 12,
+                                 12 &&
+                             WORR_EVENT_PAYLOAD_KEYED_POI_V1 == 13,
                          "event payload catalog IDs changed");
 WORR_EVENT_STATIC_ASSERT(WORR_EVENT_TYPE_AUTHORITY_RECEIPT == 9,
                          "event type catalog IDs changed");
@@ -523,5 +591,9 @@ WORR_EVENT_STATIC_ASSERT(offsetof(worr_event_record_v1, payload) == 88,
                          "event record v1 payload offset changed");
 WORR_EVENT_STATIC_ASSERT(sizeof(worr_event_receipt_ack_v1) == 24,
                          "event receipt acknowledgement v1 layout changed");
+WORR_EVENT_STATIC_ASSERT(
+    sizeof(((worr_event_receipt_ack_v1 *)0)->selective_mask) * CHAR_BIT ==
+        WORR_EVENT_RECEIPT_SELECTIVE_CAPACITY,
+    "event receipt selective acknowledgement width changed");
 
 #undef WORR_EVENT_STATIC_ASSERT

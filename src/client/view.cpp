@@ -528,12 +528,19 @@ static void V_TestParticles(void)
         u = 4 * (((i >> 3) & 7) - 3.5f);
         p = &r_particles[i];
 
+        // V_ClearScene only resets the count. Fully initialize this debug
+        // field so renderer capture fixtures exercise visible particles
+        // rather than retaining stale scale/brightness values.
+        memset(p, 0, sizeof(*p));
+
         for (j = 0; j < 3; j++)
             p->origin[j] = cl.refdef.vieworg[j] + cl.v_forward[j] * d +
                            cl.v_right[j] * r + cl.v_up[j] * u;
 
         p->color = 8;
+        p->scale = 1;
         p->alpha = 1;
+        p->brightness = 1;
     }
 }
 

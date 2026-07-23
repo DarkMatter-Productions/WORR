@@ -299,40 +299,64 @@ static bool SV_AppendNativeReadinessRecord(
         &msg_write, &sv_client->netchan.message, opcode, record);
 }
 
+static bool SV_AppendNativeServerActive(
+    sv_native_shadow_peer_v1 *peer,
+    const worr_native_readiness_record_v1 *record)
+{
+    int opcode;
+
+    if (!sv_client || !peer ||
+        sv_client->netchan.type != NETCHAN_NEW)
+        return false;
+    opcode = sv_client->protocol == PROTOCOL_VERSION_RERELEASE
+                 ? svc_rr_setting
+                 : svc_q2pro_setting;
+    return SV_NativeShadowAppendServerActiveV1(
+        peer, &msg_write, &sv_client->netchan.message, opcode,
+        record);
+}
+
+static void SV_ClearNativeShadowChallengeRequest(client_t *client)
+{
+    if (!client)
+        return;
+    client->worr_native_shadow_challenge_pending = false;
+    client->worr_native_shadow_challenge_requested_at = 0;
+    client->worr_native_shadow_challenge_barrier_bytes = 0;
+}
+
 bool SV_MaintainNativeShadowChallengePending(client_t *client)
 {
     sv_native_shadow_peer_v1 *pilot;
+    uint32_t public_mask;
 
     if (!client || !client->worr_native_shadow_challenge_pending)
         return false;
     pilot = client->worr_native_shadow;
     if (!pilot) {
-        client->worr_native_shadow_challenge_pending = false;
-        client->worr_native_shadow_challenge_requested_at = 0;
+        SV_ClearNativeShadowChallengeRequest(client);
         return false;
     }
+    public_mask =
+        SV_NativeShadowModePublicCapabilitiesV1(pilot->mode);
     if (!client->worr_capability_confirm_sent ||
         client->worr_capability_epoch == 0 ||
-        client->worr_capabilities_supported !=
-            WORR_NET_CAP_LEGACY_STAGE_MASK ||
-        client->worr_capabilities_negotiated !=
-            WORR_NET_CAP_LEGACY_STAGE_MASK) {
-        client->worr_native_shadow_challenge_pending = false;
-        client->worr_native_shadow_challenge_requested_at = 0;
+        public_mask == 0 ||
+        client->worr_capabilities_supported != public_mask ||
+        client->worr_capabilities_negotiated != public_mask) {
+        SV_ClearNativeShadowChallengeRequest(client);
         SV_NativeShadowPeerDisableV1(
             pilot, SV_NATIVE_SHADOW_FAILURE_OFFICIAL_BINDING);
         return false;
     }
     if (!SV_NativeShadowPeerEnabledV1(pilot)) {
-        client->worr_native_shadow_challenge_pending = false;
-        client->worr_native_shadow_challenge_requested_at = 0;
+        SV_ClearNativeShadowChallengeRequest(client);
         return false;
     }
     if (SV_NativeShadowChallengeQueueExpiredV1(
             client->worr_native_shadow_challenge_requested_at,
             svs.realtime)) {
-        client->worr_native_shadow_challenge_pending = false;
-        client->worr_native_shadow_challenge_requested_at = 0;
+        SV_ClearNativeShadowChallengeRequest(client);
         SV_NativeShadowPeerDisableV1(
             pilot, SV_NATIVE_SHADOW_FAILURE_QUEUE);
         return false;
@@ -340,33 +364,72 @@ bool SV_MaintainNativeShadowChallengePending(client_t *client)
     return true;
 }
 
-bool SV_TryQueueNativeShadowChallenge(client_t *client)
+sv_native_shadow_challenge_service_result_t
+SV_ServiceNativeShadowChallenge(
+    client_t *client, int numpackets, int *cursize_out)
 {
     byte staging_data[SV_NATIVE_SHADOW_SVC_WIRE_BYTES];
+    byte capacity_data[SV_NATIVE_SHADOW_SVC_WIRE_BYTES];
     sizebuf_t staging;
+    sizebuf_t capacity;
     sv_native_shadow_peer_v1 *pilot;
     worr_native_readiness_record_v1 challenge;
+    uint32_t barrier_bytes;
+    uint32_t queued_bytes;
     int opcode;
+    int transmit_bytes;
 
+    if (cursize_out)
+        *cursize_out = 0;
     if (!SV_MaintainNativeShadowChallengePending(client))
-        return false;
+        return SV_NATIVE_SHADOW_CHALLENGE_SERVICE_NONE;
     pilot = client->worr_native_shadow;
-    /* A busy channel is an expected deferral, not a readiness failure.  The
-     * 10-second protocol deadline does not exist until this becomes true. */
-    if (!SV_NativeShadowPostBootstrapQueueIdleV1(pilot))
-        return false;
+    /* A busy handed-off generation is an expected deferral, not a readiness
+     * failure.  Later queued bytes are behind the fixed Begin barrier and do
+     * not move it; the 10-second protocol deadline still does not exist. */
+    if (!SV_NativeShadowReliableGenerationIdleV1(pilot))
+        return SV_NATIVE_SHADOW_CHALLENGE_SERVICE_NONE;
+
+    barrier_bytes =
+        client->worr_native_shadow_challenge_barrier_bytes;
+    queued_bytes = client->netchan.message.cursize;
+    if (barrier_bytes > queued_bytes) {
+        SV_ClearNativeShadowChallengeRequest(client);
+        SV_NativeShadowPeerDisableV1(
+            pilot, SV_NATIVE_SHADOW_FAILURE_QUEUE);
+        return SV_NATIVE_SHADOW_CHALLENGE_SERVICE_NONE;
+    }
+
+    /* Seal and hand off exactly the reliable prefix that existed after every
+     * Begin/game callback completed.  Bytes appended later remain queued
+     * behind the barrier and cannot perpetually postpone CHALLENGE. */
+    if (barrier_bytes != 0) {
+        if (!Netchan_TransmitQueuedReliablePrefix(
+                &client->netchan, barrier_bytes, numpackets,
+                &transmit_bytes)) {
+            SV_ClearNativeShadowChallengeRequest(client);
+            SV_NativeShadowPeerDisableV1(
+                pilot, SV_NATIVE_SHADOW_FAILURE_QUEUE);
+            return SV_NATIVE_SHADOW_CHALLENGE_SERVICE_NONE;
+        }
+        client->worr_native_shadow_challenge_barrier_bytes = 0;
+        if (cursize_out)
+            *cursize_out = transmit_bytes;
+        return SV_NATIVE_SHADOW_CHALLENGE_SERVICE_BOOTSTRAP_DRAIN;
+    }
 
     SZ_Init(&staging, staging_data, sizeof(staging_data),
             "native_readiness_challenge");
+    SZ_Init(&capacity, capacity_data, sizeof(capacity_data),
+            "native_readiness_challenge_capacity");
     /* Preflight before advancing readiness: after this check, the validated
-     * fixed record has an exact count-derived atomic append reservation. */
+     * fixed record has an exact isolated-generation reservation. */
     if (!SV_NativeShadowCanAppendSvcReadinessV1(
-            &staging, &client->netchan.message)) {
-        client->worr_native_shadow_challenge_pending = false;
-        client->worr_native_shadow_challenge_requested_at = 0;
+            &staging, &capacity)) {
+        SV_ClearNativeShadowChallengeRequest(client);
         SV_NativeShadowPeerDisableV1(
             pilot, SV_NATIVE_SHADOW_FAILURE_QUEUE);
-        return false;
+        return SV_NATIVE_SHADOW_CHALLENGE_SERVICE_NONE;
     }
     if (!SV_NativeShadowBeginEpochBoundV1(
             pilot, client->worr_capability_epoch,
@@ -376,26 +439,36 @@ bool SV_TryQueueNativeShadowChallenge(client_t *client)
                 ? sv.worr_snapshot_epoch
                 : 0,
             svs.realtime, &challenge)) {
-        client->worr_native_shadow_challenge_pending = false;
-        client->worr_native_shadow_challenge_requested_at = 0;
-        return false;
+        SV_ClearNativeShadowChallengeRequest(client);
+        return SV_NATIVE_SHADOW_CHALLENGE_SERVICE_NONE;
     }
     opcode = client->protocol == PROTOCOL_VERSION_RERELEASE
                  ? svc_rr_setting
                  : svc_q2pro_setting;
     if (!SV_NativeShadowAppendSvcReadinessV1(
-            &staging, &client->netchan.message, opcode,
+            &staging, &capacity, opcode,
             &challenge)) {
-        client->worr_native_shadow_challenge_pending = false;
-        client->worr_native_shadow_challenge_requested_at = 0;
+        SV_ClearNativeShadowChallengeRequest(client);
         SV_NativeShadowPeerDisableV1(
             pilot, SV_NATIVE_SHADOW_FAILURE_QUEUE);
-        return false;
+        return SV_NATIVE_SHADOW_CHALLENGE_SERVICE_NONE;
     }
-    SZ_Write(&client->netchan.message, staging.data, staging.cursize);
-    client->worr_native_shadow_challenge_pending = false;
-    client->worr_native_shadow_challenge_requested_at = 0;
-    return true;
+
+    /* The fixed CHALLENGE becomes its own reliable generation; every
+     * post-Begin byte remains byte-identical in the ordinary queue and
+     * follows it. */
+    if (!Netchan_TransmitIsolatedReliable(
+            &client->netchan, staging.data, staging.cursize,
+            numpackets, &transmit_bytes)) {
+        SV_ClearNativeShadowChallengeRequest(client);
+        SV_NativeShadowPeerDisableV1(
+            pilot, SV_NATIVE_SHADOW_FAILURE_QUEUE);
+        return SV_NATIVE_SHADOW_CHALLENGE_SERVICE_NONE;
+    }
+    SV_ClearNativeShadowChallengeRequest(client);
+    if (cursize_out)
+        *cursize_out = transmit_bytes;
+    return SV_NATIVE_SHADOW_CHALLENGE_SERVICE_CHALLENGE;
 }
 
 static uint32_t SV_NextWorrSessionEpoch(void)
@@ -408,19 +481,30 @@ static uint32_t SV_NextWorrSessionEpoch(void)
 static void SV_ConfirmWorrCapabilities(void)
 {
     worr_net_capability_confirm_v1 confirm;
-    const uint32_t supported = WORR_NET_CAP_LEGACY_STAGE_MASK;
+    uint32_t configured = WORR_NET_CAP_LEGACY_STAGE_MASK;
+    uint32_t supported;
 
     sv_client->worr_capabilities_supported = 0;
     sv_client->worr_capabilities_negotiated = 0;
     sv_client->worr_capability_epoch = 0;
     sv_client->worr_native_shadow_challenge_pending = false;
     sv_client->worr_native_shadow_challenge_requested_at = 0;
+    sv_client->worr_native_shadow_challenge_barrier_bytes = 0;
     if (sv_client->worr_capability_failed ||
         !SV_WorrCapabilityCarrierSupported(sv_client) ||
         sv_client->worr_capabilities_offered == 0 ||
         sv_client->spawncount <= 0) {
         return;
     }
+    if (sv_client->worr_native_shadow) {
+        configured = SV_NativeShadowModePublicCapabilitiesV1(
+            sv_client->worr_native_shadow->mode);
+    }
+    supported = Worr_NetCapabilityPublicSupportV1(
+        sv_client->worr_capabilities_offered, configured,
+        sv_client->worr_native_shadow &&
+            SV_NativeShadowPeerEnabledV1(
+                sv_client->worr_native_shadow));
     const uint32_t session_epoch = SV_NextWorrSessionEpoch();
     if (Worr_NetCapabilitySelectV1(
             session_epoch,
@@ -434,6 +518,12 @@ static void SV_ConfirmWorrCapabilities(void)
     sv_client->worr_capabilities_negotiated = confirm.negotiated;
     sv_client->worr_capability_epoch = confirm.connection_epoch;
     sv_client->worr_capability_confirm_sent = true;
+    if (sv_client->worr_native_shadow &&
+        confirm.negotiated != configured) {
+        SV_NativeShadowPeerDisableV1(
+            sv_client->worr_native_shadow,
+            SV_NATIVE_SHADOW_FAILURE_OFFICIAL_BINDING);
+    }
     if ((confirm.negotiated &
          WORR_NET_CAP_LEGACY_COMMAND_SIDEBAND_V1) != 0) {
         if (!Worr_LegacyCommandSidebandParserInitV1(
@@ -612,16 +702,6 @@ void SV_Begin_f(void)
     sv_client->suppress_count = 0;
     sv_client->http_download = false;
 
-    /* Request private readiness only after the complete join/bootstrap stream
-     * and accepted begin.  The send scheduler must service this request after
-     * all begin/game callbacks have queued their reliable output, and only at
-     * a rate-admitted boundary that it will transmit immediately. */
-    if (sv_client->worr_native_shadow) {
-        sv_client->worr_native_shadow_challenge_pending = true;
-        sv_client->worr_native_shadow_challenge_requested_at =
-            svs.realtime;
-    }
-
     SV_AlignKeyFrames(sv_client);
 
     stuff_cmds(&sv_cmdlist_begin);
@@ -637,6 +717,18 @@ void SV_Begin_f(void)
     ge->ClientBegin(sv_player);
 
     AC_ClientAnnounce(sv_client);
+
+    /* Every join/bootstrap and game callback has now appended its reliable
+     * output.  Freeze that exact byte prefix as the precedence barrier.  Any
+     * later reliable bytes may accumulate behind it, but cannot move the
+     * boundary at which the isolated private CHALLENGE will be handed off. */
+    if (sv_client->worr_native_shadow) {
+        sv_client->worr_native_shadow_challenge_barrier_bytes =
+            sv_client->netchan.message.cursize;
+        sv_client->worr_native_shadow_challenge_requested_at =
+            svs.realtime;
+        sv_client->worr_native_shadow_challenge_pending = true;
+    }
 }
 
 //=============================================================================
@@ -1245,6 +1337,31 @@ static worr_command_stream_slot_v1
 static worr_command_record_v1
     worrCommandRecordScratch[WORR_LEGACY_COMMAND_BATCH_MAX_COUNT];
 
+static void SV_WorrConsumeLocalActionShadowAuthorityFailure(void)
+{
+    sv_local_action_shadow_authority_failure_v1 failure;
+    ptrdiff_t client_index;
+
+    if (!sv_client || !svs.client_pool || sv_client < svs.client_pool ||
+        sv_client >= svs.client_pool + svs.maxclients) {
+        return;
+    }
+    client_index = sv_client - svs.client_pool;
+    failure = SV_LOCAL_ACTION_SHADOW_AUTHORITY_FAILURE_NONE;
+    if (!SV_LocalActionShadowAuthorityTakeFailure(
+            (uint32_t)client_index, &failure)) {
+        return;
+    }
+
+    Com_DPrintf("local action shadow authority failure from %s: %u\n",
+                sv_client->name, (unsigned)failure);
+    if (sv_client->worr_native_shadow) {
+        SV_NativeShadowPeerDisableV1(
+            sv_client->worr_native_shadow,
+            SV_NATIVE_SHADOW_FAILURE_LOCAL_ACTION_AUTHORITY);
+    }
+}
+
 /*
 ==================
 SV_ClientThink
@@ -1285,6 +1402,7 @@ static inline void SV_ClientThink(usercmd_t *cmd,
     }
 
     ge->ClientThink(sv_player, cmd);
+    SV_WorrConsumeLocalActionShadowAuthorityFailure();
 
     if (!canonical_context_active)
         SV_CommandContextReset();
@@ -2816,7 +2934,9 @@ void SV_ExecuteClientMessage(client_t *client)
                     sideband_setting = true;
                 if (result ==
                     SV_NATIVE_SHADOW_OBSERVE_SERVER_ACTIVE_READY) {
-                    if (SV_AppendNativeReadinessRecord(&server_active)) {
+                    if (SV_AppendNativeServerActive(
+                            client->worr_native_shadow,
+                            &server_active)) {
                         SV_ClientAddMessage(
                             client, MSG_RELIABLE | MSG_CLEAR);
                         if (!SV_NativeShadowServerActiveQueuedV1(

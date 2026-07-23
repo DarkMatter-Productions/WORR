@@ -42,7 +42,8 @@ class VulkanCrtSourceTests(unittest.TestCase):
         self.assertIn("crt_mask", CRT_SHADER)
         self.assertIn("crt_to_srgb", CRT_SHADER)
         self.assertIn("gl_FragCoord.xy", CRT_SHADER)
-        self.assertIn("floor((gl_FragCoord.y + 1.0) / scale)", CRT_SHADER)
+        self.assertIn("float phase = scale", CRT_SHADER)
+        self.assertIn("floor((gl_FragCoord.y + phase) / scale)", CRT_SHADER)
         self.assertIn("layout(set = 0, binding = 0)", CRT_SHADER)
 
     def test_crt_runs_after_base_composite_without_filtering_ui(self) -> None:
@@ -52,6 +53,18 @@ class VulkanCrtSourceTests(unittest.TestCase):
         self.assertLess(composite, crt)
         self.assertIn("VK_PostProcess_RecordCrt", VK_MAIN[crt:])
         self.assertIn("if (final_postprocess) {", VK_MAIN)
+
+    def test_scaled_scene_uses_the_opengl_scanline_cadence(self) -> None:
+        self.assertIn("vk_postprocess.ctx->scene_extent.height", VK_POST)
+        self.assertIn("vk_postprocess.push.output_size[1] / max(scene_height, 1.0f)", VK_POST)
+        self.assertIn("CRT samples its already-upscaled presentation image", VK_POST)
+
+    def test_scaled_crt_lazily_owns_a_full_resolution_native_copy(self) -> None:
+        self.assertIn("VK_CrtSceneCopyResourcesNeedUpdate", VK_MAIN)
+        self.assertIn("VK_UpdateCrtSceneCopyResources", VK_MAIN)
+        self.assertIn("VK_WaitForSubmittedFrames(ctx,", VK_MAIN)
+        self.assertIn("frame->liquid_scene_descriptor_set", VK_MAIN)
+        self.assertIn("VK_PostProcess_UsesCrtPass() &&", VK_MAIN)
 
 
 if __name__ == "__main__":

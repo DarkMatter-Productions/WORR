@@ -13,7 +13,7 @@ from pathlib import Path
 from generate_rewind_collision_bsp_fixture import build_fixture
 
 
-EXPECTED_SHA256 = "42642d702c39f5d7a4d788964c4a9e9e5e7d92c5cc3cf45b953cef987fe6fe3d"
+EXPECTED_SHA256 = "ed5542288b5efb08b846e39afcd7fccf3359e036efa4364be84f08ab8855fbde"
 
 
 def main() -> int:
@@ -49,13 +49,15 @@ def main() -> int:
         check=False,
     )
     report = {
-        "schema": "worr.rewind-collision-real-bsp-parity.v2",
+        "schema": "worr.rewind-collision-real-bsp-parity.v4",
         "fixture": {
             "path": str(fixture.relative_to(repo_root)).replace("\\", "/"),
             "bytes": len(first),
             "sha256": digest,
             "inline_models": 2,
             "deathmatch_spawns": 4,
+            "gameplay_areas": 1,
+            "visibility_clusters": 1,
         },
         "probe": {
             "path": str(args.probe.resolve()),
@@ -69,6 +71,8 @@ def main() -> int:
             "provider_path": "TraceTransformed",
             "geometric_cases": 10,
             "identity_rejection_classes": 4,
+            "gameplay_area_connectivity": True,
+            "gameplay_pvs_phs_visibility": True,
             "exact_trace_fields": [
                 "allsolid",
                 "startsolid",

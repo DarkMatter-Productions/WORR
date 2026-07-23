@@ -194,6 +194,13 @@ static uint32_t ShadowFrontend_HashFloatQ(uint32_t hash, float value, float scal
     return ShadowFrontend_HashI32(hash, ShadowFrontend_Quantize(value, scale));
 }
 
+static uint32_t ShadowFrontend_HashFloatBits(uint32_t hash, float value)
+{
+    uint32_t bits;
+    memcpy(&bits, &value, sizeof(bits));
+    return ShadowFrontend_HashU32(hash, bits);
+}
+
 typedef struct {
     cvar_t *primary;
     cvar_t *alias;
@@ -1517,7 +1524,6 @@ static bool ShadowFrontend_LightIgnoresOwnerCaster(const shadow_light_desc_t *li
 static int ShadowFrontend_SelectViewCasters(shadow_frontend_state_t *state,
                                             const bsp_t *bsp,
                                             const shadow_light_desc_t *light,
-                                            uint32_t *dirty_reasons,
                                             int *dynamic_count,
                                             uint32_t *caster_hash)
 {
@@ -1557,33 +1563,29 @@ static int ShadowFrontend_SelectViewCasters(shadow_frontend_state_t *state,
             hash = ShadowFrontend_HashU32(hash, caster->entity_id);
             hash = ShadowFrontend_HashU32(hash, caster->source_index);
             hash = ShadowFrontend_HashU32(hash, (uint32_t)caster->model);
+            hash = ShadowFrontend_HashU32(hash, (uint32_t)caster->flags);
+            hash = ShadowFrontend_HashU32(hash, (uint32_t)(caster->flags >> 32));
             hash = ShadowFrontend_HashU32(hash, caster->dynamic ? 1u : 0u);
             hash = ShadowFrontend_HashU32(hash, caster->animated ? 1u : 0u);
+            hash = ShadowFrontend_HashU32(hash, caster->shadow_only ? 1u : 0u);
+            hash = ShadowFrontend_HashU32(hash, (uint32_t)caster->owner_entity);
             hash = ShadowFrontend_HashU32(hash, caster->entity.frame);
             hash = ShadowFrontend_HashU32(hash, caster->entity.oldframe);
-            hash = ShadowFrontend_HashFloatQ(hash, caster->entity.backlerp, 65535.0f);
+            hash = ShadowFrontend_HashFloatBits(hash, caster->entity.backlerp);
             hash = ShadowFrontend_HashU32(hash, (uint32_t)caster->entity.skinnum);
             for (int j = 0; j < 3; j++) {
-                hash = ShadowFrontend_HashFloatQ(hash, caster->entity.origin[j], 8.0f);
-                hash = ShadowFrontend_HashFloatQ(hash, caster->entity.oldorigin[j], 8.0f);
-                hash = ShadowFrontend_HashFloatQ(hash, caster->entity.angles[j], 256.0f);
-                hash = ShadowFrontend_HashFloatQ(hash, caster->entity.scale[j], 256.0f);
-                hash = ShadowFrontend_HashFloatQ(hash, caster->bounds[0][j], 8.0f);
-                hash = ShadowFrontend_HashFloatQ(hash, caster->bounds[1][j], 8.0f);
+                hash = ShadowFrontend_HashFloatBits(hash, caster->entity.origin[j]);
+                hash = ShadowFrontend_HashFloatBits(hash, caster->entity.oldorigin[j]);
+                hash = ShadowFrontend_HashFloatBits(hash, caster->entity.angles[j]);
+                hash = ShadowFrontend_HashFloatBits(hash, caster->entity.scale[j]);
+                hash = ShadowFrontend_HashFloatBits(hash, caster->bounds[0][j]);
+                hash = ShadowFrontend_HashFloatBits(hash, caster->bounds[1][j]);
             }
             *caster_hash = hash;
         }
         if (caster->dynamic || caster->animated) {
             if (dynamic_count) {
                 (*dynamic_count)++;
-            }
-            if (dirty_reasons) {
-                if (caster->dynamic) {
-                    *dirty_reasons |= SHADOW_DIRTY_MOVED_CASTER;
-                }
-                if (caster->animated) {
-                    *dirty_reasons |= SHADOW_DIRTY_ANIMATED_CASTER;
-                }
             }
         }
     }
@@ -1672,6 +1674,32 @@ static void ShadowFrontend_FillCacheKey(shadow_cache_key_t *key,
     key->storage_family = (uint8_t)storage;
 }
 
+// Page residency deliberately stays stable for dynamic-effect sources so a
+// moving light cannot churn array slots.  A resident page still needs to be
+// re-rendered whenever its actual projection changes, however.  Hash the
+// complete CPU view contract bit-for-bit rather than treating the broad
+// "dynamic" category as permanently dirty.  That preserves correctness for
+// sub-texel motion while allowing genuinely unchanged pages to be reused.
+static uint32_t ShadowFrontend_ViewContentHash(const shadow_view_desc_t *view)
+{
+    uint32_t hash = 2166136261u;
+    if (!view) {
+        return 0;
+    }
+    for (int i = 0; i < 3; i++) {
+        hash = ShadowFrontend_HashFloatBits(hash, view->origin[i]);
+        for (int j = 0; j < 3; j++) {
+            hash = ShadowFrontend_HashFloatBits(hash, view->axis[i][j]);
+        }
+    }
+    hash = ShadowFrontend_HashFloatBits(hash, view->fov_x);
+    hash = ShadowFrontend_HashFloatBits(hash, view->fov_y);
+    hash = ShadowFrontend_HashFloatBits(hash, view->ortho_size);
+    hash = ShadowFrontend_HashFloatBits(hash, view->near_z);
+    hash = ShadowFrontend_HashFloatBits(hash, view->far_z);
+    return hash ? hash : 1u;
+}
+
 static bool ShadowFrontend_CacheKeyEqual(const shadow_cache_key_t *a,
                                          const shadow_cache_key_t *b)
 {
@@ -1717,6 +1745,8 @@ static int ShadowFrontend_AllocResident(shadow_frontend_state_t *state,
             state->resident[i].page.index = (uint32_t)i;
             state->resident[i].page.generation = state->next_page_generation++;
             state->resident[i].dirty_reasons = SHADOW_DIRTY_NEW_PAGE;
+            state->resident[i].caster_hash = 0;
+            state->resident[i].content_hash = 0;
             *dirty_reasons |= SHADOW_DIRTY_NEW_PAGE;
             return i;
         }
@@ -1734,6 +1764,8 @@ static int ShadowFrontend_AllocResident(shadow_frontend_state_t *state,
     state->resident[victim].page.index = (uint32_t)victim;
     state->resident[victim].page.generation = state->next_page_generation++;
     state->resident[victim].dirty_reasons = SHADOW_DIRTY_EVICTION;
+    state->resident[victim].caster_hash = 0;
+    state->resident[victim].content_hash = 0;
     state->stats.evictions++;
     *dirty_reasons |= SHADOW_DIRTY_EVICTION;
     return victim;
@@ -1877,6 +1909,11 @@ static void ShadowFrontend_AssignPage(shadow_frontend_state_t *state,
         slot->caster_hash != view->caster_hash) {
         view->dirty_reasons |= SHADOW_DIRTY_MOVED_CASTER;
     }
+    if (!policy->freeze_dirtying &&
+        policy->cache_mode == SHADOW_CACHE_STATIC_REUSE &&
+        slot->content_hash != view->content_hash) {
+        view->dirty_reasons |= SHADOW_DIRTY_LIGHT_PARAMS;
+    }
     if (slot->dirty_reasons) {
         view->dirty_reasons |= slot->dirty_reasons;
     }
@@ -1965,26 +2002,16 @@ static void ShadowFrontend_AddView(shadow_frontend_state_t *state,
                                 view->resolution, view->filter_family,
                                 view->storage_family, policy, axis[0]);
 
-    uint32_t caster_dirty = 0;
     if (policy->cache_mode == SHADOW_CACHE_WORLD_ONLY) {
         view->caster_count = 0;
         view->dynamic_caster_count = 0;
         view->caster_hash = 0;
     } else {
         view->caster_count = ShadowFrontend_SelectViewCasters(state, bsp, light,
-                                                              &caster_dirty,
                                                               &view->dynamic_caster_count,
                                                               &view->caster_hash);
     }
-
-    if (!policy->freeze_dirtying) {
-        if (policy->cache_mode == SHADOW_CACHE_STATIC_REUSE) {
-            view->dirty_reasons |= caster_dirty;
-        }
-        if (light->source_shadow == DL_SHADOW_DYNAMIC) {
-            view->dirty_reasons |= SHADOW_DIRTY_LIGHT_PARAMS;
-        }
-    }
+    view->content_hash = ShadowFrontend_ViewContentHash(view);
 
     ShadowFrontend_AssignPage(state, view, policy);
     if (view->dirty_reasons) {
@@ -2081,8 +2108,17 @@ static void ShadowFrontend_RunBackend(shadow_frontend_state_t *state,
         return;
     }
 
+    uint32_t required_page_count = 1;
+    for (int i = 0; i < state->view_count; i++) {
+        const shadow_view_desc_t *view = &state->views[i];
+        if (!ShadowFrontend_BackendSupportsView(backend, view)) {
+            continue;
+        }
+        required_page_count = max(required_page_count, view->page.index + 1);
+    }
+
     if (backend->begin_frame) {
-        backend->begin_frame(backend->userdata, policy);
+        backend->begin_frame(backend->userdata, policy, required_page_count);
     }
 
     for (int i = 0; i < state->view_count; i++) {
@@ -2111,6 +2147,7 @@ static void ShadowFrontend_RunBackend(shadow_frontend_state_t *state,
                 if (resident >= 0) {
                     state->resident[resident].dirty_reasons = SHADOW_DIRTY_NONE;
                     state->resident[resident].caster_hash = view->caster_hash;
+                    state->resident[resident].content_hash = view->content_hash;
                 }
             }
         }

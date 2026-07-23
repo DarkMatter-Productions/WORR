@@ -12,6 +12,16 @@ _Static_assert(offsetof(worr_native_codec_info_v1, range_counts) == 24,
                "native codec range-count offset changed");
 _Static_assert(offsetof(worr_native_codec_info_v1, object_epoch) == 36,
                "native codec object identity offset changed");
+_Static_assert(sizeof(worr_native_codec_snapshot_metadata_v1) == 336,
+               "native codec snapshot metadata size changed");
+_Static_assert(offsetof(worr_native_codec_snapshot_metadata_v1, codec) == 8,
+               "native codec snapshot metadata codec offset changed");
+_Static_assert(offsetof(worr_native_codec_snapshot_metadata_v1, snapshot) ==
+                   56,
+               "native codec snapshot metadata snapshot offset changed");
+_Static_assert(offsetof(worr_native_codec_snapshot_metadata_v1, hashes) ==
+                   272,
+               "native codec snapshot metadata hashes offset changed");
 _Static_assert(WORR_NATIVE_CODEC_WIRE_HEADER_BYTES == 48,
                "native codec wire header changed");
 _Static_assert(WORR_NATIVE_CODEC_MAX_ENCODED_BYTES == 131072,

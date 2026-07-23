@@ -565,7 +565,7 @@ typedef struct {
 
 //===============================================================
 
-#define CGAME_API_VERSION   2028
+#define CGAME_API_VERSION   2029
 
 typedef enum
 {
@@ -715,6 +715,9 @@ typedef struct
     bool (*Key_IsDown)(int key);
     const char *(*CL_GetImageConfigString)(int image_index);
     rgba_t (*CL_GetPaletteColor)(int index);
+    bool (*CL_GetPrecachedImageInfo)(int image_index,
+                                     const char **name_out,
+                                     int *width_out, int *height_out);
 } cgame_import_t;
 
 //

@@ -9,6 +9,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #pragma once
 
+#include "common/net/native_codec.h"
 #include "shared/cgame_snapshot.h"
 
 #include <cstdint>
@@ -21,12 +22,17 @@ the Free Software Foundation; either version 2 of the License, or
  */
 
 constexpr std::uint32_t CG_CANONICAL_SNAPSHOT_MAX_ENTITY_IDENTITIES = 8192u;
-/* Audit-stage resource bound.  Larger legal projections are rejected with a
- * visible CAPACITY result/counter.  Negotiated dynamic sizing and indexed
- * event-conflict checks are prerequisites for increasing this at promotion. */
-constexpr std::uint32_t CG_CANONICAL_SNAPSHOT_TIMELINE_SLOT_CAPACITY = 32u;
+/* Fixed, value-owned timeline bounds.  Sixty-four snapshot slots retain 63
+ * intervals, or 1008 ms at the maximum effective 16 ms (~62 Hz) server
+ * cadence, covering the explicit one-second interpolation-delay bound.  The
+ * per-snapshot payload capacities cover the native codec acceptance envelope;
+ * oversized projections are rejected with a visible CAPACITY result/counter.
+ * The larger value-owned ring and its linear scans are intentional correctness
+ * costs here; indexed conflict/identity lookup remains performance debt. */
+constexpr std::uint32_t CG_CANONICAL_SNAPSHOT_TIMELINE_SLOT_CAPACITY = 64u;
 constexpr std::uint32_t CG_CANONICAL_SNAPSHOT_TIMELINE_ENTITY_CAPACITY = 512u;
-constexpr std::uint32_t CG_CANONICAL_SNAPSHOT_TIMELINE_AREA_CAPACITY = 32u;
+constexpr std::uint32_t CG_CANONICAL_SNAPSHOT_TIMELINE_AREA_CAPACITY =
+    WORR_NATIVE_CODEC_MAX_SNAPSHOT_AREA_BYTES;
 constexpr std::uint32_t CG_CANONICAL_SNAPSHOT_TIMELINE_EVENT_CAPACITY =
     CG_CANONICAL_SNAPSHOT_TIMELINE_ENTITY_CAPACITY;
 constexpr std::uint32_t CG_CANONICAL_PREDICTION_RECEIPT_VERSION = 1u;
@@ -113,9 +119,22 @@ worr_snapshot_timeline_result_v1 CG_CanonicalSnapshotTimelineSampleEntity(
 worr_snapshot_timeline_result_v1 CG_CanonicalSnapshotTimelineCopySnapshot(
     worr_snapshot_timeline_ref_v1 ref,
     worr_snapshot_v2 *snapshot_out);
+/* Resolves one retained snapshot identity to a generation-checked reference.
+ * This is used by event presentation to bind entity lineage to the exact
+ * snapshot fence rather than mutable latest-frame state. */
+worr_snapshot_timeline_result_v1 CG_CanonicalSnapshotTimelineFindSnapshot(
+    worr_snapshot_id_v2 snapshot_id,
+    worr_snapshot_timeline_ref_v1 *ref_out);
 worr_snapshot_timeline_result_v1 CG_CanonicalSnapshotTimelineCopyPlayer(
     worr_snapshot_timeline_ref_v1 ref,
     worr_snapshot_player_v2 *player_out);
+/* Copies one immutable entity range into caller-owned storage.  Failures are
+ * transactional: neither the output array nor count is modified. */
+worr_snapshot_timeline_result_v1 CG_CanonicalSnapshotTimelineCopyEntities(
+    worr_snapshot_timeline_ref_v1 ref,
+    worr_snapshot_entity_v2 *entities_out,
+    std::uint32_t capacity,
+    std::uint32_t *count_out);
 worr_snapshot_timeline_result_v1
 CG_CanonicalSnapshotTimelineCopyPredictionSnapshot(
     std::uint32_t snapshot_sequence,

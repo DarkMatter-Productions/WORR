@@ -2,7 +2,9 @@
 
 #include "server/native_shadow.h"
 
+#include "common/intreadwrite.h"
 #include "common/net/legacy_entity_event_candidate.h"
+#include "common/net/native_event_batch.h"
 #include "common/protocol.h"
 
 #include <stdio.h>
@@ -50,6 +52,13 @@ static void init_chan(netchan_t *chan)
 {
     memset(chan, 0, sizeof(*chan));
     chan->type = NETCHAN_NEW;
+}
+
+static uint32_t native_public_mask(
+    const sv_native_shadow_peer_v1 *peer)
+{
+    CHECK(peer != NULL);
+    return SV_NativeShadowModePublicCapabilitiesV1(peer->mode);
 }
 
 static void init_write_buffer(sizebuf_t *buffer, byte *data,
@@ -165,8 +174,8 @@ static void begin_event_peer_wait_confirm(
         peer, chan, raw_time_ms, SV_NATIVE_SHADOW_MODE_EVENT));
     CHECK(peer->event_state != NULL);
     CHECK(SV_NativeShadowBeginEpochV1(
-        peer, official_epoch, WORR_NET_CAP_LEGACY_STAGE_MASK,
-        WORR_NET_CAP_LEGACY_STAGE_MASK, raw_time_ms, &challenge));
+        peer, official_epoch, native_public_mask(peer),
+        native_public_mask(peer), raw_time_ms, &challenge));
     CHECK(challenge.negotiated_capabilities ==
           WORR_NET_CAP_NATIVE_EVENT_PRIVATE_MASK);
     CHECK(Worr_NativeReadinessClientInitV1(
@@ -205,6 +214,19 @@ typedef struct command_carrier_fixture_s {
     byte packet[WORR_NATIVE_CARRIER_MAX_PACKET_BYTES];
     size_t packet_bytes;
 } command_carrier_fixture;
+
+typedef struct input_batch_carrier_fixture_s {
+    worr_command_record_v1 records[WORR_NATIVE_INPUT_BATCH_MAX_COMMANDS];
+    worr_native_input_batch_info_v1 info;
+    worr_native_record_ref_v1 record_ref;
+    byte payload[WORR_NATIVE_INPUT_BATCH_MAX_PAYLOAD_BYTES];
+    byte envelope[WORR_NATIVE_ENVELOPE_WIRE_HEADER_BYTES +
+                  WORR_NATIVE_INPUT_BATCH_MAX_PAYLOAD_BYTES];
+    byte packet[WORR_NATIVE_CARRIER_MAX_PACKET_BYTES];
+    size_t payload_bytes;
+    size_t envelope_bytes;
+    size_t packet_bytes;
+} input_batch_carrier_fixture;
 
 static worr_prediction_command_v1 make_prediction_command(uint8_t marker)
 {
@@ -365,6 +387,27 @@ static sv_snapshot_shadow_ref_v1 commit_snapshot_frame(
     return ref;
 }
 
+static void make_raw_keyed_poi(
+    byte raw[WORR_LEGACY_KEYED_POI_RAW_SIZE], uint16_t key,
+    uint16_t lifetime_ms, uint16_t image_index, uint8_t color_index)
+{
+    uint32_t float_bits;
+
+    memset(raw, 0, WORR_LEGACY_KEYED_POI_RAW_SIZE);
+    raw[0] = svc_poi;
+    WL16(&raw[1], key);
+    WL16(&raw[3], lifetime_ms);
+    memcpy(&float_bits, &(float){12.5f}, sizeof(float_bits));
+    WL32(&raw[5], float_bits);
+    memcpy(&float_bits, &(float){-24.25f}, sizeof(float_bits));
+    WL32(&raw[9], float_bits);
+    memcpy(&float_bits, &(float){96.0f}, sizeof(float_bits));
+    WL32(&raw[13], float_bits);
+    WL16(&raw[17], image_index);
+    raw[19] = color_index;
+    raw[20] = WORR_EVENT_KEYED_POI_FLAG_HIDE_ON_AIM;
+}
+
 static worr_command_record_v1 make_legacy_record(
     const worr_command_record_v1 *native_record)
 {
@@ -437,6 +480,234 @@ static void build_command_carrier(
               &fixture->packet_bytes) == WORR_NATIVE_CARRIER_OK);
 }
 
+static uint32_t input_batch_crc32_update(
+    uint32_t crc, const byte *bytes, size_t count)
+{
+    size_t index;
+    for (index = 0; index < count; ++index) {
+        unsigned bit;
+        crc ^= bytes[index];
+        for (bit = 0; bit < 8; ++bit) {
+            crc = (crc >> 1) ^
+                  (UINT32_C(0xedb88320) &
+                   (uint32_t)-(int32_t)(crc & 1u));
+        }
+    }
+    return crc;
+}
+
+static uint32_t input_batch_payload_crc32(
+    const byte *bytes, size_t count)
+{
+    enum { CRC_OFFSET = 28 };
+    static const byte zero_crc[4];
+    uint32_t crc = UINT32_MAX;
+    crc = input_batch_crc32_update(crc, bytes, CRC_OFFSET);
+    crc = input_batch_crc32_update(crc, zero_crc, sizeof(zero_crc));
+    crc = input_batch_crc32_update(
+        crc, bytes + CRC_OFFSET + sizeof(uint32_t),
+        count - CRC_OFFSET - sizeof(uint32_t));
+    return ~crc;
+}
+
+static void input_batch_write_u32_le(byte *bytes, uint32_t value)
+{
+    bytes[0] = (byte)value;
+    bytes[1] = (byte)(value >> 8);
+    bytes[2] = (byte)(value >> 16);
+    bytes[3] = (byte)(value >> 24);
+}
+
+static void rebuild_input_batch_carrier(
+    input_batch_carrier_fixture *fixture,
+    uint32_t transport_epoch,
+    uint32_t message_sequence,
+    const byte *legacy,
+    size_t legacy_bytes,
+    bool include_ack)
+{
+    worr_native_envelope_fragmenter_v1 fragmenter;
+    worr_native_carrier_entry_v1 entries[2];
+    const uint16_t entry_count = include_ack ? 2u : 1u;
+
+    fixture->record_ref.record_class = WORR_NATIVE_RECORD_COMMAND_V1;
+    fixture->record_ref.record_schema_version =
+        WORR_NATIVE_INPUT_BATCH_RECORD_SCHEMA;
+    fixture->record_ref.object_epoch = fixture->info.command_epoch;
+    fixture->record_ref.object_sequence = fixture->info.last_sequence;
+    CHECK(Worr_NativeEnvelopeFragmenterInitV1(
+        &fragmenter, transport_epoch, message_sequence,
+        fixture->record_ref, 0, fixture->payload,
+        (uint32_t)fixture->payload_bytes,
+        (uint32_t)(WORR_NATIVE_ENVELOPE_WIRE_HEADER_BYTES +
+                   fixture->payload_bytes)));
+    CHECK(fragmenter.fragment_count == 1);
+    fixture->envelope_bytes = 0;
+    CHECK(Worr_NativeEnvelopeFragmentNextV1(
+              &fragmenter, fixture->payload,
+              (uint32_t)fixture->payload_bytes,
+              fixture->envelope, sizeof(fixture->envelope),
+              &fixture->envelope_bytes) == WORR_NATIVE_ENVELOPE_EMIT_OK);
+    CHECK(fixture->envelope_bytes ==
+          WORR_NATIVE_ENVELOPE_WIRE_HEADER_BYTES + fixture->payload_bytes);
+
+    memset(entries, 0, sizeof(entries));
+    entries[0].struct_size = sizeof(entries[0]);
+    entries[0].schema_version = WORR_NATIVE_CARRIER_ABI_VERSION;
+    entries[0].entry_type = WORR_NATIVE_CARRIER_ENTRY_DATA_V1;
+    entries[0].data_bytes = (uint32_t)fixture->envelope_bytes;
+    if (include_ack) {
+        entries[1].struct_size = sizeof(entries[1]);
+        entries[1].schema_version = WORR_NATIVE_CARRIER_ABI_VERSION;
+        entries[1].entry_type = WORR_NATIVE_CARRIER_ENTRY_ACK_V1;
+        entries[1].first_message_sequence = 1;
+        entries[1].last_message_sequence = 1;
+    }
+    fixture->packet_bytes = 0;
+    CHECK(Worr_NativeCarrierEncodeV1(
+              transport_epoch, legacy, legacy_bytes,
+              fixture->envelope, fixture->envelope_bytes,
+              entries, entry_count, fixture->packet,
+              sizeof(fixture->packet), &fixture->packet_bytes) ==
+          WORR_NATIVE_CARRIER_OK);
+}
+
+static void build_input_batch_carrier(
+    input_batch_carrier_fixture *fixture,
+    uint32_t transport_epoch,
+    uint32_t command_epoch,
+    uint32_t first_command_sequence,
+    uint32_t command_count,
+    uint32_t message_sequence,
+    uint8_t marker,
+    const byte *legacy,
+    size_t legacy_bytes,
+    bool include_ack)
+{
+    uint32_t index;
+
+    CHECK(fixture != NULL &&
+          command_count >= WORR_NATIVE_INPUT_BATCH_MIN_COMMANDS &&
+          command_count <= WORR_NATIVE_INPUT_BATCH_MAX_COMMANDS);
+    memset(fixture, 0, sizeof(*fixture));
+    for (index = 0; index < command_count; ++index) {
+        fixture->records[index] = make_native_record(
+            command_epoch, first_command_sequence + index,
+            (uint8_t)(marker + index));
+    }
+    CHECK(Worr_NativeInputBatchEncodeV1(
+              fixture->records, command_count,
+              WORR_COMMAND_MAX_NEGOTIATED_DURATION_MS,
+              fixture->payload, sizeof(fixture->payload),
+              &fixture->payload_bytes, &fixture->info) ==
+          WORR_NATIVE_INPUT_BATCH_OK);
+    rebuild_input_batch_carrier(
+        fixture, transport_epoch, message_sequence, legacy,
+        legacy_bytes, include_ack);
+}
+
+static void make_input_batch_noncontiguous(
+    input_batch_carrier_fixture *fixture,
+    uint32_t transport_epoch,
+    uint32_t message_sequence,
+    const byte *legacy,
+    size_t legacy_bytes)
+{
+    enum {
+        BATCH_CRC_OFFSET = 28,
+        NESTED_OBJECT_SEQUENCE_OFFSET = 40,
+    };
+    const size_t second_sequence_offset =
+        WORR_NATIVE_INPUT_BATCH_WIRE_HEADER_BYTES +
+        WORR_NATIVE_INPUT_BATCH_COMMAND_BYTES +
+        NESTED_OBJECT_SEQUENCE_OFFSET;
+
+    CHECK(fixture != NULL && fixture->info.command_count >= 2);
+    input_batch_write_u32_le(
+        fixture->payload + second_sequence_offset,
+        fixture->info.first_sequence + 2u);
+    input_batch_write_u32_le(
+        fixture->payload + BATCH_CRC_OFFSET,
+        input_batch_payload_crc32(
+            fixture->payload, fixture->payload_bytes));
+    CHECK(Worr_NativeInputBatchInspectV1(
+              fixture->payload, fixture->payload_bytes,
+              &fixture->info) == WORR_NATIVE_INPUT_BATCH_OK);
+    rebuild_input_batch_carrier(
+        fixture, transport_epoch, message_sequence, legacy,
+        legacy_bytes, false);
+}
+
+static void corrupt_input_batch_payload_crc(
+    input_batch_carrier_fixture *fixture,
+    uint32_t transport_epoch,
+    uint32_t message_sequence,
+    const byte *legacy,
+    size_t legacy_bytes,
+    bool include_ack)
+{
+    CHECK(fixture != NULL && fixture->payload_bytes != 0);
+    fixture->payload[fixture->payload_bytes - 1u] ^= 1u;
+    rebuild_input_batch_carrier(
+        fixture, transport_epoch, message_sequence, legacy,
+        legacy_bytes, include_ack);
+}
+
+static void activate_input_batch_peer(
+    sv_native_shadow_peer_v1 *peer,
+    netchan_t *chan,
+    uint32_t official_epoch,
+    uint32_t raw_time_ms,
+    bool confirmation_capacity,
+    worr_native_readiness_record_v1 *challenge_out)
+{
+    enum {
+        READINESS_BYTES = SV_NATIVE_SHADOW_SVC_WIRE_BYTES,
+        COMBINED_BYTES = SV_NATIVE_SHADOW_SVC_WIRE_BYTES +
+                         WORR_NATIVE_INPUT_BATCH_SIDEBAND_WIRE_BYTES,
+    };
+    byte message_data[COMBINED_BYTES];
+    byte reliable_data[COMBINED_BYTES];
+    sizebuf_t message;
+    sizebuf_t reliable;
+    worr_native_readiness_record_v1 challenge;
+    worr_native_readiness_record_v1 client_ready;
+    worr_native_readiness_record_v1 server_active;
+    const uint32_t capacity = confirmation_capacity
+        ? COMBINED_BYTES : READINESS_BYTES;
+
+    init_chan(chan);
+    CHECK(SV_NativeShadowPeerInitV1(peer, chan, raw_time_ms));
+    CHECK(SV_NativeShadowConfigureInputBatchV1(peer, true));
+    CHECK(SV_NativeShadowBeginEpochV1(
+        peer, official_epoch, native_public_mask(peer),
+        native_public_mask(peer), raw_time_ms, &challenge));
+    make_client_ready(&challenge, peer->clock_ticks, &client_ready);
+    feed_ready(peer, raw_time_ms + 1u, &client_ready, &server_active);
+    memset(message_data, 0xa5, sizeof(message_data));
+    memset(reliable_data, 0x5a, sizeof(reliable_data));
+    init_write_buffer(&message, message_data, capacity, 0);
+    init_write_buffer(&reliable, reliable_data, capacity, 0);
+    CHECK(SV_NativeShadowAppendServerActiveV1(
+        peer, &message, &reliable, svc_q2pro_setting,
+        &server_active));
+    CHECK(message.cursize == capacity);
+    if (confirmation_capacity) {
+        CHECK(peer->input_batch_confirm_pending == 1 &&
+              peer->input_batch_declined == 0);
+    } else {
+        CHECK(peer->input_batch_confirm_pending == 0 &&
+              peer->input_batch_declined == 1);
+    }
+    CHECK(SV_NativeShadowServerActiveQueuedV1(peer));
+    CHECK(peer->lifecycle == SV_NATIVE_SHADOW_LIFECYCLE_ACTIVE &&
+          peer->transport_initialized == 1);
+    CHECK(peer->input_batch_confirmed ==
+          (confirmation_capacity ? 1u : 0u));
+    if (challenge_out != NULL)
+        *challenge_out = challenge;
+}
+
 static void activate_peer(sv_native_shadow_peer_v1 *peer,
                           netchan_t *chan,
                           uint32_t official_epoch,
@@ -450,8 +721,8 @@ static void activate_peer(sv_native_shadow_peer_v1 *peer,
     init_chan(chan);
     CHECK(SV_NativeShadowPeerInitV1(peer, chan, raw_time_ms));
     CHECK(SV_NativeShadowBeginEpochV1(
-        peer, official_epoch, WORR_NET_CAP_LEGACY_STAGE_MASK,
-        WORR_NET_CAP_LEGACY_STAGE_MASK, raw_time_ms, &challenge));
+        peer, official_epoch, native_public_mask(peer),
+        native_public_mask(peer), raw_time_ms, &challenge));
     make_client_ready(&challenge, peer->clock_ticks, &client_ready);
     feed_ready(peer, raw_time_ms + 1u, &client_ready, &server_active);
     CHECK(peer->activation_pending == 1 &&
@@ -505,6 +776,44 @@ static void decode_single_data_frame(
         }
     }
     CHECK(data_count == 1);
+}
+
+static const byte *decode_single_data_payload(
+    const byte *packet,
+    size_t packet_bytes,
+    worr_native_envelope_frame_info_v1 *frame_out,
+    size_t *payload_bytes_out)
+{
+    worr_native_carrier_view_v1 view;
+    const byte *payload = NULL;
+    uint16_t index;
+    uint16_t data_count = 0;
+
+    CHECK(packet != NULL && frame_out != NULL && payload_bytes_out != NULL);
+    CHECK(Worr_NativeCarrierDecodeV1(
+              packet, packet_bytes, &view) == WORR_NATIVE_CARRIER_OK);
+    for (index = 0; index < view.entry_count; ++index) {
+        const byte *envelope;
+
+        if (view.entries[index].entry_type !=
+            WORR_NATIVE_CARRIER_ENTRY_DATA_V1) {
+            continue;
+        }
+        ++data_count;
+        envelope = packet + view.entries[index].data_offset;
+        CHECK(Worr_NativeEnvelopeDecodeV1(
+                  envelope, view.entries[index].data_bytes, frame_out) ==
+              WORR_NATIVE_ENVELOPE_DECODE_OK);
+        CHECK(frame_out->fragment_count == 1 &&
+              frame_out->fragment_index == 0 &&
+              frame_out->fragment_offset == 0 &&
+              frame_out->fragment_payload_bytes ==
+                  frame_out->total_payload_bytes);
+        payload = envelope + frame_out->payload_offset;
+        *payload_bytes_out = frame_out->fragment_payload_bytes;
+    }
+    CHECK(data_count == 1 && payload != NULL);
+    return payload;
 }
 
 static netchan_app_tx_prepare_result_t prepare_application(
@@ -595,8 +904,8 @@ static void test_hooks_and_handshake(void)
     CHECK(peer.tx_bypass_calls == 1 && peer.rx_bypass_calls == 1);
 
     CHECK(SV_NativeShadowBeginEpochV1(
-        &peer, 7, WORR_NET_CAP_LEGACY_STAGE_MASK,
-        WORR_NET_CAP_LEGACY_STAGE_MASK, 100, &challenge));
+        &peer, 7, native_public_mask(&peer),
+        native_public_mask(&peer), 100, &challenge));
     CHECK(challenge.negotiated_capabilities ==
           WORR_NET_CAP_NATIVE_COMMAND_PRIVATE_MASK);
     make_client_ready(&challenge, peer.clock_ticks, &client_ready);
@@ -631,26 +940,36 @@ static void test_post_bootstrap_queue_idle_gate(void)
     init_chan(&chan);
     CHECK(SV_NativeShadowPeerInitV1(&peer, &chan, 25));
     CHECK(SV_NativeShadowPostBootstrapQueueIdleV1(&peer));
+    CHECK(SV_NativeShadowReliableGenerationIdleV1(&peer));
 
     chan.message.cursize = 1;
     CHECK(!SV_NativeShadowPostBootstrapQueueIdleV1(&peer));
+    /* Later reliable bytes are allowed behind the immutable Begin barrier;
+     * they do not make the previously handed-off generation busy. */
+    CHECK(SV_NativeShadowReliableGenerationIdleV1(&peer));
     chan.message.cursize = 0;
     chan.message.overflowed = true;
     CHECK(!SV_NativeShadowPostBootstrapQueueIdleV1(&peer));
+    CHECK(!SV_NativeShadowReliableGenerationIdleV1(&peer));
     chan.message.overflowed = false;
     chan.reliable_length = 1;
     CHECK(!SV_NativeShadowPostBootstrapQueueIdleV1(&peer));
+    CHECK(!SV_NativeShadowReliableGenerationIdleV1(&peer));
     chan.reliable_length = 0;
     chan.fragment_pending = true;
     CHECK(!SV_NativeShadowPostBootstrapQueueIdleV1(&peer));
+    CHECK(!SV_NativeShadowReliableGenerationIdleV1(&peer));
     chan.fragment_pending = false;
     chan.fragment_out.cursize = 1;
     CHECK(!SV_NativeShadowPostBootstrapQueueIdleV1(&peer));
+    CHECK(!SV_NativeShadowReliableGenerationIdleV1(&peer));
     chan.fragment_out.cursize = 0;
     CHECK(SV_NativeShadowPostBootstrapQueueIdleV1(&peer));
+    CHECK(SV_NativeShadowReliableGenerationIdleV1(&peer));
 
     SV_NativeShadowPeerDetachV1(&peer);
     CHECK(!SV_NativeShadowPostBootstrapQueueIdleV1(&peer));
+    CHECK(!SV_NativeShadowReliableGenerationIdleV1(&peer));
     SV_NativeShadowPeerDestroyV1(&peer);
 }
 
@@ -686,8 +1005,8 @@ static void test_epoch_advance_inside_packet(void)
     init_chan(&chan);
     CHECK(SV_NativeShadowPeerInitV1(&peer, &chan, 500));
     CHECK(SV_NativeShadowBeginEpochV1(
-        &peer, 10, WORR_NET_CAP_LEGACY_STAGE_MASK,
-        WORR_NET_CAP_LEGACY_STAGE_MASK, 500, &first));
+        &peer, 10, native_public_mask(&peer),
+        native_public_mask(&peer), 500, &first));
     first_generation = peer.readiness.generation;
     tx_prepare = chan.app_tx_prepare;
     tx_completion = chan.app_tx_completion;
@@ -702,8 +1021,8 @@ static void test_epoch_advance_inside_packet(void)
 
     /* SV_New is dispatched by that just-observed string command. */
     CHECK(SV_NativeShadowBeginEpochV1(
-        &peer, 11, WORR_NET_CAP_LEGACY_STAGE_MASK,
-        WORR_NET_CAP_LEGACY_STAGE_MASK, 502, &second));
+        &peer, 11, native_public_mask(&peer),
+        native_public_mask(&peer), 502, &second));
     CHECK(peer.packet_open == 1);
     CHECK(peer.transport_initialized == 0 &&
           peer.retired_transport_initialized == 0 &&
@@ -754,8 +1073,8 @@ static void test_pending_challenge_epoch_is_cancelled(void)
     init_chan(&chan);
     CHECK(SV_NativeShadowPeerInitV1(&peer, &chan, 550));
     CHECK(SV_NativeShadowBeginEpochV1(
-        &peer, 12, WORR_NET_CAP_LEGACY_STAGE_MASK,
-        WORR_NET_CAP_LEGACY_STAGE_MASK, 550, &first));
+        &peer, 12, native_public_mask(&peer),
+        native_public_mask(&peer), 550, &first));
     CHECK(peer.transport_initialized == 0 &&
           peer.cancelled_through_transport_epoch == 0 &&
           peer.cancellation_barriers == 1 &&
@@ -766,8 +1085,8 @@ static void test_pending_challenge_epoch_is_cancelled(void)
      * private epoch and recognize a structurally valid delayed carrier as
      * canceled legacy-only traffic. */
     CHECK(SV_NativeShadowBeginEpochV1(
-        &peer, 13, WORR_NET_CAP_LEGACY_STAGE_MASK,
-        WORR_NET_CAP_LEGACY_STAGE_MASK, 551, &second));
+        &peer, 13, native_public_mask(&peer),
+        native_public_mask(&peer), 551, &second));
     CHECK(second.transport_epoch > first.transport_epoch &&
           peer.private_transport_epoch == second.transport_epoch &&
           peer.cancelled_through_transport_epoch ==
@@ -1037,6 +1356,534 @@ static void test_command_observation_ack_and_drain(void)
         NETCHAN_APP_TX_COMPLETION_ACCEPTED, candidate);
     CHECK(peer.lifecycle == SV_NATIVE_SHADOW_LIFECYCLE_DRAIN &&
           chan.app_tx_prepare != NULL && chan.app_rx != NULL);
+    SV_NativeShadowPeerDestroyV1(&peer);
+}
+
+static void test_input_batch_confirmation_and_fallbacks(void)
+{
+    static const byte legacy_prefix[] = {0x71, 0x72, 0x73};
+    netchan_t preconfirm_chan;
+    netchan_t decline_chan;
+    netchan_t mutation_chan;
+    sv_native_shadow_peer_v1 preconfirm_peer;
+    sv_native_shadow_peer_v1 decline_peer;
+    sv_native_shadow_peer_v1 mutation_peer;
+    sv_native_shadow_transport_v1 transport_before;
+    worr_native_readiness_record_v1 challenge;
+    worr_native_readiness_record_v1 client_ready;
+    worr_native_readiness_record_v1 server_active;
+    input_batch_carrier_fixture batch;
+    command_carrier_fixture command;
+    worr_command_record_v1 legacy;
+    netchan_app_rx_output_v1_t rx_output;
+    netchan_app_tx_prepare_output_v1_t tx_output;
+    worr_native_carrier_view_v1 ack_view;
+    byte candidate[WORR_NATIVE_CARRIER_MAX_PACKET_BYTES];
+
+    /* A schema-2 carrier cannot make private state before the same-packet
+     * confirmation has been appended and committed.  Even its mixed ACK
+     * entry is ignored: the authoritative legacy prefix is the only effect. */
+    init_chan(&preconfirm_chan);
+    CHECK(SV_NativeShadowPeerInitV1(
+        &preconfirm_peer, &preconfirm_chan, 50000));
+    CHECK(SV_NativeShadowConfigureInputBatchV1(
+        &preconfirm_peer, true));
+    CHECK(SV_NativeShadowBeginEpochV1(
+        &preconfirm_peer, 110, native_public_mask(&preconfirm_peer),
+        native_public_mask(&preconfirm_peer), 50000, &challenge));
+    make_client_ready(
+        &challenge, preconfirm_peer.clock_ticks, &client_ready);
+    feed_ready(
+        &preconfirm_peer, 50001, &client_ready, &server_active);
+    CHECK(SV_NativeShadowServerActiveQueuedV1(&preconfirm_peer));
+    CHECK(preconfirm_peer.input_batch_requested == 1 &&
+          preconfirm_peer.input_batch_confirmed == 0 &&
+          preconfirm_peer.input_batch_declined == 0);
+    build_input_batch_carrier(
+        &batch, challenge.transport_epoch, 110, 1, 2, 1, 21,
+        legacy_prefix, sizeof(legacy_prefix), true);
+    corrupt_input_batch_payload_crc(
+        &batch, challenge.transport_epoch, 1, legacy_prefix,
+        sizeof(legacy_prefix), true);
+    transport_before = preconfirm_peer.transport;
+    CHECK(receive_application(
+              &preconfirm_chan, &preconfirm_peer, batch.packet,
+              batch.packet_bytes, &rx_output) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    CHECK(rx_output.legacy_bytes == sizeof(legacy_prefix) &&
+          memcmp(&preconfirm_peer.transport, &transport_before,
+                 sizeof(transport_before)) == 0 &&
+          preconfirm_peer.lifecycle ==
+              SV_NATIVE_SHADOW_LIFECYCLE_ACTIVE &&
+          preconfirm_peer.enabled == 1 &&
+          preconfirm_peer.rx_rejections == 0 &&
+          preconfirm_peer.pending_native_valid == 0 &&
+          preconfirm_peer.input_batch_pending_count == 0 &&
+          preconfirm_peer.input_batch_legacy_fallbacks == 1);
+
+    /* Schema-2 sizing is also private-state admission.  A short WNB1 body
+     * with otherwise valid WTC/WNE framing must reach the same pre-confirm
+     * legacy-only fallback instead of being rejected by the outer classifier. */
+    memset(batch.payload, 0xa7,
+           WORR_NATIVE_INPUT_BATCH_WIRE_HEADER_BYTES);
+    batch.payload_bytes = WORR_NATIVE_INPUT_BATCH_WIRE_HEADER_BYTES;
+    rebuild_input_batch_carrier(
+        &batch, challenge.transport_epoch, 2, legacy_prefix,
+        sizeof(legacy_prefix), true);
+    transport_before = preconfirm_peer.transport;
+    CHECK(receive_application(
+              &preconfirm_chan, &preconfirm_peer, batch.packet,
+              batch.packet_bytes, &rx_output) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    CHECK(rx_output.legacy_bytes == sizeof(legacy_prefix) &&
+          memcmp(&preconfirm_peer.transport, &transport_before,
+                 sizeof(transport_before)) == 0 &&
+          preconfirm_peer.lifecycle ==
+              SV_NATIVE_SHADOW_LIFECYCLE_ACTIVE &&
+          preconfirm_peer.rx_rejections == 0 &&
+          preconfirm_peer.input_batch_pending_count == 0 &&
+          preconfirm_peer.input_batch_legacy_fallbacks == 2);
+    SV_NativeShadowPeerDestroyV1(&preconfirm_peer);
+
+    /* Capacity for readiness but not readiness+confirmation declines only
+     * WNB1.  SERVER_ACTIVE and the baseline schema-1 command/ACK path remain
+     * fully usable. */
+    activate_input_batch_peer(
+        &decline_peer, &decline_chan, 111, 50100, false, &challenge);
+    CHECK(decline_peer.input_batch_declined == 1 &&
+          decline_peer.input_batch_ack_blocked == 0 &&
+          decline_peer.input_batch_legacy_fallbacks == 1);
+    build_input_batch_carrier(
+        &batch, challenge.transport_epoch, 111, 1, 2, 7, 31,
+        legacy_prefix, sizeof(legacy_prefix), true);
+    corrupt_input_batch_payload_crc(
+        &batch, challenge.transport_epoch, 7, legacy_prefix,
+        sizeof(legacy_prefix), true);
+    transport_before = decline_peer.transport;
+    CHECK(receive_application(
+              &decline_chan, &decline_peer, batch.packet,
+              batch.packet_bytes, &rx_output) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    CHECK(rx_output.legacy_bytes == sizeof(legacy_prefix) &&
+          memcmp(&decline_peer.transport, &transport_before,
+                 sizeof(transport_before)) == 0 &&
+          decline_peer.lifecycle == SV_NATIVE_SHADOW_LIFECYCLE_ACTIVE &&
+          decline_peer.enabled == 1 && decline_peer.rx_rejections == 0 &&
+          decline_peer.input_batch_legacy_fallbacks == 2);
+
+    build_command_carrier(
+        &command, challenge.transport_epoch, 111, 1, 1, 41,
+        legacy_prefix, sizeof(legacy_prefix));
+    CHECK(receive_application(
+              &decline_chan, &decline_peer, command.packet,
+              command.packet_bytes, &rx_output) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    legacy = make_legacy_record(&command.record);
+    CHECK(SV_NativeShadowObserveLegacyCommandV1(
+        &decline_peer, &legacy, 50102));
+    CHECK(SV_NativeShadowAckDueV1(&decline_peer, 50102));
+    CHECK(prepare_application(
+              &decline_chan, &decline_peer, NULL, 0, candidate,
+              sizeof(candidate), &tx_output) ==
+          NETCHAN_APP_TX_PREPARE_PREPARED);
+    CHECK(Worr_NativeCarrierDecodeV1(
+              candidate, tx_output.application_bytes, &ack_view) ==
+          WORR_NATIVE_CARRIER_OK);
+    CHECK(ack_view.entry_count == 1 &&
+          ack_view.entries[0].entry_type ==
+              WORR_NATIVE_CARRIER_ENTRY_ACK_V1 &&
+          ack_view.entries[0].first_message_sequence == 1 &&
+          ack_view.entries[0].last_message_sequence == 1);
+    complete_application(
+        &decline_chan, &decline_peer, &tx_output,
+        NETCHAN_APP_TX_COMPLETION_ACCEPTED, candidate);
+    SV_NativeShadowPeerDestroyV1(&decline_peer);
+
+    /* A post-confirm userinfo mutation with no admitted WNB1 has no receipt
+     * to quarantine.  It declines future batches without suppressing a later
+     * baseline schema-1 receipt. */
+    activate_input_batch_peer(
+        &mutation_peer, &mutation_chan, 112, 50200, true, &challenge);
+    SV_NativeShadowDisableInputBatchV1(&mutation_peer);
+    CHECK(mutation_peer.input_batch_requested == 0 &&
+          mutation_peer.input_batch_confirmed == 1 &&
+          mutation_peer.input_batch_declined == 1 &&
+          mutation_peer.input_batch_pending_count == 0 &&
+          mutation_peer.input_batch_ack_blocked == 0);
+    build_command_carrier(
+        &command, challenge.transport_epoch, 112, 1, 1, 51,
+        NULL, 0);
+    CHECK(receive_application(
+              &mutation_chan, &mutation_peer, command.packet,
+              command.packet_bytes, &rx_output) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    legacy = make_legacy_record(&command.record);
+    CHECK(SV_NativeShadowObserveLegacyCommandV1(
+        &mutation_peer, &legacy, 50202));
+    CHECK(SV_NativeShadowAckDueV1(&mutation_peer, 50202));
+    CHECK(prepare_application(
+              &mutation_chan, &mutation_peer, NULL, 0, candidate,
+              sizeof(candidate), &tx_output) ==
+          NETCHAN_APP_TX_PREPARE_PREPARED);
+    complete_application(
+        &mutation_chan, &mutation_peer, &tx_output,
+        NETCHAN_APP_TX_COMPLETION_ACCEPTED, candidate);
+    SV_NativeShadowPeerDestroyV1(&mutation_peer);
+}
+
+static void test_input_batch_ack_gate_and_highwater(void)
+{
+    static const byte legacy_prefix[] = {0x61, 0x62};
+    netchan_t chan;
+    sv_native_shadow_peer_v1 peer;
+    sv_native_shadow_transport_v1 transport_before;
+    worr_native_readiness_record_v1 challenge;
+    input_batch_carrier_fixture batch;
+    input_batch_carrier_fixture replay;
+    worr_command_record_v1 legacy;
+    netchan_app_rx_output_v1_t rx_output;
+    netchan_app_tx_prepare_output_v1_t tx_output;
+    worr_native_carrier_view_v1 ack_view;
+    sv_native_shadow_input_batch_status_v1 status;
+    byte candidate[WORR_NATIVE_CARRIER_MAX_PACKET_BYTES];
+    byte candidate_before[sizeof(candidate)];
+    uint32_t index;
+
+    activate_input_batch_peer(
+        &peer, &chan, 120, 51000, true, &challenge);
+    CHECK(peer.input_batch_confirmed == 1 &&
+          peer.input_batch_confirmations_appended == 1);
+    build_input_batch_carrier(
+        &batch, challenge.transport_epoch, 120, 1, 3, 1, 70,
+        legacy_prefix, sizeof(legacy_prefix), false);
+    CHECK(batch.packet_bytes == sizeof(legacy_prefix) + 128u + 330u);
+    CHECK(receive_application(
+              &chan, &peer, batch.packet, batch.packet_bytes,
+              &rx_output) == NETCHAN_APP_RX_EXPOSE_LEGACY);
+    CHECK(rx_output.legacy_bytes == sizeof(legacy_prefix) &&
+          peer.rx_commits == 1 && peer.native_commands_accepted == 3 &&
+          peer.transport.ack_ledger.receipt_count == 1 &&
+          peer.transport.command_join.occupied_count == 3 &&
+          peer.input_batch_pending_count == 3 &&
+          peer.input_batch_ack_blocked == 1 &&
+          peer.input_batches_received == 1 &&
+          peer.input_batch_commands_received == 3);
+    CHECK(!SV_NativeShadowAckDueV1(&peer, 51001));
+    CHECK(!SV_NativeShadowOutputDueV1(&peer, 51001));
+    memset(candidate, 0x9a, sizeof(candidate));
+    memcpy(candidate_before, candidate, sizeof(candidate));
+    CHECK(prepare_application(
+              &chan, &peer, legacy_prefix, sizeof(legacy_prefix),
+              candidate, sizeof(candidate), &tx_output) ==
+          NETCHAN_APP_TX_PREPARE_BYPASS);
+    CHECK(memcmp(candidate, candidate_before, sizeof(candidate)) == 0);
+
+    /* A committed repeat may refresh the receipt, but cannot release it
+     * while any nested command still lacks the authoritative legacy half. */
+    CHECK(receive_application(
+              &chan, &peer, batch.packet, batch.packet_bytes,
+              &rx_output) == NETCHAN_APP_RX_EXPOSE_LEGACY);
+    CHECK(peer.rx_repeat_refreshes == 1 &&
+          peer.input_batch_repeat_refreshes == 1 &&
+          peer.input_batch_ack_blocked == 1 &&
+          peer.input_batch_pending_count == 3);
+
+    for (index = 0; index < 3; ++index) {
+        legacy = make_legacy_record(&batch.records[index]);
+        CHECK(SV_NativeShadowObserveLegacyCommandV1(
+            &peer, &legacy, 51002u + index));
+        CHECK(peer.input_batch_pending_count == 2u - index &&
+              peer.command_matches == index + 1u);
+        if (index != 2) {
+            CHECK(peer.input_batch_ack_blocked == 1);
+            CHECK(!SV_NativeShadowAckDueV1(
+                &peer, 51002u + index));
+        }
+    }
+    CHECK(peer.input_batch_ack_blocked == 0 &&
+          peer.input_batch_acknowledgements_unblocked == 1 &&
+          peer.transport.command_join.occupied_count == 0 &&
+          peer.matched_native_highwater_valid == 1 &&
+          peer.matched_native_highwater.sequence == 3);
+    CHECK(SV_NativeShadowGetInputBatchStatusV1(&peer, &status));
+    CHECK(status.pending_count == 0 && status.ack_blocked == 0 &&
+          status.legacy_joins == 3 &&
+          status.acknowledgements_unblocked == 1);
+    CHECK(SV_NativeShadowAckDueV1(&peer, 51004));
+    CHECK(prepare_application(
+              &chan, &peer, NULL, 0, candidate, sizeof(candidate),
+              &tx_output) == NETCHAN_APP_TX_PREPARE_PREPARED);
+    CHECK(Worr_NativeCarrierDecodeV1(
+              candidate, tx_output.application_bytes, &ack_view) ==
+          WORR_NATIVE_CARRIER_OK);
+    CHECK(ack_view.entry_count == 1 &&
+          ack_view.entries[0].first_message_sequence == 1 &&
+          ack_view.entries[0].last_message_sequence == 1);
+    complete_application(
+        &chan, &peer, &tx_output,
+        NETCHAN_APP_TX_COMPLETION_ACCEPTED, candidate);
+
+    /* The replay gate is based on the first nested ID, not the batch tail.
+     * Here the first ID equals matched high-water while the tail is fresh. */
+    build_input_batch_carrier(
+        &replay, challenge.transport_epoch, 120, 3, 2, 2, 80,
+        legacy_prefix, sizeof(legacy_prefix), false);
+    transport_before = peer.transport;
+    CHECK(receive_application(
+              &chan, &peer, replay.packet, replay.packet_bytes,
+              &rx_output) == NETCHAN_APP_RX_EXPOSE_LEGACY);
+    CHECK(rx_output.legacy_bytes == sizeof(legacy_prefix) &&
+          peer.lifecycle == SV_NATIVE_SHADOW_LIFECYCLE_DRAIN &&
+          peer.last_failure == SV_NATIVE_SHADOW_FAILURE_COMMAND_SHADOW &&
+          peer.rx_commits == 1 && peer.input_batches_received == 1 &&
+          peer.input_batch_pending_count == 0 &&
+          memcmp(&peer.transport, &transport_before,
+                 sizeof(transport_before)) == 0);
+    SV_NativeShadowPeerDestroyV1(&peer);
+}
+
+static void test_input_batch_mismatch_expiry_and_malformed(void)
+{
+    netchan_t mismatch_chan;
+    netchan_t expiry_chan;
+    netchan_t malformed_chan;
+    netchan_t corrupt_chan;
+    sv_native_shadow_peer_v1 mismatch_peer;
+    sv_native_shadow_peer_v1 expiry_peer;
+    sv_native_shadow_peer_v1 malformed_peer;
+    sv_native_shadow_peer_v1 corrupt_peer;
+    sv_native_shadow_transport_v1 transport_before;
+    worr_native_readiness_record_v1 challenge;
+    input_batch_carrier_fixture batch;
+    worr_command_record_v1 legacy;
+    netchan_app_rx_output_v1_t rx_output;
+    netchan_app_tx_prepare_output_v1_t tx_output;
+    byte candidate[WORR_NATIVE_CARRIER_MAX_PACKET_BYTES];
+    byte candidate_before[sizeof(candidate)];
+
+    activate_input_batch_peer(
+        &mismatch_peer, &mismatch_chan, 121, 52000, true,
+        &challenge);
+    build_input_batch_carrier(
+        &batch, challenge.transport_epoch, 121, 1, 2, 1, 90,
+        NULL, 0, false);
+    CHECK(receive_application(
+              &mismatch_chan, &mismatch_peer, batch.packet,
+              batch.packet_bytes, &rx_output) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    legacy = make_legacy_record(&batch.records[0]);
+    legacy.command.buttons ^= 1u;
+    CHECK(Worr_CommandRecordCanonicalizeV1(
+        &legacy, WORR_COMMAND_MAX_NEGOTIATED_DURATION_MS));
+    CHECK(SV_NativeShadowObserveLegacyCommandV1(
+        &mismatch_peer, &legacy, 52002));
+    CHECK(mismatch_peer.lifecycle == SV_NATIVE_SHADOW_LIFECYCLE_DRAIN &&
+          mismatch_peer.command_mismatches == 1 &&
+          mismatch_peer.input_batch_pending_count == 2 &&
+          mismatch_peer.input_batch_ack_blocked == 1 &&
+          mismatch_peer.transport.ack_ledger.receipt_count == 1);
+    CHECK(!SV_NativeShadowAckDueV1(&mismatch_peer, 52002));
+    memset(candidate, 0x4a, sizeof(candidate));
+    memcpy(candidate_before, candidate, sizeof(candidate));
+    CHECK(prepare_application(
+              &mismatch_chan, &mismatch_peer, NULL, 0, candidate,
+              sizeof(candidate), &tx_output) ==
+          NETCHAN_APP_TX_PREPARE_BYPASS);
+    CHECK(memcmp(candidate, candidate_before, sizeof(candidate)) == 0);
+    SV_NativeShadowPeerDestroyV1(&mismatch_peer);
+
+    activate_input_batch_peer(
+        &expiry_peer, &expiry_chan, 122, 52100, true, &challenge);
+    build_input_batch_carrier(
+        &batch, challenge.transport_epoch, 122, 1, 2, 1, 100,
+        NULL, 0, false);
+    CHECK(receive_application(
+              &expiry_chan, &expiry_peer, batch.packet,
+              batch.packet_bytes, &rx_output) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    CHECK(SV_NativeShadowReconcileCommandStreamV1(
+        &expiry_peer, NULL,
+        52101u + (uint32_t)SV_NATIVE_SHADOW_JOIN_EXPIRY_MS + 1u));
+    CHECK(expiry_peer.lifecycle == SV_NATIVE_SHADOW_LIFECYCLE_DRAIN &&
+          expiry_peer.join_expiries == 1 &&
+          expiry_peer.input_batch_failures == 1 &&
+          expiry_peer.input_batch_pending_count == 2 &&
+          expiry_peer.input_batch_ack_blocked == 1 &&
+          expiry_peer.transport.ack_ledger.receipt_count == 1);
+    CHECK(!SV_NativeShadowAckDueV1(
+        &expiry_peer,
+        52101u + (uint32_t)SV_NATIVE_SHADOW_JOIN_EXPIRY_MS + 1u));
+    memset(candidate, 0x5b, sizeof(candidate));
+    memcpy(candidate_before, candidate, sizeof(candidate));
+    CHECK(prepare_application(
+              &expiry_chan, &expiry_peer, NULL, 0, candidate,
+              sizeof(candidate), &tx_output) ==
+          NETCHAN_APP_TX_PREPARE_BYPASS);
+    CHECK(memcmp(candidate, candidate_before, sizeof(candidate)) == 0);
+    SV_NativeShadowPeerDestroyV1(&expiry_peer);
+
+    /* The outer WNB1 framing/CRC remains valid, but the second nested WNC1
+     * skips an identity.  Decode rejects the complete batch transactionally;
+     * no RX slot, receipt, or join mutation is committed. */
+    activate_input_batch_peer(
+        &malformed_peer, &malformed_chan, 123, 52200, true,
+        &challenge);
+    build_input_batch_carrier(
+        &batch, challenge.transport_epoch, 123, 1, 2, 1, 110,
+        NULL, 0, false);
+    make_input_batch_noncontiguous(
+        &batch, challenge.transport_epoch, 1, NULL, 0);
+    transport_before = malformed_peer.transport;
+    CHECK(receive_application(
+              &malformed_chan, &malformed_peer, batch.packet,
+              batch.packet_bytes, &rx_output) == NETCHAN_APP_RX_REJECT);
+    CHECK(malformed_peer.lifecycle == SV_NATIVE_SHADOW_LIFECYCLE_DRAIN &&
+          malformed_peer.last_failure == SV_NATIVE_SHADOW_FAILURE_CODEC &&
+          malformed_peer.rx_rejections == 1 &&
+          malformed_peer.rx_commits == 0 &&
+          malformed_peer.input_batch_pending_count == 0 &&
+          memcmp(&malformed_peer.transport, &transport_before,
+                 sizeof(transport_before)) == 0);
+    SV_NativeShadowPeerDestroyV1(&malformed_peer);
+
+    activate_input_batch_peer(
+        &corrupt_peer, &corrupt_chan, 124, 52300, true,
+        &challenge);
+    build_input_batch_carrier(
+        &batch, challenge.transport_epoch, 124, 1, 2, 1, 120,
+        NULL, 0, false);
+    corrupt_input_batch_payload_crc(
+        &batch, challenge.transport_epoch, 1, NULL, 0, false);
+    transport_before = corrupt_peer.transport;
+    CHECK(receive_application(
+              &corrupt_chan, &corrupt_peer, batch.packet,
+              batch.packet_bytes, &rx_output) == NETCHAN_APP_RX_REJECT);
+    CHECK(corrupt_peer.lifecycle == SV_NATIVE_SHADOW_LIFECYCLE_DRAIN &&
+          corrupt_peer.last_failure == SV_NATIVE_SHADOW_FAILURE_CODEC &&
+          corrupt_peer.rx_rejections == 1 &&
+          corrupt_peer.rx_commits == 0 &&
+          corrupt_peer.input_batch_pending_count == 0 &&
+          memcmp(&corrupt_peer.transport, &transport_before,
+                 sizeof(transport_before)) == 0);
+    SV_NativeShadowPeerDestroyV1(&corrupt_peer);
+}
+
+static void test_input_batch_legacy_history_reconciliation(void)
+{
+    netchan_t chan;
+    sv_native_shadow_peer_v1 peer;
+    worr_native_readiness_record_v1 challenge;
+    input_batch_carrier_fixture first_batch;
+    input_batch_carrier_fixture second_batch;
+    worr_command_stream_v1 stream;
+    worr_command_stream_slot_v1 stream_slots[8];
+    worr_command_record_v1 legacy;
+    netchan_app_rx_output_v1_t rx_output;
+    netchan_app_tx_prepare_output_v1_t tx_output;
+    byte candidate[WORR_NATIVE_CARRIER_MAX_PACKET_BYTES];
+    uint32_t index;
+
+    activate_input_batch_peer(
+        &peer, &chan, 124, 53000, true, &challenge);
+    CHECK(Worr_CommandStreamInitV1(
+        &stream, stream_slots, 8,
+        WORR_COMMAND_MAX_NEGOTIATED_DURATION_MS,
+        (worr_command_cursor_v1){124, 0}, 0));
+
+    build_input_batch_carrier(
+        &first_batch, challenge.transport_epoch, 124, 1, 2, 1,
+        120, NULL, 0, false);
+
+    /* The first one-command legacy packet was authoritative before the client
+     * could form a minimum-size WNB1.  Production retains it in the canonical
+     * command stream even though no native join was pending at that instant. */
+    legacy = make_legacy_record(&first_batch.records[0]);
+    CHECK(Worr_CommandStreamInsertV1(&stream, &legacy) ==
+          WORR_COMMAND_STREAM_INSERTED);
+    CHECK(SV_NativeShadowObserveLegacyCommandV1(
+        &peer, &legacy, 53002));
+    CHECK(Worr_CommandStreamConsumeV1(
+              &stream, legacy.command_id, NULL) ==
+          WORR_COMMAND_STREAM_CONSUMED);
+    CHECK(peer.input_batch_pending_count == 0 &&
+          peer.command_matches == 0);
+
+    /* Packet two carries WNB1 [1,2] beside only legacy command 2.  The
+     * pre-parse production reconciliation seam must join retained command 1
+     * before the current packet's command 2 is observed. */
+    CHECK(receive_application(
+              &chan, &peer, first_batch.packet,
+              first_batch.packet_bytes, &rx_output) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    CHECK(peer.input_batch_pending_count == 2 &&
+          peer.input_batch_ack_blocked == 1);
+    CHECK(SV_NativeShadowReconcileCommandStreamV1(
+        &peer, &stream, 53003));
+    CHECK(peer.input_batch_pending_count == 1 &&
+          peer.input_batch_pending_ids[0].sequence == 2 &&
+          peer.input_batch_legacy_joins == 1 &&
+          peer.command_matches == 1 &&
+          peer.input_batch_ack_blocked == 1);
+
+    legacy = make_legacy_record(&first_batch.records[1]);
+    CHECK(Worr_CommandStreamInsertV1(&stream, &legacy) ==
+          WORR_COMMAND_STREAM_INSERTED);
+    CHECK(SV_NativeShadowObserveLegacyCommandV1(
+        &peer, &legacy, 53004));
+    CHECK(Worr_CommandStreamConsumeV1(
+              &stream, legacy.command_id, NULL) ==
+          WORR_COMMAND_STREAM_CONSUMED);
+    CHECK(peer.input_batch_pending_count == 0 &&
+          peer.input_batch_ack_blocked == 0 &&
+          peer.input_batch_acknowledgements_unblocked == 1 &&
+          peer.command_matches == 2);
+
+    /* While batch one waits for its receipt at the client, later legacy
+     * packets 3 and 4 can reach authoritative intake.  Preserve both exact
+     * records, then release batch one and admit the delayed second batch. */
+    build_input_batch_carrier(
+        &second_batch, challenge.transport_epoch, 124, 3, 2, 2,
+        122, NULL, 0, false);
+    for (index = 0; index < 2; ++index) {
+        legacy = make_legacy_record(&second_batch.records[index]);
+        CHECK(Worr_CommandStreamInsertV1(&stream, &legacy) ==
+              WORR_COMMAND_STREAM_INSERTED);
+        CHECK(SV_NativeShadowObserveLegacyCommandV1(
+            &peer, &legacy, 53005 + index));
+        CHECK(Worr_CommandStreamConsumeV1(
+                  &stream, legacy.command_id, NULL) ==
+              WORR_COMMAND_STREAM_CONSUMED);
+    }
+    CHECK(peer.command_matches == 2 &&
+          peer.input_batch_pending_count == 0);
+    CHECK(SV_NativeShadowAckDueV1(&peer, 53006));
+    CHECK(prepare_application(
+              &chan, &peer, NULL, 0, candidate,
+              sizeof(candidate), &tx_output) ==
+          NETCHAN_APP_TX_PREPARE_PREPARED);
+    complete_application(
+        &chan, &peer, &tx_output,
+        NETCHAN_APP_TX_COMPLETION_ACCEPTED, candidate);
+    CHECK(!SV_NativeShadowAckDueV1(&peer, 53006));
+
+    CHECK(receive_application(
+              &chan, &peer, second_batch.packet,
+              second_batch.packet_bytes, &rx_output) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    CHECK(peer.input_batch_pending_count == 2 &&
+          peer.input_batch_ack_blocked == 1);
+    CHECK(SV_NativeShadowReconcileCommandStreamV1(
+        &peer, &stream, 53007));
+    CHECK(peer.lifecycle == SV_NATIVE_SHADOW_LIFECYCLE_ACTIVE &&
+          peer.input_batch_pending_count == 0 &&
+          peer.input_batch_ack_blocked == 0 &&
+          peer.input_batches_received == 2 &&
+          peer.input_batch_commands_received == 4 &&
+          peer.input_batch_legacy_joins == 4 &&
+          peer.input_batch_acknowledgements_unblocked == 2 &&
+          peer.command_matches == 4 &&
+          peer.input_batch_failures == 0 &&
+          SV_NativeShadowAckDueV1(&peer, 53007));
     SV_NativeShadowPeerDestroyV1(&peer);
 }
 
@@ -1325,8 +2172,8 @@ static void test_epoch_cancellation_routing(void)
     CHECK(peer.rx_commits == 1 && peer.pending_native_valid == 1);
 
     CHECK(SV_NativeShadowBeginEpochV1(
-        &peer, 71, WORR_NET_CAP_LEGACY_STAGE_MASK,
-        WORR_NET_CAP_LEGACY_STAGE_MASK, 4002, &new_challenge));
+        &peer, 71, native_public_mask(&peer),
+        native_public_mask(&peer), 4002, &new_challenge));
     CHECK(peer.transport_initialized == 0 &&
           peer.retired_transport_initialized == 0 &&
           peer.cancelled_through_transport_epoch ==
@@ -1411,8 +2258,8 @@ static void test_epoch_cancellation_routing(void)
     /* A second consecutive rotation advances one floor; no bank is silently
      * overwritten and the current receipt receives a counted cancellation. */
     CHECK(SV_NativeShadowBeginEpochV1(
-        &peer, 72, WORR_NET_CAP_LEGACY_STAGE_MASK,
-        WORR_NET_CAP_LEGACY_STAGE_MASK, 4005, &third_challenge));
+        &peer, 72, native_public_mask(&peer),
+        native_public_mask(&peer), 4005, &third_challenge));
     CHECK(peer.transport_initialized == 0 &&
           peer.retired_transport_initialized == 0 &&
           peer.cancelled_through_transport_epoch ==
@@ -1431,6 +2278,131 @@ static void test_epoch_cancellation_routing(void)
               old_distinct.packet_bytes, &rx_output) ==
           NETCHAN_APP_RX_REJECT);
     CHECK(peer.last_failure == SV_NATIVE_SHADOW_FAILURE_CARRIER);
+    SV_NativeShadowPeerDestroyV1(&peer);
+}
+
+static void test_map_quiesce_cancels_pending_command_before_stream_reset(void)
+{
+    static const byte legacy[] = {0x51, 0x52};
+    netchan_t chan;
+    sv_native_shadow_peer_v1 peer;
+    worr_native_readiness_record_v1 old_challenge;
+    worr_native_readiness_record_v1 new_challenge;
+    worr_native_readiness_record_v1 delayed_ready;
+    worr_native_readiness_record_v1 new_ready;
+    worr_native_readiness_record_v1 server_active;
+    worr_native_readiness_record_v1 untouched;
+    worr_native_readiness_setting_pair_v1 pairs[
+        WORR_NATIVE_READINESS_SIDEBAND_PAIR_COUNT];
+    command_carrier_fixture old_command;
+    netchan_app_rx_output_v1_t rx_output;
+    sv_native_shadow_status_v1 status;
+    uint64_t barriers;
+    uint32_t index;
+
+    activate_peer(&peer, &chan, 500, 12000, &old_challenge);
+    build_command_carrier(
+        &old_command, old_challenge.transport_epoch, 500, 1, 1, 0x41,
+        legacy, sizeof(legacy));
+    CHECK(receive_application(
+              &chan, &peer, old_command.packet,
+              old_command.packet_bytes, &rx_output) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    CHECK(peer.pending_native_valid == 1 &&
+          peer.transport.ack_ledger.receipt_count == 1);
+
+    CHECK(SV_NativeShadowPeerQuiesceMapV1(&peer));
+    CHECK(peer.lifecycle ==
+              SV_NATIVE_SHADOW_LIFECYCLE_WAIT_READINESS &&
+          peer.transport_initialized == 0 &&
+          peer.retired_transport_initialized == 0 &&
+          peer.pending_native_valid == 0 &&
+          peer.input_batch_pending_count == 0 &&
+          peer.matched_native_highwater_valid == 0 &&
+          peer.cancelled_through_transport_epoch ==
+              old_challenge.transport_epoch &&
+          peer.cancellation_barriers == 2 &&
+          peer.cancelled_transports == 1 &&
+          peer.cancelled_receipts == 1 &&
+          peer.failures == 0 &&
+          peer.last_failure == SV_NATIVE_SHADOW_FAILURE_NONE &&
+          chan.app_tx_opaque == &peer && chan.app_rx_opaque == &peer);
+
+    barriers = peer.cancellation_barriers;
+    CHECK(SV_NativeShadowPeerQuiesceMapV1(&peer));
+    CHECK(peer.cancellation_barriers == barriers &&
+          peer.failures == 0);
+
+    /* A delayed old command remains valid carrier syntax, exposes the exact
+     * authoritative legacy prefix, and cannot recreate a pending native half
+     * after the map cancellation floor is installed. */
+    CHECK(receive_application(
+              &chan, &peer, old_command.packet,
+              old_command.packet_bytes, &rx_output) ==
+          NETCHAN_APP_RX_EXPOSE_LEGACY);
+    CHECK(rx_output.legacy_bytes == sizeof(legacy) &&
+          peer.pending_native_valid == 0 &&
+          peer.stale_cancelled_carriers == 1 &&
+          peer.failures == 0);
+
+    /* The same floor consumes a delayed reliable CLIENT_READY from the old
+     * map without advancing or failing the retained readiness machine. */
+    make_client_ready(&old_challenge, peer.clock_ticks, &delayed_ready);
+    CHECK(Worr_NativeReadinessSidebandEncodeV1(
+        &delayed_ready, pairs,
+        WORR_NATIVE_READINESS_SIDEBAND_PAIR_COUNT));
+    memset(&untouched, 0xa5, sizeof(untouched));
+    CHECK(SV_NativeShadowPacketBeginV1(&peer, 12002));
+    for (index = 0;
+         index < WORR_NATIVE_READINESS_SIDEBAND_PAIR_COUNT;
+         ++index) {
+        CHECK(SV_NativeShadowObserveSettingV1(
+                  &peer, pairs[index].index, pairs[index].value,
+                  &untouched) ==
+              SV_NATIVE_SHADOW_OBSERVE_FIELD_CONSUMED);
+    }
+    CHECK(SV_NativeShadowPacketEndV1(&peer));
+    CHECK(peer.stale_cancelled_readiness_records == 1 &&
+          peer.failures == 0);
+
+    CHECK(SV_NativeShadowBeginEpochV1(
+        &peer, 501, native_public_mask(&peer),
+        native_public_mask(&peer), 12003, &new_challenge));
+    CHECK(new_challenge.transport_epoch >
+              old_challenge.transport_epoch &&
+          peer.cancelled_through_transport_epoch ==
+              old_challenge.transport_epoch &&
+          peer.cancellation_barriers == barriers + 1);
+    make_client_ready(&new_challenge, peer.clock_ticks, &new_ready);
+    feed_ready(&peer, 12004, &new_ready, &server_active);
+    CHECK(SV_NativeShadowServerActiveQueuedV1(&peer));
+    CHECK(peer.lifecycle == SV_NATIVE_SHADOW_LIFECYCLE_ACTIVE &&
+          peer.transport_initialized == 1 &&
+          peer.transport.binding.transport_epoch ==
+              new_challenge.transport_epoch &&
+          peer.failures == 0);
+    CHECK(SV_NativeShadowGetStatusV1(&peer, 12004, &status));
+    CHECK(status.lifecycle == SV_NATIVE_SHADOW_LIFECYCLE_ACTIVE &&
+          status.cancelled_through_transport_epoch ==
+              old_challenge.transport_epoch &&
+          status.last_failure == SV_NATIVE_SHADOW_FAILURE_NONE);
+    SV_NativeShadowPeerDestroyV1(&peer);
+}
+
+static void test_map_quiesce_busy_peer_fails_closed(void)
+{
+    netchan_t chan;
+    sv_native_shadow_peer_v1 peer;
+    worr_native_readiness_record_v1 challenge;
+
+    activate_peer(&peer, &chan, 510, 12100, &challenge);
+    peer.packet_open = 1;
+    CHECK(!SV_NativeShadowPeerQuiesceMapV1(&peer));
+    CHECK(peer.enabled == 0 &&
+          peer.lifecycle == SV_NATIVE_SHADOW_LIFECYCLE_DRAIN &&
+          peer.packet_open == 0 &&
+          peer.last_failure == SV_NATIVE_SHADOW_FAILURE_SESSION &&
+          peer.failures == 1);
     SV_NativeShadowPeerDestroyV1(&peer);
 }
 
@@ -1655,8 +2627,8 @@ static void test_clock_wrap_and_regression(void)
     CHECK(SV_NativeShadowPeerInitV1(
         &wrap_peer, &wrap_chan, UINT32_MAX - UINT32_C(5)));
     CHECK(SV_NativeShadowBeginEpochV1(
-        &wrap_peer, 20, WORR_NET_CAP_LEGACY_STAGE_MASK,
-        WORR_NET_CAP_LEGACY_STAGE_MASK,
+        &wrap_peer, 20, native_public_mask(&wrap_peer),
+        native_public_mask(&wrap_peer),
         UINT32_MAX - UINT32_C(5), &challenge));
     CHECK(SV_NativeShadowPacketBeginV1(&wrap_peer, 3));
     CHECK(wrap_peer.clock_ticks == start + UINT64_C(9));
@@ -1666,8 +2638,8 @@ static void test_clock_wrap_and_regression(void)
     init_chan(&regress_chan);
     CHECK(SV_NativeShadowPeerInitV1(&regress_peer, &regress_chan, 100));
     CHECK(SV_NativeShadowBeginEpochV1(
-        &regress_peer, 21, WORR_NET_CAP_LEGACY_STAGE_MASK,
-        WORR_NET_CAP_LEGACY_STAGE_MASK, 100, &challenge));
+        &regress_peer, 21, native_public_mask(&regress_peer),
+        native_public_mask(&regress_peer), 100, &challenge));
     CHECK(!SV_NativeShadowPacketBeginV1(&regress_peer, 50));
     CHECK(!SV_NativeShadowPeerEnabledV1(&regress_peer));
     CHECK(regress_peer.last_failure == SV_NATIVE_SHADOW_FAILURE_CLOCK);
@@ -1690,7 +2662,7 @@ static void test_binding_and_interleaving_fail_closed(void)
     CHECK(SV_NativeShadowPeerInitV1(&binding_peer, &binding_chan, 1));
     CHECK(!SV_NativeShadowBeginEpochV1(
         &binding_peer, 1, WORR_NET_CAP_LEGACY_STAGE_MASK,
-        WORR_NET_CAP_LEGACY_COMMAND_SIDEBAND_V1, 1, &challenge));
+        WORR_NET_CAP_LEGACY_STAGE_MASK, 1, &challenge));
     CHECK(!SV_NativeShadowPeerEnabledV1(&binding_peer));
     CHECK(binding_peer.last_failure ==
           SV_NATIVE_SHADOW_FAILURE_OFFICIAL_BINDING);
@@ -1699,8 +2671,8 @@ static void test_binding_and_interleaving_fail_closed(void)
     init_chan(&parser_chan);
     CHECK(SV_NativeShadowPeerInitV1(&parser_peer, &parser_chan, 2));
     CHECK(SV_NativeShadowBeginEpochV1(
-        &parser_peer, 2, WORR_NET_CAP_LEGACY_STAGE_MASK,
-        WORR_NET_CAP_LEGACY_STAGE_MASK, 2, &challenge));
+        &parser_peer, 2, native_public_mask(&parser_peer),
+        native_public_mask(&parser_peer), 2, &challenge));
     CHECK(Worr_NativeReadinessSidebandEncodeV1(
         &challenge, pairs, WORR_NATIVE_READINESS_SIDEBAND_PAIR_COUNT));
     CHECK(SV_NativeShadowPacketBeginV1(&parser_peer, 3));
@@ -1938,8 +2910,8 @@ static void test_queue_failure_disables_without_native_traffic(void)
     init_chan(&chan);
     CHECK(SV_NativeShadowPeerInitV1(&peer, &chan, 30));
     CHECK(SV_NativeShadowBeginEpochV1(
-        &peer, 30, WORR_NET_CAP_LEGACY_STAGE_MASK,
-        WORR_NET_CAP_LEGACY_STAGE_MASK, 30, &challenge));
+        &peer, 30, native_public_mask(&peer),
+        native_public_mask(&peer), 30, &challenge));
     /* Production reaches this path only if the exact staged append fails;
      * readiness state and both hooks are then retired before native bytes. */
     SV_NativeShadowPeerDisableV1(
@@ -1986,8 +2958,9 @@ static void test_queue_failure_disables_without_native_traffic(void)
     CHECK(postqueue_peer.wire_committed_transport_epoch ==
           first_postqueue_challenge.transport_epoch);
     CHECK(SV_NativeShadowBeginEpochV1(
-        &postqueue_peer, 33, WORR_NET_CAP_LEGACY_STAGE_MASK,
-        WORR_NET_CAP_LEGACY_STAGE_MASK, 52, &postqueue_challenge));
+        &postqueue_peer, 33, native_public_mask(&postqueue_peer),
+        native_public_mask(&postqueue_peer), 52,
+        &postqueue_challenge));
     make_client_ready(
         &postqueue_challenge, postqueue_peer.clock_ticks, &client_ready);
     feed_ready(
@@ -2032,8 +3005,8 @@ static void test_uncommitted_advanced_epoch_is_rejected(void)
 
     activate_peer(&peer, &chan, 34, 3000, &active_challenge);
     CHECK(SV_NativeShadowBeginEpochV1(
-        &peer, 35, WORR_NET_CAP_LEGACY_STAGE_MASK,
-        WORR_NET_CAP_LEGACY_STAGE_MASK, 3001, &waiting_challenge));
+        &peer, 35, native_public_mask(&peer),
+        native_public_mask(&peer), 3001, &waiting_challenge));
     CHECK(peer.private_transport_epoch == waiting_challenge.transport_epoch &&
           peer.wire_committed_transport_epoch ==
               active_challenge.transport_epoch &&
@@ -2108,8 +3081,8 @@ static void test_deadline_double_begin_and_dangling(void)
     init_chan(&deadline_chan);
     CHECK(SV_NativeShadowPeerInitV1(&deadline_peer, &deadline_chan, 0));
     CHECK(SV_NativeShadowBeginEpochV1(
-        &deadline_peer, 40, WORR_NET_CAP_LEGACY_STAGE_MASK,
-        WORR_NET_CAP_LEGACY_STAGE_MASK, 0, &challenge));
+        &deadline_peer, 40, native_public_mask(&deadline_peer),
+        native_public_mask(&deadline_peer), 0, &challenge));
     CHECK(!SV_NativeShadowPacketBeginV1(
         &deadline_peer, (uint32_t)SV_NATIVE_SHADOW_TIMEOUT_MS));
     CHECK(deadline_peer.last_failure ==
@@ -2119,8 +3092,8 @@ static void test_deadline_double_begin_and_dangling(void)
     init_chan(&begin_chan);
     CHECK(SV_NativeShadowPeerInitV1(&begin_peer, &begin_chan, 0));
     CHECK(SV_NativeShadowBeginEpochV1(
-        &begin_peer, 41, WORR_NET_CAP_LEGACY_STAGE_MASK,
-        WORR_NET_CAP_LEGACY_STAGE_MASK, 0, &challenge));
+        &begin_peer, 41, native_public_mask(&begin_peer),
+        native_public_mask(&begin_peer), 0, &challenge));
     CHECK(SV_NativeShadowPacketBeginV1(&begin_peer, 1));
     CHECK(!SV_NativeShadowPacketBeginV1(&begin_peer, 2));
     CHECK(!SV_NativeShadowPeerEnabledV1(&begin_peer));
@@ -2129,8 +3102,8 @@ static void test_deadline_double_begin_and_dangling(void)
     init_chan(&dangling_chan);
     CHECK(SV_NativeShadowPeerInitV1(&dangling_peer, &dangling_chan, 0));
     CHECK(SV_NativeShadowBeginEpochV1(
-        &dangling_peer, 42, WORR_NET_CAP_LEGACY_STAGE_MASK,
-        WORR_NET_CAP_LEGACY_STAGE_MASK, 0, &challenge));
+        &dangling_peer, 42, native_public_mask(&dangling_peer),
+        native_public_mask(&dangling_peer), 0, &challenge));
     CHECK(Worr_NativeReadinessSidebandEncodeV1(
         &challenge, pairs, WORR_NATIVE_READINESS_SIDEBAND_PAIR_COUNT));
     CHECK(SV_NativeShadowPacketBeginV1(&dangling_peer, 1));
@@ -2235,7 +3208,7 @@ static void test_nonmutating_ack_status_and_async_telemetry(void)
               WORR_NATIVE_READINESS_PHASE_SERVER_ACTIVE);
     CHECK(status.official_connection_epoch == 90 &&
           status.transport_epoch == challenge.transport_epoch &&
-          status.public_capabilities == WORR_NET_CAP_LEGACY_STAGE_MASK &&
+          status.public_capabilities == native_public_mask(&peer) &&
           status.private_capabilities ==
               WORR_NET_CAP_NATIVE_COMMAND_PRIVATE_MASK &&
           status.wire_committed == 1 &&
@@ -2461,7 +3434,8 @@ static void test_event_mode_mixed_tx_ack_release_and_retirement(void)
         NETCHAN_APP_TX_COMPLETION_ACCEPTED, packet);
 
     /* One current packet may carry one COMMAND DATA plus the exact event ACK.
-     * Both halves commit, and the ACK opens FIFO candidate promotion. */
+     * Both halves commit, while FIFO promotion remains deferred to the
+     * following output-due/TX-selection boundary. */
     build_command_ack_carrier(
         &command_ack, old_transport_epoch, 301, 1, 1, 0x32,
         descriptor_message, descriptor_message);
@@ -2472,8 +3446,8 @@ static void test_event_mode_mixed_tx_ack_release_and_retirement(void)
           NETCHAN_APP_RX_EXPOSE_LEGACY);
     CHECK(peer.rx_commits == 1 && peer.pending_native_valid == 1);
     CHECK(SV_NativeShadowGetEventStatusV1(&peer, 11003, &status));
-    CHECK(status.descriptor_acked == 1 && status.backlog_count == 0 &&
-          status.retained_count == 1 && status.candidates_promoted == 1 &&
+    CHECK(status.descriptor_acked == 1 && status.backlog_count == 1 &&
+          status.retained_count == 0 && status.candidates_promoted == 0 &&
           status.descriptors_acknowledged == 1 && status.output_due == 1);
 
     CHECK(SV_NativeShadowOutputDueV1(&peer, 11003));
@@ -2489,8 +3463,8 @@ static void test_event_mode_mixed_tx_ack_release_and_retirement(void)
         NETCHAN_APP_TX_COMPLETION_ACCEPTED, packet);
 
     CHECK(SV_NativeShadowBeginEpochV1(
-        &peer, 302, WORR_NET_CAP_LEGACY_STAGE_MASK,
-        WORR_NET_CAP_LEGACY_STAGE_MASK, 11004, &next_challenge));
+        &peer, 302, native_public_mask(&peer),
+        native_public_mask(&peer), 11004, &next_challenge));
     CHECK(next_challenge.negotiated_capabilities ==
           WORR_NET_CAP_NATIVE_EVENT_PRIVATE_MASK);
     CHECK(SV_NativeShadowGetEventStatusV1(&peer, 11004, &status));
@@ -2525,6 +3499,208 @@ static void test_event_mode_mixed_tx_ack_release_and_retirement(void)
           NETCHAN_APP_RX_EXPOSE_LEGACY);
     CHECK(peer.rx_drained == drained_before + 1 &&
           peer.pending_native_valid == 0);
+    SV_NativeShadowPeerDestroyV1(&peer);
+}
+
+static void test_event_schema2_batch_status_export(void)
+{
+    enum {
+        RAW_TIME_MS = 11500,
+        OFFICIAL_EPOCH = 350,
+    };
+    netchan_t chan;
+    sv_native_shadow_peer_v1 peer;
+    worr_native_readiness_record_v1 challenge;
+    worr_native_readiness_record_v1 active_confirm;
+    sv_native_shadow_event_status_v1 status;
+    worr_event_record_v1 candidates[5];
+    netchan_app_tx_prepare_output_v1_t tx_output;
+    netchan_app_rx_output_v1_t rx_output;
+    worr_native_envelope_frame_info_v1 frame;
+    byte packet[WORR_NATIVE_CARRIER_MAX_PACKET_BYTES];
+    byte ack_packet[WORR_NATIVE_CARRIER_MAX_PACKET_BYTES];
+    size_t ack_packet_bytes;
+    uint32_t descriptor_message;
+    uint32_t index;
+
+    begin_event_peer_wait_confirm(
+        &peer, &chan, OFFICIAL_EPOCH, RAW_TIME_MS, NULL,
+        &challenge, &active_confirm);
+    feed_active_confirm(&peer, RAW_TIME_MS + 2u, &active_confirm);
+    CHECK(SV_NativeShadowOutputDueV1(&peer, RAW_TIME_MS + 2u));
+    memset(packet, 0, sizeof(packet));
+    CHECK(prepare_application(
+              &chan, &peer, NULL, 0, packet, sizeof(packet),
+              &tx_output) == NETCHAN_APP_TX_PREPARE_PREPARED);
+    decode_single_data_frame(
+        packet, tx_output.application_bytes, &frame);
+    CHECK(frame.record.record_class ==
+          WORR_NATIVE_RECORD_EVENT_STREAM_DESCRIPTOR_V1);
+    descriptor_message = frame.message_sequence;
+    complete_application(
+        &chan, &peer, &tx_output,
+        NETCHAN_APP_TX_COMPLETION_ACCEPTED, packet);
+
+    for (index = 0; index < 5; ++index) {
+        candidates[index] = make_event_candidate(
+            700, 70u + index, WORR_EVENT_LEGACY_ENTITY_FOOTSTEP);
+    }
+    CHECK(SV_NativeShadowQueueEventCandidatesV1(
+        &peer, candidates, 2, RAW_TIME_MS + 2u));
+
+    encode_ack_range_carrier(
+        challenge.transport_epoch, descriptor_message,
+        descriptor_message, ack_packet, sizeof(ack_packet),
+        &ack_packet_bytes);
+    CHECK(receive_application(
+              &chan, &peer, ack_packet, ack_packet_bytes,
+              &rx_output) == NETCHAN_APP_RX_EXPOSE_LEGACY);
+    CHECK(rx_output.legacy_bytes == 0);
+    CHECK(SV_NativeShadowGetEventStatusV1(
+        &peer, RAW_TIME_MS + 2u, &status));
+    CHECK(status.descriptor_acked == 1 && status.backlog_count == 2 &&
+          status.retained_count == 0 &&
+          status.schema2_batches_promoted == 0 &&
+          status.schema2_events_promoted == 0);
+
+    /* The descriptor ACK between two independent capture sites must release
+     * credit without promoting the first prefix of this exact fence. */
+    CHECK(SV_NativeShadowQueueEventCandidatesV1(
+        &peer, candidates + 2, 3, RAW_TIME_MS + 3u));
+    CHECK(SV_NativeShadowGetEventStatusV1(
+        &peer, RAW_TIME_MS + 3u, &status));
+    CHECK(status.backlog_count == 5 && status.retained_count == 0 &&
+          status.candidates_promoted == 0 &&
+          status.schema2_batches_promoted == 0 &&
+          status.schema2_events_promoted == 0 && status.output_due == 1);
+
+    memset(packet, 0, sizeof(packet));
+    CHECK(prepare_application(
+              &chan, &peer, NULL, 0, packet, sizeof(packet),
+              &tx_output) == NETCHAN_APP_TX_PREPARE_PREPARED);
+    decode_single_data_frame(
+        packet, tx_output.application_bytes, &frame);
+    CHECK(frame.record.record_class == WORR_NATIVE_RECORD_EVENT_V1 &&
+          frame.record.record_schema_version ==
+              WORR_NATIVE_EVENT_BATCH_RECORD_SCHEMA &&
+          frame.record.object_sequence == 5 && frame.fragment_count == 1);
+    complete_application(
+        &chan, &peer, &tx_output,
+        NETCHAN_APP_TX_COMPLETION_ACCEPTED, packet);
+    CHECK(SV_NativeShadowGetEventStatusV1(
+        &peer, RAW_TIME_MS + 3u, &status));
+    CHECK(status.backlog_count == 0 && status.retained_count == 1 &&
+          status.candidates_queued == 5 &&
+          status.candidates_promoted == 5 &&
+          status.schema2_batches_promoted == 1 &&
+          status.schema2_events_promoted == 5 &&
+          status.first_sends == 6);
+
+    SV_NativeShadowPeerDestroyV1(&peer);
+}
+
+static void test_snapshot_event_transport_adds_final_emission_fence(void)
+{
+    enum {
+        SNAPSHOT_EPOCH = 93,
+        RAW_TIME_MS = 11800,
+        OFFICIAL_EPOCH = 375,
+    };
+    netchan_t chan;
+    sv_native_shadow_peer_v1 peer;
+    worr_native_readiness_record_v1 challenge;
+    worr_native_readiness_record_v1 active_confirm;
+    sv_snapshot_shadow_config_v1 shadow_config;
+    sv_snapshot_shadow_peer_v1 *shadow;
+    snapshot_frame_fixture frame_fixture;
+    sv_snapshot_shadow_ref_v1 snapshot_ref;
+    worr_event_record_v1 projection_candidate;
+    worr_event_record_v1 transport_record;
+    netchan_app_tx_prepare_output_v1_t tx_output;
+    netchan_app_rx_output_v1_t rx_output;
+    worr_native_envelope_frame_info_v1 frame;
+    const byte *payload;
+    byte packet[WORR_NATIVE_CARRIER_MAX_PACKET_BYTES];
+    byte ack_packet[WORR_NATIVE_CARRIER_MAX_PACKET_BYTES];
+    size_t payload_bytes = 0;
+    size_t ack_packet_bytes = 0;
+    uint32_t descriptor_message;
+    uint32_t candidate_count = 0;
+
+    begin_event_peer_wait_confirm(
+        &peer, &chan, OFFICIAL_EPOCH, RAW_TIME_MS, NULL,
+        &challenge, &active_confirm);
+    feed_active_confirm(&peer, RAW_TIME_MS + 2u, &active_confirm);
+    CHECK(SV_NativeShadowOutputDueV1(&peer, RAW_TIME_MS + 2u));
+    memset(packet, 0, sizeof(packet));
+    CHECK(prepare_application(
+              &chan, &peer, NULL, 0, packet, sizeof(packet),
+              &tx_output) == NETCHAN_APP_TX_PREPARE_PREPARED);
+    decode_single_data_frame(
+        packet, tx_output.application_bytes, &frame);
+    CHECK(frame.record.record_class ==
+          WORR_NATIVE_RECORD_EVENT_STREAM_DESCRIPTOR_V1);
+    descriptor_message = frame.message_sequence;
+    complete_application(
+        &chan, &peer, &tx_output,
+        NETCHAN_APP_TX_COMPLETION_ACCEPTED, packet);
+    encode_ack_range_carrier(
+        challenge.transport_epoch, descriptor_message,
+        descriptor_message, ack_packet, sizeof(ack_packet),
+        &ack_packet_bytes);
+    CHECK(receive_application(
+              &chan, &peer, ack_packet, ack_packet_bytes,
+              &rx_output) == NETCHAN_APP_RX_EXPOSE_LEGACY);
+
+    shadow_config = make_snapshot_shadow_config(SNAPSHOT_EPOCH);
+    shadow = SV_SnapshotShadowCreateV1(&shadow_config);
+    CHECK(shadow != NULL);
+    init_snapshot_frame(&frame_fixture, 610);
+    frame_fixture.deltas[5].entity_delta.delta_bits |= Q2P_ESD_EVENT;
+    frame_fixture.deltas[5].entity_delta.event =
+        WORR_EVENT_LEGACY_ENTITY_FOOTSTEP;
+    snapshot_ref = commit_snapshot_frame(
+        shadow, &frame_fixture, 6100, UINT64_C(61000000));
+
+    CHECK(SV_SnapshotShadowCopyEventCandidatesV1(
+              shadow, snapshot_ref, &projection_candidate, 1,
+              &candidate_count) == SV_SNAPSHOT_EVENT_CANDIDATES_OK);
+    CHECK(candidate_count == 1 &&
+          (projection_candidate.flags &
+           WORR_EVENT_FLAG_SNAPSHOT_FENCED) == 0);
+
+    CHECK(SV_NativeShadowQueueSnapshotEventsV1(
+        &peer, shadow, snapshot_ref, RAW_TIME_MS + 3u));
+    memset(packet, 0, sizeof(packet));
+    CHECK(prepare_application(
+              &chan, &peer, NULL, 0, packet, sizeof(packet),
+              &tx_output) == NETCHAN_APP_TX_PREPARE_PREPARED);
+    payload = decode_single_data_payload(
+        packet, tx_output.application_bytes, &frame, &payload_bytes);
+    CHECK(frame.record.record_class == WORR_NATIVE_RECORD_EVENT_V1 &&
+          frame.record.record_schema_version == WORR_EVENT_ABI_VERSION);
+    CHECK(Worr_NativeCodecEventDecodeV1(
+              payload, payload_bytes, MAX_EDICTS, &transport_record) ==
+          WORR_NATIVE_CODEC_OK);
+    CHECK((transport_record.flags & WORR_EVENT_FLAG_SNAPSHOT_FENCED) != 0 &&
+          transport_record.event_id.stream_epoch != 0 &&
+          transport_record.event_id.sequence != 0 &&
+          (transport_record.flags &
+           ~(WORR_EVENT_FLAG_SNAPSHOT_FENCED |
+             WORR_EVENT_FLAG_HAS_AUTHORITY_ID)) ==
+              projection_candidate.flags &&
+          transport_record.source_tick == projection_candidate.source_tick &&
+          transport_record.source_time_us ==
+              projection_candidate.source_time_us &&
+          transport_record.source_entity.index ==
+              projection_candidate.source_entity.index &&
+          transport_record.source_entity.generation ==
+              projection_candidate.source_entity.generation);
+    complete_application(
+        &chan, &peer, &tx_output,
+        NETCHAN_APP_TX_COMPLETION_ACCEPTED, packet);
+
+    SV_SnapshotShadowDestroyV1(shadow);
     SV_NativeShadowPeerDestroyV1(&peer);
 }
 
@@ -2573,6 +3749,248 @@ static uint16_t send_snapshot_burst(
     return expected_fragment_count;
 }
 
+static void test_reliable_keyed_poi_unified_fifo(void)
+{
+    enum {
+        RAW_TIME_MS = 11850,
+        OFFICIAL_EPOCH = 380,
+        SPAWNCOUNT = 76,
+    };
+    const uint8_t first_game[] = {
+        svc_muzzleflash, 5, 0, WORR_EVENT_PLAYER_MUZZLE_MACHINEGUN,
+    };
+    const uint8_t last_game[] = {
+        svc_muzzleflash, 7, 0, WORR_EVENT_PLAYER_MUZZLE_SHOTGUN,
+    };
+    byte reliable_poi[WORR_LEGACY_KEYED_POI_RAW_SIZE];
+    netchan_t chan;
+    sv_native_shadow_peer_v1 peer;
+    worr_native_readiness_record_v1 challenge;
+    worr_native_readiness_record_v1 active_confirm;
+    sv_snapshot_shadow_config_v1 shadow_config;
+    sv_snapshot_shadow_peer_v1 *shadow;
+    snapshot_frame_fixture frame_fixture;
+    sv_snapshot_shadow_ref_v1 snapshot_ref;
+    sv_native_shadow_event_status_v1 status;
+    netchan_app_tx_prepare_output_v1_t tx_output;
+    netchan_app_rx_output_v1_t rx_output;
+    worr_native_envelope_frame_info_v1 envelope;
+    worr_native_event_batch_info_v1 batch_info;
+    worr_event_record_v1 records[3];
+    worr_event_payload_muzzle_v1 first_payload;
+    worr_event_payload_keyed_poi_v1 poi_payload;
+    worr_event_payload_muzzle_v1 last_payload;
+    const byte *payload;
+    byte packet[WORR_NATIVE_CARRIER_MAX_PACKET_BYTES];
+    byte ack_packet[WORR_NATIVE_CARRIER_MAX_PACKET_BYTES];
+    size_t payload_bytes = 0;
+    size_t ack_packet_bytes = 0;
+    uint32_t descriptor_message;
+
+    make_raw_keyed_poi(reliable_poi, 8192, 0, 321, 208);
+    begin_event_peer_wait_confirm(
+        &peer, &chan, OFFICIAL_EPOCH, RAW_TIME_MS, NULL,
+        &challenge, &active_confirm);
+    CHECK(SV_NativeShadowCaptureReliableGameEventsV1(
+              &peer, SPAWNCOUNT, first_game, sizeof(first_game)) ==
+          SV_NATIVE_SHADOW_RELIABLE_GAME_EVENT_CAPTURED);
+    CHECK(SV_NativeShadowCaptureReliableKeyedPOIV1(
+              &peer, SPAWNCOUNT, reliable_poi,
+              sizeof(reliable_poi)) ==
+          SV_NATIVE_SHADOW_RELIABLE_GAME_EVENT_CAPTURED);
+    CHECK(SV_NativeShadowCaptureReliableGameEventsV1(
+              &peer, SPAWNCOUNT, last_game, sizeof(last_game)) ==
+          SV_NATIVE_SHADOW_RELIABLE_GAME_EVENT_CAPTURED);
+
+    shadow_config = make_snapshot_shadow_config(90);
+    shadow = SV_SnapshotShadowCreateV1(&shadow_config);
+    CHECK(shadow != NULL);
+    init_snapshot_frame(&frame_fixture, 485);
+    snapshot_ref = commit_snapshot_frame(
+        shadow, &frame_fixture, 4850, UINT64_C(48500000));
+    CHECK(SV_NativeShadowFlushReliableEventsV1(
+        &peer, shadow, snapshot_ref, SNAPSHOT_TEST_MAX_ENTITIES,
+        SPAWNCOUNT, RAW_TIME_MS + 2u));
+    CHECK(SV_NativeShadowGetEventStatusV1(
+        &peer, RAW_TIME_MS + 2u, &status));
+    CHECK(status.backlog_count == 3 && status.candidates_queued == 3);
+
+    feed_active_confirm(&peer, RAW_TIME_MS + 2u, &active_confirm);
+    memset(packet, 0, sizeof(packet));
+    CHECK(prepare_application(
+              &chan, &peer, NULL, 0, packet, sizeof(packet),
+              &tx_output) == NETCHAN_APP_TX_PREPARE_PREPARED);
+    decode_single_data_frame(
+        packet, tx_output.application_bytes, &envelope);
+    CHECK(envelope.record.record_class ==
+          WORR_NATIVE_RECORD_EVENT_STREAM_DESCRIPTOR_V1);
+    descriptor_message = envelope.message_sequence;
+    complete_application(
+        &chan, &peer, &tx_output,
+        NETCHAN_APP_TX_COMPLETION_ACCEPTED, packet);
+    encode_ack_range_carrier(
+        challenge.transport_epoch, descriptor_message,
+        descriptor_message, ack_packet, sizeof(ack_packet),
+        &ack_packet_bytes);
+    CHECK(receive_application(
+              &chan, &peer, ack_packet, ack_packet_bytes,
+              &rx_output) == NETCHAN_APP_RX_EXPOSE_LEGACY);
+
+    memset(packet, 0, sizeof(packet));
+    CHECK(prepare_application(
+              &chan, &peer, NULL, 0, packet, sizeof(packet),
+              &tx_output) == NETCHAN_APP_TX_PREPARE_PREPARED);
+    payload = decode_single_data_payload(
+        packet, tx_output.application_bytes, &envelope,
+        &payload_bytes);
+    CHECK(envelope.record.record_class == WORR_NATIVE_RECORD_EVENT_V1 &&
+          envelope.record.record_schema_version ==
+              WORR_NATIVE_EVENT_BATCH_RECORD_SCHEMA);
+    memset(&batch_info, 0, sizeof(batch_info));
+    CHECK(Worr_NativeEventBatchDecodeV1(
+              payload, payload_bytes, SNAPSHOT_TEST_MAX_ENTITIES,
+              records, 3, &batch_info) == WORR_NATIVE_EVENT_BATCH_OK);
+    CHECK(batch_info.event_count == 3 &&
+          records[0].event_id.sequence + 1u ==
+              records[1].event_id.sequence &&
+          records[1].event_id.sequence + 1u ==
+              records[2].event_id.sequence &&
+          records[0].payload_kind == WORR_EVENT_PAYLOAD_MUZZLE_V1 &&
+          records[1].payload_kind == WORR_EVENT_PAYLOAD_KEYED_POI_V1 &&
+          records[2].payload_kind == WORR_EVENT_PAYLOAD_MUZZLE_V1);
+    memcpy(&first_payload, records[0].payload, sizeof(first_payload));
+    memcpy(&poi_payload, records[1].payload, sizeof(poi_payload));
+    memcpy(&last_payload, records[2].payload, sizeof(last_payload));
+    CHECK(first_payload.flash_id == WORR_EVENT_PLAYER_MUZZLE_MACHINEGUN &&
+          poi_payload.key == 8192 && poi_payload.lifetime_ms == 0 &&
+          poi_payload.image_index == 321 && poi_payload.color_index == 208 &&
+          last_payload.flash_id == WORR_EVENT_PLAYER_MUZZLE_SHOTGUN);
+    CHECK(records[1].source_entity.index == 0 &&
+          records[1].source_entity.generation == 1 &&
+          records[1].subject_entity.index == 1 &&
+          records[1].subject_entity.generation == 1 &&
+          records[1].delivery_class ==
+              WORR_EVENT_DELIVERY_RELIABLE_ORDERED &&
+          records[1].expiry_tick == 0);
+    complete_application(
+        &chan, &peer, &tx_output,
+        NETCHAN_APP_TX_COMPLETION_ACCEPTED, packet);
+
+    /* Map quiesce must clear a newly captured deferred entry before a later
+     * map can bind it against a reused entity generation. */
+    CHECK(SV_NativeShadowCaptureReliableKeyedPOIV1(
+              &peer, SPAWNCOUNT + 1u, reliable_poi,
+              sizeof(reliable_poi)) ==
+          SV_NATIVE_SHADOW_RELIABLE_GAME_EVENT_CAPTURED);
+    CHECK(SV_NativeShadowPeerQuiesceMapV1(&peer));
+    CHECK(SV_NativeShadowFlushReliableEventsV1(
+        &peer, shadow, snapshot_ref, SNAPSHOT_TEST_MAX_ENTITIES,
+        SPAWNCOUNT + 1u, RAW_TIME_MS + 3u));
+
+    SV_SnapshotShadowDestroyV1(shadow);
+    SV_NativeShadowPeerDestroyV1(&peer);
+}
+
+static void test_reliable_mixed_game_event_snapshot_fence(void)
+{
+    enum {
+        RAW_TIME_MS = 11900,
+        OFFICIAL_EPOCH = 390,
+        SPAWNCOUNT = 77,
+    };
+    const uint8_t reliable_sequence[] = {
+        svc_muzzleflash, 5, 0,
+        WORR_EVENT_PLAYER_MUZZLE_MACHINEGUN | MZ_SILENCED,
+        svc_muzzleflash, 7, 0,
+        WORR_EVENT_PLAYER_MUZZLE_SHOTGUN,
+        svc_temp_entity, WORR_EVENT_LEGACY_TEMP_DAMAGE_DEALT, 23,
+    };
+    const uint8_t unsupported_sequence[] = {svc_nop};
+    byte reliable_poi[WORR_LEGACY_KEYED_POI_RAW_SIZE];
+    netchan_t chan;
+    sv_native_shadow_peer_v1 peer;
+    worr_native_readiness_record_v1 challenge;
+    worr_native_readiness_record_v1 active_confirm;
+    sv_snapshot_shadow_config_v1 shadow_config;
+    sv_snapshot_shadow_peer_v1 *shadow;
+    snapshot_frame_fixture frame_fixture;
+    sv_snapshot_shadow_ref_v1 snapshot_ref;
+    sv_native_shadow_event_status_v1 status;
+    uint32_t index;
+
+    begin_event_peer_wait_confirm(
+        &peer, &chan, OFFICIAL_EPOCH, RAW_TIME_MS, NULL,
+        &challenge, &active_confirm);
+    make_raw_keyed_poi(reliable_poi, 8192, 5000, 321, 208);
+    CHECK(SV_NativeShadowCaptureReliableGameEventsV1(
+              &peer, SPAWNCOUNT, unsupported_sequence,
+              sizeof(unsupported_sequence)) ==
+          SV_NATIVE_SHADOW_RELIABLE_GAME_EVENT_IGNORED);
+    CHECK(SV_NativeShadowCaptureReliableGameEventsV1(
+              &peer, SPAWNCOUNT, reliable_sequence,
+              sizeof(reliable_sequence)) ==
+          SV_NATIVE_SHADOW_RELIABLE_GAME_EVENT_CAPTURED);
+
+    shadow_config = make_snapshot_shadow_config(91);
+    shadow = SV_SnapshotShadowCreateV1(&shadow_config);
+    CHECK(shadow != NULL);
+    init_snapshot_frame(&frame_fixture, 490);
+    snapshot_ref = commit_snapshot_frame(
+        shadow, &frame_fixture, 4900, UINT64_C(49000000));
+    CHECK(SV_NativeShadowFlushReliableGameEventsV1(
+        &peer, shadow, snapshot_ref, SNAPSHOT_TEST_MAX_ENTITIES,
+        SPAWNCOUNT, RAW_TIME_MS + 2u));
+    CHECK(SV_NativeShadowGetEventStatusV1(
+        &peer, RAW_TIME_MS + 2u, &status));
+    CHECK(status.backlog_count == 3 && status.retained_count == 1 &&
+          status.candidates_queued == 3);
+
+    /* A flush is one-shot, and a map-generation mismatch cannot borrow the
+     * later snapshot's entity generations. */
+    CHECK(SV_NativeShadowFlushReliableGameEventsV1(
+        &peer, shadow, snapshot_ref, SNAPSHOT_TEST_MAX_ENTITIES,
+        SPAWNCOUNT, RAW_TIME_MS + 2u));
+    CHECK(SV_NativeShadowCaptureReliableGameEventsV1(
+              &peer, SPAWNCOUNT - 1u, reliable_sequence,
+              sizeof(reliable_sequence)) ==
+          SV_NATIVE_SHADOW_RELIABLE_GAME_EVENT_CAPTURED);
+    CHECK(SV_NativeShadowFlushReliableGameEventsV1(
+        &peer, shadow, snapshot_ref, SNAPSHOT_TEST_MAX_ENTITIES,
+        SPAWNCOUNT, RAW_TIME_MS + 2u));
+    CHECK(SV_NativeShadowGetEventStatusV1(
+        &peer, RAW_TIME_MS + 2u, &status));
+    CHECK(status.backlog_count == 3 && status.candidates_queued == 3);
+
+    for (index = 0;
+         index < SV_NATIVE_SHADOW_RELIABLE_GAME_EVENT_BATCH_CAPACITY;
+         ++index) {
+        if ((index & 1u) == 0) {
+            CHECK(SV_NativeShadowCaptureReliableGameEventsV1(
+                      &peer, SPAWNCOUNT, reliable_sequence,
+                      sizeof(reliable_sequence)) ==
+                  SV_NATIVE_SHADOW_RELIABLE_GAME_EVENT_CAPTURED);
+        } else {
+            CHECK(SV_NativeShadowCaptureReliableKeyedPOIV1(
+                      &peer, SPAWNCOUNT, reliable_poi,
+                      sizeof(reliable_poi)) ==
+                  SV_NATIVE_SHADOW_RELIABLE_GAME_EVENT_CAPTURED);
+        }
+    }
+    CHECK(SV_NativeShadowCaptureReliableGameEventsV1(
+              &peer, SPAWNCOUNT, reliable_sequence,
+              sizeof(reliable_sequence)) ==
+          SV_NATIVE_SHADOW_RELIABLE_GAME_EVENT_CAPACITY);
+    CHECK(SV_NativeShadowFlushReliableGameEventsV1(
+        &peer, shadow, snapshot_ref, SNAPSHOT_TEST_MAX_ENTITIES,
+        SPAWNCOUNT, RAW_TIME_MS + 2u));
+    CHECK(SV_NativeShadowGetEventStatusV1(
+        &peer, RAW_TIME_MS + 2u, &status));
+    CHECK(status.backlog_count == 67 && status.candidates_queued == 67);
+
+    SV_SnapshotShadowDestroyV1(shadow);
+    SV_NativeShadowPeerDestroyV1(&peer);
+}
+
 static void test_snapshot_mode_fail_closed_bindings(void)
 {
     netchan_t missing_epoch_chan;
@@ -2589,8 +4007,8 @@ static void test_snapshot_mode_fail_closed_bindings(void)
           missing_epoch_peer.event_state == NULL);
     CHECK(!SV_NativeShadowBeginEpochV1(
         &missing_epoch_peer, 400,
-        WORR_NET_CAP_LEGACY_STAGE_MASK,
-        WORR_NET_CAP_LEGACY_STAGE_MASK, 12000, &challenge));
+        native_public_mask(&missing_epoch_peer),
+        native_public_mask(&missing_epoch_peer), 12000, &challenge));
     CHECK(!SV_NativeShadowPeerEnabledV1(&missing_epoch_peer) &&
           missing_epoch_peer.last_failure ==
               SV_NATIVE_SHADOW_FAILURE_OFFICIAL_BINDING);
@@ -2602,8 +4020,8 @@ static void test_snapshot_mode_fail_closed_bindings(void)
         SV_NATIVE_SHADOW_MODE_COMMAND));
     CHECK(!SV_NativeShadowBeginEpochBoundV1(
         &wrong_mode_peer, 401,
-        WORR_NET_CAP_LEGACY_STAGE_MASK,
-        WORR_NET_CAP_LEGACY_STAGE_MASK, 77, 12010,
+        native_public_mask(&wrong_mode_peer),
+        native_public_mask(&wrong_mode_peer), 77, 12010,
         &challenge));
     CHECK(!SV_NativeShadowPeerEnabledV1(&wrong_mode_peer) &&
           wrong_mode_peer.last_failure ==
@@ -2653,8 +4071,7 @@ static void test_snapshot_mode_multifragment_retry_ack(void)
     CHECK(peer.snapshot_state != NULL && peer.event_state == NULL);
     CHECK(SV_NativeShadowBeginEpochBoundV1(
         &peer, OFFICIAL_EPOCH,
-        WORR_NET_CAP_LEGACY_STAGE_MASK,
-        WORR_NET_CAP_LEGACY_STAGE_MASK, SNAPSHOT_EPOCH,
+        native_public_mask(&peer), native_public_mask(&peer), SNAPSHOT_EPOCH,
         RAW_TIME_MS, &challenge));
     CHECK(challenge.negotiated_capabilities ==
               WORR_NET_CAP_NATIVE_SNAPSHOT_PRIVATE_MASK &&
@@ -2856,8 +4273,8 @@ static void test_combined_mode_fair_data_and_disjoint_ack_ranges(void)
         SV_NATIVE_SHADOW_MODE_EVENT_SNAPSHOT));
     CHECK(peer.event_state != NULL && peer.snapshot_state != NULL);
     CHECK(SV_NativeShadowBeginEpochBoundV1(
-        &peer, OFFICIAL_EPOCH, WORR_NET_CAP_LEGACY_STAGE_MASK,
-        WORR_NET_CAP_LEGACY_STAGE_MASK, SNAPSHOT_EPOCH,
+        &peer, OFFICIAL_EPOCH, native_public_mask(&peer),
+        native_public_mask(&peer), SNAPSHOT_EPOCH,
         RAW_TIME_MS, &challenge));
     CHECK(challenge.negotiated_capabilities ==
               WORR_NET_CAP_NATIVE_EVENT_SNAPSHOT_PRIVATE_MASK &&
@@ -2965,10 +4382,16 @@ int main(void)
     test_epoch_advance_inside_packet();
     test_pending_challenge_epoch_is_cancelled();
     test_command_observation_ack_and_drain();
+    test_input_batch_confirmation_and_fallbacks();
+    test_input_batch_ack_gate_and_highwater();
+    test_input_batch_mismatch_expiry_and_malformed();
+    test_input_batch_legacy_history_reconciliation();
     test_many_sequential_commands_and_count_saturation();
     test_fresh_message_command_id_replay_drains();
     test_legacy_first_reconcile_mismatch_and_expiry();
     test_epoch_cancellation_routing();
+    test_map_quiesce_cancels_pending_command_before_stream_reset();
+    test_map_quiesce_busy_peer_fails_closed();
     test_carrier_rejections_and_completion_provenance();
     test_clock_wrap_and_regression();
     test_binding_and_interleaving_fail_closed();
@@ -2982,6 +4405,10 @@ int main(void)
     test_nonmutating_ack_status_and_async_telemetry();
     test_event_wait_confirm_accepts_command_rx();
     test_event_mode_mixed_tx_ack_release_and_retirement();
+    test_event_schema2_batch_status_export();
+    test_snapshot_event_transport_adds_final_emission_fence();
+    test_reliable_keyed_poi_unified_fifo();
+    test_reliable_mixed_game_event_snapshot_fence();
     test_snapshot_mode_fail_closed_bindings();
     test_snapshot_mode_multifragment_retry_ack();
     test_combined_mode_fair_data_and_disjoint_ack_ranges();

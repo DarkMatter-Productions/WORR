@@ -20,6 +20,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "server/command_context.h"
 #include "server/local_interaction_authority.h"
 #include "server/local_action_shadow_authority.h"
+#include "server/native_shadow.h"
 #include "server/nav.h"
 
 server_static_t svs;                // persistent server info
@@ -38,6 +39,14 @@ void SV_ClientReset(client_t *client)
         client_index = client - svs.client_pool;
         SV_LocalActionShadowAuthorityResetClient((uint32_t)client_index);
     }
+
+    /* The netchan and native peer survive gamemap, but the authoritative
+     * command stream below does not.  Establish the cancellation floor before
+     * clearing it so an in-flight private half cannot expire against the next
+     * map and turn a healthy peer into terminal DRAIN. */
+    if (client->worr_native_shadow)
+        (void)SV_NativeShadowPeerQuiesceMapV1(
+            client->worr_native_shadow);
 
     // any partially connected client will be restarted
     client->state = cs_connected;
@@ -65,6 +74,7 @@ void SV_ClientReset(client_t *client)
     client->worr_capability_confirm_sent = false;
     client->worr_native_shadow_challenge_pending = false;
     client->worr_native_shadow_challenge_requested_at = 0;
+    client->worr_native_shadow_challenge_barrier_bytes = 0;
     client->worr_command_parser_initialized = false;
     client->worr_command_sideband_started = false;
     client->worr_command_stream_initialized = false;

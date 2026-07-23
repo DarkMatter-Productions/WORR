@@ -20,9 +20,9 @@
 #define EXPECTED_ENTITY_HASH UINT64_C(0xe9490b844d2a5ef3)
 #define EXPECTED_ENTITY_LIST_HASH UINT64_C(0xd982aea5f5df9450)
 #define EXPECTED_AREA_HASH UINT64_C(0xeb3ec84d51df6b7a)
-#define EXPECTED_EVENT_HASH UINT64_C(0x5533d24d6eab8a3b)
-#define EXPECTED_SNAPSHOT_HASH UINT64_C(0x37a1383b529d00df)
-#define EXPECTED_SOAK_CHAIN UINT64_C(0x6b48ba2f99ce98f5)
+#define EXPECTED_EVENT_HASH UINT64_C(0x906b42c00fab2edf)
+#define EXPECTED_SNAPSHOT_HASH UINT64_C(0xb2b60ae5a21f47ce)
+#define EXPECTED_SOAK_CHAIN UINT64_C(0x6f3a2ad4178c5259)
 
 #define CHECK(condition)                                                     \
     do {                                                                     \

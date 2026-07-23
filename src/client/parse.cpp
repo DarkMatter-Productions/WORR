@@ -22,6 +22,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "client/command_identity.h"
 #include "client/consumed_cursor.h"
 #include "client/demo_clock.h"
+#include "client/native_demo_recorder.h"
 #include "client/net_capability.h"
 #include "client/native_readiness_pilot.h"
 #include "client/snapshot_recovery.h"
@@ -648,6 +649,18 @@ static void CL_ParseServerData(const q2proto_svc_serverdata_t *serverdata)
     bool    cinematic;
 
     Cbuf_Execute(&cl_cmdbuf);          // make sure any stuffed commands are done
+
+    /* WDM1 v1 is deliberately single-map/single-epoch. Publish a completely
+     * validated capture before CL_ClearState invalidates immutable views. */
+    CL_NativeDemoRecorderMapBoundary();
+
+    /* A gamemap transition retains the loaded cgame DLL, but the serverdata
+     * path below calls its per-map Init again.  Close the prior map while the
+     * old client state is still intact so every retained-DLL Init has exactly
+     * one preceding Shutdown.  A fresh connection (or a post-disconnect
+     * connection) has servercount zero because CL_ClearState already ran. */
+    if (cgame && cl.servercount != 0)
+        cgame->Shutdown();
 
     /* CL_ClearState resets packet-local client systems.  Reset only the
      * readiness carrier parser here so its connection owner and nonce floor
@@ -1373,6 +1386,10 @@ static void CL_ParseSetting(const q2proto_svc_setting_t *setting)
 
 static void CL_ParseDamage(const q2proto_svc_damage_t *damage)
 {
+    if (!damage || damage->count == 0 ||
+        damage->count > WORR_CGAME_EVENT_DAMAGE_BATCH_MAX_V2) {
+        Com_Error(ERR_DROP, "%s: bad damage indicator count", __func__);
+    }
     for (uint8_t i = 0; i < damage->count; i++)
     {
         vec3_t color = { 0.f, 0.f, 0.f };
@@ -1391,6 +1408,9 @@ static void CL_ParseDamage(const q2proto_svc_damage_t *damage)
         VectorNormalize(color);
 
         SCR_AddToDamageDisplay(damage->damage[i].damage, color, damage->damage[i].direction);
+        (void)CL_CGameNativeEventProbeCompleteLegacyDispatch(
+            WORR_CGAME_EVENT_CARRIER_DAMAGE_V2,
+            WORR_CGAME_NATIVE_EVENT_PROBE_LEGACY_DISPATCHED);
     }
 }
 
@@ -1606,7 +1626,16 @@ void CL_ParseServerMessage(void)
 
         case Q2P_SVC_SOUND:
             CL_ParseStartSoundPacket(&svc_msg.sound);
-            S_ParseStartSound();
+            if (!CL_NativeReadinessPilotOwnsEventPresentation()) {
+                S_ParseStartSound();
+                (void)CL_CGameNativeEventProbeCompleteLegacyDispatch(
+                    WORR_CGAME_EVENT_CARRIER_SPATIAL_SOUND_V2,
+                    WORR_CGAME_NATIVE_EVENT_PROBE_LEGACY_DISPATCHED);
+            } else {
+                (void)CL_CGameNativeEventProbeCompleteLegacyDispatch(
+                    WORR_CGAME_EVENT_CARRIER_SPATIAL_SOUND_V2,
+                    WORR_CGAME_NATIVE_EVENT_PROBE_LEGACY_SUPPRESSED);
+            }
             break;
 
         case Q2P_SVC_SPAWNBASELINE:
@@ -1615,19 +1644,46 @@ void CL_ParseServerMessage(void)
 
         case Q2P_SVC_TEMP_ENTITY:
             CL_ParseTEntPacket(&svc_msg.temp_entity);
-            CL_ParseTEnt();
+            if (!CL_NativeReadinessPilotOwnsEventPresentation()) {
+                CL_ParseTEnt();
+                (void)CL_CGameNativeEventProbeCompleteLegacyDispatch(
+                    WORR_CGAME_EVENT_CARRIER_TEMP_ENTITY_V2,
+                    WORR_CGAME_NATIVE_EVENT_PROBE_LEGACY_DISPATCHED);
+            } else {
+                (void)CL_CGameNativeEventProbeCompleteLegacyDispatch(
+                    WORR_CGAME_EVENT_CARRIER_TEMP_ENTITY_V2,
+                    WORR_CGAME_NATIVE_EVENT_PROBE_LEGACY_SUPPRESSED);
+            }
             break;
 
         case Q2P_SVC_MUZZLEFLASH:
             CL_ParseMuzzleFlashPacket(
                 &svc_msg.muzzleflash, WORR_EVENT_MUZZLE_FAMILY_PLAYER);
-            CL_MuzzleFlash();
+            if (!CL_NativeReadinessPilotOwnsEventPresentation()) {
+                CL_MuzzleFlash();
+                (void)CL_CGameNativeEventProbeCompleteLegacyDispatch(
+                    WORR_CGAME_EVENT_CARRIER_PLAYER_MUZZLE_V2,
+                    WORR_CGAME_NATIVE_EVENT_PROBE_LEGACY_DISPATCHED);
+            } else {
+                (void)CL_CGameNativeEventProbeCompleteLegacyDispatch(
+                    WORR_CGAME_EVENT_CARRIER_PLAYER_MUZZLE_V2,
+                    WORR_CGAME_NATIVE_EVENT_PROBE_LEGACY_SUPPRESSED);
+            }
             break;
 
         case Q2P_SVC_MUZZLEFLASH2:
             CL_ParseMuzzleFlashPacket(
                 &svc_msg.muzzleflash, WORR_EVENT_MUZZLE_FAMILY_MONSTER);
-            CL_MuzzleFlash2();
+            if (!CL_NativeReadinessPilotOwnsEventPresentation()) {
+                CL_MuzzleFlash2();
+                (void)CL_CGameNativeEventProbeCompleteLegacyDispatch(
+                    WORR_CGAME_EVENT_CARRIER_MONSTER_MUZZLE_V2,
+                    WORR_CGAME_NATIVE_EVENT_PROBE_LEGACY_DISPATCHED);
+            } else {
+                (void)CL_CGameNativeEventProbeCompleteLegacyDispatch(
+                    WORR_CGAME_EVENT_CARRIER_MONSTER_MUZZLE_V2,
+                    WORR_CGAME_NATIVE_EVENT_PROBE_LEGACY_SUPPRESSED);
+            }
             break;
 
         case Q2P_SVC_DOWNLOAD:
@@ -1654,7 +1710,23 @@ void CL_ParseServerMessage(void)
 
         // KEX
         case Q2P_SVC_DAMAGE:
-            CL_ParseDamage(&svc_msg.damage);
+            if (svc_msg.damage.count == 0 ||
+                svc_msg.damage.count >
+                    WORR_CGAME_EVENT_DAMAGE_BATCH_MAX_V2) {
+                Com_Error(
+                    ERR_DROP, "%s: bad damage indicator count", __func__);
+            }
+            CL_EventRangeCaptureDamageV2(&svc_msg.damage);
+            if (!CL_NativeReadinessPilotOwnsEventPresentation()) {
+                CL_ParseDamage(&svc_msg.damage);
+            } else {
+                for (uint32_t index = 0; index < svc_msg.damage.count;
+                     ++index) {
+                    (void)CL_CGameNativeEventProbeCompleteLegacyDispatch(
+                        WORR_CGAME_EVENT_CARRIER_DAMAGE_V2,
+                        WORR_CGAME_NATIVE_EVENT_PROBE_LEGACY_SUPPRESSED);
+                }
+            }
             break;
 
         case Q2P_SVC_FOG:
@@ -1662,11 +1734,31 @@ void CL_ParseServerMessage(void)
             break;
 
         case Q2P_SVC_POI:
-            CL_ParsePOI(&svc_msg.poi);
+        {
+            const bool captured =
+                CL_EventRangeCapturePOIV2(&svc_msg.poi);
+            if (!captured ||
+                !CL_NativeReadinessPilotOwnsEventPresentation()) {
+                CL_ParsePOI(&svc_msg.poi);
+                if (captured) {
+                    (void)CL_CGameNativeEventProbeCompleteLegacyDispatch(
+                        WORR_CGAME_EVENT_CARRIER_KEYED_POI_V2,
+                        WORR_CGAME_NATIVE_EVENT_PROBE_LEGACY_DISPATCHED);
+                }
+            } else {
+                (void)CL_CGameNativeEventProbeCompleteLegacyDispatch(
+                    WORR_CGAME_EVENT_CARRIER_KEYED_POI_V2,
+                    WORR_CGAME_NATIVE_EVENT_PROBE_LEGACY_SUPPRESSED);
+            }
             break;
+        }
 
         case Q2P_SVC_HELP_PATH:
-            CL_AddHelpPath(svc_msg.help_path.pos, svc_msg.help_path.dir, svc_msg.help_path.start);
+            if (!CL_NativeReadinessPilotOwnsEventPresentation()) {
+                CL_AddHelpPath(
+                    svc_msg.help_path.pos, svc_msg.help_path.dir,
+                    svc_msg.help_path.start);
+            }
             break;
 
         case Q2P_SVC_ACHIEVEMENT:
@@ -1816,7 +1908,16 @@ bool CL_SeekDemoMessage(void)
 
         case Q2P_SVC_SOUND:
             CL_ParseStartSoundPacket(&svc_msg.sound);
-            S_ParseStartSound();
+            if (!CL_NativeReadinessPilotOwnsEventPresentation()) {
+                S_ParseStartSound();
+                (void)CL_CGameNativeEventProbeCompleteLegacyDispatch(
+                    WORR_CGAME_EVENT_CARRIER_SPATIAL_SOUND_V2,
+                    WORR_CGAME_NATIVE_EVENT_PROBE_LEGACY_DISPATCHED);
+            } else {
+                (void)CL_CGameNativeEventProbeCompleteLegacyDispatch(
+                    WORR_CGAME_EVENT_CARRIER_SPATIAL_SOUND_V2,
+                    WORR_CGAME_NATIVE_EVENT_PROBE_LEGACY_SUPPRESSED);
+            }
             break;
 
         case Q2P_SVC_SPAWNBASELINE:
@@ -1825,19 +1926,46 @@ bool CL_SeekDemoMessage(void)
 
         case Q2P_SVC_TEMP_ENTITY:
             CL_ParseTEntPacket(&svc_msg.temp_entity);
-            CL_ParseTEnt();
+            if (!CL_NativeReadinessPilotOwnsEventPresentation()) {
+                CL_ParseTEnt();
+                (void)CL_CGameNativeEventProbeCompleteLegacyDispatch(
+                    WORR_CGAME_EVENT_CARRIER_TEMP_ENTITY_V2,
+                    WORR_CGAME_NATIVE_EVENT_PROBE_LEGACY_DISPATCHED);
+            } else {
+                (void)CL_CGameNativeEventProbeCompleteLegacyDispatch(
+                    WORR_CGAME_EVENT_CARRIER_TEMP_ENTITY_V2,
+                    WORR_CGAME_NATIVE_EVENT_PROBE_LEGACY_SUPPRESSED);
+            }
             break;
 
         case Q2P_SVC_MUZZLEFLASH:
             CL_ParseMuzzleFlashPacket(
                 &svc_msg.muzzleflash, WORR_EVENT_MUZZLE_FAMILY_PLAYER);
-            CL_MuzzleFlash();
+            if (!CL_NativeReadinessPilotOwnsEventPresentation()) {
+                CL_MuzzleFlash();
+                (void)CL_CGameNativeEventProbeCompleteLegacyDispatch(
+                    WORR_CGAME_EVENT_CARRIER_PLAYER_MUZZLE_V2,
+                    WORR_CGAME_NATIVE_EVENT_PROBE_LEGACY_DISPATCHED);
+            } else {
+                (void)CL_CGameNativeEventProbeCompleteLegacyDispatch(
+                    WORR_CGAME_EVENT_CARRIER_PLAYER_MUZZLE_V2,
+                    WORR_CGAME_NATIVE_EVENT_PROBE_LEGACY_SUPPRESSED);
+            }
             break;
 
         case Q2P_SVC_MUZZLEFLASH2:
             CL_ParseMuzzleFlashPacket(
                 &svc_msg.muzzleflash, WORR_EVENT_MUZZLE_FAMILY_MONSTER);
-            CL_MuzzleFlash2();
+            if (!CL_NativeReadinessPilotOwnsEventPresentation()) {
+                CL_MuzzleFlash2();
+                (void)CL_CGameNativeEventProbeCompleteLegacyDispatch(
+                    WORR_CGAME_EVENT_CARRIER_MONSTER_MUZZLE_V2,
+                    WORR_CGAME_NATIVE_EVENT_PROBE_LEGACY_DISPATCHED);
+            } else {
+                (void)CL_CGameNativeEventProbeCompleteLegacyDispatch(
+                    WORR_CGAME_EVENT_CARRIER_MONSTER_MUZZLE_V2,
+                    WORR_CGAME_NATIVE_EVENT_PROBE_LEGACY_SUPPRESSED);
+            }
             break;
 
         case Q2P_SVC_FRAME:

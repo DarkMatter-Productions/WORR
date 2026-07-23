@@ -41,6 +41,8 @@ typedef struct {
   GLuint moment_array;
   GLuint program;
   GLuint moment_program;
+  GLuint alpha_program;
+  GLuint alpha_moment_program;
   int resolution;
   int mip_levels;
   int max_active_page;
@@ -354,6 +356,104 @@ static bool GL_Shadow_CreateMomentProgram(void) {
   return true;
 }
 
+static bool GL_Shadow_CreateAlphaProgram(bool moment) {
+  GLuint *output = moment ? &gl_shadow.alpha_moment_program
+                          : &gl_shadow.alpha_program;
+  if (*output) {
+    return true;
+  }
+
+  char vertex_source[2048];
+  Q_snprintf(vertex_source, sizeof(vertex_source),
+             "%s"
+             "layout(std140) uniform Uniforms {\n"
+             "mat4 m_model; mat4 m_view; mat4 m_proj;\n"
+             "};\n"
+             "in vec3 a_pos;\n"
+             "in vec2 a_tc;\n"
+             "out vec2 v_tc;\n"
+             "void main() {\n"
+             "  gl_Position = m_proj * m_view * m_model * vec4(a_pos, 1.0);\n"
+             "  v_tc = a_tc;\n"
+             "}\n",
+             GL_Shadow_Header());
+
+  char fragment_source[1280];
+  if (moment) {
+    Q_snprintf(fragment_source, sizeof(fragment_source),
+               "%s"
+               "uniform sampler2D u_diffuse;\n"
+               "uniform int u_shadow_filter;\n"
+               "in vec2 v_tc;\n"
+               "out vec4 o_moment;\n"
+               "void main() {\n"
+               "  if (texture(u_diffuse, v_tc).a <= 0.666) discard;\n"
+               "  float d = clamp(gl_FragCoord.z, 0.0, 1.0);\n"
+               "  if (u_shadow_filter == %d) {\n"
+               "    const float evsm_exponent = " GL_SHADOW_EVSM_EXPONENT_GLSL ";\n"
+               "    float w = exp(min(evsm_exponent * d, evsm_exponent));\n"
+               "    o_moment = vec4(w, w * w, 0.0, 1.0);\n"
+               "  } else {\n"
+               "    o_moment = vec4(d, d * d, 0.0, 1.0);\n"
+               "  }\n"
+               "}\n",
+               GL_Shadow_Header(), SHADOW_FILTER_EVSM);
+  } else {
+    Q_snprintf(fragment_source, sizeof(fragment_source),
+               "%s"
+               "uniform sampler2D u_diffuse;\n"
+               "in vec2 v_tc;\n"
+               "void main() {\n"
+               "  if (texture(u_diffuse, v_tc).a <= 0.666) discard;\n"
+               "}\n",
+               GL_Shadow_Header());
+  }
+
+  GLuint vertex_shader = GL_Shadow_CompileShader(GL_VERTEX_SHADER, vertex_source);
+  if (!vertex_shader) {
+    return false;
+  }
+  GLuint fragment_shader = GL_Shadow_CompileShader(GL_FRAGMENT_SHADER,
+                                                   fragment_source);
+  if (!fragment_shader) {
+    qglDeleteShader(vertex_shader);
+    return false;
+  }
+
+  GLuint program = qglCreateProgram();
+  qglAttachShader(program, vertex_shader);
+  qglAttachShader(program, fragment_shader);
+  qglBindAttribLocation(program, VERT_ATTR_POS, "a_pos");
+  qglBindAttribLocation(program, VERT_ATTR_TC, "a_tc");
+  if (moment && !gl_config.ver_es) {
+    qglBindFragDataLocation(program, 0, "o_moment");
+  }
+  qglLinkProgram(program);
+  qglDeleteShader(vertex_shader);
+  qglDeleteShader(fragment_shader);
+
+  GLint status = 0;
+  qglGetProgramiv(program, GL_LINK_STATUS, &status);
+  if (!status) {
+    char buffer[MAX_STRING_CHARS];
+    buffer[0] = 0;
+    qglGetProgramInfoLog(program, sizeof(buffer), NULL, buffer);
+    if (buffer[0]) {
+      Com_Printf("%s", buffer);
+    }
+    qglDeleteProgram(program);
+    return false;
+  }
+
+  if (!GL_Shadow_BindUniformBlock(program, "Uniforms", UBO_UNIFORMS)) {
+    qglDeleteProgram(program);
+    return false;
+  }
+
+  *output = program;
+  return true;
+}
+
 static int GL_Shadow_ClampResolution(int requested) {
   requested = (int)Q_clipf((float)requested, 64.0f,
                            (float)GL_SHADOW_MAX_RESOLUTION);
@@ -405,8 +505,12 @@ static bool GL_Shadow_EnsureResources(int resolution,
   if (!GL_Shadow_CreateProgram()) {
     return false;
   }
+  if (!GL_Shadow_CreateAlphaProgram(false)) {
+    return false;
+  }
   if (storage == SHADOW_STORAGE_MOMENT &&
-      !GL_Shadow_CreateMomentProgram()) {
+      (!GL_Shadow_CreateMomentProgram() ||
+       !GL_Shadow_CreateAlphaProgram(true))) {
     return false;
   }
 
@@ -613,6 +717,104 @@ static void GL_Shadow_AddTriangle(const vec3_t a, const vec3_t b,
   GL_Shadow_AddPosition(a);
   GL_Shadow_AddPosition(b);
   GL_Shadow_AddPosition(cpos);
+}
+
+static void GL_Shadow_SetMomentFilter(GLuint program,
+                                      const shadow_view_desc_t *view) {
+  if (!program || !view || view->storage_family != SHADOW_STORAGE_MOMENT) {
+    return;
+  }
+  GLint loc = qglGetUniformLocation(program, "u_shadow_filter");
+  if (loc >= 0) {
+    qglUniform1i(loc, (GLint)view->filter_family);
+  }
+}
+
+static void GL_Shadow_UseOpaqueProgram(const shadow_view_desc_t *view) {
+  GLuint program = view->storage_family == SHADOW_STORAGE_MOMENT
+      ? gl_shadow.moment_program
+      : gl_shadow.program;
+  qglUseProgram(program);
+  GL_Shadow_SetMomentFilter(program, view);
+}
+
+static void GL_Shadow_FlushAlpha(void) {
+  if (!tess.numverts) {
+    return;
+  }
+
+  GL_BindArrays(VA_SHADOW_ALPHA);
+  GL_ArrayBits(GLA_VERTEX | GLA_TC);
+  GL_LoadUniforms();
+  GL_LockArrays(tess.numverts);
+  qglDrawArrays(GL_TRIANGLES, 0, tess.numverts);
+  GL_UnlockArrays();
+  c.trisDrawn += tess.numverts / 3;
+  c.batchesDrawn++;
+  tess.numverts = 0;
+}
+
+static void GL_Shadow_AddAlphaPosition(const vec3_t pos, const vec2_t tc) {
+  if (tess.numverts >= TESS_MAX_VERTICES) {
+    GL_Shadow_FlushAlpha();
+  }
+  GLfloat *vertex = tess.vertices + tess.numverts * 5;
+  VectorCopy(pos, vertex);
+  vertex[3] = tc[0];
+  vertex[4] = tc[1];
+  tess.numverts++;
+}
+
+static void GL_Shadow_AddAlphaTriangle(const vec3_t a, const vec3_t b,
+                                       const vec3_t cpos, const mface_t *face,
+                                       const vec3_t texture_points[3]) {
+  if (!face || !face->texinfo || !face->texinfo->image || !texture_points) {
+    return;
+  }
+
+  const image_t *image = face->texinfo->image;
+  if (image->width < 1 || image->height < 1) {
+    return;
+  }
+  const vec_t *positions[3] = { a, b, cpos };
+  for (int i = 0; i < 3; i++) {
+    vec2_t tc;
+    tc[0] = (DotProduct(texture_points[i], face->texinfo->axis[0]) +
+             face->texinfo->offset[0]) / (float)image->width;
+    tc[1] = (DotProduct(texture_points[i], face->texinfo->axis[1]) +
+             face->texinfo->offset[1]) / (float)image->height;
+    GL_Shadow_AddAlphaPosition(positions[i], tc);
+  }
+}
+
+static bool GL_Shadow_BeginAlphaFace(const mface_t *face,
+                                     const shadow_view_desc_t *view) {
+  if (!face || !face->texinfo || !face->texinfo->image ||
+      !face->texinfo->image->texnum) {
+    return false;
+  }
+
+  GL_Shadow_FlushPositions();
+  GLuint program = view->storage_family == SHADOW_STORAGE_MOMENT
+      ? gl_shadow.alpha_moment_program
+      : gl_shadow.alpha_program;
+  if (!program) {
+    return false;
+  }
+  qglUseProgram(program);
+  GL_Shadow_SetMomentFilter(program, view);
+  GLint loc = qglGetUniformLocation(program, "u_diffuse");
+  if (loc >= 0) {
+    qglUniform1i(loc, TMU_TEXTURE);
+  }
+  GL_BindTexture(TMU_TEXTURE, face->texinfo->image->texnum);
+  tess.numverts = 0;
+  return true;
+}
+
+static void GL_Shadow_EndAlphaFace(const shadow_view_desc_t *view) {
+  GL_Shadow_FlushAlpha();
+  GL_Shadow_UseOpaqueProgram(view);
 }
 
 typedef struct {
@@ -907,7 +1109,8 @@ static bool GL_Shadow_DrawAliasCaster(const shadow_caster_t *caster) {
   return true;
 }
 
-static bool GL_Shadow_DrawBspCaster(const shadow_caster_t *caster) {
+static bool GL_Shadow_DrawBspCaster(const shadow_caster_t *caster,
+                                    const shadow_view_desc_t *view) {
   const entity_t *ent = &caster->entity;
   const bsp_t *bsp = gl_static.world.cache;
   if (!bsp || !bsp->models || !bsp->faces || !bsp->vertices ||
@@ -937,6 +1140,29 @@ static bool GL_Shadow_DrawBspCaster(const shadow_caster_t *caster) {
 
     const mvertex_t *v0 = GL_Shadow_SurfEdgeVertex(bsp, &face->firstsurfedge[0]);
     if (!v0) {
+      continue;
+    }
+    const bool alpha_test = (face->drawflags & SURF_ALPHATEST) != 0;
+    if (alpha_test && GL_Shadow_BeginAlphaFace(face, view)) {
+      for (int j = 1; j < face->numsurfedges - 1; j++) {
+        const mvertex_t *v1 = GL_Shadow_SurfEdgeVertex(bsp,
+                                                       &face->firstsurfedge[j]);
+        const mvertex_t *v2 = GL_Shadow_SurfEdgeVertex(bsp,
+                                                       &face->firstsurfedge[j + 1]);
+        if (!v1 || !v2) {
+          continue;
+        }
+        vec3_t p0, p1, p2;
+        GL_Shadow_TransformCasterPoint(&transform, v0->point, p0);
+        GL_Shadow_TransformCasterPoint(&transform, v1->point, p1);
+        GL_Shadow_TransformCasterPoint(&transform, v2->point, p2);
+        vec3_t texture_points[3];
+        VectorCopy(v0->point, texture_points[0]);
+        VectorCopy(v1->point, texture_points[1]);
+        VectorCopy(v2->point, texture_points[2]);
+        GL_Shadow_AddAlphaTriangle(p0, p1, p2, face, texture_points);
+      }
+      GL_Shadow_EndAlphaFace(view);
       continue;
     }
     for (int j = 1; j < face->numsurfedges - 1; j++) {
@@ -992,7 +1218,8 @@ static bool GL_Shadow_DrawBoundsCaster(const shadow_caster_t *caster) {
   return true;
 }
 
-static bool GL_Shadow_DrawCasterGeometry(const shadow_caster_t *caster) {
+static bool GL_Shadow_DrawCasterGeometry(const shadow_caster_t *caster,
+                                         const shadow_view_desc_t *view) {
   if (!caster) {
     return false;
   }
@@ -1001,7 +1228,7 @@ static bool GL_Shadow_DrawCasterGeometry(const shadow_caster_t *caster) {
   }
   bool submitted = false;
   if (caster->model & BIT(31)) {
-    submitted = GL_Shadow_DrawBspCaster(caster);
+    submitted = GL_Shadow_DrawBspCaster(caster, view);
   } else {
     submitted = GL_Shadow_DrawAliasCaster(caster);
   }
@@ -1112,6 +1339,26 @@ static void GL_Shadow_DrawWorldDepth(const shadow_view_desc_t *view) {
       continue;
     }
     gl_shadow.world_faces_submitted++;
+    const bool alpha_test = (flags & SURF_ALPHATEST) != 0;
+    if (alpha_test && GL_Shadow_BeginAlphaFace(face, view)) {
+      for (int j = 1; j < face->numsurfedges - 1; j++) {
+        const mvertex_t *v1 = GL_Shadow_SurfEdgeVertex(bsp,
+                                                       &face->firstsurfedge[j]);
+        const mvertex_t *v2 = GL_Shadow_SurfEdgeVertex(bsp,
+                                                       &face->firstsurfedge[j + 1]);
+        if (!v1 || !v2) {
+          continue;
+        }
+        vec3_t texture_points[3];
+        VectorCopy(v0->point, texture_points[0]);
+        VectorCopy(v1->point, texture_points[1]);
+        VectorCopy(v2->point, texture_points[2]);
+        GL_Shadow_AddAlphaTriangle(v0->point, v1->point, v2->point, face,
+                                   texture_points);
+      }
+      GL_Shadow_EndAlphaFace(view);
+      continue;
+    }
     for (int j = 1; j < face->numsurfedges - 1; j++) {
       const mvertex_t *v1 = GL_Shadow_SurfEdgeVertex(bsp,
                                                      &face->firstsurfedge[j]);
@@ -1159,12 +1406,22 @@ void GL_Shadow_Shutdown(void) {
     qglDeleteProgram(gl_shadow.moment_program);
     gl_shadow.moment_program = 0;
   }
+  if (gl_shadow.alpha_program) {
+    qglDeleteProgram(gl_shadow.alpha_program);
+    gl_shadow.alpha_program = 0;
+  }
+  if (gl_shadow.alpha_moment_program) {
+    qglDeleteProgram(gl_shadow.alpha_moment_program);
+    gl_shadow.alpha_moment_program = 0;
+  }
   memset(&gl_shadow, 0, sizeof(gl_shadow));
 }
 
 void GL_Shadow_BeginFrame(void *userdata,
-                          const shadow_frontend_policy_t *policy) {
+                          const shadow_frontend_policy_t *policy,
+                          uint32_t required_page_count) {
   (void)userdata;
+  (void)required_page_count;
   gl_shadow.frame_active = policy && policy->enabled;
   gl_shadow.policy = policy ? *policy : (shadow_frontend_policy_t){0};
   gl_shadow.max_active_page = -1;
@@ -1264,16 +1521,7 @@ bool GL_Shadow_RenderView(void *userdata, const shadow_view_desc_t *view,
   qglEnable(GL_POLYGON_OFFSET_FILL);
   qglPolygonOffset(GL_Shadow_ViewSlopeBias(view),
                    GL_Shadow_ViewConstantBias(view));
-  GLuint program = view->storage_family == SHADOW_STORAGE_MOMENT
-      ? gl_shadow.moment_program
-      : gl_shadow.program;
-  qglUseProgram(program);
-  if (view->storage_family == SHADOW_STORAGE_MOMENT) {
-    GLint loc = qglGetUniformLocation(program, "u_shadow_filter");
-    if (loc >= 0) {
-      qglUniform1i(loc, (GLint)view->filter_family);
-    }
-  }
+  GL_Shadow_UseOpaqueProgram(view);
 
   GL_ForceMatrix(gl_identity, view_matrix);
   gl_backend->load_matrix(GL_PROJECTION, proj_matrix, gl_identity);
@@ -1298,7 +1546,7 @@ bool GL_Shadow_RenderView(void *userdata, const shadow_view_desc_t *view,
                                      caster->bounds[1])) {
       continue;
     }
-    GL_Shadow_DrawCasterGeometry(caster);
+    GL_Shadow_DrawCasterGeometry(caster, view);
   }
   GL_Shadow_FlushPositions();
 

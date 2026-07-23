@@ -24,7 +24,10 @@ Copyright (C) 2026
 #define VK_SHADOW_CONE_NORMAL_OFFSET 0.05f
 #define VK_SHADOW_CONE_DEPTH_BIAS 0.25f
 #define VK_SHADOW_INITIAL_VERTEX_CAPACITY 4096u
+#define VK_SHADOW_INITIAL_DRAW_CAPACITY 64u
 #define VK_SHADOW_STREAM_BUFFER_MIN_BYTES (64u * 1024u)
+#define VK_SHADOW_DEFAULT_SHRINK_FRAMES 180u
+#define VK_SHADOW_RESOLUTION_POOL_COUNT 5u
 
 // EVSM warp exponent shared by the moment pass (push constant) and the world
 // receiver (shadow_moment_tuning UBO member). Moments are stored as (w, w*w)
@@ -74,9 +77,20 @@ typedef struct {
 } vk_shadow_push_t;
 
 typedef struct {
-    uint32_t page;
     uint32_t first_vertex;
     uint32_t vertex_count;
+    VkDescriptorSet descriptor_set;
+    bool alpha_test;
+} vk_shadow_draw_t;
+
+typedef struct {
+    uint32_t page;
+    uint32_t pool_index;
+    uint32_t pool_layer;
+    uint32_t first_vertex;
+    uint32_t vertex_count;
+    uint32_t first_draw;
+    uint32_t draw_count;
     vk_shadow_push_t push;
     float slope_bias;
     float bias_scale;
@@ -86,6 +100,10 @@ typedef struct {
 typedef struct {
     float matrix[16];
     float params[4];
+    // x = layer within the resolution-specific image array, y = descriptor
+    // pool index. z/w are retained for 16-byte std140 alignment and future
+    // per-page atlas metadata.
+    float location[4];
 } vk_shadow_uniform_page_t;
 
 typedef struct {
@@ -133,7 +151,67 @@ typedef struct {
     bool reallocated_this_frame;
     bool reallocated_last_frame;
     bool layout_initialized;
+    bool moment_layout_initialized;
 
+    VkFormat depth_format;
+    VkFormat moment_format;
+    bool depth_linear_filtering;
+    bool moment_linear_filtering;
+    VkImage image;
+    VkDeviceMemory memory;
+    VkImageView array_view;
+    VkSampler sampler;
+    VkSampler compare_sampler;
+    VkImage moment_image;
+    VkDeviceMemory moment_memory;
+    VkImageView moment_array_view;
+    VkSampler moment_sampler;
+    VkRenderPass render_pass;
+    VkPipelineLayout pipeline_layout;
+    VkPipeline pipeline;
+    VkPipeline alpha_pipeline;
+    VkDescriptorSetLayout material_descriptor_set_layout;
+    VkDescriptorSetLayout descriptor_set_layout;
+    VkDescriptorPool descriptor_pool;
+    vk_shadow_frame_resources_t frame_resources[VK_MAX_FRAMES_IN_FLIGHT];
+    VkImageView layer_views[VK_SHADOW_MAX_PAGES];
+    VkImageView moment_layer_views[VK_SHADOW_MAX_PAGES];
+    VkFramebuffer framebuffers[VK_SHADOW_MAX_PAGES];
+    VkFramebuffer moment_framebuffers[VK_SHADOW_MAX_PAGES];
+    VkImageLayout layout;
+    int resolution;
+    int mip_levels;
+    uint32_t page_capacity;
+    uint32_t shrink_count;
+    uint32_t last_shrink_from_capacity;
+    uint32_t last_shrink_to_capacity;
+    uint32_t test_sun_resolution_drop_frames;
+    bool moment_mips_supported;
+    int max_active_page;
+    bool sun_active;
+    shadow_storage_family_t storage_family;
+    int world_faces_considered;
+    int world_faces_submitted;
+
+    vk_shadow_vertex_t *vertices;
+    uint32_t vertex_count;
+    uint32_t vertex_capacity;
+    vk_shadow_draw_t *draws;
+    uint32_t draw_count;
+    uint32_t draw_capacity;
+    vk_shadow_job_t jobs[VK_SHADOW_MAX_PAGES];
+    uint32_t job_count;
+    vk_shadow_uniform_t uniform;
+    vk_shadow_light_pages_t lights[MAX_DLIGHTS];
+} vk_shadow_state_t;
+
+// Resource ownership is separated from per-frame/frontend state so resize and
+// storage transitions can build a replacement without discarding the last
+// valid shadow array if any Vulkan allocation step fails.
+typedef struct {
+    bool resources_ok;
+    bool layout_initialized;
+    bool moment_layout_initialized;
     VkFormat depth_format;
     VkFormat moment_format;
     VkImage image;
@@ -148,40 +226,60 @@ typedef struct {
     VkRenderPass render_pass;
     VkPipelineLayout pipeline_layout;
     VkPipeline pipeline;
-    VkPipeline moment_pipeline;
-    VkDescriptorSetLayout descriptor_set_layout;
-    VkDescriptorPool descriptor_pool;
-    vk_shadow_frame_resources_t frame_resources[VK_MAX_FRAMES_IN_FLIGHT];
+    VkPipeline alpha_pipeline;
+    VkDescriptorSetLayout material_descriptor_set_layout;
     VkImageView layer_views[VK_SHADOW_MAX_PAGES];
     VkImageView moment_layer_views[VK_SHADOW_MAX_PAGES];
     VkFramebuffer framebuffers[VK_SHADOW_MAX_PAGES];
     VkFramebuffer moment_framebuffers[VK_SHADOW_MAX_PAGES];
     VkImageLayout layout;
-    VkImageLayout moment_layout;
     int resolution;
     int mip_levels;
-    bool moment_mips_supported;
-    int max_active_page;
-    bool sun_active;
+    uint32_t page_capacity;
     shadow_storage_family_t storage_family;
-    int world_faces_considered;
-    int world_faces_submitted;
+} vk_shadow_resources_t;
 
-    vk_shadow_vertex_t *vertices;
-    uint32_t vertex_count;
-    uint32_t vertex_capacity;
-    vk_shadow_job_t jobs[VK_SHADOW_MAX_PAGES];
-    uint32_t job_count;
-    vk_shadow_uniform_t uniform;
-    vk_shadow_light_pages_t lights[MAX_DLIGHTS];
-} vk_shadow_state_t;
+typedef struct {
+    uint32_t generation;
+    uint32_t pool_index;
+    uint32_t pool_layer;
+    bool valid;
+} vk_shadow_page_mapping_t;
 
 static vk_shadow_state_t vk_shadow;
+static vk_shadow_resources_t *vk_shadow_rollback_resources;
+// The currently selected pool lives in vk_shadow's resource fields so the
+// established allocator and render helpers stay transactional. Inactive pools
+// are parked here and swapped in only while their pages are prepared/recorded.
+static vk_shadow_resources_t
+    vk_shadow_resolution_pools[VK_SHADOW_RESOLUTION_POOL_COUNT];
+static uint32_t vk_shadow_active_resolution_pool;
+static uint32_t vk_shadow_pool_frame_required_pages[
+    VK_SHADOW_RESOLUTION_POOL_COUNT];
+static uint32_t vk_shadow_pool_completed_required_pages[
+    VK_SHADOW_RESOLUTION_POOL_COUNT];
+static uint32_t vk_shadow_pool_shrink_target_capacity[
+    VK_SHADOW_RESOLUTION_POOL_COUNT];
+static uint32_t vk_shadow_pool_shrink_stable_frames[
+    VK_SHADOW_RESOLUTION_POOL_COUNT];
+static vk_shadow_page_mapping_t vk_shadow_page_mappings[VK_SHADOW_MAX_PAGES];
+// Format selection is a device capability decision, not ownership of one
+// particular image family. Keep it outside the swappable pool resources so an
+// empty pool can be materialized after another pool has been parked.
+static VkFormat vk_shadow_preferred_depth_format;
+static VkFormat vk_shadow_preferred_moment_format;
+static void VK_Shadow_SwapResources(vk_shadow_resources_t *other);
 static cvar_t *vk_fog;
+static cvar_t *vk_shadow_shrink_frames;
+static cvar_t *vk_shadow_test_fail_recreate;
+static cvar_t *vk_shadow_test_sun_resolution_drop_after_frames;
 
 typedef struct {
     vec3_t mins;
     vec3_t maxs;
+    VkDescriptorSet alpha_descriptor_set;
+    vec2_t alpha_inv_size;
+    bool alpha_test;
 } vk_shadow_face_bounds_t;
 
 // World face bounds are immutable per map; caching them avoids walking every
@@ -360,6 +458,195 @@ static int VK_Shadow_ClampResolution(int requested)
     return min(resolution, VK_SHADOW_MAX_RESOLUTION);
 }
 
+static uint32_t VK_Shadow_ResolutionPoolIndex(int requested_resolution)
+{
+    int resolution = VK_Shadow_ClampResolution(requested_resolution);
+    uint32_t index = 0;
+    while (resolution > 64 && index + 1 < VK_SHADOW_RESOLUTION_POOL_COUNT) {
+        resolution >>= 1;
+        index++;
+    }
+    return index;
+}
+
+static int VK_Shadow_ResolutionForPool(uint32_t pool_index)
+{
+    pool_index = min(pool_index, VK_SHADOW_RESOLUTION_POOL_COUNT - 1u);
+    return 64 << pool_index;
+}
+
+static bool VK_Shadow_EnsurePageMapping(const shadow_view_desc_t *view,
+                                        uint32_t pool_index,
+                                        uint32_t *out_layer,
+                                        bool *allocated)
+{
+    if (allocated) {
+        *allocated = false;
+    }
+    if (!view || !out_layer || view->page.index >= VK_SHADOW_MAX_PAGES ||
+        pool_index >= VK_SHADOW_RESOLUTION_POOL_COUNT) {
+        return false;
+    }
+
+    vk_shadow_page_mapping_t *mapping =
+        &vk_shadow_page_mappings[view->page.index];
+    if (mapping->valid && mapping->generation == view->page.generation &&
+        mapping->pool_index == pool_index) {
+        *out_layer = mapping->pool_layer;
+        return true;
+    }
+
+    // A resident slot can be recycled by the frontend with a new generation
+    // or transferred to another resolution family. Its old local layer can be
+    // reused; the new mapping reports allocation so the frontend redraws it.
+    mapping->valid = false;
+    bool used[VK_SHADOW_MAX_PAGES] = { false };
+    for (uint32_t i = 0; i < VK_SHADOW_MAX_PAGES; i++) {
+        const vk_shadow_page_mapping_t *candidate =
+            &vk_shadow_page_mappings[i];
+        if (candidate->valid && candidate->pool_index == pool_index &&
+            candidate->pool_layer < VK_SHADOW_MAX_PAGES) {
+            used[candidate->pool_layer] = true;
+        }
+    }
+    for (uint32_t layer = 0; layer < VK_SHADOW_MAX_PAGES; layer++) {
+        if (used[layer]) {
+            continue;
+        }
+        *mapping = (vk_shadow_page_mapping_t) {
+            .generation = view->page.generation,
+            .pool_index = pool_index,
+            .pool_layer = layer,
+            .valid = true,
+        };
+        *out_layer = layer;
+        if (allocated) {
+            *allocated = true;
+        }
+        return true;
+    }
+
+    Com_EPrintf("Vulkan shadow: no free layer in resolution pool %u\n",
+                pool_index);
+    return false;
+}
+
+static bool VK_Shadow_SelectResolutionPool(uint32_t pool_index)
+{
+    if (pool_index >= VK_SHADOW_RESOLUTION_POOL_COUNT) {
+        return false;
+    }
+    if (pool_index == vk_shadow_active_resolution_pool) {
+        return true;
+    }
+
+    VK_Shadow_SwapResources(
+        &vk_shadow_resolution_pools[vk_shadow_active_resolution_pool]);
+    VK_Shadow_SwapResources(&vk_shadow_resolution_pools[pool_index]);
+    vk_shadow_active_resolution_pool = pool_index;
+    return true;
+}
+
+static bool VK_Shadow_AnyResolutionPoolResources(void)
+{
+    if (vk_shadow.resources_ok) {
+        return true;
+    }
+    for (uint32_t i = 0; i < VK_SHADOW_RESOLUTION_POOL_COUNT; i++) {
+        if (i != vk_shadow_active_resolution_pool &&
+            vk_shadow_resolution_pools[i].resources_ok) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static const vk_shadow_resources_t *VK_Shadow_ParkedResolutionPool(
+    uint32_t pool_index)
+{
+    if (pool_index >= VK_SHADOW_RESOLUTION_POOL_COUNT ||
+        pool_index == vk_shadow_active_resolution_pool) {
+        return NULL;
+    }
+    return &vk_shadow_resolution_pools[pool_index];
+}
+
+static bool VK_Shadow_GrowPageCapacity(uint32_t current, uint32_t needed,
+                                       uint32_t *out_capacity)
+{
+    if (!out_capacity || !needed || needed > VK_SHADOW_MAX_PAGES) {
+        return false;
+    }
+
+    uint32_t capacity = current ? current : 1;
+    while (capacity < needed) {
+        if (capacity >= VK_SHADOW_MAX_PAGES / 2u) {
+            capacity = VK_SHADOW_MAX_PAGES;
+            break;
+        }
+        capacity *= 2u;
+    }
+    *out_capacity = capacity;
+    return true;
+}
+
+static uint32_t VK_Shadow_ShrinkDelay(void)
+{
+    const int configured = vk_shadow_shrink_frames
+        ? vk_shadow_shrink_frames->integer
+        : (int)VK_SHADOW_DEFAULT_SHRINK_FRAMES;
+    return (uint32_t)Q_clipf((float)configured, 1.0f, 3600.0f);
+}
+
+// Capacity growth remains immediate, but each physical resolution pool only
+// shrinks after a completed low-water interval. This avoids recreating arrays
+// when a light alternates between page counts while also keeping a sparse pool
+// from retaining a high-water allocation owned by another resolution.
+static bool VK_Shadow_RequestCapacityShrink(uint32_t pool_index,
+                                            uint32_t required_pages)
+{
+    if (pool_index >= VK_SHADOW_RESOLUTION_POOL_COUNT ||
+        !vk_shadow.resources_ok) {
+        vk_shadow_pool_shrink_target_capacity[pool_index] = 0;
+        vk_shadow_pool_shrink_stable_frames[pool_index] = 0;
+        return false;
+    }
+
+    if (required_pages == 0) {
+        vk_shadow_pool_shrink_target_capacity[pool_index] = 0;
+        if (vk_shadow_pool_shrink_stable_frames[pool_index] < UINT32_MAX) {
+            vk_shadow_pool_shrink_stable_frames[pool_index]++;
+        }
+        return vk_shadow_pool_shrink_stable_frames[pool_index] >=
+            VK_Shadow_ShrinkDelay();
+    }
+
+    if (required_pages >= vk_shadow.page_capacity) {
+        vk_shadow_pool_shrink_target_capacity[pool_index] = 0;
+        vk_shadow_pool_shrink_stable_frames[pool_index] = 0;
+        return false;
+    }
+
+    uint32_t target_capacity;
+    if (!VK_Shadow_GrowPageCapacity(0, required_pages, &target_capacity) ||
+        target_capacity >= vk_shadow.page_capacity) {
+        vk_shadow_pool_shrink_target_capacity[pool_index] = 0;
+        vk_shadow_pool_shrink_stable_frames[pool_index] = 0;
+        return false;
+    }
+
+    if (vk_shadow_pool_shrink_target_capacity[pool_index] !=
+        target_capacity) {
+        vk_shadow_pool_shrink_target_capacity[pool_index] = target_capacity;
+        vk_shadow_pool_shrink_stable_frames[pool_index] = 1;
+    } else if (vk_shadow_pool_shrink_stable_frames[pool_index] <
+               UINT32_MAX) {
+        vk_shadow_pool_shrink_stable_frames[pool_index]++;
+    }
+    return vk_shadow_pool_shrink_stable_frames[pool_index] >=
+        VK_Shadow_ShrinkDelay();
+}
+
 static bool VK_Shadow_DepthFormatUsable(VkFormat format)
 {
     VkFormatProperties props;
@@ -371,7 +658,16 @@ static bool VK_Shadow_DepthFormatUsable(VkFormat format)
     return (props.optimalTilingFeatures & required) == required;
 }
 
-static VkFormat VK_Shadow_ChooseDepthFormat(void)
+static bool VK_Shadow_FormatSupportsLinearFiltering(VkFormat format)
+{
+    VkFormatProperties props;
+    vkGetPhysicalDeviceFormatProperties(vk_shadow.ctx->physical_device,
+                                        format, &props);
+    return (props.optimalTilingFeatures &
+            VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) != 0;
+}
+
+static VkFormat VK_Shadow_ChooseDepthFormat(bool *linear_filtering)
 {
     static const VkFormat candidates[] = {
         VK_FORMAT_D32_SFLOAT,
@@ -379,6 +675,21 @@ static VkFormat VK_Shadow_ChooseDepthFormat(void)
         VK_FORMAT_D32_SFLOAT_S8_UINT,
     };
 
+    if (linear_filtering) {
+        *linear_filtering = false;
+    }
+    for (size_t i = 0; i < q_countof(candidates); i++) {
+        if (VK_Shadow_DepthFormatUsable(candidates[i]) &&
+            VK_Shadow_FormatSupportsLinearFiltering(candidates[i])) {
+            if (linear_filtering) {
+                *linear_filtering = true;
+            }
+            return candidates[i];
+        }
+    }
+    // A depth-comparison sampler remains legal with nearest filtering. Keep
+    // shadows available on adapters whose depth formats cannot linearly
+    // filter, rather than creating an unsupported linear sampler.
     for (size_t i = 0; i < q_countof(candidates); i++) {
         if (VK_Shadow_DepthFormatUsable(candidates[i])) {
             return candidates[i];
@@ -410,13 +721,27 @@ static bool VK_Shadow_ColorFormatMipBlitUsable(VkFormat format)
     return (props.optimalTilingFeatures & required) == required;
 }
 
-static VkFormat VK_Shadow_ChooseMomentFormat(void)
+static VkFormat VK_Shadow_ChooseMomentFormat(bool *linear_filtering)
 {
     static const VkFormat candidates[] = {
         VK_FORMAT_R16G16B16A16_SFLOAT,
         VK_FORMAT_R32G32B32A32_SFLOAT,
     };
 
+    if (linear_filtering) {
+        *linear_filtering = false;
+    }
+    for (size_t i = 0; i < q_countof(candidates); i++) {
+        if (VK_Shadow_ColorFormatUsable(candidates[i]) &&
+            VK_Shadow_FormatSupportsLinearFiltering(candidates[i])) {
+            if (linear_filtering) {
+                *linear_filtering = true;
+            }
+            return candidates[i];
+        }
+    }
+    // Moment filtering degrades gracefully to nearest sampling. This keeps
+    // VSM/EVSM functional on legal-but-minimal format capability sets.
     for (size_t i = 0; i < q_countof(candidates); i++) {
         if (VK_Shadow_ColorFormatUsable(candidates[i])) {
             return candidates[i];
@@ -661,7 +986,7 @@ static bool VK_Shadow_CreateDescriptors(void)
         {
             .binding = 0,
             .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            .descriptorCount = 1,
+            .descriptorCount = VK_SHADOW_RESOLUTION_POOL_COUNT,
             .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
         },
         {
@@ -673,13 +998,13 @@ static bool VK_Shadow_CreateDescriptors(void)
         {
             .binding = 2,
             .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            .descriptorCount = 1,
+            .descriptorCount = VK_SHADOW_RESOLUTION_POOL_COUNT,
             .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
         },
         {
             .binding = 3,
             .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            .descriptorCount = 1,
+            .descriptorCount = VK_SHADOW_RESOLUTION_POOL_COUNT,
             .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
         },
     };
@@ -698,7 +1023,8 @@ static bool VK_Shadow_CreateDescriptors(void)
     VkDescriptorPoolSize pool_sizes[2] = {
         {
             .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            .descriptorCount = 3 * VK_MAX_FRAMES_IN_FLIGHT,
+            .descriptorCount = 3 * VK_SHADOW_RESOLUTION_POOL_COUNT *
+                               VK_MAX_FRAMES_IN_FLIGHT,
         },
         {
             .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
@@ -743,30 +1069,81 @@ static bool VK_Shadow_CreateDescriptors(void)
 
 static void VK_Shadow_UpdateDescriptorSet(void)
 {
-    if (!vk_shadow.sampler || !vk_shadow.compare_sampler ||
-        !vk_shadow.array_view) {
+    VkImageView fallback_depth_view = vk_shadow.array_view;
+    VkSampler fallback_depth_sampler = vk_shadow.sampler;
+    VkSampler fallback_compare_sampler = vk_shadow.compare_sampler;
+    VkImageView fallback_moment_view = vk_shadow.moment_array_view;
+    VkSampler fallback_moment_sampler = vk_shadow.moment_sampler;
+    if (!fallback_depth_view || !fallback_depth_sampler ||
+        !fallback_compare_sampler) {
+        for (uint32_t pool_index = 0;
+             pool_index < VK_SHADOW_RESOLUTION_POOL_COUNT; pool_index++) {
+            const vk_shadow_resources_t *candidate =
+                VK_Shadow_ParkedResolutionPool(pool_index);
+            if (!candidate || !candidate->resources_ok ||
+                !candidate->array_view || !candidate->sampler ||
+                !candidate->compare_sampler) {
+                continue;
+            }
+            fallback_depth_view = candidate->array_view;
+            fallback_depth_sampler = candidate->sampler;
+            fallback_compare_sampler = candidate->compare_sampler;
+            fallback_moment_view = candidate->moment_array_view;
+            fallback_moment_sampler = candidate->moment_sampler;
+            break;
+        }
+    }
+    if (!fallback_depth_view || !fallback_depth_sampler ||
+        !fallback_compare_sampler) {
         return;
     }
 
-    VkDescriptorImageInfo image_info = {
-        .sampler = vk_shadow.sampler,
-        .imageView = vk_shadow.array_view,
-        .imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-    };
-    VkDescriptorImageInfo compare_info = {
-        .sampler = vk_shadow.compare_sampler,
-        .imageView = vk_shadow.array_view,
-        .imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-    };
-    VkDescriptorImageInfo moment_info = {
-        .sampler = vk_shadow.moment_sampler ? vk_shadow.moment_sampler
-                                            : vk_shadow.sampler,
-        .imageView = vk_shadow.moment_array_view ? vk_shadow.moment_array_view
-                                                 : vk_shadow.array_view,
-        .imageLayout = vk_shadow.moment_array_view
-            ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-            : VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-    };
+    VkDescriptorImageInfo image_infos[VK_SHADOW_RESOLUTION_POOL_COUNT];
+    VkDescriptorImageInfo compare_infos[VK_SHADOW_RESOLUTION_POOL_COUNT];
+    VkDescriptorImageInfo moment_infos[VK_SHADOW_RESOLUTION_POOL_COUNT];
+    for (uint32_t pool_index = 0;
+         pool_index < VK_SHADOW_RESOLUTION_POOL_COUNT; pool_index++) {
+        const vk_shadow_resources_t *parked =
+            VK_Shadow_ParkedResolutionPool(pool_index);
+        const bool parked_valid = parked && parked->resources_ok;
+        const VkImageView depth_view = parked_valid && parked->array_view
+            ? parked->array_view : fallback_depth_view;
+        const VkSampler depth_sampler = parked_valid && parked->sampler
+            ? parked->sampler : fallback_depth_sampler;
+        const VkSampler compare_sampler = parked_valid &&
+            parked->compare_sampler ? parked->compare_sampler
+                                    : fallback_compare_sampler;
+        const bool has_moments = parked_valid
+            ? parked->moment_array_view != VK_NULL_HANDLE
+            : fallback_moment_view != VK_NULL_HANDLE;
+        const VkImageView moment_view = has_moments
+            ? (parked_valid ? parked->moment_array_view
+                            : fallback_moment_view)
+            : depth_view;
+        const VkSampler moment_sampler = has_moments &&
+            (parked_valid ? parked->moment_sampler : fallback_moment_sampler)
+            ? (parked_valid ? parked->moment_sampler
+                            : fallback_moment_sampler)
+            : (fallback_moment_sampler ? fallback_moment_sampler
+                                       : depth_sampler);
+        image_infos[pool_index] = (VkDescriptorImageInfo) {
+            .sampler = depth_sampler,
+            .imageView = depth_view,
+            .imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+        };
+        compare_infos[pool_index] = (VkDescriptorImageInfo) {
+            .sampler = compare_sampler,
+            .imageView = depth_view,
+            .imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+        };
+        moment_infos[pool_index] = (VkDescriptorImageInfo) {
+            .sampler = moment_sampler,
+            .imageView = moment_view,
+            .imageLayout = has_moments
+                ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                : VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+        };
+    }
     for (uint32_t i = 0; i < VK_MAX_FRAMES_IN_FLIGHT; ++i) {
         vk_shadow_frame_resources_t *frame = &vk_shadow.frame_resources[i];
         if (!frame->descriptor_set || !frame->uniform_buffer) {
@@ -782,9 +1159,9 @@ static void VK_Shadow_UpdateDescriptorSet(void)
                 .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                 .dstSet = frame->descriptor_set,
                 .dstBinding = 0,
-                .descriptorCount = 1,
+                .descriptorCount = VK_SHADOW_RESOLUTION_POOL_COUNT,
                 .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                .pImageInfo = &image_info,
+                .pImageInfo = image_infos,
             },
             {
                 .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -798,17 +1175,17 @@ static void VK_Shadow_UpdateDescriptorSet(void)
                 .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                 .dstSet = frame->descriptor_set,
                 .dstBinding = 2,
-                .descriptorCount = 1,
+                .descriptorCount = VK_SHADOW_RESOLUTION_POOL_COUNT,
                 .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                .pImageInfo = &moment_info,
+                .pImageInfo = moment_infos,
             },
             {
                 .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                 .dstSet = frame->descriptor_set,
                 .dstBinding = 3,
-                .descriptorCount = 1,
+                .descriptorCount = VK_SHADOW_RESOLUTION_POOL_COUNT,
                 .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                .pImageInfo = &compare_info,
+                .pImageInfo = compare_infos,
             },
         };
         vkUpdateDescriptorSets(vk_shadow.ctx->device, q_countof(writes), writes,
@@ -927,6 +1304,54 @@ static bool VK_Shadow_EnsureVertexBuffer(size_t bytes)
     return true;
 }
 
+static void VK_Shadow_SwapResources(vk_shadow_resources_t *other)
+{
+    if (!other) {
+        return;
+    }
+
+#define VK_SHADOW_SWAP_RESOURCE(type, field) \
+    do { \
+        type temporary = vk_shadow.field; \
+        vk_shadow.field = other->field; \
+        other->field = temporary; \
+    } while (0)
+
+    VK_SHADOW_SWAP_RESOURCE(bool, resources_ok);
+    VK_SHADOW_SWAP_RESOURCE(bool, layout_initialized);
+    VK_SHADOW_SWAP_RESOURCE(bool, moment_layout_initialized);
+    VK_SHADOW_SWAP_RESOURCE(VkFormat, depth_format);
+    VK_SHADOW_SWAP_RESOURCE(VkFormat, moment_format);
+    VK_SHADOW_SWAP_RESOURCE(VkImage, image);
+    VK_SHADOW_SWAP_RESOURCE(VkDeviceMemory, memory);
+    VK_SHADOW_SWAP_RESOURCE(VkImageView, array_view);
+    VK_SHADOW_SWAP_RESOURCE(VkSampler, sampler);
+    VK_SHADOW_SWAP_RESOURCE(VkSampler, compare_sampler);
+    VK_SHADOW_SWAP_RESOURCE(VkImage, moment_image);
+    VK_SHADOW_SWAP_RESOURCE(VkDeviceMemory, moment_memory);
+    VK_SHADOW_SWAP_RESOURCE(VkImageView, moment_array_view);
+    VK_SHADOW_SWAP_RESOURCE(VkSampler, moment_sampler);
+    VK_SHADOW_SWAP_RESOURCE(VkRenderPass, render_pass);
+    VK_SHADOW_SWAP_RESOURCE(VkPipelineLayout, pipeline_layout);
+    VK_SHADOW_SWAP_RESOURCE(VkPipeline, pipeline);
+    VK_SHADOW_SWAP_RESOURCE(VkPipeline, alpha_pipeline);
+    VK_SHADOW_SWAP_RESOURCE(VkDescriptorSetLayout,
+                            material_descriptor_set_layout);
+    for (uint32_t i = 0; i < VK_SHADOW_MAX_PAGES; i++) {
+        VK_SHADOW_SWAP_RESOURCE(VkImageView, layer_views[i]);
+        VK_SHADOW_SWAP_RESOURCE(VkImageView, moment_layer_views[i]);
+        VK_SHADOW_SWAP_RESOURCE(VkFramebuffer, framebuffers[i]);
+        VK_SHADOW_SWAP_RESOURCE(VkFramebuffer, moment_framebuffers[i]);
+    }
+    VK_SHADOW_SWAP_RESOURCE(VkImageLayout, layout);
+    VK_SHADOW_SWAP_RESOURCE(int, resolution);
+    VK_SHADOW_SWAP_RESOURCE(int, mip_levels);
+    VK_SHADOW_SWAP_RESOURCE(uint32_t, page_capacity);
+    VK_SHADOW_SWAP_RESOURCE(shadow_storage_family_t, storage_family);
+
+#undef VK_SHADOW_SWAP_RESOURCE
+}
+
 static void VK_Shadow_DestroyResources(void)
 {
     if (!vk_shadow.ctx || !vk_shadow.ctx->device) {
@@ -934,7 +1359,7 @@ static void VK_Shadow_DestroyResources(void)
     }
     VkDevice device = vk_shadow.ctx->device;
 
-    for (int i = 0; i < VK_SHADOW_MAX_PAGES; i++) {
+    for (uint32_t i = 0; i < vk_shadow.page_capacity; i++) {
         if (vk_shadow.moment_framebuffers[i]) {
             vkDestroyFramebuffer(device, vk_shadow.moment_framebuffers[i],
                                  NULL);
@@ -954,9 +1379,9 @@ static void VK_Shadow_DestroyResources(void)
             vk_shadow.layer_views[i] = VK_NULL_HANDLE;
         }
     }
-    if (vk_shadow.moment_pipeline) {
-        vkDestroyPipeline(device, vk_shadow.moment_pipeline, NULL);
-        vk_shadow.moment_pipeline = VK_NULL_HANDLE;
+    if (vk_shadow.alpha_pipeline) {
+        vkDestroyPipeline(device, vk_shadow.alpha_pipeline, NULL);
+        vk_shadow.alpha_pipeline = VK_NULL_HANDLE;
     }
     if (vk_shadow.pipeline) {
         vkDestroyPipeline(device, vk_shadow.pipeline, NULL);
@@ -965,6 +1390,12 @@ static void VK_Shadow_DestroyResources(void)
     if (vk_shadow.pipeline_layout) {
         vkDestroyPipelineLayout(device, vk_shadow.pipeline_layout, NULL);
         vk_shadow.pipeline_layout = VK_NULL_HANDLE;
+    }
+    if (vk_shadow.material_descriptor_set_layout) {
+        vkDestroyDescriptorSetLayout(device,
+                                     vk_shadow.material_descriptor_set_layout,
+                                     NULL);
+        vk_shadow.material_descriptor_set_layout = VK_NULL_HANDLE;
     }
     if (vk_shadow.render_pass) {
         vkDestroyRenderPass(device, vk_shadow.render_pass, NULL);
@@ -1009,10 +1440,52 @@ static void VK_Shadow_DestroyResources(void)
 
     vk_shadow.resources_ok = false;
     vk_shadow.layout_initialized = false;
+    vk_shadow.moment_layout_initialized = false;
     vk_shadow.layout = VK_IMAGE_LAYOUT_UNDEFINED;
-    vk_shadow.moment_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    vk_shadow.page_capacity = 0;
     vk_shadow.resolution = 0;
     vk_shadow.mip_levels = 1;
+
+    // A replacement is constructed with the old handles parked in a local
+    // resource bundle. Any allocation failure reaches this cleanup path, so
+    // restore that bundle before returning control to the frontend.
+    if (vk_shadow_rollback_resources) {
+        VK_Shadow_SwapResources(vk_shadow_rollback_resources);
+        VK_Shadow_UpdateDescriptorSet();
+        vk_shadow_rollback_resources = NULL;
+    }
+}
+
+static void VK_Shadow_DestroyResolutionPools(void)
+{
+    if (!vk_shadow.ctx || !vk_shadow.ctx->device) {
+        memset(vk_shadow_resolution_pools, 0,
+               sizeof(vk_shadow_resolution_pools));
+        vk_shadow_active_resolution_pool = 0;
+        return;
+    }
+
+    for (uint32_t pool_index = 0;
+         pool_index < VK_SHADOW_RESOLUTION_POOL_COUNT; pool_index++) {
+        if (!VK_Shadow_SelectResolutionPool(pool_index)) {
+            continue;
+        }
+        VK_Shadow_DestroyResources();
+    }
+    memset(vk_shadow_resolution_pools, 0,
+           sizeof(vk_shadow_resolution_pools));
+    memset(vk_shadow_pool_frame_required_pages, 0,
+           sizeof(vk_shadow_pool_frame_required_pages));
+    memset(vk_shadow_pool_completed_required_pages, 0,
+           sizeof(vk_shadow_pool_completed_required_pages));
+    memset(vk_shadow_pool_shrink_target_capacity, 0,
+           sizeof(vk_shadow_pool_shrink_target_capacity));
+    memset(vk_shadow_pool_shrink_stable_frames, 0,
+           sizeof(vk_shadow_pool_shrink_stable_frames));
+    memset(vk_shadow_page_mappings, 0, sizeof(vk_shadow_page_mappings));
+    vk_shadow_active_resolution_pool = 0;
+    vk_shadow_preferred_depth_format = VK_FORMAT_UNDEFINED;
+    vk_shadow_preferred_moment_format = VK_FORMAT_UNDEFINED;
 }
 
 static bool VK_Shadow_CreateRenderPass(VkDevice device)
@@ -1082,6 +1555,42 @@ static bool VK_Shadow_CreateRenderPass(VkDevice device)
 
 static bool VK_Shadow_CreatePipeline(VkDevice device)
 {
+    // Shadow initialization precedes VK_UI_Init.  Keep an explicitly
+    // equivalent three-sampler layout here so later VK_UI image descriptor
+    // sets remain pipeline-compatible without introducing an init-order
+    // dependency.  The alpha pipeline samples binding 0 only; bindings 1/2
+    // preserve compatibility with each existing image descriptor set.
+    VkDescriptorSetLayoutBinding material_bindings[3] = {
+        {
+            .binding = 0,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .descriptorCount = 1,
+            .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+        },
+        {
+            .binding = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .descriptorCount = 1,
+            .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+        },
+        {
+            .binding = 2,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .descriptorCount = 1,
+            .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+        },
+    };
+    VkDescriptorSetLayoutCreateInfo material_layout_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = q_countof(material_bindings),
+        .pBindings = material_bindings,
+    };
+    if (!VK_Shadow_Check(vkCreateDescriptorSetLayout(
+                              device, &material_layout_info, NULL,
+                              &vk_shadow.material_descriptor_set_layout),
+                         "vkCreateDescriptorSetLayout(shadow material)")) {
+        return false;
+    }
     VkPushConstantRange push = {
         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
         .offset = 0,
@@ -1089,6 +1598,8 @@ static bool VK_Shadow_CreatePipeline(VkDevice device)
     };
     VkPipelineLayoutCreateInfo layout_info = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = 1,
+        .pSetLayouts = &vk_shadow.material_descriptor_set_layout,
         .pushConstantRangeCount = 1,
         .pPushConstantRanges = &push,
     };
@@ -1227,10 +1738,57 @@ static bool VK_Shadow_CreatePipeline(VkDevice device)
         .renderPass = vk_shadow.render_pass,
         .subpass = 0,
     };
+    if (!VK_Shadow_Check(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE,
+                                                    1, &info, NULL,
+                                                    &vk_shadow.pipeline),
+                         "vkCreateGraphicsPipelines(shadow)")) {
+        vkDestroyShaderModule(device, vert, NULL);
+        if (frag) {
+            vkDestroyShaderModule(device, frag, NULL);
+        }
+        return false;
+    }
+
+    const uint32_t *alpha_frag_spv =
+        vk_shadow.storage_family == SHADOW_STORAGE_MOMENT
+            ? vk_shadow_alpha_moment_frag_spv
+            : vk_shadow_alpha_frag_spv;
+    const size_t alpha_frag_spv_size =
+        vk_shadow.storage_family == SHADOW_STORAGE_MOMENT
+            ? vk_shadow_alpha_moment_frag_spv_size
+            : vk_shadow_alpha_frag_spv_size;
+    VkShaderModule alpha_frag = VK_NULL_HANDLE;
+    VkShaderModuleCreateInfo alpha_frag_info = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = alpha_frag_spv_size,
+        .pCode = alpha_frag_spv,
+    };
+    if (!VK_Shadow_Check(vkCreateShaderModule(device, &alpha_frag_info, NULL,
+                                              &alpha_frag),
+                         "vkCreateShaderModule(shadow alpha frag)")) {
+        vkDestroyShaderModule(device, vert, NULL);
+        if (frag) {
+            vkDestroyShaderModule(device, frag, NULL);
+        }
+        return false;
+    }
+
+    VkPipelineShaderStageCreateInfo alpha_stages[2] = {
+        stages[0],
+        {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+            .module = alpha_frag,
+            .pName = "main",
+        },
+    };
+    info.stageCount = q_countof(alpha_stages);
+    info.pStages = alpha_stages;
     bool ok = VK_Shadow_Check(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE,
                                                         1, &info, NULL,
-                                                        &vk_shadow.pipeline),
-                              "vkCreateGraphicsPipelines(shadow)");
+                                                        &vk_shadow.alpha_pipeline),
+                              "vkCreateGraphicsPipelines(shadow alpha)");
+    vkDestroyShaderModule(device, alpha_frag, NULL);
     vkDestroyShaderModule(device, vert, NULL);
     if (frag) {
         vkDestroyShaderModule(device, frag, NULL);
@@ -1240,6 +1798,8 @@ static bool VK_Shadow_CreatePipeline(VkDevice device)
 
 static bool VK_Shadow_EnsureResources(int requested_resolution,
                                       shadow_storage_family_t storage,
+                                      uint32_t requested_pages,
+                                      bool permit_capacity_shrink,
                                       bool *allocated)
 {
     if (allocated) {
@@ -1251,34 +1811,59 @@ static bool VK_Shadow_EnsureResources(int requested_resolution,
     if (!VK_Shadow_ValidStorageFamily(storage)) {
         return false;
     }
+    uint32_t page_capacity;
+    const uint32_t current_capacity = permit_capacity_shrink
+        ? 0 : vk_shadow.page_capacity;
+    if (!VK_Shadow_GrowPageCapacity(current_capacity, requested_pages,
+                                    &page_capacity)) {
+        return false;
+    }
 
     int resolution = VK_Shadow_ClampResolution(requested_resolution);
-    VkFormat depth_format = vk_shadow.depth_format;
+    VkFormat depth_format = vk_shadow_preferred_depth_format;
     if (depth_format == VK_FORMAT_UNDEFINED) {
         return false;
     }
-    VkFormat moment_format = vk_shadow.moment_format;
+    VkFormat moment_format = vk_shadow_preferred_moment_format;
     if (storage == SHADOW_STORAGE_MOMENT &&
         moment_format == VK_FORMAT_UNDEFINED) {
         return false;
     }
-    if (vk_shadow.resources_ok && vk_shadow.resolution >= resolution &&
+    if (vk_shadow.resources_ok && vk_shadow.resolution == resolution &&
         vk_shadow.depth_format == depth_format &&
-        vk_shadow.storage_family == storage) {
+        vk_shadow.storage_family == storage &&
+        vk_shadow.page_capacity == page_capacity) {
         return true;
     }
 
     VkDevice device = vk_shadow.ctx->device;
-    if (vk_shadow.resources_ok) {
+    vk_shadow_resources_t previous = {0};
+    const bool had_previous_resources = vk_shadow.resources_ok;
+    if (had_previous_resources) {
         vkDeviceWaitIdle(device);
+        VK_Shadow_SwapResources(&previous);
+        vk_shadow_rollback_resources = &previous;
+        // Test-only fault injection exercises the transactional rollback after
+        // a live resource set has been parked. It is deliberately unavailable
+        // during initial initialization, so it cannot leave the renderer
+        // without its first valid shadow resource family.
+        if (vk_shadow_test_fail_recreate &&
+            vk_shadow_test_fail_recreate->integer) {
+            Com_Printf("Vulkan shadow: test-injected replacement failure; restoring prior resources\n");
+            Cvar_SetByVar(vk_shadow_test_fail_recreate, "0", FROM_CODE);
+            VK_Shadow_DestroyResources();
+            return false;
+        }
     }
-    VK_Shadow_DestroyResources();
     vk_shadow.depth_format = depth_format;
     vk_shadow.moment_format = moment_format;
     vk_shadow.storage_family = storage;
     vk_shadow.mip_levels = storage == SHADOW_STORAGE_MOMENT
         ? VK_Shadow_MipLevels(resolution)
         : 1;
+    // Publish the new bound before creating per-layer objects so every
+    // failure path can destroy exactly the views/framebuffers it created.
+    vk_shadow.page_capacity = page_capacity;
 
     VkImageCreateInfo image_info = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -1286,7 +1871,7 @@ static bool VK_Shadow_EnsureResources(int requested_resolution,
         .format = depth_format,
         .extent = { (uint32_t)resolution, (uint32_t)resolution, 1 },
         .mipLevels = 1,
-        .arrayLayers = VK_SHADOW_MAX_PAGES,
+        .arrayLayers = page_capacity,
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .tiling = VK_IMAGE_TILING_OPTIMAL,
         .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
@@ -1297,6 +1882,7 @@ static bool VK_Shadow_EnsureResources(int requested_resolution,
     if (!VK_Shadow_Check(vkCreateImage(device, &image_info, NULL,
                                        &vk_shadow.image),
                          "vkCreateImage(shadow depth array)")) {
+        VK_Shadow_DestroyResources();
         return false;
     }
 
@@ -1338,7 +1924,7 @@ static bool VK_Shadow_EnsureResources(int requested_resolution,
             .baseMipLevel = 0,
             .levelCount = 1,
             .baseArrayLayer = 0,
-            .layerCount = VK_SHADOW_MAX_PAGES,
+            .layerCount = page_capacity,
         },
     };
     if (!VK_Shadow_Check(vkCreateImageView(device, &array_view_info, NULL,
@@ -1348,10 +1934,13 @@ static bool VK_Shadow_EnsureResources(int requested_resolution,
         return false;
     }
 
+    const VkFilter depth_filter = vk_shadow.depth_linear_filtering
+        ? VK_FILTER_LINEAR
+        : VK_FILTER_NEAREST;
     VkSamplerCreateInfo sampler_info = {
         .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-        .magFilter = VK_FILTER_LINEAR,
-        .minFilter = VK_FILTER_LINEAR,
+        .magFilter = depth_filter,
+        .minFilter = depth_filter,
         .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
         .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
         .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
@@ -1385,7 +1974,7 @@ static bool VK_Shadow_EnsureResources(int requested_resolution,
             .format = moment_format,
             .extent = { (uint32_t)resolution, (uint32_t)resolution, 1 },
             .mipLevels = (uint32_t)vk_shadow.mip_levels,
-            .arrayLayers = VK_SHADOW_MAX_PAGES,
+            .arrayLayers = page_capacity,
             .samples = VK_SAMPLE_COUNT_1_BIT,
             .tiling = VK_IMAGE_TILING_OPTIMAL,
             .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
@@ -1441,7 +2030,7 @@ static bool VK_Shadow_EnsureResources(int requested_resolution,
                 .baseMipLevel = 0,
                 .levelCount = (uint32_t)vk_shadow.mip_levels,
                 .baseArrayLayer = 0,
-                .layerCount = VK_SHADOW_MAX_PAGES,
+                .layerCount = page_capacity,
             },
         };
         if (!VK_Shadow_Check(vkCreateImageView(device,
@@ -1454,7 +2043,14 @@ static bool VK_Shadow_EnsureResources(int requested_resolution,
         }
 
         VkSamplerCreateInfo moment_sampler_info = sampler_info;
-        moment_sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        const VkFilter moment_filter = vk_shadow.moment_linear_filtering
+            ? VK_FILTER_LINEAR
+            : VK_FILTER_NEAREST;
+        moment_sampler_info.magFilter = moment_filter;
+        moment_sampler_info.minFilter = moment_filter;
+        moment_sampler_info.mipmapMode = vk_shadow.moment_mips_supported
+            ? VK_SAMPLER_MIPMAP_MODE_LINEAR
+            : VK_SAMPLER_MIPMAP_MODE_NEAREST;
         moment_sampler_info.maxLod = (float)(vk_shadow.mip_levels - 1);
         if (!VK_Shadow_Check(vkCreateSampler(device, &moment_sampler_info,
                                              NULL,
@@ -1471,7 +2067,7 @@ static bool VK_Shadow_EnsureResources(int requested_resolution,
         return false;
     }
 
-    for (int i = 0; i < VK_SHADOW_MAX_PAGES; i++) {
+    for (uint32_t i = 0; i < page_capacity; i++) {
         VkImageViewCreateInfo layer_info = array_view_info;
         layer_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
         layer_info.subresourceRange.baseArrayLayer = (uint32_t)i;
@@ -1531,6 +2127,15 @@ static bool VK_Shadow_EnsureResources(int requested_resolution,
     vk_shadow.reallocated_this_frame = true;
     vk_shadow.layout = VK_IMAGE_LAYOUT_UNDEFINED;
     vk_shadow.layout_initialized = false;
+    vk_shadow_rollback_resources = NULL;
+    if (had_previous_resources) {
+        // Retire the old array only after every image/view/sampler/pipeline in
+        // the replacement exists. Swapping keeps the normal centralized
+        // destruction logic and leaves descriptor sets bound to the new set.
+        VK_Shadow_SwapResources(&previous);
+        VK_Shadow_DestroyResources();
+        VK_Shadow_SwapResources(&previous);
+    }
     VK_Shadow_UpdateDescriptorSet();
     if (allocated) {
         *allocated = true;
@@ -1564,6 +2169,69 @@ static bool VK_Shadow_EnsureCpuCapacity(uint32_t needed)
     }
     vk_shadow.vertices = new_vertices;
     vk_shadow.vertex_capacity = new_capacity;
+    return true;
+}
+
+static bool VK_Shadow_EnsureDrawCapacity(uint32_t needed)
+{
+    if (needed <= vk_shadow.draw_capacity) {
+        return true;
+    }
+
+    uint32_t new_capacity;
+    if (!VK_Shadow_GrowCapacity(vk_shadow.draw_capacity, needed,
+                                &new_capacity, "draw")) {
+        return false;
+    }
+
+    size_t draw_bytes;
+    if (!VK_Shadow_ArrayBytes((size_t)new_capacity, sizeof(*vk_shadow.draws),
+                              &draw_bytes, "draw")) {
+        return false;
+    }
+
+    vk_shadow_draw_t *new_draws = realloc(vk_shadow.draws, draw_bytes);
+    if (!new_draws) {
+        Com_EPrintf("Vulkan shadow: out of memory for shadow draws\n");
+        return false;
+    }
+    vk_shadow.draws = new_draws;
+    vk_shadow.draw_capacity = new_capacity;
+    return true;
+}
+
+static bool VK_Shadow_AddDraw(vk_shadow_job_t *job,
+                              uint32_t first_vertex, uint32_t vertex_count,
+                              VkDescriptorSet descriptor_set, bool alpha_test)
+{
+    if (!job || !vertex_count) {
+        return true;
+    }
+
+    if (job->draw_count && vk_shadow.draw_count) {
+        vk_shadow_draw_t *previous = &vk_shadow.draws[vk_shadow.draw_count - 1];
+        if (previous->descriptor_set == descriptor_set &&
+            previous->alpha_test == alpha_test &&
+            previous->first_vertex + previous->vertex_count == first_vertex) {
+            previous->vertex_count += vertex_count;
+            return true;
+        }
+    }
+
+    uint32_t needed;
+    if (!VK_Shadow_AddCount(vk_shadow.draw_count, 1, &needed,
+                            "draw count") ||
+        !VK_Shadow_EnsureDrawCapacity(needed)) {
+        return false;
+    }
+
+    vk_shadow.draws[vk_shadow.draw_count++] = (vk_shadow_draw_t){
+        .first_vertex = first_vertex,
+        .vertex_count = vertex_count,
+        .descriptor_set = descriptor_set,
+        .alpha_test = alpha_test,
+    };
+    job->draw_count++;
     return true;
 }
 
@@ -1601,6 +2269,33 @@ static bool VK_Shadow_AddTriangle(const vec3_t a, const vec3_t b,
     v[0].color = v[1].color = v[2].color = 0xffffffffu;
     v[0].base_alpha = v[1].base_alpha = v[2].base_alpha = 255;
     vk_shadow.vertex_count = needed_vertices;
+    return true;
+}
+
+static bool VK_Shadow_AddAlphaTriangle(const vec3_t a, const vec3_t b,
+                                       const vec3_t c, const mface_t *face,
+                                       const vec3_t texture_points[3],
+                                       const vk_shadow_face_bounds_t *info)
+{
+    if (!face || !face->texinfo || !texture_points || !info ||
+        !info->alpha_test || !info->alpha_descriptor_set) {
+        return false;
+    }
+
+    uint32_t first_vertex = vk_shadow.vertex_count;
+    if (!VK_Shadow_AddTriangle(a, b, c)) {
+        return false;
+    }
+
+    vk_shadow_vertex_t *v = &vk_shadow.vertices[first_vertex];
+    for (int i = 0; i < 3; i++) {
+        float u = DotProduct(texture_points[i], face->texinfo->axis[0]) +
+                  face->texinfo->offset[0];
+        float t = DotProduct(texture_points[i], face->texinfo->axis[1]) +
+                  face->texinfo->offset[1];
+        v[i].uv[0] = u * info->alpha_inv_size[0];
+        v[i].uv[1] = t * info->alpha_inv_size[1];
+    }
     return true;
 }
 
@@ -1690,7 +2385,7 @@ static const vk_shadow_face_bounds_t *VK_Shadow_WorldFaceBounds(const bsp_t *bsp
         return NULL;
     }
 
-    vk_shadow_face_bounds_t *bounds = malloc(bounds_bytes);
+    vk_shadow_face_bounds_t *bounds = calloc(1, bounds_bytes);
     if (!bounds) {
         Com_EPrintf("Vulkan shadow: out of memory for world face bounds\n");
         return NULL;
@@ -1698,6 +2393,12 @@ static const vk_shadow_face_bounds_t *VK_Shadow_WorldFaceBounds(const bsp_t *bsp
     for (int i = 0; i < bsp->numfaces; i++) {
         const mface_t *face = &bsp->faces[i];
         ClearBounds(bounds[i].mins, bounds[i].maxs);
+        if (face->texinfo &&
+            (face->texinfo->c.flags & SURF_ALPHATEST)) {
+            bounds[i].alpha_test = VK_World_GetFaceShadowMaterial(
+                face, &bounds[i].alpha_descriptor_set,
+                bounds[i].alpha_inv_size);
+        }
         if (!face->firstsurfedge) {
             continue;
         }
@@ -1718,7 +2419,7 @@ static const vk_shadow_face_bounds_t *VK_Shadow_WorldFaceBounds(const bsp_t *bsp
     return bounds;
 }
 
-static bool VK_Shadow_AddWorldDepth(const shadow_view_desc_t *view)
+static bool VK_Shadow_AddWorldOpaqueDepth(const shadow_view_desc_t *view)
 {
     const bsp_t *bsp = VK_World_GetBsp();
     if (!bsp || !bsp->faces || !bsp->edges || !bsp->vertices) {
@@ -1749,6 +2450,9 @@ static bool VK_Shadow_AddWorldDepth(const shadow_view_desc_t *view)
                                                  bounds[i].maxs)) {
             continue;
         }
+        if (bounds[i].alpha_test) {
+            continue;
+        }
         vk_shadow.world_faces_submitted++;
         for (int j = 1; j < face->numsurfedges - 1; j++) {
             const mvertex_t *v1 = VK_Shadow_SurfEdgeVertex(bsp,
@@ -1766,13 +2470,117 @@ static bool VK_Shadow_AddWorldDepth(const shadow_view_desc_t *view)
     return true;
 }
 
+static bool VK_Shadow_AddWorldAlphaDepth(const shadow_view_desc_t *view,
+                                         vk_shadow_job_t *job)
+{
+    const bsp_t *bsp = VK_World_GetBsp();
+    if (!bsp || !bsp->faces || !bsp->edges || !bsp->vertices || !job) {
+        return true;
+    }
+
+    const vk_shadow_face_bounds_t *bounds = VK_Shadow_WorldFaceBounds(bsp);
+    if (!bounds) {
+        return true;
+    }
+
+    for (int i = 0; i < bsp->numfaces; i++) {
+        const mface_t *face = &bsp->faces[i];
+        const vk_shadow_face_bounds_t *info = &bounds[i];
+        if (!info->alpha_test || !face->firstsurfedge ||
+            face->numsurfedges < 3) {
+            continue;
+        }
+        int flags = face->drawflags;
+        if (flags & (SURF_SKY | SURF_NODRAW | SURF_TRANS_MASK) ||
+            (view && !VK_Shadow_ViewTouchesBounds(view, info->mins,
+                                                   info->maxs))) {
+            continue;
+        }
+
+        const mvertex_t *v0 = VK_Shadow_SurfEdgeVertex(
+            bsp, &face->firstsurfedge[0]);
+        if (!v0) {
+            continue;
+        }
+
+        uint32_t first_vertex = vk_shadow.vertex_count;
+        for (int j = 1; j < face->numsurfedges - 1; j++) {
+            const mvertex_t *v1 = VK_Shadow_SurfEdgeVertex(
+                bsp, &face->firstsurfedge[j]);
+            const mvertex_t *v2 = VK_Shadow_SurfEdgeVertex(
+                bsp, &face->firstsurfedge[j + 1]);
+            if (!v1 || !v2) {
+                continue;
+            }
+            vec3_t texture_points[3];
+            VectorCopy(v0->point, texture_points[0]);
+            VectorCopy(v1->point, texture_points[1]);
+            VectorCopy(v2->point, texture_points[2]);
+            if (!VK_Shadow_AddAlphaTriangle(v0->point, v1->point, v2->point,
+                                             face, texture_points, info)) {
+                return false;
+            }
+        }
+        uint32_t vertex_count = vk_shadow.vertex_count - first_vertex;
+        if (vertex_count && !VK_Shadow_AddDraw(job, first_vertex,
+                                                vertex_count,
+                                                info->alpha_descriptor_set,
+                                                true)) {
+            return false;
+        }
+        if (vertex_count) {
+            vk_shadow.world_faces_submitted++;
+        }
+    }
+    return true;
+}
+
+typedef enum {
+    VK_SHADOW_CASTER_OPAQUE,
+    VK_SHADOW_CASTER_ALPHA,
+} vk_shadow_caster_pass_t;
+
+typedef struct {
+    vk_shadow_job_t *job;
+    vk_shadow_caster_pass_t pass;
+} vk_shadow_caster_emit_t;
+
 static bool VK_Shadow_EmitCasterTriangle(const vec3_t a,
                                          const vec3_t b,
                                          const vec3_t c,
+                                         const mface_t *face,
+                                         const vec3_t texture_points[3],
                                          void *userdata)
 {
-    (void)userdata;
-    return VK_Shadow_AddTriangle(a, b, c);
+    vk_shadow_caster_emit_t *emit = userdata;
+    if (!emit || !emit->job) {
+        return false;
+    }
+
+    const vk_shadow_face_bounds_t *info = NULL;
+    bool alpha_test = false;
+    const bsp_t *bsp = VK_World_GetBsp();
+    if (face && bsp && face >= bsp->faces && face < bsp->faces + bsp->numfaces) {
+        const vk_shadow_face_bounds_t *bounds = VK_Shadow_WorldFaceBounds(bsp);
+        if (bounds) {
+            info = &bounds[face - bsp->faces];
+            alpha_test = info->alpha_test;
+        }
+    }
+
+    if ((emit->pass == VK_SHADOW_CASTER_ALPHA) != alpha_test) {
+        return true;
+    }
+    if (!alpha_test) {
+        return VK_Shadow_AddTriangle(a, b, c);
+    }
+
+    uint32_t first_vertex = vk_shadow.vertex_count;
+    if (!VK_Shadow_AddAlphaTriangle(a, b, c, face, texture_points, info)) {
+        return false;
+    }
+    return VK_Shadow_AddDraw(emit->job, first_vertex, 3,
+                             info->alpha_descriptor_set, true);
 }
 
 static bool VK_Shadow_EmitBoundsCaster(const shadow_caster_t *caster)
@@ -1865,11 +2673,19 @@ static void VK_Shadow_RegisterView(const shadow_view_desc_t *view)
 
     vk_shadow_uniform_page_t *page =
         &vk_shadow.uniform.pages[view->page.index];
+    const vk_shadow_page_mapping_t *mapping =
+        &vk_shadow_page_mappings[view->page.index];
+    if (!mapping->valid || mapping->generation != view->page.generation ||
+        mapping->pool_index != vk_shadow_active_resolution_pool) {
+        return;
+    }
     VK_Shadow_MultiplyMatrix(proj_matrix, view_matrix, page->matrix);
     page->params[0] = (float)view->filter_family;
     page->params[1] = 1.0f / (float)max(vk_shadow.resolution, 1);
     page->params[2] = VK_Shadow_ViewReceiverBias(view);
     page->params[3] = VK_Shadow_ViewNormalOffset(view);
+    page->location[0] = (float)mapping->pool_layer;
+    page->location[1] = (float)mapping->pool_index;
 
     vk_shadow.max_active_page = max(vk_shadow.max_active_page,
                                     (int)view->page.index);
@@ -1879,18 +2695,39 @@ static void VK_Shadow_RegisterView(const shadow_view_desc_t *view)
 bool VK_Shadow_Init(vk_context_t *ctx)
 {
     memset(&vk_shadow, 0, sizeof(vk_shadow));
+    memset(vk_shadow_resolution_pools, 0,
+           sizeof(vk_shadow_resolution_pools));
+    memset(vk_shadow_pool_frame_required_pages, 0,
+           sizeof(vk_shadow_pool_frame_required_pages));
+    memset(vk_shadow_pool_completed_required_pages, 0,
+           sizeof(vk_shadow_pool_completed_required_pages));
+    memset(vk_shadow_pool_shrink_target_capacity, 0,
+           sizeof(vk_shadow_pool_shrink_target_capacity));
+    memset(vk_shadow_pool_shrink_stable_frames, 0,
+           sizeof(vk_shadow_pool_shrink_stable_frames));
+    memset(vk_shadow_page_mappings, 0, sizeof(vk_shadow_page_mappings));
+    vk_shadow_active_resolution_pool = 0;
     if (!ctx) {
         return false;
     }
     vk_shadow.ctx = ctx;
     vk_shadow.initialized = true;
-    vk_shadow.depth_format = VK_Shadow_ChooseDepthFormat();
+    vk_shadow_shrink_frames = Cvar_Get("vk_shadow_shrink_frames", "180",
+                                       CVAR_ARCHIVE);
+    vk_shadow_test_fail_recreate = Cvar_Get("vk_shadow_test_fail_recreate",
+                                            "0", CVAR_NOARCHIVE);
+    vk_shadow_test_sun_resolution_drop_after_frames = Cvar_Get(
+        "vk_shadow_test_sun_resolution_drop_after_frames", "0",
+        CVAR_NOARCHIVE);
+    vk_shadow.depth_format =
+        VK_Shadow_ChooseDepthFormat(&vk_shadow.depth_linear_filtering);
     if (vk_shadow.depth_format == VK_FORMAT_UNDEFINED) {
         Com_EPrintf("Vulkan shadow: no depth format supports attachment sampling\n");
         memset(&vk_shadow, 0, sizeof(vk_shadow));
         return false;
     }
-    vk_shadow.moment_format = VK_Shadow_ChooseMomentFormat();
+    vk_shadow.moment_format =
+        VK_Shadow_ChooseMomentFormat(&vk_shadow.moment_linear_filtering);
     if (vk_shadow.moment_format == VK_FORMAT_UNDEFINED) {
         Com_EPrintf("Vulkan shadow: no color format supports moment pages\n");
         memset(&vk_shadow, 0, sizeof(vk_shadow));
@@ -1904,6 +2741,8 @@ bool VK_Shadow_Init(vk_context_t *ctx)
         memset(&vk_shadow, 0, sizeof(vk_shadow));
         return false;
     }
+    vk_shadow_preferred_depth_format = vk_shadow.depth_format;
+    vk_shadow_preferred_moment_format = vk_shadow.moment_format;
     memset(&vk_shadow.uniform, 0, sizeof(vk_shadow.uniform));
     vk_shadow.uniform.sun[0] = -1.0f;
     for (uint32_t i = 0; i < VK_MAX_FRAMES_IN_FLIGHT; ++i) {
@@ -1919,7 +2758,8 @@ bool VK_Shadow_Init(vk_context_t *ctx)
         memcpy(vk_shadow.frame_resources[i].uniform_mapped,
                &vk_shadow.uniform, sizeof(vk_shadow.uniform));
     }
-    if (!VK_Shadow_EnsureResources(64, SHADOW_STORAGE_DEPTH_COMPARE, NULL)) {
+    if (!VK_Shadow_EnsureResources(64, SHADOW_STORAGE_DEPTH_COMPARE, 1,
+                                   false, NULL)) {
         VK_Shadow_DestroyResources();
         for (uint32_t i = 0; i < VK_MAX_FRAMES_IN_FLIGHT; ++i) {
             VK_Shadow_DestroyUniformBuffer(&vk_shadow.frame_resources[i]);
@@ -1942,13 +2782,14 @@ void VK_Shadow_Shutdown(vk_context_t *ctx)
         vkDeviceWaitIdle(vk_shadow.ctx->device);
     }
     VK_Shadow_FreeWorldCache();
-    VK_Shadow_DestroyResources();
+    VK_Shadow_DestroyResolutionPools();
     for (uint32_t i = 0; i < VK_MAX_FRAMES_IN_FLIGHT; ++i) {
         VK_Shadow_DestroyVertexBuffer(&vk_shadow.frame_resources[i]);
         VK_Shadow_DestroyUniformBuffer(&vk_shadow.frame_resources[i]);
     }
     VK_Shadow_DestroyDescriptors();
     free(vk_shadow.vertices);
+    free(vk_shadow.draws);
     memset(&vk_shadow, 0, sizeof(vk_shadow));
 }
 
@@ -1981,6 +2822,30 @@ bool VK_Shadow_HasActiveSurfaceFog(void)
     // height fog are both inactive.
     const uint32_t flags = (uint32_t)(vk_shadow.uniform.fog_params[3] + 0.5f);
     return (flags & (VK_FOG_GLOBAL | VK_FOG_HEIGHT)) != 0;
+}
+
+bool VK_Shadow_GetSkyFogClearColor(vec3_t out_color)
+{
+    if (!out_color) {
+        return false;
+    }
+
+    const uint32_t flags = (uint32_t)(vk_shadow.uniform.fog_params[3] + 0.5f);
+    // OpenGL leaves a fully fog-coloured background where a cubemap sky
+    // portal does not cover the viewport. Preserve that native compositor
+    // contract in Vulkan without synthesizing any OpenGL renderer path.
+    if ((flags & (VK_FOG_GLOBAL | VK_FOG_SKY)) !=
+        (VK_FOG_GLOBAL | VK_FOG_SKY)) {
+        return false;
+    }
+
+    // Vulkan attachment clears write raw UNORM values, while OpenGL's legacy
+    // scene preparation maps authored fog through its 250-level colour scale
+    // before the LDR target is encoded. Apply that equivalent scale here so
+    // an uncovered sky portal has the same framebuffer colour as GL.
+    const float clear_scale = 250.0f / 255.0f;
+    VectorScale(vk_shadow.uniform.fog_color_density, clear_scale, out_color);
+    return true;
 }
 
 static void VK_Shadow_FillDlightPages(int source_index,
@@ -2085,8 +2950,36 @@ void VK_Shadow_UpdateDlights(const refdef_t *fd)
     VK_Shadow_UploadUniform();
 }
 
+// A one-shot test hook changes the public sun-resolution cvar only after the
+// requested number of completed shadow frames. This gives headless validation
+// a real high-to-low demand transition without affecting normal runtime paths.
+static void VK_Shadow_RunTestHooks(void)
+{
+    if (!vk_shadow_test_sun_resolution_drop_after_frames ||
+        vk_shadow_test_sun_resolution_drop_after_frames->integer <= 0 ||
+        !vk_shadow.policy.sun_enabled) {
+        return;
+    }
+
+    const uint32_t after_frames = (uint32_t)max(
+        vk_shadow_test_sun_resolution_drop_after_frames->integer, 1);
+    if (vk_shadow.test_sun_resolution_drop_frames < UINT32_MAX) {
+        vk_shadow.test_sun_resolution_drop_frames++;
+    }
+    if (vk_shadow.test_sun_resolution_drop_frames < after_frames) {
+        return;
+    }
+
+    Com_Printf("Vulkan shadow: test-injected sun resolution drop to 64 after %u frames\n",
+               after_frames);
+    Cvar_Set("r_shadow_sun_resolution", "64");
+    Cvar_SetByVar(vk_shadow_test_sun_resolution_drop_after_frames, "0",
+                  FROM_CODE);
+}
+
 void VK_Shadow_BeginFrame(void *userdata,
-                          const shadow_frontend_policy_t *policy)
+                          const shadow_frontend_policy_t *policy,
+                          uint32_t required_page_count)
 {
     (void)userdata;
     vk_shadow.frame_active = policy && policy->enabled;
@@ -2096,12 +2989,83 @@ void VK_Shadow_BeginFrame(void *userdata,
     vk_shadow.reallocated_last_frame = vk_shadow.reallocated_this_frame;
     vk_shadow.reallocated_this_frame = false;
     vk_shadow.policy = policy ? *policy : (shadow_frontend_policy_t){0};
+    VK_Shadow_RunTestHooks();
+    // The frontend's global page count still defines its cache traversal, but
+    // physical Vulkan arrays are compact local layers per resolution pool.
+    // Consume only completed per-pool demand here, before this frame begins.
+    (void)required_page_count;
+    for (uint32_t pool_index = 0;
+         pool_index < VK_SHADOW_RESOLUTION_POOL_COUNT; pool_index++) {
+        if (!VK_Shadow_SelectResolutionPool(pool_index) ||
+            !VK_Shadow_RequestCapacityShrink(
+                pool_index,
+                vk_shadow_pool_completed_required_pages[pool_index])) {
+            continue;
+        }
+        const uint32_t previous_capacity = vk_shadow.page_capacity;
+        const uint32_t target_capacity =
+            vk_shadow_pool_shrink_target_capacity[pool_index];
+        if (vk_shadow_pool_completed_required_pages[pool_index] == 0) {
+            // Receiver descriptor arrays statically expose every resolution
+            // pool. Keep the smallest pool materialized as their permanent
+            // legal image fallback: retiring the final live pool would leave
+            // its descriptor entries referring to the just-destroyed views.
+            // It still shrinks to one 64px layer, so this safety net has a
+            // negligible idle-memory cost and all higher-resolution pools
+            // continue to be released completely.
+            if (pool_index == 0 && vk_shadow.resources_ok) {
+                bool reallocated = false;
+                if (VK_Shadow_EnsureResources(
+                        VK_Shadow_ResolutionForPool(pool_index),
+                        vk_shadow.storage_family, 1, true,
+                        &reallocated)) {
+                    if (reallocated) {
+                        vk_shadow.last_shrink_from_capacity = previous_capacity;
+                        vk_shadow.last_shrink_to_capacity = 1;
+                        if (vk_shadow.shrink_count < UINT32_MAX) {
+                            vk_shadow.shrink_count++;
+                        }
+                    }
+                    vk_shadow_pool_shrink_target_capacity[pool_index] = 0;
+                    vk_shadow_pool_shrink_stable_frames[pool_index] = 0;
+                }
+                continue;
+            }
+            vkDeviceWaitIdle(vk_shadow.ctx->device);
+            VK_Shadow_DestroyResources();
+            VK_Shadow_UpdateDescriptorSet();
+            vk_shadow.last_shrink_from_capacity = previous_capacity;
+            vk_shadow.last_shrink_to_capacity = 0;
+            if (vk_shadow.shrink_count < UINT32_MAX) {
+                vk_shadow.shrink_count++;
+            }
+            vk_shadow_pool_shrink_stable_frames[pool_index] = 0;
+            continue;
+        }
+        bool reallocated = false;
+        if (VK_Shadow_EnsureResources(VK_Shadow_ResolutionForPool(pool_index),
+                                      vk_shadow.storage_family,
+                                      target_capacity,
+                                      true,
+                                      &reallocated) && reallocated) {
+            vk_shadow.last_shrink_from_capacity = previous_capacity;
+            vk_shadow.last_shrink_to_capacity = target_capacity;
+            if (vk_shadow.shrink_count < UINT32_MAX) {
+                vk_shadow.shrink_count++;
+            }
+            vk_shadow_pool_shrink_target_capacity[pool_index] = 0;
+            vk_shadow_pool_shrink_stable_frames[pool_index] = 0;
+        }
+    }
+    memset(vk_shadow_pool_frame_required_pages, 0,
+           sizeof(vk_shadow_pool_frame_required_pages));
     vk_shadow_frame_resources_t *frame = VK_Shadow_CurrentFrameResources();
     if (frame) {
         frame->vertex_upload_bytes = 0;
         frame->vertex_upload_recorded = false;
     }
     vk_shadow.vertex_count = 0;
+    vk_shadow.draw_count = 0;
     vk_shadow.job_count = 0;
     vk_shadow.max_active_page = -1;
     vk_shadow.sun_active = false;
@@ -2133,12 +3097,30 @@ bool VK_Shadow_EnsurePage(void *userdata, const shadow_view_desc_t *view)
         return false;
     }
     bool allocated = false;
-    if (!VK_Shadow_EnsureResources(view->resolution, view->storage_family,
-                                   &allocated)) {
+    const uint32_t pool_index =
+        VK_Shadow_ResolutionPoolIndex(view->resolution);
+    uint32_t pool_layer;
+    bool mapping_allocated = false;
+    if (!VK_Shadow_EnsurePageMapping(view, pool_index, &pool_layer,
+                                     &mapping_allocated)) {
         return false;
     }
+    if (!VK_Shadow_SelectResolutionPool(pool_index)) {
+        return false;
+    }
+    uint32_t requested_pages = pool_layer + 1;
+    if (!VK_Shadow_EnsureResources(view->resolution, view->storage_family,
+                                   requested_pages, false, &allocated)) {
+        return false;
+    }
+    if (allocated) {
+        vk_shadow_pool_shrink_target_capacity[pool_index] = 0;
+        vk_shadow_pool_shrink_stable_frames[pool_index] = 0;
+    }
+    vk_shadow_pool_frame_required_pages[pool_index] = max(
+        vk_shadow_pool_frame_required_pages[pool_index], requested_pages);
     VK_Shadow_RegisterView(view);
-    return allocated || vk_shadow.reallocated_this_frame ||
+    return mapping_allocated || allocated || vk_shadow.reallocated_this_frame ||
            vk_shadow.reallocated_last_frame;
 }
 
@@ -2147,16 +3129,30 @@ bool VK_Shadow_RenderView(void *userdata, const shadow_view_desc_t *view,
                           const int *caster_indices, int caster_count)
 {
     (void)userdata;
-    if (!vk_shadow.frame_active || !vk_shadow.resources_ok ||
-        !VK_Shadow_ValidView(view) || caster_count < 0 ||
+    if (!vk_shadow.frame_active || !VK_Shadow_ValidView(view) ||
+        caster_count < 0 ||
         vk_shadow.job_count >= VK_SHADOW_MAX_PAGES) {
+        return false;
+    }
+
+    const uint32_t pool_index =
+        VK_Shadow_ResolutionPoolIndex(view->resolution);
+    uint32_t pool_layer;
+    if (!VK_Shadow_EnsurePageMapping(view, pool_index, &pool_layer, NULL)) {
+        return false;
+    }
+    if (!VK_Shadow_SelectResolutionPool(pool_index) ||
+        !vk_shadow.resources_ok || pool_layer >= vk_shadow.page_capacity) {
         return false;
     }
 
     vk_shadow_job_t *job = &vk_shadow.jobs[vk_shadow.job_count];
     memset(job, 0, sizeof(*job));
     job->page = view->page.index;
+    job->pool_index = pool_index;
+    job->pool_layer = pool_layer;
     job->first_vertex = vk_shadow.vertex_count;
+    job->first_draw = vk_shadow.draw_count;
     job->slope_bias = VK_Shadow_ViewSlopeBias(view);
     job->bias_scale = VK_Shadow_ViewConstantBias(view);
     job->storage_family = view->storage_family;
@@ -2164,10 +3160,12 @@ bool VK_Shadow_RenderView(void *userdata, const shadow_view_desc_t *view,
     job->push.filter = (float)view->filter_family;
     job->push.evsm_exponent = VK_SHADOW_EVSM_EXPONENT;
 
-    if (!VK_Shadow_AddWorldDepth(view)) {
-        vk_shadow.vertex_count = job->first_vertex;
-        memset(job, 0, sizeof(*job));
-        return false;
+    vk_shadow_caster_emit_t opaque_emit = {
+        .job = job,
+        .pass = VK_SHADOW_CASTER_OPAQUE,
+    };
+    if (!VK_Shadow_AddWorldOpaqueDepth(view)) {
+        goto fail;
     }
     for (int i = 0; i < caster_count; i++) {
         int caster_index = caster_indices ? caster_indices[i] : -1;
@@ -2185,28 +3183,61 @@ bool VK_Shadow_RenderView(void *userdata, const shadow_view_desc_t *view,
         uint32_t caster_first_vertex = vk_shadow.vertex_count;
         if (!VK_Entity_EmitShadowCaster(&caster->entity, NULL,
                                         world_bsp,
-                                        VK_Shadow_EmitCasterTriangle, NULL)) {
-            vk_shadow.vertex_count = job->first_vertex;
-            memset(job, 0, sizeof(*job));
-            return false;
+                                        VK_Shadow_EmitCasterTriangle,
+                                        &opaque_emit)) {
+            goto fail;
         }
         if (vk_shadow.vertex_count == caster_first_vertex &&
+            !(caster->entity.model & BIT(31)) &&
             (caster->flags & RF_CASTSHADOW) &&
             !VK_Shadow_EmitBoundsCaster(caster)) {
-            vk_shadow.vertex_count = job->first_vertex;
-            memset(job, 0, sizeof(*job));
-            return false;
+            goto fail;
+        }
+    }
+    uint32_t opaque_vertex_count = vk_shadow.vertex_count - job->first_vertex;
+    if (!VK_Shadow_AddDraw(job, job->first_vertex, opaque_vertex_count,
+                           VK_NULL_HANDLE, false)) {
+        goto fail;
+    }
+
+    if (!VK_Shadow_AddWorldAlphaDepth(view, job)) {
+        goto fail;
+    }
+    vk_shadow_caster_emit_t alpha_emit = {
+        .job = job,
+        .pass = VK_SHADOW_CASTER_ALPHA,
+    };
+    for (int i = 0; i < caster_count; i++) {
+        int caster_index = caster_indices ? caster_indices[i] : -1;
+        if (caster_index < 0 || !casters) {
+            continue;
+        }
+        const shadow_caster_t *caster = &casters[caster_index];
+        if (!(caster->entity.model & BIT(31)) ||
+            !VK_Shadow_ViewTouchesBounds(view, caster->bounds[0],
+                                          caster->bounds[1])) {
+            continue;
+        }
+        if (!VK_Entity_EmitShadowCaster(&caster->entity, NULL,
+                                        VK_World_GetBsp(),
+                                        VK_Shadow_EmitCasterTriangle,
+                                        &alpha_emit)) {
+            goto fail;
         }
     }
     job->vertex_count = vk_shadow.vertex_count - job->first_vertex;
-    if (!job->vertex_count) {
-        vk_shadow.vertex_count = job->first_vertex;
-        memset(job, 0, sizeof(*job));
-        return false;
+    if (!job->vertex_count || !job->draw_count) {
+        goto fail;
     }
 
     vk_shadow.job_count++;
     return true;
+
+fail:
+    vk_shadow.vertex_count = job->first_vertex;
+    vk_shadow.draw_count = job->first_draw;
+    memset(job, 0, sizeof(*job));
+    return false;
 }
 
 void VK_Shadow_EndFrame(void *userdata,
@@ -2214,6 +3245,10 @@ void VK_Shadow_EndFrame(void *userdata,
 {
     (void)userdata;
     (void)stats;
+
+    memcpy(vk_shadow_pool_completed_required_pages,
+           vk_shadow_pool_frame_required_pages,
+           sizeof(vk_shadow_pool_completed_required_pages));
 
     if (vk_shadow.max_active_page >= 0 && vk_shadow.resources_ok) {
         vk_shadow.uniform.global[0] = (float)(vk_shadow.max_active_page + 1);
@@ -2253,6 +3288,7 @@ void VK_Shadow_EndFrame(void *userdata,
         !VK_Shadow_ArrayBytes((size_t)vk_shadow.vertex_count, sizeof(*vk_shadow.vertices),
                               &bytes, "vertex upload")) {
         vk_shadow.vertex_count = 0;
+        vk_shadow.draw_count = 0;
         vk_shadow.job_count = 0;
         return;
     }
@@ -2261,6 +3297,7 @@ void VK_Shadow_EndFrame(void *userdata,
     if (!VK_Shadow_EnsureVertexBuffer(bytes) || !frame ||
         !frame->vertex_staging_mapped) {
         vk_shadow.vertex_count = 0;
+        vk_shadow.draw_count = 0;
         vk_shadow.job_count = 0;
         return;
     }
@@ -2299,21 +3336,39 @@ void VK_Shadow_RecordUploads(VkCommandBuffer cmd)
 const char *VK_Shadow_DescribeMaterialization(void *userdata)
 {
     (void)userdata;
-    return vk_shadow.resources_ok
-        ? va("%s 2d-array format=%d pages=%d size=%d mips=%d world=%d/%d",
-             vk_shadow.storage_family == SHADOW_STORAGE_MOMENT
-                 ? "moment"
-                 : "depth-compare",
-             (int)(vk_shadow.storage_family == SHADOW_STORAGE_MOMENT
-                       ? vk_shadow.moment_format
-                       : vk_shadow.depth_format),
-             vk_shadow.max_active_page + 1, vk_shadow.resolution,
-             vk_shadow.storage_family == SHADOW_STORAGE_MOMENT
-                 ? vk_shadow.mip_levels
-                 : 1,
-             vk_shadow.world_faces_submitted,
-             vk_shadow.world_faces_considered)
-        : "unallocated";
+    if (!VK_Shadow_AnyResolutionPoolResources()) {
+        return "unallocated";
+    }
+
+    char pools[128] = { 0 };
+    size_t used = 0;
+    for (uint32_t pool_index = 0;
+         pool_index < VK_SHADOW_RESOLUTION_POOL_COUNT; pool_index++) {
+        const bool active = pool_index == vk_shadow_active_resolution_pool;
+        const bool allocated = active ? vk_shadow.resources_ok
+            : vk_shadow_resolution_pools[pool_index].resources_ok;
+        const uint32_t capacity = active ? vk_shadow.page_capacity
+            : vk_shadow_resolution_pools[pool_index].page_capacity;
+        int wrote = Q_snprintf(pools + used, sizeof(pools) - used,
+                               "%s%d:%u%s", used ? "," : "",
+                               VK_Shadow_ResolutionForPool(pool_index),
+                               allocated ? capacity : 0,
+                               active ? "*" : "");
+        if (wrote < 0 || (size_t)wrote >= sizeof(pools) - used) {
+            break;
+        }
+        used += (size_t)wrote;
+    }
+    return va("resolution-pools=[%s] active=%u pages=%d depth-filter=%s moment-filter=%s pool-shrinks=%u last-pool-shrink=%u>%u world=%d/%d",
+              pools, vk_shadow_active_resolution_pool,
+              vk_shadow.max_active_page + 1,
+              vk_shadow.depth_linear_filtering ? "linear" : "nearest",
+              vk_shadow.moment_linear_filtering ? "linear" : "nearest",
+              vk_shadow.shrink_count,
+              vk_shadow.last_shrink_from_capacity,
+              vk_shadow.last_shrink_to_capacity,
+              vk_shadow.world_faces_submitted,
+              vk_shadow.world_faces_considered);
 }
 
 static void VK_Shadow_Barrier(VkCommandBuffer cmd, VkImageLayout old_layout,
@@ -2337,174 +3392,229 @@ static void VK_Shadow_Barrier(VkCommandBuffer cmd, VkImageLayout old_layout,
             .baseMipLevel = 0,
             .levelCount = 1,
             .baseArrayLayer = 0,
-            .layerCount = VK_SHADOW_MAX_PAGES,
+            .layerCount = vk_shadow.page_capacity,
         },
     };
     vkCmdPipelineBarrier(cmd, src_stage, dst_stage, 0,
                          0, NULL, 0, NULL, 1, &barrier);
 }
 
-static void VK_Shadow_MomentBarrierRange(VkCommandBuffer cmd,
-                                         uint32_t base_mip,
-                                         uint32_t level_count,
-                                         VkImageLayout old_layout,
-                                         VkImageLayout new_layout,
-                                         VkAccessFlags src_access,
-                                         VkAccessFlags dst_access,
-                                         VkPipelineStageFlags src_stage,
-                                         VkPipelineStageFlags dst_stage);
-
-static void VK_Shadow_MomentBarrier(VkCommandBuffer cmd,
-                                    VkImageLayout old_layout,
-                                    VkImageLayout new_layout,
-                                    VkAccessFlags src_access,
-                                    VkAccessFlags dst_access,
-                                    VkPipelineStageFlags src_stage,
-                                    VkPipelineStageFlags dst_stage)
+static uint32_t VK_Shadow_CollectMomentPages(
+    uint32_t pool_index, uint32_t pages[VK_SHADOW_MAX_PAGES])
 {
-    VK_Shadow_MomentBarrierRange(cmd, 0, (uint32_t)vk_shadow.mip_levels,
-                                 old_layout, new_layout,
-                                 src_access, dst_access,
-                                 src_stage, dst_stage);
+    bool seen[VK_SHADOW_MAX_PAGES] = { false };
+    uint32_t page_count = 0;
+
+    for (uint32_t i = 0; i < vk_shadow.job_count; i++) {
+        const vk_shadow_job_t *job = &vk_shadow.jobs[i];
+        if (job->pool_index != pool_index || !job->vertex_count ||
+            job->pool_layer >= vk_shadow.page_capacity ||
+            !vk_shadow.framebuffers[job->pool_layer] ||
+            seen[job->pool_layer]) {
+            continue;
+        }
+        seen[job->pool_layer] = true;
+        pages[page_count++] = job->pool_layer;
+    }
+    return page_count;
 }
 
-static void VK_Shadow_MomentBarrierRange(VkCommandBuffer cmd,
-                                         uint32_t base_mip,
-                                         uint32_t level_count,
-                                         VkImageLayout old_layout,
-                                         VkImageLayout new_layout,
-                                         VkAccessFlags src_access,
-                                         VkAccessFlags dst_access,
-                                         VkPipelineStageFlags src_stage,
-                                         VkPipelineStageFlags dst_stage)
+static bool VK_Shadow_PoolHasJobs(uint32_t pool_index)
 {
-    if (!vk_shadow.moment_image) {
+    for (uint32_t i = 0; i < vk_shadow.job_count; i++) {
+        const vk_shadow_job_t *job = &vk_shadow.jobs[i];
+        if (job->pool_index == pool_index && job->vertex_count) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void VK_Shadow_MomentBarrierPages(
+    VkCommandBuffer cmd, const uint32_t *pages, uint32_t page_count,
+    uint32_t base_mip, uint32_t level_count,
+    VkImageLayout old_layout, VkImageLayout new_layout,
+    VkAccessFlags src_access, VkAccessFlags dst_access,
+    VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage)
+{
+    if (!vk_shadow.moment_image || !pages || !page_count) {
         return;
     }
+
+    VkImageMemoryBarrier barriers[VK_SHADOW_MAX_PAGES];
+    for (uint32_t i = 0; i < page_count; i++) {
+        barriers[i] = (VkImageMemoryBarrier) {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .oldLayout = old_layout,
+            .newLayout = new_layout,
+            .srcAccessMask = src_access,
+            .dstAccessMask = dst_access,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = vk_shadow.moment_image,
+            .subresourceRange = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .baseMipLevel = base_mip,
+                .levelCount = level_count,
+                .baseArrayLayer = pages[i],
+                .layerCount = 1,
+            },
+        };
+    }
+    vkCmdPipelineBarrier(cmd, src_stage, dst_stage, 0,
+                         0, NULL, 0, NULL, page_count, barriers);
+}
+
+// The descriptor view spans the fixed-capacity array. Vulkan requires every
+// subresource identified by that view to have the descriptor's shader-read
+// layout when a receiver draw accesses it, even if that draw only samples a
+// subset of pages. Do this full-array layout initialization once per image;
+// all recurring render/mip work below remains restricted to active pages.
+static void VK_Shadow_InitializeMomentLayouts(VkCommandBuffer cmd)
+{
+    if (!vk_shadow.moment_image || vk_shadow.moment_layout_initialized) {
+        return;
+    }
+
     VkImageMemoryBarrier barrier = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-        .oldLayout = old_layout,
-        .newLayout = new_layout,
-        .srcAccessMask = src_access,
-        .dstAccessMask = dst_access,
+        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        .srcAccessMask = 0,
+        .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .image = vk_shadow.moment_image,
         .subresourceRange = {
             .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .baseMipLevel = base_mip,
-            .levelCount = level_count,
+            .baseMipLevel = 0,
+            .levelCount = (uint32_t)vk_shadow.mip_levels,
             .baseArrayLayer = 0,
-            .layerCount = VK_SHADOW_MAX_PAGES,
+            .layerCount = vk_shadow.page_capacity,
         },
     };
-    vkCmdPipelineBarrier(cmd, src_stage, dst_stage, 0,
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
                          0, NULL, 0, NULL, 1, &barrier);
+    vk_shadow.moment_layout_initialized = true;
 }
 
-static void VK_Shadow_GenerateMomentMips(VkCommandBuffer cmd)
+static void VK_Shadow_GenerateMomentMips(VkCommandBuffer cmd,
+                                         const uint32_t *pages,
+                                         uint32_t page_count)
 {
-    if (!vk_shadow.moment_image || vk_shadow.mip_levels <= 1) {
-        VK_Shadow_MomentBarrier(cmd,
-                                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-                                VK_ACCESS_SHADER_READ_BIT,
-                                VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+    if (!vk_shadow.moment_image || !page_count) {
         return;
     }
-
-    int src_size = vk_shadow.resolution;
-    for (uint32_t level = 1; level < (uint32_t)vk_shadow.mip_levels; level++) {
-        VK_Shadow_MomentBarrierRange(
-            cmd, level - 1, 1,
-            level == 1 ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
-                       : VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-            level == 1 ? VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
-                       : VK_ACCESS_TRANSFER_WRITE_BIT,
-            VK_ACCESS_TRANSFER_READ_BIT,
-            level == 1 ? VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
-                       : VK_PIPELINE_STAGE_TRANSFER_BIT,
-            VK_PIPELINE_STAGE_TRANSFER_BIT);
-
-        VK_Shadow_MomentBarrierRange(
-            cmd, level, 1,
+    if (vk_shadow.mip_levels <= 1) {
+        VK_Shadow_MomentBarrierPages(
+            cmd, pages, page_count, 0, 1,
             VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            0,
-            VK_ACCESS_TRANSFER_WRITE_BIT,
-            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-            VK_PIPELINE_STAGE_TRANSFER_BIT);
-
-        int dst_size = max(src_size >> 1, 1);
-        VkImageBlit blit = {
-            .srcSubresource = {
-                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                .mipLevel = level - 1,
-                .baseArrayLayer = 0,
-                .layerCount = VK_SHADOW_MAX_PAGES,
-            },
-            .srcOffsets = {
-                { 0, 0, 0 },
-                { src_size, src_size, 1 },
-            },
-            .dstSubresource = {
-                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                .mipLevel = level,
-                .baseArrayLayer = 0,
-                .layerCount = VK_SHADOW_MAX_PAGES,
-            },
-            .dstOffsets = {
-                { 0, 0, 0 },
-                { dst_size, dst_size, 1 },
-            },
-        };
-        vkCmdBlitImage(cmd,
-                       vk_shadow.moment_image,
-                       VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                       vk_shadow.moment_image,
-                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                       1, &blit, VK_FILTER_LINEAR);
-
-        VK_Shadow_MomentBarrierRange(
-            cmd, level - 1, 1,
-            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            VK_ACCESS_TRANSFER_READ_BIT,
+            VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+            VK_ACCESS_SHADER_READ_BIT,
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+    } else {
+        int src_size = vk_shadow.resolution;
+        for (uint32_t level = 1;
+             level < (uint32_t)vk_shadow.mip_levels; level++) {
+            VK_Shadow_MomentBarrierPages(
+                cmd, pages, page_count, level - 1, 1,
+                level == 1 ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+                           : VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                level == 1 ? VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+                           : VK_ACCESS_TRANSFER_WRITE_BIT,
+                VK_ACCESS_TRANSFER_READ_BIT,
+                level == 1 ? VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
+                           : VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+            VK_Shadow_MomentBarrierPages(
+                cmd, pages, page_count, level, 1,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                VK_ACCESS_SHADER_READ_BIT,
+                VK_ACCESS_TRANSFER_WRITE_BIT,
+                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+            int dst_size = max(src_size >> 1, 1);
+            VkImageBlit blits[VK_SHADOW_MAX_PAGES];
+            for (uint32_t i = 0; i < page_count; i++) {
+                blits[i] = (VkImageBlit) {
+                    .srcSubresource = {
+                        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                        .mipLevel = level - 1,
+                        .baseArrayLayer = pages[i],
+                        .layerCount = 1,
+                    },
+                    .srcOffsets = {
+                        { 0, 0, 0 },
+                        { src_size, src_size, 1 },
+                    },
+                    .dstSubresource = {
+                        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                        .mipLevel = level,
+                        .baseArrayLayer = pages[i],
+                        .layerCount = 1,
+                    },
+                    .dstOffsets = {
+                        { 0, 0, 0 },
+                        { dst_size, dst_size, 1 },
+                    },
+                };
+            }
+            vkCmdBlitImage(cmd,
+                           vk_shadow.moment_image,
+                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                           vk_shadow.moment_image,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                           page_count, blits, VK_FILTER_LINEAR);
+
+            VK_Shadow_MomentBarrierPages(
+                cmd, pages, page_count, level - 1, 1,
+                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                VK_ACCESS_TRANSFER_READ_BIT,
+                VK_ACCESS_SHADER_READ_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+            src_size = dst_size;
+        }
+
+        VK_Shadow_MomentBarrierPages(
+            cmd, pages, page_count,
+            (uint32_t)vk_shadow.mip_levels - 1, 1,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_ACCESS_TRANSFER_WRITE_BIT,
             VK_ACCESS_SHADER_READ_BIT,
             VK_PIPELINE_STAGE_TRANSFER_BIT,
             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
-        src_size = dst_size;
     }
 
-    VK_Shadow_MomentBarrierRange(
-        cmd, (uint32_t)vk_shadow.mip_levels - 1, 1,
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        VK_ACCESS_TRANSFER_WRITE_BIT,
-        VK_ACCESS_SHADER_READ_BIT,
-        VK_PIPELINE_STAGE_TRANSFER_BIT,
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
 }
 
-void VK_Shadow_Record(VkCommandBuffer cmd)
+static void VK_Shadow_RecordResolutionPool(
+    VkCommandBuffer cmd, const vk_shadow_frame_resources_t *frame,
+    uint32_t pool_index)
 {
-    if (!vk_shadow.initialized || !vk_shadow.resources_ok || !cmd ||
-        vk_shadow.resolution <= 0 ||
-        !VK_Shadow_ValidStorageFamily(vk_shadow.storage_family)) {
-        return;
-    }
-
-    vk_shadow_frame_resources_t *frame = VK_Shadow_CurrentFrameResources();
+    const bool has_jobs = VK_Shadow_PoolHasJobs(pool_index);
     if (!frame || !frame->vertex_buffer || !frame->vertex_upload_recorded ||
-        !vk_shadow.vertex_count || !vk_shadow.job_count) {
+        !has_jobs) {
+        // Descriptor arrays expose every materialized pool to receiver
+        // pipelines. Even an idle moment pool therefore needs its complete
+        // view range transitioned before the first receiver draw can legally
+        // select another pool through the static shader switch.
+        if (vk_shadow.storage_family == SHADOW_STORAGE_MOMENT) {
+            VK_Shadow_InitializeMomentLayouts(cmd);
+        }
         if (!vk_shadow.layout_initialized) {
             VK_Shadow_Barrier(cmd, VK_IMAGE_LAYOUT_UNDEFINED,
                               VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-                              0,
-                              VK_ACCESS_SHADER_READ_BIT,
+                              0, VK_ACCESS_SHADER_READ_BIT,
                               VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                               VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
             vk_shadow.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
@@ -2513,52 +3623,39 @@ void VK_Shadow_Record(VkCommandBuffer cmd)
         return;
     }
 
+    uint32_t moment_pages[VK_SHADOW_MAX_PAGES];
+    uint32_t moment_page_count =
+        vk_shadow.storage_family == SHADOW_STORAGE_MOMENT
+            ? VK_Shadow_CollectMomentPages(pool_index, moment_pages)
+            : 0;
     VkImageLayout old_layout = vk_shadow.layout_initialized
-        ? vk_shadow.layout
-        : VK_IMAGE_LAYOUT_UNDEFINED;
+        ? vk_shadow.layout : VK_IMAGE_LAYOUT_UNDEFINED;
     VkAccessFlags old_access = vk_shadow.layout_initialized
-        ? VK_ACCESS_SHADER_READ_BIT
-        : 0;
+        ? VK_ACCESS_SHADER_READ_BIT : 0;
     VkPipelineStageFlags old_stage = vk_shadow.layout_initialized
-        ? VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
-        : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        ? VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
     VK_Shadow_Barrier(cmd, old_layout,
                       VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                      old_access,
-                      VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                      old_stage,
-                      VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT);
+                      old_access, VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                      old_stage, VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT);
     if (vk_shadow.storage_family == SHADOW_STORAGE_MOMENT) {
-        VkImageLayout old_moment_layout =
-            vk_shadow.layout_initialized
-                ? vk_shadow.moment_layout
-                : VK_IMAGE_LAYOUT_UNDEFINED;
-        VkAccessFlags old_moment_access =
-            vk_shadow.layout_initialized ? VK_ACCESS_SHADER_READ_BIT : 0;
-        VkPipelineStageFlags old_moment_stage =
-            vk_shadow.layout_initialized
-                ? VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
-                : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        VK_Shadow_MomentBarrier(cmd, old_moment_layout,
-                                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                old_moment_access,
-                                VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-                                old_moment_stage,
-                                VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+        VK_Shadow_InitializeMomentLayouts(cmd);
+        if (moment_page_count) {
+            VK_Shadow_MomentBarrierPages(
+                cmd, moment_pages, moment_page_count, 0, 1,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+        }
     }
 
-    // Unlike the swapchain passes, shadow pages must NOT use the negated
-    // viewport trick: the receiver reconstructs uv as ndc * 0.5 + 0.5, which
-    // matches GL's window/texel mapping (ndc.y = -1 -> texel row 0). A
-    // negative-height viewport would mirror every page vertically relative
-    // to that lookup.
     VkViewport viewport = {
-        .x = 0.0f,
-        .y = 0.0f,
+        .x = 0.0f, .y = 0.0f,
         .width = (float)vk_shadow.resolution,
         .height = (float)vk_shadow.resolution,
-        .minDepth = 0.0f,
-        .maxDepth = 1.0f,
+        .minDepth = 0.0f, .maxDepth = 1.0f,
     };
     VkRect2D scissor = {
         .offset = { 0, 0 },
@@ -2566,8 +3663,6 @@ void VK_Shadow_Record(VkCommandBuffer cmd)
                     (uint32_t)vk_shadow.resolution },
     };
     VkDeviceSize offset = 0;
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                      vk_shadow.pipeline);
     vkCmdBindVertexBuffers(cmd, 0, 1, &frame->vertex_buffer, &offset);
     vkCmdSetViewport(cmd, 0, 1, &viewport);
     vkCmdSetScissor(cmd, 0, 1, &scissor);
@@ -2577,16 +3672,14 @@ void VK_Shadow_Record(VkCommandBuffer cmd)
         { .depthStencil = { 1.0f, 0 } },
     };
     const float evsm_clear_moment = expf(VK_SHADOW_EVSM_EXPONENT);
-    VkClearValue clear = {
-        .depthStencil = { 1.0f, 0 },
-    };
+    VkClearValue clear = { .depthStencil = { 1.0f, 0 } };
     for (uint32_t i = 0; i < vk_shadow.job_count; i++) {
         const vk_shadow_job_t *job = &vk_shadow.jobs[i];
-        if (!job->vertex_count || job->page >= VK_SHADOW_MAX_PAGES ||
-            !vk_shadow.framebuffers[job->page]) {
+        if (job->pool_index != pool_index || !job->vertex_count ||
+            job->pool_layer >= vk_shadow.page_capacity ||
+            !vk_shadow.framebuffers[job->pool_layer]) {
             continue;
         }
-
         if ((int)(job->push.filter + 0.5f) == SHADOW_FILTER_EVSM) {
             clear_values[0].color.float32[0] = evsm_clear_moment;
             clear_values[0].color.float32[1] =
@@ -2595,31 +3688,62 @@ void VK_Shadow_Record(VkCommandBuffer cmd)
             clear_values[0].color.float32[0] = 1.0f;
             clear_values[0].color.float32[1] = 1.0f;
         }
-
         VkRenderPassBeginInfo begin = {
             .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
             .renderPass = vk_shadow.render_pass,
-            .framebuffer = vk_shadow.framebuffers[job->page],
+            .framebuffer = vk_shadow.framebuffers[job->pool_layer],
             .renderArea = {
                 .offset = { 0, 0 },
                 .extent = { (uint32_t)vk_shadow.resolution,
                             (uint32_t)vk_shadow.resolution },
             },
-            .clearValueCount =
-                vk_shadow.storage_family == SHADOW_STORAGE_MOMENT ? 2u : 1u,
+            .clearValueCount = vk_shadow.storage_family == SHADOW_STORAGE_MOMENT
+                ? 2u : 1u,
             .pClearValues = vk_shadow.storage_family == SHADOW_STORAGE_MOMENT
-                ? clear_values
-                : &clear,
+                ? clear_values : &clear,
         };
         vkCmdBeginRenderPass(cmd, &begin, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdSetDepthBias(cmd, job->bias_scale, 0.0f, job->slope_bias);
         vkCmdPushConstants(cmd, vk_shadow.pipeline_layout,
                            VK_SHADER_STAGE_VERTEX_BIT |
                                VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0,
-                           sizeof(job->push), &job->push);
-        vkCmdDraw(cmd, job->vertex_count, 1, job->first_vertex, 0);
-        VK_Debug_RecordDraw(VK_DEBUG_DOMAIN_SHADOW, job->vertex_count, 0);
+                           0, sizeof(job->push), &job->push);
+        if (job->first_draw < vk_shadow.draw_count &&
+            job->draw_count <= vk_shadow.draw_count - job->first_draw) {
+            VkPipeline bound_pipeline = VK_NULL_HANDLE;
+            for (uint32_t draw_index = job->first_draw;
+                 draw_index < job->first_draw + job->draw_count;
+                 draw_index++) {
+                const vk_shadow_draw_t *draw = &vk_shadow.draws[draw_index];
+                if (!draw->vertex_count ||
+                    draw->first_vertex < job->first_vertex ||
+                    draw->first_vertex - job->first_vertex > job->vertex_count ||
+                    draw->vertex_count > job->vertex_count -
+                                         (draw->first_vertex - job->first_vertex) ||
+                    (draw->alpha_test && !draw->descriptor_set)) {
+                    continue;
+                }
+                VkPipeline pipeline = draw->alpha_test
+                    ? vk_shadow.alpha_pipeline : vk_shadow.pipeline;
+                if (!pipeline) {
+                    continue;
+                }
+                if (pipeline != bound_pipeline) {
+                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                      pipeline);
+                    bound_pipeline = pipeline;
+                }
+                if (draw->alpha_test) {
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                            vk_shadow.pipeline_layout,
+                                            0, 1, &draw->descriptor_set,
+                                            0, NULL);
+                }
+                vkCmdDraw(cmd, draw->vertex_count, 1, draw->first_vertex, 0);
+                VK_Debug_RecordDraw(VK_DEBUG_DOMAIN_SHADOW,
+                                    draw->vertex_count, 0);
+            }
+        }
         vkCmdEndRenderPass(cmd);
     }
 
@@ -2631,9 +3755,27 @@ void VK_Shadow_Record(VkCommandBuffer cmd)
                       VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
                       VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
     if (vk_shadow.storage_family == SHADOW_STORAGE_MOMENT) {
-        VK_Shadow_GenerateMomentMips(cmd);
-        vk_shadow.moment_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        VK_Shadow_GenerateMomentMips(cmd, moment_pages, moment_page_count);
     }
     vk_shadow.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
     vk_shadow.layout_initialized = true;
+}
+
+void VK_Shadow_Record(VkCommandBuffer cmd)
+{
+    if (!vk_shadow.initialized || !cmd ||
+        !VK_Shadow_AnyResolutionPoolResources()) {
+        return;
+    }
+
+    vk_shadow_frame_resources_t *frame = VK_Shadow_CurrentFrameResources();
+    for (uint32_t pool_index = 0;
+         pool_index < VK_SHADOW_RESOLUTION_POOL_COUNT; pool_index++) {
+        if (!VK_Shadow_SelectResolutionPool(pool_index) ||
+            !vk_shadow.resources_ok || vk_shadow.resolution <= 0 ||
+            !VK_Shadow_ValidStorageFamily(vk_shadow.storage_family)) {
+            continue;
+        }
+        VK_Shadow_RecordResolutionPool(cmd, frame, pool_index);
+    }
 }

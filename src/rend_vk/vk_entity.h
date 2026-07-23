@@ -27,6 +27,8 @@ const char *VK_Entity_ModelName(qhandle_t handle);
 typedef bool (*vk_entity_shadow_emit_triangle_fn)(const vec3_t a,
                                                   const vec3_t b,
                                                   const vec3_t c,
+                                                  const mface_t *face,
+                                                  const vec3_t texture_points[3],
                                                   void *userdata);
 
 bool VK_Entity_EmitShadowCaster(const entity_t *ent, const refdef_t *fd,

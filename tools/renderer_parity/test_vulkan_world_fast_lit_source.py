@@ -13,6 +13,12 @@ SHADER = (
     ROOT / "src/rend_vk/shaders/vk_world_shadow.frag"
 ).read_text(encoding="utf-8")
 SPV_GENERATOR = (ROOT / "tools/gen_vk_world_spv.py").read_text(encoding="utf-8")
+TEXTURE_REPLACE_VERTEX = (
+    ROOT / "src/rend_vk/shaders/vk_world_texture_replace.vert"
+).read_text(encoding="utf-8")
+TEXTURE_REPLACE_FRAGMENT = (
+    ROOT / "src/rend_vk/shaders/vk_world_texture_replace.frag"
+).read_text(encoding="utf-8")
 
 
 class VulkanWorldFastLitSourceTests(unittest.TestCase):
@@ -57,7 +63,7 @@ class VulkanWorldFastLitSourceTests(unittest.TestCase):
         self.assertIn("pipeline_texture_replace_opaque", WORLD)
         self.assertIn("pipeline_texture_replace_no_fog_opaque", WORLD)
         self.assertIn("texture_replace_vertex_flags", WORLD)
-        self.assertIn("vk_world_texture_replace_frag_spv", WORLD)
+        self.assertIn("vk_world_texture_replace_specialized_frag_spv", WORLD)
         self.assertIn("VK_WORLD_TEXTURE_REPLACE", SHADER)
         self.assertIn("texture(tex_sampler, in_uv)", SHADER)
         self.assertIn("apply_fog(color.rgb, false)", SHADER)
@@ -65,6 +71,18 @@ class VulkanWorldFastLitSourceTests(unittest.TestCase):
         self.assertIn("vk_world_texture_replace_no_fog_frag_spv", SPV_GENERATOR)
         self.assertIn("VK_WORLD_TEXTURE_REPLACE_NO_FOG", SHADER)
         self.assertIn("VK_Debug_RecordWorldTextureReplaceDraw", WORLD)
+        self.assertIn("vk_world_texture_replace_specialization", WORLD)
+        self.assertIn("vk_world_texture_replace_specialized_frag_spv", WORLD)
+        self.assertIn("vk_world_texture_replace.vert", SPV_GENERATOR)
+        self.assertIn("vk_world_texture_replace.frag", SPV_GENERATOR)
+        self.assertIn("in_pos", TEXTURE_REPLACE_VERTEX)
+        self.assertIn("in_uv", TEXTURE_REPLACE_VERTEX)
+        self.assertIn("in_flags", TEXTURE_REPLACE_VERTEX)
+        self.assertNotIn("in_lm_uv", TEXTURE_REPLACE_VERTEX)
+        self.assertNotIn("in_color", TEXTURE_REPLACE_VERTEX)
+        self.assertNotIn("in_normal", TEXTURE_REPLACE_VERTEX)
+        self.assertIn("layout(location = 0) in vec2 in_uv", TEXTURE_REPLACE_FRAGMENT)
+        self.assertIn("layout(location = 3) flat in uint in_flags", TEXTURE_REPLACE_FRAGMENT)
         texture_replace_creation = WORLD.split(
             "// OpenGL compiles ordinary opaque faces with GLS_TEXTURE_REPLACE", 1
         )[1].split("if (!VK_World_CreatePipelineVariant(ctx, true", 1)[0]
@@ -106,6 +124,23 @@ class VulkanWorldFastLitSourceTests(unittest.TestCase):
         self.assertIn("VK_WORLD_STATIC_FAST_LIT_GLOWMAP_NO_FOG", SHADER)
         self.assertIn("vk_world_fast_lit_no_fog_frag_spv", SPV_GENERATOR)
         self.assertIn("vk_world_fast_lit_glowmap_no_fog_frag_spv", SPV_GENERATOR)
+
+    def test_shared_lightmap_debug_cvar_has_native_opaque_and_alpha_pipelines(self) -> None:
+        config = (ROOT / "assets/renderer_parity/fr01_bmodel_first_frame_lightmapped.cfg").read_text(
+            encoding="utf-8"
+        )
+        manifest = (ROOT / "assets/renderer_parity/fr01_bmodel_first_frame_manifest.json").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('Cvar_Get("r_lightmap", "0", CVAR_CHEAT)', WORLD)
+        self.assertIn("pipeline_lightmap_debug_opaque", WORLD)
+        self.assertIn("pipeline_lightmap_debug_alpha", WORLD)
+        self.assertIn("VK_WORLD_LIGHTMAP_DEBUG", SHADER)
+        self.assertIn("vk_world_lightmap_debug_frag_spv", WORLD)
+        self.assertIn("vk_world_lightmap_debug_frag_spv", SPV_GENERATOR)
+        self.assertIn("set r_lightmap 1", config)
+        self.assertIn('"min_color": [32, 32, 32]', manifest)
+        self.assertIn("VK_World_HasBloomEmission", WORLD)
 
 
 if __name__ == "__main__":

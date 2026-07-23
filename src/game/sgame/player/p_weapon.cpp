@@ -2295,6 +2295,12 @@ static void Weapon_Blaster_Fire(gentity_t *ent, const Vector3 &g_offset,
 
 static void Weapon_Blaster_DoFire(gentity_t *ent) {
   int damage = 15;
+  // Observation-only fixture hook at the same production callback boundary
+  // used by HyperBlaster.  The shared fire_blaster path retains projectile,
+  // collision, and damage authority; this only exposes the mapped command to
+  // the canonical spawn-forward probe before that path runs.
+  LagCompensation_ObserveCanonicalWeaponCallback(
+      ent, WORR_REWIND_WEAPON_BLASTER_BOLT_SPAWN_FORWARD);
   Weapon_Blaster_Fire(ent, vec3_origin, damage, false, EF_BLASTER);
 }
 

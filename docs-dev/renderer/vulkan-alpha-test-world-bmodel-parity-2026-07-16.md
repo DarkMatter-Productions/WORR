@@ -90,8 +90,10 @@ cutoff, flag propagation, and the inline-BSP general-path selection rule.
 
 This upgrades world and inline-BSP cutout evidence from source-only to a
 durable paired runtime gate. It does not close the broader alpha-cutout row:
-fences, sprite cutouts, and alpha-tested shadow casters still need dedicated
-coverage under FR-02-T05 and FR-02-T14.
+fences still need dedicated coverage under `FR-02-T05`. Paletted sprite
+cutouts now have a separate retained gate in
+`vulkan-sprite-paletted-cutout-parity-2026-07-19.md`, and alpha-tested shadow
+casters are covered by `vulkan-alpha-tested-shadow-casters-2026-07-19.md`.
 
 ## Reproduction
 

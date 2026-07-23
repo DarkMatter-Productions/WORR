@@ -18,7 +18,7 @@ class OpenGLPerformanceTelemetrySourceTests(unittest.TestCase):
         self.assertIn('Cmd_AddCommand("gl_stats", GL_Stats_f);', GL_MAIN)
         self.assertIn('Cmd_RemoveCommand("gl_stats");', GL_MAIN)
         self.assertIn('"GL_STATS frame=%u draws=%d vertices=%llu indices=0 uploads=%llu "', GL_MAIN)
-        for metric in ("cpu_ms=%.3f", "gpu_ms=%.3f", "gpu_frame_ms=%.3f",
+        for metric in ("cpu_ms=%.3f", "cpu_render_ms=%.3f", "gpu_ms=%.3f", "gpu_frame_ms=%.3f",
                        "gpu_world_ms=%.3f", "gpu_effects_ms=%.3f",
                        "gpu_post_ms=%.3f", "gpu_frame_valid=%d", "gpu_valid=%d"):
             self.assertIn(metric, GL_MAIN)

@@ -30,6 +30,141 @@ static cvar_t *cl_muzzlelight_time;
 cvar_t *cl_shadowlights;
 cvar_t *cl_flashlight_torso_sway;
 
+/* Native event presentation supplies a copied, generation-checked source
+ * state. Keep the established effect code while preventing its legacy slot
+ * lookup and delayed audio from retargeting a recycled entity. */
+static const entity_state_t *cl_native_muzzle_state;
+static const mz_params_t *cl_native_muzzle_params;
+static vec3_t cl_native_muzzle_sound_origin;
+static uint32_t cl_native_muzzle_generation;
+
+struct cl_native_muzzle_sound_t {
+    const char *name;
+    qhandle_t handle;
+};
+
+static cl_native_muzzle_sound_t cl_native_muzzle_sounds[] = {
+    {"weapons/blastf1a.wav", 0},
+    {"weapons/hyprbf1a.wav", 0},
+    {"weapons/machgf1b.wav", 0},
+    {"weapons/machgf2b.wav", 0},
+    {"weapons/machgf3b.wav", 0},
+    {"weapons/machgf4b.wav", 0},
+    {"weapons/machgf5b.wav", 0},
+    {"weapons/shotgf1b.wav", 0},
+    {"weapons/shotgr1b.wav", 0},
+    {"weapons/sshotf1b.wav", 0},
+    {"weapons/railgf1a.wav", 0},
+    {"weapons/railgr1b.wav", 0},
+    {"weapons/rocklf1a.wav", 0},
+    {"weapons/rocklr1b.wav", 0},
+    {"weapons/grenlf1a.wav", 0},
+    {"weapons/grenlr1b.wav", 0},
+    {"weapons/bfg__f1y.wav", 0},
+    {"weapons/plasshot.wav", 0},
+    {"weapons/rippfire.wav", 0},
+    {"weapons/proxlr1a.wav", 0},
+    {"weapons/nail1.wav", 0},
+    {"weapons/shotg2.wav", 0},
+    {"weapons/disint2.wav", 0},
+    {"infantry/infatck1.wav", 0},
+    {"soldier/solatck1.wav", 0},
+    {"soldier/solatck2.wav", 0},
+    {"soldier/solatck3.wav", 0},
+    {"gunner/gunatck2.wav", 0},
+    {"gunner/gunatck3.wav", 0},
+    {"flyer/flyatck3.wav", 0},
+    {"medic/medatck1.wav", 0},
+    {"hover/hovatck1.wav", 0},
+    {"floater/fltatck1.wav", 0},
+    {"tank/tnkatck1.wav", 0},
+    {"tank/tnkatck3.wav", 0},
+    {"tank/tnkatk2a.wav", 0},
+    {"tank/tnkatk2b.wav", 0},
+    {"tank/tnkatk2c.wav", 0},
+    {"tank/tnkatk2d.wav", 0},
+    {"tank/tnkatk2e.wav", 0},
+    {"tank/rocket.wav", 0},
+    {"chick/chkatck2.wav", 0},
+    {"makron/blaster.wav", 0},
+    {"boss3/xfire.wav", 0},
+    {"guncmdr/gcdratck2.wav", 0},
+    {"guncmdr/gcdratck3.wav", 0},
+};
+static const cgame_entity_import_t *cl_native_muzzle_resource_import;
+
+#undef mz
+#define mz (cl_native_muzzle_params ? *cl_native_muzzle_params : *cgei->mz)
+
+#undef S_StartSound
+static void CL_StartMuzzleSound(const vec3_t origin, int entnum,
+                                int entchannel, qhandle_t sfx,
+                                float volume, float attenuation,
+                                float timeofs)
+{
+    const vec_t *resolved_origin = origin;
+    if (!resolved_origin && cl_native_muzzle_params &&
+        entnum == cl_native_muzzle_params->entity) {
+        resolved_origin = cl_native_muzzle_sound_origin;
+    }
+    cgei->S_StartSound(resolved_origin, entnum, entchannel, sfx, volume,
+                       attenuation, timeofs);
+}
+
+#define S_StartSound CL_StartMuzzleSound
+
+#undef S_RegisterSound
+static qhandle_t CL_RegisterMuzzleSoundDirect(const char *name)
+{
+    return cgei && cgei->S_RegisterSound
+               ? cgei->S_RegisterSound(name)
+               : 0;
+}
+
+static qhandle_t CL_RegisterMuzzleSound(const char *name)
+{
+    if (!cl_native_muzzle_params)
+        return CL_RegisterMuzzleSoundDirect(name);
+    for (const auto &sound : cl_native_muzzle_sounds) {
+        if (!strcmp(sound.name, name))
+            return sound.handle;
+    }
+    return 0;
+}
+
+#define S_RegisterSound CL_RegisterMuzzleSound
+
+void CL_RegisterNativeMuzzleSounds(bool enabled)
+{
+    cl_native_muzzle_resource_import = enabled ? cgei : nullptr;
+    for (auto &sound : cl_native_muzzle_sounds) {
+        sound.handle = enabled
+                           ? CL_RegisterMuzzleSoundDirect(sound.name)
+                           : 0;
+    }
+}
+
+static bool CL_NativeMuzzleSoundsReady()
+{
+    if (!cgei || cl_native_muzzle_resource_import != cgei)
+        return false;
+    for (const auto &sound : cl_native_muzzle_sounds) {
+        if (!sound.handle)
+            return false;
+    }
+    return true;
+}
+
+static int CL_MuzzleDlightKey(int entity)
+{
+    if (!cl_native_muzzle_params)
+        return entity;
+    uint32_t key = cl_native_muzzle_generation * UINT32_C(2654435761) ^
+                   static_cast<uint32_t>(entity);
+    key = (key & UINT32_C(0x3fffffff)) | UINT32_C(0x40000000);
+    return -static_cast<int>(key);
+}
+
 static void CL_AddWeaponMuzzleFXv(cl_muzzlefx_t fx, float x, float y, float z, float scale)
 {
     vec3_t offset = { x, y, z };
@@ -229,13 +364,20 @@ void CL_MuzzleFlash(void)
     char        soundname[MAX_QPATH];
 
 #if USE_DEBUG
-    if (developer->integer)
+    if (developer->integer && !cl_native_muzzle_state)
         CL_CheckEntityPresent(mz.entity, "muzzleflash");
 #endif
 
-    pl = &cl_entities[mz.entity];
+    centity_t native_source{};
+    if (cl_native_muzzle_state) {
+        native_source.current = *cl_native_muzzle_state;
+        native_source.prev = *cl_native_muzzle_state;
+        pl = &native_source;
+    } else {
+        pl = &cl_entities[mz.entity];
+    }
 
-    dl = CL_AllocDlight(mz.entity);
+    dl = CL_AllocDlight(CL_MuzzleDlightKey(mz.entity));
     VectorCopy(pl->current.origin,  dl->origin);
     AngleVectors(pl->current.angles, fv, rv, NULL);
     VectorMA(dl->origin, 18, fv, dl->origin);
@@ -446,7 +588,14 @@ void CL_MuzzleFlash2(void)
     float       scale;
 
     // locate the origin
-    ent = &cl_entities[mz.entity];
+    centity_t native_source{};
+    if (cl_native_muzzle_state) {
+        native_source.current = *cl_native_muzzle_state;
+        native_source.prev = *cl_native_muzzle_state;
+        ent = &native_source;
+    } else {
+        ent = &cl_entities[mz.entity];
+    }
     AngleVectors(ent->current.angles, forward, right, NULL);
 
     scale = ent->current.scale;
@@ -460,7 +609,7 @@ void CL_MuzzleFlash2(void)
 
     VectorMA(origin, 4.0f * scale, forward, flash_origin);
 
-    dl = CL_AllocDlight(mz.entity);
+    dl = CL_AllocDlight(CL_MuzzleDlightKey(mz.entity));
     VectorCopy(origin,  dl->origin);
     dl->radius = 200 + (Q_rand() & 31);
     dl->die = cl.time + Cvar_ClampInteger(cl_muzzlelight_time, 0, 1000);
@@ -936,6 +1085,62 @@ void CL_MuzzleFlash2(void)
         break;
     }
     }
+
+bool CL_CanPresentMuzzleFlashValue(const mz_params_t *params,
+                                   const entity_state_t *source_state,
+                                   const vec3_t sound_origin,
+                                   uint32_t source_generation,
+                                   bool monster_family)
+{
+    if (!params || !source_state || !sound_origin || !source_generation ||
+        !cgei ||
+        cl_native_muzzle_state || cl_native_muzzle_params ||
+        !cl_muzzlelight_time || !cl_rerelease_effects ||
+        !cl_dlight_hacks || params->entity <= 0 ||
+        params->entity >= cl.csr.max_edicts ||
+        source_state->number != params->entity ||
+        !CL_MuzzleValueResourcesReady()) {
+        return false;
+    }
+    if (monster_family) {
+        if (params->weapon < WORR_EVENT_MONSTER_MUZZLE_FIRST ||
+            params->weapon > WORR_EVENT_MONSTER_MUZZLE_LAST) {
+            return false;
+        }
+    } else if (!(params->weapon <=
+                     WORR_EVENT_PLAYER_MUZZLE_PHALANX2 ||
+                 (params->weapon >=
+                      WORR_EVENT_PLAYER_MUZZLE_ETF_RIFLE &&
+                  params->weapon <= WORR_EVENT_PLAYER_MUZZLE_NUKE8))) {
+        return false;
+    }
+    return CL_NativeMuzzleSoundsReady();
+}
+
+void CL_PresentMuzzleFlashValue(const mz_params_t *params,
+                                const entity_state_t *source_state,
+                                const vec3_t sound_origin,
+                                uint32_t source_generation,
+                                bool monster_family)
+{
+    if (!params || !source_state || !sound_origin || !source_generation ||
+        !cgei || cl_native_muzzle_state || cl_native_muzzle_params)
+        return;
+
+    cl_native_muzzle_state = source_state;
+    cl_native_muzzle_params = params;
+    cl_native_muzzle_generation = source_generation;
+    VectorCopy(sound_origin, cl_native_muzzle_sound_origin);
+    if (monster_family)
+        CL_MuzzleFlash2();
+    else
+        CL_MuzzleFlash();
+
+    cl_native_muzzle_state = nullptr;
+    cl_native_muzzle_params = nullptr;
+    cl_native_muzzle_generation = 0;
+    VectorClear(cl_native_muzzle_sound_origin);
+}
 
 /*
 ==============================================================

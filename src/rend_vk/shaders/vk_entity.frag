@@ -16,16 +16,19 @@
 #define VK_ENTITY_VERTEX_BLOOM_RIM 8192u
 #define VK_ENTITY_VERTEX_BLOOM_DEPTHHACK 16384u
 #define VK_ENTITY_VERTEX_TEXTURE_REPLACE 65536u
+#define VK_ENTITY_VERTEX_NO_ENTITY_MODULATE 524288u
 #define VK_FOG_GLOBAL 1u
 #define VK_FOG_HEIGHT 2u
 #define SHADOW_VISIBILITY_EXPONENT 2.0
 #define VK_SHADOW_MAX_PAGES 64
 #define VK_SHADOW_MAX_DLIGHTS 64
+#define VK_SHADOW_RESOLUTION_POOL_COUNT 5
 #define DLIGHT_CUTOFF 64.0
 
 struct shadow_page_t {
     mat4 matrix;
     vec4 params;
+    vec4 location;
 };
 
 struct shadow_dlight_t {
@@ -41,8 +44,8 @@ layout(set = 1, binding = 0) uniform sampler2D lm_sampler;
 #ifdef VK_ENTITY_BLOOM_EXTRACT_DEPTH_SAMPLE
 layout(set = 1, binding = 2) uniform sampler2D bloom_depth_sampler;
 #endif
-layout(set = 2, binding = 0) uniform sampler2DArray shadow_sampler;
-layout(set = 2, binding = 3) uniform sampler2DArrayShadow shadow_sampler_cmp;
+layout(set = 2, binding = 0) uniform sampler2DArray shadow_sampler[VK_SHADOW_RESOLUTION_POOL_COUNT];
+layout(set = 2, binding = 3) uniform sampler2DArrayShadow shadow_sampler_cmp[VK_SHADOW_RESOLUTION_POOL_COUNT];
 layout(std140, set = 2, binding = 1) uniform ShadowPages {
     vec4 shadow_global;
     vec4 shadow_sun;
@@ -57,7 +60,7 @@ layout(std140, set = 2, binding = 1) uniform ShadowPages {
     shadow_page_t shadow_pages[VK_SHADOW_MAX_PAGES];
     shadow_dlight_t shadow_dlights[VK_SHADOW_MAX_DLIGHTS];
 };
-layout(set = 2, binding = 2) uniform sampler2DArray shadow_moments;
+layout(set = 2, binding = 2) uniform sampler2DArray shadow_moments[VK_SHADOW_RESOLUTION_POOL_COUNT];
 layout(set = 0, binding = 1) uniform sampler2D glow_sampler;
 
 layout(location = 0) in vec2 in_uv;
@@ -69,12 +72,49 @@ layout(location = 5) in vec3 in_normal;
 
 layout(location = 0) out vec4 out_color;
 
+int shadow_page_pool(int page) {
+    return clamp(int(shadow_pages[page].location.y + 0.5), 0,
+                 VK_SHADOW_RESOLUTION_POOL_COUNT - 1);
+}
+
+int shadow_page_layer(int page) {
+    return max(int(shadow_pages[page].location.x + 0.5), 0);
+}
+
 float shadow_raw_depth(int page, vec2 uv) {
-    return texture(shadow_sampler, vec3(uv, float(page))).r;
+    int pool = shadow_page_pool(page);
+    float layer = float(shadow_page_layer(page));
+    switch (pool) {
+        case 0: return texture(shadow_sampler[0], vec3(uv, layer)).r;
+        case 1: return texture(shadow_sampler[1], vec3(uv, layer)).r;
+        case 2: return texture(shadow_sampler[2], vec3(uv, layer)).r;
+        case 3: return texture(shadow_sampler[3], vec3(uv, layer)).r;
+        default: return texture(shadow_sampler[4], vec3(uv, layer)).r;
+    }
 }
 
 float shadow_compare_depth(int page, vec2 uv, float depth) {
-    return texture(shadow_sampler_cmp, vec4(uv, float(page), depth));
+    int pool = shadow_page_pool(page);
+    float layer = float(shadow_page_layer(page));
+    switch (pool) {
+        case 0: return texture(shadow_sampler_cmp[0], vec4(uv, layer, depth));
+        case 1: return texture(shadow_sampler_cmp[1], vec4(uv, layer, depth));
+        case 2: return texture(shadow_sampler_cmp[2], vec4(uv, layer, depth));
+        case 3: return texture(shadow_sampler_cmp[3], vec4(uv, layer, depth));
+        default: return texture(shadow_sampler_cmp[4], vec4(uv, layer, depth));
+    }
+}
+
+vec2 shadow_moment_lookup(int page, vec2 uv) {
+    int pool = shadow_page_pool(page);
+    float layer = float(shadow_page_layer(page));
+    switch (pool) {
+        case 0: return texture(shadow_moments[0], vec3(uv, layer)).xy;
+        case 1: return texture(shadow_moments[1], vec3(uv, layer)).xy;
+        case 2: return texture(shadow_moments[2], vec3(uv, layer)).xy;
+        case 3: return texture(shadow_moments[3], vec3(uv, layer)).xy;
+        default: return texture(shadow_moments[4], vec3(uv, layer)).xy;
+    }
 }
 
 float shadow_pcf_depth(int page, vec3 tc, float bias, float radius_texels) {
@@ -124,9 +164,9 @@ float shadow_moment_factor(int page, vec3 tc, float bias, float filter_mode) {
     float evsm_exponent = max(shadow_moment_tuning.y, 0.0001);
     if (filter_mode > 2.5) {
         depth = exp(min(evsm_exponent * depth, evsm_exponent));
-        moments = texture(shadow_moments, vec3(tc.xy, float(page))).xy;
+        moments = shadow_moment_lookup(page, tc.xy);
     } else {
-        moments = texture(shadow_moments, vec3(tc.xy, float(page))).xy;
+        moments = shadow_moment_lookup(page, tc.xy);
     }
     if (depth <= moments.x) {
         return 1.0;
@@ -326,7 +366,15 @@ vec3 safe_normal(vec3 normal) {
     return normal * inversesqrt(len2);
 }
 
-#ifdef VK_ENTITY_GPU_BMODEL_FAST_LIT
+#ifdef VK_ENTITY_CELSHADING
+// OpenGL's cel pass is a second black wireframe draw. It reuses the ordinary
+// model transform but never samples the skin or receiver-lighting resources.
+void main() {
+    float fade = clamp(1.0 - length(in_world_pos - view_origin.xyz) / 700.0,
+                       0.0, 1.0);
+    out_color = vec4(0.0, 0.0, 0.0, in_color.a * fade);
+}
+#elif defined(VK_ENTITY_GPU_BMODEL_FAST_LIT)
 // This native specialization is selected only for opaque lightmapped inline
 // BSP faces with no glow/alpha/fullbright flags and no active sun or dynamic
 // light receiver work.  It preserves the generic lightmap, intensity, and
@@ -561,7 +609,9 @@ void main() {
             // entity modulate applies here so values above 1.0 survive the
             // UNORM vertex encoding. Per-pixel dynamic lights gain the world
             // modulate like the GL mesh path.
-            lighting *= entity_modulate;
+            if ((in_flags & VK_ENTITY_VERTEX_NO_ENTITY_MODULATE) == 0u) {
+                lighting *= entity_modulate;
+            }
             if ((in_flags & VK_ENTITY_VERTEX_NO_SHADOW) == 0u) {
                 lighting *= shadow_sun_factor(in_world_pos, normal);
             }

@@ -109,6 +109,17 @@ bool Worr_NativeCodecInfoRecordRefV1(
     const worr_native_codec_info_v1 *info,
     worr_native_record_ref_v1 *record_out);
 
+/*
+ * Performs complete command, event, or snapshot semantic validation without
+ * retaining or materializing decoded output.  Other record classes are
+ * unsupported.  max_entities is the exclusive entity-index limit for
+ * snapshot and event records and must be nonzero.
+ */
+worr_native_codec_result_v1 Worr_NativeCodecValidateV1(
+    const void *encoded,
+    size_t encoded_bytes,
+    uint32_t max_entities);
+
 worr_native_codec_result_v1 Worr_NativeCodecCommandPreflightV1(
     const worr_command_record_v1 *record,
     uint16_t max_duration_ms,
@@ -179,6 +190,30 @@ worr_native_codec_result_v1 Worr_NativeCodecSnapshotEncodeV1(
     void *encoded_out,
     size_t encoded_capacity,
     size_t *encoded_bytes_out);
+
+/* Pointer-free result of one complete snapshot dry-run validation. */
+typedef struct worr_native_codec_snapshot_metadata_v1_s {
+    uint32_t struct_size;
+    uint16_t schema_version;
+    uint16_t flags;
+    worr_native_codec_info_v1 codec;
+    worr_snapshot_v2 snapshot;
+    worr_snapshot_projection_hashes_v2 hashes;
+    uint64_t reserved0;
+} worr_native_codec_snapshot_metadata_v1;
+
+/*
+ * Performs the complete snapshot dry-run validation without materializing its
+ * variable ranges.  The returned metadata retains the canonical wire hashes
+ * and deterministic transient range counts/serials.  The output remains
+ * unchanged unless the complete WNC1 image is valid and must not overlap the
+ * encoded input.
+ */
+worr_native_codec_result_v1 Worr_NativeCodecSnapshotMetadataV1(
+    const void *encoded,
+    size_t encoded_bytes,
+    uint32_t max_entities,
+    worr_native_codec_snapshot_metadata_v1 *metadata_out);
 
 /*
  * Decodes a complete snapshot directly into a transient, fully valid
@@ -253,5 +288,17 @@ WORR_NATIVE_CODEC_STATIC_ASSERT(
 WORR_NATIVE_CODEC_STATIC_ASSERT(
     offsetof(worr_native_codec_info_v1, object_epoch) == 36,
     "native codec object-identity offset changed");
+WORR_NATIVE_CODEC_STATIC_ASSERT(
+    sizeof(worr_native_codec_snapshot_metadata_v1) == 336,
+    "native codec snapshot metadata layout changed");
+WORR_NATIVE_CODEC_STATIC_ASSERT(
+    offsetof(worr_native_codec_snapshot_metadata_v1, codec) == 8,
+    "native codec snapshot metadata codec offset changed");
+WORR_NATIVE_CODEC_STATIC_ASSERT(
+    offsetof(worr_native_codec_snapshot_metadata_v1, snapshot) == 56,
+    "native codec snapshot metadata snapshot offset changed");
+WORR_NATIVE_CODEC_STATIC_ASSERT(
+    offsetof(worr_native_codec_snapshot_metadata_v1, hashes) == 272,
+    "native codec snapshot metadata hashes offset changed");
 
 #undef WORR_NATIVE_CODEC_STATIC_ASSERT

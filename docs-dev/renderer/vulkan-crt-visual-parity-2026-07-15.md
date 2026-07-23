@@ -16,11 +16,14 @@ the engine's top-left presentation convention; without compensation,
 OpenGL's bright and dark scanlines were vertically interchanged in the final
 screenshot.
 
-`crt_scanline_mod` now adds one output pixel before its row parity calculation.
-It affects only the alternating CRT scanline phase; reconstruction, mask,
-gamma conversion, and the unfiltered UI overlay ordering remain native and
-unchanged. The shader is regenerated into `vk_crt_spv.h`, and the source
-regression locks that phase expression.
+`crt_scanline_mod` offsets by one complete expanded source scanline before its
+row-parity calculation. At native resolution this is the original one-output-
+pixel correction; at reduced resolution it preserves both the first row and
+bright/dark parity of every expanded scanline block. It affects only the
+alternating CRT scanline phase; reconstruction, mask, gamma conversion, and
+the unfiltered UI overlay ordering remain native and unchanged. The shader is
+regenerated into `vk_crt_spv.h`, and the source regression locks that phase
+expression.
 
 ## Retained paired scene
 

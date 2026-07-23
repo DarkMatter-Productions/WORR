@@ -32,7 +32,9 @@ class VulkanScenePresentationPassSourceTests(unittest.TestCase):
         self.assertIn("ctx->presentation_load_render_pass", POST)
 
     def test_recording_routes_scene_and_output_to_their_own_passes(self) -> None:
-        self.assertIn("liquid_info.renderPass = ctx->scene_load_render_pass", MAIN)
+        self.assertIn("liquid_info.renderPass = ctx->scene_single_sample_active", MAIN)
+        self.assertIn("? ctx->scene_single_sample_load_render_pass", MAIN)
+        self.assertIn(": ctx->scene_load_render_pass", MAIN)
         self.assertIn("final_info.renderPass = ctx->presentation_load_render_pass", MAIN)
         self.assertIn("crt_info.renderPass = ctx->presentation_load_render_pass", MAIN)
         self.assertIn(

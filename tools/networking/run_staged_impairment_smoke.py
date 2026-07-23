@@ -452,7 +452,7 @@ def main() -> int:
         "schema": "worr.networking.impairment-runtime.v3",
         "connected_protocol": 1038,
         "game_api": 2025,
-        "cgame_api": 2028,
+        "cgame_api": 2029,
         "spawned": True,
         "default_off_profile": {
             "counters": control_counters,

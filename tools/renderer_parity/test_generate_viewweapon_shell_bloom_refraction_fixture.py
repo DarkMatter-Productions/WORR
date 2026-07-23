@@ -45,6 +45,25 @@ class ViewWeaponShellBloomRefractionFixtureTests(unittest.TestCase):
         self.assertEqual(1, scene["metrics"]["pixel_threshold"])
         self.assertEqual(0, scene["metrics"]["max_pixels_over_threshold_percent"])
 
+    def test_refraction_is_enabled_only_after_the_map_has_initialized(self) -> None:
+        asset_root = Path(__file__).resolve().parents[2] / "assets"
+        for filename in (
+            "fr01_viewweapon_shell_bloom_refraction.cfg",
+            "fr01_hdr_viewweapon_shell_bloom_refraction.cfg",
+        ):
+            config = (asset_root / "renderer_parity" / filename).read_text(
+                encoding="utf-8"
+            )
+            map_marker = "map worr_fr01_viewweapon_shell_bloom_refraction\nwait 60\n"
+            enable_marker = (
+                "set gl_warp_refraction 0.1\n"
+                "set vk_warp_refraction 0.1\n"
+                "wait 10\n"
+            )
+            self.assertIn("set gl_warp_refraction 0\n", config)
+            self.assertIn("set vk_warp_refraction 0\n", config)
+            self.assertLess(config.index(map_marker), config.index(enable_marker))
+
     def test_generator_writes_only_its_map(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             asset_root = Path(temp) / "assets"

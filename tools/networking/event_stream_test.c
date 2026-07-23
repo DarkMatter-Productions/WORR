@@ -138,6 +138,9 @@ static bool test_descriptor_validation_matrix(void)
     uint32_t index;
 
     CHECK(!Worr_EventStreamDescriptorValidateV1(NULL));
+    valid.flags = WORR_EVENT_STREAM_FLAG_BATCH_SCHEMA2;
+    CHECK(Worr_EventStreamDescriptorValidateV1(&valid));
+    valid.flags = 0;
     for (index = 0; index < 12; ++index) {
         malformed = valid;
         switch (index) {
@@ -154,7 +157,7 @@ static bool test_descriptor_validation_matrix(void)
             malformed.schema_version++;
             break;
         case 4:
-            malformed.flags = 1;
+            malformed.flags = UINT16_C(0x8000);
             break;
         case 5:
             malformed.flags = UINT16_MAX;
@@ -206,8 +209,14 @@ static bool test_descriptor_equality(void)
     right = make_descriptor(12, 35);
     CHECK(!Worr_EventStreamDescriptorEqualV1(&left, &right));
 
+    right = left;
+    right.flags = WORR_EVENT_STREAM_FLAG_BATCH_SCHEMA2;
+    CHECK(!Worr_EventStreamDescriptorEqualV1(&left, &right));
+    malformed = right;
+    CHECK(Worr_EventStreamDescriptorEqualV1(&right, &malformed));
+
     malformed = left;
-    malformed.flags = 1;
+    malformed.flags = UINT16_C(0x8000);
     CHECK(!Worr_EventStreamDescriptorEqualV1(&malformed, &malformed));
     CHECK(!Worr_EventStreamDescriptorEqualV1(&left, &malformed));
     CHECK(memcmp(&left, &left_before, sizeof(left)) == 0);
@@ -236,6 +245,7 @@ static bool test_native_codec_round_trip(void)
         make_descriptor(UINT32_C(0x01020304), UINT32_C(0x11223344));
     const worr_event_stream_descriptor_v1 source_before = source;
     worr_event_stream_descriptor_v1 decoded;
+    worr_event_stream_descriptor_v1 flagged;
     worr_native_codec_info_v1 info;
     worr_native_record_ref_v1 record_ref;
     uint8_t encoded[64];
@@ -310,6 +320,17 @@ static bool test_native_codec_round_trip(void)
               encoded, encoded_bytes, &decoded) == WORR_NATIVE_CODEC_OK);
     CHECK(Worr_EventStreamDescriptorEqualV1(&source, &decoded));
     CHECK(memcmp(&source, &decoded, sizeof(source)) == 0);
+
+    flagged = source;
+    flagged.flags = WORR_EVENT_STREAM_FLAG_BATCH_SCHEMA2;
+    CHECK(Worr_NativeCodecEventStreamEncodeV1(
+              &flagged, encoded, sizeof(encoded), &encoded_bytes) ==
+          WORR_NATIVE_CODEC_OK);
+    CHECK(encoded[52] == WORR_EVENT_STREAM_FLAG_BATCH_SCHEMA2 &&
+          encoded[53] == 0 && encoded[54] == 0 && encoded[55] == 0);
+    CHECK(Worr_NativeCodecEventStreamDecodeV1(
+              encoded, encoded_bytes, &decoded) == WORR_NATIVE_CODEC_OK);
+    CHECK(Worr_EventStreamDescriptorEqualV1(&flagged, &decoded));
     return true;
 }
 
@@ -345,7 +366,7 @@ static bool test_native_codec_arguments_and_aliasing(void)
           WORR_NATIVE_CODEC_INVALID_ARGUMENT);
 
     malformed = descriptor;
-    malformed.flags = 1;
+    malformed.flags = UINT16_C(0x8000);
     preflight = UINT32_C(0xdeadbeef);
     CHECK(Worr_NativeCodecEventStreamPreflightV1(
               &malformed, &preflight) == WORR_NATIVE_CODEC_INVALID_RECORD);
@@ -530,7 +551,7 @@ static bool test_native_codec_malformed_matrix(void)
     CHECK(check_decode_failure_untouched(
         malformed, encoded_bytes, WORR_NATIVE_CODEC_INVALID_RECORD));
     memcpy(malformed, encoded, encoded_bytes);
-    store_u32(malformed + 52, 1);
+    store_u32(malformed + 52, UINT32_C(0x8000));
     CHECK(check_decode_failure_untouched(
         malformed, encoded_bytes, WORR_NATIVE_CODEC_INVALID_RECORD));
 

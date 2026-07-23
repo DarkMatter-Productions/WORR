@@ -96,8 +96,9 @@ known records or allow unknown reliable/critical events through.
 fieldwise payload hashing. It never hashes C padding or native pointers.
 Finite negative zero is normalized to positive zero. Prediction keys have a
 separate hash domain. The tests pin exact record and prediction-key goldens so
-schema or hash drift is visible. The v1 fixture goldens are
-`6612534348164222094` for the full record and `11232163421548043143` for its
+schema or hash drift is visible. After the keyed-POI catalog addition advanced
+the event model to revision 2, the fixture goldens are
+`17999893636270564749` for the full record and `11232163421548043143` for its
 prediction key.
 
 ## Journal Semantics

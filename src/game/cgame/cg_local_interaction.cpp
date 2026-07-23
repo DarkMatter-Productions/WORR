@@ -9,6 +9,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "cg_local_interaction.hpp"
 
+#include "common/net/native_event_sender.h"
 #include "shared/local_interaction_abi.h"
 
 #include <array>
@@ -41,7 +42,28 @@ struct local_interaction_shadow_telemetry_t {
 
 local_interaction_shadow_telemetry_t telemetry;
 
-constexpr std::uint32_t kAuthorityPairCapacity = 128;
+constexpr std::uint32_t kLocalInteractionAuthorityPairCapacity = 128;
+static_assert(kLocalInteractionAuthorityPairCapacity ==
+                  WORR_CGAME_PREDICTION_INPUT_CAPACITY,
+              "local authority evidence must cover one canonical command ring");
+
+/* A command may remain unreconciled across every independently bounded stage:
+ * 127 canonical successors before prediction range exhaustion, the complete
+ * native event TX/backlog, the published server mailbox, and 63 selectively
+ * admitted successors behind one missing reliable event head. Keep this a
+ * compositional bound rather than depending on current producer/drain cadence.
+ */
+constexpr std::uint32_t kLocalActionEvidenceRequired =
+    (WORR_CGAME_PREDICTION_INPUT_CAPACITY - 1u) +
+    WORR_NATIVE_EVENT_SENDER_TX_CAPACITY +
+    WORR_NATIVE_EVENT_SENDER_BACKLOG_CAPACITY +
+    WORR_LOCAL_ACTION_SHADOW_AUTHORITY_MAILBOX_CAPACITY +
+    (WORR_EVENT_RECEIPT_SELECTIVE_CAPACITY - 1u);
+static_assert(kLocalActionEvidenceRequired == 798u,
+              "local action receipt flight bound changed");
+static_assert(CG_LOCAL_ACTION_SHADOW_EVIDENCE_CAPACITY >=
+                  kLocalActionEvidenceRequired,
+              "local action evidence does not cover bounded receipt flight");
 constexpr std::uint32_t kAttackButton = 1u << 0;
 enum : std::uint32_t {
     AUTHORITY_PAIR_OCCUPIED = 1u << 0,
@@ -58,7 +80,8 @@ struct authority_pair_entry_t {
     worr_local_interaction_authority_receipt_v1 receipt{};
 };
 
-std::array<authority_pair_entry_t, kAuthorityPairCapacity> authority_pairs;
+std::array<authority_pair_entry_t,
+           kLocalInteractionAuthorityPairCapacity> authority_pairs;
 
 void increment_saturated(std::uint64_t &value)
 {
@@ -340,6 +363,11 @@ struct local_action_shadow_telemetry_t {
     std::uint64_t exact_lookup_attempts{};
     std::uint64_t exact_lookup_hits{};
     std::uint64_t exact_lookup_misses{};
+    std::uint64_t command_frontier_prunes{};
+    std::uint64_t terminal_frontier_prunes{};
+    std::uint64_t receipt_frontier_advances{};
+    std::uint64_t command_cache_evictions{};
+    std::uint64_t coverage_loss_failures{};
     std::uint32_t requires_resync{};
 };
 
@@ -360,10 +388,16 @@ struct local_action_shadow_pair_t {
     worr_local_action_shadow_authority_receipt_v1 receipt{};
 };
 
-std::array<local_action_shadow_pair_t, kAuthorityPairCapacity>
+std::array<local_action_shadow_pair_t,
+           CG_LOCAL_ACTION_SHADOW_EVIDENCE_CAPACITY>
     action_shadow_pairs;
 std::uint32_t action_shadow_observed_through;
 bool action_shadow_observation_started;
+worr_command_id_v1 action_shadow_command_coverage_lost_through;
+bool action_shadow_command_coverage_lost;
+worr_local_action_shadow_authority_receipt_v1
+    action_shadow_receipt_frontier;
+bool action_shadow_receipt_frontier_started;
 
 void require_action_shadow_resync()
 {
@@ -389,6 +423,168 @@ int find_free_action_shadow_pair()
             return static_cast<int>(index);
     }
     return -1;
+}
+
+int find_oldest_action_shadow_command_only_pair()
+{
+    int selected = -1;
+    for (std::uint32_t index = 0; index < action_shadow_pairs.size(); ++index) {
+        const auto &entry = action_shadow_pairs[index];
+        if (entry.flags !=
+            (ACTION_SHADOW_OCCUPIED | ACTION_SHADOW_COMMAND)) {
+            continue;
+        }
+        if (entry.legacy_sequence == 0) {
+            require_action_shadow_resync();
+            return -2;
+        }
+        if (selected < 0 ||
+            entry.legacy_sequence <
+                action_shadow_pairs[static_cast<std::size_t>(selected)]
+                    .legacy_sequence) {
+            selected = static_cast<int>(index);
+        }
+    }
+    return selected;
+}
+
+bool note_action_shadow_command_coverage_loss(
+    worr_command_id_v1 command_id)
+{
+    if (action_shadow_command_coverage_lost &&
+        (command_id.epoch !=
+             action_shadow_command_coverage_lost_through.epoch ||
+         command_id.sequence <=
+             action_shadow_command_coverage_lost_through.sequence)) {
+        increment_saturated(action_shadow_telemetry.authority_conflicts);
+        require_action_shadow_resync();
+        return false;
+    }
+    action_shadow_command_coverage_lost_through = command_id;
+    action_shadow_command_coverage_lost = true;
+    increment_saturated(action_shadow_telemetry.command_cache_evictions);
+    return true;
+}
+
+int allocate_action_shadow_pair_under_command_pressure()
+{
+    const int free_index = find_free_action_shadow_pair();
+    if (free_index >= 0)
+        return free_index;
+
+    const int eviction_index =
+        find_oldest_action_shadow_command_only_pair();
+    if (eviction_index < 0)
+        return eviction_index;
+    auto &entry =
+        action_shadow_pairs[static_cast<std::size_t>(eviction_index)];
+    if (!note_action_shadow_command_coverage_loss(entry.command_id))
+        return -2;
+    entry = {};
+    return eviction_index;
+}
+
+bool action_shadow_command_coverage_was_lost(
+    worr_command_id_v1 command_id)
+{
+    return action_shadow_command_coverage_lost &&
+           command_id.epoch ==
+               action_shadow_command_coverage_lost_through.epoch &&
+           command_id.sequence <=
+               action_shadow_command_coverage_lost_through.sequence;
+}
+
+enum class action_shadow_exact_result_t {
+    found,
+    history_missing,
+    invalid,
+};
+
+action_shadow_exact_result_t resolve_action_shadow_command_exact(
+    worr_command_id_v1 command_id,
+    worr_cgame_command_record_entry_v1 &command_out)
+{
+    command_out = {};
+    if (!valid_import(command_record_import_v2))
+        return action_shadow_exact_result_t::history_missing;
+
+    increment_saturated(action_shadow_telemetry.exact_lookup_attempts);
+    const std::uint32_t result =
+        command_record_import_v2->ResolveCanonicalCommandById(
+            command_id, &command_out);
+    if (result == WORR_CGAME_COMMAND_RECORD_HISTORY_MISSING) {
+        increment_saturated(action_shadow_telemetry.exact_lookup_misses);
+        return action_shadow_exact_result_t::history_missing;
+    }
+    if (result != WORR_CGAME_COMMAND_RECORD_OK ||
+        command_out.legacy_sequence == 0 || command_out.reserved0 != 0 ||
+        !command_id_equal(command_out.command.command_id, command_id) ||
+        !Worr_CommandRecordValidateV1(
+            &command_out.command,
+            WORR_COMMAND_MAX_NEGOTIATED_DURATION_MS)) {
+        require_action_shadow_resync();
+        return action_shadow_exact_result_t::invalid;
+    }
+
+    increment_saturated(action_shadow_telemetry.exact_lookup_hits);
+    return action_shadow_exact_result_t::found;
+}
+
+bool action_shadow_receipt_frontier_accepts(worr_command_id_v1 command_id)
+{
+    return !action_shadow_receipt_frontier_started ||
+           (command_id.epoch ==
+                action_shadow_receipt_frontier.command_id.epoch &&
+            command_id.sequence >
+                action_shadow_receipt_frontier.command_id.sequence);
+}
+
+bool prune_action_shadow_cache_before(
+    worr_command_id_v1 command_id)
+{
+    for (auto &entry : action_shadow_pairs) {
+        if ((entry.flags & ACTION_SHADOW_OCCUPIED) == 0)
+            continue;
+        if (entry.command_id.epoch != command_id.epoch) {
+            increment_saturated(action_shadow_telemetry.authority_conflicts);
+            require_action_shadow_resync();
+            return false;
+        }
+        if (entry.command_id.sequence >= command_id.sequence)
+            continue;
+
+        if (entry.flags ==
+            (ACTION_SHADOW_OCCUPIED | ACTION_SHADOW_COMMAND)) {
+            entry = {};
+            increment_saturated(
+                action_shadow_telemetry.command_frontier_prunes);
+            continue;
+        }
+
+        if (entry.flags ==
+            (ACTION_SHADOW_OCCUPIED | ACTION_SHADOW_COMMAND |
+             ACTION_SHADOW_RECEIPT | ACTION_SHADOW_TERMINAL)) {
+            /* Ordered receipt command IDs are a server-consumption frontier.
+             * A later receipt proves an older matched pair is terminal; its
+             * event-level duplicate remains owned by the reliable event
+             * runtime, while the most recent receipt's full bytes remain in
+             * action_shadow_receipt_frontier. Receipt-only rows stay resident
+             * because their local command can still arrive for reconciliation.
+             */
+            entry = {};
+            increment_saturated(
+                action_shadow_telemetry.terminal_frontier_prunes);
+        }
+    }
+    return true;
+}
+
+void advance_action_shadow_receipt_frontier(
+    const worr_local_action_shadow_authority_receipt_v1 &receipt)
+{
+    action_shadow_receipt_frontier = receipt;
+    action_shadow_receipt_frontier_started = true;
+    increment_saturated(action_shadow_telemetry.receipt_frontier_advances);
 }
 
 cg_local_action_shadow_receipt_result_v1 reconcile_action_shadow_pair(
@@ -467,30 +663,62 @@ bool resolve_action_shadow_record(
     return true;
 }
 
-bool observe_action_shadow_command(
-    const worr_cgame_command_record_entry_v1 &command)
+enum class action_shadow_command_result_t {
+    accepted,
+    capacity,
+    invalid,
+};
+
+action_shadow_command_result_t observe_action_shadow_command(
+    const worr_cgame_command_record_entry_v1 &command,
+    bool count_canonical_command)
 {
     // This first receipt slice is intentionally attack-bearing on both ends.
     // Retaining idle commands would consume reconciliation capacity for
     // records the server is specified not to publish.
     if ((command.command.command.buttons & kAttackButton) == 0)
-        return true;
+        return action_shadow_command_result_t::accepted;
 
     std::uint64_t command_hash = 0;
     if (!Worr_CommandRecordInputHashV1(
             &command.command, WORR_COMMAND_MAX_NEGOTIATED_DURATION_MS,
             &command_hash)) {
         require_action_shadow_resync();
-        return false;
+        return action_shadow_command_result_t::invalid;
     }
 
     int index = find_action_shadow_pair(command.command.command_id);
     if (index < 0) {
-        index = find_free_action_shadow_pair();
+        if (action_shadow_receipt_frontier_started) {
+            if (command.command.command_id.epoch !=
+                action_shadow_receipt_frontier.command_id.epoch) {
+                increment_saturated(
+                    action_shadow_telemetry.authority_conflicts);
+                require_action_shadow_resync();
+                return action_shadow_command_result_t::invalid;
+            }
+            if (command.command.command_id.sequence <
+                action_shadow_receipt_frontier.command_id.sequence) {
+                if (count_canonical_command)
+                    increment_saturated(
+                        action_shadow_telemetry.canonical_commands);
+                return action_shadow_command_result_t::accepted;
+            }
+        }
+        if (action_shadow_command_coverage_lost &&
+            command.command.command_id.epoch !=
+                action_shadow_command_coverage_lost_through.epoch) {
+            increment_saturated(action_shadow_telemetry.authority_conflicts);
+            require_action_shadow_resync();
+            return action_shadow_command_result_t::invalid;
+        }
+        index = allocate_action_shadow_pair_under_command_pressure();
+        if (index == -2)
+            return action_shadow_command_result_t::invalid;
         if (index < 0) {
             increment_saturated(action_shadow_telemetry.capacity_failures);
             require_action_shadow_resync();
-            return false;
+            return action_shadow_command_result_t::capacity;
         }
         action_shadow_pairs[index].flags = ACTION_SHADOW_OCCUPIED;
         action_shadow_pairs[index].command_id = command.command.command_id;
@@ -502,18 +730,22 @@ bool observe_action_shadow_command(
             entry.legacy_sequence != command.legacy_sequence) {
             increment_saturated(action_shadow_telemetry.authority_conflicts);
             require_action_shadow_resync();
-            return false;
+            return action_shadow_command_result_t::invalid;
         }
-        return true;
+        return action_shadow_command_result_t::accepted;
     }
 
     entry.command_hash = command_hash;
     entry.legacy_sequence = command.legacy_sequence;
     entry.flags |= ACTION_SHADOW_COMMAND;
-    increment_saturated(action_shadow_telemetry.canonical_commands);
-    return (entry.flags & ACTION_SHADOW_RECEIPT) == 0 ||
-           reconcile_action_shadow_pair(entry) !=
-               cg_local_action_shadow_receipt_result_v1::command_mismatch;
+    if (count_canonical_command)
+        increment_saturated(action_shadow_telemetry.canonical_commands);
+    if ((entry.flags & ACTION_SHADOW_RECEIPT) == 0)
+        return action_shadow_command_result_t::accepted;
+    return reconcile_action_shadow_pair(entry) ==
+                   cg_local_action_shadow_receipt_result_v1::command_mismatch
+               ? action_shadow_command_result_t::invalid
+               : action_shadow_command_result_t::accepted;
 }
 
 std::uint64_t action_shadow_outstanding_receipts()
@@ -553,6 +785,10 @@ void CG_LocalInteractionReset()
     action_shadow_pairs = {};
     action_shadow_observed_through = 0;
     action_shadow_observation_started = false;
+    action_shadow_command_coverage_lost_through = {};
+    action_shadow_command_coverage_lost = false;
+    action_shadow_receipt_frontier = {};
+    action_shadow_receipt_frontier_started = false;
 }
 
 bool CG_LocalInteractionRequiresResync()
@@ -739,6 +975,13 @@ void CG_LocalActionShadowGetStatus(
         action_shadow_telemetry.exact_lookup_attempts,
         action_shadow_telemetry.exact_lookup_hits,
         action_shadow_telemetry.exact_lookup_misses,
+        action_shadow_telemetry.command_frontier_prunes,
+        action_shadow_telemetry.terminal_frontier_prunes,
+        action_shadow_telemetry.receipt_frontier_advances,
+        action_shadow_telemetry.command_cache_evictions,
+        action_shadow_telemetry.coverage_loss_failures,
+        action_shadow_command_coverage_lost_through,
+        action_shadow_receipt_frontier.command_id,
         action_shadow_telemetry.requires_resync,
     };
 }
@@ -747,7 +990,7 @@ cg_local_action_shadow_receipt_result_v1
 CG_LocalActionShadowSubmitAuthorityReceipt(
     const worr_local_action_shadow_authority_receipt_v1 *receipt)
 {
-    int index;
+    int index = -1;
 
     if (action_shadow_telemetry.requires_resync != 0)
         return cg_local_action_shadow_receipt_result_v1::requires_resync;
@@ -756,41 +999,92 @@ CG_LocalActionShadowSubmitAuthorityReceipt(
         return cg_local_action_shadow_receipt_result_v1::invalid;
     }
 
+    index = find_action_shadow_pair(receipt->command_id);
+    if (index >= 0 &&
+        (action_shadow_pairs[index].flags & ACTION_SHADOW_RECEIPT) != 0) {
+        auto &entry = action_shadow_pairs[index];
+        if (std::memcmp(&entry.receipt, receipt, sizeof(*receipt)) == 0) {
+            increment_saturated(action_shadow_telemetry.authority_duplicates);
+            return cg_local_action_shadow_receipt_result_v1::duplicate;
+        }
+        increment_saturated(action_shadow_telemetry.authority_conflicts);
+        require_action_shadow_resync();
+        return cg_local_action_shadow_receipt_result_v1::conflict;
+    }
+    /* Terminal pairs are retired once the authoritative legacy command
+     * frontier covers them, but the latest ordered receipt must remain exactly
+     * idempotent. Keep its full bytes, not just its command ID. */
+    if (action_shadow_receipt_frontier_started &&
+        command_id_equal(receipt->command_id,
+                         action_shadow_receipt_frontier.command_id)) {
+        if (std::memcmp(&action_shadow_receipt_frontier, receipt,
+                        sizeof(*receipt)) == 0) {
+            increment_saturated(action_shadow_telemetry.authority_duplicates);
+            return cg_local_action_shadow_receipt_result_v1::duplicate;
+        }
+        increment_saturated(action_shadow_telemetry.authority_conflicts);
+        require_action_shadow_resync();
+        return cg_local_action_shadow_receipt_result_v1::conflict;
+    }
+    if (!action_shadow_receipt_frontier_accepts(receipt->command_id)) {
+        increment_saturated(action_shadow_telemetry.authority_conflicts);
+        require_action_shadow_resync();
+        return cg_local_action_shadow_receipt_result_v1::conflict;
+    }
+    if (action_shadow_command_coverage_lost &&
+        receipt->command_id.epoch !=
+            action_shadow_command_coverage_lost_through.epoch) {
+        increment_saturated(action_shadow_telemetry.authority_conflicts);
+        require_action_shadow_resync();
+        return cg_local_action_shadow_receipt_result_v1::conflict;
+    }
+    /* The caller applies private receipts only after their reliable event IDs
+     * become contiguous. Server command consumption and mailbox/event FIFO
+     * ordering therefore make this command ID an authority-production
+     * frontier: no new receipt for a lower command can arrive in this epoch.
+     * Retire command-only rows and already-matched terminal pairs strictly
+     * below it. Receipt-only rows remain unresolved evidence, and the latest
+     * full receipt remains separately retained for exact idempotence. */
+    if (!prune_action_shadow_cache_before(receipt->command_id))
+        return cg_local_action_shadow_receipt_result_v1::conflict;
+
     /* Render cadence can skip the interval in which a command is pending,
      * especially across a reconnect or a deliberately frozen player. Resolve
      * the receipt's exact immutable command by canonical ID before recording
      * it as unmatched. No movement range, packet ack, or timestamp is inferred
      * here. */
-    if (find_action_shadow_pair(receipt->command_id) < 0 &&
-        valid_import(command_record_import_v2)) {
+    if (index < 0) {
         worr_cgame_command_record_entry_v1 command{};
-        increment_saturated(action_shadow_telemetry.exact_lookup_attempts);
-        const std::uint32_t result =
-            command_record_import_v2->ResolveCanonicalCommandById(
-                receipt->command_id, &command);
-        if (result == WORR_CGAME_COMMAND_RECORD_OK) {
-            increment_saturated(action_shadow_telemetry.exact_lookup_hits);
-            if (command.reserved0 != 0 ||
-                !command_id_equal(
-                    command.command.command_id, receipt->command_id) ||
-                !Worr_CommandRecordValidateV1(
-                    &command.command,
-                    WORR_COMMAND_MAX_NEGOTIATED_DURATION_MS) ||
-                !observe_action_shadow_command(command)) {
-                require_action_shadow_resync();
+        const auto exact_result = resolve_action_shadow_command_exact(
+            receipt->command_id, command);
+        if (exact_result == action_shadow_exact_result_t::found) {
+            const bool count_canonical_command =
+                !action_shadow_observation_started ||
+                command.legacy_sequence > action_shadow_observed_through;
+            const auto command_result = observe_action_shadow_command(
+                command, count_canonical_command);
+            if (command_result == action_shadow_command_result_t::capacity)
+                return cg_local_action_shadow_receipt_result_v1::capacity;
+            if (command_result == action_shadow_command_result_t::invalid)
                 return cg_local_action_shadow_receipt_result_v1::invalid;
-            }
-        } else if (result == WORR_CGAME_COMMAND_RECORD_HISTORY_MISSING) {
-            increment_saturated(action_shadow_telemetry.exact_lookup_misses);
-        } else {
-            require_action_shadow_resync();
+        } else if (exact_result == action_shadow_exact_result_t::invalid) {
             return cg_local_action_shadow_receipt_result_v1::invalid;
+        } else if (action_shadow_command_coverage_was_lost(
+                       receipt->command_id)) {
+            increment_saturated(
+                action_shadow_telemetry.coverage_loss_failures);
+            increment_saturated(
+                action_shadow_telemetry.authority_expirations);
+            require_action_shadow_resync();
+            return cg_local_action_shadow_receipt_result_v1::command_mismatch;
         }
     }
 
     index = find_action_shadow_pair(receipt->command_id);
     if (index < 0) {
-        index = find_free_action_shadow_pair();
+        index = allocate_action_shadow_pair_under_command_pressure();
+        if (index == -2)
+            return cg_local_action_shadow_receipt_result_v1::invalid;
         if (index < 0) {
             increment_saturated(action_shadow_telemetry.capacity_failures);
             require_action_shadow_resync();
@@ -802,10 +1096,6 @@ CG_LocalActionShadowSubmitAuthorityReceipt(
 
     auto &entry = action_shadow_pairs[index];
     if ((entry.flags & ACTION_SHADOW_RECEIPT) != 0) {
-        if (std::memcmp(&entry.receipt, receipt, sizeof(*receipt)) == 0) {
-            increment_saturated(action_shadow_telemetry.authority_duplicates);
-            return cg_local_action_shadow_receipt_result_v1::duplicate;
-        }
         increment_saturated(action_shadow_telemetry.authority_conflicts);
         require_action_shadow_resync();
         return cg_local_action_shadow_receipt_result_v1::conflict;
@@ -814,6 +1104,7 @@ CG_LocalActionShadowSubmitAuthorityReceipt(
     entry.receipt = *receipt;
     entry.flags |= ACTION_SHADOW_RECEIPT;
     increment_saturated(action_shadow_telemetry.authority_receipts);
+    advance_action_shadow_receipt_frontier(*receipt);
     if ((entry.flags & ACTION_SHADOW_COMMAND) == 0) {
         increment_saturated(action_shadow_telemetry.authority_unmatched);
         return cg_local_action_shadow_receipt_result_v1::accepted_unmatched;
@@ -880,8 +1171,10 @@ void CG_LocalActionShadowObserveCommands(
             !prune_action_shadow_pairs(prediction_range, &records)) {
             return;
         }
-        if (!observe_action_shadow_command(records.commands[0]))
+        if (observe_action_shadow_command(records.commands[0], true) !=
+            action_shadow_command_result_t::accepted) {
             return;
+        }
         action_shadow_observed_through = sequence;
         action_shadow_observation_started = true;
         observed_any = true;

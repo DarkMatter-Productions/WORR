@@ -22,6 +22,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "server/local_interaction_authority.h"
 #include "server/local_action_shadow_authority.h"
 #include "server/rewind_collision.h"
+#include "server/snapshot_event_candidates.h"
 #include "game3_proxy/game3_proxy.h"
 #include "common/loc.h"
 #include "common/gamedll.h"
@@ -618,6 +619,8 @@ static void SV_StartSound(const vec3_t origin, edict_t *edict,
     q2proto_sound_t snd = {0};
     message_packet_t    *msg;
     bool        force_pos;
+    bool        sound_encoded;
+    uint32_t    native_delivery_flags;
 
     if (!edict)
         Com_Error(ERR_DROP, "%s: edict = NULL", __func__);
@@ -660,12 +663,20 @@ static void SV_StartSound(const vec3_t origin, edict_t *edict,
     q2proto_svc_message_t sound_msg = {.type = Q2P_SVC_SOUND, .sound = {0}};
     q2proto_sound_encode_message(&snd, &sound_msg.sound);
 
-    q2proto_server_multicast_write(Q2P_PROTOCOL_MULTICAST_FLOAT, Q2PROTO_IOARG_SERVER_WRITE_MULTICAST, &sound_msg);
+    sound_encoded = q2proto_server_multicast_write(
+        Q2P_PROTOCOL_MULTICAST_FLOAT,
+        Q2PROTO_IOARG_SERVER_WRITE_MULTICAST, &sound_msg) == Q2P_ERR_SUCCESS;
 
     // if the sound doesn't attenuate, send it to everyone
     // (global radio chatter, voiceovers, etc)
     if (attenuation == ATTN_NONE)
         channel |= CHAN_NO_PHS_ADD;
+
+    native_delivery_flags = 0;
+    if (channel & CHAN_RELIABLE)
+        native_delivery_flags |= SV_SNAPSHOT_SPATIAL_AUDIO_RELIABLE;
+    if (channel & CHAN_NO_PHS_ADD)
+        native_delivery_flags |= SV_SNAPSHOT_SPATIAL_AUDIO_NO_PHS;
 
     // multicast if force sending origin
     if (force_pos) {
@@ -673,6 +684,34 @@ static void SV_StartSound(const vec3_t origin, edict_t *edict,
         if (channel & CHAN_NO_PHS_ADD)
             to = MULTICAST_ALL;
         SV_Multicast(origin, to, channel & CHAN_RELIABLE);
+        if (sound_encoded && (channel & CHAN_RELIABLE)) {
+            const mleaf_t *multicast_leaf = NULL;
+            visrow_t multicast_mask;
+
+            if (to) {
+                multicast_leaf = CM_PointLeaf(&sv.cm, origin);
+                BSP_ClusterVis(sv.cm.cache, &multicast_mask,
+                               multicast_leaf->cluster,
+                               MULTICAST_PVS - to);
+            }
+            FOR_EACH_CLIENT(client) {
+                if (client->state < cs_primed)
+                    continue;
+                if (to) {
+                    const mleaf_t *client_leaf =
+                        CM_PointLeaf(&sv.cm, client->edict->s.origin);
+                    if (!CM_AreasConnected(&sv.cm, multicast_leaf->area,
+                                           client_leaf->area) ||
+                        client_leaf->cluster == -1 ||
+                        !Q_IsBitSet(multicast_mask.b,
+                                    client_leaf->cluster)) {
+                        continue;
+                    }
+                }
+                SV_QueueNativeSpatialAudio(
+                    client, &sound_msg.sound, native_delivery_flags);
+            }
+        }
         return;
     }
 
@@ -704,6 +743,10 @@ static void SV_StartSound(const vec3_t origin, edict_t *edict,
         // as no one guarantees reliables to be delivered in time
         if (channel & CHAN_RELIABLE) {
             SV_ClientAddMessage(client, MSG_RELIABLE);
+            if (sound_encoded) {
+                SV_QueueNativeSpatialAudio(
+                    client, &sound_msg.sound, native_delivery_flags);
+            }
             continue;
         }
 
@@ -776,9 +819,20 @@ static void PF_LocalSound(edict_t *target, const vec3_t origin,
         return;
     }
 
-    q2proto_server_write(&client->q2proto_ctx, Q2PROTO_IOARG_SERVER_WRITE_MULTICAST, &message);
+    const bool sound_encoded =
+        q2proto_server_write(&client->q2proto_ctx,
+                             Q2PROTO_IOARG_SERVER_WRITE_MULTICAST,
+                             &message) == Q2P_ERR_SUCCESS;
 
     PF_Unicast(target, !!(channel & CHAN_RELIABLE), dupe_key);
+    if (sound_encoded) {
+        uint32_t delivery_flags = SV_SNAPSHOT_SPATIAL_AUDIO_LOCAL_ONLY;
+        if (channel & CHAN_RELIABLE)
+            delivery_flags |= SV_SNAPSHOT_SPATIAL_AUDIO_RELIABLE;
+        if (channel & CHAN_NO_PHS_ADD)
+            delivery_flags |= SV_SNAPSHOT_SPATIAL_AUDIO_NO_PHS;
+        SV_QueueNativeSpatialAudio(client, &message.sound, delivery_flags);
+    }
 }
 
 void PF_Pmove(void *pm)

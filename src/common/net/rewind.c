@@ -719,7 +719,16 @@ bool Worr_RewindHistoryConfigValidateV1(
          config->teleport_distance > 0.0f && config->reserved0 == 0;
 }
 
-bool Worr_RewindPoseValidateV1(const worr_rewind_pose_v1 *pose) {
+#if defined(_MSC_VER)
+#define WORR_REWIND_FORCE_INLINE __forceinline
+#elif defined(__GNUC__) || defined(__clang__)
+#define WORR_REWIND_FORCE_INLINE inline __attribute__((always_inline))
+#else
+#define WORR_REWIND_FORCE_INLINE inline
+#endif
+
+static WORR_REWIND_FORCE_INLINE bool
+rewind_pose_valid(const worr_rewind_pose_v1 *pose) {
   if (!pose || !range_aligned(pose, _Alignof(worr_rewind_pose_v1)) ||
       pose->struct_size != sizeof(*pose) ||
       pose->schema_version != WORR_REWIND_ABI_VERSION ||
@@ -769,6 +778,10 @@ bool Worr_RewindPoseValidateV1(const worr_rewind_pose_v1 *pose) {
   return true;
 }
 
+bool Worr_RewindPoseValidateV1(const worr_rewind_pose_v1 *pose) {
+  return rewind_pose_valid(pose);
+}
+
 static void canonicalize_pose(worr_rewind_pose_v1 *pose) {
   canonicalize_vector(pose->origin);
   canonicalize_vector(pose->angles);
@@ -815,7 +828,7 @@ bool Worr_RewindPoseHashV1(const worr_rewind_pose_v1 *pose,
       !make_range(pose, sizeof(*pose), &pose_range) ||
       !make_range(hash_out, sizeof(*hash_out), &output_range) ||
       ranges_overlap(pose_range, output_range) ||
-      !Worr_RewindPoseValidateV1(pose)) {
+      !rewind_pose_valid(pose)) {
     return false;
   }
   *hash_out = pose_hash_unchecked(pose);
@@ -833,9 +846,10 @@ static bool history_storage_range(const worr_rewind_history_v1 *history,
 static const worr_rewind_pose_v1 *
 history_at(const worr_rewind_history_v1 *history,
            uint32_t chronological_index) {
-  const uint32_t index =
-      (uint32_t)(((uint64_t)history->head + (uint64_t)chronological_index) %
-                 (uint64_t)history->capacity);
+  const uint32_t tail = history->capacity - history->head;
+  const uint32_t index = chronological_index < tail
+                             ? history->head + chronological_index
+                             : chronological_index - tail;
   return &history->slots[index];
 }
 
@@ -844,9 +858,80 @@ history_newest(const worr_rewind_history_v1 *history) {
   return history_at(history, history->count - 1);
 }
 
-static bool history_boundary_valid(const worr_rewind_history_v1 *history,
-                                   const worr_rewind_pose_v1 *older,
-                                   const worr_rewind_pose_v1 *newer);
+static double distance_squared(const float a[3], const float b[3]) {
+  const double x = (double)a[0] - (double)b[0];
+  const double y = (double)a[1] - (double)b[1];
+  const double z = (double)a[2] - (double)b[2];
+  return x * x + y * y + z * z;
+}
+
+static bool mover_changed(const worr_rewind_pose_v1 *a,
+                          const worr_rewind_pose_v1 *b) {
+  const bool a_has = (a->flags & WORR_REWIND_POSE_HAS_MOVER) != 0;
+  const bool b_has = (b->flags & WORR_REWIND_POSE_HAS_MOVER) != 0;
+  return a_has != b_has || (a_has && !entity_ref_equal(a->mover, b->mover));
+}
+
+static bool collision_identity_changed(const worr_rewind_pose_v1 *a,
+                                       const worr_rewind_pose_v1 *b) {
+  const uint32_t semantic_flags =
+      WORR_REWIND_POSE_LINKED | WORR_REWIND_POSE_DAMAGEABLE;
+  return ((a->flags ^ b->flags) & semantic_flags) != 0 ||
+         a->solid != b->solid || a->clip_flags != b->clip_flags ||
+         a->collision_shape != b->collision_shape ||
+         a->collision_asset_id != b->collision_asset_id;
+}
+
+/*
+ * Keep this definition ahead of the full-history validator.  It is the sole
+ * caller and executes once per adjacent pose, so making the body visible at
+ * the call site lets optimized builds fold it into that traversal instead of
+ * paying a large out-of-line helper call for every retained sample.
+ */
+static WORR_REWIND_FORCE_INLINE bool
+history_boundary_valid(const worr_rewind_history_v1 *history,
+                       const worr_rewind_pose_v1 *older,
+                       const worr_rewind_pose_v1 *newer,
+                       double teleport_limit_squared) {
+  const bool same_entity = entity_ref_equal(newer->entity, older->entity);
+  const bool same_mover = !mover_changed(newer, older);
+  uint32_t required = 0;
+  if (newer->map_epoch != older->map_epoch) {
+    return (newer->flags & WORR_REWIND_POSE_DISCONTINUITY_MAP) != 0;
+  }
+  if (newer->server_time_us - older->server_time_us >
+      history->config.max_interpolation_span_us) {
+    required |= WORR_REWIND_POSE_DISCONTINUITY_TIME;
+  }
+  if (!same_entity)
+    required |= WORR_REWIND_POSE_DISCONTINUITY_GENERATION;
+  if (!same_mover)
+    required |= WORR_REWIND_POSE_DISCONTINUITY_MOVER;
+  if (collision_identity_changed(newer, older))
+    required |= WORR_REWIND_POSE_DISCONTINUITY_COLLISION;
+  if (older->lifecycle == WORR_REWIND_LIFECYCLE_ALIVE &&
+      newer->lifecycle != WORR_REWIND_LIFECYCLE_ALIVE) {
+    required |= WORR_REWIND_POSE_DISCONTINUITY_DEATH;
+  }
+  if (older->lifecycle != WORR_REWIND_LIFECYCLE_ALIVE &&
+      newer->lifecycle == WORR_REWIND_LIFECYCLE_ALIVE) {
+    required |= WORR_REWIND_POSE_DISCONTINUITY_RESPAWN;
+  }
+  if (same_entity && same_mover) {
+    const bool relative = (newer->flags & WORR_REWIND_POSE_HAS_MOVER) != 0;
+    const float *newer_position =
+        relative ? newer->mover_relative_origin : newer->origin;
+    const float *older_position =
+        relative ? older->mover_relative_origin : older->origin;
+    if (distance_squared(newer_position, older_position) >
+        teleport_limit_squared) {
+      required |= WORR_REWIND_POSE_DISCONTINUITY_TELEPORT;
+    }
+  }
+  return (newer->flags & required) == required;
+}
+
+#undef WORR_REWIND_FORCE_INLINE
 
 bool Worr_RewindHistoryInitV1(worr_rewind_history_v1 *history,
                               worr_rewind_pose_v1 *storage, uint32_t capacity,
@@ -887,6 +972,8 @@ bool Worr_RewindHistoryValidateV1(const worr_rewind_history_v1 *history) {
   worr_range envelope_range;
   worr_range storage_range;
   const worr_rewind_pose_v1 *previous = NULL;
+  double teleport_limit_squared;
+  uint32_t physical_index;
   uint32_t i;
   if (!history || !range_aligned(history, _Alignof(worr_rewind_history_v1)) ||
       history->struct_size != sizeof(*history) ||
@@ -902,9 +989,12 @@ bool Worr_RewindHistoryValidateV1(const worr_rewind_history_v1 *history) {
       ranges_overlap(envelope_range, storage_range)) {
     return false;
   }
+  teleport_limit_squared = (double)history->config.teleport_distance *
+                           (double)history->config.teleport_distance;
+  physical_index = history->head;
   for (i = 0; i < history->count; ++i) {
-    const worr_rewind_pose_v1 *pose = history_at(history, i);
-    if (!Worr_RewindPoseValidateV1(pose) ||
+    const worr_rewind_pose_v1 *pose = &history->slots[physical_index];
+    if (!rewind_pose_valid(pose) ||
         pose->entity.index != history->entity_index) {
       return false;
     }
@@ -926,10 +1016,13 @@ bool Worr_RewindHistoryValidateV1(const worr_rewind_history_v1 *history) {
           return false;
         }
       }
-      if (!history_boundary_valid(history, previous, pose))
+      if (!history_boundary_valid(history, previous, pose,
+                                  teleport_limit_squared))
         return false;
     }
     previous = pose;
+    if (++physical_index == history->capacity)
+      physical_index = 0;
   }
   return true;
 }
@@ -955,69 +1048,6 @@ static bool append_ranges_valid(worr_rewind_history_v1 *history,
   return true;
 }
 
-static double distance_squared(const float a[3], const float b[3]) {
-  const double x = (double)a[0] - (double)b[0];
-  const double y = (double)a[1] - (double)b[1];
-  const double z = (double)a[2] - (double)b[2];
-  return x * x + y * y + z * z;
-}
-
-static bool mover_changed(const worr_rewind_pose_v1 *a,
-                          const worr_rewind_pose_v1 *b) {
-  const bool a_has = (a->flags & WORR_REWIND_POSE_HAS_MOVER) != 0;
-  const bool b_has = (b->flags & WORR_REWIND_POSE_HAS_MOVER) != 0;
-  return a_has != b_has || (a_has && !entity_ref_equal(a->mover, b->mover));
-}
-
-static bool collision_identity_changed(const worr_rewind_pose_v1 *a,
-                                       const worr_rewind_pose_v1 *b) {
-  const uint32_t semantic_flags =
-      WORR_REWIND_POSE_LINKED | WORR_REWIND_POSE_DAMAGEABLE;
-  return ((a->flags ^ b->flags) & semantic_flags) != 0 ||
-         a->solid != b->solid || a->clip_flags != b->clip_flags ||
-         a->collision_shape != b->collision_shape ||
-         a->collision_asset_id != b->collision_asset_id;
-}
-
-static bool history_boundary_valid(const worr_rewind_history_v1 *history,
-                                   const worr_rewind_pose_v1 *older,
-                                   const worr_rewind_pose_v1 *newer) {
-  uint32_t required = 0;
-  if (newer->map_epoch != older->map_epoch) {
-    return (newer->flags & WORR_REWIND_POSE_DISCONTINUITY_MAP) != 0;
-  }
-  if (newer->server_time_us - older->server_time_us >
-      history->config.max_interpolation_span_us) {
-    required |= WORR_REWIND_POSE_DISCONTINUITY_TIME;
-  }
-  if (!entity_ref_equal(newer->entity, older->entity))
-    required |= WORR_REWIND_POSE_DISCONTINUITY_GENERATION;
-  if (mover_changed(newer, older))
-    required |= WORR_REWIND_POSE_DISCONTINUITY_MOVER;
-  if (collision_identity_changed(newer, older))
-    required |= WORR_REWIND_POSE_DISCONTINUITY_COLLISION;
-  if (older->lifecycle == WORR_REWIND_LIFECYCLE_ALIVE &&
-      newer->lifecycle != WORR_REWIND_LIFECYCLE_ALIVE) {
-    required |= WORR_REWIND_POSE_DISCONTINUITY_DEATH;
-  }
-  if (older->lifecycle != WORR_REWIND_LIFECYCLE_ALIVE &&
-      newer->lifecycle == WORR_REWIND_LIFECYCLE_ALIVE) {
-    required |= WORR_REWIND_POSE_DISCONTINUITY_RESPAWN;
-  }
-  if (entity_ref_equal(newer->entity, older->entity) &&
-      !mover_changed(newer, older)) {
-    const bool relative = (newer->flags & WORR_REWIND_POSE_HAS_MOVER) != 0;
-    const float *newer_position =
-        relative ? newer->mover_relative_origin : newer->origin;
-    const float *older_position =
-        relative ? older->mover_relative_origin : older->origin;
-    const double limit = (double)history->config.teleport_distance;
-    if (distance_squared(newer_position, older_position) > limit * limit)
-      required |= WORR_REWIND_POSE_DISCONTINUITY_TELEPORT;
-  }
-  return (newer->flags & required) == required;
-}
-
 bool Worr_RewindHistoryAppendV1(worr_rewind_history_v1 *history,
                                 const worr_rewind_pose_v1 *pose,
                                 uint32_t *reason_out) {
@@ -1039,7 +1069,7 @@ bool Worr_RewindHistoryAppendV1(worr_rewind_history_v1 *history,
   candidate = *pose;
   canonicalize_pose(&candidate);
   saturating_increment(&next.telemetry.append_attempts);
-  if (!Worr_RewindPoseValidateV1(&candidate)) {
+  if (!rewind_pose_valid(&candidate)) {
     reason = WORR_REWIND_APPEND_REJECT_INVALID;
     saturating_increment(&next.telemetry.rejected_invalid);
     goto rejected;
@@ -1142,8 +1172,8 @@ bool Worr_RewindHistoryAppendV1(worr_rewind_history_v1 *history,
   }
 
   if (next.count < next.capacity) {
-    index = (uint32_t)(((uint64_t)next.head + (uint64_t)next.count) %
-                       (uint64_t)next.capacity);
+    /* A non-full validated history has head == 0. */
+    index = next.count;
     ++next.count;
   } else {
     index = next.head;
@@ -1240,6 +1270,7 @@ bool Worr_RewindHistoryQueryV1(worr_rewind_history_v1 *history,
   uint64_t span;
   uint64_t offset;
   uint32_t fraction_q32;
+  uint32_t physical_index;
   uint32_t i;
   double fraction;
 
@@ -1271,15 +1302,30 @@ bool Worr_RewindHistoryQueryV1(worr_rewind_history_v1 *history,
     goto finish;
   }
 
-  for (i = 0; i < history->count; ++i) {
-    const worr_rewind_pose_v1 *pose = history_at(history, i);
+  /*
+   * Rewind targets normally sit near the newest capture.  Walk backward so
+   * the common exact/interpolation path examines only the requested tail of a
+   * full ring.  Reset the newer bracket across map/identity boundaries just
+   * as the former oldest-to-newest walk reset its older bracket.  The first
+   * exact sample encountered is the newest duplicate pause sample.
+   */
+  {
+    const uint32_t tail = history->capacity - history->head;
+    physical_index = history->count < tail
+                         ? history->head + history->count
+                         : history->count - tail;
+  }
+  for (i = history->count; i-- > 0;) {
+    physical_index =
+        physical_index == 0 ? history->capacity - 1u : physical_index - 1u;
+    const worr_rewind_pose_v1 *pose = &history->slots[physical_index];
     if (pose->map_epoch != query->map_epoch) {
-      older = NULL;
+      newer = NULL;
       continue;
     }
     map_found = true;
     if (!entity_ref_equal(pose->entity, query->entity)) {
-      older = NULL;
+      newer = NULL;
       continue;
     }
     generation_found = true;
@@ -1288,18 +1334,15 @@ bool Worr_RewindHistoryQueryV1(worr_rewind_history_v1 *history,
     if (pose->server_time_us > newest_time)
       newest_time = pose->server_time_us;
     if (pose->server_time_us == query->target_time_us) {
-      exact = pose; /* Newest duplicate exact pause sample wins. */
-      older = pose;
-      continue;
-    }
-    if (pose->server_time_us < query->target_time_us) {
-      older = pose;
-      continue;
-    }
-    if (!newer) {
-      newer = pose;
+      exact = pose;
       break;
     }
+    if (pose->server_time_us > query->target_time_us) {
+      newer = pose;
+      continue;
+    }
+    older = pose;
+    break;
   }
 
   if (!map_found) {
@@ -1506,19 +1549,9 @@ static int entity_ref_compare(worr_event_entity_ref_v1 a,
 }
 
 static bool
-scene_candidate_valid(const worr_rewind_scene_v1 *scene,
-                      const worr_rewind_scene_candidate_v1 *candidate) {
-  uint64_t pose_hash;
-  if (!scene || !candidate || candidate->struct_size != sizeof(*candidate) ||
-      candidate->schema_version != WORR_REWIND_ABI_VERSION ||
-      candidate->reserved0 != 0 ||
-      !Worr_RewindPoseValidateV1(&candidate->pose) ||
-      (candidate->pose.flags & WORR_REWIND_POSE_LINKED) == 0 ||
-      candidate->pose.map_epoch != scene->map_epoch ||
-      !Worr_RewindPoseHashV1(&candidate->pose, &pose_hash) ||
-      pose_hash != candidate->pose_hash) {
-    return false;
-  }
+scene_candidate_timing_valid(
+    const worr_rewind_scene_v1 *scene,
+    const worr_rewind_scene_candidate_v1 *candidate) {
   switch (candidate->query_reason) {
   case WORR_REWIND_QUERY_EXACT:
     return candidate->discrete_source == WORR_REWIND_DISCRETE_EXACT &&
@@ -1538,6 +1571,20 @@ scene_candidate_valid(const worr_rewind_scene_v1 *scene,
   default:
     return false;
   }
+}
+
+static bool
+scene_candidate_valid(const worr_rewind_scene_v1 *scene,
+                      const worr_rewind_scene_candidate_v1 *candidate) {
+  uint64_t pose_hash;
+  return scene && candidate && candidate->struct_size == sizeof(*candidate) &&
+         candidate->schema_version == WORR_REWIND_ABI_VERSION &&
+         candidate->reserved0 == 0 &&
+         (candidate->pose.flags & WORR_REWIND_POSE_LINKED) != 0 &&
+         candidate->pose.map_epoch == scene->map_epoch &&
+         Worr_RewindPoseHashV1(&candidate->pose, &pose_hash) &&
+         pose_hash == candidate->pose_hash &&
+         scene_candidate_timing_valid(scene, candidate);
 }
 
 static const worr_rewind_scene_candidate_v1 *
@@ -1612,11 +1659,9 @@ static uint64_t scene_hash_unchecked(const worr_rewind_scene_v1 *scene) {
   return hash;
 }
 
-static bool scene_core_valid(const worr_rewind_scene_v1 *scene,
-                             bool verify_seal) {
+static bool scene_envelope_valid(const worr_rewind_scene_v1 *scene) {
   worr_range envelope_range;
   worr_range storage_range;
-  uint32_t i;
   if (!scene || !range_aligned(scene, _Alignof(worr_rewind_scene_v1)) ||
       scene->struct_size != sizeof(*scene) ||
       scene->schema_version != WORR_REWIND_ABI_VERSION ||
@@ -1631,6 +1676,14 @@ static bool scene_core_valid(const worr_rewind_scene_v1 *scene,
       ranges_overlap(envelope_range, storage_range)) {
     return false;
   }
+  return true;
+}
+
+static bool scene_core_valid(const worr_rewind_scene_v1 *scene,
+                             bool verify_seal) {
+  uint32_t i;
+  if (!scene_envelope_valid(scene))
+    return false;
   for (i = 0; i < scene->count; ++i) {
     if (!scene_candidate_valid(scene, &scene->slots[i]) ||
         (i != 0 && scene->slots[i - 1].pose.entity.index >=
@@ -1706,13 +1759,16 @@ static bool scene_add_ranges_valid(worr_rewind_scene_v1 *scene,
   return true;
 }
 
-bool Worr_RewindSceneAddResultV1(worr_rewind_scene_v1 *scene,
-                                 const worr_rewind_pose_result_v1 *result) {
+static bool scene_add_result(worr_rewind_scene_v1 *scene,
+                             const worr_rewind_pose_result_v1 *result,
+                             bool validate_existing) {
   worr_rewind_scene_candidate_v1 candidate;
   uint64_t pose_hash;
   if (!scene || !result ||
       !range_aligned(result, _Alignof(worr_rewind_pose_result_v1)) ||
-      !scene_core_valid(scene, true) ||
+      (validate_existing ? !scene_core_valid(scene, true)
+                         : (!scene_envelope_valid(scene) ||
+                            scene->scene_hash != 0)) ||
       (scene->flags & WORR_REWIND_SCENE_SEALED) != 0 ||
       scene->count == scene->capacity ||
       !scene_add_ranges_valid(scene, result) ||
@@ -1720,7 +1776,6 @@ bool Worr_RewindSceneAddResultV1(worr_rewind_scene_v1 *scene,
       result->schema_version != WORR_REWIND_ABI_VERSION || result->found != 1 ||
       result->requested_time_us != scene->decision.applied_time_us ||
       result->applied_time_us != result->pose.server_time_us ||
-      !Worr_RewindPoseValidateV1(&result->pose) ||
       (result->pose.flags & WORR_REWIND_POSE_LINKED) == 0 ||
       result->pose.map_epoch != scene->map_epoch ||
       !Worr_RewindPoseHashV1(&result->pose, &pose_hash)) {
@@ -1734,7 +1789,14 @@ bool Worr_RewindSceneAddResultV1(worr_rewind_scene_v1 *scene,
   candidate.interpolation_fraction_q32 = result->interpolation_fraction_q32;
   candidate.pose = result->pose;
   candidate.pose_hash = pose_hash;
-  if (!scene_candidate_valid(scene, &candidate))
+  /*
+   * The result pose was just validated and hashed above, and every envelope
+   * field on this local candidate is assigned here.  Rehashing it through
+   * scene_candidate_valid() duplicated the production scene-add boundary.
+   * Existing caller-owned slots still receive the full validation in
+   * scene_core_valid().
+   */
+  if (!scene_candidate_timing_valid(scene, &candidate))
     return false;
   if (scene->count != 0 && scene->slots[scene->count - 1u].pose.entity.index >=
                                candidate.pose.entity.index) {
@@ -1743,6 +1805,17 @@ bool Worr_RewindSceneAddResultV1(worr_rewind_scene_v1 *scene,
   scene->slots[scene->count] = candidate;
   ++scene->count;
   return true;
+}
+
+bool Worr_RewindSceneAddResultV1(worr_rewind_scene_v1 *scene,
+                                 const worr_rewind_pose_result_v1 *result) {
+  return scene_add_result(scene, result, true);
+}
+
+bool Worr_RewindSceneAddOwnedResultV1(
+    worr_rewind_scene_v1 *scene,
+    const worr_rewind_pose_result_v1 *result) {
+  return scene_add_result(scene, result, false);
 }
 
 bool Worr_RewindSceneSealV1(worr_rewind_scene_v1 *scene) {

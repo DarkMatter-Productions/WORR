@@ -1976,6 +1976,12 @@ MOUSE
 // Called when the window gains focus or changes in some way
 static void Win_ClipCursor(void)
 {
+    // A hidden capture surface must never move or confine the desktop pointer.
+    // This is deliberately here, rather than only in the input layer, because
+    // window resize/focus paths can re-clip an already grabbed mouse.
+    if (win_is_headless())
+        return;
+
     SetCursorPos(win.center_x, win.center_y);
     ClipCursor(&win.screen_rc);
 }
@@ -2053,6 +2059,14 @@ void Win_ShutdownMouse(void)
 
 bool Win_InitMouse(void)
 {
+    // Keep the platform boundary fail-closed as well as IN_Init(). This
+    // protects headless automation from future callers that bypass the client
+    // input setup path.
+    if (win_is_headless()) {
+        Com_DPrintf("...headless capture skips raw mouse initialization\n");
+        return false;
+    }
+
     if (!win.wnd) {
         return false;
     }
@@ -2070,6 +2084,20 @@ bool Win_InitMouse(void)
 // Called when the main window gains or loses focus.
 void Win_GrabMouse(bool grab)
 {
+    // Do not let a hidden rendering surface acquire the desktop pointer. The
+    // input layer requests an ungrab in this mode, but reject direct platform
+    // calls too so SetCapture, ClipCursor, and cursor hiding remain unreachable.
+    if (win_is_headless()) {
+        if (win.mouse.grabbed) {
+            ClipCursor(NULL);
+            ReleaseCapture();
+            win.mouse.grabbed = false;
+        }
+        win.mouse.mx = 0;
+        win.mouse.my = 0;
+        return;
+    }
+
     if (!win.mouse.initialized) {
         return;
     }
@@ -2093,6 +2121,9 @@ void Win_GrabMouse(bool grab)
 
 void Win_WarpMouse(int x, int y)
 {
+    if (win_is_headless())
+        return;
+
     SetCursorPos(win.screen_rc.left + x, win.screen_rc.top + y);
 }
 

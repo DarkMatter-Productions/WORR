@@ -861,16 +861,20 @@ static void build_surface_light(mface_t *surf, vec_t *vbo)
 
 static void calc_surface_hash(mface_t *surf)
 {
-    uint32_t args[] = {
-        surf->texinfo->image - r_images,
-        surf->light_m ? surf->light_m - lm.lightmaps : 0,
-        surf->statebits
+    const struct {
+        uint32_t image;
+        uint32_t lightmap;
+        uint64_t statebits;
+    } args = {
+        .image = surf->texinfo->image - r_images,
+        .lightmap = surf->light_m ? surf->light_m - lm.lightmaps : 0,
+        .statebits = surf->statebits,
     };
     struct mdfour md;
     uint8_t out[16];
 
     mdfour_begin(&md);
-    mdfour_update(&md, (uint8_t *)args, sizeof(args));
+    mdfour_update(&md, (const uint8_t *)&args, sizeof(args));
     mdfour_result(&md, out);
 
     surf->hash = 0;

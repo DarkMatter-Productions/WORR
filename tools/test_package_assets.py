@@ -82,18 +82,27 @@ def write_renderer_parity_fixture(assets_dir: pathlib.Path) -> list[str]:
         "renderer_parity/fixture_manifest.json",
         "maps/worr_fr01_bmodel_first_frame.bsp",
         "maps/worr_fr01_bmodel_instances.bsp",
+        "maps/worr_fr01_bmodel_cull.bsp",
+        "maps/worr_fr01_lightgrid.bsp",
+        "maps/worr_fr01_lightgrid_no_receiver.bsp",
+        "maps/worr_fr01_lightgrid_inline_receiver.bsp",
         "maps/worr_fr01_bmodel_instances_fog.bsp",
         "maps/worr_fr01_bmodel_instances_lightmapped.bsp",
         "maps/worr_fr01_bmodel_instances_lightmapped_fog.bsp",
         "maps/worr_fr01_world_texture_replace.bsp",
         "maps/worr_fr01_world_texture_replace_fog.bsp",
         "maps/worr_fr01_alpha_test.bsp",
+        "maps/worr_fr02_fence_cutout.bsp",
+        "maps/worr_fr02_sprite_blend.bsp",
+        "maps/worr_fr02_sprite_replacement.bsp",
+        "maps/worr_fr02_sprite_depth_write.bsp",
         "maps/worr_fr01_beam_fog.bsp",
         "maps/worr_fr01_global_fog.bsp",
         "maps/worr_fr01_flare_fog.bsp",
         "maps/worr_fr01_glowmap.bsp",
         "maps/worr_fr01_lightmap_saturation.bsp",
         "maps/worr_fr01_model_glowmap.bsp",
+        "maps/worr_fr01_model_md5_multijoint.bsp",
         "maps/worr_fr01_model_shell.bsp",
         "maps/worr_fr01_model_rim.bsp",
         "maps/worr_fr01_model_rim_occluded.bsp",
@@ -102,10 +111,15 @@ def write_renderer_parity_fixture(assets_dir: pathlib.Path) -> list[str]:
         "maps/worr_fr01_underwater_waterwarp.bsp",
         "maps/worr_fr01_height_fog.bsp",
         "maps/worr_fr01_sprite_fog.bsp",
+        "maps/worr_fr01_liquid_entity_ordering.bsp",
         "maps/worr_fr01_transparent_ordering.bsp",
         "maps/worr_fr01_transparent_fog.bsp",
         "maps/worr_fr01_warp_flow.bsp",
         "maps/worr_fr10_rewind_mover.bsp",
+        "sprites/worr_fr02_truecolor_alpha.sp2",
+        "sprites/worr_fr02_sprite_replacement.sp2",
+        "sprites/worr_fr02_sprite_opaque.sp2",
+        "sprites/worr_fr02_sprite_alpha.sp2",
         "textures/parity/fr01_bm_bg.tga",
         "textures/parity/fr01_bm_box.tga",
     ]
@@ -209,18 +223,27 @@ class PackageAssetsTest(unittest.TestCase):
                 "Mirrored loose asset paths: botfiles, renderer_parity, "
                 "maps/worr_fr01_bmodel_first_frame.bsp, "
                 "maps/worr_fr01_bmodel_instances.bsp, "
+                "maps/worr_fr01_bmodel_cull.bsp, "
+                "maps/worr_fr01_lightgrid.bsp, "
+                "maps/worr_fr01_lightgrid_no_receiver.bsp, "
+                "maps/worr_fr01_lightgrid_inline_receiver.bsp, "
                 "maps/worr_fr01_bmodel_instances_fog.bsp, "
                 "maps/worr_fr01_bmodel_instances_lightmapped.bsp, "
                 "maps/worr_fr01_bmodel_instances_lightmapped_fog.bsp, "
                 "maps/worr_fr01_world_texture_replace.bsp, "
                 "maps/worr_fr01_world_texture_replace_fog.bsp, "
                 "maps/worr_fr01_alpha_test.bsp, "
+                  "maps/worr_fr02_fence_cutout.bsp, "
+                  "maps/worr_fr02_sprite_blend.bsp, "
+                  "maps/worr_fr02_sprite_replacement.bsp, "
+                  "maps/worr_fr02_sprite_depth_write.bsp, "
                 "maps/worr_fr01_beam_fog.bsp, "
                 "maps/worr_fr01_global_fog.bsp, "
                 "maps/worr_fr01_flare_fog.bsp, "
                 "maps/worr_fr01_glowmap.bsp, "
                 "maps/worr_fr01_lightmap_saturation.bsp, "
                 "maps/worr_fr01_model_glowmap.bsp, "
+                "maps/worr_fr01_model_md5_multijoint.bsp, "
                 "maps/worr_fr01_model_shell.bsp, "
                 "maps/worr_fr01_model_rim.bsp, "
                 "maps/worr_fr01_model_rim_occluded.bsp, "
@@ -229,9 +252,14 @@ class PackageAssetsTest(unittest.TestCase):
                 "maps/worr_fr01_underwater_waterwarp.bsp, "
                 "maps/worr_fr01_height_fog.bsp, "
                 "maps/worr_fr01_sprite_fog.bsp, "
+                "maps/worr_fr01_liquid_entity_ordering.bsp, "
                 "maps/worr_fr01_transparent_ordering.bsp, "
                 "maps/worr_fr01_transparent_fog.bsp, "
                 "maps/worr_fr01_warp_flow.bsp, maps/worr_fr10_rewind_mover.bsp, "
+                  "sprites/worr_fr02_truecolor_alpha.sp2, "
+                  "sprites/worr_fr02_sprite_replacement.sp2, "
+                  "sprites/worr_fr02_sprite_opaque.sp2, "
+                  "sprites/worr_fr02_sprite_alpha.sp2, "
                 "textures/parity",
                 result.stdout,
             )

@@ -8,6 +8,7 @@ the Free Software Foundation; either version 2 of the License, or
 */
 
 #include "common/net/native_event_admission.h"
+#include "common/net/native_event_batch.h"
 
 #include "native_carrier_ack_internal.h"
 
@@ -228,6 +229,34 @@ static bool submit_result_accepted(worr_cgame_event_runtime_result_v1 result) {
          result == WORR_CGAME_EVENT_RUNTIME_DEGRADED;
 }
 
+static worr_native_carrier_ack_receipt_v1 *event_receipt_find(
+    worr_native_carrier_ack_ledger_v1 *ledger, uint32_t message_sequence) {
+  uint16_t index;
+
+  for (index = 0; index < WORR_NATIVE_CARRIER_ACK_RECEIPT_CAPACITY; ++index) {
+    worr_native_carrier_ack_receipt_v1 *receipt = &ledger->receipts[index];
+    if ((receipt->state_flags &
+         WORR_NATIVE_CARRIER_ACK_RECEIPT_OCCUPIED) != 0 &&
+        receipt->message_sequence == message_sequence &&
+        receipt->record_class == WORR_NATIVE_RECORD_EVENT_V1)
+      return receipt;
+  }
+  return NULL;
+}
+
+static bool event_batch_receipt_install(
+    worr_native_carrier_ack_ledger_v1 *ledger, uint32_t message_sequence,
+    uint32_t first_sequence) {
+  worr_native_carrier_ack_receipt_v1 *receipt =
+      event_receipt_find(ledger, message_sequence);
+
+  if (receipt == NULL || first_sequence == 0 ||
+      receipt->semantic_first_sequence != 0)
+    return false;
+  receipt->semantic_first_sequence = first_sequence;
+  return Worr_NativeCarrierAckLedgerValidateV1(ledger);
+}
+
 static void
 force_consumer_resync(worr_event_stream_owner_v1 *owner,
                       const worr_event_stream_owner_v1 *attempted_owner,
@@ -275,12 +304,19 @@ static worr_native_event_admission_result_v1 repeat_record_owner_result(
     return WORR_NATIVE_EVENT_ADMISSION_DESCRIPTOR_REPEAT_REVALIDATED;
   }
   if (record.record_class == WORR_NATIVE_RECORD_EVENT_V1) {
-    if (record.record_schema_version != WORR_EVENT_ABI_VERSION)
+    if (record.record_schema_version != WORR_EVENT_ABI_VERSION &&
+        record.record_schema_version !=
+            WORR_NATIVE_EVENT_BATCH_RECORD_SCHEMA)
       return WORR_NATIVE_EVENT_ADMISSION_UNSUPPORTED;
     if (record.object_epoch != owner->descriptor.stream_epoch ||
         record.object_sequence < owner->descriptor.first_sequence) {
       return WORR_NATIVE_EVENT_ADMISSION_WRONG_EPOCH;
     }
+    if (record.record_schema_version ==
+            WORR_NATIVE_EVENT_BATCH_RECORD_SCHEMA &&
+        (owner->descriptor.flags &
+         WORR_EVENT_STREAM_FLAG_BATCH_SCHEMA2) == 0)
+      return WORR_NATIVE_EVENT_ADMISSION_UNSUPPORTED;
     return WORR_NATIVE_EVENT_ADMISSION_EVENT_REPEAT_REVALIDATED;
   }
   return WORR_NATIVE_EVENT_ADMISSION_UNSUPPORTED;
@@ -337,11 +373,15 @@ Worr_NativeEventAdmissionCommitCompletedV1(
   worr_native_codec_info_v1 info;
   worr_native_record_ref_v1 codec_ref;
   worr_event_stream_descriptor_v1 descriptor;
-  worr_event_record_v1 event;
+  worr_event_record_v1 events[WORR_NATIVE_EVENT_BATCH_MAX_EVENTS];
+  worr_native_event_batch_info_v1 batch_info;
   worr_cgame_event_runtime_status_v1 status;
   worr_event_stream_owner_result_v1 owner_result;
   worr_cgame_event_runtime_result_v1 consumer_result;
   const uint8_t *payload;
+  uint32_t event_count = 0;
+  uint32_t event_index;
+  bool event_batch = false;
   const size_t slots_bytes = (size_t)slot_capacity * sizeof(*slots);
 
   if (owner == NULL || binding == NULL || session == NULL || slots == NULL ||
@@ -387,23 +427,47 @@ Worr_NativeEventAdmissionCommitCompletedV1(
   }
 
   payload = (const uint8_t *)payload_arena + message->payload_offset;
-  if (Worr_NativeCodecInspectV1(payload, message->payload_bytes, &info) !=
-          WORR_NATIVE_CODEC_OK ||
-      !Worr_NativeCodecInfoRecordRefV1(&info, &codec_ref) ||
-      !record_ref_equal(codec_ref, message->record)) {
+  memset(&info, 0, sizeof(info));
+  memset(&codec_ref, 0, sizeof(codec_ref));
+  memset(&batch_info, 0, sizeof(batch_info));
+  if (message->record.record_class == WORR_NATIVE_RECORD_EVENT_V1 &&
+      message->record.record_schema_version ==
+          WORR_NATIVE_EVENT_BATCH_RECORD_SCHEMA) {
+    const worr_native_event_batch_result_v1 inspected =
+        Worr_NativeEventBatchInspectV1(
+            payload, message->payload_bytes, &batch_info);
+    if (inspected != WORR_NATIVE_EVENT_BATCH_OK)
+      return inspected == WORR_NATIVE_EVENT_BATCH_UNSUPPORTED
+                 ? WORR_NATIVE_EVENT_ADMISSION_UNSUPPORTED
+                 : WORR_NATIVE_EVENT_ADMISSION_MALFORMED;
+    codec_ref.record_class = WORR_NATIVE_RECORD_EVENT_V1;
+    codec_ref.record_schema_version =
+        WORR_NATIVE_EVENT_BATCH_RECORD_SCHEMA;
+    codec_ref.object_epoch = batch_info.stream_epoch;
+    codec_ref.object_sequence = batch_info.last_sequence;
+    event_batch = true;
+  } else {
+    if (Worr_NativeCodecInspectV1(payload, message->payload_bytes, &info) !=
+            WORR_NATIVE_CODEC_OK ||
+        !Worr_NativeCodecInfoRecordRefV1(&info, &codec_ref)) {
+      return WORR_NATIVE_EVENT_ADMISSION_MALFORMED;
+    }
+    if (info.record_class != WORR_NATIVE_RECORD_EVENT_V1 &&
+        info.record_class !=
+            WORR_NATIVE_RECORD_EVENT_STREAM_DESCRIPTOR_V1) {
+      return WORR_NATIVE_EVENT_ADMISSION_UNSUPPORTED;
+    }
+  }
+  if (!record_ref_equal(codec_ref, message->record))
     return WORR_NATIVE_EVENT_ADMISSION_MALFORMED;
-  }
-  if (info.record_class != WORR_NATIVE_RECORD_EVENT_V1 &&
-      info.record_class != WORR_NATIVE_RECORD_EVENT_STREAM_DESCRIPTOR_V1) {
-    return WORR_NATIVE_EVENT_ADMISSION_UNSUPPORTED;
-  }
 
   staged_owner = *owner;
   staged_session = *session;
   memcpy(staged_slots, slots, slots_bytes);
   staged_ledger = *ack_ledger;
 
-  if (info.record_class == WORR_NATIVE_RECORD_EVENT_STREAM_DESCRIPTOR_V1) {
+  if (codec_ref.record_class ==
+      WORR_NATIVE_RECORD_EVENT_STREAM_DESCRIPTOR_V1) {
     if (Worr_NativeCodecEventStreamDecodeV1(payload, message->payload_bytes,
                                             &descriptor) !=
         WORR_NATIVE_CODEC_OK) {
@@ -454,13 +518,32 @@ Worr_NativeEventAdmissionCommitCompletedV1(
 
   if ((owner->state_flags & WORR_EVENT_STREAM_OWNER_ACTIVE) == 0)
     return WORR_NATIVE_EVENT_ADMISSION_NOT_READY;
-  if (Worr_NativeCodecEventDecodeV1(payload, message->payload_bytes,
-                                    WORR_EVENT_STREAM_MAX_ENTITIES_V1,
-                                    &event) != WORR_NATIVE_CODEC_OK) {
-    return WORR_NATIVE_EVENT_ADMISSION_MALFORMED;
+  if (event_batch &&
+      (owner->descriptor.flags &
+       WORR_EVENT_STREAM_FLAG_BATCH_SCHEMA2) == 0)
+    return WORR_NATIVE_EVENT_ADMISSION_UNSUPPORTED;
+  if (event_batch) {
+    if (Worr_NativeEventBatchDecodeV1(
+            payload, message->payload_bytes,
+            WORR_EVENT_STREAM_MAX_ENTITIES_V1, events,
+            WORR_NATIVE_EVENT_BATCH_MAX_EVENTS, &batch_info) !=
+        WORR_NATIVE_EVENT_BATCH_OK) {
+      return WORR_NATIVE_EVENT_ADMISSION_MALFORMED;
+    }
+    event_count = batch_info.event_count;
+  } else {
+    if (codec_ref.record_schema_version != WORR_EVENT_ABI_VERSION)
+      return WORR_NATIVE_EVENT_ADMISSION_UNSUPPORTED;
+    if (Worr_NativeCodecEventDecodeV1(
+            payload, message->payload_bytes,
+            WORR_EVENT_STREAM_MAX_ENTITIES_V1, &events[0]) !=
+        WORR_NATIVE_CODEC_OK) {
+      return WORR_NATIVE_EVENT_ADMISSION_MALFORMED;
+    }
+    event_count = 1;
   }
-  if (event.event_id.stream_epoch != owner->descriptor.stream_epoch ||
-      event.event_id.sequence < owner->descriptor.first_sequence) {
+  if (events[0].event_id.stream_epoch != owner->descriptor.stream_epoch ||
+      events[0].event_id.sequence < owner->descriptor.first_sequence) {
     return WORR_NATIVE_EVENT_ADMISSION_WRONG_EPOCH;
   }
   if (Worr_NativeCarrierSessionCommitRetainedInternalV1(
@@ -469,6 +552,11 @@ Worr_NativeEventAdmissionCommitCompletedV1(
           &staged_ledger) != WORR_NATIVE_RX_COMMITTED) {
     return WORR_NATIVE_EVENT_ADMISSION_RETRY_UNCOMMITTED;
   }
+  if (event_batch &&
+      !event_batch_receipt_install(
+          &staged_ledger, message->message_sequence,
+          events[0].event_id.sequence))
+    return WORR_NATIVE_EVENT_ADMISSION_RETRY_UNCOMMITTED;
 
   memset(&status, 0, sizeof(status));
   if (!consumer->GetStatus(consumer->opaque, &status) ||
@@ -476,15 +564,21 @@ Worr_NativeEventAdmissionCommitCompletedV1(
     force_consumer_resync(owner, owner, ack_ledger, consumer);
     return WORR_NATIVE_EVENT_ADMISSION_RESYNC_UNCOMMITTED;
   }
-  consumer_result =
-      consumer->SubmitAuthoritativeBatch(consumer->opaque, &event, 1);
+  consumer_result = consumer->SubmitAuthoritativeBatch(
+      consumer->opaque, events, event_count);
   memset(&status, 0, sizeof(status));
   if (!submit_result_accepted(consumer_result) ||
       !consumer->GetStatus(consumer->opaque, &status) ||
-      !active_status(&status, &owner->descriptor) ||
-      !Worr_EventReceiptContainsV1(&status.receipt, event.event_id)) {
+      !active_status(&status, &owner->descriptor)) {
     force_consumer_resync(owner, owner, ack_ledger, consumer);
     return WORR_NATIVE_EVENT_ADMISSION_RESYNC_UNCOMMITTED;
+  }
+  for (event_index = 0; event_index < event_count; ++event_index) {
+    if (!Worr_EventReceiptContainsV1(
+            &status.receipt, events[event_index].event_id)) {
+      force_consumer_resync(owner, owner, ack_ledger, consumer);
+      return WORR_NATIVE_EVENT_ADMISSION_RESYNC_UNCOMMITTED;
+    }
   }
 
   *session = staged_session;
@@ -523,6 +617,8 @@ Worr_NativeEventAdmissionRevalidateCommittedRepeatV1(
   worr_native_rx_result_v1 rx_result;
   worr_native_event_admission_result_v1 semantic_result;
   worr_event_id_v1 event_id;
+  uint32_t event_first_sequence = 0;
+  uint32_t event_sequence;
   const worr_native_carrier_entry_v1 *entry;
   const size_t slots_bytes = (size_t)slot_capacity * sizeof(*slots);
 
@@ -605,6 +701,20 @@ Worr_NativeEventAdmissionRevalidateCommittedRepeatV1(
   staged_session = *session;
   memcpy(staged_slots, slots, slots_bytes);
   staged_ledger = *ack_ledger;
+  if (frame.record.record_class == WORR_NATIVE_RECORD_EVENT_V1) {
+    event_first_sequence = frame.record.object_sequence;
+    if (frame.record.record_schema_version ==
+        WORR_NATIVE_EVENT_BATCH_RECORD_SCHEMA) {
+      const worr_native_carrier_ack_receipt_v1 *receipt =
+          event_receipt_find(&staged_ledger, frame.message_sequence);
+      if (receipt == NULL || receipt->semantic_first_sequence == 0 ||
+          receipt->semantic_first_sequence > frame.record.object_sequence ||
+          frame.record.object_sequence - receipt->semantic_first_sequence >=
+              WORR_NATIVE_EVENT_BATCH_MAX_EVENTS)
+        return WORR_NATIVE_EVENT_ADMISSION_INVALID_STATE;
+      event_first_sequence = receipt->semantic_first_sequence;
+    }
+  }
   memset(&message, 0, sizeof(message));
   memset(&repeat_acknowledgement, 0, sizeof(repeat_acknowledgement));
   accepted = Worr_NativeCarrierSessionAcceptDataV1(
@@ -629,13 +739,24 @@ Worr_NativeEventAdmissionRevalidateCommittedRepeatV1(
 
   memset(&status, 0, sizeof(status));
   event_id.stream_epoch = frame.record.object_epoch;
-  event_id.sequence = frame.record.object_sequence;
+  event_id.sequence = event_first_sequence;
   if (!consumer->GetStatus(consumer->opaque, &status) ||
-      !active_status(&status, &owner->descriptor) ||
-      (frame.record.record_class == WORR_NATIVE_RECORD_EVENT_V1 &&
-       !Worr_EventReceiptContainsV1(&status.receipt, event_id))) {
+      !active_status(&status, &owner->descriptor)) {
     force_consumer_resync(owner, owner, ack_ledger, consumer);
     return WORR_NATIVE_EVENT_ADMISSION_RESYNC_UNCOMMITTED;
+  }
+  if (frame.record.record_class == WORR_NATIVE_RECORD_EVENT_V1) {
+    for (event_sequence = event_first_sequence;
+         event_sequence <= frame.record.object_sequence;
+         ++event_sequence) {
+      event_id.sequence = event_sequence;
+      if (!Worr_EventReceiptContainsV1(&status.receipt, event_id)) {
+        force_consumer_resync(owner, owner, ack_ledger, consumer);
+        return WORR_NATIVE_EVENT_ADMISSION_RESYNC_UNCOMMITTED;
+      }
+      if (event_sequence == UINT32_MAX)
+        break;
+    }
   }
 
   *session = staged_session;

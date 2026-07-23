@@ -80,10 +80,24 @@ def build_command(args: argparse.Namespace, renderer: str, scene: str,
         "+set", "logfile_flush", "1",
         "+set", "logfile_name", log_name,
         "+set", "r_shadowmaps", "1",
+        "+set", "r_shadowmap_cache_mode", str(args.cache_mode),
+        "+set", "vk_shadow_shrink_frames", str(args.vk_shadow_shrink_frames),
+        "+set", "r_shadowmap_size", str(args.shadow_size),
         "+set", "r_shadow_filter", str(filter_value),
         "+set", "r_shadow_sun", "1" if scene == "sun-cascade" else "0",
+        "+set", "r_shadow_sun_resolution", str(args.sun_shadow_size),
         "+set", "r_shadow_draw_debug", str(args.debug_draw),
     ]
+    if args.inject_shadow_recreate_failure and renderer == "vulkan":
+        command += [
+            "+set", "vk_shadow_test_fail_recreate", "1",
+        ]
+    if (args.inject_sun_resolution_drop_after_frames is not None and
+            renderer == "vulkan"):
+        command += [
+            "+set", "vk_shadow_test_sun_resolution_drop_after_frames",
+            str(args.inject_sun_resolution_drop_after_frames),
+        ]
     if scene == "flashlight-owner":
         command += [
             "+set", "cl_shadowlights", "1",
@@ -97,6 +111,24 @@ def build_command(args: argparse.Namespace, renderer: str, scene: str,
             "+wait", "60",
             "+give", "item_flashlight",
             "+use", "Flashlight",
+        ]
+    if (args.shadow_size_after_wait is not None or
+            args.sun_shadow_size_after_wait is not None):
+        if args.shadow_size_transition_wait > 0:
+            command += ["+wait", str(args.shadow_size_transition_wait)]
+        if args.shadow_size_after_wait is not None:
+            command += ["+set", "r_shadowmap_size", str(args.shadow_size_after_wait)]
+        if args.sun_shadow_size_after_wait is not None:
+            command += ["+set", "r_shadow_sun_resolution",
+                        str(args.sun_shadow_size_after_wait)]
+    if args.pre_dump_wait > 0:
+        command += [
+            "+wait", str(args.pre_dump_wait),
+            "+r_shadow_dump",
+        ]
+    elif args.dump_before_wait:
+        command += [
+            "+r_shadow_dump",
         ]
     command += [
         "+wait", str(args.wait),
@@ -124,6 +156,28 @@ def main() -> int:
                         help="Shadow filter family; repeatable")
     parser.add_argument("--wait", type=int, default=180,
                         help="Frames to wait after map load before dump/quit")
+    parser.add_argument("--cache-mode", type=int, choices=(0, 1, 2), default=1,
+                        help="Shadow cache mode: 0=none, 1=static reuse, 2=world only")
+    parser.add_argument("--vk-shadow-shrink-frames", type=int, default=180,
+                        help="Frames below a smaller Vulkan shadow bucket before shrinking")
+    parser.add_argument("--shadow-size", type=int, default=512,
+                        help="Initial shared shadow resolution in texels")
+    parser.add_argument("--shadow-size-after-wait", type=int,
+                        help="Set r_shadowmap_size after the optional transition wait")
+    parser.add_argument("--shadow-size-transition-wait", type=int, default=0,
+                        help="Frames to retain the initial shadow size before changing it")
+    parser.add_argument("--sun-shadow-size", type=int, default=1024,
+                        help="Initial sun shadow resolution in texels")
+    parser.add_argument("--sun-shadow-size-after-wait", type=int,
+                        help="Set r_shadow_sun_resolution after the optional transition wait")
+    parser.add_argument("--dump-before-wait", action="store_true",
+                        help="Emit a shadow dump before the post-map wait interval")
+    parser.add_argument("--pre-dump-wait", type=int, default=0,
+                        help="Frames to wait before an additional pre-settle shadow dump")
+    parser.add_argument("--inject-shadow-recreate-failure", action="store_true",
+                        help="Test transactional Vulkan shadow-resource rollback")
+    parser.add_argument("--inject-sun-resolution-drop-after-frames", type=int,
+                        help="Vulkan test-only: lower sun shadow resolution after N frames")
     parser.add_argument("--debug-draw", type=int, default=0,
                         help="r_shadow_draw_debug bitmask for overlay repros")
     parser.add_argument("--vulkan-validation", action="store_true",

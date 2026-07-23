@@ -16,6 +16,10 @@ DENSE_INLINE_BSP_GPU_BUDGET = json.loads(
     (ROOT / "assets/renderer_parity/fr01_renderer_perf_bmodel_instances_gpu_budget.json")
     .read_text(encoding="utf-8")
 )
+DENSE_INLINE_BSP_CPU_SUBMISSION_BUDGET = json.loads(
+    (ROOT / "assets/renderer_parity/fr01_renderer_perf_bmodel_instances_cpu_submission_budget.json")
+    .read_text(encoding="utf-8")
+)
 SPEC = importlib.util.spec_from_file_location("renderer_perf", SCRIPT)
 assert SPEC and SPEC.loader
 PERF = importlib.util.module_from_spec(SPEC)
@@ -88,6 +92,15 @@ class RendererPerfTests(unittest.TestCase):
             self.assertEqual(ratios["gpu_frame_ms_mean"], 4 / 3)
             self.assertEqual(ratios["gpu_post_ms_mean"], 0.75)
 
+    def test_summarizes_comparable_cpu_render_and_vulkan_sync_metrics(self) -> None:
+        records = [
+            {"cpu_ms": 8.0, "cpu_render_ms": 1.0, "cpu_sync_wait_ms": 7.0},
+            {"cpu_ms": 6.0, "cpu_render_ms": 2.0, "cpu_sync_wait_ms": 4.0},
+        ]
+        summary = PERF.summarize(records, warmup=0)
+        self.assertEqual(summary["cpu_render_ms_mean"], 1.5)
+        self.assertEqual(summary["cpu_sync_wait_ms_p50"], 5.5)
+
     def test_warmup_cannot_remove_all_samples(self) -> None:
         with self.assertRaisesRegex(ValueError, "after warmup"):
             PERF.summarize([{"cpu_ms": 1.0}], 1)
@@ -144,6 +157,20 @@ class RendererPerfTests(unittest.TestCase):
         self.assertEqual(limits["gpu_frame_ms_p50"], 0.65)
         self.assertEqual(limits["draws_p95"], 18)
         self.assertEqual(limits["uploads_p95"], 4800)
+
+    def test_dense_inline_bsp_cpu_submission_budget_is_provenance_bound(self) -> None:
+        self.assertEqual(DENSE_INLINE_BSP_CPU_SUBMISSION_BUDGET["schema_version"], 1)
+        self.assertEqual(DENSE_INLINE_BSP_CPU_SUBMISSION_BUDGET["min_samples"], 100)
+        contract = DENSE_INLINE_BSP_CPU_SUBMISSION_BUDGET["capture_contract"]
+        self.assertEqual(contract["scenario_id"], "fr01-bmodel-instance-grid-current")
+        self.assertEqual(contract["hardware_id"], "Intel(R) Iris(R) Xe Graphics")
+        self.assertEqual(contract["driver"], "local-headless")
+        limits = DENSE_INLINE_BSP_CPU_SUBMISSION_BUDGET["vulkan_max"]
+        self.assertEqual(limits["cpu_render_ms_mean"], 1.75)
+        self.assertEqual(limits["cpu_render_ms_p95"], 3.25)
+        ratios = DENSE_INLINE_BSP_CPU_SUBMISSION_BUDGET["vulkan_over_opengl_max"]
+        self.assertEqual(ratios["cpu_render_ms_mean"], 0.6)
+        self.assertEqual(ratios["cpu_render_ms_p95"], 0.6)
 
     def test_budget_rejects_capture_contract_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

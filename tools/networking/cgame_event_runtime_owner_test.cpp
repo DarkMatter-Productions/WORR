@@ -786,10 +786,11 @@ void test_descriptor_quiesce_and_native_callbacks()
           WORR_CGAME_EVENT_RUNTIME_OK);
     CHECK(!CL_CGameEventRuntimeRequiresResync());
     CHECK(Worr_EventStreamDescriptorInitV1(&descriptor, 1, 1));
+    descriptor.flags = WORR_EVENT_STREAM_FLAG_BATCH_SCHEMA2;
     CHECK(CL_CGameEventRuntimeObserveDescriptor(&descriptor) ==
           WORR_CGAME_EVENT_RUNTIME_OK);
 
-    descriptor.flags = 1;
+    descriptor.flags |= UINT16_C(0x8000);
     CHECK(CL_CGameEventRuntimeObserveDescriptor(&descriptor) ==
           WORR_CGAME_EVENT_RUNTIME_INVALID_ARGUMENT);
     CHECK(CL_CGameEventRuntimeResetConnection() ==
