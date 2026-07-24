@@ -1790,15 +1790,24 @@ correction evidence.
   provider's rules, fail-closed on any non-predictable weapon, non-cursor-next
   command, or hard-resync classification. Because producer role is excluded
   from every semantic hash, the same engine serves the client predictor and
-  the server producer; a dedicated test proves the seed cases, a full Shotgun
-  fire/drain/refire lifecycle, matching-authority reconciliation with no
-  correction, and a command-mismatch hard resync. The client seeds this engine
-  from the server's authoritative canonical weapon state (the server resolves
-  weapon->catalog with its existing SG_LocalActionCatalog adapter, so the
-  client never needs the sgame-internal item enum); wiring the client
-  cg_predict replay seam and the sgame authoritative-producer seam behind the
-  default-off prediction gate, plus the compact authority-state transport
-  between them, is the remaining T08 integration. Predictable local state is
+  the server producer: Worr_LocalActionPredictorReplayV1 (PREDICTED, state-
+  owning) and the stateless Worr_LocalActionPredictorProduceV1 (either role)
+  build through one shared path, and a dedicated test proves the seed cases, a
+  full fire/drain/refire lifecycle, dry-fire ammo exhaustion, weapon switching,
+  a command-mismatch hard resync, and the load-bearing cross-seam invariant
+  that the client predictor and server producer emit hash-identical
+  transactions for the same observed state and command (reconciliation reports
+  no correction). The 200,000-case-per-decoder malformed-input fuzz over the
+  changed WDM1/native decoders is fail-closed. Both engine seams therefore
+  exist and are verified to agree; the remaining T08 integration is binding
+  them to live cgame/sgame weapon state behind the default-off prediction gate
+  and carrying the observed catalog identity from server to client. That
+  transport is a genuine design gate rather than missing code: the canonical
+  snapshot player projection (worr_snapshot_player_v2) is a frozen ABI with no
+  spare field, and the server maps weapon->catalog only with its internal item
+  enum, so the identity must ride either a dedicated diagnostic stat slot or a
+  new versioned side record -- a protocol choice that needs running-game
+  verification, not an unverified in-place ABI edit. Predictable local state is
   phase/
   animation timing, the muzzle/fire presentation event, and the fixed ammo
   debit; all world effects stay server-authoritative, exactly as the non-zero
