@@ -150,6 +150,30 @@ worr_native_demo_recorder_result_v1 Worr_NativeDemoRecorderObserveSnapshotV1(
     const worr_snapshot_projection_hashes_v2 *hashes,
     worr_snapshot_ref_v2 projection_ref);
 
+/*
+ * Encodes one canonical command image (WNC1) into a WDR1 command record,
+ * validates the private next ordering state, and commits accounting only
+ * after an exact sink write.  Commands carry no snapshot phase constraint;
+ * the order state enforces monotonic command identity independently of the
+ * snapshot/event classes.  Every runtime rejection is terminal.
+ */
+worr_native_demo_recorder_result_v1 Worr_NativeDemoRecorderObserveCommandV1(
+    worr_native_demo_recorder_state_v1 *state,
+    const worr_command_record_v1 *command,
+    uint16_t max_duration_ms);
+
+/*
+ * Encodes one canonical event image (WNC1) into a WDR1 event record with the
+ * same transactional framing/ordering.  The order state requires a prior
+ * snapshot and, at an equal time, that no snapshot follows an event, so a
+ * present-once replay reproduces authoritative snapshot/event order exactly.
+ * Every runtime rejection is terminal.
+ */
+worr_native_demo_recorder_result_v1 Worr_NativeDemoRecorderObserveEventV1(
+    worr_native_demo_recorder_state_v1 *state,
+    const worr_event_record_v1 *event,
+    uint32_t max_entities);
+
 worr_native_demo_recorder_result_v1 Worr_NativeDemoRecorderStopV1(
     worr_native_demo_recorder_state_v1 *state);
 bool Worr_NativeDemoRecorderGetStatusV1(

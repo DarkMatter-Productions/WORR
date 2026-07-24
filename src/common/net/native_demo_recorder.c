@@ -12,6 +12,9 @@ the Free Software Foundation; either version 2 of the License, or
 #include <stdbool.h>
 #include <string.h>
 
+#include "shared/command_abi.h"
+#include "shared/event_abi.h"
+
 static bool ranges_overlap(const void *left, size_t left_bytes,
                            const void *right, size_t right_bytes) {
   const uintptr_t left_begin = (uintptr_t)left;
@@ -335,6 +338,129 @@ worr_native_demo_recorder_result_v1 Worr_NativeDemoRecorderObserveSnapshotV1(
   state->status.next_ordinal =
       record.ordinal == UINT64_MAX ? 0 : record.ordinal + 1;
   return WORR_NATIVE_DEMO_RECORDER_OK;
+}
+
+/*
+ * Shared tail for command/event records: frame the already-staged codec image
+ * into a WDR1 record, enforce the stream byte cap, validate a private copy of
+ * the ordering state, write exactly, and only then commit byte/ordinal
+ * accounting.  Any framing/order/output failure is terminal and leaves the
+ * committed stream untouched.
+ */
+static worr_native_demo_recorder_result_v1 frame_and_commit_record(
+    worr_native_demo_recorder_state_v1 *state,
+    worr_native_demo_record_v1 *record, size_t codec_bytes) {
+  worr_native_demo_order_state_v1 next_order;
+  worr_native_demo_record_info_v1 record_info;
+  worr_native_demo_result_v1 demo_result;
+  size_t record_bytes = 0;
+  int64_t written;
+
+  demo_result = Worr_NativeDemoRecordEncodeV1(
+      record, state->codec_bytes, codec_bytes, state->record_bytes,
+      state->record_capacity, &record_bytes);
+  state->status.last_demo_result = demo_result;
+  if (demo_result != WORR_NATIVE_DEMO_OK)
+    return fail_active(state, WORR_NATIVE_DEMO_RECORDER_FRAMING);
+  if (state->status.stream_bytes > UINT64_MAX - (uint64_t)record_bytes ||
+      (uint64_t)record_bytes > state->config.max_stream_bytes ||
+      state->status.stream_bytes + (uint64_t)record_bytes >
+          state->config.max_stream_bytes) {
+    return fail_active(state, WORR_NATIVE_DEMO_RECORDER_LIMIT);
+  }
+
+  demo_result = Worr_NativeDemoRecordDecodeV1(
+      state->record_bytes, record_bytes, state->status.stream_bytes,
+      &record_info);
+  next_order = state->order;
+  if (demo_result == WORR_NATIVE_DEMO_OK)
+    demo_result = Worr_NativeDemoOrderObserveV1(&next_order, &record_info);
+  state->status.last_demo_result = demo_result;
+  if (demo_result != WORR_NATIVE_DEMO_OK) {
+    return fail_active(
+        state, demo_result == WORR_NATIVE_DEMO_ORDER
+                   ? WORR_NATIVE_DEMO_RECORDER_ORDER
+                   : WORR_NATIVE_DEMO_RECORDER_FRAMING);
+  }
+
+  written = state->WriteExact(state->write_opaque, state->record_bytes,
+                              record_bytes);
+  state->status.last_write_result = written;
+  if (written != (int64_t)record_bytes)
+    return fail_active(state, WORR_NATIVE_DEMO_RECORDER_OUTPUT);
+
+  state->order = next_order;
+  state->status.stream_bytes += (uint64_t)record_bytes;
+  state->status.last_result = WORR_NATIVE_DEMO_RECORDER_OK;
+  state->status.next_ordinal =
+      record->ordinal == UINT64_MAX ? 0 : record->ordinal + 1;
+  return WORR_NATIVE_DEMO_RECORDER_OK;
+}
+
+worr_native_demo_recorder_result_v1 Worr_NativeDemoRecorderObserveCommandV1(
+    worr_native_demo_recorder_state_v1 *state,
+    const worr_command_record_v1 *command, uint16_t max_duration_ms) {
+  worr_native_demo_record_v1 record;
+  worr_native_codec_result_v1 codec_result;
+  size_t codec_bytes = 0;
+
+  if (!state_initialized(state) || command == NULL)
+    return WORR_NATIVE_DEMO_RECORDER_INVALID_ARGUMENT;
+  if ((state->status.state_flags & WORR_NATIVE_DEMO_RECORDER_ACTIVE) == 0)
+    return WORR_NATIVE_DEMO_RECORDER_NOT_ACTIVE;
+  if (!Worr_CommandRecordValidateV1(command, max_duration_ms))
+    return fail_active(state, WORR_NATIVE_DEMO_RECORDER_INVALID_ARGUMENT);
+  if (state->status.next_ordinal == 0)
+    return fail_active(state, WORR_NATIVE_DEMO_RECORDER_LIMIT);
+
+  codec_result = Worr_NativeCodecCommandEncodeV1(
+      command, max_duration_ms, state->codec_bytes, state->codec_capacity,
+      &codec_bytes);
+  state->status.last_codec_result = codec_result;
+  if (codec_result != WORR_NATIVE_CODEC_OK)
+    return fail_active(state, WORR_NATIVE_DEMO_RECORDER_CODEC);
+
+  memset(&record, 0, sizeof(record));
+  record.struct_size = sizeof(record);
+  record.schema_version = WORR_NATIVE_DEMO_ABI_VERSION;
+  record.record_kind = WORR_NATIVE_DEMO_RECORD_COMMAND_V1;
+  record.ordinal = state->status.next_ordinal;
+  record.time_us = command->sample_time_us;
+  return frame_and_commit_record(state, &record, codec_bytes);
+}
+
+worr_native_demo_recorder_result_v1 Worr_NativeDemoRecorderObserveEventV1(
+    worr_native_demo_recorder_state_v1 *state,
+    const worr_event_record_v1 *event, uint32_t max_entities) {
+  worr_native_demo_record_v1 record;
+  worr_native_codec_result_v1 codec_result;
+  size_t codec_bytes = 0;
+
+  if (!state_initialized(state) || event == NULL)
+    return WORR_NATIVE_DEMO_RECORDER_INVALID_ARGUMENT;
+  if ((state->status.state_flags & WORR_NATIVE_DEMO_RECORDER_ACTIVE) == 0)
+    return WORR_NATIVE_DEMO_RECORDER_NOT_ACTIVE;
+  if (max_entities == 0 || max_entities != state->config.max_entities)
+    return fail_active(state, WORR_NATIVE_DEMO_RECORDER_INVALID_ARGUMENT);
+  if (!Worr_EventRecordValidateV1(event, max_entities))
+    return fail_active(state, WORR_NATIVE_DEMO_RECORDER_INVALID_ARGUMENT);
+  if (state->status.next_ordinal == 0)
+    return fail_active(state, WORR_NATIVE_DEMO_RECORDER_LIMIT);
+
+  codec_result = Worr_NativeCodecEventEncodeV1(
+      event, max_entities, state->codec_bytes, state->codec_capacity,
+      &codec_bytes);
+  state->status.last_codec_result = codec_result;
+  if (codec_result != WORR_NATIVE_CODEC_OK)
+    return fail_active(state, WORR_NATIVE_DEMO_RECORDER_CODEC);
+
+  memset(&record, 0, sizeof(record));
+  record.struct_size = sizeof(record);
+  record.schema_version = WORR_NATIVE_DEMO_ABI_VERSION;
+  record.record_kind = WORR_NATIVE_DEMO_RECORD_EVENT_V1;
+  record.ordinal = state->status.next_ordinal;
+  record.time_us = event->source_time_us;
+  return frame_and_commit_record(state, &record, codec_bytes);
 }
 
 worr_native_demo_recorder_result_v1 Worr_NativeDemoRecorderStopV1(
