@@ -24,6 +24,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "client/cgame_event_shadow_runtime.h"
 #include "client/consumed_cursor.h"
 #include "client/demo_clock.h"
+#include "client/native_demo_player.h"
 #include "client/native_demo_recorder.h"
 #include "client/net_capability.h"
 #include "client/snapshot_shadow.h"
@@ -1725,6 +1726,7 @@ fail:
 void CL_CleanupDemos(void)
 {
     CL_NativeDemoRecorderCleanup();
+    CL_NativeDemoPlayerCleanup();
 
     if (cls.demo.recording) {
         CL_Stop_f();
@@ -1762,6 +1764,11 @@ CL_DemoFrame
 */
 void CL_DemoFrame(void)
 {
+    // FR-10-T13 (default-off): drive a loaded native (WDM1) demo timeline.
+    // A strict no-op unless a native demo is loaded and cl_native_demo_play is
+    // set; it does not depend on legacy .dm2 playback being active.
+    CL_NativeDemoPlayerFrame();
+
     if (!cls.demo.playback) {
         return;
     }
@@ -1820,4 +1827,5 @@ void CL_InitDemos(void)
 
     Cmd_Register(c_demo);
     CL_NativeDemoRecorderInit();
+    CL_NativeDemoPlayerInit();
 }
