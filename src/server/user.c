@@ -21,6 +21,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "server/command_context.h"
 #include "server/local_interaction_authority.h"
 #include "server/local_action_shadow_authority.h"
+#include "server/weapon_predict_seed_mailbox.h"
 #include "server/native_shadow.h"
 #include "server/snapshot_shadow.h"
 #include "common/net/usercmd_delta.h"
@@ -1862,6 +1863,55 @@ static void SV_WorrQueueLocalActionShadowAuthorityReceipts(void)
     }
 }
 
+/*
+ * FR-10-T08 (default-off): drain the client's latest weapon-prediction seed
+ * (published by sgame when sv_worr_weapon_predict is on) and queue it as its
+ * own kind-14 native event.  The client applies it outside the reconciliation
+ * path; nothing is queued unless a seed is pending, so this is inert by
+ * default and never touches the legacy wire.
+ */
+static void SV_WorrQueueWeaponPredictSeed(void)
+{
+    worr_local_action_predict_seed_v1 seed;
+    worr_event_record_v1 candidate;
+    ptrdiff_t client_index;
+
+    if (!sv_client || !svs.client_pool || sv_client < svs.client_pool ||
+        sv_client >= svs.client_pool + svs.maxclients) {
+        return;
+    }
+    client_index = sv_client - svs.client_pool;
+    if (!SV_WeaponPredictSeedTake((uint32_t)client_index, &seed))
+        return;
+
+    /* sgame owns the weapon (catalog/ammo/frame); the engine owns the command
+     * boundary.  Stamp the exact consumed cursor and its sample time so the
+     * client seeds at the same boundary it will replay strictly-later commands
+     * from.  The client re-validates the completed seed on apply. */
+    seed.applied_cursor = sv_client->worr_command_stream.consumed_cursor;
+    seed.sample_time_us =
+        sv_client->worr_command_stream.last_received_sample_time_us;
+
+    memset(&candidate, 0, sizeof(candidate));
+    candidate.struct_size = sizeof(candidate);
+    candidate.schema_version = WORR_EVENT_ABI_VERSION;
+    candidate.model_revision = WORR_EVENT_MODEL_REVISION;
+    candidate.flags = WORR_EVENT_FLAG_CRITICAL;
+    candidate.source_tick = sv.framenum > 0 ? (uint32_t)(sv.framenum - 1) : 0;
+    candidate.source_time_us = sv.worr_server_time_us;
+    candidate.source_entity.index = WORR_EVENT_NO_ENTITY;
+    candidate.subject_entity.index = WORR_EVENT_NO_ENTITY;
+    candidate.event_type = WORR_EVENT_TYPE_AUTHORITY_RECEIPT;
+    candidate.delivery_class = WORR_EVENT_DELIVERY_RELIABLE_ORDERED;
+    candidate.prediction_class = WORR_EVENT_PREDICTION_AUTHORITATIVE_ONLY;
+    candidate.payload_kind = WORR_EVENT_PAYLOAD_LOCAL_ACTION_PREDICT_SEED_V1;
+    candidate.payload_size = sizeof(seed);
+    memcpy(candidate.payload, &seed, sizeof(seed));
+
+    (void)SV_NativeShadowQueueEventCandidatesV1(
+        sv_client->worr_native_shadow, &candidate, 1, svs.realtime);
+}
+
 static bool SV_WorrConsumeCommand(worr_command_id_v1 command_id,
                                   usercmd_t *command,
                                   bool simulate)
@@ -1911,6 +1961,7 @@ static bool SV_WorrConsumeCommand(worr_command_id_v1 command_id,
         SV_CommandContextEnd();
         SV_WorrQueueLocalInteractionAuthorityReceipt(command_id);
         SV_WorrQueueLocalActionShadowAuthorityReceipts();
+        SV_WorrQueueWeaponPredictSeed();
     }
     result = Worr_CommandStreamConsumeV1(
         &sv_client->worr_command_stream, command_id, NULL);

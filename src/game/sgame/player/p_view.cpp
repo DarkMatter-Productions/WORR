@@ -17,6 +17,7 @@ poses for the sgame-owned historical collision-query service.*/
 #include "../monsters/m_player.hpp"
 #include "../bots/bot_includes.hpp"
 #include "../network/lag_compensation.hpp"
+#include "../network/local_action_predict_producer.hpp"
 
 #include <array>
 
@@ -1741,4 +1742,8 @@ void ClientEndServerFrame(gentity_t* ent) {
 		if (!clipped_player)
 			ent->clipMask |= CONTENTS_PLAYER;
 	}
+
+	// FR-10-T08 (default-off): publish this client's READY weapon-prediction seed
+	// to the engine mailbox.  A complete no-op unless sv_worr_weapon_predict is set.
+	SG_WeaponPredictPublishSeed(ent);
 }

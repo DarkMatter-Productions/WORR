@@ -35,3 +35,10 @@ bool SG_WeaponPredictEnabled();
 bool SG_WeaponPredictBuildSeed(const gentity_t *entity,
                                uint32_t command_epoch,
                                worr_local_action_predict_seed_v1 *seed_out);
+
+/*
+ * Builds and publishes a READY seed for the entity's client to the engine seed
+ * mailbox (the engine stamps the exact command boundary).  A no-op when
+ * disabled, the extension is unavailable, or the weapon is not predictable.
+ */
+void SG_WeaponPredictPublishSeed(const gentity_t *entity);

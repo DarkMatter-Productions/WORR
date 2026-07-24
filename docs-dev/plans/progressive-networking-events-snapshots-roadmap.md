@@ -1819,12 +1819,23 @@ correction evidence.
   and keeps both sides' transaction hashes and states in lockstep as they
   replay the same command, while a catalog/state mismatch rejects. It rides the
   native side-channel and leaves the legacy wire untouched. Every shared,
-  testable T08 component is therefore complete and verified; the residue is the
-  thin live glue that a running game is required to verify (server emitting the
-  seed from a resolved READY-boundary weapon state, client applying it and
-  calling the predictor from cg_predict, and runtime tuning of the one
-  frame-cadence constant), all behind the default-off prediction gate, and made
-  safe by the reconciliation model in which authority always wins. Every
+  testable T08 component is therefore complete and verified, and the live glue
+  is now built and links end-to-end behind the default-off gate: the sgame
+  producer (SG_WeaponPredictPublishSeed) resolves the client's READY-boundary
+  weapon/ammo to the catalog seed and publishes it to the engine seed mailbox
+  from ClientEndServerFrame; the engine (weapon_predict_seed_mailbox) drains
+  that mailbox in user.c, stamps the exact consumed command cursor and receive
+  sample time, and emits it as a homogeneous kind-14 native candidate event; the
+  cgame event runtime intercepts that batch, applies the seed through a
+  registered callback into the cg_predict weapon predictor, and the replay
+  bridge feeds the canonical command range back through the predictor after
+  local interaction. The whole carriage compiles and links across sgame, cgame,
+  and both engine binaries, and the touched networking tests stay green. The
+  residue is now purely evidence: running-game behavioral verification (a live
+  fire/reconcile session confirming zero corrections for the predictable set)
+  and runtime tuning of the one frame-cadence constant -- neither is missing
+  code, both require an actual game session, and both are made safe by the
+  reconciliation model in which authority always wins. Every
   derived rule validates under
   Worr_LocalActionWeaponRuleValidateV2; the one input the tables cannot supply,
   animation frame cadence, is isolated as a single documented constant. This is

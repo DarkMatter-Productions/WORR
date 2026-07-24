@@ -14,6 +14,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../g_local.hpp"
 
 #include "shared/local_action_rule_provider.h"
+#include "shared/weapon_predict_seed_mailbox.h"
 
 #include <cstring>
 
@@ -66,4 +67,34 @@ bool SG_WeaponPredictBuildSeed(const gentity_t *entity, uint32_t command_epoch,
     return false;
   }
   return Worr_LocalActionPredictSeedBuildV1(&state, seed_out);
+}
+
+static const worr_weapon_predict_seed_import_v1 *sv_seed_import = nullptr;
+
+void SG_WeaponPredictPublishSeed(const gentity_t *entity) {
+  worr_local_action_predict_seed_v1 seed;
+
+  if (!SG_WeaponPredictEnabled() || entity == nullptr ||
+      entity->client == nullptr) {
+    return;
+  }
+  if (sv_seed_import == nullptr) {
+    sv_seed_import = static_cast<const worr_weapon_predict_seed_import_v1 *>(
+        gi.GetExtension(WORR_WEAPON_PREDICT_SEED_IMPORT_V1));
+    if (sv_seed_import == nullptr ||
+        sv_seed_import->struct_size != sizeof(*sv_seed_import) ||
+        sv_seed_import->api_version !=
+            WORR_WEAPON_PREDICT_SEED_IMPORT_API_VERSION ||
+        sv_seed_import->PublishSeed == nullptr) {
+      sv_seed_import = nullptr;
+      return;
+    }
+  }
+
+  /* command_epoch is a placeholder: the engine overwrites the applied cursor
+   * with the exact consumed command boundary when it drains this seed. */
+  if (!SG_WeaponPredictBuildSeed(entity, 1u, &seed))
+    return;
+  (void)sv_seed_import->PublishSeed(
+      static_cast<uint32_t>(entity->s.number - 1), &seed);
 }

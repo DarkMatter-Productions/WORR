@@ -21,6 +21,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "server/command_context.h"
 #include "server/local_interaction_authority.h"
 #include "server/local_action_shadow_authority.h"
+#include "server/weapon_predict_seed_mailbox.h"
 #include "server/rewind_collision.h"
 #include "server/snapshot_event_candidates.h"
 #include "game3_proxy/game3_proxy.h"
@@ -1241,6 +1242,9 @@ static void *PF_GetExtension(const char *name)
 
     if (!strcmp(name, WORR_LOCAL_ACTION_SHADOW_AUTHORITY_IMPORT_V1))
         return (void *)SV_LocalActionShadowAuthorityImportV1();
+
+    if (!strcmp(name, WORR_WEAPON_PREDICT_SEED_IMPORT_V1))
+        return (void *)SV_WeaponPredictSeedImportV1();
 
     if (!strcmp(name, WORR_REWIND_COLLISION_IMPORT_V1))
         return (void *)SV_RewindCollisionImportV1();
