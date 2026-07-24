@@ -175,3 +175,13 @@ bool Worr_LocalActionPredictSeedApplyV1(
 #ifdef __cplusplus
 }
 #endif
+
+#if defined(__cplusplus)
+static_assert(sizeof(worr_local_action_predict_seed_v1) <=
+                  WORR_EVENT_PAYLOAD_CAPACITY,
+              "predict seed must fit a native event payload");
+#else
+_Static_assert(sizeof(worr_local_action_predict_seed_v1) <=
+                   WORR_EVENT_PAYLOAD_CAPACITY,
+               "predict seed must fit a native event payload");
+#endif
