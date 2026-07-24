@@ -1811,7 +1811,21 @@ correction evidence.
   phase/
   animation timing, the muzzle/fire presentation event, and the fixed ammo
   debit; all world effects stay server-authoritative, exactly as the non-zero
-  blocker masks encode. Every derived rule validates under
+  blocker masks encode. The catalog transport is now a built, tested payload
+  rather than an open design question: a compact versioned side record
+  (worr_local_action_predict_seed_v1) carries the server's exact authoritative
+  weapon state to the client so it seeds its predictor at a known command
+  boundary, and a test proves a byte-copy wire hop reproduces the state exactly
+  and keeps both sides' transaction hashes and states in lockstep as they
+  replay the same command, while a catalog/state mismatch rejects. It rides the
+  native side-channel and leaves the legacy wire untouched. Every shared,
+  testable T08 component is therefore complete and verified; the residue is the
+  thin live glue that a running game is required to verify (server emitting the
+  seed from a resolved READY-boundary weapon state, client applying it and
+  calling the predictor from cg_predict, and runtime tuning of the one
+  frame-cadence constant), all behind the default-off prediction gate, and made
+  safe by the reconciliation model in which authority always wins. Every
+  derived rule validates under
   Worr_LocalActionWeaponRuleValidateV2; the one input the tables cannot supply,
   animation frame cadence, is isolated as a single documented constant. This is
   the foundation the client replay driver, server authoritative producer, and
