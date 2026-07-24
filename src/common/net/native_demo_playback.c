@@ -13,6 +13,9 @@ the Free Software Foundation; either version 2 of the License, or
 #include <stdbool.h>
 #include <string.h>
 
+#include "shared/command_abi.h"
+#include "shared/event_abi.h"
+
 static bool ranges_overlap(const void *left, size_t left_bytes,
                            const void *right, size_t right_bytes) {
   const uintptr_t left_begin = (uintptr_t)left;
@@ -836,4 +839,130 @@ worr_native_demo_playback_result_v1 Worr_NativeDemoPlaybackStepV1(
     ++index;
   }
   return WORR_NATIVE_DEMO_PLAYBACK_NOT_FOUND;
+}
+
+/*
+ * Revalidate the binding, confirm the entry at entry_index is the expected
+ * non-snapshot record class, decode and cross-check its WDR1 frame, and return
+ * the located codec payload span.  The cursor position is never mutated.
+ */
+static worr_native_demo_playback_result_v1 locate_record_payload(
+    const worr_native_demo_playback_cursor_v1 *cursor, const void *encoded,
+    size_t encoded_bytes, const worr_native_demo_index_entry_v1 *entries,
+    size_t entry_count, uint64_t entry_index, uint8_t expected_kind,
+    uint8_t expected_class, const uint8_t **payload_out,
+    uint32_t *payload_bytes_out) {
+  const worr_native_demo_index_entry_v1 *entry;
+  const uint8_t *bytes = (const uint8_t *)encoded;
+  worr_native_demo_record_info_v1 record;
+  worr_native_demo_result_v1 demo_nested;
+  worr_native_demo_playback_result_v1 result;
+  uint64_t relative_u64;
+  size_t relative;
+
+  result = revalidate_binding(cursor, encoded, encoded_bytes, entries,
+                              entry_count);
+  if (result != WORR_NATIVE_DEMO_PLAYBACK_OK)
+    return result;
+  if (entry_index >= (uint64_t)entry_count)
+    return WORR_NATIVE_DEMO_PLAYBACK_NOT_FOUND;
+  entry = &entries[(size_t)entry_index];
+  if (entry->record_kind != expected_kind)
+    return WORR_NATIVE_DEMO_PLAYBACK_WRONG_CLASS;
+  if (entry->record_offset < cursor->scan.stream_offset)
+    return WORR_NATIVE_DEMO_PLAYBACK_GAP;
+  relative_u64 = entry->record_offset - cursor->scan.stream_offset;
+  relative = (size_t)relative_u64;
+  if ((uint64_t)relative != relative_u64 || relative > encoded_bytes ||
+      entry->frame_bytes > encoded_bytes - relative) {
+    return WORR_NATIVE_DEMO_PLAYBACK_LIMIT;
+  }
+  demo_nested = Worr_NativeDemoRecordDecodeV1(
+      bytes + relative, entry->frame_bytes, entry->record_offset, &record);
+  if (demo_nested != WORR_NATIVE_DEMO_OK)
+    return demo_result(demo_nested);
+  if (!record_matches_entry(&record, entry))
+    return WORR_NATIVE_DEMO_PLAYBACK_MUTATED;
+  if (record.record_kind != expected_kind ||
+      record.codec.record_class != expected_class)
+    return WORR_NATIVE_DEMO_PLAYBACK_WRONG_CLASS;
+  *payload_out = bytes + relative + WORR_NATIVE_DEMO_RECORD_WIRE_HEADER_BYTES;
+  *payload_bytes_out = record.payload_bytes;
+  return WORR_NATIVE_DEMO_PLAYBACK_OK;
+}
+
+static bool output_disjoint(const void *output, size_t output_bytes,
+                            const worr_native_demo_playback_cursor_v1 *cursor,
+                            const void *encoded, size_t encoded_bytes,
+                            const worr_native_demo_index_entry_v1 *entries,
+                            size_t entry_count) {
+  size_t entry_bytes;
+
+  if (entry_count > SIZE_MAX / sizeof(*entries))
+    return false;
+  entry_bytes = entry_count * sizeof(*entries);
+  return !ranges_overlap(output, output_bytes, cursor, sizeof(*cursor)) &&
+         !ranges_overlap(output, output_bytes, encoded, encoded_bytes) &&
+         !ranges_overlap(output, output_bytes, entries, entry_bytes);
+}
+
+worr_native_demo_playback_result_v1 Worr_NativeDemoPlaybackDecodeCommandV1(
+    const worr_native_demo_playback_cursor_v1 *cursor, const void *encoded,
+    size_t encoded_bytes, const worr_native_demo_index_entry_v1 *entries,
+    size_t entry_count, uint64_t entry_index, uint16_t max_duration_ms,
+    worr_command_record_v1 *command_out) {
+  const uint8_t *payload = NULL;
+  uint32_t payload_bytes = 0;
+  worr_native_demo_playback_result_v1 result;
+  worr_native_codec_result_v1 codec_nested;
+
+  if (command_out == NULL)
+    return WORR_NATIVE_DEMO_PLAYBACK_INVALID_ARGUMENT;
+  result = locate_record_payload(
+      cursor, encoded, encoded_bytes, entries, entry_count, entry_index,
+      WORR_NATIVE_DEMO_RECORD_COMMAND_V1, WORR_NATIVE_RECORD_COMMAND_V1,
+      &payload, &payload_bytes);
+  if (result != WORR_NATIVE_DEMO_PLAYBACK_OK)
+    return result;
+  if (!output_disjoint(command_out, sizeof(*command_out), cursor, encoded,
+                       encoded_bytes, entries, entry_count)) {
+    return WORR_NATIVE_DEMO_PLAYBACK_INVALID_ARGUMENT;
+  }
+  codec_nested = Worr_NativeCodecCommandDecodeV1(payload, payload_bytes,
+                                                 max_duration_ms, command_out);
+  if (codec_nested != WORR_NATIVE_CODEC_OK)
+    return codec_result(codec_nested);
+  return WORR_NATIVE_DEMO_PLAYBACK_OK;
+}
+
+worr_native_demo_playback_result_v1 Worr_NativeDemoPlaybackDecodeEventV1(
+    const worr_native_demo_playback_cursor_v1 *cursor, const void *encoded,
+    size_t encoded_bytes, const worr_native_demo_index_entry_v1 *entries,
+    size_t entry_count, uint64_t entry_index, uint32_t max_entities,
+    worr_event_record_v1 *event_out) {
+  const uint8_t *payload = NULL;
+  uint32_t payload_bytes = 0;
+  worr_native_demo_playback_result_v1 result;
+  worr_native_codec_result_v1 codec_nested;
+
+  if (event_out == NULL)
+    return WORR_NATIVE_DEMO_PLAYBACK_INVALID_ARGUMENT;
+  if (cursor == NULL || max_entities == 0 ||
+      max_entities != cursor->scan_config.max_entities)
+    return WORR_NATIVE_DEMO_PLAYBACK_INVALID_ARGUMENT;
+  result = locate_record_payload(
+      cursor, encoded, encoded_bytes, entries, entry_count, entry_index,
+      WORR_NATIVE_DEMO_RECORD_EVENT_V1, WORR_NATIVE_RECORD_EVENT_V1, &payload,
+      &payload_bytes);
+  if (result != WORR_NATIVE_DEMO_PLAYBACK_OK)
+    return result;
+  if (!output_disjoint(event_out, sizeof(*event_out), cursor, encoded,
+                       encoded_bytes, entries, entry_count)) {
+    return WORR_NATIVE_DEMO_PLAYBACK_INVALID_ARGUMENT;
+  }
+  codec_nested = Worr_NativeCodecEventDecodeV1(payload, payload_bytes,
+                                               max_entities, event_out);
+  if (codec_nested != WORR_NATIVE_CODEC_OK)
+    return codec_result(codec_nested);
+  return WORR_NATIVE_DEMO_PLAYBACK_OK;
 }

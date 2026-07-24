@@ -160,6 +160,33 @@ worr_native_demo_playback_result_v1 Worr_NativeDemoPlaybackStepV1(
     uint32_t event_ref_capacity,
     worr_native_demo_playback_frame_v1 *frame_out);
 
+/*
+ * Read-only decode of the canonical command image at an exact index entry.
+ * Neither operation mutates the cursor position, so a caller may walk the
+ * command/event records that sit between two snapshots (using each entry's
+ * record_kind) and drive command replay and present-once event playback
+ * without disturbing the snapshot-centric Step traversal.  The complete
+ * binding is revalidated on every call; the entry's record_kind must be
+ * COMMAND, its codec class must match, and command_out must not overlap the
+ * cursor, stream, or index.  command_out is untouched on every failure.
+ */
+worr_native_demo_playback_result_v1 Worr_NativeDemoPlaybackDecodeCommandV1(
+    const worr_native_demo_playback_cursor_v1 *cursor, const void *encoded,
+    size_t encoded_bytes, const worr_native_demo_index_entry_v1 *entries,
+    size_t entry_count, uint64_t entry_index, uint16_t max_duration_ms,
+    worr_command_record_v1 *command_out);
+
+/*
+ * Read-only decode of the canonical event image at an exact index entry.
+ * Same contract as the command decoder; the entry's record_kind must be
+ * EVENT and its codec class must match.  event_out is untouched on failure.
+ */
+worr_native_demo_playback_result_v1 Worr_NativeDemoPlaybackDecodeEventV1(
+    const worr_native_demo_playback_cursor_v1 *cursor, const void *encoded,
+    size_t encoded_bytes, const worr_native_demo_index_entry_v1 *entries,
+    size_t entry_count, uint64_t entry_index, uint32_t max_entities,
+    worr_event_record_v1 *event_out);
+
 #ifdef __cplusplus
 }
 #endif
