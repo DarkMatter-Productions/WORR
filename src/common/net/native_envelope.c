@@ -110,7 +110,10 @@ static bool record_class_valid(uint8_t record_class)
            record_class == WORR_NATIVE_RECORD_SNAPSHOT_V1 ||
            record_class == WORR_NATIVE_RECORD_EVENT_V1 ||
            record_class ==
-               WORR_NATIVE_RECORD_EVENT_STREAM_DESCRIPTOR_V1;
+               WORR_NATIVE_RECORD_EVENT_STREAM_DESCRIPTOR_V1 ||
+           /* FR-10-T13 demo-only gamestate record; the transport never creates
+            * it, but the demo format validates its record ref through here. */
+           record_class == WORR_NATIVE_RECORD_BOOTSTRAP_V1;
 }
 
 bool Worr_NativeEnvelopeRecordRefValidV1(

@@ -136,7 +136,8 @@ static uint32_t crc32_zero_field(const uint8_t *header, size_t header_bytes,
 static bool record_kind_valid(uint8_t kind) {
   return kind == WORR_NATIVE_DEMO_RECORD_COMMAND_V1 ||
          kind == WORR_NATIVE_DEMO_RECORD_SNAPSHOT_V1 ||
-         kind == WORR_NATIVE_DEMO_RECORD_EVENT_V1;
+         kind == WORR_NATIVE_DEMO_RECORD_EVENT_V1 ||
+         kind == WORR_NATIVE_DEMO_RECORD_BOOTSTRAP_V1;
 }
 
 static worr_native_demo_result_v1
@@ -458,6 +459,18 @@ static bool record_info_valid(const worr_native_demo_record_info_v1 *record,
       return false;
     }
     break;
+  case WORR_NATIVE_DEMO_RECORD_BOOTSTRAP_V1:
+    if (record->codec.fixed_body_bytes !=
+            WORR_NATIVE_CODEC_BOOTSTRAP_FIXED_BODY_BYTES ||
+        record->codec.range_counts[1] != 0 ||
+        record->codec.range_counts[2] != 0 ||
+        record->payload_bytes !=
+            WORR_NATIVE_CODEC_WIRE_HEADER_BYTES +
+                WORR_NATIVE_CODEC_BOOTSTRAP_FIXED_BODY_BYTES +
+                record->codec.range_counts[0]) {
+      return false;
+    }
+    break;
   default:
     return false;
   }
@@ -585,7 +598,10 @@ static bool order_state_valid(const worr_native_demo_order_state_v1 *state) {
   const uint32_t snapshot_bit = UINT32_C(1)
                                 << WORR_NATIVE_DEMO_RECORD_SNAPSHOT_V1;
   const uint32_t event_bit = UINT32_C(1) << WORR_NATIVE_DEMO_RECORD_EVENT_V1;
-  const uint32_t known_classes = command_bit | snapshot_bit | event_bit;
+  const uint32_t bootstrap_bit = UINT32_C(1)
+                                 << WORR_NATIVE_DEMO_RECORD_BOOTSTRAP_V1;
+  const uint32_t known_classes =
+      command_bit | snapshot_bit | event_bit | bootstrap_bit;
   const bool command_seen = (state->seen_class_mask & command_bit) != 0;
   const bool snapshot_seen = (state->seen_class_mask & snapshot_bit) != 0;
   const bool event_seen = (state->seen_class_mask & event_bit) != 0;
@@ -647,6 +663,11 @@ order_observe_ref(worr_native_demo_order_state_v1 *state, uint8_t record_kind,
       (observed && time_us < next.last_time_us)) {
     return WORR_NATIVE_DEMO_ORDER;
   }
+  /* The bootstrap gamestate record is legal only as the very first record;
+   * reject it anywhere else before the per-class identity logic (which assumes
+   * command/snapshot/event) can run for it. */
+  if (record_kind == WORR_NATIVE_DEMO_RECORD_BOOTSTRAP_V1 && observed)
+    return WORR_NATIVE_DEMO_ORDER;
   if (!observed || time_us != next.last_time_us)
     next.same_time_phase = ORDER_PHASE_NONE;
 
@@ -671,7 +692,12 @@ order_observe_ref(worr_native_demo_order_state_v1 *state, uint8_t record_kind,
     }
   }
 
-  if (record_kind == WORR_NATIVE_DEMO_RECORD_SNAPSHOT_V1) {
+  if (record_kind == WORR_NATIVE_DEMO_RECORD_BOOTSTRAP_V1) {
+    /* The gamestate record is a singleton legal only as the first record; it
+     * carries no per-class identity to track. */
+    if (observed)
+      return WORR_NATIVE_DEMO_ORDER;
+  } else if (record_kind == WORR_NATIVE_DEMO_RECORD_SNAPSHOT_V1) {
     if (next.same_time_phase == ORDER_PHASE_EVENT)
       return WORR_NATIVE_DEMO_ORDER;
     next.same_time_phase = ORDER_PHASE_SNAPSHOT;
@@ -820,6 +846,9 @@ static bool record_ref_schema_valid(worr_native_record_ref_v1 record) {
     return record.record_schema_version == WORR_SNAPSHOT_ABI_VERSION;
   case WORR_NATIVE_DEMO_RECORD_EVENT_V1:
     return record.record_schema_version == WORR_EVENT_ABI_VERSION;
+  case WORR_NATIVE_DEMO_RECORD_BOOTSTRAP_V1:
+    return record.record_schema_version ==
+           WORR_NATIVE_DEMO_BOOTSTRAP_ABI_VERSION;
   default:
     return false;
   }

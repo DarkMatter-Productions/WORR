@@ -397,6 +397,41 @@ static worr_native_demo_recorder_result_v1 frame_and_commit_record(
   return WORR_NATIVE_DEMO_RECORDER_OK;
 }
 
+worr_native_demo_recorder_result_v1 Worr_NativeDemoRecorderBootstrapV1(
+    worr_native_demo_recorder_state_v1 *state,
+    const worr_native_demo_bootstrap_header_v1 *header,
+    const worr_native_demo_bootstrap_configstring_v1 *strings) {
+  worr_native_demo_record_v1 record;
+  worr_native_codec_result_v1 codec_result;
+  size_t codec_bytes = 0;
+
+  if (!state_initialized(state) || header == NULL)
+    return WORR_NATIVE_DEMO_RECORDER_INVALID_ARGUMENT;
+  if ((state->status.state_flags & WORR_NATIVE_DEMO_RECORDER_ACTIVE) == 0)
+    return WORR_NATIVE_DEMO_RECORDER_NOT_ACTIVE;
+  if (state->status.next_ordinal == 0)
+    return fail_active(state, WORR_NATIVE_DEMO_RECORDER_LIMIT);
+  /* The gamestate record must be the very first record; the order validator
+   * enforces bootstrap-precedes-everything, but reject early for a clear
+   * error. */
+  if ((state->order.state_flags & WORR_NATIVE_DEMO_ORDER_OBSERVED) != 0)
+    return fail_active(state, WORR_NATIVE_DEMO_RECORDER_ORDER);
+
+  codec_result = Worr_NativeCodecBootstrapEncodeV1(
+      header, strings, state->codec_bytes, state->codec_capacity, &codec_bytes);
+  state->status.last_codec_result = codec_result;
+  if (codec_result != WORR_NATIVE_CODEC_OK)
+    return fail_active(state, WORR_NATIVE_DEMO_RECORDER_CODEC);
+
+  memset(&record, 0, sizeof(record));
+  record.struct_size = sizeof(record);
+  record.schema_version = WORR_NATIVE_DEMO_ABI_VERSION;
+  record.record_kind = WORR_NATIVE_DEMO_RECORD_BOOTSTRAP_V1;
+  record.ordinal = state->status.next_ordinal;
+  record.time_us = 0; /* the gamestate record precedes the timeline */
+  return frame_and_commit_record(state, &record, codec_bytes);
+}
+
 worr_native_demo_recorder_result_v1 Worr_NativeDemoRecorderObserveCommandV1(
     worr_native_demo_recorder_state_v1 *state,
     const worr_command_record_v1 *command, uint16_t max_duration_ms) {

@@ -67,6 +67,8 @@ typedef enum worr_native_demo_record_kind_v1_e {
   WORR_NATIVE_DEMO_RECORD_COMMAND_V1 = WORR_NATIVE_RECORD_COMMAND_V1,
   WORR_NATIVE_DEMO_RECORD_SNAPSHOT_V1 = WORR_NATIVE_RECORD_SNAPSHOT_V1,
   WORR_NATIVE_DEMO_RECORD_EVENT_V1 = WORR_NATIVE_RECORD_EVENT_V1,
+  /* FR-10-T13 gamestate record; legal only as the first record of a stream. */
+  WORR_NATIVE_DEMO_RECORD_BOOTSTRAP_V1 = WORR_NATIVE_RECORD_BOOTSTRAP_V1,
 } worr_native_demo_record_kind_v1;
 
 typedef enum worr_native_demo_result_v1_e {

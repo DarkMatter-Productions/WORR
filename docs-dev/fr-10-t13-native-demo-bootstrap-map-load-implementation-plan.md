@@ -119,12 +119,24 @@ a "native_play loads the recorded map and renders" criterion).
   framing. Additive: existing COMMAND/SNAPSHOT/EVENT classes and their tests are
   unchanged; the build has no -Werror and only native_codec.c/native_demo.c
   switch on record_class.
-- **TODO — demo-format threading**: the ~15 record_kind sites + the
-  bootstrap-precedes-everything ordering rule.
-- **TODO — recorder capture**: fill the header/configstrings from `cl` and write
-  the bootstrap record first.
+- **DONE — demo-format threading** (`native_demo.c`, `native_envelope.c`, tested
+  by `network-native-demo-roundtrip`): `WORR_NATIVE_DEMO_RECORD_BOOTSTRAP_V1`
+  threaded through `record_kind_valid`, `record_info_valid`, the envelope
+  `record_class_valid`, and `record_ref_schema_valid`, plus the
+  bootstrap-precedes-everything ordering rule in `order_state_valid` /
+  `order_observe_ref` (bootstrap legal only as the first record; rejected
+  anywhere else before the per-class identity logic).
+- **DONE — recorder write core** (`Worr_NativeDemoRecorderBootstrapV1`, tested):
+  frames+writes the bootstrap record first (claiming the first ordinal), failing
+  closed if any record was already written. The roundtrip test proves a
+  bootstrap-first stream scans with the bootstrap as index entry 0 and that a
+  bootstrap after a snapshot is rejected. **TODO (client, running-game side)**:
+  fill the header/configstrings from live `cl` in `CL_NativeDemoRecord_f` and
+  call it before the first snapshot.
 - **TODO (running-game gate) — client map-load**: apply the decoded bootstrap and
-  reproduce the serverdata→configstrings→map→cgame sequence.
+  reproduce the serverdata→configstrings→map→cgame sequence. Optional
+  unit-testable helper first: a playback decode-at-index for the bootstrap record
+  (mirroring the command/event/snapshot decode-at-index family).
 
 ## Verification
 

@@ -138,6 +138,17 @@ worr_native_demo_recorder_result_v1 Worr_NativeDemoRecorderBeginV1(
     const worr_native_demo_recorder_sink_v1 *sink);
 
 /*
+ * FR-10-T13: writes the bootstrap (gamestate) record.  It must be the first
+ * record written after Begin (before any snapshot/command/event), claiming the
+ * first ordinal; the order validator enforces bootstrap-precedes-everything.
+ * strings must hold header->configstring_count entries (may be NULL when zero).
+ */
+worr_native_demo_recorder_result_v1 Worr_NativeDemoRecorderBootstrapV1(
+    worr_native_demo_recorder_state_v1 *state,
+    const worr_native_demo_bootstrap_header_v1 *header,
+    const worr_native_demo_bootstrap_configstring_v1 *strings);
+
+/*
  * Encodes one complete immutable snapshot to WNC1/WDR1 staging, validates a
  * private next ordering state, and commits accounting only after an exact
  * sink write.  DUPLICATE performs no write and leaves the recorder active.
