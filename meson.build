@@ -3749,6 +3749,21 @@ native_demo_roundtrip_test = executable(
   override_options: ['c_std=c11'],
 )
 
+native_demo_decoder_fuzz_test = executable(
+  'native_demo_decoder_fuzz_test',
+  'tools/networking/native_demo_decoder_fuzz_test.c',
+  dependencies: networking_math_deps,
+  include_directories: include_directories('inc'),
+  link_with: [native_demo_core_lib,
+              native_codec_core_lib,
+              native_envelope_core_lib,
+              canonical_command_core_lib,
+              canonical_event_core_lib,
+              canonical_snapshot_core_lib],
+  install: false,
+  override_options: ['c_std=c11'],
+)
+
 native_demo_playback_layout_c_test = executable(
   'native_demo_playback_layout_c_test',
   'tools/networking/native_demo_playback_layout_c.c',
@@ -5437,6 +5452,13 @@ test(
   native_demo_roundtrip_test,
   suite: 'networking',
   timeout: 30,
+)
+
+test(
+  'network-native-demo-decoder-fuzz',
+  native_demo_decoder_fuzz_test,
+  suite: 'networking',
+  timeout: 60,
 )
 
 test(
