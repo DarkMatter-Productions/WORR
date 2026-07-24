@@ -2862,12 +2862,18 @@ correction evidence.
   consumer the live snapshot shadow uses (ConsumeCanonicalSnapshot). It is a
   strict no-op unless enabled and a demo is loaded, leaves legacy .dm2 playback
   untouched, and degrades to advance-and-decode-only when no cgame consumer is
-  active. An adversarial review of the player fixed a zero-length-file buffer
+  active. Event steps are now also presented: each EVENT record is decoded and
+  submitted in canonical step order to the cgame event runtime's native consumer
+  (CL_CGameEventRuntimeGetNativeConsumerV1 -> SubmitAuthoritativeBatch), the same
+  admission path live authoritative events use, so the runtime owns present-once
+  ordering and epoch admission and safely rejects (never crashes) an event a
+  recording's epoch is not ready for. An adversarial review of the player fixed a
+  zero-length-file buffer
   leak and a disable/re-enable demo-clock fast-forward. What remains open: the
   standalone bootstrap
   data / map-load seam so a native demo can start a playable session without a
-  live connection, command/event replay into the live runtime (snapshot
-  presentation is wired; command/event consumers are not yet), file-backed
+  live connection (both snapshot and event presentation are wired but present
+  nothing until a cgame timeline is active), file-backed
   seek wiring, canonical timeline
   publication/reset,
   MVD/GTV,

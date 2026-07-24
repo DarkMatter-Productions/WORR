@@ -8,12 +8,14 @@ the Free Software Foundation; either version 2 of the License, or
 */
 
 #include "client.h"
+#include "client/cgame_event_runtime.h"
 #include "client/native_demo_player.h"
 #include "client/snapshot_shadow.h"
 
 #include "common/net/native_demo.h"
 #include "common/net/native_demo_playback.h"
 #include "common/net/native_demo_timeline.h"
+#include "common/net/native_event_admission.h"
 #include "common/net/snapshot_projection.h"
 
 #include <cstring>
@@ -41,6 +43,7 @@ struct client_native_demo_player_t {
     uint64_t clock_us{};
     uint64_t last_real_us{};
     uint64_t presented_snapshots{};
+    uint64_t presented_events{};
     uint64_t skipped_no_consumer{};
     bool clock_started{};
     char path[MAX_OSPATH]{};
@@ -73,6 +76,7 @@ void release_storage()
     player.clock_started = false;
     player.clock_us = 0;
     player.presented_snapshots = 0;
+    player.presented_events = 0;
     player.skipped_no_consumer = 0;
     player.path[0] = '\0';
 }
@@ -214,6 +218,36 @@ bool present_snapshot_at(uint64_t entry_index, uint64_t receive_time_us)
     return false;
 }
 
+/* Decodes and submits the event at the given index to the cgame event runtime's
+ * native consumer, when one is available.  The runtime owns ordering/present-
+ * once/epoch admission, so an event from a recording's epoch is safely rejected
+ * (never crashes) if the runtime is not ready for it.  Returns true if
+ * submitted. */
+bool present_event_at(uint64_t entry_index)
+{
+    worr_event_record_v1 event{};
+    worr_native_event_consumer_v1 consumer{};
+    worr_native_demo_playback_result_v1 decode;
+
+    decode = Worr_NativeDemoPlaybackDecodeEventV1(
+        &player.playback_cursor, player.bytes, player.byte_count, player.index,
+        (size_t)player.record_count, entry_index, player_entity_capacity,
+        &event);
+    if (decode != WORR_NATIVE_DEMO_PLAYBACK_OK)
+        return false;
+
+    if (!CL_CGameEventRuntimeGetNativeConsumerV1(&consumer) ||
+        consumer.SubmitAuthoritativeBatch == nullptr) {
+        player.skipped_no_consumer += 1;
+        return false;
+    }
+
+    /* Submit one event in canonical step order; the runtime dedups/orders. */
+    (void)consumer.SubmitAuthoritativeBatch(consumer.opaque, &event, 1);
+    player.presented_events += 1;
+    return true;
+}
+
 void CL_NativeDemoPlay_f()
 {
     char base[MAX_OSPATH];
@@ -312,11 +346,12 @@ void CL_NativeDemoPlayStatus_f()
                (unsigned long long)player.summary.snapshot_count,
                (unsigned long long)player.summary.command_count,
                (unsigned long long)player.summary.event_count);
-    Com_Printf("  frontier: %llu/%llu; presented %llu snapshots; %llu skipped "
-               "(no consumer)\n",
+    Com_Printf("  frontier: %llu/%llu; presented %llu snapshots, %llu events; "
+               "%llu skipped (no consumer)\n",
                (unsigned long long)player.exec_cursor.next_step,
                (unsigned long long)player.summary.step_count,
                (unsigned long long)player.presented_snapshots,
+               (unsigned long long)player.presented_events,
                (unsigned long long)player.skipped_no_consumer);
 }
 
@@ -385,9 +420,12 @@ extern "C" void CL_NativeDemoPlayerFrame(void)
             WORR_NATIVE_DEMO_RECORD_SNAPSHOT_V1) {
             (void)present_snapshot_at(player.steps[step].entry_index,
                                       player.steps[step].time_us);
+        } else if (player.steps[step].record_kind ==
+                   WORR_NATIVE_DEMO_RECORD_EVENT_V1) {
+            (void)present_event_at(player.steps[step].entry_index);
         }
-        /* Command and event replay into the live runtime present through the
-         * command/event consumers; wiring those is the remaining live-runtime
-         * step tracked in the roadmap and the verification runbook. */
+        /* Command replay into the live runtime (movement/weapon prediction) is
+         * driven by the live command stream, not demo playback; it is not
+         * presented here. */
     }
 }
