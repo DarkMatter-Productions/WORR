@@ -5,8 +5,10 @@
 
 #include "shared/local_action_rule_provider.h"
 
+#include "shared/command_abi.h"
 #include "shared/local_action_abi.h"
 #include "shared/local_action_catalog.h"
+#include "shared/prediction_abi.h"
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -150,6 +152,93 @@ static bool test_intent_adapter(void) {
   return true;
 }
 
+static worr_command_record_v1 make_command(
+    const worr_local_action_state_v2 *state, uint8_t duration_ms) {
+  worr_command_record_v1 command;
+  worr_command_id_v1 next_id = {0, 0};
+
+  memset(&command, 0, sizeof(command));
+  command.struct_size = sizeof(command);
+  command.schema_version = WORR_COMMAND_ABI_VERSION;
+  (void)Worr_CommandCursorNextIdV1(state->applied_cursor, &next_id);
+  command.command_id = next_id;
+  command.sample_time_us =
+      state->sample_time_us + (uint64_t)duration_ms * UINT64_C(1000);
+  command.movement_model_revision = WORR_PREDICTION_MODEL_REVISION;
+  command.command.struct_size = sizeof(command.command);
+  command.command.schema_version = WORR_PREDICTION_ABI_VERSION;
+  command.command.duration_ms = duration_ms;
+  command.render_watermark.struct_size = sizeof(command.render_watermark);
+  command.render_watermark.schema_version = WORR_COMMAND_ABI_VERSION;
+  return command;
+}
+
+/*
+ * Prove the provider's derived rule actually drives a correct predicted fire
+ * through the v2 core: a single-press Shotgun fires once on the attack rising
+ * edge, debits its fixed ammo, enters FIRING, and emits a WEAPON_FIRE event.
+ */
+static bool test_provider_fire_sequence(void) {
+  worr_local_action_state_v2 state;
+  worr_local_action_weapon_rule_v2 shotgun;
+  worr_local_action_weapon_rule_v2 absent;
+  worr_local_action_intent_v2 attack;
+  worr_command_record_v1 command;
+  worr_local_action_transaction_v2 tx;
+  const uint32_t initial_ammo = 3;
+  bool saw_fire = false;
+  uint32_t i;
+
+  CHECK(Worr_LocalActionStateInitV2(&state, 5u,
+                                    WORR_LOCAL_ACTION_CATALOG_SHOTGUN,
+                                    initial_ammo, 0));
+  CHECK(state.phase == WORR_LOCAL_ACTION_PHASE_READY);
+
+  memset(&shotgun, 0, sizeof(shotgun));
+  CHECK(Worr_LocalActionRuleProviderBuildRuleV1(
+      WORR_LOCAL_ACTION_CATALOG_SHOTGUN, &shotgun));
+
+  /* Canonical absent rule for the (empty) pending slot. */
+  memset(&absent, 0, sizeof(absent));
+  absent.struct_size = sizeof(absent);
+  absent.schema_version = WORR_LOCAL_ACTION_ABI_VERSION;
+  absent.model_revision = WORR_LOCAL_ACTION_MODEL_REVISION;
+  CHECK(Worr_LocalActionWeaponRuleValidateV2(&absent));
+
+  memset(&attack, 0, sizeof(attack));
+  CHECK(Worr_LocalActionRuleProviderBuildIntentV1(true, false, 0, 0, &attack));
+
+  command = make_command(&state, 10);
+  memset(&tx, 0, sizeof(tx));
+  CHECK(Worr_LocalActionBuildTransactionV2(
+      &state, &command, &attack, &shotgun, &absent,
+      WORR_LOCAL_ACTION_PRODUCER_PREDICTED, &tx));
+
+  CHECK(tx.state_after.active_ammo_units ==
+        initial_ammo - shotgun.ammo_per_shot);
+  CHECK(tx.state_after.phase == WORR_LOCAL_ACTION_PHASE_FIRING);
+  CHECK(tx.state_after.shot_sequence == 1);
+  CHECK(tx.event_count >= 1);
+  for (i = 0; i < tx.event_count; ++i) {
+    if (tx.events[i].kind == WORR_LOCAL_ACTION_EVENT_WEAPON_FIRE)
+      saw_fire = true;
+  }
+  CHECK(saw_fire);
+
+  /* Predicted and authoritative producers agree bit-for-bit on the semantic
+   * hashes (role is provenance only), which is what lets reconciliation match. */
+  {
+    worr_local_action_transaction_v2 authoritative;
+    memset(&authoritative, 0, sizeof(authoritative));
+    CHECK(Worr_LocalActionBuildTransactionV2(
+        &state, &command, &attack, &shotgun, &absent,
+        WORR_LOCAL_ACTION_PRODUCER_AUTHORITATIVE, &authoritative));
+    CHECK(authoritative.transaction_hash == tx.transaction_hash);
+    CHECK(authoritative.state_hash == tx.state_hash);
+  }
+  return true;
+}
+
 static bool test_digest_stable(void) {
   uint64_t first = 0;
   uint64_t second = 0;
@@ -165,7 +254,8 @@ static bool test_digest_stable(void) {
 
 int main(void) {
   if (!test_predictable_set() || !test_rules_valid() || !test_fixed_ammo() ||
-      !test_intent_adapter() || !test_digest_stable()) {
+      !test_intent_adapter() || !test_provider_fire_sequence() ||
+      !test_digest_stable()) {
     return 1;
   }
   puts("local_action_rule_provider_test: all checks passed");
