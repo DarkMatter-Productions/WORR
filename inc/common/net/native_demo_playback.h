@@ -111,6 +111,25 @@ typedef struct worr_native_demo_playback_frame_v1_s {
 } worr_native_demo_playback_frame_v1;
 
 /*
+ * Convenience that opens a whole WDM1 byte image (logical stream offset zero)
+ * in one call: it performs a bounded count-only scan, verifies the caller's
+ * index scratch is large enough, fills it with a second scan, and binds a
+ * ready cursor via Worr_NativeDemoPlaybackInitV1.  This encapsulates the
+ * two-pass scan whose results must agree exactly, so a file-backed reader only
+ * supplies the loaded bytes and a large-enough index buffer.
+ *
+ * On CAPACITY the required entry count is written to record_count_out (when
+ * non-null) so the caller can resize and retry; cursor_out is unchanged on
+ * every failure.  record_count_out is also set on success.  This core still
+ * opens no files: the caller owns the byte image and the index storage.
+ */
+worr_native_demo_playback_result_v1 Worr_NativeDemoPlaybackOpenV1(
+    const worr_native_demo_playback_config_v1 *config, const void *encoded,
+    size_t encoded_bytes, worr_native_demo_index_entry_v1 *index_scratch,
+    size_t index_capacity, worr_native_demo_playback_cursor_v1 *cursor_out,
+    uint64_t *record_count_out);
+
+/*
  * Binds an exact, already scanned WDM1 image and its complete caller-owned
  * index.  The stream is rescanned and the index independently revalidated;
  * cursor_out remains unchanged on every failure.

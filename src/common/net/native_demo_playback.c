@@ -716,6 +716,59 @@ worr_native_demo_playback_result_v1 Worr_NativeDemoPlaybackInitV1(
   return WORR_NATIVE_DEMO_PLAYBACK_OK;
 }
 
+worr_native_demo_playback_result_v1 Worr_NativeDemoPlaybackOpenV1(
+    const worr_native_demo_playback_config_v1 *config, const void *encoded,
+    size_t encoded_bytes, worr_native_demo_index_entry_v1 *index_scratch,
+    size_t index_capacity, worr_native_demo_playback_cursor_v1 *cursor_out,
+    uint64_t *record_count_out) {
+  worr_native_demo_scan_config_v1 scan_config;
+  worr_native_demo_scan_info_v1 count_scan;
+  worr_native_demo_scan_info_v1 fill_scan;
+  worr_native_demo_result_v1 nested;
+  size_t record_count;
+
+  if (config == NULL || cursor_out == NULL ||
+      (encoded_bytes != 0 && encoded == NULL)) {
+    return WORR_NATIVE_DEMO_PLAYBACK_INVALID_ARGUMENT;
+  }
+  if (!config_valid(config))
+    return WORR_NATIVE_DEMO_PLAYBACK_INVALID_CONFIG;
+
+  memset(&scan_config, 0, sizeof(scan_config));
+  scan_config.struct_size = sizeof(scan_config);
+  scan_config.schema_version = WORR_NATIVE_DEMO_ABI_VERSION;
+  scan_config.stream_offset = 0;
+  scan_config.max_records = config->max_records;
+  scan_config.max_entities = config->max_entities;
+
+  /* First pass: count records without filling any index. */
+  nested = Worr_NativeDemoStreamScanV1(&scan_config, encoded, encoded_bytes,
+                                       NULL, 0, &count_scan);
+  if (nested != WORR_NATIVE_DEMO_OK)
+    return demo_result(nested);
+  if (record_count_out != NULL)
+    *record_count_out = count_scan.record_count;
+  if (count_scan.record_count > (uint64_t)index_capacity)
+    return WORR_NATIVE_DEMO_PLAYBACK_CAPACITY;
+  record_count = (size_t)count_scan.record_count;
+  if ((uint64_t)record_count != count_scan.record_count)
+    return WORR_NATIVE_DEMO_PLAYBACK_LIMIT;
+  if (record_count != 0 && index_scratch == NULL)
+    return WORR_NATIVE_DEMO_PLAYBACK_INVALID_ARGUMENT;
+
+  /* Second pass: fill the caller-owned index; the two scans must agree. */
+  nested = Worr_NativeDemoStreamScanV1(&scan_config, encoded, encoded_bytes,
+                                       index_scratch, index_capacity,
+                                       &fill_scan);
+  if (nested != WORR_NATIVE_DEMO_OK)
+    return demo_result(nested);
+  if (!scan_equal(&count_scan, &fill_scan))
+    return WORR_NATIVE_DEMO_PLAYBACK_MUTATED;
+  return Worr_NativeDemoPlaybackInitV1(config, &fill_scan, encoded,
+                                       encoded_bytes, index_scratch,
+                                       record_count, cursor_out);
+}
+
 worr_native_demo_playback_result_v1 Worr_NativeDemoPlaybackPositionFirstV1(
     worr_native_demo_playback_cursor_v1 *cursor, const void *encoded,
     size_t encoded_bytes, const worr_native_demo_index_entry_v1 *entries,
