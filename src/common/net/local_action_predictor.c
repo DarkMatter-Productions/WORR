@@ -81,39 +81,39 @@ bool Worr_LocalActionPredictorSeedV1(worr_local_action_predictor_v1 *predictor,
   return true;
 }
 
-bool Worr_LocalActionPredictorReplayV1(
-    worr_local_action_predictor_v1 *predictor,
+/*
+ * Resolves the active/pending rules and intent for one command and builds the
+ * transaction with the requested role.  transaction_out must be zero on entry
+ * and is left byte-identical on any failure (rule/intent resolution never
+ * touches it, and the core build is itself byte-atomic).
+ */
+static bool build_transaction_for(
+    const worr_local_action_state_v2 *state_before,
     const worr_command_record_v1 *command, bool attack_held,
     bool switch_requested, uint32_t requested_weapon_id,
-    uint32_t requested_ammo_units,
+    uint32_t requested_ammo_units, uint32_t producer_role,
     worr_local_action_transaction_v2 *transaction_out) {
   worr_local_action_weapon_rule_v2 active;
   worr_local_action_weapon_rule_v2 pending;
   worr_local_action_intent_v2 intent;
-  worr_local_action_transaction_v2 transaction;
   uint32_t pending_target;
 
-  if (!predictor_shape_valid(predictor) || command == NULL)
-    return false;
-  if ((predictor->flags & WORR_LOCAL_ACTION_PREDICTOR_ACTIVE) == 0)
+  if (state_before == NULL || command == NULL)
     return false;
 
   memset(&active, 0, sizeof(active));
-  if (!Worr_LocalActionRuleProviderBuildRuleV1(
-          predictor->state.active_weapon_id, &active)) {
-    deactivate(predictor);
+  if (!Worr_LocalActionRuleProviderBuildRuleV1(state_before->active_weapon_id,
+                                               &active)) {
     return false;
   }
 
   memset(&pending, 0, sizeof(pending));
-  pending_target =
-      switch_requested ? requested_weapon_id : predictor->state.pending_weapon_id;
+  pending_target = switch_requested ? requested_weapon_id
+                                    : state_before->pending_weapon_id;
   if (pending_target != 0) {
-    if (!Worr_LocalActionRuleProviderBuildRuleV1(pending_target, &pending)) {
-      /* Switching to a non-predictable weapon cannot be predicted. */
-      deactivate(predictor);
+    /* Switching to a non-predictable weapon cannot be represented. */
+    if (!Worr_LocalActionRuleProviderBuildRuleV1(pending_target, &pending))
       return false;
-    }
   } else {
     make_absent_rule(&pending);
   }
@@ -122,14 +122,33 @@ bool Worr_LocalActionPredictorReplayV1(
   if (!Worr_LocalActionRuleProviderBuildIntentV1(
           attack_held, switch_requested, requested_weapon_id,
           requested_ammo_units, &intent)) {
-    deactivate(predictor);
     return false;
   }
 
+  return Worr_LocalActionBuildTransactionV2(state_before, command, &intent,
+                                            &active, &pending, producer_role,
+                                            transaction_out);
+}
+
+bool Worr_LocalActionPredictorReplayV1(
+    worr_local_action_predictor_v1 *predictor,
+    const worr_command_record_v1 *command, bool attack_held,
+    bool switch_requested, uint32_t requested_weapon_id,
+    uint32_t requested_ammo_units,
+    worr_local_action_transaction_v2 *transaction_out) {
+  worr_local_action_transaction_v2 transaction;
+
+  if (!predictor_shape_valid(predictor) || command == NULL)
+    return false;
+  if ((predictor->flags & WORR_LOCAL_ACTION_PREDICTOR_ACTIVE) == 0)
+    return false;
+
   memset(&transaction, 0, sizeof(transaction));
-  if (!Worr_LocalActionBuildTransactionV2(
-          &predictor->state, command, &intent, &active, &pending,
-          WORR_LOCAL_ACTION_PRODUCER_PREDICTED, &transaction)) {
+  if (!build_transaction_for(&predictor->state, command, attack_held,
+                             switch_requested, requested_weapon_id,
+                             requested_ammo_units,
+                             WORR_LOCAL_ACTION_PRODUCER_PREDICTED,
+                             &transaction)) {
     deactivate(predictor);
     return false;
   }
@@ -142,6 +161,26 @@ bool Worr_LocalActionPredictorReplayV1(
     *transaction_out = transaction;
   }
   return true;
+}
+
+bool Worr_LocalActionPredictorProduceV1(
+    const worr_local_action_state_v2 *state_before,
+    const worr_command_record_v1 *command, bool attack_held,
+    bool switch_requested, uint32_t requested_weapon_id,
+    uint32_t requested_ammo_units, uint32_t producer_role,
+    worr_local_action_transaction_v2 *transaction_out) {
+  if (transaction_out == NULL ||
+      !bytes_are_zero(transaction_out, sizeof(*transaction_out))) {
+    return false;
+  }
+  if (producer_role != WORR_LOCAL_ACTION_PRODUCER_PREDICTED &&
+      producer_role != WORR_LOCAL_ACTION_PRODUCER_AUTHORITATIVE) {
+    return false;
+  }
+  return build_transaction_for(state_before, command, attack_held,
+                               switch_requested, requested_weapon_id,
+                               requested_ammo_units, producer_role,
+                               transaction_out);
 }
 
 bool Worr_LocalActionPredictorReconcileV1(

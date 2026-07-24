@@ -236,9 +236,58 @@ static bool test_reconcile_match_and_resync(void) {
   return true;
 }
 
+static bool test_producer_matches_predictor(void) {
+  worr_local_action_predictor_v1 predictor;
+  worr_local_action_state_v2 before;
+  worr_local_action_transaction_v2 predicted;
+  worr_local_action_transaction_v2 authoritative;
+  worr_local_action_transaction_v2 zero_tx;
+  worr_local_action_correction_v2 correction;
+  worr_command_record_v1 command;
+
+  /* The client predictor (PREDICTED) and the server producer (AUTHORITATIVE),
+   * given the same observed state and command, produce hash-identical
+   * transactions -- the invariant that lets reconciliation converge across the
+   * two seams. */
+  CHECK(Worr_LocalActionPredictorSeedV1(
+      &predictor, 5u, WORR_LOCAL_ACTION_CATALOG_GRENADE_LAUNCHER, 5, 0));
+  CHECK(Worr_LocalActionPredictorGetStateV1(&predictor, &before));
+  command = make_command(&before, 15);
+
+  memset(&predicted, 0, sizeof(predicted));
+  CHECK(Worr_LocalActionPredictorReplayV1(&predictor, &command, true, false, 0,
+                                          0, &predicted));
+  memset(&authoritative, 0, sizeof(authoritative));
+  CHECK(Worr_LocalActionPredictorProduceV1(
+      &before, &command, true, false, 0, 0,
+      WORR_LOCAL_ACTION_PRODUCER_AUTHORITATIVE, &authoritative));
+
+  CHECK(predicted.producer_role == WORR_LOCAL_ACTION_PRODUCER_PREDICTED);
+  CHECK(authoritative.producer_role ==
+        WORR_LOCAL_ACTION_PRODUCER_AUTHORITATIVE);
+  CHECK(predicted.transaction_hash == authoritative.transaction_hash);
+  CHECK(predicted.state_hash == authoritative.state_hash);
+  CHECK(predicted.event_hash == authoritative.event_hash);
+
+  memset(&correction, 0, sizeof(correction));
+  CHECK(Worr_LocalActionPredictorReconcileV1(&predictor, &predicted,
+                                             &authoritative, &correction));
+  CHECK(correction.classification == WORR_LOCAL_ACTION_CORRECTION_NONE);
+
+  /* A non-zero output buffer and an invalid role both reject. */
+  CHECK(!Worr_LocalActionPredictorProduceV1(
+      &before, &command, true, false, 0, 0,
+      WORR_LOCAL_ACTION_PRODUCER_AUTHORITATIVE, &authoritative));
+  memset(&zero_tx, 0, sizeof(zero_tx));
+  CHECK(!Worr_LocalActionPredictorProduceV1(&before, &command, true, false, 0,
+                                            0, 99u, &zero_tx));
+  return true;
+}
+
 int main(void) {
   if (!test_seed_and_inactive() || !test_fire_drain_refire() ||
       !test_dry_fire() || !test_switch() ||
+      !test_producer_matches_predictor() ||
       !test_reconcile_match_and_resync()) {
     return 1;
   }

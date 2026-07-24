@@ -99,6 +99,26 @@ bool Worr_LocalActionPredictorReconcileV1(
     const worr_local_action_transaction_v2 *authoritative,
     worr_local_action_correction_v2 *correction_out);
 
+/*
+ * Stateless authoritative/predicted transaction builder shared by the client
+ * predictor replay and the server producer.  Given an immutable state_before
+ * and a command, it resolves the active and pending weapon rules from the
+ * ratified provider, adapts the intent, and builds the transaction with the
+ * caller's producer_role (PREDICTED or AUTHORITATIVE).  The server producer
+ * calls this with the weapon state it observed for the command; the client
+ * predictor replay is exactly this with role PREDICTED plus state ownership.
+ * Because producer role is excluded from all semantic hashes, the two sides
+ * produce identical hashes when their state, command, and rules agree.
+ * transaction_out must be entirely zero on entry; every failure (non-
+ * predictable weapon, invalid intent, core rejection) leaves it byte-identical.
+ */
+bool Worr_LocalActionPredictorProduceV1(
+    const worr_local_action_state_v2 *state_before,
+    const worr_command_record_v1 *command, bool attack_held,
+    bool switch_requested, uint32_t requested_weapon_id,
+    uint32_t requested_ammo_units, uint32_t producer_role,
+    worr_local_action_transaction_v2 *transaction_out);
+
 /* Copies the current owned state.  Fails if the predictor is not active. */
 bool Worr_LocalActionPredictorGetStateV1(
     const worr_local_action_predictor_v1 *predictor,
