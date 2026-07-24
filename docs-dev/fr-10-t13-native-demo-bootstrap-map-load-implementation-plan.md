@@ -109,9 +109,16 @@ a "native_play loads the recorded map and renders" criterion).
   fail-closed encoder/decoder and a roundtrip + capacity + malformed/truncated/
   reorder test. This is the data every later layer carries. Baselines are
   intentionally omitted (the first snapshot supplies entity state).
-- **TODO — codec-class wrapper**: wrap this payload as a WNC1 record class
-  `WORR_NATIVE_RECORD_BOOTSTRAP_V1` (native_envelope + native_codec) so a WDM1
-  record can carry it (the record body must be a codec image, see below).
+- **DONE — codec-class wrapper** (`WORR_NATIVE_RECORD_BOOTSTRAP_V1` in
+  native_envelope.h; `Worr_NativeCodecBootstrap{Preflight,Encode,Decode}V1` in
+  native_codec, tested by `network-native-codec`): a WNC1 record class wrapping
+  the bootstrap payload (fixed 184-byte header body + a variable configstring
+  range), so a WDM1 record can carry it while preserving the one-codec-image-per-
+  record invariant. Inspect/Validate recognize and fail-close the class; Encode/
+  Decode delegate the body to the tested payload core and add the canonical WNC1
+  framing. Additive: existing COMMAND/SNAPSHOT/EVENT classes and their tests are
+  unchanged; the build has no -Werror and only native_codec.c/native_demo.c
+  switch on record_class.
 - **TODO — demo-format threading**: the ~15 record_kind sites + the
   bootstrap-precedes-everything ordering rule.
 - **TODO — recorder capture**: fill the header/configstrings from `cl` and write

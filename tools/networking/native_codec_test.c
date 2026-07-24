@@ -1536,12 +1536,89 @@ static bool test_maximum_entity_snapshot_codec(void)
     return true;
 }
 
+static bool test_bootstrap_codec(void)
+{
+    worr_native_demo_bootstrap_header_v1 header;
+    worr_native_demo_bootstrap_configstring_v1 strings[3];
+    worr_native_demo_bootstrap_header_v1 decoded_header;
+    worr_native_demo_bootstrap_configstring_v1 decoded[8];
+    worr_native_codec_info_v1 info;
+    static uint8_t encoded[TEST_BUFFER_BYTES];
+    uint32_t pre = 0;
+    size_t out = 0;
+    int i;
+
+    memset(&header, 0, sizeof(header));
+    header.struct_size = sizeof(header);
+    header.schema_version = WORR_NATIVE_DEMO_BOOTSTRAP_ABI_VERSION;
+    header.protocol = 2023;
+    header.game_api = 1;
+    header.server_count = 7;
+    header.client_num = 2;
+    header.csr_variant = 2;
+    header.max_stats = 64;
+    header.map_checksum = 0x1234u;
+    header.configstring_count = 3;
+    memcpy(header.gamedir, "baseq2", sizeof("baseq2"));
+    memcpy(header.mapname, "maps/base1.bsp", sizeof("maps/base1.bsp"));
+    memset(strings, 0, sizeof(strings));
+    for (i = 0; i < 3; ++i) {
+        strings[i].index = (uint16_t)(1 + i * 5);
+        strings[i].length =
+            (uint16_t)snprintf(strings[i].value, sizeof(strings[i].value),
+                               "models/x%d.md2", i);
+    }
+
+    /* Preflight equals encode size; encode wraps the payload in a WNC1 image. */
+    CHECK(Worr_NativeCodecBootstrapPreflightV1(&header, strings, &pre) ==
+          WORR_NATIVE_CODEC_OK);
+    CHECK(Worr_NativeCodecBootstrapEncodeV1(&header, strings, encoded,
+                                            sizeof(encoded), &out) ==
+          WORR_NATIVE_CODEC_OK);
+    CHECK(out == pre);
+
+    /* Inspect recognizes the bootstrap class and its framing. */
+    CHECK(Worr_NativeCodecInspectV1(encoded, out, &info) ==
+          WORR_NATIVE_CODEC_OK);
+    CHECK(info.record_class == WORR_NATIVE_RECORD_BOOTSTRAP_V1);
+    CHECK(info.fixed_body_bytes ==
+          WORR_NATIVE_CODEC_BOOTSTRAP_FIXED_BODY_BYTES);
+    CHECK(info.encoded_bytes == out);
+
+    /* Generic validate accepts it without materializing configstrings. */
+    CHECK(Worr_NativeCodecValidateV1(encoded, out, TEST_MAX_ENTITIES) ==
+          WORR_NATIVE_CODEC_OK);
+
+    /* Decode reproduces the header and configstrings byte-exactly. */
+    memset(&decoded_header, 0, sizeof(decoded_header));
+    memset(decoded, 0, sizeof(decoded));
+    CHECK(Worr_NativeCodecBootstrapDecodeV1(encoded, out, &decoded_header,
+                                            decoded, 8) ==
+          WORR_NATIVE_CODEC_OK);
+    CHECK(memcmp(&decoded_header, &header, sizeof(header)) == 0);
+    CHECK(memcmp(decoded, strings, sizeof(strings)) == 0);
+
+    /* A command decoder rejects the bootstrap class (cross-class guard). */
+    {
+        worr_command_record_v1 command;
+        CHECK(Worr_NativeCodecCommandDecodeV1(
+                  encoded, out, WORR_COMMAND_MAX_NEGOTIATED_DURATION_MS,
+                  &command) == WORR_NATIVE_CODEC_UNSUPPORTED);
+    }
+
+    /* A one-byte truncation fails closed. */
+    CHECK(Worr_NativeCodecInspectV1(encoded, out - 1, &info) !=
+          WORR_NATIVE_CODEC_OK);
+    return true;
+}
+
 int main(void)
 {
     if (!test_command_codec() || !test_event_codecs() ||
         !test_event_batch_codec() ||
         !test_snapshot_codec() || !test_empty_snapshot_codec() ||
-        !test_maximum_entity_snapshot_codec()) {
+        !test_maximum_entity_snapshot_codec() ||
+        !test_bootstrap_codec()) {
         return 1;
     }
     puts("native codec tests passed");

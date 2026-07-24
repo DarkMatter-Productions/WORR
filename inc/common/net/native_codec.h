@@ -9,6 +9,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #pragma once
 
+#include "common/net/native_demo_bootstrap.h"
 #include "common/net/snapshot_projection.h"
 #include "common/net/snapshot_store.h"
 #include "shared/command_abi.h"
@@ -53,6 +54,9 @@ extern "C" {
 #define WORR_NATIVE_CODEC_SNAPSHOT_ENTITY_MIN_BYTES 52u
 #define WORR_NATIVE_CODEC_SNAPSHOT_ENTITY_MAX_BYTES 125u
 #define WORR_NATIVE_CODEC_SNAPSHOT_EVENT_REF_BYTES 30u
+/* FR-10-T13 bootstrap: fixed header body + a variable configstring range. */
+#define WORR_NATIVE_CODEC_BOOTSTRAP_FIXED_BODY_BYTES \
+    WORR_NATIVE_DEMO_BOOTSTRAP_HEADER_WIRE_BYTES
 
 typedef enum worr_native_codec_result_v1_e {
     WORR_NATIVE_CODEC_OK = 0,
@@ -171,6 +175,29 @@ worr_native_codec_result_v1 Worr_NativeCodecEventStreamDecodeV1(
     const void *encoded,
     size_t encoded_bytes,
     worr_event_stream_descriptor_v1 *descriptor_out);
+
+/*
+ * FR-10-T13 bootstrap (gamestate) record: a WNC1 wrapper around the native-demo
+ * bootstrap payload (serverdata identity + configstrings).  Demo-only; never
+ * carried on the live transport.  Encode/decode delegate the body to
+ * Worr_NativeDemoBootstrap*V1 and add the canonical WNC1 framing.
+ */
+worr_native_codec_result_v1 Worr_NativeCodecBootstrapPreflightV1(
+    const worr_native_demo_bootstrap_header_v1 *header,
+    const worr_native_demo_bootstrap_configstring_v1 *strings,
+    uint32_t *encoded_bytes_out);
+worr_native_codec_result_v1 Worr_NativeCodecBootstrapEncodeV1(
+    const worr_native_demo_bootstrap_header_v1 *header,
+    const worr_native_demo_bootstrap_configstring_v1 *strings,
+    void *encoded_out,
+    size_t encoded_capacity,
+    size_t *encoded_bytes_out);
+worr_native_codec_result_v1 Worr_NativeCodecBootstrapDecodeV1(
+    const void *encoded,
+    size_t encoded_bytes,
+    worr_native_demo_bootstrap_header_v1 *header_out,
+    worr_native_demo_bootstrap_configstring_v1 *strings_out,
+    size_t strings_capacity);
 
 /*
  * max_entities is the exclusive entity-index limit.  The independently

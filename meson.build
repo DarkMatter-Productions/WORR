@@ -1819,6 +1819,7 @@ native_codec_core_lib = static_library(
   [
     'src/common/net/native_codec.c',
     'src/common/net/native_event_batch.c',
+    'src/common/net/native_demo_bootstrap.c',
   ],
   include_directories: include_directories('inc'),
   c_args: prediction_core_c_fp_args,

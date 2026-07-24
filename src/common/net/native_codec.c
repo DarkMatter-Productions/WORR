@@ -245,6 +245,10 @@ static bool info_valid(const worr_native_codec_info_v1 *info)
         return info->record_schema_version ==
                    WORR_EVENT_STREAM_ABI_VERSION &&
                info->model_revision == WORR_EVENT_MODEL_REVISION;
+    case WORR_NATIVE_RECORD_BOOTSTRAP_V1:
+        return info->record_schema_version ==
+                   WORR_NATIVE_DEMO_BOOTSTRAP_ABI_VERSION &&
+               info->model_revision == WORR_NATIVE_DEMO_BOOTSTRAP_ABI_VERSION;
     default:
         return false;
     }
@@ -378,6 +382,22 @@ worr_native_codec_result_v1 Worr_NativeCodecInspectV1(
                             WORR_NATIVE_CODEC_SNAPSHOT_EVENT_REF_BYTES;
         if (info.encoded_bytes < minimum_bytes)
             return WORR_NATIVE_CODEC_MALFORMED;
+        break;
+    case WORR_NATIVE_RECORD_BOOTSTRAP_V1:
+        if (info.record_schema_version !=
+                WORR_NATIVE_DEMO_BOOTSTRAP_ABI_VERSION ||
+            info.model_revision != WORR_NATIVE_DEMO_BOOTSTRAP_ABI_VERSION) {
+            return WORR_NATIVE_CODEC_UNSUPPORTED;
+        }
+        if (info.fixed_body_bytes !=
+                WORR_NATIVE_CODEC_BOOTSTRAP_FIXED_BODY_BYTES ||
+            info.range_counts[1] != 0 || info.range_counts[2] != 0 ||
+            info.encoded_bytes !=
+                WORR_NATIVE_CODEC_WIRE_HEADER_BYTES +
+                    WORR_NATIVE_CODEC_BOOTSTRAP_FIXED_BODY_BYTES +
+                    info.range_counts[0]) {
+            return WORR_NATIVE_CODEC_MALFORMED;
+        }
         break;
     default:
         return WORR_NATIVE_CODEC_UNSUPPORTED;
@@ -528,6 +548,115 @@ worr_native_codec_result_v1 Worr_NativeCodecEventStreamDecodeV1(
         return WORR_NATIVE_CODEC_INVALID_RECORD;
     *descriptor_out = descriptor;
     return WORR_NATIVE_CODEC_OK;
+}
+
+static worr_native_codec_result_v1 bootstrap_result_to_codec(
+    worr_native_demo_bootstrap_result_v1 result)
+{
+    switch (result) {
+    case WORR_NATIVE_DEMO_BOOTSTRAP_OK:
+        return WORR_NATIVE_CODEC_OK;
+    case WORR_NATIVE_DEMO_BOOTSTRAP_INVALID_ARGUMENT:
+        return WORR_NATIVE_CODEC_INVALID_ARGUMENT;
+    case WORR_NATIVE_DEMO_BOOTSTRAP_INVALID_METADATA:
+        return WORR_NATIVE_CODEC_INVALID_RECORD;
+    case WORR_NATIVE_DEMO_BOOTSTRAP_OUTPUT_TOO_SMALL:
+        return WORR_NATIVE_CODEC_OUTPUT_TOO_SMALL;
+    case WORR_NATIVE_DEMO_BOOTSTRAP_LIMIT:
+        return WORR_NATIVE_CODEC_LIMIT;
+    case WORR_NATIVE_DEMO_BOOTSTRAP_CAPACITY:
+        return WORR_NATIVE_CODEC_CAPACITY;
+    case WORR_NATIVE_DEMO_BOOTSTRAP_TRUNCATED:
+    case WORR_NATIVE_DEMO_BOOTSTRAP_MALFORMED:
+    default:
+        return WORR_NATIVE_CODEC_MALFORMED;
+    }
+}
+
+worr_native_codec_result_v1 Worr_NativeCodecBootstrapPreflightV1(
+    const worr_native_demo_bootstrap_header_v1 *header,
+    const worr_native_demo_bootstrap_configstring_v1 *strings,
+    uint32_t *encoded_bytes_out)
+{
+    size_t payload_bytes = 0;
+    worr_native_codec_result_v1 result;
+    uint64_t total;
+
+    if (encoded_bytes_out == NULL)
+        return WORR_NATIVE_CODEC_INVALID_ARGUMENT;
+    result = bootstrap_result_to_codec(
+        Worr_NativeDemoBootstrapPreflightV1(header, strings, &payload_bytes));
+    if (result != WORR_NATIVE_CODEC_OK)
+        return result;
+    total = (uint64_t)WORR_NATIVE_CODEC_WIRE_HEADER_BYTES + payload_bytes;
+    if (total > WORR_NATIVE_CODEC_MAX_ENCODED_BYTES)
+        return WORR_NATIVE_CODEC_LIMIT;
+    *encoded_bytes_out = (uint32_t)total;
+    return WORR_NATIVE_CODEC_OK;
+}
+
+worr_native_codec_result_v1 Worr_NativeCodecBootstrapEncodeV1(
+    const worr_native_demo_bootstrap_header_v1 *header,
+    const worr_native_demo_bootstrap_configstring_v1 *strings,
+    void *encoded_out,
+    size_t encoded_capacity,
+    size_t *encoded_bytes_out)
+{
+    uint32_t encoded_bytes;
+    size_t payload_written = 0;
+    worr_native_codec_result_v1 result;
+    byte_writer writer;
+
+    if (encoded_out == NULL || encoded_bytes_out == NULL)
+        return WORR_NATIVE_CODEC_INVALID_ARGUMENT;
+    result = Worr_NativeCodecBootstrapPreflightV1(header, strings,
+                                                  &encoded_bytes);
+    if (result != WORR_NATIVE_CODEC_OK)
+        return result;
+    if (encoded_capacity < encoded_bytes)
+        return WORR_NATIVE_CODEC_OUTPUT_TOO_SMALL;
+
+    writer.cursor = (uint8_t *)encoded_out;
+    write_header(&writer, WORR_NATIVE_RECORD_BOOTSTRAP_V1,
+                 WORR_NATIVE_DEMO_BOOTSTRAP_ABI_VERSION,
+                 WORR_NATIVE_DEMO_BOOTSTRAP_ABI_VERSION, encoded_bytes,
+                 WORR_NATIVE_CODEC_BOOTSTRAP_FIXED_BODY_BYTES,
+                 encoded_bytes - WORR_NATIVE_CODEC_WIRE_HEADER_BYTES -
+                     WORR_NATIVE_CODEC_BOOTSTRAP_FIXED_BODY_BYTES,
+                 0, 0, WORR_NATIVE_DEMO_BOOTSTRAP_ABI_VERSION,
+                 WORR_NATIVE_DEMO_BOOTSTRAP_ABI_VERSION);
+    result = bootstrap_result_to_codec(Worr_NativeDemoBootstrapEncodeV1(
+        header, strings, (uint8_t *)encoded_out +
+                             WORR_NATIVE_CODEC_WIRE_HEADER_BYTES,
+        encoded_capacity - WORR_NATIVE_CODEC_WIRE_HEADER_BYTES,
+        &payload_written));
+    if (result != WORR_NATIVE_CODEC_OK)
+        return result;
+    *encoded_bytes_out = encoded_bytes;
+    return WORR_NATIVE_CODEC_OK;
+}
+
+worr_native_codec_result_v1 Worr_NativeCodecBootstrapDecodeV1(
+    const void *encoded,
+    size_t encoded_bytes,
+    worr_native_demo_bootstrap_header_v1 *header_out,
+    worr_native_demo_bootstrap_configstring_v1 *strings_out,
+    size_t strings_capacity)
+{
+    worr_native_codec_info_v1 info;
+    worr_native_codec_result_v1 result;
+
+    if (header_out == NULL)
+        return WORR_NATIVE_CODEC_INVALID_ARGUMENT;
+    result = Worr_NativeCodecInspectV1(encoded, encoded_bytes, &info);
+    if (result != WORR_NATIVE_CODEC_OK)
+        return result;
+    if (info.record_class != WORR_NATIVE_RECORD_BOOTSTRAP_V1)
+        return WORR_NATIVE_CODEC_UNSUPPORTED;
+    return bootstrap_result_to_codec(Worr_NativeDemoBootstrapDecodeV1(
+        (const uint8_t *)encoded + WORR_NATIVE_CODEC_WIRE_HEADER_BYTES,
+        encoded_bytes - WORR_NATIVE_CODEC_WIRE_HEADER_BYTES, header_out,
+        strings_out, strings_capacity));
 }
 
 static void write_command_body(byte_writer *writer,
@@ -2616,6 +2745,12 @@ worr_native_codec_result_v1 Worr_NativeCodecValidateV1(
         snapshot_decode_validation validation;
         return validate_snapshot_wire(encoded, encoded_bytes, &info,
                                       max_entities, &validation);
+    }
+    case WORR_NATIVE_RECORD_BOOTSTRAP_V1: {
+        /* Validate the whole bootstrap without materializing configstrings. */
+        worr_native_demo_bootstrap_header_v1 header;
+        return Worr_NativeCodecBootstrapDecodeV1(encoded, encoded_bytes,
+                                                 &header, NULL, 0);
     }
     default:
         return WORR_NATIVE_CODEC_UNSUPPORTED;

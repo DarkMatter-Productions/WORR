@@ -42,6 +42,9 @@ typedef enum worr_native_record_class_v1_e {
     WORR_NATIVE_RECORD_SNAPSHOT_V1 = 2,
     WORR_NATIVE_RECORD_EVENT_V1 = 3,
     WORR_NATIVE_RECORD_EVENT_STREAM_DESCRIPTOR_V1 = 4,
+    /* FR-10-T13 demo-only gamestate record; never carried on the live
+     * transport (only the WDM1 demo format encodes/decodes it). */
+    WORR_NATIVE_RECORD_BOOTSTRAP_V1 = 5,
 } worr_native_record_class_v1;
 
 /*
