@@ -116,6 +116,42 @@ static bool test_fire_drain_refire(void) {
   return true;
 }
 
+static bool drain_to_ready(worr_local_action_predictor_v1 *predictor,
+                           worr_local_action_state_v2 *state) {
+  uint32_t guard;
+  for (guard = 0; guard < 64u; ++guard) {
+    CHECK(replay(predictor, 250, true, NULL));
+    CHECK(Worr_LocalActionPredictorGetStateV1(predictor, state));
+    if (state->phase == WORR_LOCAL_ACTION_PHASE_READY)
+      return true;
+  }
+  return false;
+}
+
+static bool test_dry_fire(void) {
+  worr_local_action_predictor_v1 predictor;
+  worr_local_action_state_v2 state;
+
+  /* One shell: the first press fires it, a later press with no ammo dry-fires
+   * -- no shot, no ammo change, and the dry-fire latch is set. */
+  CHECK(Worr_LocalActionPredictorSeedV1(
+      &predictor, 5u, WORR_LOCAL_ACTION_CATALOG_SHOTGUN, 1, 0));
+  CHECK(replay(&predictor, 10, true, NULL));
+  CHECK(Worr_LocalActionPredictorGetStateV1(&predictor, &state));
+  CHECK(state.active_ammo_units == 0);
+  CHECK(state.shot_sequence == 1);
+  CHECK(drain_to_ready(&predictor, &state));
+
+  CHECK(replay(&predictor, 10, false, NULL));
+  CHECK(replay(&predictor, 10, true, NULL));
+  CHECK(Worr_LocalActionPredictorGetStateV1(&predictor, &state));
+  CHECK(state.phase == WORR_LOCAL_ACTION_PHASE_READY);
+  CHECK(state.active_ammo_units == 0);
+  CHECK(state.shot_sequence == 1);
+  CHECK((state.flags & WORR_LOCAL_ACTION_STATE_DRY_FIRE_LATCHED) != 0);
+  return true;
+}
+
 static bool test_reconcile_match_and_resync(void) {
   worr_local_action_predictor_v1 predictor;
   worr_local_action_transaction_v2 predicted_one;
@@ -165,7 +201,7 @@ static bool test_reconcile_match_and_resync(void) {
 
 int main(void) {
   if (!test_seed_and_inactive() || !test_fire_drain_refire() ||
-      !test_reconcile_match_and_resync()) {
+      !test_dry_fire() || !test_reconcile_match_and_resync()) {
     return 1;
   }
   puts("local_action_predictor_test: all checks passed");
