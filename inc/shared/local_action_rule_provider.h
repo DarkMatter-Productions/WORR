@@ -56,7 +56,11 @@ extern "C" {
  * mask excludes every input that makes the local animation timeline
  * non-deterministic on the client (held/spin repeat, hold-release, staged
  * fire, mode override, external client state) and whose per-shot ammo debit is
- * fixed (semantics min == max).  Returns false for an invalid catalog id.
+ * fixed (semantics min == max).  That resolves to Blaster, Shotgun, Super
+ * Shotgun, Grenade Launcher, Prox Launcher, Rocket Launcher, Railgun, and
+ * Disruptor; projectile weapons qualify for local phase/ammo/muzzle prediction
+ * while their projectile and damage stay authoritative.  Returns false for an
+ * invalid catalog id.
  */
 bool Worr_LocalActionRuleProviderPredictableV1(uint32_t catalog_id);
 

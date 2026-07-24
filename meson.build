@@ -3244,6 +3244,17 @@ local_action_weapon_profile_test = executable(
   override_options: ['c_std=c11'],
 )
 
+local_action_rule_provider_test = executable(
+  'local_action_rule_provider_test',
+  'tools/networking/local_action_rule_provider_test.c',
+  dependencies: networking_math_deps,
+  include_directories: include_directories('inc', 'q2proto/inc'),
+  link_with: [local_action_catalog_core_lib, canonical_local_action_core_lib,
+              canonical_event_core_lib, canonical_command_core_lib],
+  install: false,
+  override_options: ['c_std=c11'],
+)
+
 local_action_weapon_semantics_test = executable(
   'local_action_weapon_semantics_test',
   'tools/networking/local_action_weapon_semantics_test.c',
@@ -5072,6 +5083,13 @@ test(
 test(
   'network-local-action-catalog',
   local_action_catalog_test,
+  suite: 'networking',
+  timeout: 30,
+)
+
+test(
+  'network-local-action-rule-provider',
+  local_action_rule_provider_test,
   suite: 'networking',
   timeout: 30,
 )

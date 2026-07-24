@@ -1782,7 +1782,9 @@ correction evidence.
   local-timeline hazard (held/spin repeat, hold-release, staged fire, mode
   override, external client state) and whose per-shot ammo debit is fixed
   (semantics min == max), which resolves to Blaster, Shotgun, Super Shotgun,
-  Grenade Launcher, Railgun, and Disruptor. Predictable local state is phase/
+  Grenade Launcher, Prox Launcher, Rocket Launcher, Railgun, and Disruptor (a
+  dedicated unit test verifies the derived 8-weapon set and that every derived
+  rule validates under the v2 core). Predictable local state is phase/
   animation timing, the muzzle/fire presentation event, and the fixed ammo
   debit; all world effects stay server-authoritative, exactly as the non-zero
   blocker masks encode. Every derived rule validates under
