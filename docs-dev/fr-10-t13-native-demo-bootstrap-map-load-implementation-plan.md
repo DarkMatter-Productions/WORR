@@ -138,8 +138,23 @@ a "native_play loads the recorded map and renders" criterion).
 - **DONE — playback bootstrap decode-at-index**
   (`Worr_NativeDemoPlaybackDecodeBootstrapAtV1`, tested): the client map-load
   reads the gamestate at index entry 0 with this.
-- **TODO (running-game gate) — client map-load**: the one remaining piece. The
-  player already decodes and stages the bootstrap (`player.bootstrap_header`);
+- **DONE (best-effort, UNVERIFIED) — client map-load** (`CL_NativeDemoMapLoad_f`,
+  the `native_mapload` command): applies the decoded bootstrap to `cl`/`cls` and
+  reproduces the serverdata + demo-precache sequence (`CL_ClearState`, populate
+  `cl` identity + `cl.csr` + `cl.configstrings`, `CG_Load`/`cgame->Init`, then
+  `CL_RegisterVWepModels`/`CL_RegisterBspModels`/`CL_PrepRenderer`/
+  `CL_RegisterSounds`/`CL_LoadState`, `cls.state = ca_precached`) **additively**
+  via public entry points -- it modifies no legacy function, and it runs only on
+  the explicit opt-in `native_mapload` command, so a fault is confined to this
+  experimental path and cannot touch legacy `.dm2`/live play. Compiles and links.
+  Its runtime correctness (the exact stateful order, cgame/renderer assumptions,
+  cl.frame/q2proto-context expectations) is the running-game gate the plan's
+  Definition-of-Done requires a live session to validate -- see the runbook.
+  Historical note: the earlier blocker below assumed the precache trigger had to
+  be reused; it was avoided by reproducing the demo-precache steps directly from
+  their public entry points.
+- (superseded) The player already decodes and stages the bootstrap
+  (`player.bootstrap_header`);
   what remains is applying it to `cl` and triggering the map load. Concrete
   blocker found: the load/init trigger `CL_Precache_f` is **static**
   (`main.cpp:1860`) and its map-load branch is gated on `cls.demo.playback`

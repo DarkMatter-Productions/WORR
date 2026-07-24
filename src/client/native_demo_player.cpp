@@ -345,6 +345,94 @@ void CL_NativeDemoPlay_f()
                    "but presents nothing until a map is loaded.\n");
 }
 
+/*
+ * FR-10-T13 client map-load (best-effort, UNVERIFIED, doubly opt-in).
+ *
+ * Applies the loaded demo's bootstrap gamestate to the live client and drives
+ * the map/cgame load so the already-wired snapshot/event presentation renders,
+ * WITHOUT a live connection.  It reproduces the serverdata + demo-precache
+ * sequence (CL_ParseServerData / CL_Precache_f demo branch) additively using
+ * public entry points -- it modifies no legacy function and runs only on the
+ * explicit `native_mapload` command, so a fault is confined to this experimental
+ * path and cannot affect legacy .dm2 or live play.  Its correctness (the exact
+ * stateful order, cgame/renderer assumptions) is a running-game gate; see the
+ * verification runbook.
+ */
+void CL_NativeDemoMapLoad_f()
+{
+    worr_native_demo_bootstrap_configstring_v1 *strings = nullptr;
+    const worr_native_demo_bootstrap_header_v1 *b = &player.bootstrap_header;
+    uint32_t i;
+
+    if (!player.loaded || !player.has_bootstrap) {
+        Com_Printf("No native demo with a bootstrap gamestate is loaded. Run "
+                   "native_play <name> first.\n");
+        return;
+    }
+
+    /* Decode the configstrings staged with the bootstrap. */
+    if (b->configstring_count != 0) {
+        strings = (worr_native_demo_bootstrap_configstring_v1 *)Z_Malloc(
+            sizeof(*strings) * b->configstring_count);
+        worr_native_demo_bootstrap_header_v1 tmp;
+        if (Worr_NativeDemoPlaybackDecodeBootstrapAtV1(
+                &player.playback_cursor, player.bytes, player.byte_count,
+                player.index, (size_t)player.record_count, 0u, &tmp, strings,
+                b->configstring_count) != WORR_NATIVE_DEMO_PLAYBACK_OK) {
+            Z_Free(strings);
+            Com_Printf("Failed to decode bootstrap configstrings.\n");
+            return;
+        }
+    }
+
+    /* Apply the serverdata identity (mirrors CL_ParseServerData). */
+    cls.serverProtocol = (int)b->protocol;
+    CL_ClearState();
+    cl.servercount = (int)b->server_count;
+    Q_strlcpy(cl.gamedir, b->gamedir, sizeof(cl.gamedir));
+    cl.clientNum = b->client_num;
+    cl.csr = (b->game_api == Q2PROTO_GAME_RERELEASE) ? cs_remap_rerelease
+                                                     : cs_remap_old;
+    cl.max_stats = (int)b->max_stats;
+    cl.game_api = (q2proto_game_api_t)b->game_api;
+    cl.serverstate = ss_game;
+    Q_strlcpy(cl.mapname, b->mapname, sizeof(cl.mapname));
+
+    /* Apply configstrings directly into cl. */
+    for (i = 0; strings && i < b->configstring_count; ++i) {
+        uint16_t idx = strings[i].index;
+        uint16_t len = strings[i].length;
+        if (idx >= MAX_CONFIGSTRINGS)
+            continue;
+        if (len > CS_MAX_STRING_LENGTH)
+            len = CS_MAX_STRING_LENGTH;
+        memset(cl.configstrings[idx], 0, sizeof(cl.configstrings[idx]));
+        memcpy(cl.configstrings[idx], strings[i].value, len);
+    }
+    if (strings)
+        Z_Free(strings);
+
+    /* Load cgame, then reproduce the demo-precache sequence directly. */
+    cls.state = ca_connected;
+    CG_Load(cl.gamedir, cl.game_api == Q2PROTO_GAME_RERELEASE);
+    if (cgame)
+        cgame->Init();
+    cls.state = ca_loading;
+    CL_LoadState(LOAD_MAP);
+    CL_RegisterVWepModels();
+    CL_RegisterBspModels();
+    CL_PrepRenderer();
+    CL_LoadState(LOAD_SOUNDS);
+    CL_RegisterSounds();
+    CL_LoadState(LOAD_NONE);
+    cls.state = ca_precached;
+
+    Com_Printf("Native map-load applied for %s (best-effort, UNVERIFIED). "
+               "Presentation renders as the plan advances; validate on a live "
+               "client per the runbook.\n",
+               cl.mapname);
+}
+
 void CL_NativeDemoStopPlay_f()
 {
     if (!player.loaded) {
@@ -383,6 +471,7 @@ void CL_NativeDemoPlayStatus_f()
 
 const cmdreg_t native_demo_player_commands[] = {
     {"native_play", CL_NativeDemoPlay_f},
+    {"native_mapload", CL_NativeDemoMapLoad_f},
     {"native_stop_play", CL_NativeDemoStopPlay_f},
     {"native_play_status", CL_NativeDemoPlayStatus_f},
     {nullptr},
