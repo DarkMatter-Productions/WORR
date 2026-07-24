@@ -124,6 +124,44 @@ bool Worr_LocalActionPredictorGetStateV1(
     const worr_local_action_predictor_v1 *predictor,
     worr_local_action_state_v2 *state_out);
 
+/*
+ * Compact pointer-free seed record: the transport payload that carries the
+ * server's exact authoritative weapon state to the client so the client can
+ * seed its predictor at a known command boundary.  It rides the native
+ * side-channel (a versioned record, not the frozen snapshot ABI or a
+ * legacy-compat-breaking stat), so it is default-off and never alters the
+ * legacy wire.  The state's applied_cursor names the boundary; the client
+ * replays commands after it.
+ */
+#define WORR_LOCAL_ACTION_PREDICT_SEED_ABI_VERSION 1u
+
+typedef struct worr_local_action_predict_seed_v1_s {
+  uint32_t struct_size;
+  uint32_t schema_version;
+  uint32_t catalog_id;
+  uint32_t reserved0;
+  worr_local_action_state_v2 state;
+} worr_local_action_predict_seed_v1;
+
+/*
+ * Builds a seed from an authoritative weapon state.  Fails (and zeroes
+ * seed_out) unless the state is valid and its weapon is client-predictable.
+ */
+bool Worr_LocalActionPredictSeedBuildV1(
+    const worr_local_action_state_v2 *state,
+    worr_local_action_predict_seed_v1 *seed_out);
+
+bool Worr_LocalActionPredictSeedValidateV1(
+    const worr_local_action_predict_seed_v1 *seed);
+
+/*
+ * Applies a received seed to a predictor, activating it at the seed's exact
+ * state.  Fails (leaving the predictor inactive/zeroed) on an invalid seed.
+ */
+bool Worr_LocalActionPredictSeedApplyV1(
+    const worr_local_action_predict_seed_v1 *seed,
+    worr_local_action_predictor_v1 *predictor_out);
+
 #ifdef __cplusplus
 }
 #endif

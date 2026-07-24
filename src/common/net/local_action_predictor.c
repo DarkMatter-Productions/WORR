@@ -238,3 +238,46 @@ bool Worr_LocalActionPredictorGetStateV1(
   *state_out = predictor->state;
   return true;
 }
+
+bool Worr_LocalActionPredictSeedBuildV1(
+    const worr_local_action_state_v2 *state,
+    worr_local_action_predict_seed_v1 *seed_out) {
+  if (seed_out == NULL)
+    return false;
+  memset(seed_out, 0, sizeof(*seed_out));
+  if (state == NULL || !Worr_LocalActionStateValidateV2(state) ||
+      !Worr_LocalActionRuleProviderPredictableV1(state->active_weapon_id)) {
+    return false;
+  }
+  seed_out->struct_size = sizeof(*seed_out);
+  seed_out->schema_version = WORR_LOCAL_ACTION_PREDICT_SEED_ABI_VERSION;
+  seed_out->catalog_id = state->active_weapon_id;
+  seed_out->state = *state;
+  return true;
+}
+
+bool Worr_LocalActionPredictSeedValidateV1(
+    const worr_local_action_predict_seed_v1 *seed) {
+  return seed != NULL && seed->struct_size == sizeof(*seed) &&
+         seed->schema_version == WORR_LOCAL_ACTION_PREDICT_SEED_ABI_VERSION &&
+         seed->reserved0 == 0 &&
+         seed->catalog_id == seed->state.active_weapon_id &&
+         Worr_LocalActionRuleProviderPredictableV1(seed->catalog_id) &&
+         Worr_LocalActionStateValidateV2(&seed->state);
+}
+
+bool Worr_LocalActionPredictSeedApplyV1(
+    const worr_local_action_predict_seed_v1 *seed,
+    worr_local_action_predictor_v1 *predictor_out) {
+  if (predictor_out == NULL)
+    return false;
+  memset(predictor_out, 0, sizeof(*predictor_out));
+  predictor_out->struct_size = sizeof(*predictor_out);
+  predictor_out->schema_version = WORR_LOCAL_ACTION_PREDICTOR_ABI_VERSION;
+  if (!Worr_LocalActionPredictSeedValidateV1(seed))
+    return false;
+  predictor_out->flags = WORR_LOCAL_ACTION_PREDICTOR_ACTIVE;
+  predictor_out->catalog_id = seed->catalog_id;
+  predictor_out->state = seed->state;
+  return true;
+}

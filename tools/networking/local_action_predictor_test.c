@@ -284,10 +284,57 @@ static bool test_producer_matches_predictor(void) {
   return true;
 }
 
+static bool test_seed_transport(void) {
+  worr_local_action_predictor_v1 server;
+  worr_local_action_predictor_v1 client;
+  worr_local_action_state_v2 server_state;
+  worr_local_action_state_v2 client_state;
+  worr_local_action_predict_seed_v1 seed;
+  worr_local_action_predict_seed_v1 wire;
+  worr_command_record_v1 command;
+  worr_local_action_transaction_v2 server_tx;
+  worr_local_action_transaction_v2 client_tx;
+
+  /* The server advances its authoritative state (fire once -> FIRING with a
+   * live refire timer), so the seed must carry a non-trivial mid-cycle state. */
+  CHECK(Worr_LocalActionPredictorSeedV1(
+      &server, 5u, WORR_LOCAL_ACTION_CATALOG_ROCKET_LAUNCHER, 5, 0));
+  CHECK(replay(&server, 10, true, NULL));
+  CHECK(Worr_LocalActionPredictorGetStateV1(&server, &server_state));
+  CHECK(server_state.phase == WORR_LOCAL_ACTION_PHASE_FIRING);
+
+  /* Build the seed, copy it over a simulated wire, and apply it client-side. */
+  CHECK(Worr_LocalActionPredictSeedBuildV1(&server_state, &seed));
+  memcpy(&wire, &seed, sizeof(wire));
+  CHECK(Worr_LocalActionPredictSeedValidateV1(&wire));
+  CHECK(Worr_LocalActionPredictSeedApplyV1(&wire, &client));
+  CHECK(Worr_LocalActionPredictorGetStateV1(&client, &client_state));
+  CHECK(memcmp(&client_state, &server_state, sizeof(client_state)) == 0);
+
+  /* From the shared seed, replaying the same command stays in lockstep. */
+  command = make_command(&server_state, 20);
+  memset(&server_tx, 0, sizeof(server_tx));
+  memset(&client_tx, 0, sizeof(client_tx));
+  CHECK(Worr_LocalActionPredictorReplayV1(&server, &command, true, false, 0, 0,
+                                          &server_tx));
+  CHECK(Worr_LocalActionPredictorReplayV1(&client, &command, true, false, 0, 0,
+                                          &client_tx));
+  CHECK(server_tx.transaction_hash == client_tx.transaction_hash);
+  CHECK(memcmp(&server.state, &client.state, sizeof(server.state)) == 0);
+
+  /* A tampered seed (catalog id not matching the carried state) rejects. */
+  memcpy(&wire, &seed, sizeof(wire));
+  wire.catalog_id = WORR_LOCAL_ACTION_CATALOG_MACHINEGUN;
+  CHECK(!Worr_LocalActionPredictSeedValidateV1(&wire));
+  CHECK(!Worr_LocalActionPredictSeedApplyV1(&wire, &client));
+  CHECK((client.flags & WORR_LOCAL_ACTION_PREDICTOR_ACTIVE) == 0);
+  return true;
+}
+
 int main(void) {
   if (!test_seed_and_inactive() || !test_fire_drain_refire() ||
       !test_dry_fire() || !test_switch() ||
-      !test_producer_matches_predictor() ||
+      !test_producer_matches_predictor() || !test_seed_transport() ||
       !test_reconcile_match_and_resync()) {
     return 1;
   }
