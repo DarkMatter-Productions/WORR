@@ -339,6 +339,78 @@ void CL_NativeDemoStop_f()
     finish_recording(stop_reason_t::user);
 }
 
+// Copies a C string into a fixed field, always NUL-terminated.
+static void bootstrap_copy_field(char *dst, size_t dst_size, const char *src)
+{
+    size_t i = 0;
+    for (; src && src[i] && i + 1 < dst_size; ++i)
+        dst[i] = src[i];
+    dst[i] = '\0';
+}
+
+// FR-10-T13: captures the live gamestate (serverdata identity + configstrings)
+// from cl/cls and writes it as the demo's first (bootstrap) record. Only ever
+// called from CL_NativeDemoRecord_f, which is command-driven and gated on active
+// live play; a no-op path never runs during normal gameplay.
+static worr_native_demo_recorder_result_v1 write_bootstrap_record()
+{
+    worr_native_demo_bootstrap_header_v1 header;
+    worr_native_demo_bootstrap_configstring_v1 *strings = nullptr;
+    worr_native_demo_recorder_result_v1 result;
+    uint32_t count = 0;
+    uint32_t written = 0;
+    int i;
+    int end = (int)cl.csr.end;
+
+    if (end < 0)
+        end = 0;
+    if (end > (int)WORR_NATIVE_DEMO_BOOTSTRAP_MAX_CONFIGSTRINGS)
+        end = (int)WORR_NATIVE_DEMO_BOOTSTRAP_MAX_CONFIGSTRINGS;
+    for (i = 0; i < end; ++i)
+        if (cl.configstrings[i][0] != '\0')
+            ++count;
+
+    memset(&header, 0, sizeof(header));
+    header.struct_size = sizeof(header);
+    header.schema_version = WORR_NATIVE_DEMO_BOOTSTRAP_ABI_VERSION;
+    header.protocol = (uint32_t)cls.serverProtocol;
+    header.protocol_version = (uint32_t)cls.protocolVersion;
+    header.game_api = (uint32_t)cl.game_api;
+    header.server_count = (uint32_t)cl.servercount;
+    header.client_num = cl.clientNum;
+    header.csr_variant = (uint32_t)cl.csr.end;
+    header.max_stats = (uint32_t)cl.max_stats;
+    header.es_flags = (uint32_t)cl.esFlags;
+    header.ps_flags = (uint32_t)cl.psFlags;
+    header.configstring_count = count;
+    bootstrap_copy_field(header.gamedir, sizeof(header.gamedir), cl.gamedir);
+    bootstrap_copy_field(header.mapname, sizeof(header.mapname), cl.mapname);
+
+    if (count != 0) {
+        strings = (worr_native_demo_bootstrap_configstring_v1 *)Z_Malloc(
+            sizeof(*strings) * count);
+        for (i = 0; i < end && written < count; ++i) {
+            const char *cs = cl.configstrings[i];
+            size_t len = 0;
+            if (cs[0] == '\0')
+                continue;
+            while (len < WORR_NATIVE_DEMO_BOOTSTRAP_MAX_STRING && cs[len])
+                ++len;
+            memset(&strings[written], 0, sizeof(strings[written]));
+            strings[written].index = (uint16_t)i;
+            strings[written].length = (uint16_t)len;
+            memcpy(strings[written].value, cs, len);
+            ++written;
+        }
+    }
+
+    result = Worr_NativeDemoRecorderBootstrapV1(&recorder.core, &header,
+                                                strings);
+    if (strings)
+        Z_Free(strings);
+    return result;
+}
+
 void CL_NativeDemoRecord_f()
 {
     char base[MAX_OSPATH];
@@ -439,6 +511,14 @@ void CL_NativeDemoRecord_f()
     if (begin_result != WORR_NATIVE_DEMO_RECORDER_OK) {
         close_failed_recording(stop_reason_t::core_failure,
                                core_result_name(begin_result));
+        return;
+    }
+    // Write the gamestate bootstrap first (before any snapshot) so the capture
+    // can later start a playable session without a live connection.
+    const auto bootstrap_result = write_bootstrap_record();
+    if (bootstrap_result != WORR_NATIVE_DEMO_RECORDER_OK) {
+        close_failed_recording(stop_reason_t::core_failure,
+                               core_result_name(bootstrap_result));
         return;
     }
     const auto snapshot_result = Worr_NativeDemoRecorderObserveSnapshotV1(
