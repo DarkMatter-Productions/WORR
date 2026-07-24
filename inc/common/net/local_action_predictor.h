@@ -135,17 +135,27 @@ bool Worr_LocalActionPredictorGetStateV1(
  */
 #define WORR_LOCAL_ACTION_PREDICT_SEED_ABI_VERSION 1u
 
+/*
+ * Compact READY-boundary seed (40 bytes, fits the 80-byte native event
+ * payload).  The client reconstructs the exact READY state from these fields,
+ * so only stable idle-state boundaries are transported; the client predicts
+ * forward through the fire/refire cycle from there.
+ */
 typedef struct worr_local_action_predict_seed_v1_s {
   uint32_t struct_size;
   uint32_t schema_version;
   uint32_t catalog_id;
+  uint32_t active_ammo_units;
+  uint32_t presentation_frame;
   uint32_t reserved0;
-  worr_local_action_state_v2 state;
+  worr_command_cursor_v1 applied_cursor;
+  uint64_t sample_time_us;
 } worr_local_action_predict_seed_v1;
 
 /*
- * Builds a seed from an authoritative weapon state.  Fails (and zeroes
- * seed_out) unless the state is valid and its weapon is client-predictable.
+ * Builds a seed from an authoritative READY weapon state.  Fails (and zeroes
+ * seed_out) unless the state is valid, READY, and its weapon is
+ * client-predictable.
  */
 bool Worr_LocalActionPredictSeedBuildV1(
     const worr_local_action_state_v2 *state,

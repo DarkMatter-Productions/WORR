@@ -295,13 +295,26 @@ static bool test_seed_transport(void) {
   worr_local_action_transaction_v2 server_tx;
   worr_local_action_transaction_v2 client_tx;
 
-  /* The server advances its authoritative state (fire once -> FIRING with a
-   * live refire timer), so the seed must carry a non-trivial mid-cycle state. */
+  /* The server emits a seed at a stable READY boundary (idle between shots);
+   * the client predicts the fire/refire cycle forward from it. */
   CHECK(Worr_LocalActionPredictorSeedV1(
       &server, 5u, WORR_LOCAL_ACTION_CATALOG_ROCKET_LAUNCHER, 5, 0));
-  CHECK(replay(&server, 10, true, NULL));
   CHECK(Worr_LocalActionPredictorGetStateV1(&server, &server_state));
-  CHECK(server_state.phase == WORR_LOCAL_ACTION_PHASE_FIRING);
+  CHECK(server_state.phase == WORR_LOCAL_ACTION_PHASE_READY);
+
+  /* A mid-cycle (non-READY) state cannot be seeded. */
+  {
+    worr_local_action_state_v2 firing;
+    worr_local_action_predict_seed_v1 rejected;
+    CHECK(replay(&server, 10, true, NULL));
+    CHECK(Worr_LocalActionPredictorGetStateV1(&server, &firing));
+    CHECK(firing.phase == WORR_LOCAL_ACTION_PHASE_FIRING);
+    CHECK(!Worr_LocalActionPredictSeedBuildV1(&firing, &rejected));
+    /* Reseed the server back to the READY boundary for the transport check. */
+    CHECK(Worr_LocalActionPredictorSeedV1(
+        &server, 5u, WORR_LOCAL_ACTION_CATALOG_ROCKET_LAUNCHER, 5, 0));
+    CHECK(Worr_LocalActionPredictorGetStateV1(&server, &server_state));
+  }
 
   /* Build the seed, copy it over a simulated wire, and apply it client-side. */
   CHECK(Worr_LocalActionPredictSeedBuildV1(&server_state, &seed));
