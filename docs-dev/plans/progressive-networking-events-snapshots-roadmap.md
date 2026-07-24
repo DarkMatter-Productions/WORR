@@ -1884,6 +1884,9 @@ correction evidence.
   `docs-dev/fr-10-t04-t05-t08-t09-t14-live-reconnect-local-action-authority-2026-07-18.md`,
   plus
   `docs-dev/fr-10-t04-t08-private-receipt-bounded-lifecycle-2026-07-20.md`.
+  The outstanding running-game behavioral gate has a written verification
+  procedure (cvars, scenarios, pass/fail thresholds) in
+  `docs-dev/fr-10-default-off-prediction-and-demo-verification-runbook.md`.
 - Definition of Done:
   - All declared predictable local state replays from the authoritative
     consumed-command watermark established by `FR-10-T09` through
@@ -2849,6 +2852,9 @@ correction evidence.
   `docs-dev/fr-10-t13-native-demo-snapshot-playback-cursor-2026-07-20.md`
   and
   `docs-dev/fr-10-t13-client-native-snapshot-recording-2026-07-20.md`.
+  The outstanding record/playback behavioral gate has a written verification
+  procedure in
+  `docs-dev/fr-10-default-off-prediction-and-demo-verification-runbook.md`.
 - Definition of Done:
   - Legacy demos still parse and play with the existing adapter.
   - New recordings identify their schema/transport and reproduce canonical
