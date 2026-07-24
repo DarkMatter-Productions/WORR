@@ -130,13 +130,22 @@ a "native_play loads the recorded map and renders" criterion).
   frames+writes the bootstrap record first (claiming the first ordinal), failing
   closed if any record was already written. The roundtrip test proves a
   bootstrap-first stream scans with the bootstrap as index entry 0 and that a
-  bootstrap after a snapshot is rejected. **TODO (client, running-game side)**:
-  fill the header/configstrings from live `cl` in `CL_NativeDemoRecord_f` and
-  call it before the first snapshot.
-- **TODO (running-game gate) — client map-load**: apply the decoded bootstrap and
-  reproduce the serverdata→configstrings→map→cgame sequence. Optional
-  unit-testable helper first: a playback decode-at-index for the bootstrap record
-  (mirroring the command/event/snapshot decode-at-index family).
+  bootstrap after a snapshot is rejected.
+- **DONE — client-side capture** (`write_bootstrap_record` in
+  `native_demo_recorder.cpp`): fills the header/configstrings from live `cl`/`cls`
+  and writes the bootstrap first in `CL_NativeDemoRecord_f`. Low risk (reads `cl`,
+  writes a record); links; validated on a running client per the runbook.
+- **DONE — playback bootstrap decode-at-index**
+  (`Worr_NativeDemoPlaybackDecodeBootstrapAtV1`, tested): the client map-load
+  reads the gamestate at index entry 0 with this.
+- **TODO (running-game gate) — client map-load**: the one remaining piece. Apply
+  the decoded bootstrap to `cl` and reproduce the
+  serverdata→configstrings→map→cgame sequence (mirroring `CL_ParseServerData` +
+  the demo `CL_Precache_f`) so the already-wired snapshot/event presentation
+  renders. This WRITES client state and triggers map loading through the legacy
+  serverdata/demo machinery, is not unit-testable (no test links the client), and
+  can break legacy demo playback if wrong — so it is the genuine running-game
+  gate the plan's Definition-of-Done requires a live session to close.
 
 ## Verification
 
