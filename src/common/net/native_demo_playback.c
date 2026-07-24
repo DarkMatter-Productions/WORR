@@ -1020,6 +1020,42 @@ worr_native_demo_playback_result_v1 Worr_NativeDemoPlaybackDecodeEventV1(
   return WORR_NATIVE_DEMO_PLAYBACK_OK;
 }
 
+worr_native_demo_playback_result_v1 Worr_NativeDemoPlaybackDecodeBootstrapAtV1(
+    const worr_native_demo_playback_cursor_v1 *cursor, const void *encoded,
+    size_t encoded_bytes, const worr_native_demo_index_entry_v1 *entries,
+    size_t entry_count, uint64_t entry_index,
+    worr_native_demo_bootstrap_header_v1 *header_out,
+    worr_native_demo_bootstrap_configstring_v1 *strings_out,
+    size_t strings_capacity) {
+  const uint8_t *payload = NULL;
+  uint32_t payload_bytes = 0;
+  worr_native_demo_playback_result_v1 result;
+  worr_native_codec_result_v1 codec_nested;
+
+  if (header_out == NULL || cursor == NULL)
+    return WORR_NATIVE_DEMO_PLAYBACK_INVALID_ARGUMENT;
+  result = locate_record_payload(
+      cursor, encoded, encoded_bytes, entries, entry_count, entry_index,
+      WORR_NATIVE_DEMO_RECORD_BOOTSTRAP_V1, WORR_NATIVE_RECORD_BOOTSTRAP_V1,
+      &payload, &payload_bytes);
+  if (result != WORR_NATIVE_DEMO_PLAYBACK_OK)
+    return result;
+  if (!output_disjoint(header_out, sizeof(*header_out), cursor, encoded,
+                       encoded_bytes, entries, entry_count)) {
+    return WORR_NATIVE_DEMO_PLAYBACK_INVALID_ARGUMENT;
+  }
+  if (strings_out != NULL && strings_capacity != 0 &&
+      !output_disjoint(strings_out, sizeof(*strings_out) * strings_capacity,
+                       cursor, encoded, encoded_bytes, entries, entry_count)) {
+    return WORR_NATIVE_DEMO_PLAYBACK_INVALID_ARGUMENT;
+  }
+  codec_nested = Worr_NativeCodecBootstrapDecodeV1(
+      payload, payload_bytes, header_out, strings_out, strings_capacity);
+  if (codec_nested != WORR_NATIVE_CODEC_OK)
+    return codec_result(codec_nested);
+  return WORR_NATIVE_DEMO_PLAYBACK_OK;
+}
+
 worr_native_demo_playback_result_v1 Worr_NativeDemoPlaybackDecodeSnapshotAtV1(
     const worr_native_demo_playback_cursor_v1 *cursor, const void *encoded,
     size_t encoded_bytes, const worr_native_demo_index_entry_v1 *entries,

@@ -430,6 +430,23 @@ static bool test_bootstrap_stream(void) {
   CHECK(record_count == 2);
   CHECK(index_scratch[0].record_kind == WORR_NATIVE_DEMO_RECORD_BOOTSTRAP_V1);
   CHECK(index_scratch[1].record_kind == WORR_NATIVE_DEMO_RECORD_SNAPSHOT_V1);
+
+  /* Decode the bootstrap at index 0 and confirm it round-trips byte-exactly. */
+  {
+    worr_native_demo_bootstrap_header_v1 decoded_boot;
+    memset(&decoded_boot, 0, sizeof(decoded_boot));
+    CHECK(Worr_NativeDemoPlaybackDecodeBootstrapAtV1(
+              &cursor, sink_storage.bytes, sink_storage.size, index_scratch,
+              (size_t)record_count, 0u, &decoded_boot, NULL, 0) ==
+          WORR_NATIVE_DEMO_PLAYBACK_OK);
+    CHECK(memcmp(&decoded_boot, &boot, sizeof(boot)) == 0);
+    /* The snapshot-kind decoder rejects the bootstrap entry (cross-class). */
+    worr_native_demo_bootstrap_header_v1 reject;
+    CHECK(Worr_NativeDemoPlaybackDecodeBootstrapAtV1(
+              &cursor, sink_storage.bytes, sink_storage.size, index_scratch,
+              (size_t)record_count, 1u, &reject, NULL, 0) ==
+          WORR_NATIVE_DEMO_PLAYBACK_WRONG_CLASS);
+  }
   return true;
 }
 

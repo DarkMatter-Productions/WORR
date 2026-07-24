@@ -227,6 +227,23 @@ worr_native_demo_playback_result_v1 Worr_NativeDemoPlaybackDecodeSnapshotAtV1(
     worr_snapshot_event_ref_v2 *event_refs_out, uint32_t event_ref_capacity,
     worr_native_demo_playback_frame_v1 *frame_out);
 
+/*
+ * Read-only decode of the bootstrap (gamestate) record at an exact index entry.
+ * Same contract as the other decode-at-index members: the cursor is not
+ * mutated, the binding is revalidated, the entry's record_kind must be
+ * BOOTSTRAP and its codec class must match, and outputs are untouched on
+ * failure.  On CAPACITY the required configstring count is written to
+ * header_out->configstring_count so a caller can resize and retry.  A client
+ * map-load walks index entry 0 with this before presenting any snapshot.
+ */
+worr_native_demo_playback_result_v1 Worr_NativeDemoPlaybackDecodeBootstrapAtV1(
+    const worr_native_demo_playback_cursor_v1 *cursor, const void *encoded,
+    size_t encoded_bytes, const worr_native_demo_index_entry_v1 *entries,
+    size_t entry_count, uint64_t entry_index,
+    worr_native_demo_bootstrap_header_v1 *header_out,
+    worr_native_demo_bootstrap_configstring_v1 *strings_out,
+    size_t strings_capacity);
+
 #ifdef __cplusplus
 }
 #endif
