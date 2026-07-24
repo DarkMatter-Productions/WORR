@@ -12,6 +12,8 @@
 
 #include "common/net/local_action_predictor.h"
 
+#include "cg_weapon_predict.hpp"
+
 #include <climits>
 #include <cstdio>
 #include <cstdint>
@@ -201,6 +203,7 @@ void CG_PredictionAuthority_InitCvars()
         "cg_prediction_snapshot_authority", "0", CVAR_NOARCHIVE);
     cg_predict_weapon = Cvar_Get("cg_predict_weapon", "0", CVAR_NOARCHIVE);
     CG_WeaponPredictReset();
+    CG_EventRuntimeSetWeaponSeedApply(&CG_WeaponPredictApplySeed);
 }
 
 static void CG_PredictionPlaneFromTrace(worr_prediction_plane_v1 *out,

@@ -10,11 +10,20 @@ the Free Software Foundation; either version 2 of the License, or
 #include "cg_event_runtime.hpp"
 #include "cg_canonical_snapshot_timeline.hpp"
 #include "cg_local_interaction.hpp"
+#include "cg_weapon_predict.hpp"
 
 #include "common/net/predicted_presentation.h"
 
 #include <array>
 #include <cstring>
+
+/* FR-10-T08 (default-off): seed-apply callback registered by cg_predict. */
+static cg_weapon_predict_seed_apply_fn weapon_seed_apply_callback = nullptr;
+
+void CG_EventRuntimeSetWeaponSeedApply(cg_weapon_predict_seed_apply_fn fn)
+{
+    weapon_seed_apply_callback = fn;
+}
 
 namespace {
 
@@ -2989,9 +2998,36 @@ worr_cgame_event_runtime_result_v1 export_reset_authority(
         CG_EventRuntimeResetAuthority(stream_epoch, first_sequence));
 }
 
+/*
+ * FR-10-T08 (default-off, UNVERIFIED): a client weapon-prediction seed is a
+ * control record, not a presentable/reconcilable event.  The server emits it
+ * in a dedicated homogeneous batch, so it is intercepted here at the delivery
+ * boundary and applied to the client predictor without ever entering the event
+ * runtime's journal or authority-reconciliation transaction.  When
+ * cg_predict_weapon is 0 (default) CG_WeaponPredictApplySeed is a no-op, so the
+ * seed is simply consumed and nothing changes.
+ */
 worr_cgame_event_runtime_result_v1 export_submit_authority(
     const worr_event_record_v1 *records, std::uint32_t count)
 {
+    if (records != nullptr && count != 0 &&
+        records[0].event_type == WORR_EVENT_TYPE_AUTHORITY_RECEIPT &&
+        records[0].payload_kind ==
+            WORR_EVENT_PAYLOAD_LOCAL_ACTION_PREDICT_SEED_V1) {
+        for (std::uint32_t index = 0;
+             weapon_seed_apply_callback != nullptr && index < count; ++index) {
+            const worr_event_record_v1 &record = records[index];
+            worr_local_action_predict_seed_v1 seed;
+            if (record.payload_kind !=
+                    WORR_EVENT_PAYLOAD_LOCAL_ACTION_PREDICT_SEED_V1 ||
+                record.payload_size != sizeof(seed)) {
+                continue;
+            }
+            std::memcpy(&seed, record.payload, sizeof(seed));
+            (void)weapon_seed_apply_callback(&seed);
+        }
+        return WORR_CGAME_EVENT_RUNTIME_OK;
+    }
     return static_cast<worr_cgame_event_runtime_result_v1>(
         CG_EventRuntimeSubmitAuthoritativeBatch(records, count));
 }
