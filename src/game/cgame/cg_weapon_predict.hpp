@@ -18,6 +18,7 @@ the Free Software Foundation; either version 2 of the License, or
  * default-off, UNVERIFIED).  A no-op unless cg_predict_weapon is set.
  */
 void CG_WeaponPredictReset();
+bool CG_WeaponPredictEnabled();
 bool CG_WeaponPredictApplySeed(const worr_local_action_predict_seed_v1 *seed);
 bool CG_WeaponPredictReplayCommand(const worr_command_record_v1 *command,
                                    bool attack_held);

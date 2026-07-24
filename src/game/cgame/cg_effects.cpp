@@ -387,6 +387,13 @@ static bool CG_WeaponPredictFireCueSuppress(void)
 {
     if (fc_in_predicted)
         return false;
+    /* Gate on the live cvar: if prediction was disabled mid-burst, any debt
+     * accrued while enabled must not keep suppressing real muzzles.  Clear it
+     * so a 1->0 toggle is an immediate, complete no-op. */
+    if (!CG_WeaponPredictEnabled()) {
+        fc_debt = 0;
+        return false;
+    }
     int local = fc_local_player_entity();
     if (local < 0 || mz.entity != local)
         return false;

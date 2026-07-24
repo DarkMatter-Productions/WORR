@@ -162,7 +162,7 @@ static cg_weapon_predict_fire_reset_fn cg_weapon_fire_reset_cb = nullptr;
 static uint32_t cg_weapon_fire_highwater = 0;
 static bool cg_weapon_fire_highwater_valid = false;
 
-static bool CG_WeaponPredictEnabled()
+bool CG_WeaponPredictEnabled()
 {
     return cg_predict_weapon && cg_predict_weapon->integer != 0;
 }
