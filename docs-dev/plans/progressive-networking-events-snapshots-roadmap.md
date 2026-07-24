@@ -1838,11 +1838,16 @@ correction evidence.
   pass-through otherwise (disabled, inactive, mid-switch, spectating, or a
   hidden/no-ammo weapon). It cannot double-present -- it only changes a display
   value that converges to authority. The predicted FIRE cue (muzzle flash/sound)
-  is deliberately NOT presented, because the authoritative path already presents
-  the local muzzle, so a predicted cue would need present-once dedup against it
-  to avoid a double flash -- a reconciliation-aware presentation change that a
-  running game must verify, so it is flagged rather than shipped as a
-  regression. The residue is now purely evidence: running-game behavioral
+  is now also wired as a best-effort, UNVERIFIED presenter: the predictor owns
+  the local muzzle (a monotonic shot-sequence high-water emits it early, so
+  re-prediction of the same command never re-fires) and the matching
+  authoritative local muzzle is suppressed by a debt counter, so exactly one cue
+  shows per shot; debt and high-water reset on every seed apply and hard resync
+  to bound drift to one reconciliation window, and the whole path is inert while
+  cg_predict_weapon is 0 (nothing increments the debt). Its runtime correctness
+  rests on the still-unverified weapon replay cadence, so it is explicitly a
+  running-game gate (runbook P2.6: watch for double/missing flashes and
+  spurious re-fire). The residue is now purely evidence: running-game behavioral
   verification (a live
   fire/reconcile session confirming zero corrections for the predictable set,
   the predicted-ammo display leading authority without divergence, and the

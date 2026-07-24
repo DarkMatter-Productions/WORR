@@ -18,6 +18,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 // cl_fx.c -- entity effects parsing and management
 
 #include "cg_entity_local.h"
+#include "cg_weapon_predict.hpp"
 #include "shared/m_flash.h"
 
 static void CL_LogoutEffect(const vec3_t org, int color);
@@ -355,6 +356,51 @@ void CL_AddDLights(void)
 CL_MuzzleFlash
 ==============
 */
+/*
+ * FR-10-T08 predicted fire-cue state (default-off, best-effort, UNVERIFIED).
+ * The predictor owns the local player's muzzle: fc_emit presents it early and
+ * accrues one unit of debt per predicted shot; the matching authoritative local
+ * muzzle is suppressed while debt remains, so exactly one cue shows per shot.
+ * Nothing here does anything until fc_emit runs (only when cg_predict_weapon is
+ * set), so it is a strict no-op by default.
+ */
+static int fc_debt = 0;
+static mz_params_t fc_cached_mz{};
+static bool fc_cached_valid = false;
+static bool fc_in_predicted = false;
+
+static int fc_local_player_entity(void)
+{
+    if (cl.frame.clientNum < 0 || cl.frame.clientNum + 1 >= MAX_EDICTS)
+        return -1;
+    return cl.frame.clientNum + 1;
+}
+
+/*
+ * Called at the top of CL_MuzzleFlash for every muzzle.  Caches the local
+ * player's authoritative weapon/silenced so a predicted cue can reuse the right
+ * flash, and suppresses the authoritative local muzzle when a predicted cue
+ * already presented that shot (debt > 0).  Never suppresses our own predicted
+ * emission or any non-local muzzle.
+ */
+static bool CG_WeaponPredictFireCueSuppress(void)
+{
+    if (fc_in_predicted)
+        return false;
+    int local = fc_local_player_entity();
+    if (local < 0 || mz.entity != local)
+        return false;
+    fc_cached_mz.entity = mz.entity;
+    fc_cached_mz.weapon = mz.weapon;
+    fc_cached_mz.silenced = mz.silenced;
+    fc_cached_valid = true;
+    if (fc_debt > 0) {
+        fc_debt--;
+        return true;
+    }
+    return false;
+}
+
 void CL_MuzzleFlash(void)
 {
     vec3_t      fv, rv;
@@ -362,6 +408,9 @@ void CL_MuzzleFlash(void)
     centity_t   *pl;
     float       volume;
     char        soundname[MAX_QPATH];
+
+    if (CG_WeaponPredictFireCueSuppress())
+        return;
 
 #if USE_DEBUG
     if (developer->integer && !cl_native_muzzle_state)
@@ -2120,10 +2169,55 @@ void CL_ClearEffects(void)
     CL_ClearDlights();
 }
 
+/* Predicted fire-cue reset (FR-10-T08): clears pending debt so a resync/seed
+ * cannot leave the authoritative muzzle suppressed. */
+static void CG_WeaponPredictFireCueReset(void)
+{
+    fc_debt = 0;
+    fc_in_predicted = false;
+}
+
+/*
+ * Presents up to a small cap of predicted local muzzle cues for the shots the
+ * predictor landed this frame, reusing the last authoritative local weapon.
+ * Each presented cue accrues one unit of debt so the matching authoritative
+ * muzzle is later suppressed.  A no-op until an authoritative local muzzle has
+ * been observed (so the first-ever shot of a weapon presents authoritatively).
+ */
+static void CG_WeaponPredictFireCueEmit(uint32_t shots)
+{
+    static mz_params_t fc_emit_params;
+    const uint32_t cap = 4;
+    int local;
+    uint32_t emitted;
+
+    if (!fc_cached_valid || shots == 0)
+        return;
+    local = fc_local_player_entity();
+    if (local < 0)
+        return;
+    if (shots > cap)
+        shots = cap;
+
+    fc_emit_params = fc_cached_mz;
+    fc_emit_params.entity = local;
+    for (emitted = 0; emitted < shots; ++emitted) {
+        fc_in_predicted = true;
+        cl_native_muzzle_params = &fc_emit_params;
+        CL_MuzzleFlash();
+        cl_native_muzzle_params = nullptr;
+        fc_in_predicted = false;
+    }
+    fc_debt += (int)shots;
+}
+
 void CL_InitEffects(void)
 {
     int i, j;
     static bool cg_rand_seeded;
+
+    CG_WeaponPredictSetFireCue(&CG_WeaponPredictFireCueEmit,
+                               &CG_WeaponPredictFireCueReset);
 
     // Ensure particle/dlight lists are initialized for cgame module
     // (CL_ClearEffects may have run before cgame was loaded).

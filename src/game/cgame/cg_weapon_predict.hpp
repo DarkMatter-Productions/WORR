@@ -38,6 +38,28 @@ bool CG_WeaponPredictGetState(worr_local_action_state_v2 *state_out);
 int CG_WeaponPredictPresentAmmo(int authoritative_ammo);
 
 /*
+ * Predicted fire-cue presenter (default-off, best-effort, UNVERIFIED).  The
+ * predictor owns the local player's muzzle flash/sound: when a predicted shot
+ * lands the emit callback presents the cue early, and the matching
+ * authoritative local muzzle is suppressed via a debt counter (see
+ * cg_effects.cpp), so exactly one cue shows per shot.  The cue is driven off a
+ * monotonic shot-sequence high-water, so re-prediction of the same command
+ * never re-emits; debt and high-water reset on every seed apply and hard
+ * resync, bounding drift to one reconciliation window.  It is a strict no-op
+ * while cg_predict_weapon is 0 (nothing ever increments the debt, so nothing is
+ * ever suppressed).  Its runtime correctness depends on the (still
+ * running-game-unverified) weapon replay cadence; see the verification runbook.
+ *
+ * The callbacks live in cg_effects.cpp (which owns the muzzle infrastructure)
+ * and are registered into cg_predict.cpp from CL_InitEffects; they default to
+ * null, so cg_predict's unit tests link without cg_effects.
+ */
+typedef void (*cg_weapon_predict_fire_emit_fn)(uint32_t shots);
+typedef void (*cg_weapon_predict_fire_reset_fn)(void);
+void CG_WeaponPredictSetFireCue(cg_weapon_predict_fire_emit_fn emit_fn,
+                                cg_weapon_predict_fire_reset_fn reset_fn);
+
+/*
  * Registers the seed-apply callback the event runtime invokes when a predict
  * seed arrives.  Passing null (the default) leaves seed batches consumed but
  * inert, which keeps the event runtime free of any hard link to cg_predict.

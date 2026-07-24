@@ -117,10 +117,19 @@ deliberately excluded and stay fully server-authoritative.
   the counter shows that player's authoritative ammo (the override must be a
   pass-through when the local predictor is inactive). On ammo **pickup** the
   display may briefly lag until the predictor reseeds — confirm it self-corrects.
-- P2.6 **Deferred predicted fire cue**: confirm there is exactly **one** muzzle
-  flash/sound per shot. The predicted fire cue is intentionally not wired
-  (present-once dedup with the authoritative cue is required first); if a future
-  change adds it, this criterion guards against the double-flash regression.
+- P2.6 **Predicted fire cue + dedup** (now wired, best-effort/UNVERIFIED): the
+  local muzzle flash/sound fires on the *predicted* shot (early), and there is
+  exactly **one** cue per shot — the authoritative local muzzle is suppressed by
+  the debt counter. Watch specifically for the two failure modes this design
+  accepts and cannot self-check: a **double flash** (dedup missed a match) or a
+  **missing flash** (dedup over-suppressed). Both should be bounded to a single
+  reconciliation window (debt + high-water reset on every seed apply and hard
+  resync) — confirm they do not accumulate. Because the cue is driven by the
+  weapon replay cadence, this is the criterion most exposed to the still-
+  unverified replay/reseed behavior: if the predictor deactivates or re-fires
+  spuriously, it will show here first. Also confirm non-local players' muzzles
+  are never predicted or suppressed, and that with `cg_predict_weapon 0` the cue
+  path is completely inert (debt never increments, so nothing is suppressed).
 
 ### Tuning
 

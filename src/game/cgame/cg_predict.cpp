@@ -153,14 +153,68 @@ extern "C" void CG_PredictionInputSetImportV2(
 static cvar_t *cg_predict_weapon;
 static worr_local_action_predictor_v1 cg_weapon_predictor;
 
+/* Predicted fire-cue callbacks (registered by cg_effects from CL_InitEffects;
+ * null in cg_predict's unit tests, which do not link cg_effects). */
+static cg_weapon_predict_fire_emit_fn cg_weapon_fire_emit_cb = nullptr;
+static cg_weapon_predict_fire_reset_fn cg_weapon_fire_reset_cb = nullptr;
+/* Monotonic shot-sequence high-water so re-prediction of the same command never
+ * re-emits a predicted cue.  Re-anchored on every seed apply / hard resync. */
+static uint32_t cg_weapon_fire_highwater = 0;
+static bool cg_weapon_fire_highwater_valid = false;
+
 static bool CG_WeaponPredictEnabled()
 {
     return cg_predict_weapon && cg_predict_weapon->integer != 0;
 }
 
+void CG_WeaponPredictSetFireCue(cg_weapon_predict_fire_emit_fn emit_fn,
+                                cg_weapon_predict_fire_reset_fn reset_fn)
+{
+    cg_weapon_fire_emit_cb = emit_fn;
+    cg_weapon_fire_reset_cb = reset_fn;
+}
+
+static void CG_WeaponPredictFireCueResetLocal()
+{
+    cg_weapon_fire_highwater = 0;
+    cg_weapon_fire_highwater_valid = false;
+    if (cg_weapon_fire_reset_cb)
+        cg_weapon_fire_reset_cb();
+}
+
 void CG_WeaponPredictReset()
 {
     memset(&cg_weapon_predictor, 0, sizeof(cg_weapon_predictor));
+    CG_WeaponPredictFireCueResetLocal();
+}
+
+/*
+ * Presents the predicted fire cue for shots landed since the last frame.  Uses
+ * a monotonic high-water on the predictor's shot_sequence: only a genuine
+ * increase emits, so re-replay of already-applied commands is inert.  A no-op
+ * when disabled, inactive, or no emit callback is registered.  Emitting more
+ * than one cue for a burst is capped by the callback.
+ */
+static void CG_WeaponPredictPresentFireCue()
+{
+    worr_local_action_state_v2 state;
+
+    if (!CG_WeaponPredictEnabled() || cg_weapon_fire_emit_cb == nullptr)
+        return;
+    if ((cg_weapon_predictor.flags & WORR_LOCAL_ACTION_PREDICTOR_ACTIVE) == 0)
+        return;
+    if (!CG_WeaponPredictGetState(&state))
+        return;
+    if (!cg_weapon_fire_highwater_valid) {
+        cg_weapon_fire_highwater = state.shot_sequence;
+        cg_weapon_fire_highwater_valid = true;
+        return;
+    }
+    if (state.shot_sequence <= cg_weapon_fire_highwater)
+        return;
+    uint32_t shots = state.shot_sequence - cg_weapon_fire_highwater;
+    cg_weapon_fire_highwater = state.shot_sequence;
+    cg_weapon_fire_emit_cb(shots);
 }
 
 /*
@@ -171,7 +225,19 @@ bool CG_WeaponPredictApplySeed(const worr_local_action_predict_seed_v1 *seed)
 {
     if (!CG_WeaponPredictEnabled())
         return false;
-    return Worr_LocalActionPredictSeedApplyV1(seed, &cg_weapon_predictor);
+    bool applied = Worr_LocalActionPredictSeedApplyV1(seed, &cg_weapon_predictor);
+    /* Re-anchor the fire cue at the seeded boundary: clear any pending debt and
+     * set the high-water to the seed's shot_sequence so the cue resumes cleanly
+     * from the authoritative state. */
+    CG_WeaponPredictFireCueResetLocal();
+    if (applied) {
+        worr_local_action_state_v2 state;
+        if (CG_WeaponPredictGetState(&state)) {
+            cg_weapon_fire_highwater = state.shot_sequence;
+            cg_weapon_fire_highwater_valid = true;
+        }
+    }
+    return applied;
 }
 
 /*
@@ -1069,6 +1135,7 @@ void CL_PredictMovement(void)
      */
     CG_LocalInteractionPredict(input_range);
     CG_WeaponPredictReplayRange(input_range);
+    CG_WeaponPredictPresentFireCue();
     CG_LocalActionShadowObserveCommands(input_range);
     CG_LocalActionShadowReportParity();
     CG_EventRuntimeSynchronizeLocalInteractionHealth();
