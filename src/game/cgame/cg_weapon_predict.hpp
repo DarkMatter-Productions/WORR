@@ -24,6 +24,20 @@ bool CG_WeaponPredictReplayCommand(const worr_command_record_v1 *command,
 bool CG_WeaponPredictGetState(worr_local_action_state_v2 *state_out);
 
 /*
+ * Predicted presenter (default-off): returns the predicted active-weapon ammo
+ * for the local player's HUD when the predictor is actively seeded for a live
+ * weapon, otherwise returns authoritative_ammo unchanged.  It only ever
+ * substitutes a real, already-displayable count (authoritative_ammo >= 0) and
+ * converges to authority as snapshots arrive, so it cannot show ammo for a
+ * hidden/no-ammo weapon.  The predicted fire cue (muzzle flash/sound) is
+ * deliberately NOT presented here: the authoritative path already presents the
+ * local muzzle, so a predicted cue would need present-once dedup against it to
+ * avoid a double flash -- a reconciliation-aware change that a running game
+ * must verify.
+ */
+int CG_WeaponPredictPresentAmmo(int authoritative_ammo);
+
+/*
  * Registers the seed-apply callback the event runtime invokes when a predict
  * seed arrives.  Passing null (the default) leaves seed batches consumed but
  * inert, which keeps the event runtime free of any hard link to cg_predict.

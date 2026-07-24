@@ -109,6 +109,18 @@ deliberately excluded and stay fully server-authoritative.
   A/B slot reuse: player A on a predictable weapon disconnects mid-fire, player
   B connects into the same slot on a different weapon — B's first predicted
   state must be B's weapon, never A's).
+- P2.5 **Predicted-ammo presenter** (`CG_WeaponPredictPresentAmmo`): with
+  prediction on, the HUD ammo counter decrements on the *predicted* shot
+  (immediately, ahead of the authoritative snapshot) and matches the
+  authoritative `STAT_AMMO` once it arrives — no lingering divergence, no wrong
+  count after a weapon switch, and while **spectating/following** another player
+  the counter shows that player's authoritative ammo (the override must be a
+  pass-through when the local predictor is inactive). On ammo **pickup** the
+  display may briefly lag until the predictor reseeds — confirm it self-corrects.
+- P2.6 **Deferred predicted fire cue**: confirm there is exactly **one** muzzle
+  flash/sound per shot. The predicted fire cue is intentionally not wired
+  (present-once dedup with the authoritative cue is required first); if a future
+  change adds it, this criterion guards against the double-flash regression.
 
 ### Tuning
 

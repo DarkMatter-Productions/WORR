@@ -195,6 +195,31 @@ bool CG_WeaponPredictGetState(worr_local_action_state_v2 *state_out)
     return Worr_LocalActionPredictorGetStateV1(&cg_weapon_predictor, state_out);
 }
 
+/*
+ * Predicted presenter: substitutes the local player's HUD ammo with the
+ * predicted active-weapon count while the predictor is actively seeded for a
+ * live weapon (READY/FIRING).  A strict pass-through when disabled, inactive,
+ * mid-switch, or for a hidden/no-ammo weapon (authoritative_ammo < 0).  It
+ * cannot double-present anything: it only changes a display value that
+ * converges to the authoritative STAT_AMMO as snapshots arrive.
+ */
+int CG_WeaponPredictPresentAmmo(int authoritative_ammo)
+{
+    worr_local_action_state_v2 state;
+
+    if (!CG_WeaponPredictEnabled() || authoritative_ammo < 0)
+        return authoritative_ammo;
+    if ((cg_weapon_predictor.flags & WORR_LOCAL_ACTION_PREDICTOR_ACTIVE) == 0)
+        return authoritative_ammo;
+    if (!CG_WeaponPredictGetState(&state))
+        return authoritative_ammo;
+    if (state.phase != WORR_LOCAL_ACTION_PHASE_READY &&
+        state.phase != WORR_LOCAL_ACTION_PHASE_FIRING) {
+        return authoritative_ammo;
+    }
+    return (int)state.active_ammo_units;
+}
+
 void CG_PredictionAuthority_InitCvars()
 {
     if (!cgei)

@@ -1830,12 +1830,25 @@ correction evidence.
   registered callback into the cg_predict weapon predictor, and the replay
   bridge feeds the canonical command range back through the predictor after
   local interaction. The whole carriage compiles and links across sgame, cgame,
-  and both engine binaries, and the touched networking tests stay green. The
-  residue is now purely evidence: running-game behavioral verification (a live
-  fire/reconcile session confirming zero corrections for the predictable set)
-  and runtime tuning of the one frame-cadence constant -- neither is missing
-  code, both require an actual game session, and both are made safe by the
-  reconciliation model in which authority always wins. Every
+  and both engine binaries, and the touched networking tests stay green. A first
+  predicted PRESENTER now consumes that predicted state (nothing read it
+  before): CG_WeaponPredictPresentAmmo substitutes the local player's HUD ammo
+  (cg_draw STAT_AMMO) with the predicted active-weapon count while the predictor
+  is actively seeded for a live READY/FIRING weapon, and is a strict
+  pass-through otherwise (disabled, inactive, mid-switch, spectating, or a
+  hidden/no-ammo weapon). It cannot double-present -- it only changes a display
+  value that converges to authority. The predicted FIRE cue (muzzle flash/sound)
+  is deliberately NOT presented, because the authoritative path already presents
+  the local muzzle, so a predicted cue would need present-once dedup against it
+  to avoid a double flash -- a reconciliation-aware presentation change that a
+  running game must verify, so it is flagged rather than shipped as a
+  regression. The residue is now purely evidence: running-game behavioral
+  verification (a live
+  fire/reconcile session confirming zero corrections for the predictable set,
+  the predicted-ammo display leading authority without divergence, and the
+  deferred fire-cue dedup) and runtime tuning of the one frame-cadence constant
+  -- none is missing shared code, all require an actual game session, and all
+  are made safe by the reconciliation model in which authority always wins. Every
   derived rule validates under
   Worr_LocalActionWeaponRuleValidateV2; the one input the tables cannot supply,
   animation frame cadence, is isolated as a single documented constant. This is

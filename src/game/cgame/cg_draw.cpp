@@ -3,6 +3,7 @@
 // cg_draw.cpp -- HUD/screen drawing (Quake 3-style layout)
 #include "cg_local.h"
 #include "cg_native_event_presenter.hpp"
+#include "cg_weapon_predict.hpp"
 #include "cg_wheel.h"
 
 #include <cstdio>
@@ -3970,7 +3971,12 @@ static void CG_ExecuteLayoutString (const char *s, vrect_t hud_vrect, vrect_t hu
                 int     color;
 
                 width = 3;
-                value = ps->stats[STAT_AMMO];
+                // FR-10-T08 predicted presenter (default-off): substitute the
+                // predicted active-weapon ammo while actively predicting; a
+                // strict pass-through otherwise (incl. spectating, since the
+                // predictor is only seeded for the controlling client's own
+                // predictable weapon).
+                value = CG_WeaponPredictPresentAmmo(ps->stats[STAT_AMMO]);
 
                 int32_t min_ammo = CG_Wheel_GetWarnAmmoCount(ps->stats[STAT_ACTIVE_WEAPON]);
 
