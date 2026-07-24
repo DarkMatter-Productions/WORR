@@ -966,3 +966,41 @@ worr_native_demo_playback_result_v1 Worr_NativeDemoPlaybackDecodeEventV1(
     return codec_result(codec_nested);
   return WORR_NATIVE_DEMO_PLAYBACK_OK;
 }
+
+worr_native_demo_playback_result_v1 Worr_NativeDemoPlaybackDecodeSnapshotAtV1(
+    const worr_native_demo_playback_cursor_v1 *cursor, const void *encoded,
+    size_t encoded_bytes, const worr_native_demo_index_entry_v1 *entries,
+    size_t entry_count, uint64_t entry_index, worr_snapshot_v2 *snapshot_out,
+    worr_snapshot_player_v2 *player_out,
+    worr_snapshot_entity_v2 *entities_out, uint32_t entity_capacity,
+    uint8_t *area_bytes_out, uint32_t area_capacity,
+    worr_snapshot_event_ref_v2 *event_refs_out, uint32_t event_ref_capacity,
+    worr_native_demo_playback_frame_v1 *frame_out) {
+  worr_native_demo_playback_cursor_v1 scratch;
+  worr_native_demo_playback_result_v1 result;
+
+  if (cursor == NULL || frame_out == NULL)
+    return WORR_NATIVE_DEMO_PLAYBACK_INVALID_ARGUMENT;
+  result = revalidate_binding(cursor, encoded, encoded_bytes, entries,
+                              entry_count);
+  if (result != WORR_NATIVE_DEMO_PLAYBACK_OK)
+    return result;
+  if (entry_index >= (uint64_t)entry_count)
+    return WORR_NATIVE_DEMO_PLAYBACK_NOT_FOUND;
+  if (entries[(size_t)entry_index].record_kind !=
+      WORR_NATIVE_DEMO_RECORD_SNAPSHOT_V1)
+    return WORR_NATIVE_DEMO_PLAYBACK_WRONG_CLASS;
+
+  /* Decode through the exact tested snapshot path against a throwaway cursor
+   * copy: the position mutation lands in the scratch and is discarded, while
+   * frame_out and the destinations receive the same validated decode.  A
+   * valid reset generation keeps decode_selected's internal shape checks
+   * satisfied even when the real cursor is not yet positioned. */
+  scratch = *cursor;
+  return decode_selected(
+      &scratch, encoded, encoded_bytes, entries, entry_count,
+      (size_t)entry_index, WORR_NATIVE_DEMO_PLAYBACK_FRAME_SEEK_POSITION,
+      scratch.reset_generation == 0 ? 1u : scratch.reset_generation, NULL, 0,
+      snapshot_out, player_out, entities_out, entity_capacity, area_bytes_out,
+      area_capacity, event_refs_out, event_ref_capacity, frame_out);
+}

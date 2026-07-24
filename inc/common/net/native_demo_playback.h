@@ -187,6 +187,27 @@ worr_native_demo_playback_result_v1 Worr_NativeDemoPlaybackDecodeEventV1(
     size_t entry_count, uint64_t entry_index, uint32_t max_entities,
     worr_event_record_v1 *event_out);
 
+/*
+ * Read-only decode of the canonical snapshot at an exact index entry.  This
+ * completes the decode-at-index family (command/event/snapshot) so a caller
+ * can decode any canonical body at any position without disturbing the
+ * cursor's Step traversal: a client timeline can walk every index entry in
+ * ordinal order, dispatch on record_kind, and publish each body in canonical
+ * order.  The cursor position is NOT mutated; the full binding is revalidated
+ * and the entry's record_kind must be SNAPSHOT.  All destinations follow the
+ * same transactional/disjointness contract as the positioning decoders and
+ * are untouched on every failure.
+ */
+worr_native_demo_playback_result_v1 Worr_NativeDemoPlaybackDecodeSnapshotAtV1(
+    const worr_native_demo_playback_cursor_v1 *cursor, const void *encoded,
+    size_t encoded_bytes, const worr_native_demo_index_entry_v1 *entries,
+    size_t entry_count, uint64_t entry_index, worr_snapshot_v2 *snapshot_out,
+    worr_snapshot_player_v2 *player_out,
+    worr_snapshot_entity_v2 *entities_out, uint32_t entity_capacity,
+    uint8_t *area_bytes_out, uint32_t area_capacity,
+    worr_snapshot_event_ref_v2 *event_refs_out, uint32_t event_ref_capacity,
+    worr_native_demo_playback_frame_v1 *frame_out);
+
 #ifdef __cplusplus
 }
 #endif
