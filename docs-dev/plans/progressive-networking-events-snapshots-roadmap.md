@@ -2819,9 +2819,24 @@ correction evidence.
   plan over a mixed snapshot/command/event stream, fingerprint reproducibility,
   the capacity-report path, and fail-closed rejection of an unanchored event, a
   reordered index, and a truncated index. It still opens no files and drives no
-  live client; it only fixes and proves the dispatch order. Standalone bootstrap
+  live client; it only fixes and proves the dispatch order. The execution half
+  of present-once replay is now a built, tested core as well: a pointer-free
+  present-once cursor over the plan (Worr_NativeDemoTimelineCursor{Init,
+  AdvanceToTime,Step,Reset}V1) that a live driver ticks against the plan. It
+  advances a forward-only frontier so each step is dispatched exactly once: a
+  paused clock (no time advance) dispatches nothing, a clock that goes backward
+  without an explicit reset dispatches nothing (no event re-fire on a rewind),
+  Step presents exactly one record regardless of time, and Reset re-arms the
+  frontier from the start with a new generation for an explicit seek. The plan
+  fingerprint and step count are revalidated on every call so a different plan
+  cannot be silently substituted. Its test proves clock-driven batching, the
+  paused/backward no-op cases, single-stepping to exhaustion, reset-and-replay,
+  and the binding/argument guards. It reads no snapshot bodies and drives no
+  live client; it only decides which already-decoded steps to present each tick.
+  Standalone bootstrap
   data and file-backed/client playback/seek wiring, canonical timeline
-  publication/reset, binding this dispatch plan into the live client runtime,
+  publication/reset, binding this dispatch plan and cursor into the live client
+  runtime,
   MVD/GTV,
   spectator-view switching,
   and full native/legacy record/play/seek/relay

@@ -59,6 +59,8 @@ typedef enum worr_native_demo_timeline_result_v1_e {
   WORR_NATIVE_DEMO_TIMELINE_ORDER = 7,
   WORR_NATIVE_DEMO_TIMELINE_MALFORMED = 8,
   WORR_NATIVE_DEMO_TIMELINE_WRONG_CLASS = 9,
+  WORR_NATIVE_DEMO_TIMELINE_INVALID_STATE = 10,
+  WORR_NATIVE_DEMO_TIMELINE_NOT_FOUND = 11,
 } worr_native_demo_timeline_result_v1;
 
 enum {
@@ -134,6 +136,95 @@ worr_native_demo_timeline_result_v1 Worr_NativeDemoTimelineBuildV1(
     size_t entry_count, worr_native_demo_timeline_step_v1 *steps_out,
     size_t step_capacity, worr_native_demo_timeline_summary_v1 *summary_out);
 
+/*
+ * Present-once execution cursor over a built plan (FR-10-T13).
+ *
+ * The planner fixes the static dispatch order; this cursor is the execution
+ * half a live demo/MVD/spectator driver ticks against it.  It advances a
+ * present-once frontier: a step is dispatched exactly once and only forward, so
+ * a paused clock (no time advance) dispatches nothing, a clock that goes
+ * backwards without an explicit reset dispatches nothing (no event re-fire on a
+ * rewind), and a Reset re-arms the frontier from the start with a new
+ * generation for an explicit seek.  The cursor is pointer-free: the plan step
+ * array is caller-owned and supplied on every call, and its fingerprint is
+ * revalidated so a caller cannot silently substitute a different plan.  This
+ * core drives no live client and reads no snapshot bodies; it only decides
+ * which already-decoded steps to present this tick.
+ */
+enum {
+  WORR_NATIVE_DEMO_TIMELINE_CURSOR_INITIALIZED = 1u << 0,
+};
+
+typedef struct worr_native_demo_timeline_cursor_v1_s {
+  uint32_t struct_size;
+  uint16_t schema_version;
+  uint16_t state_flags;
+  uint32_t reset_generation;
+  uint32_t reserved0;
+  uint64_t plan_fingerprint;      /* binds the cursor to one exact plan */
+  uint64_t step_count;
+  uint64_t next_step;             /* present-once frontier: next step to emit */
+  uint64_t presented_count;
+  uint64_t last_presented_time_us;
+  uint64_t last_snapshot_ordinal; /* anchor of the most recently emitted step */
+  uint64_t reserved1;
+} worr_native_demo_timeline_cursor_v1;
+
+/* One contiguous batch of steps to present this tick: [first_step, first_step +
+ * count).  count == 0 means nothing is due (paused clock, backward target, or
+ * end of plan). */
+typedef struct worr_native_demo_timeline_batch_v1_s {
+  uint32_t struct_size;
+  uint16_t schema_version;
+  uint16_t flags;
+  uint64_t first_step;
+  uint64_t count;
+  uint64_t last_time_us;
+  uint64_t last_snapshot_ordinal;
+} worr_native_demo_timeline_batch_v1;
+
+/*
+ * Binds a cursor to a plan described by `summary` (its fingerprint and step
+ * count) and arms the frontier at the start.  cursor_out is untouched on
+ * failure.
+ */
+worr_native_demo_timeline_result_v1 Worr_NativeDemoTimelineCursorInitV1(
+    const worr_native_demo_timeline_summary_v1 *summary,
+    worr_native_demo_timeline_cursor_v1 *cursor_out);
+
+/*
+ * Clock-driven advance: dispatches every not-yet-presented step whose time is
+ * <= target_time_us, as one contiguous batch, and advances the frontier past
+ * them.  A target before the last presented time (a rewind without a reset)
+ * dispatches nothing.  `steps`/`step_count`/`plan_fingerprint` must match the
+ * bound plan exactly.  batch_out is untouched on failure; on success count may
+ * be zero.
+ */
+worr_native_demo_timeline_result_v1 Worr_NativeDemoTimelineCursorAdvanceToTimeV1(
+    worr_native_demo_timeline_cursor_v1 *cursor,
+    const worr_native_demo_timeline_step_v1 *steps, size_t step_count,
+    uint64_t plan_fingerprint, uint64_t target_time_us,
+    worr_native_demo_timeline_batch_v1 *batch_out);
+
+/*
+ * Single-step advance: dispatches exactly the next step (batch count 1) and
+ * advances the frontier by one, regardless of time.  Returns NOT_FOUND with an
+ * untouched batch_out when the frontier is already at the end of the plan.
+ */
+worr_native_demo_timeline_result_v1 Worr_NativeDemoTimelineCursorStepV1(
+    worr_native_demo_timeline_cursor_v1 *cursor,
+    const worr_native_demo_timeline_step_v1 *steps, size_t step_count,
+    uint64_t plan_fingerprint,
+    worr_native_demo_timeline_batch_v1 *batch_out);
+
+/*
+ * Re-arms the frontier at the start for an explicit seek/restart and bumps the
+ * reset generation, so a subsequent advance re-presents from the beginning.
+ * The plan binding is unchanged.
+ */
+worr_native_demo_timeline_result_v1 Worr_NativeDemoTimelineCursorResetV1(
+    worr_native_demo_timeline_cursor_v1 *cursor);
+
 #ifdef __cplusplus
 }
 #endif
@@ -155,5 +246,11 @@ WORR_NATIVE_DEMO_TIMELINE_STATIC_ASSERT(
 WORR_NATIVE_DEMO_TIMELINE_STATIC_ASSERT(
     sizeof(worr_native_demo_timeline_config_v1) == 16,
     "native demo timeline config layout changed");
+WORR_NATIVE_DEMO_TIMELINE_STATIC_ASSERT(
+    sizeof(worr_native_demo_timeline_cursor_v1) == 72,
+    "native demo timeline cursor layout changed");
+WORR_NATIVE_DEMO_TIMELINE_STATIC_ASSERT(
+    sizeof(worr_native_demo_timeline_batch_v1) == 40,
+    "native demo timeline batch layout changed");
 
 #undef WORR_NATIVE_DEMO_TIMELINE_STATIC_ASSERT

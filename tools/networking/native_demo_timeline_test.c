@@ -444,6 +444,180 @@ static bool test_argument_guards(void) {
   return true;
 }
 
+/* Records, opens, and builds the plan; returns the steps + summary. */
+static bool build_plan(worr_native_demo_timeline_step_v1 *steps_out,
+                       worr_native_demo_timeline_summary_v1 *summary_out,
+                       uint64_t *record_count_out) {
+  worr_native_demo_timeline_config_v1 config = make_config();
+
+  CHECK(record_and_open(record_count_out));
+  CHECK(Worr_NativeDemoTimelineBuildV1(
+            &config, sink_storage.bytes, sink_storage.size, index_scratch,
+            (size_t)*record_count_out, steps_out, TEST_INDEX_CAPACITY,
+            summary_out) == WORR_NATIVE_DEMO_TIMELINE_OK);
+  return true;
+}
+
+static bool test_cursor_clock_drive(void) {
+  worr_native_demo_timeline_step_v1 steps[TEST_INDEX_CAPACITY];
+  worr_native_demo_timeline_summary_v1 summary;
+  worr_native_demo_timeline_cursor_v1 cursor;
+  worr_native_demo_timeline_batch_v1 batch;
+  uint64_t record_count = 0;
+  uint64_t fp;
+
+  CHECK(build_plan(steps, &summary, &record_count));
+  fp = summary.plan_fingerprint;
+  CHECK(Worr_NativeDemoTimelineCursorInitV1(&summary, &cursor) ==
+        WORR_NATIVE_DEMO_TIMELINE_OK);
+  CHECK(cursor.step_count == record_count);
+  CHECK(cursor.next_step == 0);
+
+  /* A target before the first step (time 1000000) presents nothing. */
+  CHECK(Worr_NativeDemoTimelineCursorAdvanceToTimeV1(
+            &cursor, steps, (size_t)record_count, fp, 0u, &batch) ==
+        WORR_NATIVE_DEMO_TIMELINE_OK);
+  CHECK(batch.count == 0);
+  CHECK(cursor.next_step == 0);
+
+  /* Advancing to time 1200000 presents the first three steps (times 1000000,
+   * 1100000, 1200000) as one contiguous batch. */
+  CHECK(Worr_NativeDemoTimelineCursorAdvanceToTimeV1(
+            &cursor, steps, (size_t)record_count, fp, UINT64_C(1200000),
+            &batch) == WORR_NATIVE_DEMO_TIMELINE_OK);
+  CHECK(batch.first_step == 0);
+  CHECK(batch.count == 3);
+  CHECK(cursor.presented_count == 3);
+  CHECK(cursor.next_step == 3);
+  CHECK(batch.last_time_us == UINT64_C(1200000));
+
+  /* A rewind target (below the frontier) presents nothing: the frontier only
+   * moves forward, so no already-presented event re-fires. */
+  CHECK(Worr_NativeDemoTimelineCursorAdvanceToTimeV1(
+            &cursor, steps, (size_t)record_count, fp, UINT64_C(1000000),
+            &batch) == WORR_NATIVE_DEMO_TIMELINE_OK);
+  CHECK(batch.count == 0);
+  CHECK(cursor.next_step == 3);
+
+  /* Advancing past the end presents the final step exactly once. */
+  CHECK(Worr_NativeDemoTimelineCursorAdvanceToTimeV1(
+            &cursor, steps, (size_t)record_count, fp, UINT64_C(9000000),
+            &batch) == WORR_NATIVE_DEMO_TIMELINE_OK);
+  CHECK(batch.first_step == 3);
+  CHECK(batch.count == 1);
+  CHECK(cursor.presented_count == record_count);
+
+  /* Nothing remains to present. */
+  CHECK(Worr_NativeDemoTimelineCursorAdvanceToTimeV1(
+            &cursor, steps, (size_t)record_count, fp, UINT64_C(9000000),
+            &batch) == WORR_NATIVE_DEMO_TIMELINE_OK);
+  CHECK(batch.count == 0);
+  return true;
+}
+
+static bool test_cursor_step(void) {
+  worr_native_demo_timeline_step_v1 steps[TEST_INDEX_CAPACITY];
+  worr_native_demo_timeline_summary_v1 summary;
+  worr_native_demo_timeline_cursor_v1 cursor;
+  worr_native_demo_timeline_batch_v1 batch;
+  uint64_t record_count = 0;
+  uint64_t fp;
+  uint64_t i;
+
+  CHECK(build_plan(steps, &summary, &record_count));
+  fp = summary.plan_fingerprint;
+  CHECK(Worr_NativeDemoTimelineCursorInitV1(&summary, &cursor) ==
+        WORR_NATIVE_DEMO_TIMELINE_OK);
+
+  /* Single-step presents each step once, in order, regardless of time. */
+  for (i = 0; i < record_count; ++i) {
+    CHECK(Worr_NativeDemoTimelineCursorStepV1(
+              &cursor, steps, (size_t)record_count, fp, &batch) ==
+          WORR_NATIVE_DEMO_TIMELINE_OK);
+    CHECK(batch.first_step == i);
+    CHECK(batch.count == 1);
+  }
+  /* The frontier is exhausted. */
+  CHECK(Worr_NativeDemoTimelineCursorStepV1(
+            &cursor, steps, (size_t)record_count, fp, &batch) ==
+        WORR_NATIVE_DEMO_TIMELINE_NOT_FOUND);
+  CHECK(cursor.presented_count == record_count);
+  return true;
+}
+
+static bool test_cursor_reset(void) {
+  worr_native_demo_timeline_step_v1 steps[TEST_INDEX_CAPACITY];
+  worr_native_demo_timeline_summary_v1 summary;
+  worr_native_demo_timeline_cursor_v1 cursor;
+  worr_native_demo_timeline_batch_v1 batch;
+  uint64_t record_count = 0;
+  uint64_t fp;
+
+  CHECK(build_plan(steps, &summary, &record_count));
+  fp = summary.plan_fingerprint;
+  CHECK(Worr_NativeDemoTimelineCursorInitV1(&summary, &cursor) ==
+        WORR_NATIVE_DEMO_TIMELINE_OK);
+  CHECK(Worr_NativeDemoTimelineCursorAdvanceToTimeV1(
+            &cursor, steps, (size_t)record_count, fp, UINT64_C(9000000),
+            &batch) == WORR_NATIVE_DEMO_TIMELINE_OK);
+  CHECK(cursor.presented_count == record_count);
+
+  /* Reset re-arms the frontier for an explicit seek and bumps the generation. */
+  CHECK(Worr_NativeDemoTimelineCursorResetV1(&cursor) ==
+        WORR_NATIVE_DEMO_TIMELINE_OK);
+  CHECK(cursor.reset_generation == 1);
+  CHECK(cursor.next_step == 0);
+  CHECK(cursor.presented_count == 0);
+  CHECK(cursor.last_snapshot_ordinal == 0);
+
+  /* After reset the whole plan re-presents from the start. */
+  CHECK(Worr_NativeDemoTimelineCursorAdvanceToTimeV1(
+            &cursor, steps, (size_t)record_count, fp, UINT64_C(9000000),
+            &batch) == WORR_NATIVE_DEMO_TIMELINE_OK);
+  CHECK(batch.first_step == 0);
+  CHECK(batch.count == record_count);
+  return true;
+}
+
+static bool test_cursor_binding_guards(void) {
+  worr_native_demo_timeline_step_v1 steps[TEST_INDEX_CAPACITY];
+  worr_native_demo_timeline_summary_v1 summary;
+  worr_native_demo_timeline_cursor_v1 cursor;
+  worr_native_demo_timeline_cursor_v1 raw;
+  worr_native_demo_timeline_batch_v1 batch;
+  uint64_t record_count = 0;
+  uint64_t fp;
+
+  CHECK(build_plan(steps, &summary, &record_count));
+  fp = summary.plan_fingerprint;
+  CHECK(Worr_NativeDemoTimelineCursorInitV1(&summary, &cursor) ==
+        WORR_NATIVE_DEMO_TIMELINE_OK);
+
+  /* A different plan fingerprint or step count cannot be substituted. */
+  CHECK(Worr_NativeDemoTimelineCursorAdvanceToTimeV1(
+            &cursor, steps, (size_t)record_count, fp ^ UINT64_C(1),
+            UINT64_C(9000000), &batch) ==
+        WORR_NATIVE_DEMO_TIMELINE_INVALID_METADATA);
+  CHECK(Worr_NativeDemoTimelineCursorAdvanceToTimeV1(
+            &cursor, steps, (size_t)record_count - 1, fp, UINT64_C(9000000),
+            &batch) == WORR_NATIVE_DEMO_TIMELINE_INVALID_METADATA);
+
+  /* An uninitialized cursor is rejected. */
+  memset(&raw, 0, sizeof(raw));
+  CHECK(Worr_NativeDemoTimelineCursorAdvanceToTimeV1(
+            &raw, steps, (size_t)record_count, fp, UINT64_C(9000000), &batch) ==
+        WORR_NATIVE_DEMO_TIMELINE_INVALID_STATE);
+
+  /* Null batch/step guards. */
+  CHECK(Worr_NativeDemoTimelineCursorAdvanceToTimeV1(
+            &cursor, steps, (size_t)record_count, fp, UINT64_C(9000000),
+            NULL) == WORR_NATIVE_DEMO_TIMELINE_INVALID_ARGUMENT);
+  CHECK(Worr_NativeDemoTimelineCursorStepV1(
+            &cursor, NULL, (size_t)record_count, fp, &batch) ==
+        WORR_NATIVE_DEMO_TIMELINE_INVALID_ARGUMENT);
+  return true;
+}
+
 int main(void) {
   if (!test_plan())
     return 1;
@@ -456,6 +630,14 @@ int main(void) {
   if (!test_truncated_index_fails())
     return 1;
   if (!test_argument_guards())
+    return 1;
+  if (!test_cursor_clock_drive())
+    return 1;
+  if (!test_cursor_step())
+    return 1;
+  if (!test_cursor_reset())
+    return 1;
+  if (!test_cursor_binding_guards())
     return 1;
   puts("native_demo_timeline_test: all checks passed");
   return 0;

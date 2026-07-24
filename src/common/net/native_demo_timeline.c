@@ -192,3 +192,141 @@ worr_native_demo_timeline_result_v1 Worr_NativeDemoTimelineBuildV1(
   memcpy(summary_out, &summary, sizeof(summary));
   return WORR_NATIVE_DEMO_TIMELINE_OK;
 }
+
+/* Revalidate a cursor's binding against the caller-supplied plan on every
+ * operation, so a different or resized plan cannot be silently substituted. */
+static worr_native_demo_timeline_result_v1 worr_timeline_cursor_check(
+    const worr_native_demo_timeline_cursor_v1 *cursor,
+    const worr_native_demo_timeline_step_v1 *steps, size_t step_count,
+    uint64_t plan_fingerprint) {
+  if (cursor == NULL || steps == NULL)
+    return WORR_NATIVE_DEMO_TIMELINE_INVALID_ARGUMENT;
+  if (cursor->struct_size != sizeof(*cursor) ||
+      cursor->schema_version != WORR_NATIVE_DEMO_TIMELINE_SCHEMA_VERSION ||
+      (cursor->state_flags & WORR_NATIVE_DEMO_TIMELINE_CURSOR_INITIALIZED) == 0)
+    return WORR_NATIVE_DEMO_TIMELINE_INVALID_STATE;
+  if ((uint64_t)step_count != cursor->step_count ||
+      plan_fingerprint != cursor->plan_fingerprint)
+    return WORR_NATIVE_DEMO_TIMELINE_INVALID_METADATA;
+  if (cursor->next_step > cursor->step_count)
+    return WORR_NATIVE_DEMO_TIMELINE_INVALID_STATE;
+  return WORR_NATIVE_DEMO_TIMELINE_OK;
+}
+
+worr_native_demo_timeline_result_v1 Worr_NativeDemoTimelineCursorInitV1(
+    const worr_native_demo_timeline_summary_v1 *summary,
+    worr_native_demo_timeline_cursor_v1 *cursor_out) {
+  worr_native_demo_timeline_cursor_v1 cursor;
+
+  if (summary == NULL || cursor_out == NULL)
+    return WORR_NATIVE_DEMO_TIMELINE_INVALID_ARGUMENT;
+  if (summary->struct_size != sizeof(*summary) ||
+      summary->schema_version != WORR_NATIVE_DEMO_TIMELINE_SCHEMA_VERSION ||
+      summary->step_count == 0)
+    return WORR_NATIVE_DEMO_TIMELINE_INVALID_METADATA;
+
+  memset(&cursor, 0, sizeof(cursor));
+  cursor.struct_size = sizeof(cursor);
+  cursor.schema_version = WORR_NATIVE_DEMO_TIMELINE_SCHEMA_VERSION;
+  cursor.state_flags = WORR_NATIVE_DEMO_TIMELINE_CURSOR_INITIALIZED;
+  cursor.plan_fingerprint = summary->plan_fingerprint;
+  cursor.step_count = summary->step_count;
+  memcpy(cursor_out, &cursor, sizeof(cursor));
+  return WORR_NATIVE_DEMO_TIMELINE_OK;
+}
+
+/* Commit a contiguous [first, first+count) presentation to the cursor and emit
+ * the batch.  Callers must have already validated the binding and computed the
+ * range against the present-once frontier. */
+static void worr_timeline_emit_batch(
+    worr_native_demo_timeline_cursor_v1 *cursor,
+    const worr_native_demo_timeline_step_v1 *steps, uint64_t first,
+    uint64_t count, worr_native_demo_timeline_batch_v1 *batch_out) {
+  worr_native_demo_timeline_batch_v1 batch;
+
+  memset(&batch, 0, sizeof(batch));
+  batch.struct_size = sizeof(batch);
+  batch.schema_version = WORR_NATIVE_DEMO_TIMELINE_SCHEMA_VERSION;
+  batch.first_step = first;
+  batch.count = count;
+
+  if (count != 0) {
+    const worr_native_demo_timeline_step_v1 *last = &steps[first + count - 1];
+    uint64_t i;
+    for (i = first; i < first + count; ++i) {
+      if (steps[i].record_kind == WORR_NATIVE_DEMO_RECORD_SNAPSHOT_V1)
+        cursor->last_snapshot_ordinal = steps[i].ordinal;
+    }
+    cursor->next_step = first + count;
+    cursor->presented_count += count;
+    cursor->last_presented_time_us = last->time_us;
+    batch.last_time_us = last->time_us;
+  }
+  batch.last_snapshot_ordinal = cursor->last_snapshot_ordinal;
+  memcpy(batch_out, &batch, sizeof(batch));
+}
+
+worr_native_demo_timeline_result_v1 Worr_NativeDemoTimelineCursorAdvanceToTimeV1(
+    worr_native_demo_timeline_cursor_v1 *cursor,
+    const worr_native_demo_timeline_step_v1 *steps, size_t step_count,
+    uint64_t plan_fingerprint, uint64_t target_time_us,
+    worr_native_demo_timeline_batch_v1 *batch_out) {
+  worr_native_demo_timeline_result_v1 status;
+  uint64_t first;
+  uint64_t end;
+
+  if (batch_out == NULL)
+    return WORR_NATIVE_DEMO_TIMELINE_INVALID_ARGUMENT;
+  status = worr_timeline_cursor_check(cursor, steps, step_count,
+                                      plan_fingerprint);
+  if (status != WORR_NATIVE_DEMO_TIMELINE_OK)
+    return status;
+
+  first = cursor->next_step;
+  end = first;
+  /* Present every not-yet-presented step at or before the target time.  A
+   * target before an already-presented step contributes nothing: the frontier
+   * only moves forward, so there is no event re-fire on a backward clock. */
+  while (end < cursor->step_count && steps[end].time_us <= target_time_us)
+    ++end;
+
+  worr_timeline_emit_batch(cursor, steps, first, end - first, batch_out);
+  return WORR_NATIVE_DEMO_TIMELINE_OK;
+}
+
+worr_native_demo_timeline_result_v1 Worr_NativeDemoTimelineCursorStepV1(
+    worr_native_demo_timeline_cursor_v1 *cursor,
+    const worr_native_demo_timeline_step_v1 *steps, size_t step_count,
+    uint64_t plan_fingerprint,
+    worr_native_demo_timeline_batch_v1 *batch_out) {
+  worr_native_demo_timeline_result_v1 status;
+
+  if (batch_out == NULL)
+    return WORR_NATIVE_DEMO_TIMELINE_INVALID_ARGUMENT;
+  status = worr_timeline_cursor_check(cursor, steps, step_count,
+                                      plan_fingerprint);
+  if (status != WORR_NATIVE_DEMO_TIMELINE_OK)
+    return status;
+  if (cursor->next_step >= cursor->step_count)
+    return WORR_NATIVE_DEMO_TIMELINE_NOT_FOUND;
+
+  worr_timeline_emit_batch(cursor, steps, cursor->next_step, 1, batch_out);
+  return WORR_NATIVE_DEMO_TIMELINE_OK;
+}
+
+worr_native_demo_timeline_result_v1 Worr_NativeDemoTimelineCursorResetV1(
+    worr_native_demo_timeline_cursor_v1 *cursor) {
+  if (cursor == NULL)
+    return WORR_NATIVE_DEMO_TIMELINE_INVALID_ARGUMENT;
+  if (cursor->struct_size != sizeof(*cursor) ||
+      cursor->schema_version != WORR_NATIVE_DEMO_TIMELINE_SCHEMA_VERSION ||
+      (cursor->state_flags & WORR_NATIVE_DEMO_TIMELINE_CURSOR_INITIALIZED) == 0)
+    return WORR_NATIVE_DEMO_TIMELINE_INVALID_STATE;
+
+  cursor->next_step = 0;
+  cursor->presented_count = 0;
+  cursor->last_presented_time_us = 0;
+  cursor->last_snapshot_ordinal = 0;
+  cursor->reset_generation += 1;
+  return WORR_NATIVE_DEMO_TIMELINE_OK;
+}
