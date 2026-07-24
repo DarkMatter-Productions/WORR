@@ -10,6 +10,8 @@
 #include "shared/cgame_prediction.h"
 #include "shared/prediction_abi.h"
 
+#include "common/net/local_action_predictor.h"
+
 #include <climits>
 #include <cstdio>
 #include <cstdint>
@@ -133,12 +135,72 @@ extern "C" void CG_PredictionInputSetImportV2(
     prediction_input_import_v2 = import;
 }
 
+/*
+ * FR-10-T08 client weapon-prediction seam (default-off, UNVERIFIED).
+ *
+ * Holds the client-side predictable-weapon predictor.  It is seeded from the
+ * server's authoritative canonical weapon state carried by the native seed
+ * record (worr_local_action_predict_seed_v1) and, once that native
+ * seed-receive path and the canonical command-record bridge are wired, replays
+ * the unacknowledged commands to predict local weapon phase/ammo and match
+ * predicted audiovisual events against authority.  It moves no authority: when
+ * cg_predict_weapon is 0 (default) or unseeded it is a complete no-op, and any
+ * reconciliation hard resync deactivates it.  Its behaviour is not yet
+ * confirmed in a running game.
+ */
+static cvar_t *cg_predict_weapon;
+static worr_local_action_predictor_v1 cg_weapon_predictor;
+
+static bool CG_WeaponPredictEnabled()
+{
+    return cg_predict_weapon && cg_predict_weapon->integer != 0;
+}
+
+void CG_WeaponPredictReset()
+{
+    memset(&cg_weapon_predictor, 0, sizeof(cg_weapon_predictor));
+}
+
+/*
+ * Applies a received authoritative seed, activating the predictor at the
+ * server's exact weapon state.  A no-op returning false when disabled.
+ */
+bool CG_WeaponPredictApplySeed(const worr_local_action_predict_seed_v1 *seed)
+{
+    if (!CG_WeaponPredictEnabled())
+        return false;
+    return Worr_LocalActionPredictSeedApplyV1(seed, &cg_weapon_predictor);
+}
+
+/*
+ * Replays one canonical command through the predictor when active.  Deactivates
+ * (fail-closed) on any core rejection so the caller reseeds from the next
+ * authoritative seed.  Returns false with no effect when disabled or inactive.
+ */
+bool CG_WeaponPredictReplayCommand(const worr_command_record_v1 *command,
+                                   bool attack_held)
+{
+    if (!CG_WeaponPredictEnabled() ||
+        (cg_weapon_predictor.flags & WORR_LOCAL_ACTION_PREDICTOR_ACTIVE) == 0) {
+        return false;
+    }
+    return Worr_LocalActionPredictorReplayV1(&cg_weapon_predictor, command,
+                                             attack_held, false, 0, 0, nullptr);
+}
+
+bool CG_WeaponPredictGetState(worr_local_action_state_v2 *state_out)
+{
+    return Worr_LocalActionPredictorGetStateV1(&cg_weapon_predictor, state_out);
+}
+
 void CG_PredictionAuthority_InitCvars()
 {
     if (!cgei)
         return;
     cg_prediction_snapshot_authority = Cvar_Get(
         "cg_prediction_snapshot_authority", "0", CVAR_NOARCHIVE);
+    cg_predict_weapon = Cvar_Get("cg_predict_weapon", "0", CVAR_NOARCHIVE);
+    CG_WeaponPredictReset();
 }
 
 static void CG_PredictionPlaneFromTrace(worr_prediction_plane_v1 *out,
@@ -770,6 +832,9 @@ static void CG_PredictionHardResync(
 
     CG_ClearPredictionHistory();
     CG_ApplyPredictionAuthority(authority);
+    /* A movement hard resync also drops any predicted weapon state; it must be
+     * reseeded from the next authoritative weapon seed. */
+    CG_WeaponPredictReset();
 
     CG_SnapshotTimeline_NotePredictionReplay(
         range.authoritative_legacy_sequence,
