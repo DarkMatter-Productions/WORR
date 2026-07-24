@@ -204,6 +204,7 @@ void CG_PredictionAuthority_InitCvars()
     cg_predict_weapon = Cvar_Get("cg_predict_weapon", "0", CVAR_NOARCHIVE);
     CG_WeaponPredictReset();
     CG_EventRuntimeSetWeaponSeedApply(&CG_WeaponPredictApplySeed);
+    CG_WeaponPredictSetReplay(&CG_WeaponPredictReplayCommand);
 }
 
 static void CG_PredictionPlaneFromTrace(worr_prediction_plane_v1 *out,
@@ -1042,6 +1043,7 @@ void CL_PredictMovement(void)
      * reconciliation for a joined/frozen/menu-owned player.
      */
     CG_LocalInteractionPredict(input_range);
+    CG_WeaponPredictReplayRange(input_range);
     CG_LocalActionShadowObserveCommands(input_range);
     CG_LocalActionShadowReportParity();
     CG_EventRuntimeSynchronizeLocalInteractionHealth();

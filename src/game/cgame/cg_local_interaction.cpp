@@ -8,6 +8,7 @@ the Free Software Foundation; either version 2 of the License, or
 */
 
 #include "cg_local_interaction.hpp"
+#include "cg_weapon_predict.hpp"
 
 #include "common/net/native_event_sender.h"
 #include "shared/local_interaction_abi.h"
@@ -866,6 +867,49 @@ CG_LocalInteractionSubmitAuthorityReceipt(
         return cg_local_interaction_receipt_result_v1::accepted_unmatched;
     }
     return reconcile_authority_pair(entry);
+}
+
+/*
+ * FR-10-T08 (default-off, UNVERIFIED): replay the canonical command range
+ * through the client weapon predictor.  Reuses the same canonical command
+ * record import as the Hook shadow.  A no-op when weapon prediction is
+ * disabled or the predictor is unseeded; a predictor rejection deactivates it
+ * (it reseeds from the next authoritative seed), so this cannot corrupt state.
+ */
+static cg_weapon_predict_replay_fn weapon_replay_callback = nullptr;
+
+void CG_WeaponPredictSetReplay(cg_weapon_predict_replay_fn fn)
+{
+    weapon_replay_callback = fn;
+}
+
+void CG_WeaponPredictReplayRange(
+    const worr_cgame_prediction_input_range_v1 &prediction_range)
+{
+    worr_cgame_command_record_range_v1 records{};
+
+    if (weapon_replay_callback == nullptr ||
+        (prediction_range.flags & WORR_CGAME_PREDICTION_INPUT_CANONICAL) == 0 ||
+        prediction_range.command_count == 0 ||
+        !valid_import(command_record_import)) {
+        return;
+    }
+    if (command_record_import->ResolveCanonicalCommandRange(
+            prediction_range.authoritative_legacy_sequence + 1u,
+            prediction_range.command_count, &records) !=
+        WORR_CGAME_COMMAND_RECORD_OK) {
+        return;
+    }
+    /* BUTTON_ATTACK is shared.h BIT(0); the byte-order-guarded header is not
+     * safe to include in every build of this file, so match the bit directly. */
+    constexpr std::uint32_t attack_button = 1u;
+    for (std::uint32_t index = 0; index < records.command_count; ++index) {
+        const auto &entry = records.commands[index];
+        const bool attack =
+            (entry.command.command.buttons & attack_button) != 0;
+        if (!weapon_replay_callback(&entry.command, attack))
+            return;
+    }
 }
 
 void CG_LocalInteractionPredict(
