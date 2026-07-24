@@ -1774,6 +1774,22 @@ correction evidence.
   bound arrival orders, more-than-two-table rolling streams, six focused Meson
   rows, production cgame build, refreshed stage, and the final integrated parent
   pass. No prediction or presentation authority moves.
+  A first live-promotion foundation is now present as a pointer-free rule
+  provider that ratifies the client-predictable subset and derives its exact
+  v2 weapon rules from the frozen catalog/profile/semantics tables. The
+  predictable set is derived, not hand-listed: a weapon qualifies only when it
+  is a single-press GENERIC-driver weapon whose v2 blocker mask excludes every
+  local-timeline hazard (held/spin repeat, hold-release, staged fire, mode
+  override, external client state) and whose per-shot ammo debit is fixed
+  (semantics min == max), which resolves to Blaster, Shotgun, Super Shotgun,
+  Grenade Launcher, Railgun, and Disruptor. Predictable local state is phase/
+  animation timing, the muzzle/fire presentation event, and the fixed ammo
+  debit; all world effects stay server-authoritative, exactly as the non-zero
+  blocker masks encode. Every derived rule validates under
+  Worr_LocalActionWeaponRuleValidateV2; the one input the tables cannot supply,
+  animation frame cadence, is isolated as a single documented constant. This is
+  the foundation the client replay driver, server authoritative producer, and
+  live reconciliation still consume; it moves no authority by itself.
 - Evidence:
   `docs-dev/networking-authoritative-prediction-input-range-2026-07-12.md`,
   `docs-dev/networking-canonical-local-action-transaction-v2-2026-07-13.md`, and
@@ -2723,10 +2739,25 @@ correction evidence.
   records, and never duplicates a snapshot. Header-only streams remain valid;
   stream/index mutation, ordinal gaps, epoch/time mismatch, overflow, capacity,
   and alias faults fail unchanged. DM2, MVD, GTV, and q2proto are unchanged.
-  Standalone bootstrap data and file-backed/client playback/seek, canonical
-  timeline publication/reset, command/event recording, MVD/GTV,
+  The recorder now also writes canonical command and event WNC1 images into
+  WDR1 command/event records through the same transactional framing, byte cap,
+  and cross-class ordering path as snapshots (a command's identity increases
+  independently; an event requires a prior snapshot; at an equal time a
+  snapshot precedes an event). Playback correspondingly gained a complete
+  read-only decode-at-index family for all three record classes
+  (command/event/snapshot) that never mutates the cursor, so a driver can walk
+  every index entry in ordinal order and decode any canonical body at any
+  position without disturbing the snapshot-centric step traversal. A one-call
+  open performs the two-pass count/fill scan, proves the passes agree, and
+  binds a ready cursor from a whole loaded byte image. A three-way adversarial
+  review of the new record/decode functions reported zero defects, and the
+  recorder, playback, and C/C++ layout parity tests pass. These are
+  pointer-free cores: they still open no files and publish nothing to a live
+  client. Standalone bootstrap data and file-backed/client playback/seek wiring,
+  canonical timeline publication/reset, present-once command/event replay into
+  the live client runtime, MVD/GTV,
   spectator-view switching,
-  event-present-once playback, and full native/legacy record/play/seek/relay
+  and full native/legacy record/play/seek/relay
   matrices remain open.
 - Evidence:
   `docs-dev/networking-live-client-snapshot-prediction-and-demo-clock-2026-07-12.md`
