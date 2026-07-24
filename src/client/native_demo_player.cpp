@@ -45,6 +45,8 @@ struct client_native_demo_player_t {
     uint64_t presented_snapshots{};
     uint64_t presented_events{};
     uint64_t skipped_no_consumer{};
+    bool has_bootstrap{};
+    worr_native_demo_bootstrap_header_v1 bootstrap_header{};
     bool clock_started{};
     char path[MAX_OSPATH]{};
 };
@@ -78,6 +80,8 @@ void release_storage()
     player.presented_snapshots = 0;
     player.presented_events = 0;
     player.skipped_no_consumer = 0;
+    player.has_bootstrap = false;
+    memset(&player.bootstrap_header, 0, sizeof(player.bootstrap_header));
     player.path[0] = '\0';
 }
 
@@ -312,11 +316,33 @@ void CL_NativeDemoPlay_f()
                (unsigned long long)player.summary.snapshot_count,
                (unsigned long long)player.summary.command_count,
                (unsigned long long)player.summary.event_count);
+
+    /* If the stream carries a gamestate bootstrap (index 0), decode and report
+     * it.  This proves the capture->format->playback->decode loop end-to-end and
+     * stages the gamestate the client map-load will apply.  Read-only: applying
+     * it to cl and triggering the map load is the remaining running-game step. */
+    if (player.record_count > 0 &&
+        player.index[0].record_kind == WORR_NATIVE_DEMO_RECORD_BOOTSTRAP_V1) {
+        worr_native_demo_bootstrap_header_v1 boot;
+        memset(&boot, 0, sizeof(boot));
+        if (Worr_NativeDemoPlaybackDecodeBootstrapAtV1(
+                &player.playback_cursor, player.bytes, player.byte_count,
+                player.index, (size_t)player.record_count, 0u, &boot, nullptr,
+                0) == WORR_NATIVE_DEMO_PLAYBACK_OK) {
+            player.has_bootstrap = true;
+            player.bootstrap_header = boot;
+            Com_Printf("  bootstrap: map %s, gamedir %s, protocol %u, %u "
+                       "configstrings (map-load into a live client is the "
+                       "remaining running-game step).\n",
+                       boot.mapname, boot.gamedir, (unsigned)boot.protocol,
+                       (unsigned)boot.configstring_count);
+        }
+    }
+
     worr_native_snapshot_consumer_v1 probe{};
-    if (!CL_SnapshotShadowGetNativeConsumerV1(&probe))
+    if (!player.has_bootstrap && !CL_SnapshotShadowGetNativeConsumerV1(&probe))
         Com_Printf("Note: no cgame timeline is active, so the plan advances "
-                   "but presents nothing until a map is loaded (standalone "
-                   "bootstrap is not yet wired).\n");
+                   "but presents nothing until a map is loaded.\n");
 }
 
 void CL_NativeDemoStopPlay_f()
