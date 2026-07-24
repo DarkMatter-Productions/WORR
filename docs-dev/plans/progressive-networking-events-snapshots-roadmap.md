@@ -2873,7 +2873,11 @@ correction evidence.
   standalone bootstrap
   data / map-load seam so a native demo can start a playable session without a
   live connection (both snapshot and event presentation are wired but present
-  nothing until a cgame timeline is active), file-backed
+  nothing until a cgame timeline is active) -- a multi-subsystem feature (native
+  codec ABI + demo-format threading + recorder capture + an unverifiable
+  legacy-path client load), scoped at precise file:line in
+  `docs-dev/fr-10-t13-native-demo-bootstrap-map-load-implementation-plan.md`;
+  file-backed
   seek wiring, canonical timeline
   publication/reset,
   MVD/GTV,
