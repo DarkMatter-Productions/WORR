@@ -492,6 +492,8 @@ sgame_src = bgame_src + [
   'src/game/sgame/network/local_action_shadow.hpp',
   'src/game/sgame/network/local_action_weapon_catalog.cpp',
   'src/game/sgame/network/local_action_weapon_catalog.hpp',
+  'src/game/sgame/network/local_action_predict_producer.cpp',
+  'src/game/sgame/network/local_action_predict_producer.hpp',
   'src/common/net/event_shadow_map.c',
   'src/game/sgame/network/event_shadow.cpp',
   'src/game/sgame/network/event_shadow.hpp',
