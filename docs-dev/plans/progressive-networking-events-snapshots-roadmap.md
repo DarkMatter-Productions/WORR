@@ -1784,7 +1784,22 @@ correction evidence.
   (semantics min == max), which resolves to Blaster, Shotgun, Super Shotgun,
   Grenade Launcher, Prox Launcher, Rocket Launcher, Railgun, and Disruptor (a
   dedicated unit test verifies the derived 8-weapon set and that every derived
-  rule validates under the v2 core). Predictable local state is phase/
+  rule validates under the v2 core). A pure predictable-weapon replay engine
+  (Worr_LocalActionPredictor) now owns one v2 weapon state and advances it one
+  canonical command at a time through the deterministic core using the
+  provider's rules, fail-closed on any non-predictable weapon, non-cursor-next
+  command, or hard-resync classification. Because producer role is excluded
+  from every semantic hash, the same engine serves the client predictor and
+  the server producer; a dedicated test proves the seed cases, a full Shotgun
+  fire/drain/refire lifecycle, matching-authority reconciliation with no
+  correction, and a command-mismatch hard resync. The client seeds this engine
+  from the server's authoritative canonical weapon state (the server resolves
+  weapon->catalog with its existing SG_LocalActionCatalog adapter, so the
+  client never needs the sgame-internal item enum); wiring the client
+  cg_predict replay seam and the sgame authoritative-producer seam behind the
+  default-off prediction gate, plus the compact authority-state transport
+  between them, is the remaining T08 integration. Predictable local state is
+  phase/
   animation timing, the muzzle/fire presentation event, and the fixed ammo
   debit; all world effects stay server-authoritative, exactly as the non-zero
   blocker masks encode. Every derived rule validates under
