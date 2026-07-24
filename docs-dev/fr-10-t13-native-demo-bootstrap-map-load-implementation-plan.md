@@ -99,12 +99,31 @@ This touches the legacy serverdata/demo machinery and **cannot be unit-verified*
 it must be validated on a real client per the verification runbook (extend it with
 a "native_play loads the recorded map and renders" criterion).
 
+## Build status (incremental)
+
+- **DONE — payload serialization core** (`inc/common/net/native_demo_bootstrap.h`,
+  `src/common/net/native_demo_bootstrap.c`, test `network-native-demo-bootstrap`):
+  the pointer-free serialization of the bootstrap gamestate — the fixed
+  serverdata-identity header (protocol/gamedir/clientNum/csr-variant/map name +
+  checksum) plus the variable configstring table — with a transactional,
+  fail-closed encoder/decoder and a roundtrip + capacity + malformed/truncated/
+  reorder test. This is the data every later layer carries. Baselines are
+  intentionally omitted (the first snapshot supplies entity state).
+- **TODO — codec-class wrapper**: wrap this payload as a WNC1 record class
+  `WORR_NATIVE_RECORD_BOOTSTRAP_V1` (native_envelope + native_codec) so a WDM1
+  record can carry it (the record body must be a codec image, see below).
+- **TODO — demo-format threading**: the ~15 record_kind sites + the
+  bootstrap-precedes-everything ordering rule.
+- **TODO — recorder capture**: fill the header/configstrings from `cl` and write
+  the bootstrap record first.
+- **TODO (running-game gate) — client map-load**: apply the decoded bootstrap and
+  reproduce the serverdata→configstrings→map→cgame sequence.
+
 ## Verification
 
-- Unit-testable now: the codec bootstrap encode/decode roundtrip, the demo-format
-  threading (record→scan→index→decode roundtrip with a bootstrap-first stream),
-  and the bootstrap-precedes-everything ordering (a stream with a snapshot before
-  bootstrap must fail closed). Build these as a `native_demo_bootstrap_test`
-  mirroring `native_demo_roundtrip_test`.
+- Unit-testable (payload core done; codec + demo-format threading next): the
+  encode/decode roundtrip, the record→scan→index→decode roundtrip with a
+  bootstrap-first stream, and the bootstrap-precedes-everything ordering (a
+  snapshot before bootstrap must fail closed).
 - Running-game only: the recorder capturing a real map's gamestate and the client
   reproducing the map load. This is the evidence gate; no unit test can close it.

@@ -1863,6 +1863,15 @@ native_demo_timeline_core_lib = static_library(
   override_options: ['c_std=c11'],
 )
 
+native_demo_bootstrap_core_lib = static_library(
+  'native_demo_bootstrap_core',
+  'src/common/net/native_demo_bootstrap.c',
+  include_directories: include_directories('inc'),
+  install: false,
+  pic: true,
+  override_options: ['c_std=c11'],
+)
+
 native_session_core_lib = static_library(
   'native_session_core',
   'src/common/net/native_session.c',
@@ -3765,6 +3774,15 @@ native_demo_roundtrip_test = executable(
   override_options: ['c_std=c11'],
 )
 
+native_demo_bootstrap_test = executable(
+  'native_demo_bootstrap_test',
+  'tools/networking/native_demo_bootstrap_test.c',
+  include_directories: include_directories('inc'),
+  link_with: [native_demo_bootstrap_core_lib],
+  install: false,
+  override_options: ['c_std=c11'],
+)
+
 native_demo_timeline_test = executable(
   'native_demo_timeline_test',
   'tools/networking/native_demo_timeline_test.c',
@@ -5498,6 +5516,13 @@ test(
 test(
   'network-native-demo-timeline',
   native_demo_timeline_test,
+  suite: 'networking',
+  timeout: 30,
+)
+
+test(
+  'network-native-demo-bootstrap',
+  native_demo_bootstrap_test,
   suite: 'networking',
   timeout: 30,
 )
