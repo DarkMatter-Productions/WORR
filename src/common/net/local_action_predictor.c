@@ -1,0 +1,201 @@
+/*
+Copyright (C) 2026 WORR contributors
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+*/
+
+#include "common/net/local_action_predictor.h"
+
+#include <string.h>
+
+#include "shared/local_action_rule_provider.h"
+
+static bool bytes_are_zero(const void *data, size_t size) {
+  const unsigned char *bytes = (const unsigned char *)data;
+  size_t index;
+  for (index = 0; index < size; ++index) {
+    if (bytes[index] != 0)
+      return false;
+  }
+  return true;
+}
+
+static bool predictor_shape_valid(
+    const worr_local_action_predictor_v1 *predictor) {
+  return predictor != NULL &&
+         predictor->struct_size == sizeof(*predictor) &&
+         predictor->schema_version ==
+             WORR_LOCAL_ACTION_PREDICTOR_ABI_VERSION &&
+         predictor->reserved0 == 0;
+}
+
+static void deactivate(worr_local_action_predictor_v1 *predictor) {
+  predictor->flags &= ~(uint32_t)WORR_LOCAL_ACTION_PREDICTOR_ACTIVE;
+  if (predictor->resync_count != UINT64_MAX)
+    ++predictor->resync_count;
+}
+
+static void make_absent_rule(worr_local_action_weapon_rule_v2 *rule) {
+  memset(rule, 0, sizeof(*rule));
+  rule->struct_size = sizeof(*rule);
+  rule->schema_version = WORR_LOCAL_ACTION_ABI_VERSION;
+  rule->model_revision = WORR_LOCAL_ACTION_MODEL_REVISION;
+}
+
+bool Worr_LocalActionPredictorSeedV1(worr_local_action_predictor_v1 *predictor,
+                                     uint32_t command_epoch,
+                                     uint32_t catalog_id,
+                                     uint32_t active_ammo_units,
+                                     uint32_t presentation_frame) {
+  worr_local_action_predictor_v1 next;
+
+  if (predictor == NULL || command_epoch == 0)
+    return false;
+
+  memset(&next, 0, sizeof(next));
+  next.struct_size = sizeof(next);
+  next.schema_version = WORR_LOCAL_ACTION_PREDICTOR_ABI_VERSION;
+
+  /* A zero weapon is a valid "nothing predictable" seed: the predictor stays
+   * inactive but the call succeeds so the caller need not special-case it. */
+  if (catalog_id == 0) {
+    *predictor = next;
+    return true;
+  }
+
+  if (!Worr_LocalActionRuleProviderPredictableV1(catalog_id)) {
+    *predictor = next;
+    return false;
+  }
+  if (!Worr_LocalActionStateInitV2(&next.state, command_epoch, catalog_id,
+                                   active_ammo_units, presentation_frame)) {
+    *predictor = next;
+    return false;
+  }
+  next.flags = WORR_LOCAL_ACTION_PREDICTOR_ACTIVE;
+  next.catalog_id = catalog_id;
+  *predictor = next;
+  return true;
+}
+
+bool Worr_LocalActionPredictorReplayV1(
+    worr_local_action_predictor_v1 *predictor,
+    const worr_command_record_v1 *command, bool attack_held,
+    bool switch_requested, uint32_t requested_weapon_id,
+    uint32_t requested_ammo_units,
+    worr_local_action_transaction_v2 *transaction_out) {
+  worr_local_action_weapon_rule_v2 active;
+  worr_local_action_weapon_rule_v2 pending;
+  worr_local_action_intent_v2 intent;
+  worr_local_action_transaction_v2 transaction;
+  uint32_t pending_target;
+
+  if (!predictor_shape_valid(predictor) || command == NULL)
+    return false;
+  if ((predictor->flags & WORR_LOCAL_ACTION_PREDICTOR_ACTIVE) == 0)
+    return false;
+
+  memset(&active, 0, sizeof(active));
+  if (!Worr_LocalActionRuleProviderBuildRuleV1(
+          predictor->state.active_weapon_id, &active)) {
+    deactivate(predictor);
+    return false;
+  }
+
+  memset(&pending, 0, sizeof(pending));
+  pending_target =
+      switch_requested ? requested_weapon_id : predictor->state.pending_weapon_id;
+  if (pending_target != 0) {
+    if (!Worr_LocalActionRuleProviderBuildRuleV1(pending_target, &pending)) {
+      /* Switching to a non-predictable weapon cannot be predicted. */
+      deactivate(predictor);
+      return false;
+    }
+  } else {
+    make_absent_rule(&pending);
+  }
+
+  memset(&intent, 0, sizeof(intent));
+  if (!Worr_LocalActionRuleProviderBuildIntentV1(
+          attack_held, switch_requested, requested_weapon_id,
+          requested_ammo_units, &intent)) {
+    deactivate(predictor);
+    return false;
+  }
+
+  memset(&transaction, 0, sizeof(transaction));
+  if (!Worr_LocalActionBuildTransactionV2(
+          &predictor->state, command, &intent, &active, &pending,
+          WORR_LOCAL_ACTION_PRODUCER_PREDICTED, &transaction)) {
+    deactivate(predictor);
+    return false;
+  }
+
+  predictor->state = transaction.state_after;
+  if (predictor->replay_count != UINT64_MAX)
+    ++predictor->replay_count;
+  if (transaction_out != NULL &&
+      bytes_are_zero(transaction_out, sizeof(*transaction_out))) {
+    *transaction_out = transaction;
+  }
+  return true;
+}
+
+bool Worr_LocalActionPredictorReconcileV1(
+    worr_local_action_predictor_v1 *predictor,
+    const worr_local_action_transaction_v2 *predicted,
+    const worr_local_action_transaction_v2 *authoritative,
+    worr_local_action_correction_v2 *correction_out) {
+  worr_local_action_correction_v2 correction;
+
+  if (!predictor_shape_valid(predictor) || predicted == NULL ||
+      authoritative == NULL) {
+    return false;
+  }
+  if ((predictor->flags & WORR_LOCAL_ACTION_PREDICTOR_ACTIVE) == 0)
+    return false;
+
+  memset(&correction, 0, sizeof(correction));
+  if (!Worr_LocalActionCorrectionClassifyV2(predicted, authoritative,
+                                            &correction)) {
+    deactivate(predictor);
+    return false;
+  }
+
+  if (correction.classification == WORR_LOCAL_ACTION_CORRECTION_HARD_RESYNC) {
+    deactivate(predictor);
+    if (correction_out != NULL &&
+        bytes_are_zero(correction_out, sizeof(*correction_out))) {
+      *correction_out = correction;
+    }
+    return false;
+  }
+
+  /* Authority immediately owns gameplay state; presentation-only differences
+   * keep the predicted state and are smoothed by the caller. */
+  if (correction.classification ==
+      WORR_LOCAL_ACTION_CORRECTION_GAMEPLAY_IMMEDIATE) {
+    predictor->state = authoritative->state_after;
+    if (predictor->correction_count != UINT64_MAX)
+      ++predictor->correction_count;
+  }
+  if (correction_out != NULL &&
+      bytes_are_zero(correction_out, sizeof(*correction_out))) {
+    *correction_out = correction;
+  }
+  return true;
+}
+
+bool Worr_LocalActionPredictorGetStateV1(
+    const worr_local_action_predictor_v1 *predictor,
+    worr_local_action_state_v2 *state_out) {
+  if (!predictor_shape_valid(predictor) || state_out == NULL)
+    return false;
+  if ((predictor->flags & WORR_LOCAL_ACTION_PREDICTOR_ACTIVE) == 0)
+    return false;
+  *state_out = predictor->state;
+  return true;
+}
