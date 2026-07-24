@@ -138,14 +138,25 @@ a "native_play loads the recorded map and renders" criterion).
 - **DONE — playback bootstrap decode-at-index**
   (`Worr_NativeDemoPlaybackDecodeBootstrapAtV1`, tested): the client map-load
   reads the gamestate at index entry 0 with this.
-- **TODO (running-game gate) — client map-load**: the one remaining piece. Apply
-  the decoded bootstrap to `cl` and reproduce the
-  serverdata→configstrings→map→cgame sequence (mirroring `CL_ParseServerData` +
-  the demo `CL_Precache_f`) so the already-wired snapshot/event presentation
-  renders. This WRITES client state and triggers map loading through the legacy
-  serverdata/demo machinery, is not unit-testable (no test links the client), and
-  can break legacy demo playback if wrong — so it is the genuine running-game
-  gate the plan's Definition-of-Done requires a live session to close.
+- **TODO (running-game gate) — client map-load**: the one remaining piece. The
+  player already decodes and stages the bootstrap (`player.bootstrap_header`);
+  what remains is applying it to `cl` and triggering the map load. Concrete
+  blocker found: the load/init trigger `CL_Precache_f` is **static**
+  (`main.cpp:1860`) and its map-load branch is gated on `cls.demo.playback`
+  (`main.cpp:1874-1882`), and the per-map register functions (`CL_RegisterBspModels`,
+  `CL_PrepRenderer`, `CG_Load`) are internal. So driving the actual map load
+  requires either entangling `native_play` with the legacy demo-playback machinery
+  (`cls.demo.playback` + the `precache` command + the legacy precache path) or
+  un-staticing/reproducing internal functions across `main.cpp`/`parse.cpp`/
+  `precache.cpp`. Both are invasive changes to the legacy client bootstrap
+  machinery, are not unit-testable (no test links the client), and can break
+  legacy `.dm2`/live playback if wrong — the reproduction of `CL_ParseServerData`'s
+  stateful, `Com_Error`-trapped sequence needs a running client to iterate
+  against. This is the running-game gate the plan's Definition-of-Done requires a
+  live session to close. Suggested live approach: set `cls.serverProtocol` +
+  `cls.demo.playback`, `CL_ClearState`, populate `cl` (protocol/servercount/
+  gamedir/clientNum/csr/max_stats/flags) and `cl.configstrings[]` from the
+  bootstrap, then `Cbuf_AddText("precache\n")` — iterating on a live client.
 
 ## Verification
 
