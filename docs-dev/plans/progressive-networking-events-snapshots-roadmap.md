@@ -2755,8 +2755,9 @@ correction evidence.
   `FR-10-T09`.
 - Current state: In Progress at client-demo capability/cursor preservation,
   canonical seek lineage, a versioned native WDM1/WDR1 stream-index/seek core,
-  an allocation-free native snapshot playback cursor/decoder, and an opt-in
-  bounded production client snapshot recorder.
+  an allocation-free native snapshot playback cursor/decoder, an opt-in
+  bounded production client snapshot recorder, and a deterministic present-once
+  timeline planner over the validated index.
 - Progress: new client recordings rebuild the confirmed capability tuple, emit
   the consumed-cursor sideband atomically with synthetic frame/entity data, and
   replay it through the same strict packet parser. Client-generated in-memory
@@ -2804,9 +2805,24 @@ correction evidence.
   review of the new record/decode functions reported zero defects, and the
   recorder, playback, and C/C++ layout parity tests pass. These are
   pointer-free cores: they still open no files and publish nothing to a live
-  client. Standalone bootstrap data and file-backed/client playback/seek wiring,
-  canonical timeline publication/reset, present-once command/event replay into
-  the live client runtime, MVD/GTV,
+  client. The ordering half of present-once replay is now a built, tested core
+  as well: a pointer-free timeline planner (Worr_NativeDemoTimelineBuildV1)
+  makes one deterministic pass over the validated index and fixes the exact
+  dispatch plan a live driver will consume -- every record visited exactly once
+  in strictly increasing ordinal order, time monotonic non-decreasing, and each
+  event anchored to the most recent prior snapshot (an event with no base
+  snapshot fails closed). The plan carries an order-sensitive fingerprint that
+  is identical across builds of the same stream and changes if any record is
+  reordered, dropped, or duplicated, and the planner revalidates each entry's
+  record offsets against the byte image so a mismatched or truncated index
+  fails closed rather than driving a bogus dispatch. Its test proves the full
+  plan over a mixed snapshot/command/event stream, fingerprint reproducibility,
+  the capacity-report path, and fail-closed rejection of an unanchored event, a
+  reordered index, and a truncated index. It still opens no files and drives no
+  live client; it only fixes and proves the dispatch order. Standalone bootstrap
+  data and file-backed/client playback/seek wiring, canonical timeline
+  publication/reset, binding this dispatch plan into the live client runtime,
+  MVD/GTV,
   spectator-view switching,
   and full native/legacy record/play/seek/relay
   matrices remain open.

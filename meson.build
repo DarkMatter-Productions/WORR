@@ -1853,6 +1853,15 @@ native_demo_playback_core_lib = static_library(
   override_options: ['c_std=c11'],
 )
 
+native_demo_timeline_core_lib = static_library(
+  'native_demo_timeline_core',
+  'src/common/net/native_demo_timeline.c',
+  include_directories: include_directories('inc'),
+  install: false,
+  pic: true,
+  override_options: ['c_std=c11'],
+)
+
 native_session_core_lib = static_library(
   'native_session_core',
   'src/common/net/native_session.c',
@@ -3753,6 +3762,24 @@ native_demo_roundtrip_test = executable(
   override_options: ['c_std=c11'],
 )
 
+native_demo_timeline_test = executable(
+  'native_demo_timeline_test',
+  'tools/networking/native_demo_timeline_test.c',
+  dependencies: networking_math_deps,
+  include_directories: include_directories('inc'),
+  link_with: [native_demo_timeline_core_lib,
+              native_demo_recorder_core_lib,
+              native_demo_playback_core_lib,
+              native_demo_core_lib,
+              native_codec_core_lib,
+              native_envelope_core_lib,
+              canonical_command_core_lib,
+              canonical_event_core_lib,
+              canonical_snapshot_core_lib],
+  install: false,
+  override_options: ['c_std=c11'],
+)
+
 native_demo_decoder_fuzz_test = executable(
   'native_demo_decoder_fuzz_test',
   'tools/networking/native_demo_decoder_fuzz_test.c',
@@ -5463,6 +5490,13 @@ test(
   native_demo_decoder_fuzz_test,
   suite: 'networking',
   timeout: 60,
+)
+
+test(
+  'network-native-demo-timeline',
+  native_demo_timeline_test,
+  suite: 'networking',
+  timeout: 30,
 )
 
 test(
