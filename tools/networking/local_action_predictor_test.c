@@ -152,6 +152,43 @@ static bool test_dry_fire(void) {
   return true;
 }
 
+static bool replay_switch(worr_local_action_predictor_v1 *predictor,
+                          uint8_t duration, uint32_t target,
+                          uint32_t target_ammo) {
+  const worr_command_record_v1 command =
+      make_command(&predictor->state, duration);
+  return Worr_LocalActionPredictorReplayV1(predictor, &command, false, true,
+                                           target, target_ammo, NULL);
+}
+
+static bool test_switch(void) {
+  worr_local_action_predictor_v1 predictor;
+  worr_local_action_state_v2 state;
+  uint32_t guard;
+
+  /* Switching between two predictable weapons is itself predictable: the
+   * request lowers the Shotgun, then the commit raises the Railgun. */
+  CHECK(Worr_LocalActionPredictorSeedV1(
+      &predictor, 5u, WORR_LOCAL_ACTION_CATALOG_SHOTGUN, 5, 0));
+  CHECK(replay_switch(&predictor, 10, WORR_LOCAL_ACTION_CATALOG_RAILGUN, 4));
+  CHECK(Worr_LocalActionPredictorGetStateV1(&predictor, &state));
+  CHECK(state.phase == WORR_LOCAL_ACTION_PHASE_LOWERING);
+  CHECK(state.pending_weapon_id == WORR_LOCAL_ACTION_CATALOG_RAILGUN);
+
+  for (guard = 0; guard < 64u; ++guard) {
+    CHECK(replay(&predictor, 250, false, NULL));
+    CHECK(Worr_LocalActionPredictorGetStateV1(&predictor, &state));
+    if (state.active_weapon_id == WORR_LOCAL_ACTION_CATALOG_RAILGUN &&
+        state.phase == WORR_LOCAL_ACTION_PHASE_READY)
+      break;
+  }
+  CHECK(state.active_weapon_id == WORR_LOCAL_ACTION_CATALOG_RAILGUN);
+  CHECK(state.pending_weapon_id == 0);
+  CHECK(state.active_ammo_units == 4);
+  CHECK(state.phase == WORR_LOCAL_ACTION_PHASE_READY);
+  return true;
+}
+
 static bool test_reconcile_match_and_resync(void) {
   worr_local_action_predictor_v1 predictor;
   worr_local_action_transaction_v2 predicted_one;
@@ -201,7 +238,8 @@ static bool test_reconcile_match_and_resync(void) {
 
 int main(void) {
   if (!test_seed_and_inactive() || !test_fire_drain_refire() ||
-      !test_dry_fire() || !test_reconcile_match_and_resync()) {
+      !test_dry_fire() || !test_switch() ||
+      !test_reconcile_match_and_resync()) {
     return 1;
   }
   puts("local_action_predictor_test: all checks passed");
