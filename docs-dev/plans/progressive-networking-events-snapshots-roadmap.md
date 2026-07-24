@@ -2836,14 +2836,27 @@ correction evidence.
   paused/backward no-op cases, single-stepping to exhaustion, reset-and-replay,
   and the binding/argument guards. It reads no snapshot bodies and drives no
   live client; it only decides which already-decoded steps to present each tick.
-  Standalone bootstrap
-  data and file-backed/client playback/seek wiring, canonical timeline
-  publication/reset, binding this dispatch plan and cursor into the live client
-  runtime,
+  A default-off client player now binds these cores into the live client: the
+  `native_play` command (gated behind cl_native_demo_play, default 0) loads a
+  WDM1 stream, builds the plan, arms the execution cursor, and a per-frame hook
+  in CL_DemoFrame advances the cursor against a demo clock and presents each due
+  canonical snapshot to the cgame timeline through the same native admission
+  consumer the live snapshot shadow uses (ConsumeCanonicalSnapshot). It is a
+  strict no-op unless enabled and a demo is loaded, leaves legacy .dm2 playback
+  untouched, and degrades to advance-and-decode-only when no cgame consumer is
+  active. An adversarial review of the player fixed a zero-length-file buffer
+  leak and a disable/re-enable demo-clock fast-forward. What remains open: the
+  standalone bootstrap
+  data / map-load seam so a native demo can start a playable session without a
+  live connection, command/event replay into the live runtime (snapshot
+  presentation is wired; command/event consumers are not yet), file-backed
+  seek wiring, canonical timeline
+  publication/reset,
   MVD/GTV,
   spectator-view switching,
   and full native/legacy record/play/seek/relay
-  matrices remain open.
+  matrices. On-screen behavior is confirmed by the verification runbook, not a
+  unit test (no test links the client presenter).
 - Evidence:
   `docs-dev/networking-live-client-snapshot-prediction-and-demo-clock-2026-07-12.md`
   and

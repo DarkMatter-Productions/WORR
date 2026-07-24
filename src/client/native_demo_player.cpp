@@ -247,6 +247,10 @@ void CL_NativeDemoPlay_f()
 
     length = FS_LoadFile(full, &bytes);
     if (length <= 0 || bytes == nullptr) {
+        /* A zero-length file still returns a (tiny) non-null allocation; free
+         * it here since player.bytes has not been assigned yet. */
+        if (bytes)
+            FS_FreeFile(bytes);
         Com_Printf("Couldn't open %s.\n", full);
         return;
     }
@@ -346,12 +350,18 @@ extern "C" void CL_NativeDemoPlayerFrame(void)
     uint64_t now;
     uint64_t i;
 
-    if (!player.loaded || !cl_native_demo_play ||
-        cl_native_demo_play->integer == 0) {
+    if (!player.loaded)
+        return;
+
+    now = com_unscaledTimeUs;
+    if (!cl_native_demo_play || cl_native_demo_play->integer == 0) {
+        /* Disabled acts as pause: keep the real-time anchor current so the
+         * disabled span is not later counted as demo-clock advance (which would
+         * fast-forward the whole paused duration in one frame on re-enable). */
+        player.last_real_us = now;
         return;
     }
 
-    now = com_unscaledTimeUs;
     if (!player.clock_started) {
         /* Anchor the demo clock at the first step's time. */
         player.clock_us = player.steps[0].time_us;
