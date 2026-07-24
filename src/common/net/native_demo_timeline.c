@@ -32,18 +32,76 @@ static bool worr_timeline_record_kind_known(uint8_t record_kind) {
          record_kind == WORR_NATIVE_DEMO_RECORD_EVENT_V1;
 }
 
+/*
+ * Validate the whole index without writing any caller output.  Because the
+ * planner promises steps_out is untouched on failure, all fail-closed checks
+ * run here first; the fill pass below only executes once the entire index is
+ * proven a canonically ordered, present-once-valid timeline.
+ */
+static worr_native_demo_timeline_result_v1 worr_timeline_validate(
+    const void *encoded, size_t encoded_bytes,
+    const worr_native_demo_index_entry_v1 *entries, size_t entry_count) {
+  uint64_t prev_ordinal = 0;
+  uint64_t prev_time_us = 0;
+  bool have_anchor = false;
+  bool have_prev = false;
+  size_t i;
+
+  for (i = 0; i < entry_count; ++i) {
+    const worr_native_demo_index_entry_v1 *entry = &entries[i];
+
+    if (entry->struct_size != sizeof(*entry) ||
+        entry->schema_version != entries[0].schema_version)
+      return WORR_NATIVE_DEMO_TIMELINE_INVALID_METADATA;
+    if (!worr_timeline_record_kind_known(entry->record_kind))
+      return WORR_NATIVE_DEMO_TIMELINE_WRONG_CLASS;
+
+    /* Revalidate the entry against the byte image: offsets must be ordered,
+     * bounded, and contiguous with the previous record.  A mismatched or
+     * truncated index fails closed rather than driving a bogus dispatch. */
+    if (entry->record_offset >= entry->next_record_offset ||
+        entry->next_record_offset > (uint64_t)encoded_bytes)
+      return WORR_NATIVE_DEMO_TIMELINE_MALFORMED;
+    if (i > 0 && entry->record_offset != entries[i - 1].next_record_offset)
+      return WORR_NATIVE_DEMO_TIMELINE_MALFORMED;
+
+    /* Canonical order: strictly increasing ordinal, non-decreasing time. */
+    if (have_prev) {
+      if (entry->ordinal <= prev_ordinal)
+        return WORR_NATIVE_DEMO_TIMELINE_ORDER;
+      if (entry->time_us < prev_time_us)
+        return WORR_NATIVE_DEMO_TIMELINE_ORDER;
+    }
+
+    if (entry->record_kind == WORR_NATIVE_DEMO_RECORD_SNAPSHOT_V1) {
+      have_anchor = true;
+    } else if (entry->record_kind == WORR_NATIVE_DEMO_RECORD_EVENT_V1) {
+      /* Present-once requires a base: an event before any snapshot cannot be
+       * dispatched.  Because ordinals strictly increase and the anchor is the
+       * most recent snapshot, "anchor precedes" holds by construction; the
+       * load-bearing check is that an anchor exists at all. */
+      if (!have_anchor)
+        return WORR_NATIVE_DEMO_TIMELINE_ORDER;
+    }
+
+    prev_ordinal = entry->ordinal;
+    prev_time_us = entry->time_us;
+    have_prev = true;
+  }
+  return WORR_NATIVE_DEMO_TIMELINE_OK;
+}
+
 worr_native_demo_timeline_result_v1 Worr_NativeDemoTimelineBuildV1(
     const worr_native_demo_timeline_config_v1 *config, const void *encoded,
     size_t encoded_bytes, const worr_native_demo_index_entry_v1 *entries,
     size_t entry_count, worr_native_demo_timeline_step_v1 *steps_out,
     size_t step_capacity, worr_native_demo_timeline_summary_v1 *summary_out) {
   worr_native_demo_timeline_summary_v1 summary;
+  worr_native_demo_timeline_result_v1 validation;
   uint64_t hash = 0xcbf29ce484222325ull;
   uint64_t anchor_snapshot_ordinal = 0;
-  uint64_t prev_ordinal = 0;
   uint64_t prev_time_us = 0;
   bool have_anchor = false;
-  bool have_prev = false;
   size_t i;
 
   if (config == NULL || entries == NULL || summary_out == NULL)
@@ -71,38 +129,24 @@ worr_native_demo_timeline_result_v1 Worr_NativeDemoTimelineBuildV1(
     return WORR_NATIVE_DEMO_TIMELINE_CAPACITY;
   }
 
+  /* Prove the whole index before writing a single step: on any failure the
+   * caller's steps_out and summary_out stay untouched (documented contract). */
+  validation = worr_timeline_validate(encoded, encoded_bytes, entries,
+                                      entry_count);
+  if (validation != WORR_NATIVE_DEMO_TIMELINE_OK)
+    return validation;
+
+  /* Fill pass: the index is already validated, so nothing here can fail. */
   for (i = 0; i < entry_count; ++i) {
     const worr_native_demo_index_entry_v1 *entry = &entries[i];
     worr_native_demo_timeline_step_v1 step;
     uint8_t step_flags = 0;
 
-    if (entry->struct_size != sizeof(*entry) ||
-        entry->schema_version != entries[0].schema_version)
-      return WORR_NATIVE_DEMO_TIMELINE_INVALID_METADATA;
-    if (!worr_timeline_record_kind_known(entry->record_kind))
-      return WORR_NATIVE_DEMO_TIMELINE_WRONG_CLASS;
-
-    /* Revalidate the entry against the byte image: offsets must be ordered,
-     * bounded, and contiguous with the previous record.  A mismatched or
-     * truncated index fails closed rather than driving a bogus dispatch. */
-    if (entry->record_offset >= entry->next_record_offset ||
-        entry->next_record_offset > (uint64_t)encoded_bytes)
-      return WORR_NATIVE_DEMO_TIMELINE_MALFORMED;
-    if (i > 0 && entry->record_offset != entries[i - 1].next_record_offset)
-      return WORR_NATIVE_DEMO_TIMELINE_MALFORMED;
-
-    /* Canonical order: strictly increasing ordinal, non-decreasing time. */
-    if (have_prev) {
-      if (entry->ordinal <= prev_ordinal)
-        return WORR_NATIVE_DEMO_TIMELINE_ORDER;
-      if (entry->time_us < prev_time_us)
-        return WORR_NATIVE_DEMO_TIMELINE_ORDER;
-      if (entry->time_us > prev_time_us)
-        step_flags |= WORR_NATIVE_DEMO_TIMELINE_STEP_TIME_ADVANCE;
-    } else {
+    if (i == 0)
       step_flags |= WORR_NATIVE_DEMO_TIMELINE_STEP_FIRST |
                     WORR_NATIVE_DEMO_TIMELINE_STEP_TIME_ADVANCE;
-    }
+    else if (entry->time_us > prev_time_us)
+      step_flags |= WORR_NATIVE_DEMO_TIMELINE_STEP_TIME_ADVANCE;
 
     if (entry->record_kind == WORR_NATIVE_DEMO_RECORD_SNAPSHOT_V1) {
       anchor_snapshot_ordinal = entry->ordinal;
@@ -112,13 +156,6 @@ worr_native_demo_timeline_result_v1 Worr_NativeDemoTimelineBuildV1(
       if (i == 0)
         summary.flags |= WORR_NATIVE_DEMO_TIMELINE_SUMMARY_LEADING_SNAPSHOT;
     } else if (entry->record_kind == WORR_NATIVE_DEMO_RECORD_EVENT_V1) {
-      /* Present-once requires a base: an event before any snapshot, or at the
-       * same timestamp as its anchor without the snapshot preceding it, cannot
-       * be dispatched.  Because ordinals strictly increase and the anchor is
-       * the most recent snapshot, "anchor precedes" holds by construction; the
-       * load-bearing check is that an anchor exists at all. */
-      if (!have_anchor)
-        return WORR_NATIVE_DEMO_TIMELINE_ORDER;
       summary.event_count += 1;
     } else {
       summary.command_count += 1;
@@ -142,9 +179,7 @@ worr_native_demo_timeline_result_v1 Worr_NativeDemoTimelineBuildV1(
     hash = worr_timeline_fnv_mix_u64(hash, step.anchor_snapshot_ordinal);
     hash = worr_timeline_fnv_mix_u64(hash, (uint64_t)i);
 
-    prev_ordinal = entry->ordinal;
     prev_time_us = entry->time_us;
-    have_prev = true;
 
     if (i == 0)
       summary.first_ordinal = entry->ordinal;

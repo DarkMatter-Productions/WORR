@@ -20,6 +20,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "server/command_context.h"
 #include "server/local_interaction_authority.h"
 #include "server/local_action_shadow_authority.h"
+#include "server/weapon_predict_seed_mailbox.h"
 #include "server/native_shadow.h"
 #include "server/nav.h"
 
@@ -38,6 +39,7 @@ void SV_ClientReset(client_t *client)
         client < svs.client_pool + svs.maxclients) {
         client_index = client - svs.client_pool;
         SV_LocalActionShadowAuthorityResetClient((uint32_t)client_index);
+        SV_WeaponPredictSeedResetClient((uint32_t)client_index);
     }
 
     /* The netchan and native peer survive gamemap, but the authoritative
@@ -257,6 +259,7 @@ void SV_SpawnServer(const mapcmd_t *cmd)
     SV_EventShadowResetMap();
     SV_LocalInteractionAuthorityResetMap();
     SV_LocalActionShadowAuthorityResetMap();
+    SV_WeaponPredictSeedResetMap();
     ge->SpawnEntities(sv.name, sv.cm.entitystring, cmd->spawnpoint);
 
     // run two frames to allow everything to settle

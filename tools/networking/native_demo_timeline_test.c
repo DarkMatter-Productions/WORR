@@ -400,15 +400,22 @@ static bool test_reordered_index_fails(void) {
 static bool test_truncated_index_fails(void) {
   worr_native_demo_timeline_config_v1 config = make_config();
   worr_native_demo_timeline_summary_v1 summary;
+  worr_native_demo_timeline_step_v1 sentinel[TEST_INDEX_CAPACITY];
   uint64_t record_count = 0;
 
   CHECK(record_and_open(&record_count));
-  /* An index whose last record runs past the byte image fails closed. */
+  /* An index whose last record runs past the byte image fails closed.  The
+   * failure is reached only after the first records validate, so this also
+   * proves the documented "steps_out untouched on failure" contract: a mid-
+   * stream failure must not leave the buffer partially written. */
   index_scratch[record_count - 1].next_record_offset = sink_storage.size + 1;
+  memset(step_scratch, 0xCD, sizeof(step_scratch));
+  memcpy(sentinel, step_scratch, sizeof(step_scratch));
   CHECK(Worr_NativeDemoTimelineBuildV1(
             &config, sink_storage.bytes, sink_storage.size, index_scratch,
             (size_t)record_count, step_scratch, TEST_INDEX_CAPACITY,
             &summary) == WORR_NATIVE_DEMO_TIMELINE_MALFORMED);
+  CHECK(memcmp(step_scratch, sentinel, sizeof(step_scratch)) == 0);
   return true;
 }
 

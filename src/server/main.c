@@ -18,6 +18,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "server.h"
 #include "server/local_action_shadow_authority.h"
+#include "server/weapon_predict_seed_mailbox.h"
 #include "server/native_shadow.h"
 #include "server/snapshot_shadow.h"
 #include "client/input.h"
@@ -1909,6 +1910,7 @@ static bool SV_BotAddImmediate(const char *name, const char *team,
 
     number = newcl - svs.client_pool;
     SV_LocalActionShadowAuthorityResetClient((uint32_t)number);
+    SV_WeaponPredictSeedResetClient((uint32_t)number);
     memset(newcl, 0, sizeof(*newcl));
     newcl->number = newcl->infonum = number;
     newcl->protocol = -1;
@@ -7022,6 +7024,7 @@ static void SVC_DirectConnect(void)
     // accept the new client
     // this is the only place a client_t is ever initialized
     SV_LocalActionShadowAuthorityResetClient((uint32_t)number);
+    SV_WeaponPredictSeedResetClient((uint32_t)number);
     memset(newcl, 0, sizeof(*newcl));
     newcl->number = newcl->infonum = number;
     newcl->challenge = params.challenge; // save challenge for checksumming
