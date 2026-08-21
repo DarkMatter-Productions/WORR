@@ -17,6 +17,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "shared/local_interaction_abi.h"
 #include "shared/local_action_shadow.h"
+#include "shared/local_action_predict_seed.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -556,6 +557,9 @@ WORR_EVENT_STATIC_ASSERT(
     sizeof(worr_local_action_shadow_authority_receipt_v1) <=
         WORR_EVENT_PAYLOAD_CAPACITY,
     "local action shadow authority receipt exceeds event payload capacity");
+WORR_EVENT_STATIC_ASSERT(
+    sizeof(worr_local_action_predict_seed_v1) <= WORR_EVENT_PAYLOAD_CAPACITY,
+    "local action predict seed exceeds event payload capacity");
 WORR_EVENT_STATIC_ASSERT(WORR_EVENT_PAYLOAD_LEGACY_ENTITY_V1 == 7 &&
                              WORR_EVENT_PAYLOAD_LEGACY_TEMP_V1 == 8 &&
                              WORR_EVENT_PAYLOAD_MUZZLE_V1 == 9 &&
@@ -564,7 +568,9 @@ WORR_EVENT_STATIC_ASSERT(WORR_EVENT_PAYLOAD_LEGACY_ENTITY_V1 == 7 &&
                                  11 &&
                              WORR_EVENT_PAYLOAD_LOCAL_ACTION_SHADOW_AUTHORITY_V1 ==
                                  12 &&
-                             WORR_EVENT_PAYLOAD_KEYED_POI_V1 == 13,
+                             WORR_EVENT_PAYLOAD_KEYED_POI_V1 == 13 &&
+                             WORR_EVENT_PAYLOAD_LOCAL_ACTION_PREDICT_SEED_V1 ==
+                                 14,
                          "event payload catalog IDs changed");
 WORR_EVENT_STATIC_ASSERT(WORR_EVENT_TYPE_AUTHORITY_RECEIPT == 9,
                          "event type catalog IDs changed");

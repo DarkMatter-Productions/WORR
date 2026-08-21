@@ -1,0 +1,9 @@
+[wrap-file]
+directory = monocypher-4.0.3
+source_url = https://monocypher.org/download/monocypher-4.0.3.tar.gz
+source_filename = monocypher-4.0.3.tar.gz
+source_hash = 8cc9bc341a66249016db9bd70e9142d8d0aef9945973744b1ac05dbc55d8ee66
+patch_directory = monocypher
+
+[provide]
+monocypher = monocypher_dep

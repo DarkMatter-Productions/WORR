@@ -1,7 +1,13 @@
+import sys
 import unittest
 from pathlib import Path
 
-from . import discover_reference_candidates as discover
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+import discover_reference_candidates as discover  # noqa: E402
 
 
 class DiscoverReferenceCandidatesTest(unittest.TestCase):

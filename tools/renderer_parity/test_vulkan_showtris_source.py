@@ -67,9 +67,39 @@ class VulkanShowTrisSourceTests(unittest.TestCase):
 
     def test_showtris_is_recorded_after_3d_geometry(self) -> None:
         self.assertIn("VK_Debug_RecordShowTris(cmd, &ctx->scene_extent)", VK_MAIN)
+        self.assertEqual(
+            VK_MAIN.count("VK_Debug_RecordShowTris(cmd, &ctx->scene_extent)"),
+            2,
+        )
         self.assertLess(
-            VK_MAIN.index("VK_World_Record(cmd, &ctx->scene_extent)"),
+            VK_MAIN.index("VK_World_RecordOpaque(cmd, &ctx->scene_extent)"),
             VK_MAIN.index("VK_Debug_RecordShowTris(cmd, &ctx->scene_extent)"),
+        )
+        non_refracted = VK_MAIN.split("if (!liquid_refraction) {", 1)[1].split(
+            "vkCmdEndRenderPass(cmd);", 1
+        )[0]
+        self.assertLess(
+            non_refracted.index("VK_World_RecordAlpha(cmd, &ctx->scene_extent"),
+            non_refracted.index(
+                "VK_Debug_RecordShowTris(cmd, &ctx->scene_extent)"
+            ),
+        )
+        self.assertLess(
+            non_refracted.index("VK_Entity_RecordAfterLiquid(cmd, &ctx->scene_extent)"),
+            non_refracted.index(
+                "VK_Debug_RecordShowTris(cmd, &ctx->scene_extent)"
+            ),
+        )
+        refracted = VK_MAIN.split(
+            "if (liquid_refraction) {\n        if (linear_scene)", 1
+        )[1].split("VK_Debug_MarkGpuPhase", 1)[0]
+        self.assertLess(
+            refracted.index("VK_World_RecordAlpha(cmd, &ctx->scene_extent"),
+            refracted.index("VK_Debug_RecordShowTris(cmd, &ctx->scene_extent)"),
+        )
+        self.assertLess(
+            refracted.index("VK_Entity_RecordAfterLiquid(cmd, &ctx->scene_extent)"),
+            refracted.index("VK_Debug_RecordShowTris(cmd, &ctx->scene_extent)"),
         )
 
     def test_paired_fixtures_clear_cvars_and_wait_for_async_screenshots(self) -> None:

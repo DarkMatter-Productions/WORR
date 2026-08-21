@@ -1,3 +1,4 @@
 [wrap-file]
 directory = khr-headers
 source_filename = khr-headers.tar.xz
+source_hash = 50d3a176430248c7e887ff9b078a341adc3b69387f027a4114e97015719a0350

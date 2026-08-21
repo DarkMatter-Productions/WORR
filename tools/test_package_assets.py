@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import pathlib
+import stat
 import subprocess
 import sys
 import tempfile
@@ -361,6 +363,137 @@ class PackageAssetsTest(unittest.TestCase):
 
 
 class RefreshInstallPackageValidationTest(unittest.TestCase):
+    @staticmethod
+    def minimal_stage_build(build_dir: pathlib.Path) -> None:
+        (build_dir / "basew").mkdir(parents=True)
+        (build_dir / "basew" / "shader.dat").write_bytes(b"game data")
+        (build_dir / "worr_x86_64.exe").write_bytes(b"runtime")
+        (build_dir / "cgame_x86_64.dll").write_bytes(b"cgame")
+        (build_dir / "sgame_x86_64.dll").write_bytes(b"sgame")
+
+    def test_stage_install_replaces_stale_user_data_with_a_clean_tree(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            build_dir = root / "build"
+            install_dir = root / ".install"
+            self.minimal_stage_build(build_dir)
+            (build_dir / "basew" / ".conhistory").write_bytes(b"private commands")
+            (build_dir / "basew" / "config.cfg").write_bytes(b"private cvars")
+            (build_dir / "basew" / "save" / "slot1").mkdir(parents=True)
+            (build_dir / "basew" / "save" / "slot1" / "server.ssv").write_bytes(
+                b"private save"
+            )
+            (install_dir / "basew" / "screenshots").mkdir(parents=True)
+            (install_dir / "basew" / "screenshots" / "private.png").write_bytes(
+                b"must not ship"
+            )
+
+            with mock.patch.object(
+                sys,
+                "argv",
+                [
+                    "stage_install.py",
+                    "--build-dir",
+                    str(build_dir),
+                    "--install-dir",
+                    str(install_dir),
+                    "--base-game",
+                    "basew",
+                ],
+            ):
+                self.assertEqual(0, stage_install.main())
+
+            self.assertFalse((install_dir / "basew" / "screenshots").exists())
+            self.assertFalse((install_dir / "basew" / ".conhistory").exists())
+            self.assertFalse((install_dir / "basew" / "config.cfg").exists())
+            self.assertFalse((install_dir / "basew" / "save").exists())
+            self.assertEqual(
+                b"runtime",
+                (install_dir / "worr_x86_64.exe").read_bytes(),
+            )
+            runtime_lock = install_dir / stage_install.RUNTIME_COORDINATION_LOCK
+            self.assertTrue(runtime_lock.is_file())
+            self.assertEqual(b"", runtime_lock.read_bytes())
+            if os.name != "nt":
+                self.assertEqual(0o644, stat.S_IMODE(runtime_lock.stat().st_mode))
+
+    def test_stage_install_failure_preserves_the_previous_complete_tree(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            build_dir = root / "build"
+            install_dir = root / ".install"
+            self.minimal_stage_build(build_dir)
+            install_dir.mkdir()
+            sentinel = install_dir / "previous.dat"
+            sentinel.write_bytes(b"previous complete tree")
+
+            with mock.patch.object(
+                sys,
+                "argv",
+                [
+                    "stage_install.py",
+                    "--build-dir",
+                    str(build_dir),
+                    "--install-dir",
+                    str(install_dir),
+                ],
+            ), mock.patch.object(
+                stage_install,
+                "copy_base_game_tree",
+                side_effect=RuntimeError("injected staging failure"),
+            ), self.assertRaisesRegex(RuntimeError, "injected staging failure"):
+                stage_install.main()
+
+            self.assertEqual(b"previous complete tree", sentinel.read_bytes())
+
+    def test_base_game_stage_excludes_test_binaries_and_keeps_real_modules(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            build_dir = root / "build"
+            install_dir = root / ".install"
+            built_base_game = build_dir / "basew"
+            built_base_game.mkdir(parents=True)
+
+            (built_base_game / "static.dat").write_bytes(b"preserved asset")
+            (built_base_game / "config.cfg").write_bytes(b"private runtime config")
+            (built_base_game / ".conhistory").write_bytes(b"private history")
+            (built_base_game / "cgame_x86_64.dll").write_bytes(b"stale cgame")
+            (built_base_game / "sgame_x86_64.dll").write_bytes(b"stale sgame")
+            (built_base_game / "cgame_event_runtime_test.exe").write_bytes(b"test executable")
+            (built_base_game / "cgame_event_runtime_test.pdb").write_bytes(b"test symbols")
+
+            expected_modules = {
+                "cgame_x86_64.dll": b"current cgame",
+                "cgame_x86_64.pdb": b"current cgame symbols",
+                "sgame_x86_64.dll": b"current sgame",
+                "sgame_x86_64.pdb": b"current sgame symbols",
+            }
+            for name, contents in expected_modules.items():
+                (build_dir / name).write_bytes(contents)
+            (build_dir / "cgame_event_runtime_test.exe").write_bytes(b"root test executable")
+            (build_dir / "cgame_event_runtime_test.pdb").write_bytes(b"root test symbols")
+            (build_dir / "sgame_headless_test").write_bytes(b"extensionless root test")
+
+            stale_install = install_dir / "basew"
+            stale_install.mkdir(parents=True)
+            (stale_install / "sgame_old_test.exe").write_bytes(b"stale staged test")
+
+            stage_install.copy_base_game_tree(build_dir, install_dir, "basew")
+
+            staged_base_game = install_dir / "basew"
+            self.assertEqual(
+                b"preserved asset",
+                (staged_base_game / "static.dat").read_bytes(),
+            )
+            self.assertFalse((staged_base_game / "config.cfg").exists())
+            self.assertFalse((staged_base_game / ".conhistory").exists())
+            for name, contents in expected_modules.items():
+                self.assertEqual(contents, (staged_base_game / name).read_bytes())
+            self.assertFalse((staged_base_game / "cgame_event_runtime_test.exe").exists())
+            self.assertFalse((staged_base_game / "cgame_event_runtime_test.pdb").exists())
+            self.assertFalse((staged_base_game / "sgame_headless_test").exists())
+            self.assertFalse((staged_base_game / "sgame_old_test.exe").exists())
+
     def test_runtime_stage_retains_only_an_identical_locked_destination(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)

@@ -281,6 +281,91 @@ static bool record_and_open(uint64_t *record_count_out) {
   return true;
 }
 
+static worr_native_demo_bootstrap_header_v1 make_bootstrap(void) {
+  worr_native_demo_bootstrap_header_v1 header;
+
+  memset(&header, 0, sizeof(header));
+  header.struct_size = sizeof(header);
+  header.schema_version = WORR_NATIVE_DEMO_BOOTSTRAP_ABI_VERSION;
+  header.protocol = 2023;
+  header.game_api = 1;
+  header.server_count = 1;
+  header.csr_variant = 2;
+  header.max_stats = 64;
+  header.configstring_count = 0;
+  memcpy(header.gamedir, "baseq2", sizeof("baseq2"));
+  memcpy(header.mapname, "maps/q2dm1.bsp", sizeof("maps/q2dm1.bsp"));
+  return header;
+}
+
+/* Records the shape a real client recording now has: a BOOTSTRAP prologue
+ * claiming the first ordinal, then ordinary presentable records. */
+static bool record_and_open_bootstrap(uint64_t *record_count_out) {
+  worr_native_demo_recorder_config_v1 config;
+  worr_native_demo_recorder_storage_v1 storage;
+  worr_native_demo_recorder_sink_v1 output;
+  worr_native_demo_recorder_state_v1 state;
+  worr_native_demo_playback_config_v1 play_config;
+  worr_native_demo_playback_cursor_v1 cursor;
+  worr_native_demo_bootstrap_header_v1 boot = make_bootstrap();
+  snapshot_fixture snap;
+  worr_event_record_v1 event;
+
+  memset(&sink_storage, 0, sizeof(sink_storage));
+
+  memset(&config, 0, sizeof(config));
+  config.struct_size = sizeof(config);
+  config.schema_version = WORR_NATIVE_DEMO_RECORDER_ABI_VERSION;
+  config.capability_mask = WORR_NET_CAP_NATIVE_SNAPSHOT_PUBLIC_MASK;
+  config.transport_epoch = 17;
+  config.timeline_epoch = 9;
+  config.max_entities = TEST_MAX_ENTITIES;
+  config.created_time_us = UINT64_C(1234567);
+  config.max_stream_bytes = TEST_FILE_BYTES;
+  config.controlled_entity.index = 1;
+  config.controlled_entity.generation = 4;
+  memset(&storage, 0, sizeof(storage));
+  storage.struct_size = sizeof(storage);
+  storage.schema_version = WORR_NATIVE_DEMO_RECORDER_ABI_VERSION;
+  storage.codec_bytes = codec_scratch;
+  storage.record_bytes = record_scratch;
+  storage.codec_capacity = sizeof(codec_scratch);
+  storage.record_capacity = sizeof(record_scratch);
+  memset(&output, 0, sizeof(output));
+  output.struct_size = sizeof(output);
+  output.schema_version = WORR_NATIVE_DEMO_RECORDER_ABI_VERSION;
+  output.opaque = &sink_storage;
+  output.WriteExact = memory_write;
+  CHECK(Worr_NativeDemoRecorderBeginV1(&state, &config, &storage, &output) ==
+        WORR_NATIVE_DEMO_RECORDER_OK);
+
+  CHECK(Worr_NativeDemoRecorderBootstrapV1(&state, &boot, NULL) ==
+        WORR_NATIVE_DEMO_RECORDER_OK);
+  CHECK(build_snapshot(&snap, 1, 0, UINT64_C(1000000), 1));
+  CHECK(Worr_NativeDemoRecorderObserveSnapshotV1(&state, &snap.view,
+                                                 &snap.hashes, snap.ref) ==
+        WORR_NATIVE_DEMO_RECORDER_OK);
+  event = build_event(7, 1, 101, UINT64_C(1200000));
+  CHECK(Worr_NativeDemoRecorderObserveEventV1(&state, &event,
+                                              TEST_MAX_ENTITIES) ==
+        WORR_NATIVE_DEMO_RECORDER_OK);
+  CHECK(Worr_NativeDemoRecorderStopV1(&state) == WORR_NATIVE_DEMO_RECORDER_OK);
+
+  memset(&play_config, 0, sizeof(play_config));
+  play_config.struct_size = sizeof(play_config);
+  play_config.schema_version = WORR_NATIVE_DEMO_PLAYBACK_ABI_VERSION;
+  play_config.max_entities = TEST_MAX_ENTITIES;
+  play_config.expected_transport_epoch = 17;
+  play_config.expected_timeline_epoch = 9;
+  play_config.max_records = TEST_INDEX_CAPACITY;
+  CHECK(Worr_NativeDemoPlaybackOpenV1(&play_config, sink_storage.bytes,
+                                      sink_storage.size, index_scratch,
+                                      TEST_INDEX_CAPACITY, &cursor,
+                                      record_count_out) ==
+        WORR_NATIVE_DEMO_PLAYBACK_OK);
+  return true;
+}
+
 static worr_native_demo_timeline_config_v1 make_config(void) {
   worr_native_demo_timeline_config_v1 config;
 
@@ -618,8 +703,83 @@ static bool test_cursor_binding_guards(void) {
   return true;
 }
 
+/*
+ * Every real client recording now begins with a BOOTSTRAP gamestate record
+ * (the recorder claims the first ordinal for it), so the planner must accept
+ * that shape: before this was covered, the planner rejected entry 0 with
+ * WRONG_CLASS and `native_play` could not build a plan for any real recording.
+ * The prologue is planned (1:1 step/entry mapping holds) but is not a
+ * presentable body: it is not counted as a command, never becomes an event
+ * anchor, and does not cost the stream its LEADING_SNAPSHOT classification.
+ */
+static bool test_bootstrap_prologue_plan(void) {
+  worr_native_demo_timeline_config_v1 config = make_config();
+  worr_native_demo_timeline_summary_v1 summary;
+  uint64_t record_count = 0;
+
+  CHECK(record_and_open_bootstrap(&record_count));
+  CHECK(record_count == 3); /* bootstrap, snapshot, event */
+
+  CHECK(Worr_NativeDemoTimelineBuildV1(
+            &config, sink_storage.bytes, sink_storage.size, index_scratch,
+            (size_t)record_count, step_scratch, TEST_INDEX_CAPACITY,
+            &summary) == WORR_NATIVE_DEMO_TIMELINE_OK);
+
+  /* One step per record: the prologue does not break the 1:1 mapping. */
+  CHECK(summary.step_count == record_count);
+  CHECK(step_scratch[0].entry_index == 0);
+  CHECK(step_scratch[0].record_kind == WORR_NATIVE_DEMO_RECORD_BOOTSTRAP_V1);
+  CHECK((step_scratch[0].flags & WORR_NATIVE_DEMO_TIMELINE_STEP_BOOTSTRAP) != 0);
+  CHECK((step_scratch[0].flags & WORR_NATIVE_DEMO_TIMELINE_STEP_FIRST) != 0);
+
+  /* A prologue is not a command and not an anchor. */
+  CHECK(summary.command_count == 0);
+  CHECK(summary.snapshot_count == 1);
+  CHECK(summary.event_count == 1);
+  CHECK((step_scratch[0].flags &
+         WORR_NATIVE_DEMO_TIMELINE_STEP_SNAPSHOT_ANCHOR) == 0);
+  CHECK(step_scratch[0].anchor_snapshot_ordinal == 0);
+
+  CHECK((summary.flags & WORR_NATIVE_DEMO_TIMELINE_SUMMARY_LEADING_BOOTSTRAP) !=
+        0);
+  /* The first *presentable* record is the snapshot, so the stream is still
+   * classified standalone. */
+  CHECK((summary.flags & WORR_NATIVE_DEMO_TIMELINE_SUMMARY_LEADING_SNAPSHOT) !=
+        0);
+
+  /* The event still anchors to the snapshot, not to the prologue. */
+  CHECK(step_scratch[2].record_kind == WORR_NATIVE_DEMO_RECORD_EVENT_V1);
+  CHECK(step_scratch[2].anchor_snapshot_ordinal == step_scratch[1].ordinal);
+  return true;
+}
+
+/*
+ * The container permits a BOOTSTRAP only as the stream's first record; the
+ * planner mirrors that rule so a mid-stream prologue cannot silently plan a
+ * second map load.
+ */
+static bool test_mid_stream_bootstrap_fails(void) {
+  worr_native_demo_timeline_config_v1 config = make_config();
+  worr_native_demo_timeline_summary_v1 summary;
+  uint64_t record_count = 0;
+
+  CHECK(record_and_open(&record_count));
+
+  /* Retype a later entry as a prologue: order must fail closed. */
+  index_scratch[2].record_kind = WORR_NATIVE_DEMO_RECORD_BOOTSTRAP_V1;
+  CHECK(Worr_NativeDemoTimelineBuildV1(
+            &config, sink_storage.bytes, sink_storage.size, index_scratch,
+            (size_t)record_count, step_scratch, TEST_INDEX_CAPACITY,
+            &summary) == WORR_NATIVE_DEMO_TIMELINE_ORDER);
+  return true;
+}
+
 int main(void) {
   if (!test_plan())
+    return 1;
+  if (!test_bootstrap_prologue_plan())
+    return 1;
+  if (!test_mid_stream_bootstrap_fails())
     return 1;
   if (!test_capacity())
     return 1;

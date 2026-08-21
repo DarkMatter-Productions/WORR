@@ -3,3 +3,12 @@
 *.yml text eol=lf
 *.yaml text eol=lf
 *.py text eol=lf
+*.vert text eol=lf
+*.frag text eol=lf
+*.comp text eol=lf
+*.glsl text eol=lf
+*.rgen text eol=lf
+*.rchit text eol=lf
+*.rahit text eol=lf
+*.rmiss text eol=lf
+*.rint text eol=lf

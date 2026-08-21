@@ -57,10 +57,18 @@ class VulkanGpuMd2SubmissionSourceTests(unittest.TestCase):
         )
 
     def test_current_frame_instance_upload_is_device_local_and_synchronized(self) -> None:
-        self.assertIn("static bool VK_Entity_EnsureMd2InstanceBuffer", VK_ENTITY)
-        self.assertIn("frame->md2_instance_upload_bytes = instance_bytes;", VK_ENTITY)
-        self.assertIn("vkCmdCopyBuffer(cmd, frame->md2_instance_staging_buffer,", VK_ENTITY)
-        self.assertIn(".buffer = frame->md2_instance_buffer,", VK_ENTITY)
+        self.assertIn("static bool VK_Entity_EnsureInstanceBuffer", VK_ENTITY)
+        self.assertIn("VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT", VK_ENTITY)
+        self.assertIn("frame->md2_instance_offset", VK_ENTITY)
+        self.assertIn(
+            "frame->md2_instance_upload_bytes = md2_instance_bytes;", VK_ENTITY
+        )
+        self.assertIn(".srcOffset = frame->md2_instance_offset", VK_ENTITY)
+        self.assertIn(
+            "vkCmdCopyBuffer(cmd, frame->instance_staging_buffer,", VK_ENTITY
+        )
+        self.assertIn(".buffer = frame->instance_buffer,", VK_ENTITY)
+        self.assertIn("VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT", VK_ENTITY)
         self.assertIn("VK_Entity_BindGpuMd2Batch", VK_ENTITY)
         self.assertIn("VK_ENTITY_VERTEX_LAYOUT_GPU_MD2", VK_ENTITY)
         self.assertIn("vk_md2_gpu_lerp", VK_ENTITY)

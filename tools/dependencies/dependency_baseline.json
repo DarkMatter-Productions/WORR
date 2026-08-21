@@ -1,0 +1,490 @@
+{
+  "schema_version": 1,
+  "archive": {
+    "path": "subprojects/wraps.zip",
+    "compression": "stored",
+    "entry_mode": "0644",
+    "timestamp": "1980-01-01T00:00:00"
+  },
+  "meson": {
+    "root_files": [
+      "meson.build"
+    ],
+    "scan_roots": [
+      "src",
+      "tools"
+    ],
+    "excluded_roots": [
+      ".git",
+      ".install",
+      ".tmp",
+      "build",
+      "builddir",
+      "q2proto",
+      "subprojects",
+      "vendor"
+    ],
+    "consumer_files": {
+      "meson.build": {
+        "dependencies": [
+          "RmlUi",
+          "fmt",
+          "freetype2",
+          "harfbuzz",
+          "jsoncpp",
+          "libavcodec",
+          "libavformat",
+          "libavutil",
+          "libcurl",
+          "libjpeg",
+          "libpng",
+          "libswresample",
+          "libswscale",
+          "monocypher",
+          "openal",
+          "rmlui",
+          "sdl3",
+          "sdl3_ttf",
+          "vulkan",
+          "zlib"
+        ],
+        "fallbacks": [
+          "freetype2",
+          "harfbuzz",
+          "libcurl",
+          "monocypher",
+          "openal-soft",
+          "sdl3",
+          "sdl3_ttf",
+          "zlib-ng"
+        ],
+        "subprojects": [
+          "khr-headers",
+          "rmlui"
+        ]
+      },
+      "src/unix/meson.build": {
+        "dependencies": [
+          "threads"
+        ],
+        "fallbacks": [],
+        "subprojects": []
+      },
+      "src/unix/video/meson.build": {
+        "dependencies": [
+          "egl",
+          "gl",
+          "libdecor-0",
+          "wayland-client",
+          "wayland-cursor",
+          "wayland-egl",
+          "wayland-protocols",
+          "x11",
+          "xi"
+        ],
+        "fallbacks": [],
+        "subprojects": []
+      },
+      "tools/q2aas/meson.build": {
+        "dependencies": [
+          "threads"
+        ],
+        "fallbacks": [],
+        "subprojects": []
+      }
+    },
+    "system_dependencies": [
+      "egl",
+      "gl",
+      "libdecor-0",
+      "threads",
+      "vulkan",
+      "wayland-client",
+      "wayland-cursor",
+      "wayland-egl",
+      "wayland-protocols",
+      "x11",
+      "xi"
+    ],
+    "dependency_consumers": {
+      "RmlUi": "rmlui.wrap",
+      "fmt": "fmt.wrap",
+      "freetype2": "freetype2.wrap",
+      "harfbuzz": "harfbuzz.wrap",
+      "jsoncpp": "jsoncpp.wrap",
+      "libavcodec": "ffmpeg.wrap",
+      "libavformat": "ffmpeg.wrap",
+      "libavutil": "ffmpeg.wrap",
+      "libcurl": "libcurl.wrap",
+      "libjpeg": "libjpeg-turbo.wrap",
+      "libpng": "libpng.wrap",
+      "libswresample": "ffmpeg.wrap",
+      "libswscale": "ffmpeg.wrap",
+      "monocypher": "monocypher.wrap",
+      "openal": "openal-soft.wrap",
+      "rmlui": "rmlui.wrap",
+      "sdl3": "sdl3.wrap",
+      "sdl3_ttf": "sdl3_ttf.wrap",
+      "zlib": "zlib-ng.wrap"
+    },
+    "fallback_consumers": {
+      "freetype2": "freetype2.wrap",
+      "harfbuzz": "harfbuzz.wrap",
+      "libcurl": "libcurl.wrap",
+      "monocypher": "monocypher.wrap",
+      "openal-soft": "openal-soft.wrap",
+      "sdl3": "sdl3.wrap",
+      "sdl3_ttf": "sdl3_ttf.wrap",
+      "zlib-ng": "zlib-ng.wrap"
+    },
+    "subproject_consumers": {
+      "khr-headers": "khr-headers.wrap",
+      "rmlui": "rmlui.wrap"
+    }
+  },
+  "trust_exceptions": {
+    "ffmpeg.wrap": {
+      "kind": "git-tag",
+      "revision": "meson-8.0.1"
+    },
+    "khr-headers.wrap": {
+      "kind": "repository-local-archive",
+      "sha256": "50d3a176430248c7e887ff9b078a341adc3b69387f027a4114e97015719a0350"
+    }
+  },
+  "wraps": {
+    "cairo.wrap": {
+      "scope": "transitive",
+      "version": "1.18.4",
+      "sections": {
+        "wrap-file": {
+          "directory": "cairo-1.18.4",
+          "source_url": "https://www.cairographics.org/releases/cairo-1.18.4.tar.xz",
+          "source_filename": "cairo-1.18.4.tar.xz",
+          "source_hash": "445ed8208a6e4823de1226a74ca319d3600e83f6369f99b14265006599c32ccb",
+          "source_fallback_url": "https://github.com/mesonbuild/wrapdb/releases/download/cairo_1.18.4-2/cairo-1.18.4.tar.xz",
+          "wrapdb_version": "1.18.4-2"
+        },
+        "provide": {
+          "dependency_names": "cairo, cairo-gobject, cairo-script-interpreter"
+        }
+      }
+    },
+    "ffmpeg.wrap": {
+      "scope": "direct",
+      "version": "8.0.1",
+      "sections": {
+        "wrap-git": {
+          "url": "https://gitlab.freedesktop.org/gstreamer/meson-ports/ffmpeg.git",
+          "revision": "meson-8.0.1",
+          "depth": "1"
+        },
+        "provide": {
+          "libavcodec": "libavcodec_dep",
+          "libavformat": "libavformat_dep",
+          "libavutil": "libavutil_dep",
+          "libswresample": "libswresample_dep",
+          "libswscale": "libswscale_dep"
+        }
+      }
+    },
+    "fmt.wrap": {
+      "scope": "direct",
+      "version": "12.0.0",
+      "sections": {
+        "wrap-file": {
+          "directory": "fmt-12.0.0",
+          "source_url": "https://github.com/fmtlib/fmt/archive/12.0.0.tar.gz",
+          "source_filename": "fmt-12.0.0.tar.gz",
+          "source_hash": "aa3e8fbb6a0066c03454434add1f1fc23299e85758ceec0d7d2d974431481e40",
+          "source_fallback_url": "https://github.com/mesonbuild/wrapdb/releases/download/fmt_12.0.0-1/fmt-12.0.0.tar.gz",
+          "patch_filename": "fmt_12.0.0-1_patch.zip",
+          "patch_url": "https://wrapdb.mesonbuild.com/v2/fmt_12.0.0-1/get_patch",
+          "patch_hash": "307f288ebf3850abf2f0c50ac1fb07de97df9538d39146d802f3c0d6cada8998",
+          "wrapdb_version": "12.0.0-1"
+        },
+        "provide": {
+          "dependency_names": "fmt"
+        }
+      }
+    },
+    "freetype2.wrap": {
+      "scope": "direct",
+      "version": "2.14.1",
+      "sections": {
+        "wrap-file": {
+          "directory": "freetype-2.14.1",
+          "source_url": "https://download.savannah.gnu.org/releases/freetype/freetype-2.14.1.tar.xz",
+          "source_fallback_url": "https://github.com/mesonbuild/wrapdb/releases/download/freetype2_2.14.1-1/freetype-2.14.1.tar.xz",
+          "source_filename": "freetype-2.14.1.tar.xz",
+          "source_hash": "32427e8c471ac095853212a37aef816c60b42052d4d9e48230bab3bdf2936ccc",
+          "wrapdb_version": "2.14.1-1"
+        },
+        "provide": {
+          "dependency_names": "freetype2"
+        }
+      }
+    },
+    "glib.wrap": {
+      "scope": "transitive",
+      "version": "2.86.3",
+      "sections": {
+        "wrap-file": {
+          "directory": "glib-2.86.3",
+          "source_url": "https://download.gnome.org/sources/glib/2.86/glib-2.86.3.tar.xz",
+          "source_fallback_url": "https://wrapdb.mesonbuild.com/v2/glib_2.86.3-1/get_source/glib-2.86.3.tar.xz",
+          "source_filename": "glib-2.86.3.tar.xz",
+          "source_hash": "b3211d8d34b9df5dca05787ef0ad5d7ca75dec998b970e1aab0001d229977c65",
+          "wrapdb_version": "2.86.3-1"
+        },
+        "provide": {
+          "dependency_names": "gthread-2.0, gobject-2.0, gmodule-no-export-2.0, gmodule-export-2.0, gmodule-2.0, glib-2.0, gio-2.0, gio-windows-2.0, gio-unix-2.0",
+          "program_names": "glib-genmarshal, glib-mkenums, glib-compile-schemas, glib-compile-resources, gio-querymodules, gdbus-codegen"
+        }
+      }
+    },
+    "harfbuzz.wrap": {
+      "scope": "direct",
+      "version": "12.3.2",
+      "sections": {
+        "wrap-file": {
+          "directory": "harfbuzz-12.3.2",
+          "source_url": "https://github.com/harfbuzz/harfbuzz/releases/download/12.3.2/harfbuzz-12.3.2.tar.xz",
+          "source_filename": "harfbuzz-12.3.2.tar.xz",
+          "source_hash": "6f6db164359a2da5a84ef826615b448b33e6306067ad829d85d5b0bf936f1bb8",
+          "source_fallback_url": "https://wrapdb.mesonbuild.com/v2/harfbuzz_12.3.2-1/get_source/harfbuzz-12.3.2.tar.xz",
+          "wrapdb_version": "12.3.2-1"
+        },
+        "provide": {
+          "dependency_names": "harfbuzz, harfbuzz-cairo, harfbuzz-gobject, harfbuzz-icu, harfbuzz-subset"
+        }
+      }
+    },
+    "jsoncpp.wrap": {
+      "scope": "direct",
+      "version": "1.9.6",
+      "sections": {
+        "wrap-file": {
+          "directory": "jsoncpp-1.9.6",
+          "source_url": "https://github.com/open-source-parsers/jsoncpp/archive/1.9.6.tar.gz",
+          "source_filename": "jsoncpp-1.9.6.tar.gz",
+          "source_hash": "f93b6dd7ce796b13d02c108bc9f79812245a82e577581c4c9aabe57075c90ea2",
+          "source_fallback_url": "https://github.com/mesonbuild/wrapdb/releases/download/jsoncpp_1.9.6-1/jsoncpp-1.9.6.tar.gz",
+          "wrapdb_version": "1.9.6-1"
+        },
+        "provide": {
+          "jsoncpp": "jsoncpp_dep"
+        }
+      }
+    },
+    "khr-headers.wrap": {
+      "scope": "direct",
+      "version": "repository-local",
+      "sections": {
+        "wrap-file": {
+          "directory": "khr-headers",
+          "source_filename": "khr-headers.tar.xz",
+          "source_hash": "50d3a176430248c7e887ff9b078a341adc3b69387f027a4114e97015719a0350"
+        }
+      }
+    },
+    "libcurl.wrap": {
+      "scope": "direct",
+      "version": "8.18.0",
+      "sections": {
+        "wrap-file": {
+          "directory": "curl-8.18.0",
+          "source_url": "https://curl.se/download/curl-8.18.0.tar.xz",
+          "source_filename": "curl-8.18.0.tar.xz",
+          "source_hash": "40df79166e74aa20149365e11ee4c798a46ad57c34e4f68fd13100e2c9a91946",
+          "patch_directory": "curl"
+        },
+        "provide": {
+          "libcurl": "libcurl_dep"
+        }
+      }
+    },
+    "libjpeg-turbo.wrap": {
+      "scope": "direct",
+      "version": "3.1.3",
+      "sections": {
+        "wrap-file": {
+          "directory": "libjpeg-turbo-3.1.3",
+          "source_url": "https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.1.3/libjpeg-turbo-3.1.3.tar.gz",
+          "source_filename": "libjpeg-turbo-3.1.3.tar.gz",
+          "source_hash": "075920b826834ac4ddf97661cc73491047855859affd671d52079c6867c1c6c0",
+          "source_fallback_url": "https://wrapdb.mesonbuild.com/v2/libjpeg-turbo_3.1.3-1/get_source/libjpeg-turbo-3.1.3.tar.gz",
+          "patch_filename": "libjpeg-turbo_3.1.3-1_patch.zip",
+          "patch_url": "https://wrapdb.mesonbuild.com/v2/libjpeg-turbo_3.1.3-1/get_patch",
+          "patch_fallback_url": "https://github.com/mesonbuild/wrapdb/releases/download/libjpeg-turbo_3.1.3-1/libjpeg-turbo_3.1.3-1_patch.zip",
+          "patch_hash": "4c552c743b6a16d3338cbee6ab1dc10333f19a72464e7b7c964f6e03d78f48df",
+          "wrapdb_version": "3.1.3-1"
+        },
+        "provide": {
+          "dependency_names": "libjpeg, libturbojpeg"
+        }
+      }
+    },
+    "libpng.wrap": {
+      "scope": "direct",
+      "version": "1.6.53",
+      "sections": {
+        "wrap-file": {
+          "directory": "libpng-1.6.53",
+          "source_url": "https://github.com/pnggroup/libpng/archive/v1.6.53.tar.gz",
+          "source_filename": "libpng-1.6.53.tar.gz",
+          "source_hash": "b20cee717e11416d2f96ccc7d184f63730ca8cb2f03bfd0c4ed77fbc909c0bff",
+          "source_fallback_url": "https://wrapdb.mesonbuild.com/v2/libpng_1.6.53-2/get_source/libpng-1.6.53.tar.gz",
+          "patch_filename": "libpng_1.6.53-2_patch.zip",
+          "patch_url": "https://wrapdb.mesonbuild.com/v2/libpng_1.6.53-2/get_patch",
+          "patch_fallback_url": "https://github.com/mesonbuild/wrapdb/releases/download/libpng_1.6.53-2/libpng_1.6.53-2_patch.zip",
+          "patch_hash": "c6c965f20b58fb6e920ddeaef41eb27d9cc4dcd89b2a0fcef88c229e484dede8",
+          "wrapdb_version": "1.6.53-2"
+        },
+        "provide": {
+          "dependency_names": "libpng"
+        }
+      }
+    },
+    "monocypher.wrap": {
+      "scope": "direct",
+      "version": "4.0.3",
+      "sections": {
+        "wrap-file": {
+          "directory": "monocypher-4.0.3",
+          "source_url": "https://monocypher.org/download/monocypher-4.0.3.tar.gz",
+          "source_filename": "monocypher-4.0.3.tar.gz",
+          "source_hash": "8cc9bc341a66249016db9bd70e9142d8d0aef9945973744b1ac05dbc55d8ee66",
+          "patch_directory": "monocypher"
+        },
+        "provide": {
+          "monocypher": "monocypher_dep"
+        }
+      }
+    },
+    "nasm.wrap": {
+      "scope": "transitive",
+      "version": "ffmpeg-managed",
+      "sections": {
+        "wrap-redirect": {
+          "filename": "ffmpeg/subprojects/nasm.wrap"
+        }
+      }
+    },
+    "openal-soft.wrap": {
+      "scope": "direct",
+      "version": "1.24.3",
+      "sections": {
+        "wrap-file": {
+          "directory": "openal-soft-1.24.3",
+          "source_url": "https://github.com/kcat/openal-soft/archive/refs/tags/1.24.3.tar.gz",
+          "source_filename": "openal-soft-1.24.3.tar.gz",
+          "source_hash": "7e1fecdeb45e7f78722b776c5cf30bd33934b961d7fd2a11e0494e064cc631ce",
+          "source_fallback_url": "https://github.com/mesonbuild/wrapdb/releases/download/openal-soft_1.24.3-2/openal-soft-1.24.3.tar.gz",
+          "patch_filename": "openal-soft_1.24.3-2_patch.zip",
+          "patch_url": "https://wrapdb.mesonbuild.com/v2/openal-soft_1.24.3-2/get_patch",
+          "patch_hash": "6642f3f3321f3d00633547e3abc06657ca4e22124b6593da7bddd4d9593ccc2b",
+          "wrapdb_version": "1.24.3-2"
+        },
+        "provide": {
+          "dependency_names": "openal"
+        }
+      }
+    },
+    "pixman.wrap": {
+      "scope": "transitive",
+      "version": "0.46.4",
+      "sections": {
+        "wrap-file": {
+          "directory": "pixman-0.46.4",
+          "source_url": "https://www.cairographics.org/releases/pixman-0.46.4.tar.gz",
+          "source_filename": "pixman-0.46.4.tar.gz",
+          "source_hash": "d09c44ebc3bd5bee7021c79f922fe8fb2fb57f7320f55e97ff9914d2346a591c",
+          "source_fallback_url": "https://github.com/mesonbuild/wrapdb/releases/download/pixman_0.46.4-1/pixman-0.46.4.tar.gz",
+          "wrapdb_version": "0.46.4-1"
+        },
+        "provide": {
+          "pixman-1": "idep_pixman"
+        }
+      }
+    },
+    "rmlui.wrap": {
+      "scope": "direct",
+      "version": "6.2",
+      "sections": {
+        "wrap-file": {
+          "directory": "RmlUi-6.2",
+          "source_url": "https://github.com/mikke89/RmlUi/archive/refs/tags/6.2.tar.gz",
+          "source_filename": "RmlUi-6.2.tar.gz",
+          "source_hash": "814c3ff7b9666280338d8f0dda85979f5daf028d01c85fc8975431d1e2fd8e8b",
+          "method": "cmake"
+        },
+        "provide": {
+          "dependency_names": "RmlUi, rmlui"
+        }
+      }
+    },
+    "sdl3.wrap": {
+      "scope": "direct",
+      "version": "3.4.0",
+      "sections": {
+        "wrap-file": {
+          "directory": "SDL3-3.4.0",
+          "source_url": "https://github.com/libsdl-org/SDL/releases/download/release-3.4.0/SDL3-3.4.0.tar.gz",
+          "source_filename": "SDL3-3.4.0.tar.gz",
+          "source_hash": "082cbf5f429e0d80820f68dc2b507a94d4cc1b4e70817b119bbb8ec6a69584b8",
+          "source_fallback_url": "https://wrapdb.mesonbuild.com/v2/sdl3_3.4.0-2/get_source/SDL3-3.4.0.tar.gz",
+          "patch_filename": "sdl3_3.4.0-2_patch.zip",
+          "patch_url": "https://wrapdb.mesonbuild.com/v2/sdl3_3.4.0-2/get_patch",
+          "patch_fallback_url": "https://github.com/mesonbuild/wrapdb/releases/download/sdl3_3.4.0-2/sdl3_3.4.0-2_patch.zip",
+          "patch_hash": "0ef4e75d1a2416c71406d81cfbe5733caabfb86d1a2a551e62cd66e78bf23472",
+          "wrapdb_version": "3.4.0-2"
+        },
+        "provide": {
+          "dependency_names": "sdl3"
+        }
+      }
+    },
+    "sdl3_ttf.wrap": {
+      "scope": "direct",
+      "version": "3.2.2",
+      "sections": {
+        "wrap-file": {
+          "directory": "SDL3_ttf-3.2.2",
+          "source_url": "https://github.com/libsdl-org/SDL_ttf/releases/download/release-3.2.2/SDL3_ttf-3.2.2.tar.gz",
+          "source_filename": "SDL3_ttf-3.2.2.tar.gz",
+          "source_hash": "63547d58d0185c833213885b635a2c0548201cc8f301e6587c0be1a67e1e045d",
+          "patch_filename": "sdl3_ttf_3.2.2-2_patch.zip",
+          "patch_url": "https://wrapdb.mesonbuild.com/v2/sdl3_ttf_3.2.2-2/get_patch",
+          "patch_hash": "da1006e2244497bb2ef2177d5028ebfecac8b22644b1f3b49df9883e44f31bc0",
+          "source_fallback_url": "https://github.com/mesonbuild/wrapdb/releases/download/sdl3_ttf_3.2.2-2/SDL3_ttf-3.2.2.tar.gz",
+          "wrapdb_version": "3.2.2-2"
+        },
+        "provide": {
+          "sdl3_ttf": "sdl3_ttf_dep"
+        }
+      }
+    },
+    "zlib-ng.wrap": {
+      "scope": "direct",
+      "version": "2.3.2",
+      "sections": {
+        "wrap-file": {
+          "directory": "zlib-ng-2.3.2",
+          "source_url": "https://github.com/zlib-ng/zlib-ng/archive/refs/tags/2.3.2.tar.gz",
+          "source_filename": "zlib-ng-2.3.2.tar.gz",
+          "source_hash": "6a0561b50b8f5f6434a6a9e667a67026f2b2064a1ffa959c6b2dae320161c2a8",
+          "source_fallback_url": "https://wrapdb.mesonbuild.com/v2/zlib-ng_2.3.2-2/get_source/zlib-ng-2.3.2.tar.gz",
+          "patch_filename": "zlib-ng_2.3.2-2_patch.zip",
+          "patch_url": "https://wrapdb.mesonbuild.com/v2/zlib-ng_2.3.2-2/get_patch",
+          "patch_fallback_url": "https://github.com/mesonbuild/wrapdb/releases/download/zlib-ng_2.3.2-2/zlib-ng_2.3.2-2_patch.zip",
+          "patch_hash": "43eff1d7f7948b0fa09237bcf08d7fc34378929eddf216897e9be5955506e35f",
+          "wrapdb_version": "2.3.2-2"
+        },
+        "provide": {
+          "dependency_names": "zlib-ng"
+        }
+      }
+    }
+  }
+}

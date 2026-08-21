@@ -14,6 +14,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "shared/command_abi.h"
 #include "shared/local_action_abi.h"
+#include "shared/local_action_predict_seed.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -125,32 +126,12 @@ bool Worr_LocalActionPredictorGetStateV1(
     worr_local_action_state_v2 *state_out);
 
 /*
- * Compact pointer-free seed record: the transport payload that carries the
- * server's exact authoritative weapon state to the client so the client can
- * seed its predictor at a known command boundary.  It rides the native
- * side-channel (a versioned record, not the frozen snapshot ABI or a
- * legacy-compat-breaking stat), so it is default-off and never alters the
- * legacy wire.  The state's applied_cursor names the boundary; the client
- * replays commands after it.
+ * The seed record itself (worr_local_action_predict_seed_v1 and its ABI
+ * version) is defined in "shared/local_action_predict_seed.h", included above.
+ * It is a native event payload, so shared/event_abi.h must be able to size,
+ * validate, hash, and serialize it, and this header already depends on
+ * event_abi.h -- defining it here would be circular.
  */
-#define WORR_LOCAL_ACTION_PREDICT_SEED_ABI_VERSION 1u
-
-/*
- * Compact READY-boundary seed (40 bytes, fits the 80-byte native event
- * payload).  The client reconstructs the exact READY state from these fields,
- * so only stable idle-state boundaries are transported; the client predicts
- * forward through the fire/refire cycle from there.
- */
-typedef struct worr_local_action_predict_seed_v1_s {
-  uint32_t struct_size;
-  uint32_t schema_version;
-  uint32_t catalog_id;
-  uint32_t active_ammo_units;
-  uint32_t presentation_frame;
-  uint32_t reserved0;
-  worr_command_cursor_v1 applied_cursor;
-  uint64_t sample_time_us;
-} worr_local_action_predict_seed_v1;
 
 /*
  * Builds a seed from an authoritative READY weapon state.  Fails (and zeroes

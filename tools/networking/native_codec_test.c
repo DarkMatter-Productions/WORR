@@ -2,6 +2,8 @@
 
 #include "common/net/native_codec.h"
 #include "common/net/native_event_batch.h"
+#include "common/net/local_action_predictor.h"
+#include "shared/local_action_rule_provider.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -1612,10 +1614,163 @@ static bool test_bootstrap_codec(void)
     return true;
 }
 
+/*
+ * FR-10-T08 predict-seed payload (kind 14).
+ *
+ * The seed carries the server's exact authoritative READY weapon state to the
+ * client predictor over the native side-channel.  Its enum value existed
+ * before this coverage, but no size/validate/hash/codec case did, so
+ * Worr_EventRecordValidateV1 rejected every seed candidate and the peer
+ * drained -- the whole weapon-prediction carriage was dead on arrival.  This
+ * proves the record the server actually builds (src/server/user.c) validates
+ * and survives a byte roundtrip.
+ */
+static uint32_t first_predictable_catalog_id(void)
+{
+    uint32_t id;
+
+    /* Discovered, not hard-coded: the predictable set is derived from the
+     * catalog/semantics tables and must not be restated here. */
+    for (id = 1; id <= 64u; ++id) {
+        if (Worr_LocalActionRuleProviderPredictableV1(id))
+            return id;
+    }
+    return 0;
+}
+
+/* `authoritative` selects the two legal forms of the same record: the
+ * candidate the server queues (no authority ID yet) and the ID-assigned record
+ * the reliable sender emits.  Both must validate and both must round-trip. */
+static worr_event_record_v1 make_predict_seed_event(
+    const worr_local_action_predict_seed_v1 *seed, bool authoritative)
+{
+    worr_event_record_v1 record;
+
+    memset(&record, 0, sizeof(record));
+    record.struct_size = sizeof(record);
+    record.schema_version = WORR_EVENT_ABI_VERSION;
+    record.model_revision = WORR_EVENT_MODEL_REVISION;
+    record.flags = WORR_EVENT_FLAG_CRITICAL;
+    record.source_tick = 41;
+    record.source_time_us = UINT64_C(987654321);
+    record.source_entity.index = WORR_EVENT_NO_ENTITY;
+    record.subject_entity.index = WORR_EVENT_NO_ENTITY;
+    record.event_type = WORR_EVENT_TYPE_AUTHORITY_RECEIPT;
+    record.delivery_class = WORR_EVENT_DELIVERY_RELIABLE_ORDERED;
+    record.prediction_class = WORR_EVENT_PREDICTION_AUTHORITATIVE_ONLY;
+    record.payload_kind = WORR_EVENT_PAYLOAD_LOCAL_ACTION_PREDICT_SEED_V1;
+    record.payload_size = sizeof(*seed);
+    memcpy(record.payload, seed, sizeof(*seed));
+    if (authoritative) {
+        record.flags |= WORR_EVENT_FLAG_HAS_AUTHORITY_ID;
+        record.event_id.stream_epoch = 3;
+        record.event_id.sequence = 11;
+    }
+    return record;
+}
+
+static bool test_predict_seed_event_codec(void)
+{
+    worr_local_action_predict_seed_v1 seed;
+    worr_event_record_v1 candidate;
+    worr_event_record_v1 source;
+    worr_event_record_v1 decoded;
+    worr_native_codec_info_v1 info;
+    uint8_t encoded[256];
+    uint64_t source_hash;
+    uint64_t decoded_hash;
+    uint32_t preflight = 0;
+    size_t encoded_bytes = 0;
+    uint32_t catalog_id = first_predictable_catalog_id();
+
+    CHECK(catalog_id != 0);
+
+    memset(&seed, 0, sizeof(seed));
+    seed.struct_size = sizeof(seed);
+    seed.schema_version = WORR_LOCAL_ACTION_PREDICT_SEED_ABI_VERSION;
+    seed.catalog_id = catalog_id;
+    seed.active_ammo_units = 25;
+    seed.presentation_frame = 3;
+    seed.applied_cursor.epoch = 7;
+    seed.applied_cursor.contiguous_sequence = 4096;
+    seed.sample_time_us = UINT64_C(123456789);
+    CHECK(Worr_LocalActionPredictSeedValidateV1(&seed));
+
+    /* The exact candidate the server queues must be admissible.  This is the
+     * check that failed before kind 14 was wired: candidate validation
+     * rejected the seed, so queue_event_candidates_at_tick drained the peer. */
+    candidate = make_predict_seed_event(&seed, false);
+    CHECK(Worr_EventRecordCandidateValidateV1(&candidate, TEST_MAX_ENTITIES));
+
+    /* The ID-assigned record the reliable sender emits is what crosses the
+     * wire, so the roundtrip below uses that form. */
+    source = make_predict_seed_event(&seed, true);
+    CHECK(Worr_EventRecordValidateV1(&source, TEST_MAX_ENTITIES));
+
+    CHECK(Worr_NativeCodecEventPreflightV1(&source, TEST_MAX_ENTITIES,
+                                           &preflight) ==
+          WORR_NATIVE_CODEC_OK);
+    memset(encoded, 0xa5, sizeof(encoded));
+    CHECK(Worr_NativeCodecEventEncodeV1(&source, TEST_MAX_ENTITIES, encoded,
+                                        sizeof(encoded), &encoded_bytes) ==
+          WORR_NATIVE_CODEC_OK);
+    CHECK(encoded_bytes == preflight);
+    CHECK(Worr_NativeCodecInspectV1(encoded, encoded_bytes, &info) ==
+          WORR_NATIVE_CODEC_OK);
+    CHECK(info.record_class == WORR_NATIVE_RECORD_EVENT_V1);
+    /* 40 payload bytes on the wire, matching the frozen struct. */
+    CHECK(source.payload_size == 40 && info.range_counts[0] == 40);
+
+    memset(&decoded, 0xcc, sizeof(decoded));
+    CHECK(Worr_NativeCodecEventDecodeV1(encoded, encoded_bytes,
+                                        TEST_MAX_ENTITIES, &decoded) ==
+          WORR_NATIVE_CODEC_OK);
+    CHECK(Worr_EventRecordHashV1(&source, TEST_MAX_ENTITIES, &source_hash));
+    CHECK(Worr_EventRecordHashV1(&decoded, TEST_MAX_ENTITIES, &decoded_hash));
+    CHECK(source_hash == decoded_hash);
+
+    /* Every field survives the roundtrip byte-for-byte. */
+    {
+        worr_local_action_predict_seed_v1 round;
+        memcpy(&round, decoded.payload, sizeof(round));
+        CHECK(memcmp(&round, &seed, sizeof(seed)) == 0);
+    }
+
+    /* Fail-closed: a seed whose weapon is not client-predictable, and one with
+     * a wrong schema version, are both rejected at record validation. */
+    {
+        worr_local_action_predict_seed_v1 bad = seed;
+        worr_event_record_v1 bad_record;
+
+        bad.catalog_id = 0;
+        bad_record = make_predict_seed_event(&bad, true);
+        CHECK(!Worr_EventRecordValidateV1(&bad_record, TEST_MAX_ENTITIES));
+
+        bad = seed;
+        bad.schema_version = WORR_LOCAL_ACTION_PREDICT_SEED_ABI_VERSION + 1u;
+        bad_record = make_predict_seed_event(&bad, true);
+        CHECK(!Worr_EventRecordValidateV1(&bad_record, TEST_MAX_ENTITIES));
+
+        bad = seed;
+        bad.reserved0 = 1;
+        bad_record = make_predict_seed_event(&bad, true);
+        CHECK(!Worr_EventRecordValidateV1(&bad_record, TEST_MAX_ENTITIES));
+    }
+
+    /* A mismatched payload size for kind 14 must not be admitted. */
+    {
+        worr_event_record_v1 bad_record = make_predict_seed_event(&seed, true);
+        bad_record.payload_size = sizeof(seed) - 1u;
+        CHECK(!Worr_EventRecordValidateV1(&bad_record, TEST_MAX_ENTITIES));
+    }
+    return true;
+}
+
 int main(void)
 {
     if (!test_command_codec() || !test_event_codecs() ||
         !test_event_batch_codec() ||
+        !test_predict_seed_event_codec() ||
         !test_snapshot_codec() || !test_empty_snapshot_codec() ||
         !test_maximum_entity_snapshot_codec() ||
         !test_bootstrap_codec()) {

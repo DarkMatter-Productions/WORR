@@ -838,6 +838,8 @@ static uint32_t event_payload_wire_bytes(uint16_t payload_kind)
             worr_local_action_shadow_authority_receipt_v1);
     case WORR_EVENT_PAYLOAD_KEYED_POI_V1:
         return 20;
+    case WORR_EVENT_PAYLOAD_LOCAL_ACTION_PREDICT_SEED_V1:
+        return (uint32_t)sizeof(worr_local_action_predict_seed_v1);
     default:
         return UINT32_MAX;
     }
@@ -988,6 +990,20 @@ static void write_event_payload(byte_writer *writer,
         put_u16(writer, payload.image_index);
         put_u8(writer, payload.color_index);
         put_u8(writer, payload.flags);
+        break;
+    }
+    case WORR_EVENT_PAYLOAD_LOCAL_ACTION_PREDICT_SEED_V1: {
+        worr_local_action_predict_seed_v1 payload;
+        memcpy(&payload, record->payload, sizeof(payload));
+        put_u32(writer, payload.struct_size);
+        put_u32(writer, payload.schema_version);
+        put_u32(writer, payload.catalog_id);
+        put_u32(writer, payload.active_ammo_units);
+        put_u32(writer, payload.presentation_frame);
+        put_u32(writer, payload.reserved0);
+        put_u32(writer, payload.applied_cursor.epoch);
+        put_u32(writer, payload.applied_cursor.contiguous_sequence);
+        put_u64(writer, payload.sample_time_us);
         break;
     }
     default:
@@ -1175,6 +1191,23 @@ static bool read_event_payload(byte_reader *reader,
             !get_u16(reader, &payload.image_index) ||
             !get_u8(reader, &payload.color_index) ||
             !get_u8(reader, &payload.flags)) {
+            return false;
+        }
+        memcpy(record->payload, &payload, sizeof(payload));
+        return true;
+    }
+    case WORR_EVENT_PAYLOAD_LOCAL_ACTION_PREDICT_SEED_V1: {
+        worr_local_action_predict_seed_v1 payload;
+        memset(&payload, 0, sizeof(payload));
+        if (!get_u32(reader, &payload.struct_size) ||
+            !get_u32(reader, &payload.schema_version) ||
+            !get_u32(reader, &payload.catalog_id) ||
+            !get_u32(reader, &payload.active_ammo_units) ||
+            !get_u32(reader, &payload.presentation_frame) ||
+            !get_u32(reader, &payload.reserved0) ||
+            !get_u32(reader, &payload.applied_cursor.epoch) ||
+            !get_u32(reader, &payload.applied_cursor.contiguous_sequence) ||
+            !get_u64(reader, &payload.sample_time_us)) {
             return false;
         }
         memcpy(record->payload, &payload, sizeof(payload));

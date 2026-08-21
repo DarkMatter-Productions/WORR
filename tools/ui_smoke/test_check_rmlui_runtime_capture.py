@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -161,6 +162,93 @@ RmlUi runtime input: keys=2 chars=1 mouse_moves=1 mouse_buttons=1 mouse_wheels=1
     write_text(condump_path, evidence_text)
 
 
+def write_valid_navigation_evidence(
+    repo_root: Path,
+    renderer: str,
+    *,
+    evidence_id: str | None = None,
+) -> Path:
+    install_dir = repo_root / ".install"
+    basew_dir = install_dir / "basew"
+    lane_evidence_id = evidence_id or f"rmlui_runtime_smoke_round29_navigation_{renderer}"
+    runtime_home = (
+        repo_root
+        / runtime_capture.DEFAULT_NAVIGATION_RUNTIME_DIR
+        / lane_evidence_id
+    )
+    log_path = runtime_home / "basew" / "logs" / f"{lane_evidence_id}.log"
+    write_text(install_dir / "worr_x86_64.exe", "fake exe")
+    for route_id in ("main", "options", "video"):
+        write_text(
+            basew_dir / "ui/rml" / runtime_capture.ROUTE_DOCUMENTS[route_id],
+            "<rml />",
+        )
+
+    renderer_family = runtime_capture.RENDERER_FAMILIES[renderer]
+    renderer_label = runtime_capture.RENDERER_LABELS[renderer]
+    lines: list[str] = []
+    for name, active, route_id in runtime_capture.NAVIGATION_CHECKPOINTS:
+        prefix = "[2026-08-03 12:00] "
+        lines.append(prefix + runtime_capture.navigation_checkpoint_token(name))
+        lines.append(
+            prefix
+            + "RmlUi runtime status: "
+            + f"active={'yes' if active else 'no'} route='{route_id}' "
+            + "availability='ready' runtime='RmlUi 6.2' "
+            + f"renderer='{renderer_label} RmlUi render-interface primitives' "
+            + f"family='{renderer_family}'."
+        )
+        lines.append(
+            prefix
+            + "RmlUi runtime frames: updates=2 renders=2 "
+            + "last_realtime=123 dimensions=960x720."
+        )
+        if active:
+            lines.append(
+                prefix
+                + "RmlUi runtime route counters: opens=1 closes=0 "
+                + "close_requests=0 synthetic_inputs=0."
+            )
+        else:
+            lines.append(
+                prefix
+                + "RmlUi runtime route counters: opens=1 closes=1 "
+                + "close_requests=1 synthetic_inputs=0."
+            )
+        lines.append(
+            prefix
+            + "RmlUi runtime input: keys=0 chars=0 mouse_moves=0 "
+            + "mouse_buttons=0 mouse_wheels=0 last_mouse=0,0."
+        )
+    write_text(log_path, "\n".join(lines) + "\n")
+    return log_path
+
+
+def write_valid_navigation_matrix_evidence(repo_root: Path) -> dict[str, Path]:
+    return {
+        renderer: write_valid_navigation_evidence(repo_root, renderer)
+        for renderer in runtime_capture.NAVIGATION_RENDERERS
+    }
+
+
+def replace_navigation_checkpoint_text(
+    text: str,
+    checkpoint: str,
+    old: str,
+    new: str,
+) -> str:
+    marker = runtime_capture.navigation_checkpoint_token(checkpoint)
+    start = text.index(marker)
+    end = len(text)
+    for name, _active, _route in runtime_capture.NAVIGATION_CHECKPOINTS:
+        candidate = text.find(runtime_capture.navigation_checkpoint_token(name), start + len(marker))
+        if candidate >= 0:
+            end = min(end, candidate)
+    segment = text[start:end]
+    assert old in segment
+    return text[:start] + segment.replace(old, new, 1) + text[end:]
+
+
 def run_checker(
     repo_root: Path,
     capsys: pytest.CaptureFixture[str],
@@ -295,6 +383,457 @@ def test_full_route_matrix_dry_run_covers_manifest_routes(
     assert "+ui_rml_runtime_capture_route match_stats" in captured.out
     assert captured.out.count("+set ui_dm_initial 0") == 2
     assert captured.out.count("+set ui_dm_show_resume 1") == 2
+
+
+def test_navigation_matrix_dry_run_is_headless_input_free_and_ordered(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    repo_root = tmp_path / "repo"
+
+    result, captured = run_checker(
+        repo_root,
+        capsys,
+        "--dry-run",
+        "--navigation-matrix",
+        "--format",
+        "json",
+    )
+
+    payload = json.loads(captured.out)
+    assert result == 0
+    assert payload["ok"] is True
+    assert payload["schema"] == runtime_capture.NAVIGATION_EVIDENCE_SCHEMA
+    assert payload["journey_id"] == runtime_capture.NAVIGATION_JOURNEY_ID
+    assert payload["counts"]["renderer_lanes"] == 3
+    assert [lane["renderer"] for lane in payload["lanes"]] == list(
+        runtime_capture.NAVIGATION_RENDERERS
+    )
+    expected_markers = [
+        runtime_capture.navigation_checkpoint_token(name)
+        for name, _active, _route in runtime_capture.NAVIGATION_CHECKPOINTS
+    ]
+    for lane in payload["lanes"]:
+        command = lane["command"]
+        assert runtime_capture.command_contains_sequence(
+            command, ("+set", "win_headless", "1")
+        )
+        assert runtime_capture.command_contains_sequence(
+            command, ("+set", "in_enable", "0")
+        )
+        assert runtime_capture.command_contains_sequence(
+            command, ("+set", "in_grab", "0")
+        )
+        assert runtime_capture.command_contains_sequence(
+            command, ("+set", "r_fullscreen", "0")
+        )
+        assert runtime_capture.command_contains_sequence(
+            command, ("+set", "r_renderer", lane["renderer"])
+        )
+        runtime_home = repo_root / lane["paths"]["runtime_home"]
+        assert runtime_capture.command_set_values(command, "homedir") == [
+            str(runtime_home)
+        ]
+        assert runtime_home.is_relative_to(repo_root / ".tmp")
+        assert "+ui_rml_runtime_synthetic_input" not in command
+        assert not any(token.startswith("+screenshot") for token in command)
+        assert [token for token in command if token.startswith("RMLUI_NAV_CHECKPOINT:")] == expected_markers
+        assert command.count("+ui_rml_runtime_back") == 3
+        assert command.index("+ui_rml_runtime_capture_menu") < command.index(
+            "+ui_rml_runtime_open"
+        )
+        options_index = command.index("options")
+        video_index = command.index("video")
+        first_back_index = command.index("+ui_rml_runtime_back")
+        assert options_index < video_index < first_back_index
+
+
+def test_navigation_command_contract_rejects_conflicting_headless_or_input_flags(
+    tmp_path: Path,
+) -> None:
+    command = runtime_capture.build_navigation_engine_command(
+        tmp_path / "worr_x86_64.exe",
+        tmp_path,
+        tmp_path / ".tmp/rmlui/runtime-navigation/navigation-contract",
+        "basew",
+        "opengl",
+        "navigation-contract",
+        "960x720",
+        1,
+        1,
+    )
+    command.extend(
+        [
+            "+set",
+            "win_headless",
+            "0",
+            "+set",
+            "in_enable",
+            "1",
+            "+screenshotpng",
+            "forbidden-navigation-capture",
+        ]
+    )
+
+    errors = runtime_capture.navigation_command_contract_errors(command)
+
+    assert any("win_headless=1" in error for error in errors)
+    assert any("in_enable=0" in error for error in errors)
+    assert any("must remain log-only" in error for error in errors)
+
+
+def test_navigation_report_contract_rejects_renderer_redirection(
+    tmp_path: Path,
+) -> None:
+    repo_root = tmp_path / "repo"
+    install_dir = repo_root / ".install"
+    report = runtime_capture.build_navigation_reports(
+        repo_root,
+        install_dir,
+        install_dir / "worr_x86_64.exe",
+        "basew",
+        repo_root / ".tmp/rmlui/runtime-capture",
+        "navigation-renderer-contract",
+        "960x720",
+        1,
+        1,
+        repo_root / ".tmp/rmlui/runtime-capture/navigation-matrix.json",
+    )[1]
+    assert report.renderer == "vulkan"
+    report.command.extend(["+set", "r_renderer", "opengl"])
+
+    errors = runtime_capture.navigation_report_contract_errors(report)
+
+    assert any("r_renderer=vulkan" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    ("option", "value"),
+    (
+        ("--evidence-id", "../victim"),
+        ("--evidence-id", "+quit"),
+        ("--evidence-id", "capture;quit"),
+        ("--base-game", "../outside"),
+        ("--base-game", "+quit"),
+        ("--base-game", "basew/../outside"),
+    ),
+)
+def test_navigation_matrix_rejects_unsafe_command_and_path_identifiers(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    option: str,
+    value: str,
+) -> None:
+    repo_root = tmp_path / "repo"
+
+    with pytest.raises(SystemExit) as exc_info:
+        runtime_capture.main(
+            [
+                "--repo-root",
+                str(repo_root),
+                "--navigation-matrix",
+                "--dry-run",
+                option,
+                value,
+            ]
+        )
+
+    captured = capsys.readouterr()
+    assert exc_info.value.code == 2
+    assert "simple portable identifier" in captured.err
+    assert not (repo_root / ".tmp").exists()
+
+
+@pytest.mark.parametrize("timeout", ("nan", "inf", "1e308", "-1", "0"))
+def test_navigation_matrix_rejects_nonfinite_or_nonpositive_timeout(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    timeout: str,
+) -> None:
+    repo_root = tmp_path / "repo"
+
+    with pytest.raises(SystemExit) as exc_info:
+        runtime_capture.main(
+            [
+                "--repo-root",
+                str(repo_root),
+                "--navigation-matrix",
+                "--dry-run",
+                "--timeout",
+                timeout,
+            ]
+        )
+
+    captured = capsys.readouterr()
+    assert exc_info.value.code == 2
+    assert "finite, positive" in captured.err
+
+
+def test_navigation_live_runner_refuses_unverified_platform(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_root = tmp_path / "repo"
+    install_dir = repo_root / ".install"
+    reports = runtime_capture.build_navigation_reports(
+        repo_root,
+        install_dir,
+        install_dir / "worr_x86_64.exe",
+        "basew",
+        repo_root / ".tmp/rmlui/runtime-capture",
+        "navigation-platform",
+        "960x720",
+        1,
+        1,
+        repo_root / ".tmp/rmlui/runtime-capture/navigation-matrix.json",
+    )
+
+    monkeypatch.setattr(runtime_capture.os, "name", "posix")
+    monkeypatch.setattr(
+        runtime_capture.subprocess,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail("unsupported platform launched the client"),
+    )
+
+    assert runtime_capture.run_engine_for_navigation_report(reports[0], 1) is None
+    assert any("verified Windows win_headless" in error for error in reports[0].errors)
+
+
+def test_navigation_live_runner_uses_isolated_home_and_no_window_process_flag(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_root = tmp_path / "repo"
+    install_dir = repo_root / ".install"
+    engine_exe = install_dir / "worr_x86_64.exe"
+    write_text(engine_exe, "fake exe")
+    report = runtime_capture.build_navigation_reports(
+        repo_root,
+        install_dir,
+        engine_exe,
+        "basew",
+        repo_root / ".tmp/rmlui/runtime-capture",
+        "navigation-launch",
+        "960x720",
+        1,
+        1,
+        repo_root / ".tmp/rmlui/runtime-capture/navigation-matrix.json",
+    )[0]
+    captured_kwargs: dict[str, object] = {}
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        captured_kwargs.update(kwargs)
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(runtime_capture.os, "name", "nt")
+    monkeypatch.setattr(runtime_capture.subprocess, "run", fake_run)
+
+    assert runtime_capture.run_engine_for_navigation_report(report, 1) is not None
+    assert report.runtime_home.is_dir()
+    assert report.runtime_home.is_relative_to(repo_root / ".tmp")
+    assert captured_kwargs["stdin"] is subprocess.DEVNULL
+    assert captured_kwargs["creationflags"] == getattr(
+        subprocess, "CREATE_NO_WINDOW", 0
+    )
+
+
+def test_navigation_live_runner_rejects_redirected_scratch_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_root = tmp_path / "repo"
+    install_dir = repo_root / ".install"
+    engine_exe = install_dir / "worr_x86_64.exe"
+    write_text(engine_exe, "fake exe")
+    outside = tmp_path / "outside-runtime-home"
+    outside.mkdir(parents=True)
+    runtime_root = repo_root / runtime_capture.DEFAULT_NAVIGATION_RUNTIME_DIR
+    runtime_root.parent.mkdir(parents=True)
+    try:
+        runtime_root.symlink_to(outside, target_is_directory=True)
+    except (NotImplementedError, OSError) as exc:
+        pytest.skip(f"directory symlinks are unavailable on this host: {exc}")
+    report = runtime_capture.build_navigation_reports(
+        repo_root,
+        install_dir,
+        engine_exe,
+        "basew",
+        repo_root / ".tmp/rmlui/runtime-capture",
+        "navigation-redirect",
+        "960x720",
+        1,
+        1,
+        repo_root / ".tmp/rmlui/runtime-capture/navigation-matrix.json",
+    )[0]
+
+    monkeypatch.setattr(runtime_capture.os, "name", "nt")
+    monkeypatch.setattr(
+        runtime_capture.subprocess,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail("redirected scratch root launched the client"),
+    )
+
+    assert runtime_capture.run_engine_for_navigation_report(report, 1) is None
+    assert any(
+        "link or reparse point" in error or "resolves outside" in error
+        for error in report.errors
+    )
+
+
+def test_navigation_live_runner_rechecks_mocked_reparse_after_leaf_claim(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_root = tmp_path / "repo"
+    install_dir = repo_root / ".install"
+    engine_exe = install_dir / "worr_x86_64.exe"
+    write_text(engine_exe, "fake exe")
+    report = runtime_capture.build_navigation_reports(
+        repo_root,
+        install_dir,
+        engine_exe,
+        "basew",
+        repo_root / ".tmp/rmlui/runtime-capture",
+        "navigation-mocked-reparse",
+        "960x720",
+        1,
+        1,
+        repo_root / ".tmp/rmlui/runtime-capture/navigation-matrix.json",
+    )[0]
+    redirected_component = report.runtime_home.absolute()
+    original_probe = runtime_capture.path_is_link_or_reparse
+    redirected_component_probes = 0
+
+    def mocked_probe(path: Path) -> bool:
+        nonlocal redirected_component_probes
+        if path.absolute() == redirected_component:
+            redirected_component_probes += 1
+            return redirected_component_probes >= 3
+        return original_probe(path)
+
+    monkeypatch.setattr(runtime_capture.os, "name", "nt")
+    monkeypatch.setattr(runtime_capture, "path_is_link_or_reparse", mocked_probe)
+    monkeypatch.setattr(
+        runtime_capture.subprocess,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail("reparse component launched the client"),
+    )
+
+    assert runtime_capture.run_engine_for_navigation_report(report, 1) is None
+    assert redirected_component_probes == 3
+    assert report.runtime_home.is_dir()
+    assert any("link or reparse point" in error for error in report.errors)
+
+
+def test_navigation_live_runner_atomically_refuses_preexisting_empty_lane_home(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_root = tmp_path / "repo"
+    install_dir = repo_root / ".install"
+    engine_exe = install_dir / "worr_x86_64.exe"
+    write_text(engine_exe, "fake exe")
+    report = runtime_capture.build_navigation_reports(
+        repo_root,
+        install_dir,
+        engine_exe,
+        "basew",
+        repo_root / ".tmp/rmlui/runtime-capture",
+        "navigation-existing-empty-home",
+        "960x720",
+        1,
+        1,
+        repo_root / ".tmp/rmlui/runtime-capture/navigation-matrix.json",
+    )[0]
+    report.runtime_home.mkdir(parents=True)
+    assert not any(report.runtime_home.iterdir())
+
+    monkeypatch.setattr(runtime_capture.os, "name", "nt")
+    monkeypatch.setattr(
+        runtime_capture.subprocess,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail("pre-existing lane home launched the client"),
+    )
+
+    assert runtime_capture.run_engine_for_navigation_report(report, 1) is None
+    assert any("atomic lane claim refused" in error for error in report.errors)
+
+
+def test_navigation_live_runner_refuses_nonempty_lane_home(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_root = tmp_path / "repo"
+    install_dir = repo_root / ".install"
+    engine_exe = install_dir / "worr_x86_64.exe"
+    write_text(engine_exe, "fake exe")
+    report = runtime_capture.build_navigation_reports(
+        repo_root,
+        install_dir,
+        engine_exe,
+        "basew",
+        repo_root / ".tmp/rmlui/runtime-capture",
+        "navigation-stale-home",
+        "960x720",
+        1,
+        1,
+        repo_root / ".tmp/rmlui/runtime-capture/navigation-matrix.json",
+    )[0]
+    stale_config = report.runtime_home / "basew/config.cfg"
+    stale_log = report.log_path
+    write_text(stale_config, "set in_enable 1\nset r_fullscreen 1\n")
+    write_text(stale_log, "stale checkpoint\n")
+
+    monkeypatch.setattr(runtime_capture.os, "name", "nt")
+    monkeypatch.setattr(
+        runtime_capture.subprocess,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail("stale runtime home launched the client"),
+    )
+
+    assert runtime_capture.run_engine_for_navigation_report(report, 1) is None
+    assert any("atomic lane claim refused" in error for error in report.errors)
+    assert stale_config.is_file()
+    assert stale_log.is_file()
+
+
+def test_navigation_contract_reports_resolve_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_root = tmp_path / "repo"
+    install_dir = repo_root / ".install"
+    report = runtime_capture.build_navigation_reports(
+        repo_root,
+        install_dir,
+        install_dir / "worr_x86_64.exe",
+        "basew",
+        repo_root / ".tmp/rmlui/runtime-capture",
+        "navigation-resolve-failure",
+        "960x720",
+        1,
+        1,
+        repo_root / ".tmp/rmlui/runtime-capture/navigation-matrix.json",
+    )[0]
+    runtime_root = (
+        repo_root / runtime_capture.DEFAULT_NAVIGATION_RUNTIME_DIR
+    ).absolute()
+    original_resolve = Path.resolve
+
+    def mocked_resolve(path: Path, *args: object, **kwargs: object) -> Path:
+        if path.absolute() == runtime_root:
+            raise RuntimeError("mocked reparse loop")
+        return original_resolve(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", mocked_resolve)
+
+    errors = runtime_capture.navigation_report_contract_errors(report)
+
+    assert any(
+        "could not resolve navigation runtime scratch root" in error
+        and "mocked reparse loop" in error
+        for error in errors
+    )
 
 
 def test_dry_run_save_route_uses_general_route_capture(
@@ -528,6 +1067,176 @@ def test_route_matrix_evidence_passes_for_guarded_menu_entrypoints(
             f"rmlui_runtime_smoke_round29_{route_id}.tga"
         )
     assert (repo_root / ".tmp/rmlui/runtime-capture/manifest.json").is_file()
+
+
+def test_navigation_matrix_evidence_passes_ordered_renderer_journeys(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    repo_root = tmp_path / "repo"
+    write_valid_navigation_matrix_evidence(repo_root)
+    manifest_path = repo_root / ".tmp/rmlui/runtime-capture/navigation-matrix.json"
+
+    result, captured = run_checker(
+        repo_root,
+        capsys,
+        "--navigation-matrix",
+        "--format",
+        "json",
+    )
+
+    payload = json.loads(captured.out)
+    assert result == 0
+    assert payload["ok"] is True
+    assert payload["counts"] == {
+        "checkpoints_per_lane": 6,
+        "errors": 0,
+        "failed": 0,
+        "passed": 3,
+        "renderer_lanes": 3,
+    }
+    expected_order = [
+        name for name, _active, _route in runtime_capture.NAVIGATION_CHECKPOINTS
+    ]
+    expected_routes = [
+        route for _name, _active, route in runtime_capture.NAVIGATION_CHECKPOINTS
+    ]
+    for lane in payload["lanes"]:
+        assert lane["facts"]["checkpoint_order_ok"] is True
+        assert lane["facts"]["observed_checkpoint_order"] == expected_order
+        assert lane["facts"]["synthetic_input_command_absent"] is True
+        assert lane["facts"]["synthetic_input_marker_absent"] is True
+        assert lane["facts"]["final_inactive"] is True
+        assert [checkpoint["route"] for checkpoint in lane["checkpoints"]] == expected_routes
+        assert all(
+            checkpoint["renderer_family"] == lane["renderer_family"]
+            for checkpoint in lane["checkpoints"]
+        )
+        assert all(
+            checkpoint["frame_renders"] > 0
+            for checkpoint in lane["checkpoints"]
+            if checkpoint["expected_active"]
+        )
+        assert all(
+            checkpoint["input_keys"] == 0
+            and checkpoint["input_chars"] == 0
+            and checkpoint["input_mouse_moves"] == 0
+            and checkpoint["input_mouse_buttons"] == 0
+            and checkpoint["input_mouse_wheels"] == 0
+            for checkpoint in lane["checkpoints"]
+        )
+        copied_log = repo_root / lane["copied_evidence"]["log"]
+        assert copied_log.is_file()
+    assert manifest_path.is_file()
+    assert json.loads(manifest_path.read_text(encoding="utf-8")) == payload
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected_error"),
+    (
+        ("wrong_back_route", "checkpoint 'back_options' route was 'main'"),
+        ("missing_checkpoint", "checkpoints were missing, duplicated, or out of order"),
+        ("wrong_family", "checkpoint 'video' renderer family was 'vulkan'"),
+        ("zero_render", "checkpoint 'video' did not record an update and render"),
+        ("final_active", "did not finish inactive on route '<none>'"),
+        ("nonzero_input", "checkpoint 'options' input_keys was 1"),
+        ("synthetic_marker", "log contains a synthetic input marker"),
+    ),
+)
+def test_navigation_matrix_rejects_invalid_checkpoint_evidence(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    failure: str,
+    expected_error: str,
+) -> None:
+    repo_root = tmp_path / "repo"
+    paths = write_valid_navigation_matrix_evidence(repo_root)
+    log_path = paths["opengl"]
+    text = log_path.read_text(encoding="utf-8")
+    if failure == "wrong_back_route":
+        text = replace_navigation_checkpoint_text(
+            text, "back_options", "route='options'", "route='main'"
+        )
+    elif failure == "missing_checkpoint":
+        text = text.replace(
+            runtime_capture.navigation_checkpoint_token("back_options"),
+            "RMLUI_NAV_CHECKPOINT_MISSING:back_options",
+            1,
+        )
+    elif failure == "wrong_family":
+        text = replace_navigation_checkpoint_text(
+            text, "video", "family='opengl'", "family='vulkan'"
+        )
+    elif failure == "zero_render":
+        text = replace_navigation_checkpoint_text(
+            text, "video", "updates=2 renders=2", "updates=2 renders=0"
+        )
+    elif failure == "final_active":
+        text = replace_navigation_checkpoint_text(
+            text,
+            "inactive",
+            "active=no route='<none>'",
+            "active=yes route='main'",
+        )
+    elif failure == "nonzero_input":
+        text = replace_navigation_checkpoint_text(
+            text, "options", "keys=0", "keys=1"
+        )
+    elif failure == "synthetic_marker":
+        text += runtime_capture.SYNTHETIC_INPUT_MARKER + " forbidden\n"
+    else:
+        raise AssertionError(f"unhandled fixture mutation: {failure}")
+    write_text(log_path, text)
+
+    result, captured = run_checker(
+        repo_root,
+        capsys,
+        "--navigation-matrix",
+        "--format",
+        "json",
+    )
+
+    payload = json.loads(captured.out)
+    assert result == 1
+    assert payload["ok"] is False
+    assert any(expected_error in error["error"] for error in payload["errors"])
+
+
+def test_navigation_matrix_rejects_synthetic_input_command(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_root = tmp_path / "repo"
+    write_valid_navigation_matrix_evidence(repo_root)
+    original_builder = runtime_capture.build_navigation_engine_command
+
+    def build_forbidden_command(*args: object, **kwargs: object) -> list[str]:
+        command = original_builder(*args, **kwargs)  # type: ignore[arg-type]
+        command.insert(-3, "+ui_rml_runtime_synthetic_input")
+        return command
+
+    monkeypatch.setattr(
+        runtime_capture,
+        "build_navigation_engine_command",
+        build_forbidden_command,
+    )
+
+    result, captured = run_checker(
+        repo_root,
+        capsys,
+        "--navigation-matrix",
+        "--format",
+        "json",
+    )
+
+    payload = json.loads(captured.out)
+    assert result == 1
+    assert payload["ok"] is False
+    assert all(
+        any("must not invoke runtime synthetic input" in error for error in lane["errors"])
+        for lane in payload["lanes"]
+    )
 
 
 def test_renderer_matrix_evidence_combines_opengl_routes_and_static_lanes(

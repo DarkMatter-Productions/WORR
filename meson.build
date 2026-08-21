@@ -1113,8 +1113,68 @@ endif
 server_deps = []
 game_deps = [fmt_dep, jsoncpp_dep]
 
+native_vk_shader_target = []
 vkpt_shader_target = []
+vkpt_shader_validation_target = []
 if vulkan.found() and cpu.endswith('64')
+  prog_python = find_program('python3')
+
+  native_vk_shader_sources = files(
+    'src/rend_vk/shaders/vk_bloom.frag',
+    'src/rend_vk/shaders/vk_bloom_blur.frag',
+    'src/rend_vk/shaders/vk_bloom_prefilter.frag',
+    'src/rend_vk/shaders/vk_crt.frag',
+    'src/rend_vk/shaders/vk_debug.frag',
+    'src/rend_vk/shaders/vk_debug.vert',
+    'src/rend_vk/shaders/vk_dof.frag',
+    'src/rend_vk/shaders/vk_entity.frag',
+    'src/rend_vk/shaders/vk_entity.vert',
+    'src/rend_vk/shaders/vk_entity_gpu_beam.vert',
+    'src/rend_vk/shaders/vk_entity_gpu_bmodel.vert',
+    'src/rend_vk/shaders/vk_entity_gpu_bmodel_texture_replace.frag',
+    'src/rend_vk/shaders/vk_entity_gpu_bmodel_texture_replace.vert',
+    'src/rend_vk/shaders/vk_entity_gpu_md2.vert',
+    'src/rend_vk/shaders/vk_entity_gpu_md5.vert',
+    'src/rend_vk/shaders/vk_entity_gpu_particle.vert',
+    'src/rend_vk/shaders/vk_postprocess.frag',
+    'src/rend_vk/shaders/vk_postprocess.vert',
+    'src/rend_vk/shaders/vk_shadow_alpha.frag',
+    'src/rend_vk/shaders/vk_shadow_moment.frag',
+    'src/rend_vk/shaders/vk_ui2d.frag',
+    'src/rend_vk/shaders/vk_ui2d.vert',
+    'src/rend_vk/shaders/vk_world.vert',
+    'src/rend_vk/shaders/vk_world_shadow.frag',
+    'src/rend_vk/shaders/vk_world_shadow.vert',
+    'src/rend_vk/shaders/vk_world_sky.frag',
+    'src/rend_vk/shaders/vk_world_texture_replace.frag',
+    'src/rend_vk/shaders/vk_world_texture_replace.vert',
+  )
+  native_vk_shader_headers = files(
+    'src/rend_vk/vk_bloom_spv.h',
+    'src/rend_vk/vk_crt_spv.h',
+    'src/rend_vk/vk_debug_spv.h',
+    'src/rend_vk/vk_dof_spv.h',
+    'src/rend_vk/vk_entity_spv.h',
+    'src/rend_vk/vk_postprocess_spv.h',
+    'src/rend_vk/vk_ui2d_spv.h',
+    'src/rend_vk/vk_world_spv.h',
+  )
+  native_vk_shader_target = custom_target(
+    'native_vk_shader_freshness',
+    input: native_vk_shader_sources + native_vk_shader_headers + files(
+      'tools/gen_vk_world_spv.py',
+      'tools/atomic_directory.py',
+    ),
+    output: 'native_vk_shader_freshness.stamp',
+    command: [
+      prog_python,
+      meson.current_source_dir() / 'tools' / 'gen_vk_world_spv.py',
+      '--check',
+      '--stamp', '@OUTPUT@',
+    ],
+    build_by_default: true,
+  )
+
   vkpt_shader_sources = files(
     'src/rend_rtx/vkpt/shader/animate_materials.comp',
     'src/rend_rtx/vkpt/shader/god_rays_filter.comp',
@@ -1198,12 +1258,15 @@ if vulkan.found() and cpu.endswith('64')
   )
 
   vkpt_shader_out_dir = meson.current_build_dir() / get_option('base-game') / 'shader_vkpt'
-  prog_python = find_program('python3')
   prog_compile_vkpt_shaders = meson.current_source_dir() / 'tools' / 'compile_vkpt_shaders.py'
 
   vkpt_shader_target = custom_target(
     'vkpt_shaders',
-    input: vkpt_shader_sources + vkpt_shader_rt_sources + vkpt_shader_includes,
+    input: vkpt_shader_sources + vkpt_shader_rt_sources + vkpt_shader_includes + files(
+      'tools/compile_vkpt_shaders.py',
+      'tools/atomic_directory.py',
+      'src/rend_rtx/vkpt/vkpt.h',
+    ),
     output: 'vkpt_shaders.stamp',
     command: [
       prog_python,
@@ -1212,6 +1275,24 @@ if vulkan.found() and cpu.endswith('64')
       '--stamp', '@OUTPUT@'
     ],
     build_by_default: true,
+  )
+
+  vkpt_shader_validation_target = custom_target(
+    'vkpt_shader_validation',
+    input: [vkpt_shader_target] + files(
+      'tools/compile_vkpt_shaders.py',
+      'src/rend_rtx/vkpt/vkpt.h',
+    ),
+    output: 'vkpt_shader_validation.stamp',
+    command: [
+      prog_python,
+      prog_compile_vkpt_shaders,
+      '--out-dir', vkpt_shader_out_dir,
+      '--check',
+      '--stamp', '@OUTPUT@',
+    ],
+    build_by_default: true,
+    build_always_stale: true,
   )
 endif
 
@@ -1543,6 +1624,7 @@ if get_option('external-renderers')
     renderer_vk_rtx_lib_name = meson.project_name() + '_rtx_' + cpu
     renderer_vk_rtx_lib = shared_library(renderer_vk_rtx_lib_name, renderer_vk_rtx_lib_src,
       dependencies:          renderer_vk_rtx_deps,
+      link_depends:          vkpt_shader_validation_target,
       include_directories:   ['inc', 'q2proto/inc', 'src/rend_vk/refresh/stb', 'src/rend_rtx/third_party'],
       gnu_symbol_visibility: 'hidden',
       link_args:             dll_link_args,
@@ -1557,6 +1639,7 @@ if get_option('external-renderers')
     renderer_vk_lib_name = meson.project_name() + '_vulkan_' + cpu
     renderer_vk_lib = shared_library(renderer_vk_lib_name, renderer_vk_lib_src,
       dependencies:          renderer_vk_deps,
+      link_depends:          native_vk_shader_target,
       include_directories:   ['inc', 'q2proto/inc', 'src/rend_vk/refresh/stb'],
       gnu_symbol_visibility: 'hidden',
       link_args:             dll_link_args,
@@ -2062,6 +2145,12 @@ shared_library(server_engine_binary_name, common_src, server_src,
 )
 
 if bootstrapper_enabled
+  monocypher_dep = dependency(
+    'monocypher',
+    version: '>=4.0.3',
+    fallback: ['monocypher', 'monocypher_dep'],
+  )
+
   bootstrap_logo_h = custom_target('bootstrap_logo_rgba',
     input:  'assets/art/logo.png',
     output: 'bootstrap_logo_rgba.h',
@@ -2070,6 +2159,12 @@ if bootstrapper_enabled
 
   updater_src += [
     bootstrap_logo_h,
+    'src/updater/archive_path.cpp',
+    'src/updater/install_root.cpp',
+    'src/updater/install_transaction.cpp',
+    'src/updater/release_signature.cpp',
+    'src/updater/sha256.cpp',
+    'src/updater/zip_attributes.cpp',
     'src/updater/bootstrap.cpp',
     'src/updater/third_party/miniz.c',
     'src/updater/third_party/miniz_tdef.c',
@@ -2097,7 +2192,7 @@ if bootstrapper_enabled
     endif
   endif
 
-  updater_common_deps = updater_deps + [curl, jsoncpp_dep, sdl3, sdl3_ttf]
+  updater_common_deps = updater_deps + [curl, jsoncpp_dep, monocypher_dep, sdl3, sdl3_ttf]
   updater_include_dirs = ['.', 'inc', 'src/updater/third_party']
 
   executable(client_launcher_binary_name, client_launcher_src + updater_src + ['src/updater/client_launcher_main.cpp'],
@@ -2323,7 +2418,7 @@ event_stream_layout_cpp_test = executable(
   'tools/networking/event_stream_layout_cpp.cpp',
   include_directories: include_directories('inc'),
   install: false,
-  override_options: ['cpp_std=c++20'],
+  override_options: ['cpp_std=c++17'],
 )
 
 event_stream_owner_test = executable(
@@ -4391,6 +4486,58 @@ gameplay_light_test = executable(
   override_options: ['c_std=c11'],
 )
 
+updater_archive_path_test = executable(
+  'updater_archive_path_test',
+  [
+    'tools/release/archive_path_test.cpp',
+    'src/updater/archive_path.cpp',
+    'src/updater/zip_attributes.cpp',
+  ],
+  include_directories: include_directories('.'),
+  install: false,
+  override_options: ['cpp_std=c++17'],
+)
+
+updater_install_root_test = executable(
+  'updater_install_root_test',
+  [
+    'tools/release/install_root_test.cpp',
+    'src/updater/archive_path.cpp',
+    'src/updater/install_root.cpp',
+    'src/updater/sha256.cpp',
+  ],
+  include_directories: include_directories('.'),
+  install: false,
+  override_options: ['cpp_std=c++17'],
+)
+
+updater_install_transaction_test = executable(
+  'updater_install_transaction_test',
+  [
+    'tools/release/install_transaction_test.cpp',
+    'src/updater/archive_path.cpp',
+    'src/updater/install_root.cpp',
+    'src/updater/install_transaction.cpp',
+    'src/updater/sha256.cpp',
+  ],
+  include_directories: include_directories('.'),
+  install: false,
+  override_options: ['cpp_std=c++17'],
+)
+
+updater_release_signature_test = executable(
+  'updater_release_signature_test',
+  [
+    'tools/release/release_signature_test.cpp',
+    'src/updater/release_signature.cpp',
+    'src/updater/sha256.cpp',
+  ],
+  dependencies: [jsoncpp_dep, monocypher_dep],
+  include_directories: include_directories('src/updater'),
+  install: false,
+  override_options: ['cpp_std=c++20'],
+)
+
 test(
   'network-impair-model',
   network_impair_model_test,
@@ -4402,6 +4549,34 @@ test(
   'renderer-gameplay-light',
   gameplay_light_test,
   suite: 'renderer',
+  timeout: 30,
+)
+
+test(
+  'release-updater-archive-path-safety',
+  updater_archive_path_test,
+  suite: 'release',
+  timeout: 30,
+)
+
+test(
+  'release-updater-anchored-install-safety',
+  updater_install_root_test,
+  suite: 'release',
+  timeout: 30,
+)
+
+test(
+  'release-updater-install-transaction',
+  updater_install_transaction_test,
+  suite: 'release',
+  timeout: 30,
+)
+
+test(
+  'release-updater-signature-verification',
+  updater_release_signature_test,
+  suite: 'release',
   timeout: 30,
 )
 
@@ -6182,6 +6357,31 @@ test(
 release_bootstrap_headless_contract_test = files(
   'tools/release/test_bootstrap_headless_contract.py',
 )
+release_install_staging_unit_test = files(
+  'tools/test_package_assets.py',
+)
+
+test(
+  'release-tooling-unit',
+  version_prog,
+  args: [
+    '-m', 'unittest', 'discover',
+    '-s', meson.current_source_dir() / 'tools' / 'release' / 'tests',
+    '-t', meson.current_source_dir(),
+    '-v',
+  ],
+  suite: 'release',
+  timeout: 60,
+)
+
+test(
+  'release-install-staging-unit',
+  version_prog,
+  args: release_install_staging_unit_test,
+  suite: 'release',
+  timeout: 120,
+)
+
 test(
   'release-bootstrap-headless-contract',
   version_prog,

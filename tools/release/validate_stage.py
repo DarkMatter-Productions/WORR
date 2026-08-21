@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import hashlib
+import os
 import pathlib
+import stat
 import sys
 import zipfile
 
 if __package__ is None or __package__ == "":
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
-from tools.release.targets import get_target
+from tools.release.targets import RUNTIME_COORDINATION_LOCK, get_target
+
+
+ROLE_GENERATED_STAGE_PATHS = frozenset({"worr_update.json"})
 
 
 def require_file(path: pathlib.Path) -> None:
@@ -91,6 +97,84 @@ def staged_launch_exe(config: dict[str, str]) -> str:
     return config.get("staged_launch_exe", config["launch_exe"])
 
 
+def _is_link_or_reparse(path: pathlib.Path) -> bool:
+    metadata = path.lstat()
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    return stat.S_ISLNK(metadata.st_mode) or bool(
+        getattr(metadata, "st_file_attributes", 0) & reparse_flag
+    )
+
+
+def validate_exact_stage_contract(
+    install_dir: pathlib.Path,
+    target: dict[str, object],
+) -> None:
+    entries: dict[str, pathlib.Path] = {}
+    files: dict[str, pathlib.Path] = {}
+    portable_identities: dict[str, str] = {}
+    for path in install_dir.rglob("*"):
+        relative = path.relative_to(install_dir).as_posix()
+        if _is_link_or_reparse(path):
+            raise SystemExit(f"Staged payload contains a link or reparse point: {relative}")
+        identity = relative.casefold()
+        prior = portable_identities.get(identity)
+        if prior is not None:
+            raise SystemExit(
+                f"Staged payload contains colliding portable paths: {prior} and {relative}"
+            )
+        portable_identities[identity] = relative
+        entries[relative] = path
+        if path.is_file():
+            files[relative] = path
+
+    client = target["client"]
+    if not isinstance(client, dict):
+        raise SystemExit("Release target has an invalid client contract")
+    required_paths = client.get("update_required_paths", [])
+    forbidden_paths = client.get("update_forbidden_paths", [])
+    if not isinstance(required_paths, list) or not isinstance(forbidden_paths, list):
+        raise SystemExit("Release target has invalid staged path requirements")
+
+    file_keys = {relative.casefold() for relative in files}
+    for required in required_paths:
+        if isinstance(required, str) and required in ROLE_GENERATED_STAGE_PATHS:
+            # prepare_role_install.py creates this channel/role-specific file
+            # from the clean shared .install input after the PR stage gate.
+            continue
+        if not isinstance(required, str) or required.casefold() not in file_keys:
+            raise SystemExit(f"Missing required staged release file: {required}")
+
+    for pattern in forbidden_paths:
+        if not isinstance(pattern, str):
+            raise SystemExit("Release target contains an invalid forbidden-path pattern")
+        normalized_pattern = pattern.casefold()
+        hit = next(
+            (
+                relative
+                for relative in sorted(entries)
+                if fnmatch.fnmatchcase(relative.casefold(), normalized_pattern)
+            ),
+            None,
+        )
+        if hit is not None:
+            raise SystemExit(
+                f"Staged payload contains forbidden runtime/user data: {hit} "
+                f"(matched {pattern})"
+            )
+
+    runtime_lock = files.get(RUNTIME_COORDINATION_LOCK)
+    if runtime_lock is None or runtime_lock.stat().st_size != 0:
+        raise SystemExit(
+            f"Stable runtime coordination lock must be an empty file: "
+            f"{RUNTIME_COORDINATION_LOCK}"
+        )
+    if os.name != "nt" and stat.S_IMODE(runtime_lock.stat().st_mode) != 0o644:
+        raise SystemExit(
+            f"Stable runtime coordination lock must have mode 0644: "
+            f"{RUNTIME_COORDINATION_LOCK}"
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate staged release contents for a release target.")
     parser.add_argument("--install-dir", required=True, help="Staged install directory (.install)")
@@ -111,6 +195,7 @@ def main() -> int:
         raise SystemExit(f"Install directory not found: {install_dir}")
 
     target = get_target(args.platform_id)
+    validate_exact_stage_contract(install_dir, target)
 
     client_launcher = install_dir / staged_launch_exe(target["client"])
     client_engine = install_dir / target["client"]["engine_library"]

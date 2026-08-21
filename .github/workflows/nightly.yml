@@ -12,7 +12,7 @@ on:
         type: boolean
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: nightly-release
@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   prepare:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       should_run: ${{ steps.nightly.outputs.should_run }}
       nightly_date: ${{ steps.nightly.outputs.nightly_date }}
@@ -32,21 +32,33 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       display_version: ${{ steps.version.outputs.display_version }}
       msi_version: ${{ steps.version.outputs.msi_version }}
+      release_sequence: ${{ steps.sequence.outputs.value }}
+      trust_policy_artifact_id: ${{ steps.upload_trust_policy.outputs.artifact-id }}
+      trust_policy_artifact_digest: ${{ steps.upload_trust_policy.outputs.artifact-digest }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Prepare nightly metadata
         id: nightly
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           FORCE_ARG=""
           if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ github.event.inputs.force }}" == "true" ]]; then
             FORCE_ARG="--force"
           fi
-          python3 tools/release/prepare_nightly.py --github-output "$GITHUB_OUTPUT" ${FORCE_ARG}
+          RUN_CREATED_AT="$(gh api \
+            "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --jq .created_at)"
+          python3 tools/release/prepare_nightly.py \
+            --github-output "$GITHUB_OUTPUT" \
+            --utc-timestamp "${RUN_CREATED_AT}" \
+            ${FORCE_ARG}
 
       - name: Prepare platform matrix
         id: matrix
@@ -70,6 +82,61 @@ jobs:
           echo "display_version=$(python3 version.py --version)" >> "$GITHUB_OUTPUT"
           echo "msi_version=$(python3 version.py --msi-version)" >> "$GITHUB_OUTPUT"
 
+      - name: Compute monotonic release sequence
+        id: sequence
+        if: steps.nightly.outputs.should_run == 'true'
+        shell: bash
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          python3 - <<'PY' >> "${GITHUB_OUTPUT}"
+          import os
+          run_number = int(os.environ["RUN_NUMBER"])
+          run_attempt = int(os.environ["RUN_ATTEMPT"])
+          if run_number <= 0 or not 1 <= run_attempt <= 50:
+              raise SystemExit("invalid GitHub workflow sequence inputs")
+          sequence = run_number * 100 + run_attempt
+          if sequence > 9_223_372_036_854_775_807:
+              raise SystemExit("release sequence exceeds signed 64-bit range")
+          print(f"value={sequence}")
+          PY
+
+      - name: Materialize nightly release trust policy once
+        if: steps.nightly.outputs.should_run == 'true'
+        shell: bash
+        env:
+          WORR_NIGHTLY_RELEASE_TRUST_POLICY_B64: ${{ secrets.WORR_NIGHTLY_RELEASE_TRUST_POLICY_B64 }}
+        run: |
+          python3 tools/release/materialize_signing_secrets.py \
+            --trust-policy-env WORR_NIGHTLY_RELEASE_TRUST_POLICY_B64 \
+            --repo "${{ github.repository }}" \
+            --channel nightly
+
+      - name: Freeze nightly release trust policy for this run
+        if: steps.nightly.outputs.should_run == 'true'
+        shell: bash
+        run: |
+          mkdir -p release-policy
+          cp --no-dereference -- "${WORR_RELEASE_TRUST_POLICY_PATH}" \
+            release-policy/release-trust-policy.json
+
+      - name: Upload immutable nightly release trust policy
+        id: upload_trust_policy
+        if: steps.nightly.outputs.should_run == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: worr-nightly-trust-policy-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release-policy/release-trust-policy.json
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 90
+
+      - name: Remove materialized nightly trust policy
+        if: always()
+        shell: bash
+        run: python3 tools/release/cleanup_signing_secrets.py
+
   build:
     needs: prepare
     if: needs.prepare.outputs.should_run == 'true'
@@ -81,12 +148,20 @@ jobs:
       WORR_CHANNEL: nightly
       WORR_NIGHTLY_DATE: ${{ needs.prepare.outputs.nightly_date }}
       WORR_RELEASE: 1
-      WORR_BUILD_ID: ${{ github.run_id }}.${{ github.run_attempt }}
+      WORR_BUILD_ID: ${{ github.run_id }}
+      WORR_RELEASE_TRUST_POLICY_PATH: ${{ github.workspace }}/release-policy/release-trust-policy.json
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download immutable nightly release trust policy
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.trust_policy_artifact_id }}
+          path: release-policy
 
       - name: Check shadowmapping guardrails
         shell: bash
@@ -98,8 +173,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            meson ninja-build pkg-config gcc g++ python3 python3-venv cmake nasm \
-            libcurl4-openssl-dev libopenal-dev libpng-dev libjpeg-dev zlib1g-dev libvulkan-dev glslang-tools \
+            ninja-build pkg-config gcc g++ python3 python3-venv cmake nasm \
+            libcurl4-openssl-dev libopenal-dev libpng-dev libjpeg-dev zlib1g-dev libvulkan-dev glslang-tools spirv-tools \
             libdbus-1-dev libpipewire-0.3-dev libudev-dev libxkbcommon-dev \
             libgl1-mesa-dev libx11-dev libxext-dev libxi-dev libxcursor-dev libxfixes-dev libxrandr-dev libxss-dev libxtst-dev \
             libwayland-dev wayland-protocols x11proto-dev libdecor-0-dev
@@ -107,12 +182,16 @@ jobs:
           # Meson is already configured to use the bundled SDL3/SDL3_ttf wraps on Linux, but
           # the SDL3 subproject still needs its native Linux development dependencies.
 
-      - name: Install Linux Meson toolchain
-        if: matrix.os == 'linux'
+      - name: Install hash-locked Meson toolchain
+        if: matrix.os != 'windows'
         shell: bash
         run: |
           python3 -m venv "${RUNNER_TEMP}/meson-venv"
-          "${RUNNER_TEMP}/meson-venv/bin/pip" install --upgrade pip meson
+          "${RUNNER_TEMP}/meson-venv/bin/pip" install \
+            --disable-pip-version-check \
+            --only-binary=:all: \
+            --require-hashes \
+            --requirement tools/release/build-tool-requirements.txt
           echo "${RUNNER_TEMP}/meson-venv/bin" >> "$GITHUB_PATH"
           "${RUNNER_TEMP}/meson-venv/bin/meson" --version
 
@@ -120,13 +199,12 @@ jobs:
         if: matrix.os == 'macos'
         shell: bash
         run: |
-          brew update
-          brew install meson ninja pkg-config cmake curl sdl3 openal-soft libpng jpeg-turbo \
-            vulkan-loader molten-vk glslang
+          HOMEBREW_NO_AUTO_UPDATE=1 brew install ninja pkg-config cmake curl sdl3 openal-soft libpng jpeg-turbo \
+            vulkan-loader molten-vk glslang spirv-tools
 
       - name: Setup MSYS2 (Windows)
         if: matrix.os == 'windows'
-        uses: msys2/setup-msys2@v2
+        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2.32.0
         with:
           msystem: MINGW64
           update: true
@@ -141,6 +219,7 @@ jobs:
             mingw-w64-x86_64-vulkan-headers
             mingw-w64-x86_64-vulkan-loader
             mingw-w64-x86_64-glslang
+            mingw-w64-x86_64-spirv-tools
 
       - name: Configure (Linux/macOS)
         if: matrix.os != 'windows'
@@ -195,7 +274,7 @@ jobs:
       - name: Install WiX Toolset
         if: matrix.has_installer
         shell: powershell
-        run: choco install wixtoolset -y --no-progress
+        run: choco install wixtoolset --version=3.14.1.20250415 -y --no-progress
 
       - name: Add WiX Toolset to PATH
         if: matrix.has_installer
@@ -218,7 +297,9 @@ jobs:
             --channel nightly \
             --version "${{ needs.prepare.outputs.version }}" \
             --commit-sha "${{ needs.prepare.outputs.head_sha }}" \
-            --build-id "${WORR_BUILD_ID}"
+            --build-id "${WORR_BUILD_ID}" \
+            --allow-prerelease \
+            --release-trust-policy "${WORR_RELEASE_TRUST_POLICY_PATH}"
 
       - name: Build MSI installer
         if: matrix.has_installer
@@ -240,7 +321,9 @@ jobs:
             --channel nightly \
             --version "${{ needs.prepare.outputs.version }}" \
             --commit-sha "${{ needs.prepare.outputs.head_sha }}" \
-            --build-id "${WORR_BUILD_ID}"
+            --build-id "${WORR_BUILD_ID}" \
+            --allow-prerelease \
+            --release-trust-policy "${WORR_RELEASE_TRUST_POLICY_PATH}"
 
       - name: Package release assets (Windows)
         if: matrix.os == 'windows'
@@ -260,41 +343,96 @@ jobs:
             --version "${{ needs.prepare.outputs.version }}" \
             --commit-sha "${{ needs.prepare.outputs.head_sha }}" \
             --build-id "${WORR_BUILD_ID}" \
+            --allow-prerelease \
+            --release-trust-policy "${WORR_RELEASE_TRUST_POLICY_PATH}" \
             ${INSTALLER_ARG}
 
       - name: Upload platform release bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: nightly-${{ matrix.platform_id }}
           path: release/*
           if-no-files-found: error
+          overwrite: true
+          retention-days: 90
 
-  release:
+  release_candidate:
     needs: [prepare, build]
     if: needs.prepare.outputs.should_run == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      WORR_RELEASE_TRUST_POLICY_PATH: ${{ github.workspace }}/release-policy/release-trust-policy.json
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Fetch tags
         shell: bash
         run: git fetch --force --tags origin
 
+      - name: Bind nightly tag to the prepared commit
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.nightly_tag }}
+          EXPECTED_HEAD: ${{ needs.prepare.outputs.head_sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "${EXPECTED_HEAD}"
+          if git show-ref --verify --quiet "refs/tags/${RELEASE_TAG}"; then
+            TAG_HEAD="$(git rev-parse "${RELEASE_TAG}^{commit}")"
+            if [[ "${TAG_HEAD}" != "${EXPECTED_HEAD}" ]]; then
+              echo "Existing tag ${RELEASE_TAG} points to ${TAG_HEAD}, not ${EXPECTED_HEAD}" >&2
+              exit 1
+            fi
+          fi
+
+      - name: Download immutable nightly release trust policy
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.trust_policy_artifact_id }}
+          path: release-policy
+
       - name: Download build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           pattern: nightly-*
           path: release-assets
           merge-multiple: false
 
+      - name: Install MSI validation tools
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y msitools
+
       - name: Verify expected artifacts
         run: |
-          python3 tools/release/verify_artifacts.py --artifacts-root release-assets
+          python3 tools/release/verify_artifacts.py \
+            --artifacts-root release-assets \
+            --release-trust-policy "${WORR_RELEASE_TRUST_POLICY_PATH}"
 
-      - name: Compose release index
+      - name: Install hash-locked release-signing dependencies
+        shell: bash
+        run: |
+          python3 -m venv "${RUNNER_TEMP}/release-signing-venv"
+          "${RUNNER_TEMP}/release-signing-venv/bin/pip" install \
+            --disable-pip-version-check \
+            --only-binary=:all: \
+            --require-hashes \
+            --requirement tools/release/release-signing-requirements.txt
+          echo "${RUNNER_TEMP}/release-signing-venv/bin" >> "$GITHUB_PATH"
+
+      - name: Bind the frozen trust policy into the release candidate
+        shell: bash
+        run: |
+          cp --no-dereference -- "${WORR_RELEASE_TRUST_POLICY_PATH}" \
+            release-assets/release-trust-policy.json
+
+      - name: Compose unsigned release candidate
         run: |
           python3 tools/release/compose_release_index.py \
             --artifacts-root release-assets \
@@ -303,8 +441,214 @@ jobs:
             --version "${{ needs.prepare.outputs.version }}" \
             --tag "${{ needs.prepare.outputs.nightly_tag }}" \
             --commit-sha "${{ needs.prepare.outputs.head_sha }}" \
+            --release-sequence "${{ needs.prepare.outputs.release_sequence }}" \
+            --valid-for-days 14 \
+            --revocation-file tools/release/revoked-release-indexes.json \
             --index-path release-assets/worr-release-index-nightly.json \
-            --asset-list-path release-assets/release-assets.txt
+            --asset-list-path release-assets/release-assets.txt \
+            --trust-policy release-assets/release-trust-policy.json \
+            --defer-signing \
+            --signing-request-path release-assets/release-signing-request.json
+
+      - name: Upload immutable nightly release candidate control
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: worr-nightly-release-candidate-${{ github.run_id }}
+          path: |
+            release-assets/release-signing-request.json
+            release-assets/release-trust-policy.json
+            release-assets/worr-release-index-nightly.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 90
+
+  authorize_release:
+    needs: [prepare, build, release_candidate]
+    if: needs.release_candidate.result == 'success'
+    runs-on: ubuntu-24.04
+    environment: nightly-release-signing
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout without persisted credentials
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download immutable nightly release candidate control
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: worr-nightly-release-candidate-${{ github.run_id }}
+          path: release-assets
+
+      - name: Download independent nightly release trust policy
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.trust_policy_artifact_id }}
+          path: release-policy
+
+      - name: Download build artifacts for authorization
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: nightly-*
+          path: release-assets
+          merge-multiple: false
+
+      - name: Install MSI validation tools
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y msitools
+
+      - name: Verify expected artifacts before authorization
+        run: |
+          cmp --silent -- \
+            release-policy/release-trust-policy.json \
+            release-assets/release-trust-policy.json
+          python3 tools/release/verify_artifacts.py \
+            --artifacts-root release-assets \
+            --release-trust-policy release-policy/release-trust-policy.json
+
+      - name: Install hash-locked release-signing dependencies
+        shell: bash
+        run: |
+          python3 -m venv "${RUNNER_TEMP}/release-signing-venv"
+          "${RUNNER_TEMP}/release-signing-venv/bin/pip" install \
+            --disable-pip-version-check \
+            --only-binary=:all: \
+            --require-hashes \
+            --requirement tools/release/release-signing-requirements.txt
+          echo "${RUNNER_TEMP}/release-signing-venv/bin" >> "$GITHUB_PATH"
+
+      - name: Validate nightly release candidate before signing
+        shell: bash
+        run: |
+          python3 tools/release/release_signing.py verify-candidate \
+            --signing-request release-assets/release-signing-request.json \
+            --artifacts-root release-assets \
+            --repo "${{ github.repository }}" \
+            --channel nightly \
+            --version "${{ needs.prepare.outputs.version }}" \
+            --tag "${{ needs.prepare.outputs.nightly_tag }}" \
+            --commit-sha "${{ needs.prepare.outputs.head_sha }}" \
+            --release-sequence "${{ needs.prepare.outputs.release_sequence }}" \
+            --valid-for-days 14 \
+            --revocation-file tools/release/revoked-release-indexes.json
+
+      - name: Materialize nightly release signing secrets
+        shell: bash
+        env:
+          WORR_NIGHTLY_RELEASE_SIGNING_KEY_B64: ${{ secrets.WORR_NIGHTLY_RELEASE_SIGNING_KEY_B64 }}
+        run: |
+          python3 tools/release/materialize_signing_secrets.py \
+            --trust-policy-file release-policy/release-trust-policy.json \
+            --signing-key-env WORR_NIGHTLY_RELEASE_SIGNING_KEY_B64 \
+            --repo "${{ github.repository }}" \
+            --channel nightly
+
+      - name: Sign nightly release candidate
+        shell: bash
+        run: |
+          python3 tools/release/release_signing.py sign-request \
+            --signing-request release-assets/release-signing-request.json \
+            --signature release-assets/release-authorization.partial.sig.json \
+            --signing-key-list "${WORR_RELEASE_SIGNING_KEY_LIST_PATH}" \
+            --artifacts-root release-assets \
+            --repo "${{ github.repository }}" \
+            --channel nightly \
+            --version "${{ needs.prepare.outputs.version }}" \
+            --tag "${{ needs.prepare.outputs.nightly_tag }}" \
+            --commit-sha "${{ needs.prepare.outputs.head_sha }}" \
+            --release-sequence "${{ needs.prepare.outputs.release_sequence }}" \
+            --valid-for-days 14 \
+            --revocation-file tools/release/revoked-release-indexes.json
+          python3 tools/release/release_signing.py aggregate \
+            --signing-request release-assets/release-signing-request.json \
+            --signature release-assets/release-authorization.partial.sig.json
+
+      - name: Remove release signing secrets before authorization upload
+        if: always()
+        shell: bash
+        run: python3 tools/release/cleanup_signing_secrets.py
+
+      - name: Upload immutable nightly release authorization
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: worr-nightly-release-authorization-${{ github.run_id }}
+          path: |
+            release-assets/release-assets.txt
+            release-assets/release-signing-request.json
+            release-assets/release-signing-request.json.authorization.sig.json
+            release-assets/release-trust-policy.json
+            release-assets/worr-release-index-nightly.json
+            release-assets/worr-release-index-nightly.json.sig.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 90
+
+  publish_release:
+    needs: [prepare, build, release_candidate, authorize_release]
+    if: needs.authorize_release.result == 'success'
+    runs-on: ubuntu-24.04
+    environment: nightly-release-publishing
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout without persisted credentials
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download immutable nightly release authorization
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: worr-nightly-release-authorization-${{ github.run_id }}
+          path: release-assets
+
+      - name: Download independent nightly release trust policy
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.trust_policy_artifact_id }}
+          path: release-policy
+
+      - name: Download build artifacts for publication
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: nightly-*
+          path: release-assets
+          merge-multiple: false
+
+      - name: Install hash-locked release-signing dependencies
+        shell: bash
+        run: |
+          python3 -m venv "${RUNNER_TEMP}/release-signing-venv"
+          "${RUNNER_TEMP}/release-signing-venv/bin/pip" install \
+            --disable-pip-version-check \
+            --only-binary=:all: \
+            --require-hashes \
+            --requirement tools/release/release-signing-requirements.txt
+          echo "${RUNNER_TEMP}/release-signing-venv/bin" >> "$GITHUB_PATH"
+
+      - name: Cryptographically verify nightly release authorization
+        shell: bash
+        run: |
+          cmp --silent -- \
+            release-policy/release-trust-policy.json \
+            release-assets/release-trust-policy.json
+          python3 tools/release/release_signing.py verify-publish \
+            --signing-request release-assets/release-signing-request.json \
+            --signature release-assets/worr-release-index-nightly.json.sig.json \
+            --authorization release-assets/release-signing-request.json.authorization.sig.json \
+            --asset-list release-assets/release-assets.txt \
+            --trust-policy release-policy/release-trust-policy.json \
+            --repo "${{ github.repository }}" \
+            --channel nightly \
+            --version "${{ needs.prepare.outputs.version }}" \
+            --tag "${{ needs.prepare.outputs.nightly_tag }}" \
+            --commit-sha "${{ needs.prepare.outputs.head_sha }}" \
+            --release-sequence "${{ needs.prepare.outputs.release_sequence }}"
 
       - name: Generate release notes
         run: |
@@ -317,28 +661,26 @@ jobs:
             --run-id "${{ github.run_id }}" \
             --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             --index-path release-assets/worr-release-index-nightly.json \
+            --trust-policy-path release-policy/release-trust-policy.json \
             --output release-assets/release-notes.md
 
-      - name: Build upload file list
-        id: files
+      - name: Publish exact nightly release through a draft gate
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          {
-            echo "files<<EOF"
-            cat release-assets/release-assets.txt
-            echo "release-assets/release-notes.md"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Publish nightly release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.prepare.outputs.nightly_tag }}
-          name: ${{ needs.prepare.outputs.nightly_name }} (${{ needs.prepare.outputs.version }})
-          prerelease: false
-          draft: false
-          target_commitish: ${{ needs.prepare.outputs.head_sha }}
-          body_path: release-assets/release-notes.md
-          files: ${{ steps.files.outputs.files }}
-          make_latest: false
-          overwrite_files: true
+          python3 tools/release/publish_github_release.py \
+            --repo "${{ github.repository }}" \
+            --tag "${{ needs.prepare.outputs.nightly_tag }}" \
+            --name "${{ needs.prepare.outputs.nightly_name }} (${{ needs.prepare.outputs.version }})" \
+            --expected-commit "${{ needs.prepare.outputs.head_sha }}" \
+            --expected-version "${{ needs.prepare.outputs.version }}" \
+            --expected-release-sequence "${{ needs.prepare.outputs.release_sequence }}" \
+            --body-path release-assets/release-notes.md \
+            --asset-list-path release-assets/release-assets.txt \
+            --signing-request release-assets/release-signing-request.json \
+            --signature release-assets/worr-release-index-nightly.json.sig.json \
+            --authorization release-assets/release-signing-request.json.authorization.sig.json \
+            --trust-policy release-policy/release-trust-policy.json \
+            --channel nightly \
+            --prerelease

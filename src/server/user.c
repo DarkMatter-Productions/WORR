@@ -1887,10 +1887,32 @@ static void SV_WorrQueueWeaponPredictSeed(void)
     /* sgame owns the weapon (catalog/ammo/frame); the engine owns the command
      * boundary.  Stamp the exact consumed cursor and its sample time so the
      * client seeds at the same boundary it will replay strictly-later commands
-     * from.  The client re-validates the completed seed on apply. */
+     * from.  The client re-validates the completed seed on apply.
+     *
+     * The sample time must come from the command the cursor names, not from
+     * `last_received_sample_time_us`: reception normally runs ahead of
+     * consumption, so the received time belongs to a *later* command and would
+     * seed the client at a boundary its own cursor contradicts.  A cursor at
+     * sequence 0 is the legitimate bootstrap case -- no command consumed in
+     * this epoch, so the seed carries no command time.  If the named command
+     * has already been reclaimed we cannot stamp a truthful boundary, so the
+     * seed is dropped rather than published with a wrong time; the next
+     * publish supplies a fresh one. */
     seed.applied_cursor = sv_client->worr_command_stream.consumed_cursor;
-    seed.sample_time_us =
-        sv_client->worr_command_stream.last_received_sample_time_us;
+    if (seed.applied_cursor.contiguous_sequence == 0) {
+        seed.sample_time_us = 0;
+    } else {
+        worr_command_id_v1 consumed_id;
+        worr_command_record_v1 consumed_record;
+
+        consumed_id.epoch = seed.applied_cursor.epoch;
+        consumed_id.sequence = seed.applied_cursor.contiguous_sequence;
+        if (!Worr_CommandStreamCopyRecordV1(&sv_client->worr_command_stream,
+                                            consumed_id, &consumed_record)) {
+            return;
+        }
+        seed.sample_time_us = consumed_record.sample_time_us;
+    }
 
     memset(&candidate, 0, sizeof(candidate));
     candidate.struct_size = sizeof(candidate);

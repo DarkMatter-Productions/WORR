@@ -24,14 +24,37 @@ def write_github_output(path: Path, key: str, value: str) -> None:
         handle.write(f"{key}={value}\n")
 
 
+def parse_utc_timestamp(value: str) -> dt.datetime:
+    normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
+    try:
+        timestamp = dt.datetime.fromisoformat(normalized)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "UTC timestamp must be an RFC 3339 date-time"
+        ) from exc
+    if timestamp.tzinfo is None:
+        raise argparse.ArgumentTypeError("UTC timestamp must include a timezone")
+    return timestamp.astimezone(dt.timezone.utc)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Prepare nightly metadata for GitHub Actions.")
     parser.add_argument("--github-output", help="Path to GITHUB_OUTPUT file")
     parser.add_argument("--force", action="store_true", help="Force nightly release even without commits today")
-    parser.add_argument("--utc-date", help="Override UTC date (YYYY-MM-DD) for testing")
+    time_source = parser.add_mutually_exclusive_group()
+    time_source.add_argument(
+        "--utc-timestamp",
+        type=parse_utc_timestamp,
+        help="Workflow-run creation timestamp (RFC 3339); stable across reruns",
+    )
+    time_source.add_argument(
+        "--utc-date", help="Override UTC date (YYYY-MM-DD) for testing"
+    )
     args = parser.parse_args()
 
-    if args.utc_date:
+    if args.utc_timestamp:
+        now = args.utc_timestamp
+    elif args.utc_date:
         now = dt.datetime.strptime(args.utc_date, "%Y-%m-%d").replace(tzinfo=dt.timezone.utc)
     else:
         now = dt.datetime.now(dt.timezone.utc)
@@ -72,4 +95,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

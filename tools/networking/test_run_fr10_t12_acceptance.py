@@ -280,18 +280,30 @@ class Fr10T12PartialAcceptanceTests(unittest.TestCase):
         self.assertEqual(command[command.index("--output") + 1], "report.json")
 
     def test_child_timeout_is_enforced_by_process_termination(self) -> None:
+        # The property under test is that run_child_checked returns by killing
+        # the child, never by waiting for the child's natural exit.  The bound
+        # must therefore sit between the kill path's cost and CHILD_LIFETIME.
+        # It cannot be tightened toward the kill path's cost: on Windows the
+        # kill spawns taskkill.exe, whose process-creation time is unbounded
+        # under parallel `meson test` load (measured 0.8s idle, >2.8s loaded).
+        # A bound near that cost measures machine load, not enforcement.  The
+        # bound stays under run_child_checked's own worst-case kill path
+        # (taskkill 10s + wait 10s + kill/wait 10s) so a genuinely unprompt
+        # termination still fails here instead of being absorbed by slack.
+        child_lifetime = 45.0
+        enforcement_bound = 25.0
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
             child = root / "slow_child.py"
             child.write_text(
-                "import time\ntime.sleep(2.0)\n", encoding="utf-8"
+                f"import time\ntime.sleep({child_lifetime})\n", encoding="utf-8"
             )
             started = time.monotonic()
             with self.assertRaisesRegex(RuntimeError, "bounded timeout"):
                 RUNNER.run_child_checked(
                     [sys.executable, str(child)], root, 0.05
                 )
-            self.assertLess(time.monotonic() - started, 1.5)
+            self.assertLess(time.monotonic() - started, enforcement_bound)
 
     def test_runtime_provenance_binds_the_loaded_staged_closure(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

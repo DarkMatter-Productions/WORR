@@ -19,6 +19,10 @@ from package_assets import botfile_archive_member_requirements, q2aas_tool_binar
 
 RELEASE_NOTICE_FILES = (
     ("LICENSE", "licenses/WORR-LICENSE.txt"),
+    (
+        "src/updater/third_party/MONOCYPHER-LICENSE.txt",
+        "licenses/MONOCYPHER-LICENSE.txt",
+    ),
     ("tools/q2aas/LICENSE", "licenses/q2aas-bspc-LICENSE.txt"),
     ("docs-dev/q3a-botlib-aas-credits.md", "licenses/q3a-botlib-aas-credits.md"),
     ("tools/q2aas/README.WORR.md", "licenses/q2aas-README.WORR.md"),

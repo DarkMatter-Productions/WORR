@@ -29,7 +29,8 @@ static uint64_t worr_timeline_fnv_mix_u64(uint64_t hash, uint64_t value) {
 static bool worr_timeline_record_kind_known(uint8_t record_kind) {
   return record_kind == WORR_NATIVE_DEMO_RECORD_COMMAND_V1 ||
          record_kind == WORR_NATIVE_DEMO_RECORD_SNAPSHOT_V1 ||
-         record_kind == WORR_NATIVE_DEMO_RECORD_EVENT_V1;
+         record_kind == WORR_NATIVE_DEMO_RECORD_EVENT_V1 ||
+         record_kind == WORR_NATIVE_DEMO_RECORD_BOOTSTRAP_V1;
 }
 
 /*
@@ -79,8 +80,17 @@ static worr_native_demo_timeline_result_v1 worr_timeline_validate(
       /* Present-once requires a base: an event before any snapshot cannot be
        * dispatched.  Because ordinals strictly increase and the anchor is the
        * most recent snapshot, "anchor precedes" holds by construction; the
-       * load-bearing check is that an anchor exists at all. */
+       * load-bearing check is that an anchor exists at all.  A BOOTSTRAP is
+       * never an anchor: it carries gamestate, not entity state. */
       if (!have_anchor)
+        return WORR_NATIVE_DEMO_TIMELINE_ORDER;
+    } else if (entry->record_kind == WORR_NATIVE_DEMO_RECORD_BOOTSTRAP_V1) {
+      /* Mirror the container's bootstrap-precedes-everything rule
+       * (order_state_valid / order_observe_ref in native_demo.c): the
+       * gamestate prologue is legal only as the stream's first record, so a
+       * mid-stream bootstrap fails closed here too rather than silently
+       * planning a second map load. */
+      if (i != 0)
         return WORR_NATIVE_DEMO_TIMELINE_ORDER;
     }
 
@@ -102,6 +112,7 @@ worr_native_demo_timeline_result_v1 Worr_NativeDemoTimelineBuildV1(
   uint64_t anchor_snapshot_ordinal = 0;
   uint64_t prev_time_us = 0;
   bool have_anchor = false;
+  size_t first_presentable_index;
   size_t i;
 
   if (config == NULL || entries == NULL || summary_out == NULL)
@@ -136,6 +147,11 @@ worr_native_demo_timeline_result_v1 Worr_NativeDemoTimelineBuildV1(
   if (validation != WORR_NATIVE_DEMO_TIMELINE_OK)
     return validation;
 
+  /* Validation pinned any BOOTSTRAP to entry 0, so the first presentable
+   * record is entry 1 exactly when a prologue is present. */
+  first_presentable_index =
+      (entries[0].record_kind == WORR_NATIVE_DEMO_RECORD_BOOTSTRAP_V1) ? 1u : 0u;
+
   /* Fill pass: the index is already validated, so nothing here can fail. */
   for (i = 0; i < entry_count; ++i) {
     const worr_native_demo_index_entry_v1 *entry = &entries[i];
@@ -153,10 +169,18 @@ worr_native_demo_timeline_result_v1 Worr_NativeDemoTimelineBuildV1(
       have_anchor = true;
       step_flags |= WORR_NATIVE_DEMO_TIMELINE_STEP_SNAPSHOT_ANCHOR;
       summary.snapshot_count += 1;
-      if (i == 0)
+      /* "Leading" means the first presentable record, so a BOOTSTRAP prologue
+       * at step 0 does not cost a bootstrap-then-snapshot stream this flag.
+       * For a stream without a prologue this is still exactly `i == 0`. */
+      if (i == first_presentable_index)
         summary.flags |= WORR_NATIVE_DEMO_TIMELINE_SUMMARY_LEADING_SNAPSHOT;
     } else if (entry->record_kind == WORR_NATIVE_DEMO_RECORD_EVENT_V1) {
       summary.event_count += 1;
+    } else if (entry->record_kind == WORR_NATIVE_DEMO_RECORD_BOOTSTRAP_V1) {
+      /* Planned for the 1:1 step/entry mapping, but counted separately: it is
+       * a gamestate prologue, not a command, and not a presentable body. */
+      step_flags |= WORR_NATIVE_DEMO_TIMELINE_STEP_BOOTSTRAP;
+      summary.flags |= WORR_NATIVE_DEMO_TIMELINE_SUMMARY_LEADING_BOOTSTRAP;
     } else {
       summary.command_count += 1;
     }

@@ -49,7 +49,9 @@ class VulkanSpriteCutoutSourceTests(unittest.TestCase):
     def test_cutout_pipeline_disables_blending_and_depth_writes(self) -> None:
         self.assertIn("VK_ENTITY_BLEND_CUTOUT", VK_ENTITY)
         self.assertIn("bool cutout = blend_mode == VK_ENTITY_BLEND_CUTOUT", VK_ENTITY)
-        self.assertIn("!alpha && !cutout && !occlusion", VK_ENTITY)
+        self.assertIn("!gpu_bmodel_opaque_special && !occlusion && !cutout", VK_ENTITY)
+        self.assertIn(".depthWriteEnable = (!outline && !alpha && !cutout &&", VK_ENTITY)
+        self.assertIn(".blendEnable = alpha ? VK_TRUE : VK_FALSE", VK_ENTITY)
         self.assertIn("pipeline_cutout", VK_ENTITY)
         self.assertIn("pipeline_depthhack_cutout", VK_ENTITY)
 

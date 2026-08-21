@@ -882,7 +882,7 @@ umclusters = 4`, with travel counts including walk, jump, ladder, walk-off-ledge
   - Stabilized dynamic effect dlight shadow residency for both OpenGL and Vulkan by preserving stable cdlight/entity/explosion keys through client submission and by removing moving dynamic-light projection/origin drift from shadow cache residency keys.
   - Restored first-person viewweapon shadow receiving in both OpenGL and native Vulkan so the hidden local-player body caster can shadow the held weapon without making `RF_WEAPONMODEL` entities cast shadows.
   - Implementation logs: `docs-dev/renderer/shadowmapping-replacement-baseline.md`, `docs-dev/renderer/shadowmapping-native-backends-2026-04-30.md`, `docs-dev/renderer/shadowmapping-full-plan-2026-04-30.md`, `docs-dev/renderer/vulkan-entity-lightmap-shadow-receiver-repair-2026-06-11.md`, `docs-dev/renderer/vulkan-viewweapon-dlight-glow-fixes-2026-06-12.md`, `docs-dev/renderer/viewweapon-shadow-receiver-2026-06-13.md`.
-- `FR-02-T12` / `FR-01-T09` Done; `FR-02-T13..T15` / `FR-03-T11` / `DV-02-T07` / `DV-03-T08` Planned:
+- `FR-02-T12` / `FR-01-T09` Done; `FR-02-T13..T15` / `FR-03-T11` / `DV-03-T08` Planned:
   - Completed a cross-renderer gamma, lighting, tone-mapping, and shadowmapping audit and landed the bounded correctness/safety fixes that did not require changing the renderer output contract.
   - Native Vulkan now honors shared `r_intensity`, matches OpenGL's filtered-shadow response, prefers compatible UNORM swapchains, and keeps regenerated embedded SPIR-V in sync.
   - OpenGL now uses correct raw shadow-depth sampling, far-depth EVSM clears, finite lighting controls, inverse-transpose normal transforms, safe lightmap/lightgrid sampling, and deterministic first-frame auto exposure.
@@ -901,7 +901,9 @@ umclusters = 4`, with travel counts including walk, jump, ladder, walk-off-ledge
   - 2026-07-01 cgame UI ownership follow-up: cgame now consumes blob-backed scoreboard and end-of-unit layouts automatically when `CONFIG_HUD_BLOB` data is present, leaving `svc_layout` as a legacy fallback and narrowing sgame's UI role to data publication for those screens. Implementation log: `docs-dev/cgame-hud-blob-layout-auto-2026-07-01.md`.
   - Fixed a screenshot-validation crash by draining renderer-owned async callbacks before external renderer shutdown/unload.
   - Implementation logs: `docs-dev/quake-champions-top-hud-2026-04-28.md`, `docs-dev/renderer-async-shutdown-drain-2026-04-29.md`.
-- `DV-02-T02` In Progress:
+- `DV-02-T02` Done:
+  - Pull requests now build independently named external OpenGL, native Vulkan, and RTX renderer targets on Ubuntu with explicit renderer dependencies.
+  - Supported platform lanes refresh the shared staging tree and launch only the dedicated runtime through the bounded, isolated, input-free readiness smoke tracked by `DV-02-T03`.
   - Nightly Linux/macOS jobs now install explicit Vulkan toolchain dependencies so renderer artifacts do not depend on hosted-image luck.
   - Windows MSYS2 nightlies/releases now install Vulkan headers/loader plus `glslangValidator` so Vulkan/RTX renderer artifacts build in CI.
   - The macOS Intel target now uses the supported `macos-15-intel` runner label instead of the retired `macos-13` label.
@@ -1074,9 +1076,9 @@ umclusters = 4`, with travel counts including walk, jump, ladder, walk-off-ledge
   - Release manifests and updater metadata now publish the launcher/engine pairing through `launch_exe` and `engine_library`.
   - Implementation logs: `docs-dev/basew-gamedir-and-arch-runtime-layout-2026-03-16.md`, `docs-dev/bootstrap-hosted-engine-libraries-2026-03-24.md`.
 - `DV-08-T08` Done:
-  - Nightly GitHub releases now publish as standard releases instead of GitHub prereleases.
-  - Updater release discovery now filters the full GitHub release list by channel/tag and `allow_prerelease` policy, so stable installs do not drift onto nightly releases after that publishing change.
-  - Nightly packaging no longer emits updater configs with `allow_prerelease=true`.
+  - Nightly GitHub releases are marked as prereleases, while channel identity remains the signed `nightly` index plus the `nightly-*` tag rather than the GitHub flag alone.
+  - Updater release discovery filters the full GitHub release list by channel/tag and `allow_prerelease` policy, so stable installs do not drift onto nightly releases. Nightly packages explicitly enable prerelease consumption for their own channel.
+  - The 2026-03-16 channel-selection work removed dependence on GitHub's prerelease representation; the 2026-08-03 authenticated publication hardening restored the representation as an additional truthful metadata signal without weakening channel separation.
   - Implementation log: `docs-dev/nightly-release-non-prerelease-channel-selection-2026-03-16.md`.
 - `FR-08-T04` Done:
   - Release metadata now publishes an explicit role-level updater contract through the release index instead of inferring package names inside the updater.
@@ -1090,10 +1092,21 @@ umclusters = 4`, with travel counts including walk, jump, ladder, walk-off-ledge
   - Added release-index parser fixtures for missing role payloads and missing required updater metadata.
   - Added target-contract tests that keep full-install updater payload coverage separate from split manual archive coverage.
   - Implementation log: `docs-dev/desktop-bootstrap-updater-2026-03-23.md`.
-- `DV-08-T03` In Progress:
-  - The new bootstrap apply worker now verifies staged file hashes, writes the local install manifest last, and restores backed-up files on failure.
-  - Local build/package validation passed, but explicit live fault-injection coverage for failed extraction/apply paths is still pending.
-  - Implementation log: `docs-dev/desktop-bootstrap-updater-2026-03-23.md`.
+- `DV-08-T02` Done; workflow activation awaits secrets and production distribution awaits `DV-08-T16`:
+  - Stable and nightly updater configurations now embed a strict public Ed25519 trust policy scoped by repository and channel. Release publication signs the exact release-index bytes with a detached, domain-separated envelope and fails closed unless authorized signatures meet the configured threshold; unsigned indices are restricted to explicit development fixtures.
+  - The native bootstrap verifies the index before consuming it, binds the signed target to the exact manifest and package names/sizes/SHA-256 values, permits only HTTPS metadata/package transfers, bounds every response and package write, and deletes incomplete downloads. Producer/final-verifier gates mirror the native ceilings for managed-file count, manifest/package size, and worst-case journal size so a signed but un-installable release cannot be published.
+  - Cached resume state retains the raw index, signature envelope, and manifest and re-verifies them under the current policy before re-deriving all actionable metadata. Cached key IDs or other assertions are not accepted as proof. The committed local install manifest retains equivalent signed evidence; stale-file removal requires that evidence to reconstruct the exact local manifest and the live file to match its prior signed size/digest, otherwise the candidate is preserved.
+  - Stable/nightly workflows accept threshold-capable private-key bundles for overlap rotation. One rerun-stable, run-ID-scoped public-policy artifact feeds every platform package and the signer, and final verification requires every embedded policy to match it. Release artifacts are verified before keys are materialized; signing uses hash-locked binary dependencies and immutable Node 24 action revisions; and an unconditional, path-validated cleanup removes private runner files immediately after index composition. Release notes expose the public-policy SHA-256, threshold, and key IDs. Publication creates a draft, reconciles the exact remote name/size/SHA-256 set, promotes only after equality, and revalidates after publication. Workflow activation remains deliberately blocked until administrators configure the four channel-specific GitHub Actions trust-policy/signing-key secrets; production distribution also requires `DV-08-T16`.
+  - Rotation is intentionally overlap-based. Discovery walks up to three pages of 100 releases (300 candidates total) within a shared 15-second budget, so every still-supported old-policy client must receive a dual-signed transition inside that bounded window or use an independently distributed transition package before the old key is retired. Bundled threshold keys share one runner compromise domain; separate custodian/KMS signing and signature aggregation are required before claiming independent M-of-N protection.
+  - Implementation log: `docs-dev/authenticated-release-atomic-updater-and-pr-ci-hardening-2026-08-03.md`.
+- `DV-08-T03` Done:
+  - The active bootstrap now applies install plans through a root-handle-anchored transaction. Windows and POSIX implementations open descendants relative to held roots without following redirects, authenticate size and SHA-256 while copying from the open staging handle, atomically replace files, and commit the local manifest last.
+  - Failure or cancellation rolls mutations back in exact reverse order. Rollback continues after an individual restore error and reports the primary failure together with every incomplete restore.
+  - The fixed `.worr-update` namespace holds a bounded journal, durable backups, protected staging, and a non-blocking exclusive transaction lock. Existing recovery files must already satisfy exact protected Windows ACLs or owner-only POSIX ownership/modes before they are parsed. Startup recovers an interrupted `applying` journal before configuration loading or any engine launch, while a persisted `committed` marker authorizes cleanup without rolling back completed content. Recovery may itself be interrupted and resumed.
+  - Apply records the exact authenticated predecessor-manifest size/digest and rechecks it after acquiring the lock. Windows elevation uses a two-stage handoff into `.worr-update/elevated-worker.exe`; every privileged child validates its actual image, protected install-root/ancestor/worker boundary, and handoff shape. Approved apply additionally validates the config digest, authenticated installed manifest, and updater size/digest/mode; recovery-only remains usable when release evidence is damaged but may parse only already protected exact-ACL journal state.
+  - Native fault injection covers temporary creation/write, replacement/removal and durability boundaries, journal/backup/commit/rollback/cleanup checkpoints, locked files, progress cancellation, staging substitution, rollback ordering and failure, restart recovery, committed-marker cleanup, private state, reserved-path rejection, and concurrent locking. POSIX coverage also verifies executable-mode preservation.
+  - POSIX file and parent-directory `fsync` barriers extend the recovery protocol to sudden power loss on filesystems that honor them. Windows flushes file contents but deliberately claims process-interruption recovery only because no proven directory/volume metadata barrier is used. Rollback restores bytes and POSIX modes, not ownership, timestamps, ACLs, or extended attributes.
+  - Implementation log: `docs-dev/authenticated-release-atomic-updater-and-pr-ci-hardening-2026-08-03.md`.
 - `DV-08-T09` Done:
   - Desktop updater startup remains bootstrap-based on Windows, Linux, and macOS, with the client using a branded splash and the dedicated server using a console-first updater flow.
   - Normal startup now stays inside the user-facing bootstrap executables, which host the engine shared libraries in-process; the temp updater worker is reserved for approved file-replacement/update paths and relaunches the public bootstrap after a successful update.
@@ -1103,6 +1116,38 @@ umclusters = 4`, with travel counts including walk, jump, ladder, walk-off-ledge
   - Re-audited the updater pipeline against packaged artifacts, role-scoped staged installs, and local pending-update payloads.
   - Kept install-root normalization and real apply-time permission handling hardening in the bootstrap worker, added trace instrumentation plus a native Windows dedicated-server temp-worker/relaunch handoff path, closed the local Windows public-bootstrap approved-update gap, and added `tools/release/server_bootstrap_update_smoke.py` for deterministic local validation.
   - Implementation log: `docs-dev/updater-pipeline-audit-2026-03-25.md`.
+- `DV-08-T13` Done:
+  - Release verification derives exact artifacts and role metadata from the target registry, rejects incomplete, duplicate, unexpected, misidentified, or cross-release platform metadata, and validates every registered manual and updater manifest instead of trusting a self-reported artifact list. Each metadata file owns one exact flat bundle root; recursive/cross-bundle fallback, mixed layouts, nested metadata, and portable filename aliases are rejected.
+  - External manifests are tied to the real package size/hash and exact archive members. ZIP verification rejects unsafe, directory, encrypted, symbolic-link, privileged-bit, legacy-encoded non-ASCII, unexpected, missing, case/prefix-mismatched, duplicate, size/mode/hash-mismatched, or over-limit members; tar production materializes hard-link aliases and verification permits only regular-file members. Every archive must contain a semantically matching bounded local install manifest that cannot be disguised as ordinary managed content. Installer verification performs a structural preflight and opens the MSI through Windows Installer or `msiinfo`, requiring a non-empty `File` table. Final verification uses `msiextract` in an isolated directory to require one exact portable File-table tree, no path/case/prefix/link/special/missing/extra drift, exact size/SHA-256 for every managed client file, and a byte-exact canonical local install manifest; MSI does not represent the ZIP/POSIX mode contract.
+  - Client and full-install updater contracts now require exact native OpenGL, Vulkan, RTX, `cgame`, and `sgame` runtime library names, preventing debug symbols or similarly named tests from satisfying runtime completeness and preventing publication of a client payload that cannot create a renderer.
+  - Release packaging rejects unsafe mapped paths, non-portable artifact names, case-insensitive and file/directory prefix collisions, the `.worr-update` namespace, source files that escape through symbolic links, and package output nested beneath its input at both wrapper and producer layers. Release staging rejects unsafe game/relocation arguments, symlink/reparse sources, and every input/output overlap before replacing prior output. Role/release trees and package/manifest/index/signature/asset-list groups are built and validated as complete temporary sets before destinations are replaced, with rollback on incomplete replacement.
+  - The active C++ bootstrap applies the same portable-relative-path policy before ZIP extraction or manifest-driven install, removal, and rollback operations; requires complete, internally consistent cached manifests bound to the active role/repository/channel/launch paths; and rejects pre-existing symbolic links, Windows reparse points, non-directory ancestors, and hard-linked managed leaves beneath the canonical install root. Malformed cached state is ignored instead of blocking launch.
+  - Staging now copies only the real `cgame`/`sgame` shared modules and matching PDBs, eliminating 30 test artifacts (106,672,640 bytes) from the canonical Windows base-game stage.
+  - Added native and Python regression coverage and registered focused release checks with Meson. Implementation log: `docs-dev/release-updater-trust-boundary-hardening-2026-08-03.md`.
+- `DV-08-T14` Done:
+  - Producer and bootstrap managed paths now share a printable-ASCII-only portable domain, eliminating cross-runtime Unicode normalization/case-fold ambiguity while retaining traversal, device-name, length, and case/separator collision checks.
+  - ZIP verification and extraction reject Unix symbolic links, every other special-file type, and privileged bits. The signed manifest records exact normalized `0644`/`0755` file modes; POSIX extraction creates exact `0755` directories and exact signed file modes independently of `umask`, and the anchored install transaction verifies/preserves them.
+  - Monocypher 4.0.3 is pinned to the official release archive and SHA-256, built as a private static dependency for native Ed25519 verification, and its complete upstream dual-license notice is required in staged and packaged license bundles.
+  - Implementation log: `docs-dev/authenticated-release-atomic-updater-and-pr-ci-hardening-2026-08-03.md`.
+- `DV-08-T15` Done:
+  - Exact signed release-index bytes now include canonical `generated_at_utc` and `expires_at_utc` timestamps, a positive monotonic `release_sequence`, and `revoked_release_index_sha256s`. Stable and nightly validity defaults are 180 and 14 days, the maximum is 366 days, consumer clock tolerance is 24 hours, and each index accepts at most 1,024 exact-digest revocations sourced from `tools/release/revoked-release-indexes.json`.
+  - Discovery walks at most three pages of 100 releases within the shared 15-second budget and carries revocations from authenticated current newer candidates into every older fallback decision. Pending cached candidates must pass current-policy and expiry validation. Authenticated installed evidence remains durable after publication expiry and retains the installed sequence/digest floor; lower sequences, conflicting same-sequence digests, and exact revoked index digests fail closed.
+  - Required PR checks compare the registry with the base commit and prohibit removing prior channels or revocations. Stable/nightly workflows derive sequence from `github.run_number * 100 + github.run_attempt`, keep policy/build identity stable under rerun through `github.run_id`, anchor nightly identity to the workflow's original `created_at`, bind an existing tag to the prepared commit, and publish only an exact digest-verified draft asset set. Final integrated validation is reported at handoff rather than copied from an earlier component checkpoint.
+  - Implementation log: `docs-dev/authenticated-release-atomic-updater-and-pr-ci-hardening-2026-08-03.md`.
+- `DV-08-T16` In Progress / Externally Blocked:
+  - Stable/nightly workflows now separate keyless candidate composition, protected authorization, and protected contents-write publication. The authorization job independently reconstructs the candidate before materializing keys, signs both the exact index and a distinct canonical request/asset-set authorization, and removes keys before handoff. Publication independently anchors the frozen policy and admits only the authorized set. Repository administrators must configure separate protected environments/reviewers; the current signing runner still materializes all configured threshold keys, so independent KMS/custodian M-of-N custody remains external work.
+  - Authenticode-sign Windows executables/MSI, sign and notarize macOS artifacts, and distribute the first-install package plus policy fingerprint through an independently authenticated channel. A fingerprint printed only in the GitHub release it describes is useful comparison data, not an out-of-band trust anchor.
+  - Replace mutable hosted images, compiler/SDK versions, and package-manager resolution with pinned/attested or equivalently reproducible toolchain inputs. Immutable action SHAs, hash-locked Python/Meson wheels, the exact WiX version, and source-wrap hashes are partial controls, not a hermetic build claim.
+  - Blocked on external custodian/KMS, certificate/notary, distribution-channel, reproducible-build infrastructure, authorization, audit, protected-environment, and incident-recovery provisioning.
+- `DV-08-T20` Done:
+  - Windows elevated-worker predecessor waits now carry a complete PID plus process-creation-time identity. The child queries creation time from the same held synchronize handle before waiting, treats a mismatch as an already-exited/recycled predecessor, and rejects partial, self, query-failed, timed-out, or wait-failed identities.
+  - Both recovery elevation and the protected installed-worker handoff populate the full identity, eliminating the bounded availability delay caused by PID reuse without broadening handle inheritance.
+  - Implementation log: `docs-dev/runtime-update-coordination-ci-and-release-capability-separation-2026-08-03.md`.
+- `DV-02-T01` / `DV-02-T04` Done:
+  - Pull requests now configure and compile a literal reviewed Windows, Linux, and macOS runner/platform allowlist, run the repository Python suite, locked signing dependencies, revocation-history gate, and renderer guardrail, refresh and validate each platform's `.install`, and execute only bounded Meson tests after rejecting direct interactive-client commands.
+  - Repository-wide Python collection now excludes generated/staged/subproject trees, the q2aas test collects normally, an invalid regex escape is repaired, and stale Vulkan source-contract tests track the current native renderer layout.
+  - `DV-02-T02` and `DV-02-T03` are now complete: renderer targets are independently visible, and each platform proves the final staged dedicated runtime without launching a client or initializing user input.
+  - Implementation log: `docs-dev/authenticated-release-atomic-updater-and-pr-ci-hardening-2026-08-03.md`.
 - `DV-08-T12` In Progress:
   - Analyzed the local Steam-distributed Quake Champions client install and confirmed that Steam owns build/depot updates while the game behaves like a branded session shell with embedded web/session components.
   - Refactored the desktop bootstrapper toward a session-shell model by introducing explicit install-sync planning, enabling same-version repair/synchronization decisions, and constraining removals to managed files tracked by the local install manifest.
@@ -7373,20 +7418,25 @@ Exit Criteria:
 - Every non-trivial change path has automated build/test/smoke coverage before merge.
 
 Tasks:
-- [ ] `DV-02-T01` Add PR CI workflow for configure + compile on Windows/Linux/macOS.
+- [x] `DV-02-T01` Add PR CI workflow for configure + compile on Windows/Linux/macOS.
   Dependency: none. Priority: P0.
-- [ ] `DV-02-T02` Add matrix targets for external renderer libraries (`opengl`, `vulkan`, `rtx`) in CI.
+  Completed 2026-08-03. A literal reviewed Windows, Linux, and macOS runner/platform allowlist compiles the bootstrap-enabled build, runs the repository Python/guardrail gate, refreshes `.install`, and executes a bounded, direct-interactive-client-rejecting Meson selection. Implementation log: `docs-dev/authenticated-release-atomic-updater-and-pr-ci-hardening-2026-08-03.md`.
+- [x] `DV-02-T02` Add matrix targets for external renderer libraries (`opengl`, `vulkan`, `rtx`) in CI.
   Dependency: `DV-02-T01`. Priority: P0.
-- [ ] `DV-02-T03` Add runtime smoke launch checks against `.install/` staging for each platform.
+  Completed 2026-08-03. Pull requests contain independently named Ubuntu lanes that build the exact external OpenGL, native Vulkan, and RTX renderer targets with explicit Vulkan/shader dependencies. Implementation log: `docs-dev/runtime-update-coordination-ci-and-release-capability-separation-2026-08-03.md`.
+- [x] `DV-02-T03` Add runtime smoke launch checks against `.install/` staging for each platform.
   Dependency: `DV-02-T01`. Priority: P1.
-- [ ] `DV-02-T04` Add staged payload validation for format/manifest completeness in PR CI.
+  Completed 2026-08-03. Each supported platform refreshes `.install` and launches only the staged public dedicated-server bootstrap in an isolated home directory, with loopback networking, port zero, detached input, a bounded timeout, an engine-owned one-use readiness token, process-tree cleanup, and an immutable-install before/after check. Windows uses the no-window job-object path. No client, input subsystem, mouse capture, or OS screen capture is involved. Implementation log: `docs-dev/runtime-update-coordination-ci-and-release-capability-separation-2026-08-03.md`.
+- [x] `DV-02-T04` Add staged payload validation for format/manifest completeness in PR CI.
   Dependency: `DV-02-T01`. Priority: P1.
+  Completed 2026-08-03. Each platform matrix lane refreshes `.install` through the canonical staging workflow, which builds a clean sibling tree, atomically replaces the previous stage, and validates its platform format, required runtime set, release notices, and manifest contract before running tests. This prevents prior screenshots, saves, logs, crash data, or other local staging residue from becoming release candidates. Implementation log: `docs-dev/authenticated-release-atomic-updater-and-pr-ci-hardening-2026-08-03.md`.
 - [ ] `DV-02-T05` Add failure triage guide and flaky test quarantine workflow.
   Dependency: `DV-02-T01`. Priority: P2.
 - [x] `DV-02-T06` Add renderer guardrail scans for removed shadow fallback/cache paths.
   Dependency: `DV-02-T01`. Priority: P1.
-- [ ] `DV-02-T07` Make native Vulkan and VKPT shader generation, freshness checking, and `spirv-val` validation mandatory build/CI dependencies.
+- [x] `DV-02-T07` Make native Vulkan and VKPT shader generation, freshness checking, and `spirv-val` validation mandatory build/CI dependencies.
   Dependency: `DV-02-T01`, `DV-02-T02`. Priority: P1.
+  Completed 2026-08-03. Native Vulkan now performs a provenance-bound, canonical, read-only freshness check and validates all 48 embedded modules across eight tracked headers, including UI2D; VKPT safely publishes and independently revalidates the exact owned 51-module output set from 47 sources against its runtime lists. Both renderer targets fail closed on missing Vulkan tools, are hard Meson dependencies of their external renderer libraries, and run in independently named Vulkan and RTX PR jobs. Implementation log: `docs-dev/native-vulkan-vkpt-shader-build-validation-2026-08-03.md`.
 
 ## Epic DV-03: Automated Test Strategy
 Objective: expand meaningful automated tests across protocol, gameplay, renderer, and tooling.
@@ -7397,8 +7447,21 @@ Exit Criteria:
 - Core regression-prone systems are covered by deterministic tests and smoke checks.
 
 Tasks:
-- [ ] `DV-03-T01` Integrate `q2proto/tests` into main CI path and publish result artifacts.
+- [x] `DV-03-T01` Integrate `q2proto/tests` into main CI path and publish result artifacts.
   Dependency: `DV-02-T01`. Priority: P0.
+  2026-08-03 completion: the required pull-request workflow now has an
+  independently named, ten-minute `q2proto compatibility` gate. Its bounded
+  wrapper configures the read-only vendored suite with fatal Meson warnings,
+  Werror, and dependency downloads disabled; requires the exact four protocol
+  flavors both with and without deflate plus the single-source fixture; and
+  explicitly compiles all nine targets. The wrapper keeps build/results under
+  `.tmp/`, fingerprints the entire `q2proto/` tree before and after, contains
+  timed-out POSIX process groups or Windows job-object trees, and records exact
+  target/product hashes. A pinned `upload-artifact` step runs even after gate
+  failure and retains the JSON report, target inventory, configure/compile and
+  Meson logs, and summary for fourteen days. All pull-request checkouts now use
+  pinned action commits with persisted Git credentials disabled. Implementation
+  log: `docs-dev/q2proto-compatibility-required-pr-ci-2026-08-03.md`.
 - [ ] `DV-03-T02` Add unit-level tests for high-risk shared utilities (`files`, parsing, cvar helpers).
   Dependency: none. Priority: P1.
 - [ ] `DV-03-T03` Add deterministic server game rule tests for match-state transitions.
@@ -7669,6 +7732,26 @@ Tasks:
   layout inspection, and native Vulkan renderer-unavailable fallback to the
   matching JSON hub. Broader route automation, input/navigation coverage,
   viewport assertions, and renderer-native RmlUi coverage remain pending.
+  2026-08-03 no-input route-stack note: the guarded runtime harness adds a
+  bounded evidence mode for the ordered `main -> options -> video -> Back ->
+  options -> Back -> main -> Back -> inactive` journey, configured for native
+  OpenGL, Vulkan, and RTX/vkpt lanes. Labelled status checkpoints require the
+  exact route order, ready native renderer family, positive active-route render
+  counts, final inactive state, and zero key/text/pointer/button/wheel/synthetic
+  input counters. The optional runner requires the verified Windows hidden and
+  `CREATE_NO_WINDOW` path, a lane-specific isolated `.tmp` home, and disabled
+  client input/grab; it rejects screenshot and synthetic-input commands or
+  markers, scratch links/reparse points, resolve failures, and every
+  pre-existing lane home. Each live lane atomically claims a previously absent
+  leaf so concurrent same-evidence harness runs and stale config/log state
+  cannot share it. The complete path contract repeats after directory creation
+  and immediately before process creation. Dry-run,
+  fixture/parser, deterministic manifest, and negative-path tests are
+  implemented, but no live three-renderer journey was launched for this change.
+  The task remains open for that live evidence, responsive non-4:3 and
+  route-wide layout assertions, and a trusted required renderer lane.
+  Implementation log:
+  `docs-dev/rmlui-no-input-route-stack-navigation-matrix-2026-08-03.md`.
 
 - [ ] `DV-03-T08` Add deterministic renderer semantic tests for gamma/color charts, light-query saturation, shadow alias/cache invalidation, malformed shadowlight records, and GL/Vulkan pixel tolerances.
   Dependency: `DV-02-T03`, `FR-02-T12`. Priority: P1.
@@ -7985,7 +8068,7 @@ Exit Criteria:
 - Dependency versions are intentional, documented, and reviewable with lower drift risk.
 
 Tasks:
-- [ ] `DV-06-T01` Audit duplicate vendored versions and define active baseline per dependency.
+- [x] `DV-06-T01` Audit duplicate vendored versions and define active baseline per dependency.
   Dependency: none. Priority: P0.
   RmlUi Round 10 note:
   `docs-dev/rmlui-dependency-decision-record-2026-07-02.md` documents the
@@ -8144,6 +8227,15 @@ Tasks:
   a fresh crash dump. Final notice/update policy, local patch policy,
   supported-matrix acceptance, native Vulkan/RTX-vkpt renderer enablement, and
   default runtime ownership remain pending.
+  2026-08-03 completion note: all 19 active wraps, their Meson consumers,
+  package overrides, repository-local sources, and explicit FFmpeg-tag/KHR
+  archive trust exceptions are recorded in a single baseline. The verifier
+  recursively audits bounded first-party Meson roots, rejects link/special-file
+  substitution, detects ignored stale/duplicate local trees without deleting
+  them, and byte-verifies a reproducibly rebuilt `subprojects/wraps.zip` that
+  includes RmlUi and Monocypher. Tracked lock, disabled-wrap, and obsolete
+  OpenAL override drift was removed. Engineering record:
+  `docs-dev/dependency-baseline-audit-and-verifier-2026-08-03.md`.
 - [ ] `DV-06-T02` Remove or archive superseded dependency trees not needed for reproducible builds.
   Dependency: `DV-06-T01`. Priority: P1.
   2026-07-02 cleanup note: removed ignored local stale unpacked source trees
@@ -8744,10 +8836,14 @@ Exit Criteria:
 Tasks:
 - [x] `DV-08-T01` Add test fixtures for release index parsing edge cases (missing assets, mixed channels, malformed metadata).
   Dependency: `DV-03-T06`. Priority: P1.
-- [ ] `DV-08-T02` Add checksum/signature policy review for package trust model.
-  Dependency: none. Priority: P2.
-- [ ] `DV-08-T03` Add rollback and failed-update recovery validation scenarios.
-  Dependency: none. Priority: P1.
+- [x] `DV-08-T02` Implement the reviewed package trust model with threshold Ed25519 release-index signatures, authenticated manifest/package linkage, current-policy cached re-verification, bounded HTTPS transfer, and rotation-capable publication workflows.
+  Dependency: `DV-08-T13`. Priority: P0.
+  Definition of done: production updater configs contain only a repository/channel-scoped public trust policy; stable/nightly publication cannot proceed without enough authorized private keys; private material is created only for signing and removed through an unconditional validated cleanup; signing dependencies and workflow actions are immutable/hash-locked; the native bootstrap authenticates exact index bytes before consuming metadata and binds all downloads to signed size/SHA-256 records; cached resume re-verifies retained evidence rather than cached assertions; network inputs and partial package writes are bounded; and publication uses a draft-first, exact-name/size/SHA-256 reconciliation gate. Cross-language and workflow regressions cover tampering, scope, threshold, rotation, partial drafts, and idempotent reruns. Production activation additionally requires administrators to provision the documented stable/nightly secrets and satisfy `DV-08-T16`.
+  Completed 2026-08-03. Source and workflow implementation is complete. Release notes expose the public policy SHA-256/threshold/key IDs; immutable action pins use Node 24; release tags are bound to the prepared commit; and an already public mismatched release fails closed. Secret provisioning and the external production controls in `DV-08-T16` remain explicit release gates. Implementation log: `docs-dev/authenticated-release-atomic-updater-and-pr-ci-hardening-2026-08-03.md`.
+- [x] `DV-08-T03` Add rollback and failed-update recovery validation scenarios and make the validated transaction the active bootstrap apply path.
+  Dependency: `DV-08-T13`. Priority: P0.
+  Definition of done: all install mutations are issued relative to held no-follow roots, copied staging bytes are authenticated through the same open handle, each file and final manifest is replaced atomically, and every apply/cancellation failure attempts exact reverse-order rollback. A bounded journal and backups live in a fixed private namespace below the install root, an exclusive lock serializes apply/recovery, and bootstrap completes deterministic recovery before loading updater configuration or reaching any engine launch path. Native fault injection exercises mutation and durability boundaries, locked files, source substitution, progress interruption, incomplete rollback, interrupted recovery, committed-marker cleanup, private state, reserved-path rejection, and concurrent locking on Windows and POSIX. POSIX uses file and parent-directory `fsync` barriers for sudden-power-loss recovery; Windows claims process-interruption recovery only until a proven directory/volume durability barrier exists.
+  Completed 2026-08-03. The active bootstrap path recovers an `applying` journal before launch, preserves a committed install after its commit marker, and can resume recovery after another interruption. It rechecks the authenticated predecessor manifest after taking the exclusive lock; validates existing private state instead of silently repairing unsafe permissions; uses exact protected Windows ACLs and deterministic POSIX modes; stages privileged payloads below `.worr-update`; and admits only a protected, actual-image-checked elevated worker, with authenticated release evidence additionally required for approved apply. Final integrated validation is reported at handoff rather than copied from an earlier component checkpoint. Implementation log: `docs-dev/authenticated-release-atomic-updater-and-pr-ci-hardening-2026-08-03.md`.
 - [ ] `DV-08-T04` Add release readiness checklist tied to roadmap milestone gates.
   Dependency: `DV-01-T01`. Priority: P1.
 - [x] `DV-08-T05` Split client/server archive payloads and stage the canonical repo assets as `basew/pak0.pkz`.
@@ -8756,7 +8852,7 @@ Tasks:
   Dependency: `DV-08-T05`. Priority: P1.
 - [x] `DV-08-T07` Standardize arch-suffixed bootstrap/engine binary names and updater metadata across supported platforms.
   Dependency: `DV-08-T06`. Priority: P1.
-- [x] `DV-08-T08` Align nightly release publishing and updater channel selection after dropping GitHub prerelease publishing.
+- [x] `DV-08-T08` Align nightly GitHub prerelease representation with updater channel selection without making the GitHub flag the channel trust boundary.
   Dependency: `DV-08-T07`. Priority: P1.
 - [x] `DV-08-T09` Implement the cross-platform desktop bootstrap updater flow with bootstrap/engine-library split, splash-first startup, and role-scoped installer staging.
   Dependency: `DV-08-T07`. Priority: P0.
@@ -8768,6 +8864,35 @@ Tasks:
   Dependency: `DV-08-T09`, `DV-08-T11`. Priority: P1.
   Progress: Windows session-shell work introduced native splash-shell startup, adopted-window activation, synchronized `.install` staging, and engine-side menu backdrops. This follow-up temporarily disables Windows shared-HWND handoff because Win11 capture/preview APIs were still sampling the bootstrap-owned surface; the splash is kept out of taskbar previews, fullscreen defaults to capture-friendly borderless behavior for PrintScreen/Snipping Tool, and the renderer-owned engine window becomes the app frame. Non-transparent menus now clear the engine backbuffer every frame, the main menu backdrop is fully opaque, and hosted launches request only a short engine-owned fade from black, so stale splash pixels cannot remain blended into the main menu.
   Implementation logs: `docs-dev/bootstrap-session-shell-handoff-2026-04-01.md`, `docs-dev/ui-bootstrap-font-handoff-2026-04-27.md`.
+- [x] `DV-08-T13` Enforce the release registry as the publication contract; verify package/archive/install-manifest integrity; and reject archive, mapped-source, manifest, and cached-update paths that can escape updater-owned roots.
+  Dependency: `DV-08-T09`. Priority: P0.
+  Definition of done: release verification fails closed on a missing or semantically inconsistent registered artifact, renderer family, package digest, archive member, embedded install manifest, or updater configuration; each platform metadata file can resolve assets only from its exact flat bundle root; MSI validation opens a real installer database and binds the exact isolated extracted payload to the signed client manifest; package creation and bootstrap extraction/application accept only bounded portable relative paths and normalized modes; role/release staging and package/manifest/index/signature/asset-list output sets are committed coherently; staging excludes test binaries from game-module payloads; and producer/consumer regressions run through Meson.
+  Completed 2026-08-03. The verifier rejects recursive or cross-bundle asset fallback and fake header-only MSI files. `msiextract` preflights and extracts one exact portable File-table tree, rejects path/case/prefix/link/special/missing/extra drift, and checks each managed client's signed size/SHA-256 plus the byte-exact canonical local install manifest; MSI intentionally has no POSIX mode claim. Producer/verifier/native limits cover file counts, per-file/package/expanded/local-manifest sizes, path-prefix and reserved-state collisions, and exact `0644`/`0755` modes where the package format represents them. Role staging, release-layout staging, package/manifest publication, and signed index output publication build complete temporary sets before replacement. Implementation log: `docs-dev/release-updater-trust-boundary-hardening-2026-08-03.md`.
+  Follow-up 2026-08-03: verifier and composer now share one fail-before-read/write bundle resolver that rejects deep or mixed metadata layouts, case-insensitive metadata/asset aliases, hard-linked inputs, link/reparse/special entries, and redirecting artifact-root ancestors before any release payload is hashed or signed.
+- [x] `DV-08-T14` Align producer and consumer managed paths on a printable-ASCII portable domain, preserve valid Unix executable modes through ZIP updates, reject archive special-file types, and ship the native verifier's third-party notice.
+  Dependency: `DV-08-T13`. Priority: P0.
+  Definition of done: Python and C++ reject every non-ASCII managed component plus traversal, reserved names, invalid characters, overlong paths, ASCII case/separator collisions, path-prefix collisions, privileged bits, and the updater-reserved state namespace; ZIP verification and extraction accept only regular files whose signed normalized mode is exactly `0644` or `0755`; POSIX directories/files receive deterministic modes independent of `umask`; anchored install replacement verifies and preserves the expected mode; regression fixtures cover composed/decomposed Unicode aliases and Unix special types; Monocypher is version/hash pinned and its complete upstream license notice is required in `.install` and release packages.
+  Completed 2026-08-03. Implementation log: `docs-dev/authenticated-release-atomic-updater-and-pr-ci-hardening-2026-08-03.md`.
+- [x] `DV-08-T15` Add signed update freshness, anti-rollback, and revocation semantics plus bounded multi-page release-candidate traversal.
+  Dependency: `DV-08-T02`. Priority: P1.
+  Definition of done: producer and native consumer enforce the reviewed signed freshness/revocation contract; persisted rollback state cannot be weakened by unauthenticated cache edits or a plan/apply race; discovery traverses additional GitHub pages only within explicit response-size, page-count, candidate-count, and total-time limits; the checked-in revocation registry is append-only through required PR checks; workflow release sequences are monotonic and bounded; nightly identity is stable across reruns; and overlap, replay, expiry/revocation, feed-flooding, offline recovery, tag mismatch, and partial-publication regressions fail closed without stranding a documented recovery path.
+  Completed 2026-08-03. Signed indices carry canonical generation/expiry timestamps, a positive per-channel sequence, and at most 1,024 exact-index-digest revocations from the checked-in append-only operational list. Stable/nightly validity defaults are 180/14 days with a 366-day maximum and 24-hour consumer clock tolerance. Workflow sequence is `github.run_number * 100 + github.run_attempt`; policy/build artifact identity uses rerun-stable `github.run_id`; and nightly tag/date/window identity is anchored to the workflow run's `created_at`. Discovery is bounded to three pages of 100 candidates within 15 seconds and accumulates revocations from authenticated current newer candidates before older fallback. Cached candidates remain current and valid under the active policy, while authenticated installed evidence retains its sequence/digest rollback floor after publication expiry. Lower sequences, conflicting same-sequence digests, exact revoked digests, a changed predecessor manifest after lock acquisition, and a release tag bound to another commit are rejected. Publication promotes only a draft whose complete remote asset names, sizes, states, and SHA-256 digests equal the intended set. Final integrated validation is reported at handoff. Implementation log: `docs-dev/authenticated-release-atomic-updater-and-pr-ci-hardening-2026-08-03.md`.
+- [ ] `DV-08-T16` Complete the external production release-trust boundary: independent threshold-key custody, platform signing/notarization and first-install trust, and hermetic build inputs.
+  Dependency: `DV-08-T02`. Priority: P1.
+  Status: In progress; blocked on external custodian/KMS provisioning, certificate and Apple Developer/notary credentials, independently authenticated distribution channels, reproducible toolchain infrastructure, authorization/audit policy, protected environments, and incident-recovery design. The checked-in workflows now separate keyless candidate assembly, protected signing authorization, and protected publication into distinct jobs/environments; a domain-separated threshold authorization signs the canonical relocatable request and exact index-derived asset set, while publication independently anchors the frozen public policy and admits no unsigned extra assets. Frozen policies are carried by immutable artifact ID with overwrite disabled; candidate freshness is rechecked at signing and publication; signed channel semantics control prerelease/latest state; and the actual boundedly peeled Git tag is checked before mutation and after publication. Repository administrators must still configure separate protected environments/reviewers, and this capability separation does not substitute for independent human/KMS custody or the other external controls.
+  Definition of done: (1) no single CI secret, runner, identity, or process can access enough private keys to satisfy the production threshold; each custodian signs the exact immutable index independently; a keyless aggregator validates scope, identity, payload equality, signatures, and threshold; and audit/rotation/revocation procedures are rehearsed; (2) Windows bootstrap/updater/MSI artifacts are Authenticode-signed, macOS artifacts are signed and notarized, and the first-install package plus policy fingerprint are available through an independent authenticated channel; (3) hosted images, compilers, SDKs, package-manager dependencies, and release tools are pinned/attested or otherwise reproducible to the approved standard; and (4) workflow and operational exercises prove that missing, duplicate, unauthorized, mismatched, expired, or unavailable custody/signing inputs fail closed with a documented recovery path.
+- [x] `DV-08-T17` Journal and recover cross-release managed file/directory shape transitions.
+  Dependency: `DV-08-T03`, `DV-08-T13`. Priority: P0.
+  Completed 2026-08-03. The V3 journal records absent, regular-file, and directory states plus POSIX modes while retaining V2 recovery. Preflight proves complete ownership of every replaced subtree, rejects special/unowned contents before state mutation, backs up/removes leaves before directories, creates new directories in dependency order, and reverses the sequence for ordinary rollback or restart recovery. Deep file-to-directory and directory-to-file transitions pass Windows and Linux fault-injection coverage. Implementation log: `docs-dev/runtime-update-coordination-ci-and-release-capability-separation-2026-08-03.md`.
+- [x] `DV-08-T18` Add one stable process-lifetime runtime/update coordination lock.
+  Dependency: `DV-08-T03`. Priority: P0.
+  Completed 2026-08-03. Every manual/update/MSI payload requires the exact empty `0644` top-level `worr_install.lock`. The hosted engine holds an existing-file shared advisory lock from before library inspection through engine unload; apply and recovery hold the conflicting exclusive lock through mutation and cleanup. The file is reserved from update plans, never created or permission-repaired by the lock API, and validated after acquisition. Windows child creation now uses an explicit standard-handle inheritance allowlist. Implementation log: `docs-dev/runtime-update-coordination-ci-and-release-capability-separation-2026-08-03.md`.
+- [x] `DV-08-T19` Make `.install` publication scanner-tolerant and reject staged runtime/user-state contamination.
+  Dependency: `DV-02-T04`, `DV-08-T13`. Priority: P0.
+  Completed 2026-08-03. The clean sibling-tree publisher retries only bounded Windows access/share/lock violations while retaining rollback. Staging strips root runtime configs, console history, saves, screenshots, demos, and logs even when the Meson runtime tree contains them. The platform validator now requires the registered pre-role runtime/renderers/notices/asset pack and exact coordination lock, rejects links, portable case aliases, and forbidden user paths, and leaves role-specific `worr_update.json` generation to the role packager. Implementation log: `docs-dev/runtime-update-coordination-ci-and-release-capability-separation-2026-08-03.md`.
+- [x] `DV-08-T20` Bind Windows elevated-worker predecessor waits to stable process identity.
+  Dependency: `DV-08-T03`. Priority: P1.
+  Completed 2026-08-03. Every predecessor handoff carries both the Windows PID and 64-bit process creation time. The child opens one query-and-synchronize handle, validates creation time before waiting on that same object, treats a PID-reuse mismatch as an exited predecessor, and fails closed on partial/self identities, query errors, wait errors, or timeout. Recovery elevation and the protected installed-worker chain both populate the complete identity, with focused source-contract coverage and successful Windows launcher/updater builds. Implementation log: `docs-dev/runtime-update-coordination-ci-and-release-capability-separation-2026-08-03.md`.
 
 ## Immediate 90-Day Priority Queue (2026-07-01 to 2026-09-30)
 - [x] `P0` `FR-01-T01` Vulkan particle style parity
@@ -8785,10 +8910,13 @@ Tasks:
 - [x] `P1` `FR-09-T11` Main hero and in-world session presentation polish
 - [x] `P1` `FR-09-T12` Multiplayer join-hub navigation and active-vote revision
 - [ ] `P0` `DV-01-T01` Project board template rollout
-- [ ] `P0` `DV-02-T01` PR CI workflow
-- [ ] `P0` `DV-03-T01` Integrate q2proto tests into CI
+- [x] `P0` `DV-02-T01` PR CI workflow
+- [x] `P0` `DV-02-T02` independently named external-renderer CI lanes
+- [x] `P1` `DV-02-T03` staged dedicated-runtime smoke launches
+- [x] `P1` `DV-08-T20` stable Windows updater handoff process identity
+- [x] `P0` `DV-03-T01` Integrate q2proto tests into CI
 - [ ] `P0` `DV-03-T07` UI automation harness
-- [ ] `P0` `DV-06-T01` Dependency baseline audit
+- [x] `P0` `DV-06-T01` Dependency baseline audit
 
 ## Governance Note
 This roadmap is intended to be the live planning source for WORR 2026 execution. Any significant new initiative should be added here first as an epic/task set (or linked as a child project) before implementation starts.

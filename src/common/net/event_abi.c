@@ -9,6 +9,11 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "shared/event_abi.h"
 
+/* Payload kind 14 validates through the predictor core's own seed contract
+ * rather than restating it here.  The dependency is safe at .c scope: the
+ * header direction stays shared/ -> common/net/, not the reverse. */
+#include "common/net/local_action_predictor.h"
+
 #include <limits.h>
 #include <math.h>
 #include <string.h>
@@ -184,6 +189,8 @@ static uint16_t payload_size_for_kind(uint16_t kind)
             worr_local_action_shadow_authority_receipt_v1);
     case WORR_EVENT_PAYLOAD_KEYED_POI_V1:
         return (uint16_t)sizeof(worr_event_payload_keyed_poi_v1);
+    case WORR_EVENT_PAYLOAD_LOCAL_ACTION_PREDICT_SEED_V1:
+        return (uint16_t)sizeof(worr_local_action_predict_seed_v1);
     default:
         return UINT16_MAX;
     }
@@ -225,7 +232,9 @@ static bool payload_matches_event_type(uint16_t event_type,
         return payload_kind ==
                    WORR_EVENT_PAYLOAD_LOCAL_INTERACTION_AUTHORITY_V1 ||
                payload_kind ==
-                   WORR_EVENT_PAYLOAD_LOCAL_ACTION_SHADOW_AUTHORITY_V1;
+                   WORR_EVENT_PAYLOAD_LOCAL_ACTION_SHADOW_AUTHORITY_V1 ||
+               payload_kind ==
+                   WORR_EVENT_PAYLOAD_LOCAL_ACTION_PREDICT_SEED_V1;
     default:
         return false;
     }
@@ -797,6 +806,11 @@ static bool validate_payload(const worr_event_record_v1 *record,
         memcpy(&payload, record->payload, sizeof(payload));
         return validate_keyed_poi_payload(record, &payload);
     }
+    case WORR_EVENT_PAYLOAD_LOCAL_ACTION_PREDICT_SEED_V1: {
+        worr_local_action_predict_seed_v1 payload;
+        memcpy(&payload, record->payload, sizeof(payload));
+        return Worr_LocalActionPredictSeedValidateV1(&payload);
+    }
     default:
         return false;
     }
@@ -1100,6 +1114,19 @@ static uint64_t hash_payload(uint64_t hash,
         hash = hash_u8(hash, payload.color_index);
         return hash_u8(hash, payload.flags);
     }
+    case WORR_EVENT_PAYLOAD_LOCAL_ACTION_PREDICT_SEED_V1: {
+        worr_local_action_predict_seed_v1 payload;
+        memcpy(&payload, record->payload, sizeof(payload));
+        hash = hash_u32(hash, payload.struct_size);
+        hash = hash_u32(hash, payload.schema_version);
+        hash = hash_u32(hash, payload.catalog_id);
+        hash = hash_u32(hash, payload.active_ammo_units);
+        hash = hash_u32(hash, payload.presentation_frame);
+        hash = hash_u32(hash, payload.reserved0);
+        hash = hash_u32(hash, payload.applied_cursor.epoch);
+        hash = hash_u32(hash, payload.applied_cursor.contiguous_sequence);
+        return hash_u64(hash, payload.sample_time_us);
+    }
     default:
         return 0;
     }
@@ -1317,6 +1344,13 @@ static bool payload_semantically_equal(const worr_event_record_v1 *left,
                vec3_semantically_equal(a.position, b.position) &&
                a.image_index == b.image_index &&
                a.color_index == b.color_index && a.flags == b.flags;
+    }
+    case WORR_EVENT_PAYLOAD_LOCAL_ACTION_PREDICT_SEED_V1: {
+        worr_local_action_predict_seed_v1 a;
+        worr_local_action_predict_seed_v1 b;
+        memcpy(&a, left->payload, sizeof(a));
+        memcpy(&b, right->payload, sizeof(b));
+        return memcmp(&a, &b, sizeof(a)) == 0;
     }
     default:
         return false;

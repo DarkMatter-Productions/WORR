@@ -70,6 +70,10 @@ enum {
   WORR_NATIVE_DEMO_TIMELINE_STEP_SNAPSHOT_ANCHOR = 1u << 1,
   /* First step at a timestamp strictly greater than the previous step. */
   WORR_NATIVE_DEMO_TIMELINE_STEP_TIME_ADVANCE = 1u << 2,
+  /* The stream's BOOTSTRAP gamestate prologue.  It is planned so the 1:1
+   * step/entry mapping holds, but it is not a presentable canonical body: a
+   * driver consumes it once at load/map-load time, never as a timed step. */
+  WORR_NATIVE_DEMO_TIMELINE_STEP_BOOTSTRAP = 1u << 3,
 };
 
 /* One planned dispatch step: a single index record placed in canonical order. */
@@ -87,10 +91,15 @@ typedef struct worr_native_demo_timeline_step_v1_s {
 } worr_native_demo_timeline_step_v1;
 
 enum {
-  /* The plan begins with a SNAPSHOT record (a self-contained standalone
-   * timeline).  Absent when leading command records precede the first
-   * snapshot. */
+  /* The plan's first *presentable* record is a SNAPSHOT (a self-contained
+   * standalone timeline).  Absent when leading command records precede the
+   * first snapshot.  A BOOTSTRAP prologue does not clear this flag: it is not
+   * a presentable record, so a bootstrap-then-snapshot stream is standalone in
+   * exactly the sense this flag reports. */
   WORR_NATIVE_DEMO_TIMELINE_SUMMARY_LEADING_SNAPSHOT = 1u << 0,
+  /* The plan begins with a BOOTSTRAP gamestate record, so a driver can load a
+   * map and start a session from this stream without a live connection. */
+  WORR_NATIVE_DEMO_TIMELINE_SUMMARY_LEADING_BOOTSTRAP = 1u << 1,
 };
 
 /* Whole-plan summary, including the order-sensitive reproduction fingerprint. */

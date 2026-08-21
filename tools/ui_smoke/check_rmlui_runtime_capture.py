@@ -1,12 +1,14 @@
-"""Run or validate the guarded RmlUi runtime screenshot smoke evidence."""
+"""Run or validate guarded RmlUi runtime screenshot and navigation evidence."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -33,12 +35,14 @@ RENDERER_LABELS = {
     "rtx": "RTX/vkpt",
 }
 DEFAULT_EVIDENCE_DIR = Path(".tmp/rmlui/runtime-capture")
+DEFAULT_NAVIGATION_RUNTIME_DIR = Path(".tmp/rmlui/runtime-navigation")
 DEFAULT_EVIDENCE_ID = "rmlui_runtime_smoke_round29"
 DEFAULT_STARTUP_WAIT = 120
 # Leave enough frames for route providers, cvar-bound images, and renderer
 # uploads to settle before recording deterministic visual evidence.
 DEFAULT_CAPTURE_WAIT = 360
 DEFAULT_STATUS_WAIT = 12
+MAX_NAVIGATION_TIMEOUT = 300.0
 DEFAULT_SCREENSHOT_FORMAT = "tga"
 DEFAULT_VIEWPORT_MATRIX = (
     ("default_960x720", "960x720"),
@@ -48,6 +52,21 @@ DEFAULT_ROUTE_MATRIX = ("main", "game", "download_status")
 MENU_ENTRYPOINT_ROUTES = frozenset(DEFAULT_ROUTE_MATRIX)
 DEFAULT_ROUTE_MATRIX_GEOMETRY = "960x720"
 DEFAULT_ROUTE_ID = "core.runtime_smoke"
+NAVIGATION_JOURNEY_ID = "main_options_video_back"
+NAVIGATION_CHECKPOINT_MARKER = "RMLUI_NAV_CHECKPOINT"
+NAVIGATION_EVIDENCE_SCHEMA = "worr.rmlui.runtime_navigation.v1"
+NAVIGATION_BASE_GAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
+NAVIGATION_EVIDENCE_BASE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$")
+NAVIGATION_EVIDENCE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+NAVIGATION_RENDERERS = tuple(RENDERER_FAMILIES)
+NAVIGATION_CHECKPOINTS = (
+    ("main", True, "main"),
+    ("options", True, "options"),
+    ("video", True, "video"),
+    ("back_options", True, "options"),
+    ("back_main", True, "main"),
+    ("inactive", False, "<none>"),
+)
 
 ROUTE_DOCUMENTS = {
     "core.runtime_smoke": Path("core/runtime_smoke.rml"),
@@ -207,6 +226,33 @@ class RuntimeCaptureReport:
     elapsed_seconds: float | None = None
     copied_evidence: dict[str, str] = field(default_factory=dict)
     facts: dict[str, Any] = field(default_factory=dict)
+    errors: list[str] = field(default_factory=list)
+
+    @property
+    def ok(self) -> bool:
+        return not self.errors
+
+
+@dataclass
+class NavigationJourneyReport:
+    repo_root: Path
+    install_dir: Path
+    engine_exe: Path
+    base_game: str
+    renderer: str
+    evidence_dir: Path
+    runtime_home: Path
+    evidence_id: str
+    geometry: str
+    command: list[str]
+    log_path: Path
+    manifest_path: Path
+    ran_engine: bool = False
+    exit_code: int | None = None
+    elapsed_seconds: float | None = None
+    copied_evidence: dict[str, str] = field(default_factory=dict)
+    facts: dict[str, Any] = field(default_factory=dict)
+    checkpoints: list[dict[str, Any]] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
     @property
@@ -613,20 +659,16 @@ def parse_seed_cvar(value: str) -> tuple[str, str]:
     return name, cvar_value
 
 
-def build_engine_command(
+def build_headless_engine_prefix(
     engine_exe: Path,
     install_dir: Path,
     base_game: str,
     renderer: str,
     evidence_id: str,
-    screenshot_format: str,
-    route_id: str,
     geometry: str | None,
     startup_wait: int,
-    capture_wait: int,
-    status_wait: int,
-    server_address: str | None = None,
-    seed_cvars: tuple[tuple[str, str], ...] = (),
+    screenshot_dir: Path | None,
+    runtime_home: Path | None = None,
 ) -> list[str]:
     command = [
         str(engine_exe),
@@ -635,31 +677,37 @@ def build_engine_command(
         "+set",
         "basedir",
         str(install_dir),
-        "+set",
-        "game",
-        base_game,
-        "+set",
-        "win_headless",
-        "1",
-        "+set",
-        "in_enable",
-        "0",
-        "+set",
-        "in_grab",
-        "0",
-        "+set",
-        "s_enable",
-        "0",
-        "+set",
-        "r_renderer",
-        renderer,
-        "+set",
-        "r_fullscreen",
-        "0",
-        "+set",
-        "r_maxfps",
-        "60",
     ]
+    if runtime_home is not None:
+        command.extend(["+set", "homedir", str(runtime_home)])
+    command.extend(
+        [
+            "+set",
+            "game",
+            base_game,
+            "+set",
+            "win_headless",
+            "1",
+            "+set",
+            "in_enable",
+            "0",
+            "+set",
+            "in_grab",
+            "0",
+            "+set",
+            "s_enable",
+            "0",
+            "+set",
+            "r_renderer",
+            renderer,
+            "+set",
+            "r_fullscreen",
+            "0",
+            "+set",
+            "r_maxfps",
+            "60",
+        ]
+    )
 
     if geometry:
         command.extend(
@@ -678,15 +726,24 @@ def build_engine_command(
             "+set",
             "ui_rml_reduced_motion",
             "1",
-            "+set",
-            "r_screenshot_async",
-            "0",
-            "+set",
-            "r_screenshot_message",
-            "1",
-            "+set",
-            "r_screenshot_dir",
-            str(install_dir / base_game / "screenshots"),
+        ]
+    )
+    if screenshot_dir is not None:
+        command.extend(
+            [
+                "+set",
+                "r_screenshot_async",
+                "0",
+                "+set",
+                "r_screenshot_message",
+                "1",
+                "+set",
+                "r_screenshot_dir",
+                str(screenshot_dir),
+            ]
+        )
+    command.extend(
+        [
             "+set",
             "logfile",
             "1",
@@ -700,10 +757,38 @@ def build_engine_command(
             str(startup_wait),
             # Config files may restore the archived cvar after command-line
             # +set processing. Execute the cvar command here, immediately
-            # before opening the document, so reduced-motion capture is real.
+            # before opening a document, so reduced-motion evidence is real.
             "+ui_rml_reduced_motion",
             "1",
         ]
+    )
+    return command
+
+
+def build_engine_command(
+    engine_exe: Path,
+    install_dir: Path,
+    base_game: str,
+    renderer: str,
+    evidence_id: str,
+    screenshot_format: str,
+    route_id: str,
+    geometry: str | None,
+    startup_wait: int,
+    capture_wait: int,
+    status_wait: int,
+    server_address: str | None = None,
+    seed_cvars: tuple[tuple[str, str], ...] = (),
+) -> list[str]:
+    command = build_headless_engine_prefix(
+        engine_exe,
+        install_dir,
+        base_game,
+        renderer,
+        evidence_id,
+        geometry,
+        startup_wait,
+        install_dir / base_game / "screenshots",
     )
     for name, value in seed_cvars:
         command.extend(["+set", name, value])
@@ -752,6 +837,154 @@ def build_engine_command(
         ]
     )
     return command
+
+
+def navigation_checkpoint_token(name: str) -> str:
+    return f"{NAVIGATION_CHECKPOINT_MARKER}:{name}"
+
+
+def build_navigation_engine_command(
+    engine_exe: Path,
+    install_dir: Path,
+    runtime_home: Path,
+    base_game: str,
+    renderer: str,
+    evidence_id: str,
+    geometry: str,
+    startup_wait: int,
+    status_wait: int,
+) -> list[str]:
+    command = build_headless_engine_prefix(
+        engine_exe,
+        install_dir,
+        base_game,
+        renderer,
+        evidence_id,
+        geometry,
+        startup_wait,
+        None,
+        runtime_home,
+    )
+    steps = (
+        (("+ui_rml_runtime_capture_menu", "main"), "main"),
+        (("+ui_rml_runtime_open", "options"), "options"),
+        (("+ui_rml_runtime_open", "video"), "video"),
+        (("+ui_rml_runtime_back",), "back_options"),
+        (("+ui_rml_runtime_back",), "back_main"),
+        (("+ui_rml_runtime_back",), "inactive"),
+    )
+    for action, checkpoint in steps:
+        command.extend(action)
+        command.extend(
+            [
+                "+wait",
+                str(status_wait),
+                "+echo",
+                navigation_checkpoint_token(checkpoint),
+                "+ui_rml_runtime_status",
+            ]
+        )
+    command.extend(["+ui_rml_reduced_motion", "0", "+quit"])
+    return command
+
+
+def parse_runtime_status_line(line: str) -> dict[str, Any]:
+    active_match = re.search(r"\bactive=(yes|no)\b", line)
+    quoted_values = dict(re.findall(r"\b([a-z_]+)='([^']*)'", line))
+    return {
+        "active": active_match.group(1) == "yes" if active_match else None,
+        "route": quoted_values.get("route"),
+        "availability": quoted_values.get("availability"),
+        "runtime": quoted_values.get("runtime"),
+        "renderer_name": quoted_values.get("renderer"),
+        "renderer_family": quoted_values.get("family"),
+    }
+
+
+def navigation_checkpoint_name(line: str) -> str | None:
+    stripped = line.rstrip()
+    for name, _active, _route in NAVIGATION_CHECKPOINTS:
+        if stripped.endswith(navigation_checkpoint_token(name)):
+            return name
+    return None
+
+
+def parse_navigation_checkpoints(
+    text: str,
+) -> tuple[list[str], list[dict[str, Any]]]:
+    checkpoints = {
+        name: {
+            "name": name,
+            "expected_active": expected_active,
+            "expected_route": expected_route,
+            "marker_count": 0,
+            "status_count": 0,
+            "frames_count": 0,
+            "route_counters_count": 0,
+            "input_count": 0,
+            "active": None,
+            "route": None,
+            "availability": None,
+            "runtime": None,
+            "renderer_name": None,
+            "renderer_family": None,
+            "frame_updates": None,
+            "frame_renders": None,
+            "route_opens": None,
+            "route_closes": None,
+            "route_close_requests": None,
+            "route_synthetic_inputs": None,
+            "input_keys": None,
+            "input_chars": None,
+            "input_mouse_moves": None,
+            "input_mouse_buttons": None,
+            "input_mouse_wheels": None,
+        }
+        for name, expected_active, expected_route in NAVIGATION_CHECKPOINTS
+    }
+    observed_order: list[str] = []
+    current: dict[str, Any] | None = None
+
+    for line in text.splitlines():
+        checkpoint_name = navigation_checkpoint_name(line)
+        if checkpoint_name is not None:
+            observed_order.append(checkpoint_name)
+            current = checkpoints[checkpoint_name]
+            current["marker_count"] += 1
+            continue
+        if current is None:
+            continue
+        if STATUS_MARKER in line:
+            current["status_count"] += 1
+            if current["status_count"] == 1:
+                current.update(parse_runtime_status_line(line))
+        elif FRAMES_MARKER in line:
+            current["frames_count"] += 1
+            if current["frames_count"] == 1:
+                values = parse_counter_line(line, FRAMES_MARKER)
+                current["frame_updates"] = values.get("updates")
+                current["frame_renders"] = values.get("renders")
+        elif ROUTE_COUNTERS_MARKER in line:
+            current["route_counters_count"] += 1
+            if current["route_counters_count"] == 1:
+                values = parse_counter_line(line, ROUTE_COUNTERS_MARKER)
+                current["route_opens"] = values.get("opens")
+                current["route_closes"] = values.get("closes")
+                current["route_close_requests"] = values.get("close_requests")
+                current["route_synthetic_inputs"] = values.get("synthetic_inputs")
+        elif INPUT_MARKER in line:
+            current["input_count"] += 1
+            if current["input_count"] == 1:
+                values = parse_counter_line(line, INPUT_MARKER)
+                current["input_keys"] = values.get("keys")
+                current["input_chars"] = values.get("chars")
+                current["input_mouse_moves"] = values.get("mouse_moves")
+                current["input_mouse_buttons"] = values.get("mouse_buttons")
+                current["input_mouse_wheels"] = values.get("mouse_wheels")
+
+    return observed_order, [
+        checkpoints[name] for name, _active, _route in NAVIGATION_CHECKPOINTS
+    ]
 
 
 def build_run_environment(engine_exe: Path) -> dict[str, str]:
@@ -958,6 +1191,382 @@ def validate_evidence(report: RuntimeCaptureReport, *, min_mtime: float | None =
         report.errors.append("runtime capture screenshot was not freshly written by this run")
 
 
+def command_contains_sequence(command: list[str], sequence: tuple[str, ...]) -> bool:
+    width = len(sequence)
+    return any(
+        tuple(command[index : index + width]) == sequence
+        for index in range(len(command) - width + 1)
+    )
+
+
+def command_set_values(command: list[str], name: str) -> list[str]:
+    return [
+        command[index + 2]
+        for index in range(len(command) - 2)
+        if command[index] == "+set" and command[index + 1] == name
+    ]
+
+
+def navigation_command_contract_errors(command: list[str]) -> list[str]:
+    errors: list[str] = []
+    required_values = (
+        ("win_headless", "1"),
+        ("in_enable", "0"),
+        ("in_grab", "0"),
+        ("r_fullscreen", "0"),
+    )
+    for name, expected in required_values:
+        values = command_set_values(command, name)
+        if values != [expected]:
+            errors.append(
+                f"navigation command requires exactly one {name}={expected}; "
+                f"observed values={values!r}"
+            )
+    if "+ui_rml_runtime_synthetic_input" in command:
+        errors.append("navigation command must not invoke runtime synthetic input")
+    screenshot_commands = [
+        token for token in command if token.lower().startswith("+screenshot")
+    ]
+    if screenshot_commands:
+        errors.append(
+            "navigation command must remain log-only and not request screenshots; "
+            f"observed commands={screenshot_commands!r}"
+        )
+    return errors
+
+
+def navigation_identifier_errors(
+    base_game: str,
+    evidence_id: str,
+    *,
+    lane_evidence_id: bool = False,
+) -> list[str]:
+    errors: list[str] = []
+    if not NAVIGATION_BASE_GAME_PATTERN.fullmatch(base_game):
+        errors.append(
+            "navigation base game must be a simple portable identifier "
+            "containing only letters, digits, dot, underscore, or hyphen"
+        )
+    evidence_pattern = (
+        NAVIGATION_EVIDENCE_ID_PATTERN
+        if lane_evidence_id
+        else NAVIGATION_EVIDENCE_BASE_PATTERN
+    )
+    if not evidence_pattern.fullmatch(evidence_id):
+        errors.append(
+            "navigation evidence id must be a simple portable identifier "
+            "containing only letters, digits, dot, underscore, or hyphen"
+        )
+    return errors
+
+
+def path_is_link_or_reparse(path: Path) -> bool:
+    try:
+        metadata = path.lstat()
+    except FileNotFoundError:
+        return False
+    return stat.S_ISLNK(metadata.st_mode) or bool(
+        getattr(metadata, "st_file_attributes", 0)
+        & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    )
+
+
+def runtime_home_redirect_errors(
+    repo_root: Path,
+    target_path: Path,
+) -> list[str]:
+    errors: list[str] = []
+    lexical_repo_root = repo_root.absolute()
+    lexical_target_path = target_path.absolute()
+    try:
+        relative_target = lexical_target_path.relative_to(lexical_repo_root)
+    except ValueError:
+        return ["navigation runtime path is not lexically below the repository root"]
+
+    current = lexical_repo_root
+    components = (current,)
+    for component in relative_target.parts:
+        current = current / component
+        components += (current,)
+    for component in components:
+        try:
+            redirected = path_is_link_or_reparse(component)
+        except OSError as exc:
+            errors.append(
+                f"could not inspect navigation runtime path component {component}: {exc}"
+            )
+            continue
+        if redirected:
+            errors.append(
+                "navigation runtime path component must not be a link or reparse point: "
+                f"{component}"
+            )
+    return errors
+
+
+def resolve_navigation_path(
+    path: Path,
+    description: str,
+    errors: list[str],
+) -> Path | None:
+    try:
+        return path.resolve()
+    except (OSError, RuntimeError) as exc:
+        errors.append(f"could not resolve {description}: {exc}")
+        return None
+
+
+def navigation_report_contract_errors(report: NavigationJourneyReport) -> list[str]:
+    errors = navigation_command_contract_errors(report.command)
+    errors.extend(
+        navigation_identifier_errors(
+            report.base_game,
+            report.evidence_id,
+            lane_evidence_id=True,
+        )
+    )
+    report_cvars = (
+        ("basedir", str(report.install_dir)),
+        ("homedir", str(report.runtime_home)),
+        ("game", report.base_game),
+        ("r_renderer", report.renderer),
+        ("s_enable", "0"),
+        ("ui_rml_enable", "1"),
+    )
+    for name, expected in report_cvars:
+        values = command_set_values(report.command, name)
+        if values != [expected]:
+            errors.append(
+                f"navigation command requires exactly one {name}={expected}; "
+                f"observed values={values!r}"
+            )
+    lexical_runtime_root = report.repo_root / DEFAULT_NAVIGATION_RUNTIME_DIR
+    lexical_runtime_home = lexical_runtime_root / report.evidence_id
+    lexical_log_path = (
+        lexical_runtime_home
+        / report.base_game
+        / "logs"
+        / f"{report.evidence_id}.log"
+    )
+    if report.runtime_home.absolute() != lexical_runtime_home.absolute():
+        errors.append(
+            "navigation runtime home does not match the confined lane-specific path"
+        )
+    if report.log_path.absolute() != lexical_log_path.absolute():
+        errors.append(
+            "navigation log path does not match the confined isolated-runtime evidence path"
+        )
+
+    # Inspect every existing lexical component before resolving anything.  This
+    # makes junctions, symlinks, and reparse loops fail closed instead of being
+    # followed by Path.resolve().
+    redirect_errors = runtime_home_redirect_errors(report.repo_root, lexical_log_path)
+    errors.extend(redirect_errors)
+    if redirect_errors:
+        return errors
+
+    resolved_repo_root = resolve_navigation_path(
+        report.repo_root, "navigation repository root", errors
+    )
+    runtime_root = resolve_navigation_path(
+        lexical_runtime_root, "navigation runtime scratch root", errors
+    )
+    expected_runtime_home = resolve_navigation_path(
+        lexical_runtime_home, "navigation lane runtime home", errors
+    )
+    expected_log_path = resolve_navigation_path(
+        lexical_log_path, "navigation lane log path", errors
+    )
+    resolved_report_runtime_home = resolve_navigation_path(
+        report.runtime_home, "reported navigation runtime home", errors
+    )
+    resolved_report_log_path = resolve_navigation_path(
+        report.log_path, "reported navigation log path", errors
+    )
+
+    if resolved_repo_root is not None and runtime_root is not None:
+        try:
+            runtime_root.relative_to(resolved_repo_root)
+        except ValueError:
+            errors.append("navigation runtime scratch root resolves outside the repository")
+    if runtime_root is not None and expected_runtime_home is not None:
+        try:
+            expected_runtime_home.relative_to(runtime_root)
+        except ValueError:
+            errors.append("navigation runtime home escapes the repository scratch root")
+    if expected_runtime_home is not None and expected_log_path is not None:
+        try:
+            expected_log_path.relative_to(expected_runtime_home)
+        except ValueError:
+            errors.append("navigation log path escapes the lane-specific runtime home")
+    if (
+        expected_runtime_home is not None
+        and resolved_report_runtime_home is not None
+        and resolved_report_runtime_home != expected_runtime_home
+    ):
+        errors.append("navigation runtime home resolves away from its confined lane path")
+    if (
+        expected_log_path is not None
+        and resolved_report_log_path is not None
+        and resolved_report_log_path != expected_log_path
+    ):
+        errors.append(
+            "navigation log path resolves away from its confined isolated-runtime path"
+        )
+    return errors
+
+
+def validate_navigation_evidence(
+    report: NavigationJourneyReport,
+    *,
+    min_mtime: float | None = None,
+) -> None:
+    base_dir = report.install_dir / report.base_game
+    log_text = read_text_if_exists(report.log_path)
+    expected_order = [name for name, _active, _route in NAVIGATION_CHECKPOINTS]
+    observed_order, checkpoints = parse_navigation_checkpoints(log_text)
+    route_documents = {
+        route_id: base_dir / "ui" / "rml" / ROUTE_DOCUMENTS[route_id]
+        for route_id in ("main", "options", "video")
+    }
+    report.checkpoints = checkpoints
+    report.facts.update(
+        {
+            "journey_id": NAVIGATION_JOURNEY_ID,
+            "renderer": report.renderer,
+            "renderer_family": RENDERER_FAMILIES[report.renderer],
+            "engine_exe_exists": report.engine_exe.is_file(),
+            "install_dir_exists": report.install_dir.is_dir(),
+            "base_game_dir_exists": base_dir.is_dir(),
+            "journey_documents_exist": all(path.is_file() for path in route_documents.values()),
+            "journey_documents": {
+                route_id: {
+                    "path": display_path(path, report.repo_root),
+                    "exists": path.is_file(),
+                }
+                for route_id, path in route_documents.items()
+            },
+            "log_exists": report.log_path.is_file(),
+            "expected_checkpoint_order": expected_order,
+            "observed_checkpoint_order": observed_order,
+            "checkpoint_order_ok": observed_order == expected_order,
+            "synthetic_input_command_absent": "+ui_rml_runtime_synthetic_input"
+            not in report.command,
+            "synthetic_input_marker_absent": SYNTHETIC_INPUT_MARKER not in log_text,
+            "final_inactive": bool(checkpoints)
+            and checkpoints[-1].get("active") is False
+            and checkpoints[-1].get("route") == "<none>",
+        }
+    )
+    if min_mtime is not None and report.log_path.is_file():
+        report.facts["log_fresh"] = report.log_path.stat().st_mtime >= min_mtime - 1
+    elif min_mtime is not None:
+        report.facts["log_fresh"] = False
+
+    report.errors.extend(navigation_report_contract_errors(report))
+    required = (
+        ("engine_exe_exists", f"engine executable missing: {report.engine_exe}"),
+        ("install_dir_exists", f"install directory missing: {report.install_dir}"),
+        ("base_game_dir_exists", f"base game directory missing: {base_dir}"),
+        ("journey_documents_exist", "one or more navigation journey documents are missing"),
+        ("log_exists", f"runtime navigation log missing: {report.log_path}"),
+        ("checkpoint_order_ok", "runtime navigation checkpoints were missing, duplicated, or out of order"),
+        ("synthetic_input_command_absent", "runtime navigation command contains synthetic input"),
+        ("synthetic_input_marker_absent", "runtime navigation log contains a synthetic input marker"),
+        ("final_inactive", "runtime navigation did not finish inactive on route '<none>'"),
+    )
+    for fact, message in required:
+        if not report.facts.get(fact):
+            report.errors.append(message)
+
+    expected_family = RENDERER_FAMILIES[report.renderer]
+    input_fields = (
+        "input_keys",
+        "input_chars",
+        "input_mouse_moves",
+        "input_mouse_buttons",
+        "input_mouse_wheels",
+    )
+    for checkpoint in checkpoints:
+        name = checkpoint["name"]
+        if checkpoint["marker_count"] != 1:
+            report.errors.append(
+                f"navigation checkpoint '{name}' marker count was {checkpoint['marker_count']}, expected 1"
+            )
+        for count_field, label in (
+            ("status_count", "status"),
+            ("frames_count", "frame counters"),
+            ("route_counters_count", "route counters"),
+            ("input_count", "input counters"),
+        ):
+            if checkpoint[count_field] != 1:
+                report.errors.append(
+                    f"navigation checkpoint '{name}' {label} count was "
+                    f"{checkpoint[count_field]}, expected 1"
+                )
+        if checkpoint["active"] is not checkpoint["expected_active"]:
+            report.errors.append(
+                f"navigation checkpoint '{name}' active state was {checkpoint['active']!r}, "
+                f"expected {checkpoint['expected_active']!r}"
+            )
+        if checkpoint["route"] != checkpoint["expected_route"]:
+            report.errors.append(
+                f"navigation checkpoint '{name}' route was {checkpoint['route']!r}, "
+                f"expected {checkpoint['expected_route']!r}"
+            )
+        if checkpoint["renderer_family"] != expected_family:
+            report.errors.append(
+                f"navigation checkpoint '{name}' renderer family was "
+                f"{checkpoint['renderer_family']!r}, expected {expected_family!r}"
+            )
+        if checkpoint["availability"] != "ready":
+            report.errors.append(
+                f"navigation checkpoint '{name}' runtime availability was "
+                f"{checkpoint['availability']!r}, expected 'ready'"
+            )
+        if checkpoint["expected_active"] and (
+            not isinstance(checkpoint["frame_updates"], int)
+            or checkpoint["frame_updates"] <= 0
+            or not isinstance(checkpoint["frame_renders"], int)
+            or checkpoint["frame_renders"] <= 0
+        ):
+            report.errors.append(
+                f"navigation checkpoint '{name}' did not record an update and render"
+            )
+        if checkpoint["route_synthetic_inputs"] != 0:
+            report.errors.append(
+                f"navigation checkpoint '{name}' synthetic input counter was "
+                f"{checkpoint['route_synthetic_inputs']!r}, expected 0"
+            )
+        for input_field in input_fields:
+            if checkpoint[input_field] != 0:
+                report.errors.append(
+                    f"navigation checkpoint '{name}' {input_field} was "
+                    f"{checkpoint[input_field]!r}, expected 0"
+                )
+
+    if checkpoints:
+        final = checkpoints[-1]
+        if not isinstance(final["route_closes"], int) or final["route_closes"] <= 0:
+            report.errors.append("final inactive checkpoint did not record a route close")
+        if (
+            not isinstance(final["route_close_requests"], int)
+            or final["route_close_requests"] <= 0
+        ):
+            report.errors.append("final inactive checkpoint did not record a close request")
+
+    if min_mtime is not None and not report.facts.get("log_fresh"):
+        report.errors.append("runtime navigation log was not freshly written by this run")
+
+
+def collect_navigation_evidence(report: NavigationJourneyReport) -> None:
+    report.evidence_dir.mkdir(parents=True, exist_ok=True)
+    target = report.evidence_dir / report.log_path.name
+    if report.log_path.resolve() != target.resolve():
+        shutil.copy2(report.log_path, target)
+    report.copied_evidence["log"] = display_path(target, report.repo_root)
+
+
 def write_manifest(report: RuntimeCaptureReport) -> None:
     if not report.manifest_path:
         return
@@ -1023,6 +1632,23 @@ def write_renderer_matrix_manifest(
     )
 
 
+def write_navigation_matrix_manifest(
+    reports: list[NavigationJourneyReport],
+    manifest_path: Path,
+    repo_root: Path,
+) -> None:
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(
+        json.dumps(
+            navigation_matrix_report_payload(reports, repo_root, manifest_path),
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def json_report_payload(report: RuntimeCaptureReport) -> dict[str, Any]:
     return {
         "ok": report.ok,
@@ -1045,6 +1671,76 @@ def json_report_payload(report: RuntimeCaptureReport) -> dict[str, Any]:
         "facts": report.facts,
         "copied_evidence": report.copied_evidence,
         "errors": report.errors,
+    }
+
+
+def navigation_report_payload(report: NavigationJourneyReport) -> dict[str, Any]:
+    return {
+        "ok": report.ok,
+        "journey": {
+            "id": NAVIGATION_JOURNEY_ID,
+            "expected_checkpoints": [
+                {
+                    "name": name,
+                    "active": active,
+                    "route": route,
+                }
+                for name, active, route in NAVIGATION_CHECKPOINTS
+            ],
+        },
+        "renderer": report.renderer,
+        "renderer_family": RENDERER_FAMILIES[report.renderer],
+        "paths": {
+            "repo_root": str(report.repo_root),
+            "install_dir": display_path(report.install_dir, report.repo_root),
+            "engine_exe": display_path(report.engine_exe, report.repo_root),
+            "runtime_home": display_path(report.runtime_home, report.repo_root),
+            "log": display_path(report.log_path, report.repo_root),
+            "evidence_dir": display_path(report.evidence_dir, report.repo_root),
+            "manifest": display_path(report.manifest_path, report.repo_root),
+        },
+        "command": report.command,
+        "ran_engine": report.ran_engine,
+        "exit_code": report.exit_code,
+        "elapsed_seconds": report.elapsed_seconds,
+        "facts": report.facts,
+        "checkpoints": report.checkpoints,
+        "copied_evidence": report.copied_evidence,
+        "errors": report.errors,
+    }
+
+
+def navigation_matrix_report_payload(
+    reports: list[NavigationJourneyReport],
+    repo_root: Path,
+    manifest_path: Path,
+) -> dict[str, Any]:
+    errors = [
+        {
+            "renderer": report.renderer,
+            "evidence_id": report.evidence_id,
+            "error": error,
+        }
+        for report in reports
+        for error in report.errors
+    ]
+    return {
+        "schema": NAVIGATION_EVIDENCE_SCHEMA,
+        "ok": all(report.ok for report in reports),
+        "journey_id": NAVIGATION_JOURNEY_ID,
+        "paths": {
+            "repo_root": str(repo_root),
+            "manifest": display_path(manifest_path, repo_root),
+        },
+        "counts": {
+            "renderer_lanes": len(reports),
+            "passed": sum(1 for report in reports if report.ok),
+            "failed": sum(1 for report in reports if not report.ok),
+            "checkpoints_per_lane": len(NAVIGATION_CHECKPOINTS),
+            "errors": len(errors),
+        },
+        "lanes": [navigation_report_payload(report) for report in reports],
+        "errors": errors,
     }
 
 
@@ -1339,6 +2035,24 @@ def print_runtime_renderer_matrix_report(
         print("\nResult: RmlUi runtime capture renderer matrix failed.")
 
 
+def print_navigation_matrix_report(reports: list[NavigationJourneyReport]) -> None:
+    print("RmlUi runtime route-stack navigation matrix:")
+    for report in reports:
+        result = "passed" if report.ok else "failed"
+        observed = report.facts.get("observed_checkpoint_order") or []
+        print(
+            f"  {RENDERER_LABELS[report.renderer]}: {result}; "
+            f"family={RENDERER_FAMILIES[report.renderer]}; "
+            f"checkpoints={len(observed)}/{len(NAVIGATION_CHECKPOINTS)}"
+        )
+        for error in report.errors:
+            print(f"    - {error}")
+    if all(report.ok for report in reports):
+        print("\nResult: RmlUi runtime route-stack navigation matrix passed.")
+    else:
+        print("\nResult: RmlUi runtime route-stack navigation matrix failed.")
+
+
 def build_report(
     repo_root: Path,
     install_dir: Path,
@@ -1397,6 +2111,57 @@ def build_report(
     )
 
 
+def build_navigation_reports(
+    repo_root: Path,
+    install_dir: Path,
+    engine_exe: Path,
+    base_game: str,
+    evidence_dir: Path,
+    evidence_id: str,
+    geometry: str,
+    startup_wait: int,
+    status_wait: int,
+    manifest_path: Path,
+) -> list[NavigationJourneyReport]:
+    reports: list[NavigationJourneyReport] = []
+    runtime_root = repo_root / DEFAULT_NAVIGATION_RUNTIME_DIR
+    for renderer in NAVIGATION_RENDERERS:
+        lane_evidence_id = f"{evidence_id}_navigation_{renderer}"
+        runtime_home = runtime_root / lane_evidence_id
+        reports.append(
+            NavigationJourneyReport(
+                repo_root=repo_root,
+                install_dir=install_dir,
+                engine_exe=engine_exe,
+                base_game=base_game,
+                renderer=renderer,
+                evidence_dir=evidence_dir,
+                runtime_home=runtime_home,
+                evidence_id=lane_evidence_id,
+                geometry=geometry,
+                command=build_navigation_engine_command(
+                    engine_exe,
+                    install_dir,
+                    runtime_home,
+                    base_game,
+                    renderer,
+                    lane_evidence_id,
+                    geometry,
+                    startup_wait,
+                    status_wait,
+                ),
+                log_path=(
+                    runtime_home
+                    / base_game
+                    / "logs"
+                    / f"{lane_evidence_id}.log"
+                ),
+                manifest_path=manifest_path,
+            )
+        )
+    return reports
+
+
 def run_engine_for_report(report: RuntimeCaptureReport, timeout: float) -> float | None:
     if not report.engine_exe.is_file():
         report.errors.append(f"engine executable missing: {report.engine_exe}")
@@ -1427,6 +2192,102 @@ def run_engine_for_report(report: RuntimeCaptureReport, timeout: float) -> float
     if completed.returncode != 0:
         report.errors.append(f"engine exited with code {completed.returncode}")
 
+    return start_time
+
+
+def run_engine_for_navigation_report(
+    report: NavigationJourneyReport,
+    timeout: float,
+) -> float | None:
+    if os.name != "nt":
+        report.errors.append(
+            "live runtime navigation requires the verified Windows win_headless hidden-window path"
+        )
+        return None
+    for error in navigation_report_contract_errors(report):
+        if error not in report.errors:
+            report.errors.append(error)
+    if report.errors:
+        return None
+    if not report.engine_exe.is_file():
+        report.errors.append(f"engine executable missing: {report.engine_exe}")
+        return None
+    try:
+        report.runtime_home.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        report.errors.append(f"could not create navigation runtime parent path: {exc}")
+        return None
+    for error in navigation_report_contract_errors(report):
+        if error not in report.errors:
+            report.errors.append(error)
+    if report.errors:
+        return None
+
+    # Atomically claim the lane leaf.  Refusing every pre-existing home keeps
+    # concurrent same-evidence runs and archived state from sharing a homedir.
+    try:
+        report.runtime_home.mkdir(exist_ok=False)
+    except FileExistsError:
+        report.errors.append(
+            "isolated navigation runtime home must not already exist; "
+            "atomic lane claim refused"
+        )
+        return None
+    except OSError as exc:
+        report.errors.append(f"could not atomically claim navigation runtime home: {exc}")
+        return None
+
+    for error in navigation_report_contract_errors(report):
+        if error not in report.errors:
+            report.errors.append(error)
+    if report.errors:
+        return None
+
+    # The new leaf should still be empty immediately before launch.  This
+    # catches accidental state introduced by harness-side setup after claiming.
+    try:
+        with os.scandir(report.runtime_home) as entries:
+            runtime_home_has_entries = next(entries, None) is not None
+    except OSError as exc:
+        report.errors.append(f"could not inspect isolated navigation runtime home: {exc}")
+        return None
+    if runtime_home_has_entries:
+        report.errors.append(
+            "atomically claimed navigation runtime home was modified before launch; "
+            "refusing config or log state"
+        )
+        return None
+
+    # Re-run the complete lexical-component, reparse, resolve, and containment
+    # contract immediately before process creation.
+    for error in navigation_report_contract_errors(report):
+        if error not in report.errors:
+            report.errors.append(error)
+    if report.errors:
+        return None
+
+    start_time = time.time()
+    try:
+        completed = subprocess.run(
+            report.command,
+            cwd=report.engine_exe.parent,
+            env=build_run_environment(report.engine_exe),
+            stdin=subprocess.DEVNULL,
+            timeout=timeout,
+            check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except subprocess.TimeoutExpired:
+        report.ran_engine = True
+        report.elapsed_seconds = time.time() - start_time
+        report.errors.append(f"engine timed out after {timeout:g} seconds")
+        return start_time
+
+    report.ran_engine = True
+    report.exit_code = completed.returncode
+    report.elapsed_seconds = time.time() - start_time
+    if completed.returncode != 0:
+        report.errors.append(f"engine exited with code {completed.returncode}")
     return start_time
 
 
@@ -1552,6 +2413,14 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Run or validate the guarded OpenGL route matrix plus renderer-family guardrails.",
     )
+    parser.add_argument(
+        "--navigation-matrix",
+        action="store_true",
+        help=(
+            "Run or validate the input-free main/options/video route-stack journey "
+            "through all native renderer families."
+        ),
+    )
     parser.add_argument("--startup-wait", type=int, default=DEFAULT_STARTUP_WAIT)
     parser.add_argument("--capture-wait", type=int, default=DEFAULT_CAPTURE_WAIT)
     parser.add_argument("--status-wait", type=int, default=DEFAULT_STATUS_WAIT)
@@ -1582,14 +2451,109 @@ def main(argv: list[str] | None = None) -> int:
     if args.server_address and args.route_id != "servers":
         parser.error("--server-address is only valid with --route-id servers")
 
-    matrix_modes = [args.matrix, args.route_matrix, args.full_route_matrix, args.renderer_matrix]
+    matrix_modes = [
+        args.matrix,
+        args.route_matrix,
+        args.full_route_matrix,
+        args.renderer_matrix,
+        args.navigation_matrix,
+    ]
     if sum(1 for enabled in matrix_modes if enabled) > 1:
         parser.error(
             "--matrix, --route-matrix, --full-route-matrix, and "
-            "--renderer-matrix cannot be combined"
+            "--renderer-matrix or --navigation-matrix cannot be combined"
         )
     if args.seed_cvar and any(matrix_modes):
         parser.error("--seed-cvar is only valid for a single route capture")
+    if args.navigation_matrix:
+        identifier_errors = navigation_identifier_errors(
+            args.base_game,
+            args.evidence_id,
+        )
+        if identifier_errors:
+            parser.error(identifier_errors[0])
+        if args.startup_wait < 0:
+            parser.error("--startup-wait must be non-negative for navigation evidence")
+        if args.status_wait <= 0:
+            parser.error("--status-wait must be positive for navigation evidence")
+        if (
+            not math.isfinite(args.timeout)
+            or args.timeout <= 0
+            or args.timeout > MAX_NAVIGATION_TIMEOUT
+        ):
+            parser.error(
+                "--timeout must be finite, positive, and no greater than "
+                f"{MAX_NAVIGATION_TIMEOUT:g} seconds for navigation evidence"
+            )
+
+    if args.navigation_matrix:
+        navigation_manifest_path = manifest_path or evidence_dir / "navigation-matrix.json"
+        reports = build_navigation_reports(
+            repo_root,
+            install_dir,
+            engine_exe,
+            args.base_game,
+            evidence_dir,
+            args.evidence_id,
+            args.geometry or DEFAULT_ROUTE_MATRIX_GEOMETRY,
+            args.startup_wait,
+            args.status_wait,
+            navigation_manifest_path,
+        )
+
+        if args.dry_run:
+            if args.format == "json":
+                print(
+                    json.dumps(
+                        navigation_matrix_report_payload(
+                            reports,
+                            repo_root,
+                            navigation_manifest_path,
+                        ),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+            else:
+                for report in reports:
+                    print(" ".join(report.command))
+            return 0
+
+        for index, report in enumerate(reports, start=1):
+            start_time = (
+                run_engine_for_navigation_report(report, args.timeout)
+                if args.run
+                else None
+            )
+            validate_navigation_evidence(
+                report,
+                min_mtime=start_time if args.run else None,
+            )
+            if report.ok:
+                collect_navigation_evidence(report)
+            if args.run and args.format != "json":
+                state = "passed" if report.ok else "failed"
+                print(
+                    f"  [{index}/{len(reports)}] {report.renderer}: {state}",
+                    flush=True,
+                )
+
+        write_navigation_matrix_manifest(reports, navigation_manifest_path, repo_root)
+        if args.format == "json":
+            print(
+                json.dumps(
+                    navigation_matrix_report_payload(
+                        reports,
+                        repo_root,
+                        navigation_manifest_path,
+                    ),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+        else:
+            print_navigation_matrix_report(reports)
+        return 0 if all(report.ok for report in reports) else 1
 
     if args.matrix:
         reports = build_matrix_reports(

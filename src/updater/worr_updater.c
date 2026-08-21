@@ -147,12 +147,13 @@ static const config_t kDefaultConfig = {
         "basew/*.cfg",
         "basew/autoexec.cfg",
         "basew/config.cfg",
+        "basew/save/*",
         "basew/saves/*",
         "basew/screenshots/*",
         "basew/demos/*",
         "basew/logs/*"
     },
-    9
+    10
 };
 static void ui_post_status(ui_state_t *ui, const wchar_t *text)
 {

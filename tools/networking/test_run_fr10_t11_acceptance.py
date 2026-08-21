@@ -336,7 +336,7 @@ class Fr10T11AcceptanceTests(unittest.TestCase):
         qport = shooter[shooter.index("qport") - 1:shooter.index("qport") + 2]
         del shooter[shooter.index("qport") - 1:shooter.index("qport") + 2]
         shooter.extend(qport)
-        with self.assertRaisesRegex(ValueError, "before \+connect"):
+        with self.assertRaisesRegex(ValueError, r"before \+connect"):
             GATE.validate_canonical_report(
                 report, row, manifest(), client.resolve(), dedicated.resolve()
             )

@@ -41,7 +41,12 @@ class VulkanStaticSkyStreamSourceTests(unittest.TestCase):
         self.assertIn("VK_IMAGE_VIEW_TYPE_2D_ARRAY", WORLD)
         self.assertIn("VK_IMAGE_USAGE_TRANSFER_SRC_BIT", (ROOT / "src/rend_vk/vk_ui.c").read_text(encoding="utf-8"))
         self.assertIn("vk_world.pipeline_sky_array", WORLD)
-        self.assertIn("vkCmdDraw(cmd, vk_world.sky_vertex_count, 1, 0, 0)", WORLD)
+        self.assertIn("vk_world.sky_portal_vertex_buffer", WORLD)
+        self.assertIn(
+            "vkCmdDraw(cmd, vk_world.sky_portal_vertex_count, 1, 0, 0)",
+            WORLD,
+        )
+        self.assertIn("pipeline_sky_portal", WORLD)
         self.assertIn("using six-face draws", WORLD)
         self.assertIn("sampler2DArray", SKY_SHADER)
         self.assertIn("shadow_fog_params.z", SKY_SHADER)

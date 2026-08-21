@@ -33,7 +33,14 @@ class VulkanGpuBmodelSubmissionSourceTests(unittest.TestCase):
         self.assertIn("VK_Entity_EnsureBspGpuGeometry", ENTITY)
         self.assertIn("VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT", ENTITY)
         self.assertIn('"vkCreateBuffer(static BSP vertex)"', ENTITY)
-        self.assertIn("VK_Entity_EnsureBmodelInstanceBuffer", ENTITY)
+        self.assertIn("VK_Entity_EnsureInstanceBuffer", ENTITY)
+        self.assertIn("frame->bmodel_instance_offset", ENTITY)
+        self.assertIn(
+            "frame->bmodel_instance_upload_bytes = bmodel_instance_bytes;",
+            ENTITY,
+        )
+        self.assertIn(".srcOffset = frame->bmodel_instance_offset", ENTITY)
+        self.assertIn(".buffer = frame->instance_buffer", ENTITY)
         self.assertIn("VK_Entity_BindGpuBmodelBatch", ENTITY)
         self.assertIn("VK_Entity_AppendGpuBmodelBatch", ENTITY)
         self.assertNotIn('#include "rend_gl', ENTITY)

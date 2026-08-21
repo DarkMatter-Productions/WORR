@@ -5,9 +5,11 @@ from __future__ import annotations
 
 import json
 import pathlib
+import shutil
 import sys
 import tempfile
 import unittest
+import zipfile
 
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -341,12 +343,40 @@ class BotAcceptanceUnitTests(unittest.TestCase):
         self.assertEqual(2, result.metrics["budgets"])
         self.assertEqual(1, result.metrics["variance_budgets"])
 
-    def test_current_repo_acceptance_core_passes_with_existing_artifacts(self) -> None:
-        report = acceptance.run_acceptance(
-            REPO_ROOT,
-            scenario_report=REPO_ROOT / ".tmp" / "bot_scenarios" / "implemented_hazard_context.json",
-            min_implemented_rows=114,
-        )
+    def test_current_repo_acceptance_core_passes_with_explicit_stage_fixture(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            fixture_root = pathlib.Path(temp)
+            install_dir = fixture_root / ".install"
+            output_dir = install_dir / "basew"
+            output_dir.mkdir(parents=True)
+            assets_dir = REPO_ROOT / "assets"
+            members = acceptance.package_assets.botfile_release_members(assets_dir)
+            with zipfile.ZipFile(output_dir / "pak0.pkz", "w") as archive:
+                for member in members:
+                    source = assets_dir / acceptance.package_assets.path_from_member(member)
+                    archive.write(source, member)
+                    loose = output_dir / acceptance.package_assets.path_from_member(member)
+                    loose.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(source, loose)
+
+            maps_dir = output_dir / "maps"
+            maps_dir.mkdir()
+            for map_name in acceptance.REQUIRED_AAS_MAPS:
+                (maps_dir / f"{map_name}.aas").write_bytes(b"deterministic AAS fixture")
+            for map_name in acceptance.REQUIRED_REFERENCE_BSPS:
+                (maps_dir / f"{map_name}.bsp").write_bytes(b"deterministic BSP fixture")
+
+            scenario_report = fixture_root / "scenario-report.json"
+            movement_report = fixture_root / "movement-report.json"
+            write_json(scenario_report, scenario_payload())
+            write_json(movement_report, movement_audit_payload())
+            report = acceptance.run_acceptance(
+                REPO_ROOT,
+                install_dir=install_dir,
+                scenario_report=scenario_report,
+                movement_reference_audit=movement_report,
+                min_implemented_rows=114,
+            )
 
         self.assertEqual("passed", report["summary"]["status"])
 

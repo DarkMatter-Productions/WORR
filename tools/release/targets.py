@@ -9,8 +9,10 @@ from typing import Any
 
 BASE_GAME = "basew"
 LOCAL_INSTALL_MANIFEST = "worr_install_manifest.json"
+RUNTIME_COORDINATION_LOCK = "worr_install.lock"
 RELEASE_NOTICE_PATHS = [
     "licenses/WORR-LICENSE.txt",
+    "licenses/MONOCYPHER-LICENSE.txt",
     "licenses/q2aas-bspc-LICENSE.txt",
     "licenses/q3a-botlib-aas-credits.md",
     "licenses/q2aas-README.WORR.md",
@@ -44,6 +46,17 @@ Q2AAS_TOOL_FORBIDDEN_PATHS = [
     "*/bspc.so",
     "*/bspc.dylib",
 ]
+USER_DATA_FORBIDDEN_PATHS = [
+    f"{BASE_GAME}/.conhistory",
+    f"{BASE_GAME}/config.cfg",
+    f"{BASE_GAME}/autoexec.cfg",
+    f"{BASE_GAME}/save/*",
+    f"{BASE_GAME}/saves/*",
+    f"{BASE_GAME}/screenshots/*",
+    f"{BASE_GAME}/demos/*",
+    f"{BASE_GAME}/logs/*",
+]
+CLIENT_RENDERER_STEMS = ("worr_opengl", "worr_vulkan", "worr_rtx")
 
 
 def binary_name(stem: str, arch: str, os_name: str) -> str:
@@ -68,6 +81,26 @@ def engine_library_glob(stem: str, arch: str) -> str:
     return f"{stem}_engine_{arch}*"
 
 
+def shared_library_name(stem: str, arch: str, os_name: str) -> str:
+    suffix = {
+        "windows": ".dll",
+        "linux": ".so",
+        "macos": ".dylib",
+    }[os_name]
+    return f"{stem}_{arch}{suffix}"
+
+
+def game_module_required_path(target: dict[str, Any], module: str) -> str:
+    return f"{BASE_GAME}/{shared_library_name(module, target['arch'], target['os'])}"
+
+
+def client_renderer_required_paths(target: dict[str, Any]) -> list[str]:
+    return [
+        shared_library_name(stem, target["arch"], target["os"])
+        for stem in CLIENT_RENDERER_STEMS
+    ]
+
+
 def update_asset_name(prefix: str, platform_stub: str, ext: str) -> str:
     return f"{prefix}-{platform_stub}-update.{ext}"
 
@@ -76,10 +109,12 @@ def client_required_paths(target: dict[str, Any]) -> list[str]:
     required = [
         target["client"]["launch_exe"],
         target["client"]["engine_library"],
-        f"{BASE_GAME}/cgame*",
-        f"{BASE_GAME}/sgame*",
+        game_module_required_path(target, "cgame"),
+        game_module_required_path(target, "sgame"),
         f"{BASE_GAME}/pak0.pkz",
         "worr_update.json",
+        RUNTIME_COORDINATION_LOCK,
+        *client_renderer_required_paths(target),
         *RELEASE_NOTICE_PATHS,
     ]
     updater_asset = target.get("autoupdater", {}).get("updater_asset")
@@ -93,7 +128,8 @@ def server_required_paths(target: dict[str, Any]) -> list[str]:
         target["server"]["launch_exe"],
         target["server"]["engine_library"],
         "worr_update.json",
-        f"{BASE_GAME}/sgame*",
+        RUNTIME_COORDINATION_LOCK,
+        game_module_required_path(target, "sgame"),
         f"{BASE_GAME}/pak0.pkz",
         *RELEASE_NOTICE_PATHS,
     ]
@@ -111,6 +147,7 @@ def client_forbidden_paths(target: dict[str, Any]) -> list[str]:
         "worr/*",
         ".release/*",
         ".release/**/*",
+        *USER_DATA_FORBIDDEN_PATHS,
         *Q2AAS_TOOL_FORBIDDEN_PATHS,
     ]
 
@@ -125,6 +162,7 @@ def server_forbidden_paths(target: dict[str, Any]) -> list[str]:
         "worr/*",
         ".release/*",
         ".release/**/*",
+        *USER_DATA_FORBIDDEN_PATHS,
         *Q2AAS_TOOL_FORBIDDEN_PATHS,
     ]
 
@@ -135,10 +173,12 @@ def full_install_required_paths(target: dict[str, Any]) -> list[str]:
         target["client"]["engine_library"],
         target["server"]["launch_exe"],
         target["server"]["engine_library"],
-        f"{BASE_GAME}/cgame*",
-        f"{BASE_GAME}/sgame*",
+        game_module_required_path(target, "cgame"),
+        game_module_required_path(target, "sgame"),
         f"{BASE_GAME}/pak0.pkz",
         "worr_update.json",
+        RUNTIME_COORDINATION_LOCK,
+        *client_renderer_required_paths(target),
         *RELEASE_NOTICE_PATHS,
     ]
     updater_asset = target.get("autoupdater", {}).get("updater_asset")
@@ -153,6 +193,7 @@ def full_install_forbidden_paths() -> list[str]:
         "worr/*",
         ".release/*",
         ".release/**/*",
+        *USER_DATA_FORBIDDEN_PATHS,
         *Q2AAS_TOOL_FORBIDDEN_PATHS,
     ]
 
@@ -202,14 +243,14 @@ def build_target(
                 "worr_vulkan_*",
                 "worr_rtx_*",
                 "worr_update.json",
+                RUNTIME_COORDINATION_LOCK,
                 "licenses/*",
                 f"{BASE_GAME}/*",
             ],
             "exclude": [
                 binary_glob("worr_ded", arch),
                 engine_library_glob("worr_ded", arch),
-                f"{BASE_GAME}/.conhistory",
-                f"{BASE_GAME}/logs/*",
+                *USER_DATA_FORBIDDEN_PATHS,
             ],
         },
         "server": {
@@ -226,6 +267,7 @@ def build_target(
                 engine_library_glob("worr_ded", arch),
                 binary_glob("worr_updater", arch),
                 "worr_update.json",
+                RUNTIME_COORDINATION_LOCK,
                 "licenses/*",
                 f"{BASE_GAME}/*",
             ],
@@ -236,8 +278,7 @@ def build_target(
                 "worr_vulkan_*",
                 "worr_rtx_*",
                 f"{BASE_GAME}/cgame*",
-                f"{BASE_GAME}/.conhistory",
-                f"{BASE_GAME}/logs/*",
+                *USER_DATA_FORBIDDEN_PATHS,
                 f"{BASE_GAME}/shader_vkpt/*",
             ],
         },
@@ -266,12 +307,12 @@ def build_target(
         "worr_vulkan_*",
         "worr_rtx_*",
         "worr_update.json",
+        RUNTIME_COORDINATION_LOCK,
         "licenses/*",
         f"{BASE_GAME}/*",
     ]
     full_exclude = [
-        f"{BASE_GAME}/.conhistory",
-        f"{BASE_GAME}/logs/*",
+        *USER_DATA_FORBIDDEN_PATHS,
     ]
 
     for role in ("client", "server"):
@@ -287,7 +328,7 @@ TARGETS: list[dict[str, Any]] = [
     build_target(
         platform_id="windows-x86_64",
         platform_stub="win64",
-        runner="windows-latest",
+        runner="windows-2025",
         os_name="windows",
         arch="x86_64",
         archive_format="zip",
@@ -306,7 +347,7 @@ TARGETS: list[dict[str, Any]] = [
     build_target(
         platform_id="linux-x86_64",
         platform_stub="linux-x86_64",
-        runner="ubuntu-latest",
+        runner="ubuntu-24.04",
         os_name="linux",
         arch="x86_64",
         archive_format="tar.gz",
@@ -361,20 +402,70 @@ def matrix_payload() -> dict[str, Any]:
 
 
 def expected_asset_names(target: dict[str, Any]) -> list[str]:
-    assets = [
-        target["client"]["package_name"],
-        target["client"]["manifest_name"],
-        target["client"]["update_package_name"],
-        target["client"]["update_manifest_name"],
-        target["server"]["package_name"],
-        target["server"]["manifest_name"],
-        target["server"]["update_package_name"],
-        target["server"]["update_manifest_name"],
-    ]
+    return [artifact["name"] for artifact in expected_artifacts(target)]
+
+
+def expected_artifacts(target: dict[str, Any]) -> list[dict[str, str]]:
+    artifacts: list[dict[str, str]] = []
+    for role in ("client", "server"):
+        config = target[role]
+        artifacts.extend(
+            [
+                {
+                    "name": config["package_name"],
+                    "kind": "archive",
+                    "role": role,
+                    "variant": "manual",
+                },
+                {
+                    "name": config["manifest_name"],
+                    "kind": "manifest",
+                    "role": role,
+                    "variant": "manual",
+                },
+                {
+                    "name": config["update_package_name"],
+                    "kind": "archive",
+                    "role": role,
+                    "variant": "update",
+                },
+                {
+                    "name": config["update_manifest_name"],
+                    "kind": "manifest",
+                    "role": role,
+                    "variant": "update",
+                },
+            ]
+        )
+
     installer = target.get("installer")
     if installer:
-        assets.append(installer["name"])
-    return assets
+        artifacts.append(
+            {
+                "name": installer["name"],
+                "kind": installer["type"],
+                "role": "installer",
+                "variant": "manual",
+            }
+        )
+    return artifacts
+
+
+def expected_role_metadata(target: dict[str, Any]) -> dict[str, dict[str, str]]:
+    roles: dict[str, dict[str, str]] = {}
+    for role in ("client", "server"):
+        config = target[role]
+        roles[role] = {
+            "role": config["role"],
+            "launch_exe": config["launch_exe"],
+            "engine_library": config["engine_library"],
+            "package_name": config["package_name"],
+            "manifest_name": config["manifest_name"],
+            "update_package_name": config["update_package_name"],
+            "update_manifest_name": config["update_manifest_name"],
+            "local_manifest_name": config["local_manifest_name"],
+        }
+    return roles
 
 
 def main() -> int:

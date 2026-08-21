@@ -1,0 +1,401 @@
+name: Pull Request
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pull-request-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Python test dependencies
+        shell: bash
+        run: |
+          python3 -m venv "${RUNNER_TEMP}/python-test-venv"
+          "${RUNNER_TEMP}/python-test-venv/bin/pip" install \
+            --disable-pip-version-check \
+            --only-binary=:all: \
+            --require-hashes \
+            --requirement tools/release/release-signing-requirements.txt
+          "${RUNNER_TEMP}/python-test-venv/bin/pip" install \
+            --disable-pip-version-check \
+            --only-binary=:all: \
+            --require-hashes \
+            --requirement tools/release/python-test-requirements.txt
+          echo "${RUNNER_TEMP}/python-test-venv/bin" >> "$GITHUB_PATH"
+
+      - name: Run repository Python tests
+        run: python3 -m pytest -q -p no:cacheprovider tools
+
+      - name: Enforce append-only release revocations
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          mkdir -p .tmp/release-policy-check
+          git cat-file -e "${BASE_SHA}^{commit}"
+          if git cat-file -e "${BASE_SHA}:tools/release/revoked-release-indexes.json"; then
+            git show "${BASE_SHA}:tools/release/revoked-release-indexes.json" \
+              > .tmp/release-policy-check/base-revocations.json
+          else
+            printf '%s\n' '{"schema_version":1,"channels":{}}' \
+              > .tmp/release-policy-check/base-revocations.json
+          fi
+          python3 tools/release/verify_revocations_append_only.py \
+            --previous .tmp/release-policy-check/base-revocations.json \
+            --current tools/release/revoked-release-indexes.json
+
+      - name: Check shadowmapping guardrails
+        run: python3 tools/check_shadowmapping_guardrails.py
+
+  q2proto-compatibility:
+    name: q2proto compatibility
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install compatibility build dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc ninja-build python3-venv
+
+      - name: Install hash-locked Meson toolchain
+        shell: bash
+        run: |
+          python3 -m venv "${RUNNER_TEMP}/q2proto-meson-venv"
+          "${RUNNER_TEMP}/q2proto-meson-venv/bin/pip" install \
+            --disable-pip-version-check \
+            --only-binary=:all: \
+            --require-hashes \
+            --requirement tools/release/build-tool-requirements.txt
+          echo "${RUNNER_TEMP}/q2proto-meson-venv/bin" >> "$GITHUB_PATH"
+
+      - name: Build complete q2proto compatibility suite
+        shell: bash
+        env:
+          CC: gcc
+        run: |
+          python3 tools/run_q2proto_compatibility.py \
+            --vendor-dir q2proto \
+            --source-dir q2proto/tests \
+            --build-dir .tmp/q2proto-compatibility-build \
+            --results-dir .tmp/q2proto-compatibility-results \
+            --timeout-seconds 300 \
+            --jobs 2
+
+      - name: Publish q2proto compatibility results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: q2proto-compatibility-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .tmp/q2proto-compatibility-results/
+          if-no-files-found: error
+          retention-days: 14
+
+  renderer-opengl:
+    name: External renderer — OpenGL
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install OpenGL renderer build dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ninja-build pkg-config gcc g++ python3 python3-venv cmake nasm \
+            libcurl4-openssl-dev libopenal-dev libpng-dev libjpeg-dev zlib1g-dev \
+            libdbus-1-dev libpipewire-0.3-dev libudev-dev libxkbcommon-dev \
+            libgl1-mesa-dev libx11-dev libxext-dev \
+            libxi-dev libxcursor-dev libxfixes-dev libxrandr-dev libxss-dev \
+            libxtst-dev libwayland-dev wayland-protocols x11proto-dev libdecor-0-dev
+
+      - name: Install hash-locked Meson toolchain
+        shell: bash
+        run: |
+          python3 -m venv "${RUNNER_TEMP}/meson-venv"
+          "${RUNNER_TEMP}/meson-venv/bin/pip" install \
+            --disable-pip-version-check \
+            --only-binary=:all: \
+            --require-hashes \
+            --requirement tools/release/build-tool-requirements.txt
+          echo "${RUNNER_TEMP}/meson-venv/bin" >> "$GITHUB_PATH"
+
+      - name: Configure external renderer build
+        shell: bash
+        run: |
+          meson setup builddir-renderer --wrap-mode=default \
+            --force-fallback-for=sdl3,sdl3_ttf --buildtype=debugoptimized \
+            -Dbase-game=basew -Ddefault-game=basew -Dbootstrapper=true \
+            -Dexternal-renderers=true -Dvulkan=disabled -Dtests=false \
+            -Dsdl3=enabled -Davcodec=disabled -Dlibcurl=enabled \
+            -Dharfbuzz:tests=disabled
+
+      - name: Build OpenGL external renderer
+        shell: bash
+        run: meson compile -C builddir-renderer worr_opengl_x86_64
+
+  renderer-vulkan:
+    name: External renderer — native Vulkan shaders
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install Vulkan renderer and shader validation dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ninja-build pkg-config gcc g++ python3 python3-venv cmake nasm \
+            libcurl4-openssl-dev libopenal-dev libpng-dev libjpeg-dev zlib1g-dev \
+            libvulkan-dev glslang-tools spirv-tools libdbus-1-dev libpipewire-0.3-dev \
+            libudev-dev libxkbcommon-dev libgl1-mesa-dev libx11-dev libxext-dev \
+            libxi-dev libxcursor-dev libxfixes-dev libxrandr-dev libxss-dev \
+            libxtst-dev libwayland-dev wayland-protocols x11proto-dev libdecor-0-dev
+
+      - name: Install hash-locked Meson toolchain
+        shell: bash
+        run: |
+          python3 -m venv "${RUNNER_TEMP}/meson-venv"
+          "${RUNNER_TEMP}/meson-venv/bin/pip" install \
+            --disable-pip-version-check --only-binary=:all: --require-hashes \
+            --requirement tools/release/build-tool-requirements.txt
+          echo "${RUNNER_TEMP}/meson-venv/bin" >> "$GITHUB_PATH"
+
+      - name: Configure native Vulkan renderer build
+        shell: bash
+        run: |
+          meson setup builddir-vulkan --wrap-mode=default \
+            --force-fallback-for=sdl3,sdl3_ttf --buildtype=debugoptimized \
+            -Dbase-game=basew -Ddefault-game=basew -Dbootstrapper=true \
+            -Dexternal-renderers=true -Dvulkan=enabled -Dtests=false \
+            -Dsdl3=enabled -Davcodec=disabled -Dlibcurl=enabled \
+            -Dharfbuzz:tests=disabled
+
+      - name: Verify native Vulkan embedded shader freshness and SPIR-V
+        shell: bash
+        run: meson compile -C builddir-vulkan native_vk_shader_freshness
+
+      - name: Build native Vulkan external renderer
+        shell: bash
+        run: meson compile -C builddir-vulkan worr_vulkan_x86_64
+
+  renderer-rtx:
+    name: External renderer — RTX/VKPT shaders
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install RTX renderer and shader validation dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ninja-build pkg-config gcc g++ python3 python3-venv cmake nasm \
+            libcurl4-openssl-dev libopenal-dev libpng-dev libjpeg-dev zlib1g-dev \
+            libvulkan-dev glslang-tools spirv-tools libdbus-1-dev libpipewire-0.3-dev \
+            libudev-dev libxkbcommon-dev libgl1-mesa-dev libx11-dev libxext-dev \
+            libxi-dev libxcursor-dev libxfixes-dev libxrandr-dev libxss-dev \
+            libxtst-dev libwayland-dev wayland-protocols x11proto-dev libdecor-0-dev
+
+      - name: Install hash-locked Meson toolchain
+        shell: bash
+        run: |
+          python3 -m venv "${RUNNER_TEMP}/meson-venv"
+          "${RUNNER_TEMP}/meson-venv/bin/pip" install \
+            --disable-pip-version-check --only-binary=:all: --require-hashes \
+            --requirement tools/release/build-tool-requirements.txt
+          echo "${RUNNER_TEMP}/meson-venv/bin" >> "$GITHUB_PATH"
+
+      - name: Configure RTX renderer build
+        shell: bash
+        run: |
+          meson setup builddir-rtx --wrap-mode=default \
+            --force-fallback-for=sdl3,sdl3_ttf --buildtype=debugoptimized \
+            -Dbase-game=basew -Ddefault-game=basew -Dbootstrapper=true \
+            -Dexternal-renderers=true -Dvulkan=enabled -Dtests=false \
+            -Dsdl3=enabled -Davcodec=disabled -Dlibcurl=enabled \
+            -Dharfbuzz:tests=disabled
+
+      - name: Compile and validate exact VKPT shader inventory
+        shell: bash
+        run: meson compile -C builddir-rtx vkpt_shaders vkpt_shader_validation
+
+      - name: Build RTX external renderer
+        shell: bash
+        run: meson compile -C builddir-rtx worr_rtx_x86_64
+
+  build-and-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform_id: windows-x86_64
+            runner: windows-2025
+            os: windows
+            archive_format: zip
+            has_installer: true
+          - platform_id: linux-x86_64
+            runner: ubuntu-24.04
+            os: linux
+            archive_format: tar.gz
+            has_installer: false
+          - platform_id: macos-x86_64
+            runner: macos-15-intel
+            os: macos
+            archive_format: tar.gz
+            has_installer: false
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install Linux dependencies
+        if: matrix.os == 'linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ninja-build pkg-config gcc g++ python3 python3-venv cmake nasm \
+            libcurl4-openssl-dev libopenal-dev libpng-dev libjpeg-dev zlib1g-dev \
+            libvulkan-dev glslang-tools spirv-tools libdbus-1-dev libpipewire-0.3-dev \
+            libudev-dev libxkbcommon-dev libgl1-mesa-dev libx11-dev libxext-dev \
+            libxi-dev libxcursor-dev libxfixes-dev libxrandr-dev libxss-dev \
+            libxtst-dev libwayland-dev wayland-protocols x11proto-dev libdecor-0-dev
+
+      - name: Install hash-locked Meson toolchain
+        if: matrix.os != 'windows'
+        shell: bash
+        run: |
+          python3 -m venv "${RUNNER_TEMP}/meson-venv"
+          "${RUNNER_TEMP}/meson-venv/bin/pip" install \
+            --disable-pip-version-check \
+            --only-binary=:all: \
+            --require-hashes \
+            --requirement tools/release/build-tool-requirements.txt
+          echo "${RUNNER_TEMP}/meson-venv/bin" >> "$GITHUB_PATH"
+
+      - name: Install macOS dependencies
+        if: matrix.os == 'macos'
+        shell: bash
+        run: |
+          HOMEBREW_NO_AUTO_UPDATE=1 brew install ninja pkg-config cmake curl sdl3 openal-soft libpng \
+            jpeg-turbo vulkan-loader molten-vk glslang spirv-tools
+
+      - name: Setup MSYS2
+        if: matrix.os == 'windows'
+        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2.32.0
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-python
+            mingw-w64-x86_64-meson
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-curl
+            mingw-w64-x86_64-vulkan-headers
+            mingw-w64-x86_64-vulkan-loader
+            mingw-w64-x86_64-glslang
+            mingw-w64-x86_64-spirv-tools
+
+      - name: Configure (Linux/macOS)
+        if: matrix.os != 'windows'
+        shell: bash
+        run: |
+          meson setup builddir --wrap-mode=default \
+            --force-fallback-for=sdl3,sdl3_ttf --buildtype=debugoptimized \
+            -Dbase-game=basew -Ddefault-game=basew -Dbootstrapper=true \
+            -Dsdl3=enabled -Dtests=true -Davcodec=disabled -Dlibcurl=enabled \
+            -Dharfbuzz:tests=disabled
+
+      - name: Configure (Windows)
+        if: matrix.os == 'windows'
+        shell: msys2 {0}
+        run: |
+          meson setup builddir --wrap-mode=forcefallback --buildtype=debugoptimized \
+            -Dbase-game=basew -Ddefault-game=basew -Dbootstrapper=true \
+            -Dsdl3=enabled -Dtests=true -Davcodec=disabled -Dlibcurl=enabled \
+            -Dharfbuzz:tests=disabled
+
+      - name: Build (Linux/macOS)
+        if: matrix.os != 'windows'
+        shell: bash
+        run: meson compile -C builddir
+
+      - name: Build (Windows)
+        if: matrix.os == 'windows'
+        shell: msys2 {0}
+        run: meson compile -C builddir
+
+      - name: Refresh staged install (Linux/macOS)
+        if: matrix.os != 'windows'
+        shell: bash
+        run: |
+          python3 tools/refresh_install.py \
+            --build-dir builddir --install-dir .install --base-game basew \
+            --platform-id "${{ matrix.platform_id }}"
+
+      - name: Refresh staged install (Windows)
+        if: matrix.os == 'windows'
+        shell: msys2 {0}
+        run: |
+          python3 tools/refresh_install.py \
+            --build-dir builddir --install-dir .install --base-game basew \
+            --platform-id "${{ matrix.platform_id }}"
+
+      - name: Smoke staged dedicated runtime (Linux/macOS)
+        if: matrix.os != 'windows'
+        shell: bash
+        run: |
+          python3 tools/run_staged_runtime_smoke.py \
+            --install-dir .install --platform-id "${{ matrix.platform_id }}"
+
+      - name: Smoke staged dedicated runtime (Windows)
+        if: matrix.os == 'windows'
+        shell: msys2 {0}
+        run: |
+          python3 tools/run_staged_runtime_smoke.py \
+            --install-dir .install --platform-id "${{ matrix.platform_id }}"
+
+      - name: Run bounded headless Meson tests (Linux/macOS)
+        if: matrix.os != 'windows'
+        shell: bash
+        run: python3 tools/run_fast_headless_tests.py --build-dir builddir
+
+      - name: Run bounded headless Meson tests (Windows)
+        if: matrix.os == 'windows'
+        shell: msys2 {0}
+        run: python3 tools/run_fast_headless_tests.py --build-dir builddir

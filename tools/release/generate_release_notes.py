@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import pathlib
 import subprocess
@@ -56,6 +57,10 @@ def main() -> int:
     parser.add_argument("--run-id", default="", help="Workflow run id")
     parser.add_argument("--run-url", default="", help="Workflow run URL")
     parser.add_argument("--index-path", required=True, help="Release index JSON path")
+    parser.add_argument(
+        "--trust-policy-path",
+        help="Published release trust policy whose fingerprint is shown in the notes",
+    )
     parser.add_argument("--output", required=True, help="Markdown output path")
     args = parser.parse_args()
 
@@ -80,6 +85,26 @@ def main() -> int:
     if previous_tag:
         compare_url = f"https://github.com/{args.repo}/compare/{previous_tag}...{args.tag}"
         lines.append(f"- Compare: [{previous_tag}...{args.tag}]({compare_url})")
+    if args.trust_policy_path:
+        trust_policy_path = pathlib.Path(args.trust_policy_path)
+        trust_policy_payload = trust_policy_path.read_bytes()
+        trust_policy = json.loads(trust_policy_payload.decode("utf-8", errors="strict"))
+        lines.append("")
+        lines.append("## Release Trust Policy")
+        lines.append(f"- Asset: `{trust_policy_path.name}`")
+        lines.append(
+            "- SHA-256: `"
+            + hashlib.sha256(trust_policy_payload).hexdigest()
+            + "`"
+        )
+        lines.append(f"- Signature threshold: `{trust_policy.get('threshold', 'unknown')}`")
+        key_ids = sorted(
+            key.get("key_id", "")
+            for key in trust_policy.get("keys", [])
+            if isinstance(key, dict) and key.get("key_id")
+        )
+        if key_ids:
+            lines.append("- Authorized key IDs: " + ", ".join(f"`{key_id}`" for key_id in key_ids))
     lines.append("")
     lines.append("## Full Changelog")
     if changelog:
